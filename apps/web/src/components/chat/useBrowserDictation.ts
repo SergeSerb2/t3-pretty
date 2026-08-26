@@ -87,6 +87,7 @@ export function useBrowserDictation(input: {
 }) {
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const sessionRef = useRef<DictationSession | null>(null);
+  const startingRef = useRef(false);
   const mountedRef = useRef(true);
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -269,10 +270,18 @@ export function useBrowserDictation(input: {
 
   const start = useCallback(async () => {
     const current = inputRef.current;
-    if (!current.enabled || !current.prepared || sessionRef.current) return;
+    if (!current.enabled || !current.prepared || sessionRef.current || startingRef.current) return;
+    startingRef.current = true;
     let stream: MediaStream | null = null;
     try {
       const status = await runtime.runPromise(fetchDictationStatus(current.prepared));
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== current.prepared
+      ) {
+        return;
+      }
       if (!status.available) {
         current.reportError(
           status.reason === "groq_api_key_missing"
@@ -281,12 +290,15 @@ export function useBrowserDictation(input: {
         );
         return;
       }
-      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
       if (typeof MediaRecorder === "undefined") {
         throw new Error("This browser does not support audio recording.");
       }
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) {
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== current.prepared
+      ) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
@@ -320,14 +332,29 @@ export function useBrowserDictation(input: {
       } else if (stream) {
         for (const track of stream.getTracks()) track.stop();
       }
-      current.reportError(errorMessage(error));
+      if (mountedRef.current) current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
+    } finally {
+      startingRef.current = false;
     }
   }, [closeSession]);
 
   useEffect(() => {
-    if (!input.enabled && phase === "recording") stop();
-  }, [input.enabled, phase, stop]);
+    const session = sessionRef.current;
+    if (!session) return;
+    if (input.prepared !== session.prepared) {
+      session.cancelled = true;
+      closeSession(session);
+      return;
+    }
+    if (input.enabled) return;
+    if (phase === "recording") {
+      stop();
+      return;
+    }
+    session.cancelled = true;
+    closeSession(session);
+  }, [closeSession, input.enabled, input.prepared, phase, stop]);
 
   useEffect(() => {
     mountedRef.current = true;

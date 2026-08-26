@@ -4,7 +4,6 @@ import {
   DictationUpstreamError,
   EnvironmentHttpApi,
   type DictationAudioMimeType,
-  type DictationStatusResult,
 } from "@t3tools/contracts";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import * as Effect from "effect/Effect";
@@ -14,6 +13,9 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { annotateEnvironmentRequest, requireEnvironmentScope } from "../auth/http.ts";
+import { resolveDictationAvailability } from "./availability.ts";
+
+export { resolveDictationAvailability } from "./availability.ts";
 
 const GROQ_TRANSCRIPTIONS_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -34,32 +36,21 @@ Remove filler words, repetitions, false starts, abandoned fragments, and superse
 Compact rambling phrasing without dropping distinct details. Fix punctuation, capitalization, and obvious speech-recognition errors.
 Use the surrounding text only to infer spelling and formatting. If the transcript contains no meaningful content, return EMPTY.`;
 
-export function resolveDictationAvailability(
-  buildFlavor = T3CODE_BUILD_FLAVOR,
-  apiKey = process.env.GROQ_API_KEY,
-): DictationStatusResult {
-  if (buildFlavor !== "internal") {
-    return { available: false, reason: "internal_build_required" };
-  }
-  if (!apiKey?.trim()) {
-    return { available: false, reason: "groq_api_key_missing" };
-  }
-  return { available: true, reason: null };
-}
-
 export function normalizeCleanupResult(text: string): string {
   const cleaned = text.trim();
   return cleaned === "EMPTY" ? "" : cleaned;
 }
 
 function requireDictationApiKey() {
-  if (T3CODE_BUILD_FLAVOR !== "internal") {
-    return Effect.fail(new DictationUnavailableError({ reason: "internal_build_required" }));
-  }
   const apiKey = process.env.GROQ_API_KEY?.trim();
-  return apiKey
-    ? Effect.succeed(apiKey)
-    : Effect.fail(new DictationUnavailableError({ reason: "groq_api_key_missing" }));
+  const availability = resolveDictationAvailability(T3CODE_BUILD_FLAVOR, apiKey);
+  return availability.available
+    ? Effect.succeed(apiKey!)
+    : Effect.fail(
+        new DictationUnavailableError({
+          reason: availability.reason ?? "groq_api_key_missing",
+        }),
+      );
 }
 
 function audioExtension(mimeType: DictationAudioMimeType): string {

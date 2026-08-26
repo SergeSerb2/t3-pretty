@@ -69,6 +69,7 @@ export function useNativeDictation(input: {
 }) {
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const sessionRef = useRef<DictationSession | null>(null);
+  const startingRef = useRef(false);
   const mountedRef = useRef(true);
   const valueRef = useRef(input.value);
   const inputRef = useRef(input);
@@ -285,10 +286,18 @@ export function useNativeDictation(input: {
 
   const start = useCallback(async () => {
     const current = inputRef.current;
-    if (!current.enabled || !current.prepared || sessionRef.current) return;
+    if (!current.enabled || !current.prepared || sessionRef.current || startingRef.current) return;
+    startingRef.current = true;
     let session: DictationSession | null = null;
     try {
       const status = await runtime.runPromise(fetchDictationStatus(current.prepared));
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== current.prepared
+      ) {
+        return;
+      }
       if (!status.available) {
         current.reportError(
           status.reason === "groq_api_key_missing"
@@ -297,15 +306,26 @@ export function useNativeDictation(input: {
         );
         return;
       }
-      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
       const audio = await import("expo-audio");
-      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== current.prepared
+      ) {
+        return;
+      }
       const permission = await audio.requestRecordingPermissionsAsync();
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== current.prepared
+      ) {
+        return;
+      }
       if (!permission.granted) {
         current.reportError("Microphone access is required for voice dictation.");
         return;
       }
-      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
       const recordingOptions = nativeRecordingOptions(audio.RecordingPresets.HIGH_QUALITY);
       const cursor = Math.max(0, Math.min(valueRef.current.length, inputRef.current.cursor));
       session = {
@@ -330,21 +350,44 @@ export function useNativeDictation(input: {
       sessionRef.current = session;
       setPhase("recording");
       await audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      if (session.cancelled || session.closed) {
+      if (
+        !mountedRef.current ||
+        !inputRef.current.enabled ||
+        inputRef.current.prepared !== session.prepared ||
+        session.cancelled ||
+        session.closed
+      ) {
+        session.cancelled = true;
         await audio.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        await closeSession(session);
         return;
       }
       await beginChunkRef.current(session);
     } catch (error) {
       if (session) await closeSession(session);
-      current.reportError(errorMessage(error));
+      if (mountedRef.current) current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
+    } finally {
+      startingRef.current = false;
     }
   }, [closeSession]);
 
   useEffect(() => {
-    if (!input.enabled && phase === "recording") stop();
-  }, [input.enabled, phase, stop]);
+    const session = sessionRef.current;
+    if (!session) return;
+    if (input.prepared !== session.prepared) {
+      session.cancelled = true;
+      void closeSession(session);
+      return;
+    }
+    if (input.enabled) return;
+    if (phase === "recording") {
+      stop();
+      return;
+    }
+    session.cancelled = true;
+    void closeSession(session);
+  }, [closeSession, input.enabled, input.prepared, phase, stop]);
 
   useEffect(() => {
     mountedRef.current = true;

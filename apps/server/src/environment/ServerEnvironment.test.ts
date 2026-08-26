@@ -6,7 +6,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
-import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
@@ -15,6 +14,7 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
+import { resolveDictationAvailability } from "../dictation/availability.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
 const isServerEnvironmentIdPersistenceError = Schema.is(
@@ -93,7 +93,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.attachmentUploads).toBe(true);
       expect(second.capabilities.voiceDictation).toBe(
-        T3CODE_BUILD_FLAVOR === "internal" ? true : undefined,
+        resolveDictationAvailability().available ? true : undefined,
       );
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
