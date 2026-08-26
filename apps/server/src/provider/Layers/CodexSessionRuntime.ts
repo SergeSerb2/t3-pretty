@@ -608,7 +608,7 @@ function buildCodexCollaborationMode(input: {
       developer_instructions: buildCodexDeveloperInstructions(
         input.interactionMode,
         { model, reasoningEffort },
-        input.browserToolsAvailable ?? true,
+        input.browserToolsAvailable ?? false,
       ),
     },
   };
@@ -626,7 +626,7 @@ export function buildTurnStartParams(input: {
   readonly serviceTier?: CodexServiceTier;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
-  /** Defaults to true so callers that predate the agent-access gate are unchanged. */
+  /** Browser instructions are omitted unless the session explicitly attached preview tools. */
   readonly browserToolsAvailable?: boolean;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
@@ -648,7 +648,7 @@ export function buildTurnStartParams(input: {
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    browserToolsAvailable: input.browserToolsAvailable ?? true,
+    browserToolsAvailable: input.browserToolsAvailable ?? false,
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -2267,9 +2267,7 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable:
-              options.browserToolsAvailable ??
-              hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
+            browserToolsAvailable: options.browserToolsAvailable ?? false,
           });
           // A send that lands while a turn is running is a steer: inject into
           // the active turn instead of letting Codex queue a follow-up turn.

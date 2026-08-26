@@ -23,6 +23,7 @@ interface RecordedCall {
 /** Builds the real service over a recording executor that never spawns. */
 const makeServiceHarness = (options?: {
   readonly stdoutFor?: (input: ComputerUseCommandInput) => string;
+  readonly platform?: NodeJS.Platform;
 }) => {
   const calls: Array<RecordedCall> = [];
   const executorLayer = Layer.succeed(ComputerUseExecutor, {
@@ -36,7 +37,10 @@ const makeServiceHarness = (options?: {
         };
       }),
   });
-  const serviceLayer = Layer.effect(ComputerUseService, make).pipe(Layer.provide(executorLayer));
+  const serviceLayer = Layer.effect(ComputerUseService, make).pipe(
+    Layer.provide(executorLayer),
+    Layer.provide(Layer.succeed(HostProcessPlatform, options?.platform ?? "darwin")),
+  );
   const getService = ComputerUseService.pipe(Effect.provide(serviceLayer));
   return { calls, getService };
 };
@@ -217,7 +221,7 @@ it.effect("computer_screen_info parses the JXA JSON payload", () =>
 
 it.effect("computer actions fail with unsupported-platform off macOS", () =>
   Effect.gen(function* () {
-    const { getService } = makeServiceHarness();
+    const { getService } = makeServiceHarness({ platform: "linux" });
     const service = yield* getService;
 
     const clickError = yield* service.click({ x: 1, y: 2 }).pipe(Effect.flip);
@@ -225,7 +229,7 @@ it.effect("computer actions fail with unsupported-platform off macOS", () =>
 
     const screenshotError = yield* service.screenshot({}).pipe(Effect.flip);
     assert.equal(screenshotError.reason, "unsupported-platform");
-  }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
+  }),
 );
 
 it.effect("non-zero process exit surfaces as action-failed with stderr detail", () =>

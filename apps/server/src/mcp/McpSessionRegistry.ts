@@ -125,12 +125,15 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const capabilities = new Set<McpInvocationContext.McpCapability>(
+        request.capabilities ?? ["preview"],
+      );
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set(request.capabilities ?? ["preview"]),
+        capabilities,
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -152,7 +155,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
           capabilities: scope.capabilities,
-          servers: [{ name: McpProviderSession.T3_CODE_MCP_SERVER_NAME, url: endpoint }],
+          servers: McpProviderSession.builtInMcpServers(endpoint, capabilities),
         },
       };
     },

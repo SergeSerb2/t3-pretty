@@ -233,9 +233,9 @@ const ScreenInfoJson = Schema.fromJsonString(ComputerScreenInfoResult);
 
 export const make = Effect.gen(function* () {
   const executor = yield* ComputerUseExecutor;
+  const platform = yield* HostProcessPlatform;
 
   const requireDarwin = Effect.fn("ComputerUseService.requireDarwin")(function* () {
-    const platform = yield* HostProcessPlatform;
     if (platform !== "darwin") {
       return yield* new ComputerUseError({
         reason: "unsupported-platform",

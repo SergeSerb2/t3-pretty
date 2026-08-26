@@ -355,20 +355,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         capabilities,
       });
       if (!credential) return undefined;
-      // One bearer, many servers: apps ride the `/mcp/apps/<id>` proxy next to
-      // the built-in `t3-code` endpoint, and the proxy resolves the same token.
+      // One bearer, many servers: built-in toolkits use distinct catalogs and
+      // apps ride the `/mcp/apps/<id>` proxy; every endpoint resolves the same token.
       const config: McpProviderSession.McpProviderSessionConfig = {
         ...credential.config,
         capabilities,
         servers: [
-          ...(capabilities.size > 0
-            ? [
-                {
-                  name: McpProviderSession.T3_CODE_MCP_SERVER_NAME,
-                  url: credential.config.endpoint,
-                },
-              ]
-            : []),
+          ...credential.config.servers,
           ...plan.apps.map((app) => ({
             name: app.slug,
             url: `${credential.config.endpoint}/apps/${encodeURIComponent(app.id)}`,

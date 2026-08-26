@@ -302,14 +302,20 @@ export const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseT
   Layer.provide(ComputerUseToolkitHandlersLive),
 );
 
-const McpTransportLive = McpServer.layerHttp({
-  name: "T3 Code",
-  version: packageJson.version,
-  path: "/mcp",
-  protocols: [McpProtocol.v2025_06_18],
-}).pipe(Layer.provide(McpAuthMiddlewareLive));
+const mcpTransportLive = (path: HttpRouter.PathInput) =>
+  McpServer.layerHttp({
+    name: "T3 Code",
+    version: packageJson.version,
+    path,
+    protocols: [McpProtocol.v2025_06_18],
+  }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = Layer.mergeAll(
-  PreviewToolkitRegistrationLive,
-  ComputerUseToolkitRegistrationLive,
-).pipe(Layer.provideMerge(McpTransportLive));
+const PreviewMcpServerLive = PreviewToolkitRegistrationLive.pipe(
+  Layer.provide(mcpTransportLive("/mcp")),
+);
+
+const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
+  Layer.provide(mcpTransportLive("/mcp/computer-use")),
+);
+
+export const layer = Layer.mergeAll(PreviewMcpServerLive, ComputerUseMcpServerLive);

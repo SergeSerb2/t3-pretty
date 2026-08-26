@@ -207,6 +207,7 @@ describe("buildTurnStartParams", () => {
         model: "gpt-5.3-codex",
         effort: "medium",
         interactionMode: "plan",
+        browserToolsAvailable: true,
       }),
     );
 
@@ -247,6 +248,7 @@ describe("buildTurnStartParams", () => {
         prompt: "Implement it",
         model: "gpt-5.3-codex",
         interactionMode: "default",
+        browserToolsAvailable: true,
         attachments: [
           {
             type: "image",
@@ -642,6 +644,21 @@ describe("T3 browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it.effect("defaults to no browser instructions without an explicit preview capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-computer-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /preview_open/,
+      );
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {

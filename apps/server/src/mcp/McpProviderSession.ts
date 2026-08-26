@@ -10,21 +10,34 @@ export interface McpProviderSessionServer {
 }
 
 export const T3_CODE_MCP_SERVER_NAME = "t3-code";
+export const T3_CODE_COMPUTER_MCP_SERVER_NAME = "t3-code-computer";
+
+export function builtInMcpServers(
+  endpoint: string,
+  capabilities: ReadonlySet<McpCapability>,
+): ReadonlyArray<McpProviderSessionServer> {
+  return [
+    ...(capabilities.has("preview") ? [{ name: T3_CODE_MCP_SERVER_NAME, url: endpoint }] : []),
+    ...(capabilities.has("computer-use")
+      ? [{ name: T3_CODE_COMPUTER_MCP_SERVER_NAME, url: `${endpoint}/computer-use` }]
+      : []),
+  ];
+}
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
-  /** The built-in `t3-code` endpoint; `servers` decides whether it is attached. */
+  /** Base endpoint for built-in tool servers and app proxies. */
   readonly endpoint: string;
   readonly authorizationHeader: string;
   readonly capabilities: ReadonlySet<McpCapability>;
   /**
-   * Every server to attach, in order: `t3-code` when a built-in capability is
-   * on, then each attachable app behind the `/mcp/apps/<id>` proxy. Adapters
-   * map this list into their own config dialect and never consult
-   * `endpoint` directly.
+   * Every server to attach, in order: capability-specific built-in servers,
+   * then each attachable app behind the `/mcp/apps/<id>` proxy. Adapters map
+   * this list into their own config dialect and never consult `endpoint`
+   * directly.
    */
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
 }
