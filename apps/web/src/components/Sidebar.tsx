@@ -4329,7 +4329,7 @@ export default function Sidebar() {
                           {clearableSettledThreads.length > 0 ? (
                             <span
                               className={cn(
-                                "grid grid-cols-[0fr] overflow-hidden transition-[grid-template-columns] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                                "grid min-w-0 grid-cols-[0fr] overflow-hidden transition-[grid-template-columns] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
                                 "group-hover/settled-header:grid-cols-[1fr] group-hover/settled-header:duration-200",
                                 "has-[:focus-visible]:grid-cols-[1fr] has-[:disabled]:grid-cols-[1fr]",
                                 "pointer-coarse:grid-cols-[1fr]",
@@ -4354,7 +4354,7 @@ export default function Sidebar() {
                                           "focus-visible:translate-x-0 focus-visible:scale-100 focus-visible:opacity-100",
                                           "enabled:hover:text-sidebar-foreground",
                                           "disabled:cursor-default disabled:translate-x-0 disabled:scale-100 disabled:opacity-50",
-                                          "pointer-coarse:translate-x-0 pointer-coarse:scale-100 pointer-coarse:opacity-100",
+                                          "pointer-coarse:translate-x-0 pointer-coarse:scale-100 enabled:pointer-coarse:opacity-100",
                                           "motion-reduce:translate-x-0 motion-reduce:scale-100 motion-reduce:transition-[color,opacity]",
                                         )}
                                       />
