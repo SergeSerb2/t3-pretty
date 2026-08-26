@@ -39,6 +39,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     const issued = yield* registry.issue({
       threadId,
       providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
     });
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
     expect(issued.config.servers).toEqual([{ name: "t3-code", url: "http://127.0.0.1:43123/mcp" }]);
@@ -75,6 +76,19 @@ it.effect("stores only the capabilities requested for a provider session", () =>
         url: "http://127.0.0.1:43123/mcp/computer-use",
       },
     ]);
+  }),
+);
+
+it.effect("defaults omitted capabilities to no built-in tools", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-tools"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+
+    expect(issued.config.capabilities.size).toBe(0);
+    expect(issued.config.servers).toEqual([]);
   }),
 );
 

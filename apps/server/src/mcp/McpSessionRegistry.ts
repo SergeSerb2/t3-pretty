@@ -125,9 +125,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
-      const capabilities = new Set<McpInvocationContext.McpCapability>(
-        request.capabilities ?? ["preview"],
-      );
+      const capabilities = new Set<McpInvocationContext.McpCapability>(request.capabilities ?? []);
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
