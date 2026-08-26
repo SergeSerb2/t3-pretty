@@ -1,8 +1,8 @@
 /**
  * Computer-use contracts: cross-provider host automation tool schemas.
  *
- * The MCP tools defined here are exposed to every provider session through the
- * in-house `t3-code` MCP server (toolkit lives in
+ * The MCP tools defined here are exposed to opted-in provider sessions through
+ * the in-house `t3-code-computer` MCP server (toolkit lives in
  * `apps/server/src/mcp/toolkits/computerUse/`, host automation in
  * `apps/server/src/computerUse/`).
  *

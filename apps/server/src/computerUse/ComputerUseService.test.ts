@@ -248,7 +248,10 @@ it.effect("non-zero process exit surfaces as action-failed with stderr detail", 
         }),
     });
     const executorLayer = ComputerUseExecutorLive.pipe(Layer.provide(processRunnerLayer));
-    const serviceLayer = Layer.effect(ComputerUseService, make).pipe(Layer.provide(executorLayer));
+    const serviceLayer = Layer.effect(ComputerUseService, make).pipe(
+      Layer.provide(executorLayer),
+      Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
+    );
     const service = yield* ComputerUseService.pipe(Effect.provide(serviceLayer));
 
     const error = yield* service.screenshot({}).pipe(Effect.flip);
