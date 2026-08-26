@@ -53,7 +53,7 @@ export function readAloudPlainText(markdown: string): string {
     .replace(/<https?:\/\/[^>]+>/g, " ")
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/<\/?[A-Za-z][^>]*>/g, " ")
-    .replace(/```[^\n]*\n?/g, "")
+    .replace(/```[^]*?(?:```|$)/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/[*~]/g, "")
     .replace(/&amp;/g, "&")

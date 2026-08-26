@@ -178,27 +178,39 @@ export function useNativeReadAloud(input: {
       };
       sessionRef.current = session;
       setState({ activeMessageId: messageId, phase: "loading" });
+      const synthesizeChunk = async (chunk: string) => {
+        const synthesisAbort = new AbortController();
+        session.synthesisAbort = synthesisAbort;
+        try {
+          return {
+            result: await runtime.runPromise(
+              synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
+              { signal: synthesisAbort.signal },
+            ),
+          } as const;
+        } catch (error) {
+          return { error } as const;
+        } finally {
+          if (session.synthesisAbort === synthesisAbort) session.synthesisAbort = null;
+        }
+      };
 
       try {
         const audio = await import("expo-audio");
         await audio.setAudioModeAsync({ playsInSilentMode: true });
-        let hasPlayedAudio = false;
-        for (const chunk of chunks) {
+        let index = 0;
+        let pending: ReturnType<typeof synthesizeChunk> | null = synthesizeChunk(chunks[0]!);
+        while (pending) {
+          const outcome = await pending;
           if (session.cancelled || sessionRef.current !== session) return;
-          if (!hasPlayedAudio) setState({ activeMessageId: messageId, phase: "loading" });
-          const synthesisAbort = new AbortController();
-          session.synthesisAbort = synthesisAbort;
-          const result = await runtime.runPromise(
-            synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
-            { signal: synthesisAbort.signal },
-          );
-          if (session.synthesisAbort === synthesisAbort) session.synthesisAbort = null;
-          if (session.cancelled || sessionRef.current !== session) return;
+          if ("error" in outcome) throw outcome.error;
+          index += 1;
+          const nextChunk = chunks[index];
+          pending = nextChunk ? synthesizeChunk(nextChunk) : null;
           setState({ activeMessageId: messageId, phase: "playing" });
-          await playAudio(session, audio, result.audioBase64);
+          await playAudio(session, audio, outcome.result.audioBase64);
           releaseAudio(session);
           if (session.cancelled || sessionRef.current !== session) return;
-          hasPlayedAudio = true;
         }
       } catch (error) {
         if (!session.cancelled) inputRef.current.reportError(errorMessage(error));

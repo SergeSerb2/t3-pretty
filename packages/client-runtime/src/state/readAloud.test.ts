@@ -26,7 +26,7 @@ describe("read aloud text", () => {
   it("turns common markdown into natural plain text", () => {
     expect(
       readAloudPlainText(
-        "# Result\nRead [the docs](https://example.com), then run `vp test`.\n- First check\n- Second check",
+        "# Result\nRead [the docs](https://example.com), then run `vp test`.\n```ts\nconst hidden = true;\n```\n- First check\n- Second check",
       ),
     ).toBe("Result. Read the docs, then run vp test. First check. Second check");
   });
