@@ -233,7 +233,7 @@ export function useNativeDictation(input: {
     session.timer = null;
     const recorder = session.recorder;
     if (!recorder) {
-      session.error = new Error("Voice recorder is unavailable.");
+      if (!session.stopRequested) session.error = new Error("Voice recorder is unavailable.");
       session.stopRequested = true;
       session.stoppingChunk = false;
       await finishSession(session);
