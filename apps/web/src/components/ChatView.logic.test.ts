@@ -991,32 +991,75 @@ describe("reconcileQueuedComposerMessages", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
+        serverMessages: [],
         latestTurn: { ...completedTurn, turnId: TurnId.make("turn-other"), state: "running" },
       }),
     ).toBe(queuedMessages);
   });
 
-  it("releases one queued message when the server identifies its turn", () => {
+  it("releases through the queued message identified by the server", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
+        serverMessages: [],
         latestTurn: {
           ...completedTurn,
           turnId: TurnId.make("turn-next"),
-          userMessageId: queuedMessages[0]!.id,
+          userMessageId: queuedMessages[1]!.id,
           state: "running",
         },
       }),
-    ).toEqual([queuedMessages[1]]);
+    ).toEqual([]);
   });
 
   it("releases a queued message after its turn finishes before reconciliation", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
+        serverMessages: [],
         latestTurn: { ...completedTurn, userMessageId: queuedMessages[0]!.id },
       }),
     ).toEqual([queuedMessages[1]]);
+  });
+
+  it("falls back to the matching server message for older snapshots", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[1]!.id,
+            role: "user",
+            text: queuedMessages[1]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: completedTurn,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not use the fallback when the server identifies another message", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[0]!.id,
+            role: "user",
+            text: queuedMessages[0]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: { ...completedTurn, userMessageId: MessageId.make("message-other-client") },
+      }),
+    ).toBe(queuedMessages);
   });
 });
 

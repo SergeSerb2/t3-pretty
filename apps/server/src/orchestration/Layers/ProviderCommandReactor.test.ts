@@ -4269,6 +4269,8 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
       expect.stringMatching(/queued first$/),
     );
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    expect(thread?.latestTurn?.userMessageId).toBe("user-message-queued-a");
   });
 
   it("sends a mid-turn start immediately when delivery is left at the steer default", async () => {

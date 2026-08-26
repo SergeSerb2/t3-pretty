@@ -1331,6 +1331,26 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
             threadId: event.payload.threadId,
           });
+          const activeUserMessage =
+            event.payload.activeUserMessageId === undefined
+              ? undefined
+              : Option.getOrUndefined(
+                  yield* projectionThreadMessageRepository.getByMessageId({
+                    messageId: event.payload.activeUserMessageId,
+                  }),
+                );
+          const matchingPendingTurnStart =
+            Option.isSome(pendingTurnStart) &&
+            (event.payload.activeUserMessageId === undefined ||
+              pendingTurnStart.value.messageId === event.payload.activeUserMessageId)
+              ? pendingTurnStart.value
+              : null;
+          const activeUserMessageId =
+            event.payload.activeUserMessageId ?? matchingPendingTurnStart?.messageId ?? null;
+          const requestedAt =
+            activeUserMessage?.createdAt ??
+            matchingPendingTurnStart?.requestedAt ??
+            event.occurredAt;
           if (Option.isSome(existingTurn)) {
             const nextState =
               existingTurn.value.state === "completed" || existingTurn.value.state === "error"
@@ -1339,51 +1359,30 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTurnRepository.upsertByTurnId({
               ...existingTurn.value,
               state: nextState,
-              pendingMessageId:
-                existingTurn.value.pendingMessageId ??
-                (Option.isSome(pendingTurnStart) ? pendingTurnStart.value.messageId : null),
+              pendingMessageId: existingTurn.value.pendingMessageId ?? activeUserMessageId,
               sourceProposedPlanThreadId:
                 existingTurn.value.sourceProposedPlanThreadId ??
-                (Option.isSome(pendingTurnStart)
-                  ? pendingTurnStart.value.sourceProposedPlanThreadId
-                  : null),
+                matchingPendingTurnStart?.sourceProposedPlanThreadId ??
+                null,
               sourceProposedPlanId:
                 existingTurn.value.sourceProposedPlanId ??
-                (Option.isSome(pendingTurnStart)
-                  ? pendingTurnStart.value.sourceProposedPlanId
-                  : null),
-              startedAt:
-                existingTurn.value.startedAt ??
-                (Option.isSome(pendingTurnStart)
-                  ? pendingTurnStart.value.requestedAt
-                  : event.occurredAt),
-              requestedAt:
-                existingTurn.value.requestedAt ??
-                (Option.isSome(pendingTurnStart)
-                  ? pendingTurnStart.value.requestedAt
-                  : event.occurredAt),
+                matchingPendingTurnStart?.sourceProposedPlanId ??
+                null,
+              startedAt: existingTurn.value.startedAt ?? requestedAt,
+              requestedAt: existingTurn.value.requestedAt ?? requestedAt,
             });
           } else {
             yield* projectionTurnRepository.upsertByTurnId({
               turnId,
               threadId: event.payload.threadId,
-              pendingMessageId: Option.isSome(pendingTurnStart)
-                ? pendingTurnStart.value.messageId
-                : null,
-              sourceProposedPlanThreadId: Option.isSome(pendingTurnStart)
-                ? pendingTurnStart.value.sourceProposedPlanThreadId
-                : null,
-              sourceProposedPlanId: Option.isSome(pendingTurnStart)
-                ? pendingTurnStart.value.sourceProposedPlanId
-                : null,
+              pendingMessageId: activeUserMessageId,
+              sourceProposedPlanThreadId:
+                matchingPendingTurnStart?.sourceProposedPlanThreadId ?? null,
+              sourceProposedPlanId: matchingPendingTurnStart?.sourceProposedPlanId ?? null,
               assistantMessageId: null,
               state: "running",
-              requestedAt: Option.isSome(pendingTurnStart)
-                ? pendingTurnStart.value.requestedAt
-                : event.occurredAt,
-              startedAt: Option.isSome(pendingTurnStart)
-                ? pendingTurnStart.value.requestedAt
-                : event.occurredAt,
+              requestedAt,
+              startedAt: requestedAt,
               completedAt: null,
               checkpointTurnCount: null,
               checkpointRef: null,

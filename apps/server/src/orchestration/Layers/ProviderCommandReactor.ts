@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  type MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -23,6 +24,7 @@ import { extractSkillMentions, skillLoadIdKey, skillLoadNameKey } from "@t3tools
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -490,6 +492,7 @@ const make = Effect.gen(function* () {
   const setThreadSession = (input: {
     readonly threadId: ThreadId;
     readonly session: OrchestrationSession;
+    readonly activeUserMessageId?: MessageId;
     readonly createdAt: string;
   }) =>
     serverCommandId("provider-session-set").pipe(
@@ -499,6 +502,9 @@ const make = Effect.gen(function* () {
           commandId,
           threadId: input.threadId,
           session: input.session,
+          ...(input.activeUserMessageId !== undefined
+            ? { activeUserMessageId: input.activeUserMessageId }
+            : {}),
           createdAt: input.createdAt,
         }),
       ),
@@ -1739,7 +1745,27 @@ const make = Effect.gen(function* () {
     }
 
     yield* providerService.sendTurn(sendTurnRequest.value.request).pipe(
-      Effect.tap(() => sendTurnRequest.value.afterSendTurn),
+      Effect.tap((turn) =>
+        Effect.gen(function* () {
+          const startedThread = yield* resolveThread(event.payload.threadId);
+          if (startedThread?.session) {
+            const acceptedAt = DateTime.formatIso(yield* DateTime.now);
+            yield* setThreadSession({
+              threadId: event.payload.threadId,
+              activeUserMessageId: event.payload.messageId,
+              session: {
+                ...startedThread.session,
+                status: "running",
+                activeTurnId: turn.turnId,
+                lastError: null,
+                updatedAt: acceptedAt,
+              },
+              createdAt: acceptedAt,
+            });
+          }
+          yield* sendTurnRequest.value.afterSendTurn;
+        }),
+      ),
       Effect.catchCause(recoverTurnStartFailure),
       Effect.forkScoped,
     );

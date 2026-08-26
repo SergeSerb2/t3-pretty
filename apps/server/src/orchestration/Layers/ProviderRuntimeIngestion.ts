@@ -1664,9 +1664,6 @@ const make = Effect.gen(function* () {
               lastError,
               updatedAt: now,
             },
-            ...(event.type === "turn.started" && Option.isSome(pendingTurnStart)
-              ? { activeUserMessageId: pendingTurnStart.value.messageId }
-              : {}),
             createdAt: now,
           });
         }

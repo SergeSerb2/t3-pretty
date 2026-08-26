@@ -40,16 +40,33 @@ export interface QueuedComposerMessage {
   readonly attachmentCount: number;
 }
 
+/** Identify the queued message whose server turn has started. */
+export function startedQueuedComposerMessageId(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): MessageId | null {
+  if (input.queuedMessages.length === 0 || input.latestTurn === null) return null;
+  const queuedIds = new Set(input.queuedMessages.map((message) => message.id));
+  if (input.latestTurn.userMessageId !== undefined) {
+    return queuedIds.has(input.latestTurn.userMessageId) ? input.latestTurn.userMessageId : null;
+  }
+  return (
+    input.serverMessages.find(
+      (message) => queuedIds.has(message.id) && message.createdAt === input.latestTurn?.requestedAt,
+    )?.id ?? null
+  );
+}
+
 /** Keep queued copy at the composer until the server starts its turn. */
 export function reconcileQueuedComposerMessages(input: {
   queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
   latestTurn: Thread["latestTurn"] | null;
 }): ReadonlyArray<QueuedComposerMessage> {
-  const head = input.queuedMessages[0];
-  if (!head) return input.queuedMessages;
-  return input.latestTurn?.userMessageId === head.id
-    ? input.queuedMessages.slice(1)
-    : input.queuedMessages;
+  const startedMessageId = startedQueuedComposerMessageId(input);
+  const startedIndex = input.queuedMessages.findIndex((message) => message.id === startedMessageId);
+  return startedIndex < 0 ? input.queuedMessages : input.queuedMessages.slice(startedIndex + 1);
 }
 
 export interface ChatViewRouteIdentity {

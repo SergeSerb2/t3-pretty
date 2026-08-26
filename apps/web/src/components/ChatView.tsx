@@ -2921,7 +2921,13 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [attachmentPreviewHandoffByMessageId, clearAttachmentPreviewHandoff, displayServerMessages]);
   const timelineMessages = useMemo(() => {
-    const queuedMessageIds = new Set(queuedComposerMessages.map((message) => message.id));
+    const queuedMessageIds = new Set(
+      reconcileQueuedComposerMessages({
+        queuedMessages: queuedComposerMessages,
+        serverMessages: displayServerMessages,
+        latestTurn: activeThread?.latestTurn ?? null,
+      }).map((message) => message.id),
+    );
     const messages = displayServerMessages.filter((message) => !queuedMessageIds.has(message.id));
     const serverMessagesWithPreviewHandoff =
       Object.keys(attachmentPreviewHandoffByMessageId).length === 0
@@ -2981,6 +2987,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
   }, [
+    activeThread?.latestTurn,
     attachmentPreviewHandoffByMessageId,
     displayServerMessages,
     feedbackSubmissions,
@@ -4655,6 +4662,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThread || queuedComposerMessages.length === 0) return;
     const reconciled = reconcileQueuedComposerMessages({
       queuedMessages: queuedComposerMessages,
+      serverMessages: activeThread.messages,
       latestTurn: activeThread.latestTurn,
     });
     if (reconciled !== queuedComposerMessages) {
