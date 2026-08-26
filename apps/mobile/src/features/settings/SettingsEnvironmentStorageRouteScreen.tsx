@@ -4,7 +4,8 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { useCallback, useState } from "react";
+import { useIsFocused } from "@react-navigation/native";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -34,24 +35,37 @@ import {
   pendingActionCopy,
   scanProgressCaption,
   settledWorktrees,
+  storageInventoryCoverageWarning,
   type StoragePendingAction,
   worktreeShouldForceRemove,
 } from "./environmentStorage.logic";
 
 export function SettingsEnvironmentStorageRouteScreen() {
   const insets = useSafeAreaInsets();
-  const { environments, refresh } = useStorageInventories();
+  const isFocused = useIsFocused();
+  const { environments, refresh } = useStorageInventories(isFocused);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const removeOrphan = useAtomCommand(serverEnvironment.removeOrphan, { reportFailure: false });
   const [isOperating, setIsOperating] = useState(false);
+  const operatingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const reportFailure = useCallback(
     (title: string, result: AtomCommandResult<unknown, unknown>) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return false;
-      const error = squashAtomCommandFailure(result);
-      Alert.alert(title, error instanceof Error ? error.message : "An error occurred.");
+      if (result._tag !== "Failure") return false;
+      if (!isAtomCommandInterrupted(result) && mountedRef.current) {
+        const error = squashAtomCommandFailure(result);
+        Alert.alert(title, error instanceof Error ? error.message : "An error occurred.");
+      }
       return true;
     },
     [],
@@ -62,10 +76,10 @@ export function SettingsEnvironmentStorageRouteScreen() {
       environmentId: EnvironmentId,
       inventory: StorageInventory,
       entries: ReadonlyArray<StorageWorktreeEntry>,
-    ) => {
+    ): Promise<ReadonlySet<string>> => {
       const threadIds = new Set(entries.map((entry) => entry.threadId));
       const released = diskPathsReleasedByRemoval(inventory, threadIds);
-      const removedPaths = new Set<string>();
+      const unlinkedThreadIds = new Set<string>();
       for (const entry of entries) {
         const metaResult = await updateMetadata({
           environmentId,
@@ -74,23 +88,37 @@ export function SettingsEnvironmentStorageRouteScreen() {
         if (reportFailure("Failed to unlink worktree", metaResult)) {
           continue;
         }
-        if (
-          released.has(entry.path) &&
-          !removedPaths.has(entry.path) &&
-          entry.setupStatus !== "missing"
-        ) {
-          removedPaths.add(entry.path);
-          const removeResult = await removeWorktree({
-            environmentId,
-            input: {
-              cwd: entry.projectWorkspaceRoot,
-              path: entry.path,
-              force: worktreeShouldForceRemove(entry),
-            },
-          });
-          reportFailure("Failed to remove worktree", removeResult);
+        unlinkedThreadIds.add(entry.threadId);
+      }
+
+      const safeToDeleteThreadIds = new Set(unlinkedThreadIds);
+      const entriesByPath = new Map<string, StorageWorktreeEntry[]>();
+      for (const entry of entries) {
+        const pathEntries = entriesByPath.get(entry.path) ?? [];
+        pathEntries.push(entry);
+        entriesByPath.set(entry.path, pathEntries);
+      }
+      for (const [path, pathEntries] of entriesByPath) {
+        if (!released.has(path)) continue;
+        if (pathEntries.some((entry) => !unlinkedThreadIds.has(entry.threadId))) {
+          for (const entry of pathEntries) safeToDeleteThreadIds.delete(entry.threadId);
+          continue;
+        }
+        const removableEntry = pathEntries.find((entry) => entry.setupStatus !== "missing");
+        if (!removableEntry) continue;
+        const removeResult = await removeWorktree({
+          environmentId,
+          input: {
+            cwd: removableEntry.projectWorkspaceRoot,
+            path,
+            force: pathEntries.some(worktreeShouldForceRemove),
+          },
+        });
+        if (reportFailure("Failed to remove worktree", removeResult)) {
+          for (const entry of pathEntries) safeToDeleteThreadIds.delete(entry.threadId);
         }
       }
+      return safeToDeleteThreadIds;
     },
     [removeWorktree, reportFailure, updateMetadata],
   );
@@ -101,14 +129,35 @@ export function SettingsEnvironmentStorageRouteScreen() {
       inventory: StorageInventory,
       action: StoragePendingAction,
     ) => {
+      if (operatingRef.current) {
+        return;
+      }
+      operatingRef.current = true;
       const copy = pendingActionCopy(action);
       const confirmed = await new Promise<boolean>((resolve) => {
-        Alert.alert(copy.title, copy.message, [
-          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-          { text: copy.confirmLabel, style: "destructive", onPress: () => resolve(true) },
-        ]);
+        let settled = false;
+        const finish = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+        Alert.alert(
+          copy.title,
+          copy.message,
+          [
+            { text: "Cancel", style: "cancel", onPress: () => finish(false) },
+            { text: copy.confirmLabel, style: "destructive", onPress: () => finish(true) },
+          ],
+          {
+            cancelable: true,
+            onDismiss: () => finish(false),
+          },
+        );
       });
-      if (!confirmed) return;
+      if (!confirmed || !mountedRef.current) {
+        operatingRef.current = false;
+        return;
+      }
       setIsOperating(true);
       try {
         switch (action.kind) {
@@ -121,13 +170,20 @@ export function SettingsEnvironmentStorageRouteScreen() {
             await unlinkAndMaybeDelete(environmentId, inventory, [...settledWorktrees(inventory)]);
             break;
           case "delete-archived":
-            await unlinkAndMaybeDelete(environmentId, inventory, inventory.archivedWorktrees);
-            for (const entry of inventory.archivedWorktrees) {
-              const result = await deleteThread({
+            {
+              const safeToDeleteThreadIds = await unlinkAndMaybeDelete(
                 environmentId,
-                input: { threadId: entry.threadId },
-              });
-              reportFailure("Failed to delete thread", result);
+                inventory,
+                inventory.archivedWorktrees,
+              );
+              for (const entry of inventory.archivedWorktrees) {
+                if (!safeToDeleteThreadIds.has(entry.threadId)) continue;
+                const result = await deleteThread({
+                  environmentId,
+                  input: { threadId: entry.threadId },
+                });
+                reportFailure("Failed to delete thread", result);
+              }
             }
             break;
           case "remove-orphans":
@@ -143,8 +199,11 @@ export function SettingsEnvironmentStorageRouteScreen() {
             await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
             break;
           case "delete-thread":
-            await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
             {
+              const safeToDeleteThreadIds = await unlinkAndMaybeDelete(environmentId, inventory, [
+                action.entry,
+              ]);
+              if (!safeToDeleteThreadIds.has(action.entry.threadId)) break;
               const result = await deleteThread({
                 environmentId,
                 input: { threadId: action.entry.threadId },
@@ -163,7 +222,10 @@ export function SettingsEnvironmentStorageRouteScreen() {
         }
         refreshStorageInventory(environmentId);
       } finally {
-        setIsOperating(false);
+        operatingRef.current = false;
+        if (mountedRef.current) {
+          setIsOperating(false);
+        }
       }
     },
     [deleteThread, removeOrphan, reportFailure, unlinkAndMaybeDelete],
@@ -272,6 +334,8 @@ function EnvironmentStorageCard(props: {
 
   const cleanSettled = cleanSettledWorktrees(inventory);
   const allSettled = settledWorktrees(inventory);
+  const coverageWarning = storageInventoryCoverageWarning(inventory);
+  const bulkActionsDisabled = actionsDisabled || coverageWarning !== null;
 
   return (
     <View className="gap-6">
@@ -315,20 +379,25 @@ function EnvironmentStorageCard(props: {
             Sizes are allocated on-disk bytes for this environment's managed worktrees. Project
             checkouts outside that folder are never counted or removed.
           </Text>
+          {coverageWarning === null ? null : (
+            <Text className="text-sm leading-normal text-amber-700 dark:text-amber-300">
+              {coverageWarning}
+            </Text>
+          )}
         </View>
       </SettingsSection>
 
       <SettingsSection title="Cleanup">
         <ActionRow
           title="Remove clean settled worktrees"
-          disabled={actionsDisabled || cleanSettled.length === 0}
+          disabled={bulkActionsDisabled || cleanSettled.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "remove-clean-settled" })
           }
         />
         <ActionRow
           title="Remove all settled worktrees"
-          disabled={actionsDisabled || allSettled.length === 0}
+          disabled={bulkActionsDisabled || allSettled.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "remove-all-settled" })
           }
@@ -336,14 +405,14 @@ function EnvironmentStorageCard(props: {
         <ActionRow
           title="Delete archived threads with worktrees"
           destructive
-          disabled={actionsDisabled || inventory.archivedWorktrees.length === 0}
+          disabled={bulkActionsDisabled || inventory.archivedWorktrees.length === 0}
           onPress={() =>
             onAction(environment.environmentId, inventory, { kind: "delete-archived" })
           }
         />
         <ActionRow
           title="Remove orphan checkouts"
-          disabled={actionsDisabled || inventory.orphanWorktrees.length === 0}
+          disabled={bulkActionsDisabled || inventory.orphanWorktrees.length === 0}
           onPress={() => onAction(environment.environmentId, inventory, { kind: "remove-orphans" })}
         />
       </SettingsSection>
@@ -523,7 +592,12 @@ function WorktreeRow(props: {
           {props.entry.threadTitle}
         </Text>
         <Text className="text-sm tabular-nums text-foreground-muted">
-          {formatStorageBytes(props.entry.diskUsageBytes)}
+          {formatStorageBytes(props.entry.diskUsageBytes)} ·{" "}
+          {props.entry.isDirty === true
+            ? "Uncommitted changes"
+            : props.entry.isDirty === false
+              ? "Clean"
+              : "Status unavailable"}
         </Text>
       </View>
       <Pressable

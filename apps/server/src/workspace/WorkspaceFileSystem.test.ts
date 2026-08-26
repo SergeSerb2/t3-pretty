@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
+import { PROJECT_FILE_CONTENTS_MAX_BYTES } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -238,6 +239,32 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    it.effect("rejects UTF-8 writes above the byte limit before touching disk", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const relativePath = "oversized.txt";
+
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath,
+            contents: "é".repeat(PROJECT_FILE_CONTENTS_MAX_BYTES / 2 + 1),
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileTooLargeError);
+        expect(error).toMatchObject({
+          actualBytes: PROJECT_FILE_CONTENTS_MAX_BYTES + 2,
+          maximumBytes: PROJECT_FILE_CONTENTS_MAX_BYTES,
+          relativePath,
+        });
+        expect(yield* fileSystem.exists(path.join(cwd, relativePath))).toBe(false);
+      }),
+    );
+
     it.effect("rejects writes outside the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -262,6 +289,28 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .stat(escapedPath)
           .pipe(Effect.orElseSucceed(() => null));
         expect(escapedStat).toBeNull();
+      }),
+    );
+
+    it.effect("rejects writes through directories symlinked outside the workspace", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.symlink(outsideDir, path.join(cwd, "linked"));
+
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "linked/escape.md",
+            contents: "# nope\n",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        expect(yield* fileSystem.exists(path.join(outsideDir, "escape.md"))).toBe(false);
       }),
     );
   });

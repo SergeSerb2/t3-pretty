@@ -14,17 +14,30 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { ThreadSceneryAssignment, ThreadSceneryPhoto } from "@t3tools/contracts";
 
-import { createDebouncedStorage } from "../lib/storage";
+import { createDebouncedStorage, resolveLocalStorage } from "../lib/storage";
 import { PHOTO_SET_CATALOGS } from "./catalog";
 import { clampTranslucency, DEFAULT_TRANSLUCENCY } from "./glass";
 import { stableIndex } from "./palette";
 import { DEFAULT_PHOTO_SET_ID, type PhotoSetId } from "./photoSets";
 import { usePhotoSetStore } from "./photoSetStore";
 import { peekSeedPhotos } from "./scenerySeeds";
-import { makeUnsplashClient, type SceneryPhoto } from "./unsplash";
+import { makeUnsplashClient, sanitizeSceneryPhoto, type SceneryPhoto } from "./unsplash";
 
 const SCENERY_STORAGE_KEY = "t3code:scenery:v1";
 const SCENERY_STORAGE_VERSION = 2;
+
+const sceneryDebouncedStorage = createDebouncedStorage(resolveLocalStorage(), 5_000);
+const flushSceneryState = () => sceneryDebouncedStorage.flush();
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", flushSceneryState);
+  window.addEventListener("beforeunload", flushSceneryState);
+  import.meta.hot?.dispose(() => {
+    flushSceneryState();
+    window.removeEventListener("pagehide", flushSceneryState);
+    window.removeEventListener("beforeunload", flushSceneryState);
+  });
+}
 
 /** CDN pre-blur (imgix `blur`), 0–100. 50 is the SurgeCode mobile bake. */
 export const BLUR_RANGE = { lowerBound: 0, upperBound: 100 } as const;
@@ -61,6 +74,12 @@ const RECENT_EXCLUSION_WINDOW = 120;
  * fall out re-resolve through the deterministic hash fallback.
  */
 const MAX_ASSIGNMENTS = 300;
+
+/** Bound the persisted runtime pool; assigned photos win over older unreferenced entries. */
+const MAX_FETCHED_PHOTOS = 768;
+
+/** Old registrations may retry after eviction, which is harmless and preferable to unbounded state. */
+const MAX_REGISTERED_DOWNLOADS = 1_024;
 
 /** Refresh the fetched pool when it is this stale (SurgeCode: 14 days). */
 const POOL_STALE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -107,6 +126,18 @@ interface SceneryStoreState {
   removeThread: (threadKey: string) => void;
 }
 
+type PersistedSceneryStoreState = Pick<
+  SceneryStoreState,
+  | "assignments"
+  | "fetchedBySet"
+  | "fetchedAtBySet"
+  | "refreshCursorBySet"
+  | "registeredDownloads"
+  | "translucency"
+  | "blur"
+  | "inkMode"
+>;
+
 export function activePhotoSetId(): PhotoSetId {
   return usePhotoSetStore.getState().photoSetId;
 }
@@ -137,8 +168,8 @@ function poolForActiveSet(state: {
  * is denormalized precisely so this works when the photo is not in the local
  * pool (fetched pools diverge per device).
  */
-export function photoFromAssignment(assignment: ThreadSceneryAssignment): SceneryPhoto {
-  return {
+export function photoFromAssignment(assignment: ThreadSceneryAssignment): SceneryPhoto | null {
+  return sanitizeSceneryPhoto({
     id: assignment.photoId,
     name: assignment.name,
     averageColorHex: assignment.averageColorHex,
@@ -148,7 +179,7 @@ export function photoFromAssignment(assignment: ThreadSceneryAssignment): Scener
     downloadLocationURL: assignment.downloadLocationURL,
     photographerName: assignment.photographerName,
     photographerProfileURL: assignment.photographerProfileURL,
-  };
+  });
 }
 
 /** The inverse: what a client sends to bind its picked photo to the thread. */
@@ -207,6 +238,174 @@ function capAssignments(
   }
   entries.sort((left, right) => right[1].assignedAt - left[1].assignedAt);
   return Object.fromEntries(entries.slice(0, MAX_ASSIGNMENTS));
+}
+
+function capFetchedPhotos(
+  photos: ReadonlyArray<SceneryPhoto>,
+  assignments: Readonly<Record<string, SceneryAssignment>>,
+): SceneryPhoto[] {
+  const byId = new Map<string, SceneryPhoto>();
+  for (const photo of photos) {
+    byId.delete(photo.id);
+    byId.set(photo.id, photo);
+  }
+  const uniquePhotos = [...byId.values()];
+  if (uniquePhotos.length <= MAX_FETCHED_PHOTOS) {
+    return uniquePhotos;
+  }
+
+  const assignedIds = new Set(Object.values(assignments).map((assignment) => assignment.photoId));
+  const retainedIds = new Set(
+    uniquePhotos.filter((photo) => assignedIds.has(photo.id)).map((photo) => photo.id),
+  );
+  for (
+    let index = uniquePhotos.length - 1;
+    index >= 0 && retainedIds.size < MAX_FETCHED_PHOTOS;
+    index--
+  ) {
+    retainedIds.add(uniquePhotos[index]!.id);
+  }
+  return uniquePhotos.filter((photo) => retainedIds.has(photo.id));
+}
+
+function isSceneryAssignment(value: unknown): value is SceneryAssignment {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<SceneryAssignment>;
+  return (
+    typeof candidate.photoId === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.assignedAt === "number" &&
+    Number.isFinite(candidate.assignedAt)
+  );
+}
+
+function normalizeAssignments(value: unknown): Record<string, SceneryAssignment> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return capAssignments(
+    Object.fromEntries(
+      Object.entries(value).filter((entry): entry is [string, SceneryAssignment] =>
+        isSceneryAssignment(entry[1]),
+      ),
+    ),
+  );
+}
+
+function normalizeRegisteredDownloads(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const recentIds: string[] = [];
+  const seen = new Set<string>();
+  for (
+    let index = value.length - 1;
+    index >= 0 && recentIds.length < MAX_REGISTERED_DOWNLOADS;
+    index--
+  ) {
+    const id = value[index];
+    if (typeof id !== "string" || id.length === 0 || id.length > 128 || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    recentIds.push(id);
+  }
+  recentIds.reverse();
+  return recentIds;
+}
+
+const PHOTO_SET_IDS = Object.keys(PHOTO_SET_CATALOGS) as PhotoSetId[];
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizeFetchedBySet(
+  value: unknown,
+  assignments: Readonly<Record<string, SceneryAssignment>>,
+): Partial<Record<PhotoSetId, SceneryPhoto[]>> {
+  const source = recordValue(value);
+  if (!source) return {};
+  const normalized: Partial<Record<PhotoSetId, SceneryPhoto[]>> = {};
+  for (const photoSetId of PHOTO_SET_IDS) {
+    const rawPhotos = source[photoSetId];
+    if (!Array.isArray(rawPhotos)) continue;
+    const photos = rawPhotos.flatMap((candidate) => {
+      const photo = sanitizeSceneryPhoto(candidate);
+      return photo ? [photo] : [];
+    });
+    normalized[photoSetId] = capFetchedPhotos(photos, assignments);
+  }
+  return normalized;
+}
+
+function normalizeFetchedAtBySet(
+  value: unknown,
+): Partial<Record<PhotoSetId, number | null>> {
+  const source = recordValue(value);
+  if (!source) return {};
+  const normalized: Partial<Record<PhotoSetId, number | null>> = {};
+  for (const photoSetId of PHOTO_SET_IDS) {
+    const fetchedAt = source[photoSetId];
+    if (fetchedAt === null || (typeof fetchedAt === "number" && Number.isFinite(fetchedAt))) {
+      normalized[photoSetId] = fetchedAt;
+    }
+  }
+  return normalized;
+}
+
+function normalizeRefreshCursorBySet(value: unknown): Partial<Record<PhotoSetId, number>> {
+  const source = recordValue(value);
+  if (!source) return {};
+  const normalized: Partial<Record<PhotoSetId, number>> = {};
+  for (const photoSetId of PHOTO_SET_IDS) {
+    const cursor = source[photoSetId];
+    const catalogLength = PHOTO_SET_CATALOGS[photoSetId].length;
+    if (typeof cursor !== "number" || !Number.isFinite(cursor) || catalogLength === 0) continue;
+    normalized[photoSetId] = Math.max(0, Math.trunc(cursor)) % catalogLength;
+  }
+  return normalized;
+}
+
+/** Normalize persisted data on every hydration, including the legacy single-pool shape. */
+export function migratePersistedSceneryState(persistedState: unknown): PersistedSceneryStoreState {
+  const candidate = recordValue(persistedState) ?? {};
+  const assignments = normalizeAssignments(candidate.assignments);
+  const fetchedBySetSource =
+    recordValue(candidate.fetchedBySet) ?? { [DEFAULT_PHOTO_SET_ID]: candidate.fetchedPhotos };
+  const fetchedAtBySetSource =
+    recordValue(candidate.fetchedAtBySet) ?? { [DEFAULT_PHOTO_SET_ID]: candidate.fetchedAt };
+  const refreshCursorBySetSource =
+    recordValue(candidate.refreshCursorBySet) ?? {
+      [DEFAULT_PHOTO_SET_ID]: candidate.refreshCursor,
+    };
+  return {
+    assignments,
+    fetchedBySet: normalizeFetchedBySet(fetchedBySetSource, assignments),
+    fetchedAtBySet: normalizeFetchedAtBySet(fetchedAtBySetSource),
+    refreshCursorBySet: normalizeRefreshCursorBySet(refreshCursorBySetSource),
+    registeredDownloads: normalizeRegisteredDownloads(candidate.registeredDownloads),
+    translucency:
+      typeof candidate.translucency === "number"
+        ? clampTranslucency(candidate.translucency)
+        : DEFAULT_TRANSLUCENCY,
+    blur: typeof candidate.blur === "number" ? clampBlur(candidate.blur) : DEFAULT_BLUR,
+    inkMode:
+      typeof candidate.inkMode === "string" && INK_MODES.has(candidate.inkMode as SceneryInkMode)
+        ? (candidate.inkMode as SceneryInkMode)
+        : "auto",
+  };
+}
+
+function mergePersistedSceneryState(
+  persistedState: unknown,
+  currentState: SceneryStoreState,
+): SceneryStoreState {
+  return { ...currentState, ...migratePersistedSceneryState(persistedState) };
 }
 
 let refreshInFlight = false;
@@ -269,7 +468,11 @@ export const useSceneryStore = create<SceneryStoreState>()(
             set((current) =>
               current.registeredDownloads.includes(photo.id)
                 ? current
-                : { registeredDownloads: [...current.registeredDownloads, photo.id] },
+                : {
+                    registeredDownloads: [...current.registeredDownloads, photo.id].slice(
+                      -MAX_REGISTERED_DOWNLOADS,
+                    ),
+                  },
             );
           })
           .finally(() => {
@@ -314,14 +517,21 @@ export const useSceneryStore = create<SceneryStoreState>()(
           const fetched = results.flatMap((result) =>
             result.status === "fulfilled" ? result.value : [],
           );
+          if (!results.some((result) => result.status === "fulfilled")) {
+            return;
+          }
           set((current) => {
             const existing = current.fetchedBySet[photoSetId] ?? [];
             const byId = new Map(existing.map((photo) => [photo.id, photo]));
             for (const photo of fetched) {
+              byId.delete(photo.id);
               byId.set(photo.id, photo);
             }
             return {
-              fetchedBySet: { ...current.fetchedBySet, [photoSetId]: [...byId.values()] },
+              fetchedBySet: {
+                ...current.fetchedBySet,
+                [photoSetId]: capFetchedPhotos([...byId.values()], current.assignments),
+              },
               fetchedAtBySet: { ...current.fetchedAtBySet, [photoSetId]: Date.now() },
               refreshCursorBySet: {
                 ...current.refreshCursorBySet,
@@ -348,12 +558,7 @@ export const useSceneryStore = create<SceneryStoreState>()(
     {
       name: SCENERY_STORAGE_KEY,
       version: SCENERY_STORAGE_VERSION,
-      storage: createJSONStorage(() =>
-        createDebouncedStorage(
-          typeof window !== "undefined" ? window.localStorage : undefined,
-          5_000,
-        ),
-      ),
+      storage: createJSONStorage(() => sceneryDebouncedStorage),
       partialize: (state) => ({
         assignments: state.assignments,
         fetchedBySet: state.fetchedBySet,
@@ -364,28 +569,8 @@ export const useSceneryStore = create<SceneryStoreState>()(
         blur: state.blur,
         inkMode: state.inkMode,
       }),
-      migrate: (persisted, version) => {
-        const state = persisted as SceneryStoreState & {
-          fetchedPhotos?: SceneryPhoto[];
-          fetchedAt?: number | null;
-          refreshCursor?: number;
-        };
-        if (version >= SCENERY_STORAGE_VERSION) {
-          return state;
-        }
-        return {
-          ...state,
-          fetchedBySet: state.fetchedBySet ?? {
-            [DEFAULT_PHOTO_SET_ID]: state.fetchedPhotos ?? [],
-          },
-          fetchedAtBySet: state.fetchedAtBySet ?? {
-            [DEFAULT_PHOTO_SET_ID]: state.fetchedAt ?? null,
-          },
-          refreshCursorBySet: state.refreshCursorBySet ?? {
-            [DEFAULT_PHOTO_SET_ID]: state.refreshCursor ?? 0,
-          },
-        };
-      },
+      migrate: migratePersistedSceneryState,
+      merge: mergePersistedSceneryState,
     },
   ),
 );

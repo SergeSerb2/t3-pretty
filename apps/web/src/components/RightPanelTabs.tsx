@@ -718,7 +718,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         },
       );
 
-      const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+      let action: TabContextMenuAction | null;
+      try {
+        action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+      } catch {
+        // A menu that could not be shown has already consumed the right-click.
+        return;
+      }
       switch (action) {
         case "copy-path":
           if (surface.kind === "file") props.onCopyFilePath(surface.relativePath);

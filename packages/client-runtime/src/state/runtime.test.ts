@@ -231,6 +231,19 @@ describe("environmentRpcKey", () => {
       }),
     ).not.toBe(environmentRpcKey(originalTarget));
   });
+
+  it("does not collide when identifiers contain display-key delimiters", () => {
+    const first = environmentRpcKey({
+      environmentId: EnvironmentId.make("environment:repo"),
+      input: { repo: "source" },
+    });
+    const second = environmentRpcKey({
+      environmentId: EnvironmentId.make("environment"),
+      input: { repo: "repo:source" },
+    });
+
+    expect(first).not.toBe(second);
+  });
 });
 
 describe("Atom.fn mutation semantics", () => {

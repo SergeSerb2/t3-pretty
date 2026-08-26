@@ -86,7 +86,13 @@ export function PreviewPanelShell(props: {
   const panelContents = (
     <>
       {isInline && !maximized ? (
-        <RightPanelResizeHandle key="resize-handle" handlers={handlers} />
+        <RightPanelResizeHandle
+          key="resize-handle"
+          handlers={handlers}
+          width={width}
+          minWidth={PREVIEW_PANEL_MIN_WIDTH}
+          maxWidth={maxWidth}
+        />
       ) : null}
       {useDragRegion ? (
         <div key="drag-region" className="electron-drag-region h-0 w-full" aria-hidden />
@@ -175,7 +181,8 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!enabled || typeof window === "undefined") return;
+    setVw(window.innerWidth);
     let frame = 0;
     const onResize = () => {
       // Coalesce rapid resize events into one rAF tick.
@@ -190,7 +197,7 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
       window.removeEventListener("resize", onResize);
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [enabled]);
   useLayoutEffect(() => {
     if (!enabled) return;
     const parent = hostRef.current?.parentElement;

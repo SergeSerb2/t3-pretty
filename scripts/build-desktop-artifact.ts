@@ -630,21 +630,18 @@ export class LinuxIconResizeError extends Schema.TaggedErrorClass<LinuxIconResiz
   }
 }
 
-const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
-    ),
-  );
-
 const COMMAND_OUTPUT_TAIL_LENGTH = 20_000;
 
 function appendOutputTail(acc: string, chunk: string): string {
   const next = acc + chunk;
   return next.length > COMMAND_OUTPUT_TAIL_LENGTH ? next.slice(-COMMAND_OUTPUT_TAIL_LENGTH) : next;
 }
+
+const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold(() => "", appendOutputTail),
+  );
 
 function formatOutputSection(label: string, output: string): string | undefined {
   const trimmed = output.trim();
@@ -1289,6 +1286,98 @@ const AzureTrustedSigningOptionsConfig = Config.all({
     Config.withDefault("http://timestamp.acs.microsoft.com"),
   ),
 });
+
+export interface AzureTrustedSigningOptions {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampRfc3161: string;
+}
+
+function resolveTrustedSigningText(value: string, field: string, maxBytes: number): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > maxBytes ||
+    [...normalized].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+    })
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} is outside its safety boundary.`);
+  }
+  return normalized;
+}
+
+function resolveTrustedSigningUrl(
+  value: string,
+  field: string,
+  allowedProtocols: ReadonlySet<string>,
+): string {
+  const normalized = resolveTrustedSigningText(value, field, 4096);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  if (
+    !allowedProtocols.has(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  return parsed.toString();
+}
+
+function resolveTrustedSigningDigest(
+  value: string,
+  field: string,
+): AzureTrustedSigningOptions["fileDigest"] {
+  const normalized = resolveTrustedSigningText(value, field, 16).toUpperCase();
+  if (normalized !== "SHA256" && normalized !== "SHA384" && normalized !== "SHA512") {
+    throw new Error(`Azure Trusted Signing ${field} is unsupported.`);
+  }
+  return normalized;
+}
+
+export function resolveAzureTrustedSigningOptions(input: {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: string;
+  readonly timestampDigest: string;
+  readonly timestampRfc3161: string;
+}): AzureTrustedSigningOptions {
+  return {
+    publisherName: resolveTrustedSigningText(input.publisherName, "publisher name", 1024),
+    endpoint: resolveTrustedSigningUrl(input.endpoint, "endpoint", new Set(["https:"])),
+    certificateProfileName: resolveTrustedSigningText(
+      input.certificateProfileName,
+      "certificate profile name",
+      256,
+    ),
+    codeSigningAccountName: resolveTrustedSigningText(
+      input.codeSigningAccountName,
+      "account name",
+      256,
+    ),
+    fileDigest: resolveTrustedSigningDigest(input.fileDigest, "file digest"),
+    timestampDigest: resolveTrustedSigningDigest(input.timestampDigest, "timestamp digest"),
+    timestampRfc3161: resolveTrustedSigningUrl(
+      input.timestampRfc3161,
+      "timestamp URL",
+      new Set(["http:", "https:"]),
+    ),
+  };
+}
 
 const BuildEnvConfig = Config.all({
   platform: Config.schema(BuildPlatform, "T3CODE_DESKTOP_PLATFORM").pipe(Config.option),
@@ -2086,20 +2175,34 @@ export function resolveDesktopRuntimeDependencies(
 }
 
 export function resolveGenericUpdateFeedUrl(raw: string): string | undefined {
+  if (Buffer.byteLength(raw, "utf8") > 4096) return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return undefined;
+  }
 
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return undefined;
+    }
+    // Channel manifests are resolved relative to this directory. Query and
+    // fragment state cannot authenticate those relative requests and would be
+    // exposed in packaged updater metadata, so only a public directory URL is
+    // accepted here.
+    if (!parsed.pathname.endsWith("/")) parsed.pathname = `${parsed.pathname}/`;
+    return parsed.toString();
   } catch {
     return undefined;
   }
-
-  // electron-updater resolves channel files with `new URL(file, baseUrl)`. A
-  // base without a trailing slash replaces the last path segment, so
-  // `.../releases/latest/download` + `nightly.yml` would miss `/download/`.
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
@@ -2350,7 +2453,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       verifyUpdateCodeSignature: signed,
     };
     if (signed) {
-      winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      winConfig.azureSignOptions = resolveAzureTrustedSigningOptions(
+        yield* AzureTrustedSigningOptionsConfig,
+      );
     }
     buildConfig.win = winConfig;
   }

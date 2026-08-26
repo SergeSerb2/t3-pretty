@@ -1,9 +1,15 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import {
+  ENVIRONMENT_LABEL_MAX_LENGTH,
+  ExecutionEnvironmentDescriptor,
+  REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH,
+  RepositoryIdentity,
+} from "./environment.ts";
 
 const decodeDescriptor = Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor);
+const decodeRepositoryIdentity = Schema.decodeUnknownSync(RepositoryIdentity);
 
 const descriptor = {
   environmentId: "environment-1",
@@ -27,6 +33,24 @@ describe("ExecutionEnvironmentDescriptor", () => {
     ).toBe(true);
   });
 
+  it("rejects environment labels above the wire ceiling", () => {
+    expect(() =>
+      decodeDescriptor({ ...descriptor, label: "x".repeat(ENVIRONMENT_LABEL_MAX_LENGTH + 1) }),
+    ).toThrow();
+  });
+
+  it("rejects repository remote URLs above the wire ceiling", () => {
+    expect(() =>
+      decodeRepositoryIdentity({
+        canonicalKey: "example.com/acme/app",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: `https://example.com/${"x".repeat(REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH)}`,
+        },
+      }),
+    ).toThrow();
+  });
   it("treats a missing provider-handoff capability as unsupported under version skew", () => {
     expect(decodeDescriptor(descriptor).capabilities.providerHandoff).toBeUndefined();
   });

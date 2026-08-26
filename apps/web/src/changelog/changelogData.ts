@@ -26,6 +26,576 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.34-nightly.20260824.1173000950",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000945",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000942",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000937",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000933",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000929",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000926",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000891",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000888",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000864",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000859",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000853",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000839",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000834",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000830",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000821",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000817",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000814",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1166000811",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1166000802",
     date: "2026-08-23",
     items: [
@@ -786,6 +1356,36 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
       {
         kind: "fixed",
         title: "make the iOS Live Activity glanceable",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260817.1119000228",
+    date: "2026-08-17",
+    items: [
+      {
+        kind: "new",
+        title: "make review verdicts legible in the pull request detail (#7077)",
+      },
+      {
+        kind: "fixed",
+        title: "put World Scenery behind the new-task sheet",
+      },
+      {
+        kind: "fixed",
+        title: "make the iOS Live Activity glanceable",
+      },
+      {
+        kind: "new",
+        title: "redesign pull request menu and conversation",
+      },
+      {
+        kind: "new",
+        title: "start new threads immediately and show thinking",
+      },
+      {
+        kind: "new",
+        title: "settle, snooze, and PR in the thread header",
       },
     ],
   },

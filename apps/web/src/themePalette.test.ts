@@ -539,6 +539,35 @@ describe("theme files", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shares one storage listener across custom-theme subscribers", () => {
+    let storageHandler: ((event: StorageEvent) => void) | undefined;
+    const addEventListener = vi.fn((type: string, listener: (event: StorageEvent) => void) => {
+      if (type === "storage") storageHandler = listener;
+    });
+    const removeEventListener = vi.fn();
+    vi.stubGlobal("window", {
+      addEventListener,
+      removeEventListener,
+      localStorage: { getItem: () => null },
+    });
+
+    const first = vi.fn();
+    const second = vi.fn();
+    const unsubscribeFirst = subscribeToCustomThemes(first);
+    const unsubscribeSecond = subscribeToCustomThemes(second);
+
+    expect(addEventListener).toHaveBeenCalledTimes(1);
+    storageHandler?.({ key: CUSTOM_THEMES_STORAGE_KEY } as StorageEvent);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    unsubscribeFirst();
+    expect(removeEventListener).not.toHaveBeenCalled();
+    unsubscribeSecond();
+    expect(removeEventListener).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it("preserves valid imported-theme collections and drops malformed metadata", () => {
     vi.stubGlobal("window", {
       localStorage: {

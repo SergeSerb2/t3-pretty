@@ -2,11 +2,68 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
+  deriveTimelineMinimapTurns,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
+  type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
+
+function minimapMessageRow(
+  id: string,
+  role: "user" | "assistant" | "system",
+  text: string,
+): MessagesTimelineRow {
+  return {
+    kind: "message",
+    id,
+    createdAt: "2026-01-01T00:00:00Z",
+    message: {
+      id: id as never,
+      role,
+      text,
+      turnId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      streaming: false,
+    },
+    durationStart: "2026-01-01T00:00:00Z",
+    showAssistantMeta: false,
+    showAssistantCopyButton: false,
+    assistantCopyStreaming: false,
+  };
+}
+
+describe("deriveTimelineMinimapTurns", () => {
+  it("collects each user turn and only its final assistant response in one pass", () => {
+    const rows: MessagesTimelineRow[] = [
+      minimapMessageRow("leading-assistant", "assistant", "ignore me"),
+      minimapMessageRow("user-1", "user", "first question"),
+      { kind: "working", id: "working", createdAt: null },
+      minimapMessageRow("assistant-1a", "assistant", "draft answer"),
+      minimapMessageRow("system-1", "system", "status"),
+      minimapMessageRow("assistant-1b", "assistant", "final answer"),
+      minimapMessageRow("user-2", "user", "second question"),
+      minimapMessageRow("assistant-2", "assistant", "second answer"),
+    ];
+
+    expect(deriveTimelineMinimapTurns(rows)).toEqual([
+      {
+        id: "user-1",
+        rowIndex: 1,
+        userText: "first question",
+        assistantText: "final answer",
+      },
+      {
+        id: "user-2",
+        rowIndex: 6,
+        userText: "second question",
+        assistantText: "second answer",
+      },
+    ]);
+  });
+});
 
 describe("shouldPreserveAssistantLineBreaks", () => {
   it("preserves Claude insight formatting without changing regular markdown", () => {

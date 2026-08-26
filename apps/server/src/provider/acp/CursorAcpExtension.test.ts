@@ -1,13 +1,95 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  PROVIDER_MODEL_ID_MAX_LENGTH,
+  PROVIDER_RUNTIME_MAX_PLAN_STEPS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
+  SERVER_PROVIDER_MODELS_MAX_ITEMS,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import {
+  CursorAskQuestionRequest,
   CursorListAvailableModelsResponse,
+  CursorUpdateTodosRequest,
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
 } from "./CursorAcpExtension.ts";
 
 describe("CursorAcpExtension", () => {
+  it("rejects question, option, and todo collections beyond runtime event limits", () => {
+    const decodeQuestions = Schema.decodeUnknownSync(CursorAskQuestionRequest);
+    const baseQuestion = { id: "id", prompt: "Prompt", options: [] };
+    expect(() =>
+      decodeQuestions({
+        toolCallId: "ask",
+        questions: Array.from(
+          { length: PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS + 1 },
+          () => baseQuestion,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeQuestions({
+        toolCallId: "ask",
+        questions: [
+          {
+            ...baseQuestion,
+            prompt: "x".repeat(PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH + 1),
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeQuestions({
+        toolCallId: "ask",
+        questions: [
+          {
+            ...baseQuestion,
+            options: Array.from(
+              { length: PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS + 1 },
+              (_, index) => ({ id: String(index), label: String(index) }),
+            ),
+          },
+        ],
+      }),
+    ).toThrow();
+
+    const decodeTodos = Schema.decodeUnknownSync(CursorUpdateTodosRequest);
+    expect(() =>
+      decodeTodos({
+        toolCallId: "todos",
+        merge: true,
+        todos: Array.from({ length: PROVIDER_RUNTIME_MAX_PLAN_STEPS + 1 }, (_, index) => ({
+          id: String(index),
+          content: `Step ${index}`,
+        })),
+      }),
+    ).toThrow();
+
+    const decodeModels = Schema.decodeUnknownSync(CursorListAvailableModelsResponse);
+    expect(() =>
+      decodeModels({
+        models: Array.from({ length: SERVER_PROVIDER_MODELS_MAX_ITEMS + 1 }, (_, index) => ({
+          value: String(index),
+          name: String(index),
+        })),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeModels({
+        models: [
+          {
+            value: "x".repeat(PROVIDER_MODEL_ID_MAX_LENGTH + 1),
+            name: "Oversized",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("extracts ask-question prompts from the real Cursor ACP payload shape", () => {
     const questions = extractAskQuestions({
       toolCallId: "ask-1",

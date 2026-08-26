@@ -14,6 +14,26 @@ export const UNSPLASH_UTM = `?utm_source=${UNSPLASH_APP_NAME}&utm_medium=referra
 
 export const UNSPLASH_KEY_STORAGE_KEY = "t3code:scenery:unsplash-key";
 
+/** A stalled CDN/API request must not block scenery refreshes indefinitely. */
+export const UNSPLASH_REQUEST_TIMEOUT_MS = 15_000;
+export const UNSPLASH_SEARCH_QUERY_MAX_LENGTH = 256;
+export const UNSPLASH_SEARCH_MAX_COUNT = 30;
+const UNSPLASH_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+const UNSPLASH_ACCESS_KEY_MAX_LENGTH = 256;
+const UNSPLASH_URL_MAX_LENGTH = 2_048;
+const UNSPLASH_ID_MAX_LENGTH = 128;
+const UNSPLASH_NAME_MAX_LENGTH = 256;
+
+async function withRequestTimeout<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), UNSPLASH_REQUEST_TIMEOUT_MS);
+  try {
+    return await operation(controller.signal);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * One photo from the Unsplash API, reduced to the fields the scenery system
  * needs. Persisted (seed pool + store), so keep the shape stable — it matches
@@ -37,17 +57,164 @@ export interface SceneryPhoto {
   readonly photographerProfileURL: string | null;
 }
 
-interface UnsplashSearchResult {
-  readonly id: string;
-  readonly color?: string | null;
-  readonly plus?: unknown;
-  readonly premium?: boolean | null;
-  readonly urls: { readonly raw: string; readonly regular: string; readonly thumb: string };
-  readonly links?: { readonly download_location?: string | null } | null;
-  readonly user: {
-    readonly name: string;
-    readonly links?: { readonly html?: string | null } | null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function boundedString(value: unknown, maxLength: number): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= maxLength ? value : null;
+}
+
+function safeHttpsUrl(value: unknown, allowedHosts?: ReadonlySet<string>): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > UNSPLASH_URL_MAX_LENGTH) {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      (allowedHosts && !allowedHosts.has(url.hostname.toLowerCase()))
+    ) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+const UNSPLASH_IMAGE_HOSTS = new Set(["images.unsplash.com", "plus.unsplash.com"]);
+const UNSPLASH_PROFILE_HOSTS = new Set(["unsplash.com", "www.unsplash.com"]);
+const UNSPLASH_API_HOSTS = new Set(["api.unsplash.com"]);
+
+export function trustedUnsplashDownloadUrl(value: unknown): string | null {
+  const urlValue = safeHttpsUrl(value, UNSPLASH_API_HOSTS);
+  if (!urlValue) return null;
+  const url = new URL(urlValue);
+  return /^\/photos\/[^/]{1,128}\/download$/.test(url.pathname) && !url.hash
+    ? url.toString()
+    : null;
+}
+
+export function unsplashProfileAttributionUrl(value: unknown): string | null {
+  const urlValue = safeHttpsUrl(value, UNSPLASH_PROFILE_HOSTS);
+  if (!urlValue) return null;
+  const url = new URL(urlValue);
+  url.searchParams.set("utm_source", UNSPLASH_APP_NAME);
+  url.searchParams.set("utm_medium", "referral");
+  return url.toString();
+}
+
+/** Normalize photo data before it enters persisted or server-synced scenery state. */
+export function sanitizeSceneryPhoto(value: unknown): SceneryPhoto | null {
+  if (!isRecord(value)) return null;
+  const id = boundedString(value.id, UNSPLASH_ID_MAX_LENGTH);
+  const name = boundedString(value.name, UNSPLASH_NAME_MAX_LENGTH);
+  const heroURL = safeHttpsUrl(value.heroURL, UNSPLASH_IMAGE_HOSTS);
+  const thumbURL = safeHttpsUrl(value.thumbURL, UNSPLASH_IMAGE_HOSTS);
+  const photographerName = boundedString(value.photographerName, UNSPLASH_NAME_MAX_LENGTH);
+  if (!id || !name || !heroURL || !thumbURL || !photographerName) return null;
+  if (id.trim() !== id || name.trim() !== name || photographerName.trim() !== photographerName) {
+    return null;
+  }
+
+  const rawURL = value.rawURL === null ? null : safeHttpsUrl(value.rawURL, UNSPLASH_IMAGE_HOSTS);
+  const downloadLocationURL =
+    value.downloadLocationURL === null
+      ? null
+      : trustedUnsplashDownloadUrl(value.downloadLocationURL);
+  const photographerProfileURL =
+    value.photographerProfileURL === null
+      ? null
+      : safeHttpsUrl(value.photographerProfileURL, UNSPLASH_PROFILE_HOSTS);
+  if (
+    (value.rawURL !== null && !rawURL) ||
+    (value.downloadLocationURL !== null && !downloadLocationURL) ||
+    (value.photographerProfileURL !== null && !photographerProfileURL)
+  ) {
+    return null;
+  }
+
+  const averageColorHex =
+    value.averageColorHex === null ||
+    (typeof value.averageColorHex === "string" && /^#[0-9a-f]{6}$/i.test(value.averageColorHex))
+      ? value.averageColorHex
+      : undefined;
+  if (averageColorHex === undefined) return null;
+  return {
+    id,
+    name,
+    averageColorHex,
+    heroURL,
+    thumbURL,
+    rawURL,
+    downloadLocationURL,
+    photographerName,
+    photographerProfileURL,
   };
+}
+
+function decodeSearchPhoto(value: unknown): SceneryPhoto | null {
+  if (!isRecord(value) || !isRecord(value.urls) || !isRecord(value.user)) return null;
+  if (value.plus || value.premium === true) return null;
+  const id = boundedString(value.id, UNSPLASH_ID_MAX_LENGTH);
+  const heroURL = safeHttpsUrl(value.urls.regular, UNSPLASH_IMAGE_HOSTS);
+  const thumbURL = safeHttpsUrl(value.urls.thumb, UNSPLASH_IMAGE_HOSTS);
+  const rawURL = safeHttpsUrl(value.urls.raw, UNSPLASH_IMAGE_HOSTS);
+  const photographerName = boundedString(value.user.name, UNSPLASH_NAME_MAX_LENGTH);
+  if (!id || !heroURL || !thumbURL || !rawURL || !photographerName) return null;
+
+  const links = isRecord(value.links) ? value.links : null;
+  const userLinks = isRecord(value.user.links) ? value.user.links : null;
+  return {
+    id,
+    name: "",
+    averageColorHex:
+      typeof value.color === "string" && /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : null,
+    heroURL,
+    thumbURL,
+    rawURL,
+    downloadLocationURL: trustedUnsplashDownloadUrl(links?.download_location),
+    photographerName,
+    photographerProfileURL: safeHttpsUrl(userLinks?.html, UNSPLASH_PROFILE_HOSTS),
+  };
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > UNSPLASH_RESPONSE_MAX_BYTES) {
+    throw new Error("Unsplash returned an unexpectedly large response.");
+  }
+  if (!response.body) throw new Error("Unsplash returned an empty response.");
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > UNSPLASH_RESPONSE_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error("Unsplash returned an unexpectedly large response.");
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+  } catch (cause) {
+    throw new Error("Unsplash returned an unreadable response.", { cause });
+  }
 }
 
 /**
@@ -58,15 +225,22 @@ export function resolveUnsplashAccessKey(): string | null {
   if (typeof window !== "undefined") {
     try {
       const stored = window.localStorage.getItem(UNSPLASH_KEY_STORAGE_KEY);
-      if (typeof stored === "string" && stored.trim().length > 0) {
-        return stored.trim();
+      const key = normalizeAccessKey(stored);
+      if (key) {
+        return key;
       }
     } catch {
       // Storage unavailable; fall through to the build-time key.
     }
   }
   const fromEnv = import.meta.env.VITE_SCENERY_UNSPLASH_KEY as string | undefined;
-  return typeof fromEnv === "string" && fromEnv.length > 0 ? fromEnv : null;
+  return normalizeAccessKey(fromEnv);
+}
+
+function normalizeAccessKey(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const key = value.trim();
+  return key.length <= UNSPLASH_ACCESS_KEY_MAX_LENGTH && /^[A-Za-z0-9_-]+$/.test(key) ? key : null;
 }
 
 export interface UnsplashClient {
@@ -84,46 +258,55 @@ export function makeUnsplashClient(
   accessKey: string | null = resolveUnsplashAccessKey(),
   fetchFn: typeof fetch = fetch,
 ): UnsplashClient | null {
-  if (accessKey === null || accessKey.length === 0) {
+  const normalizedAccessKey = normalizeAccessKey(accessKey);
+  if (!normalizedAccessKey) {
     return null;
   }
   const headers = {
-    Authorization: `Client-ID ${accessKey}`,
+    Authorization: `Client-ID ${normalizedAccessKey}`,
     "Accept-Version": "v1",
   };
   return {
     searchPhotos: async (query, count) => {
-      const params = new URLSearchParams({
-        query,
-        per_page: String(count),
-        orientation: "landscape",
-        content_filter: "high",
-      });
-      const response = await fetchFn(`https://api.unsplash.com/search/photos?${params}`, {
-        headers,
-      });
-      if (!response.ok) {
-        throw new Error(`Unsplash search failed with status ${response.status}`);
+      const searchQuery = query.trim();
+      if (!searchQuery || count <= 0) return [];
+      if (searchQuery.length > UNSPLASH_SEARCH_QUERY_MAX_LENGTH) {
+        throw new Error("Unsplash search terms must be 256 characters or fewer.");
       }
-      const body = (await response.json()) as { results?: ReadonlyArray<UnsplashSearchResult> };
-      return (body.results ?? [])
-        .filter((photo) => !photo.plus && photo.premium !== true)
-        .map((photo) => ({
-          id: photo.id,
-          // Placeholder; the store pairs the curated location name at pool build.
-          name: "",
-          averageColorHex: photo.color ?? null,
-          heroURL: photo.urls.regular,
-          thumbURL: photo.urls.thumb,
-          rawURL: photo.urls.raw,
-          downloadLocationURL: photo.links?.download_location ?? null,
-          photographerName: photo.user.name,
-          photographerProfileURL: photo.user.links?.html ?? null,
-        }));
+      const resultCount = Number.isFinite(count)
+        ? Math.min(UNSPLASH_SEARCH_MAX_COUNT, Math.max(1, Math.floor(count)))
+        : UNSPLASH_SEARCH_MAX_COUNT;
+      return withRequestTimeout(async (signal) => {
+        const params = new URLSearchParams({
+          query: searchQuery,
+          per_page: String(resultCount),
+          orientation: "landscape",
+          content_filter: "high",
+        });
+        const response = await fetchFn(`https://api.unsplash.com/search/photos?${params}`, {
+          headers,
+          signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Unsplash search failed with status ${response.status}`);
+        }
+        const body = await readBoundedJson(response);
+        if (!isRecord(body) || !Array.isArray(body.results)) {
+          throw new Error("Unsplash returned an unreadable response.");
+        }
+        return body.results.slice(0, resultCount).flatMap((photo) => {
+          const decoded = decodeSearchPhoto(photo);
+          return decoded ? [decoded] : [];
+        });
+      });
     },
     registerDownload: async (downloadLocationURL) => {
+      const trustedUrl = trustedUnsplashDownloadUrl(downloadLocationURL);
+      if (!trustedUrl) return false;
       try {
-        const response = await fetchFn(downloadLocationURL, { headers });
+        const response = await withRequestTimeout((signal) =>
+          fetchFn(trustedUrl, { headers, signal }),
+        );
         return response.ok;
       } catch {
         // Guideline ping only; never surface failures.
@@ -151,20 +334,33 @@ export function sizedImageURL(
   try {
     parsed = new URL(url);
   } catch {
-    return url;
+    return "";
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    return "";
   }
   for (const param of SIZING_PARAMS) {
     parsed.searchParams.delete(param);
   }
-  parsed.searchParams.set("w", String(options.width));
+  const width = Number.isFinite(options.width)
+    ? Math.min(WALLPAPER_SHARP_CAP, Math.max(1, Math.round(options.width)))
+    : WALLPAPER_BLURRED_CAP;
+  parsed.searchParams.set("w", String(width));
   parsed.searchParams.set("q", "85");
   parsed.searchParams.set("fm", "jpg");
   parsed.searchParams.set("fit", "max");
-  if (options.blur !== undefined && options.blur > 0) {
-    parsed.searchParams.set("blur", String(options.blur));
+  if (options.blur !== undefined && Number.isFinite(options.blur) && options.blur > 0) {
+    parsed.searchParams.set("blur", String(Math.min(100, Math.round(options.blur))));
   }
-  if (options.saturation !== undefined && options.saturation !== 0) {
-    parsed.searchParams.set("sat", String(options.saturation));
+  if (
+    options.saturation !== undefined &&
+    Number.isFinite(options.saturation) &&
+    options.saturation !== 0
+  ) {
+    parsed.searchParams.set(
+      "sat",
+      String(Math.min(100, Math.max(-100, Math.round(options.saturation)))),
+    );
   }
   return parsed.toString();
 }

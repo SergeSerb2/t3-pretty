@@ -12,6 +12,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
   HttpBody,
@@ -19,6 +21,7 @@ import {
   HttpClientResponse,
   HttpMiddleware,
   HttpRouter,
+  HttpServerError,
   HttpServerResponse,
   HttpServerRequest,
   HttpServerRespondable,
@@ -47,8 +50,12 @@ import {
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { loadServerConfigSnapshot } from "./serverConfigSnapshot.ts";
+import { releaseHttpClientResponseBody } from "./stream/releaseHttpClientResponseBody.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const OTLP_TRACES_MAX_BODY_BYTES = 4 * 1024 * 1024;
+const OTLP_TRACES_EXPORT_TIMEOUT = "10 seconds";
+const decodeUnknownJsonString = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
@@ -212,29 +219,60 @@ export const serverConfigHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "server",
   Effect.fnUntraced(function* (handlers) {
-    return handlers.handle(
-      "config",
-      Effect.fn("environment.server.config")(function* (args) {
-        yield* annotateEnvironmentRequest(args.endpoint.name);
-        yield* requireEnvironmentScope(AuthOrchestrationReadScope);
-        return yield* loadServerConfigSnapshot.pipe(
-          Effect.tap((snapshot) =>
-            Effect.annotateCurrentSpan({
-              "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
-              "server.config.transport": "http",
-            }),
-          ),
-          Effect.catch((error) => failEnvironmentInternal("server_config_failed", error)),
-        );
-      }, traceRelayRequest),
+    return yield* Effect.succeed(
+      handlers.handle(
+        "config",
+        Effect.fn("environment.server.config")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          return yield* loadServerConfigSnapshot.pipe(
+            Effect.tap((snapshot) =>
+              Effect.annotateCurrentSpan({
+                "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
+                "server.config.transport": "http",
+              }),
+            ),
+            Effect.catch((error) => failEnvironmentInternal("server_config_failed", error)),
+          );
+        }, traceRelayRequest),
+      ),
     );
   }),
 );
 
 class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
   readonly cause: unknown;
-  readonly bodyJson: OtlpTracer.TraceData;
 }> {}
+
+export class RequestBodySizeLimitExceededError extends Data.TaggedError(
+  "RequestBodySizeLimitExceededError",
+)<{
+  readonly maxBytes: number;
+  readonly observedBytes: number;
+}> {}
+
+export function readJsonBodyWithinByteLimit<E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+  maxBytes: number,
+): Effect.Effect<unknown, E | RequestBodySizeLimitExceededError | Schema.SchemaError, R> {
+  return Effect.gen(function* () {
+    const body = yield* stream.pipe(
+      Stream.runFoldEffect(
+        () => ({ chunks: [] as Array<Uint8Array<ArrayBufferLike>>, bytes: 0 }),
+        (state, chunk) => {
+          const observedBytes = state.bytes + chunk.byteLength;
+          if (observedBytes > maxBytes) {
+            return Effect.fail(new RequestBodySizeLimitExceededError({ maxBytes, observedBytes }));
+          }
+          state.chunks.push(chunk);
+          return Effect.succeed({ chunks: state.chunks, bytes: observedBytes });
+        },
+      ),
+    );
+    const text = Buffer.concat(body.chunks, body.bytes).toString("utf8");
+    return yield* decodeUnknownJsonString(text);
+  });
+}
 
 export const otlpTracesProxyRouteLayer = HttpRouter.add(
   "POST",
@@ -246,17 +284,41 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
     const otlpTracesUrl = config.otlpTracesUrl;
     const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
-    const bodyJson = cast<unknown, OtlpTracer.TraceData>(yield* request.json);
+    const rawBodyJson = yield* readJsonBodyWithinByteLimit(
+      request.stream,
+      OTLP_TRACES_MAX_BODY_BYTES,
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new HttpServerError.HttpServerError({
+            reason: new HttpServerError.RequestParseError({
+              request,
+              cause,
+              ...(cause instanceof RequestBodySizeLimitExceededError
+                ? { description: `request body exceeded ${cause.maxBytes} bytes` }
+                : {}),
+            }),
+          }),
+      ),
+    );
+    const resourceSpanCount =
+      typeof rawBodyJson === "object" &&
+      rawBodyJson !== null &&
+      "resourceSpans" in rawBodyJson &&
+      Array.isArray(rawBodyJson.resourceSpans)
+        ? rawBodyJson.resourceSpans.length
+        : null;
+    const bodyJson = cast<unknown, OtlpTracer.TraceData>(rawBodyJson);
 
     yield* Effect.try({
       try: () => decodeOtlpTraceRecords(bodyJson),
-      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause, bodyJson }),
+      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause }),
     }).pipe(
       Effect.flatMap((records) => browserTraceCollector.record(records)),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to decode browser OTLP traces", {
           cause,
-          bodyJson,
+          resourceSpanCount,
         }),
       ),
     );
@@ -270,7 +332,12 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
         body: HttpBody.jsonUnsafe(bodyJson),
       })
       .pipe(
-        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap((response) =>
+          releaseHttpClientResponseBody(response).pipe(
+            Effect.andThen(HttpClientResponse.filterStatusOk(response)),
+          ),
+        ),
+        Effect.timeout(OTLP_TRACES_EXPORT_TIMEOUT),
         Effect.as(HttpServerResponse.empty({ status: 204 })),
         Effect.tapError((cause) =>
           Effect.logWarning("Failed to export browser OTLP traces", {
@@ -294,44 +361,48 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
 export const assetRouteLayer = HttpRouter.add(
   "GET",
   `${ASSET_ROUTE_PREFIX}/*`,
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
-    if (Option.isNone(url)) {
-      return HttpServerResponse.text("Bad Request", { status: 400 });
-    }
+  HttpMiddleware.withLoggerDisabled(
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const url = HttpServerRequest.toURL(request);
+      if (Option.isNone(url)) {
+        return HttpServerResponse.text("Bad Request", { status: 400 });
+      }
 
-    const suffix = url.value.pathname.slice(`${ASSET_ROUTE_PREFIX}/`.length);
-    const separatorIndex = suffix.indexOf("/");
-    if (separatorIndex <= 0) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
+      const suffix = url.value.pathname.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separatorIndex = suffix.indexOf("/");
+      if (separatorIndex <= 0) {
+        return HttpServerResponse.text("Not Found", { status: 404 });
+      }
 
-    const asset = yield* resolveAsset(
-      suffix.slice(0, separatorIndex),
-      suffix.slice(separatorIndex + 1),
-    );
-    if (!asset) {
-      return HttpServerResponse.text("Not Found", { status: 404 });
-    }
-    const config = yield* ServerConfig.ServerConfig;
-    const requestedPath =
-      asset.source === "attachment" &&
-      asset.attachmentId !== undefined &&
-      url.value.searchParams.get("variant") === ATTACHMENT_FEED_PREVIEW_VARIANT
-        ? yield* resolveAttachmentFeedPreview({
-            attachmentsDir: config.attachmentsDir,
-            attachmentId: asset.attachmentId,
-            sourcePath: asset.path,
-          })
-        : asset.path;
-    return yield* HttpServerResponse.file(requestedPath, {
-      status: 200,
-      headers: assetResponseHeaders(requestedPath, asset.source),
-    }).pipe(
-      Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
-    );
-  }),
+      const asset = yield* resolveAsset(
+        suffix.slice(0, separatorIndex),
+        suffix.slice(separatorIndex + 1),
+      );
+      if (!asset) {
+        return HttpServerResponse.text("Not Found", { status: 404 });
+      }
+      const config = yield* ServerConfig.ServerConfig;
+      const requestedPath =
+        asset.source === "attachment" &&
+        asset.attachmentId !== undefined &&
+        url.value.searchParams.get("variant") === ATTACHMENT_FEED_PREVIEW_VARIANT
+          ? yield* resolveAttachmentFeedPreview({
+              attachmentsDir: config.attachmentsDir,
+              attachmentId: asset.attachmentId,
+              sourcePath: asset.path,
+            })
+          : asset.path;
+      return yield* HttpServerResponse.file(requestedPath, {
+        status: 200,
+        headers: assetResponseHeaders(requestedPath, asset.source),
+      }).pipe(
+        Effect.orElseSucceed(() =>
+          HttpServerResponse.text("Internal Server Error", { status: 500 }),
+        ),
+      );
+    }),
+  ),
 );
 
 export const staticAndDevRouteLayer = HttpRouter.add(
@@ -401,17 +472,13 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
     if (!fileInfo || fileInfo.type !== "File") {
       const indexPath = path.resolve(staticRoot, "index.html");
-      const indexData = yield* fileSystem
-        .readFile(indexPath)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (!indexData) {
-        return HttpServerResponse.text("Not Found", { status: 404 });
-      }
-      return HttpServerResponse.uint8Array(indexData, {
+      return yield* HttpServerResponse.file(indexPath, {
         status: 200,
-        contentType: "text/html; charset=utf-8",
-        headers: { "Cache-Control": "no-cache" },
-      });
+        headers: {
+          "Cache-Control": "no-cache",
+          "Content-Type": "text/html; charset=utf-8",
+        },
+      }).pipe(Effect.orElseSucceed(() => HttpServerResponse.text("Not Found", { status: 404 })));
     }
 
     const contentType = Mime.getType(filePath) ?? "application/octet-stream";
@@ -422,31 +489,28 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     const cacheControl = staticClientAssetCacheControl(staticRelativePath);
     if (acceptsBrotliEncoding(acceptEncoding)) {
       const brotliPath = `${filePath}.br`;
-      const brotliData = yield* fileSystem
-        .readFile(brotliPath)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (brotliData) {
-        return HttpServerResponse.uint8Array(brotliData, {
-          status: 200,
-          contentType,
-          headers: {
-            "Cache-Control": cacheControl,
-            "Content-Encoding": "br",
-            Vary: "Accept-Encoding",
-          },
-        });
+      const brotliResponse = yield* HttpServerResponse.file(brotliPath, {
+        status: 200,
+        headers: {
+          "Cache-Control": cacheControl,
+          "Content-Encoding": "br",
+          "Content-Type": contentType,
+          Vary: "Accept-Encoding",
+        },
+      }).pipe(Effect.orElseSucceed(() => null));
+      if (brotliResponse) {
+        return brotliResponse;
       }
     }
 
-    const data = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!data) {
-      return HttpServerResponse.text("Internal Server Error", { status: 500 });
-    }
-
-    return HttpServerResponse.uint8Array(data, {
+    return yield* HttpServerResponse.file(filePath, {
       status: 200,
-      contentType,
-      headers: { "Cache-Control": cacheControl },
-    });
+      headers: {
+        "Cache-Control": cacheControl,
+        "Content-Type": contentType,
+      },
+    }).pipe(
+      Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
+    );
   }),
 );

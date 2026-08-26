@@ -353,6 +353,7 @@ export function buildThreadListV2Items(input: {
       contract as settlementEnvironmentIds. */
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly autoSettleAfterDays?: number;
+  readonly autoSettleOnMerge?: boolean;
   /** Max settled rows to render; the rest are counted, not built. */
   readonly settledLimit?: number;
   /** Injectable for tests; defaults to now. */
@@ -406,7 +407,10 @@ export function buildThreadListV2Items(input: {
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
     const changeRequest =
       input.changeRequestByKey?.get(`${thread.environmentId}:${thread.id}`) ?? null;
-    // Snooze outranks settlement and pinning until the thread wakes.
+    // Visibility parity with web: snooze outranks everything, including a
+    // pin — a snoozed thread leaves the list until it wakes (or raises its
+    // hand). The pin (and its pinOrderKey) survives underneath, so a woken
+    // thread reappears at its exact spot in the pinned block.
     if (supportsSnooze && effectiveSnoozed(thread, { now: snoozeNow })) {
       snoozed.push(thread);
       if (
@@ -418,17 +422,22 @@ export function buildThreadListV2Items(input: {
       }
       continue;
     }
+    // A pin otherwise overrides the lifecycle: pinned threads render above
+    // the inbox and never auto-settle out of sight.
+    if (thread.pinnedAt != null) {
+      pinned.push(thread);
+      continue;
+    }
     if (
       supportsSettlement &&
       effectiveSettled(thread, {
         now,
         autoSettleAfterDays,
+        autoSettleOnMerge: input.autoSettleOnMerge,
         changeRequest,
       })
     ) {
       settled.push(thread);
-    } else if (thread.pinnedAt != null) {
-      pinned.push(thread);
     } else {
       active.push(thread);
     }

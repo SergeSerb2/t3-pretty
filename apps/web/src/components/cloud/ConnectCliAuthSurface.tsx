@@ -1,7 +1,8 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
 import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   buildConnectCliClerkAuthorizeUrl,
@@ -52,11 +53,23 @@ const invalidLinkMessage = {
  * straight to the waiting CLI, and the hosted callback page otherwise.
  */
 export function ConnectCliAuthorizeSurface() {
-  const [request] = useState(() => readConnectAuthorizeRequest(new URL(window.location.href)));
+  const routeHash = useLocation({ select: (location) => location.hash });
+  const request = useMemo(
+    () => readConnectAuthorizeRequest(new URL(window.location.href)),
+    [routeHash],
+  );
   const clerk = useClerk();
   const { isLoaded, isSignedIn } = useAuth();
   const signInOpened = useRef(false);
   const redirecting = useRef(false);
+  const requestIdentity = request
+    ? `${request.state}\u0000${request.challenge}\u0000${request.loopbackPort ?? ""}`
+    : null;
+
+  useEffect(() => {
+    signInOpened.current = false;
+    redirecting.current = false;
+  }, [requestIdentity]);
 
   const openSignIn = useCallback(() => {
     if (!request) {
@@ -132,8 +145,12 @@ export function ConnectCliAuthorizeSurface() {
  * user enters in the waiting terminal.
  */
 export function ConnectCliCallbackSurface() {
-  const [result] = useState(readConnectCliCallbackResult);
-  const [expectedState] = useState(readConnectCliAuthState);
+  const routeHref = useLocation({ select: (location) => location.href });
+  const result = useMemo(
+    () => readConnectCliCallbackResult(new URL(window.location.href)),
+    [routeHref],
+  );
+  const expectedState = useMemo(readConnectCliAuthState, [routeHref]);
   const { user } = useUser();
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "authentication code" });
 

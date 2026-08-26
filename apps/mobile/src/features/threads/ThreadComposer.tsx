@@ -404,6 +404,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
+  const preparingImagesRef = useRef(false);
+  const previewFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendStartedAtRef = useRef(0);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
   // Opening and presentation count as active so the composer stays expanded
@@ -488,9 +490,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const closePreview = useCallback(() => {
     setPreviewImageUri(null);
     if (wasExpandedBeforePreviewRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+      previewFocusTimerRef.current = setTimeout(() => {
+        previewFocusTimerRef.current = null;
+        inputRef.current?.focus();
+      }, 100);
     }
   }, [inputRef]);
+
+  useEffect(
+    () => () => {
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const onEditorFocusChange = props.onEditorFocusChange;
   const handleFocus = useCallback(() => {
@@ -769,21 +786,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   const handlePickDraftImages = useCallback(async () => {
-    if (isDispatching) {
+    if (isDispatching || preparingImagesRef.current) {
       return;
     }
+    preparingImagesRef.current = true;
     try {
       await props.onPickDraftImages({ onPicked: beginPendingPreviews });
     } finally {
+      preparingImagesRef.current = false;
       setPendingPreviews([]);
     }
   }, [beginPendingPreviews, isDispatching, props.onPickDraftImages]);
 
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
-      if (uris.length === 0 || isDispatching) {
+      if (uris.length === 0 || isDispatching || preparingImagesRef.current) {
         return;
       }
+      preparingImagesRef.current = true;
       beginPendingPreviews(
         uris.map((uri, index) => ({
           id: `pending:${index}:${uri}`,
@@ -793,6 +813,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       try {
         await props.onNativePasteImages(uris);
       } finally {
+        preparingImagesRef.current = false;
         setPendingPreviews([]);
       }
     },

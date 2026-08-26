@@ -110,6 +110,13 @@ export interface ProjectionThreadRepositoryShape {
   ) => Effect.Effect<Option.Option<ProjectionThread>, ProjectionRepositoryError>;
 
   /**
+   * List every projected thread row.
+   *
+   * Returned in deterministic creation order.
+   */
+  readonly listAll: () => Effect.Effect<ReadonlyArray<ProjectionThread>, ProjectionRepositoryError>;
+
+  /**
    * List projected threads for a project.
    *
    * Returned in deterministic creation order.

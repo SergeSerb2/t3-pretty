@@ -245,6 +245,47 @@ export type MessagesTimelineRow =
       createdAt: string | null;
     };
 
+export interface TimelineMinimapTurn {
+  readonly id: string;
+  readonly rowIndex: number;
+  readonly userText: string | null;
+  readonly assistantText: string | null;
+}
+
+export function deriveTimelineMinimapTurns(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+): TimelineMinimapTurn[] {
+  const turns: Array<{
+    id: string;
+    rowIndex: number;
+    userText: string | null;
+    assistantText: string | null;
+  }> = [];
+  let currentTurn: (typeof turns)[number] | null = null;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row?.kind !== "message") continue;
+
+    if (row.message.role === "user") {
+      currentTurn = {
+        id: row.id,
+        rowIndex: index,
+        userText: row.message.text ?? null,
+        assistantText: null,
+      };
+      turns.push(currentTurn);
+      continue;
+    }
+
+    if (row.message.role === "assistant" && currentTurn !== null) {
+      currentTurn.assistantText = row.message.text ?? null;
+    }
+  }
+
+  return turns;
+}
+
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
   result: MessagesTimelineRow[];
@@ -273,7 +314,7 @@ export function normalizeCompactToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
-type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "other";
+type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "browser" | "other";
 type ToolGroupSummaryKind = ToolGroupAction | "dynamic-tool" | "agent-tool" | "tone-tool" | "mixed";
 
 export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
@@ -284,6 +325,7 @@ export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
 }
 
 export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
+  if (entry.previewAutomation) return "browser";
   if (
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
@@ -336,6 +378,8 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
       return `Searched the web ${count} ${count === 1 ? "time" : "times"}`;
     case "code-search":
       return `Searched code ${count} ${count === 1 ? "time" : "times"}`;
+    case "browser":
+      return `Took ${count} browser ${count === 1 ? "action" : "actions"}`;
     case "other":
       return `Used ${count} ${count === 1 ? "tool" : "tools"}`;
   }
@@ -460,7 +504,6 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
     if (message.role !== "assistant") {
       continue;
     }
-
     const responseKey = message.turnId
       ? `turn:${message.turnId}`
       : `unkeyed:${nullTurnResponseIndex}`;
@@ -468,6 +511,19 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
   }
 
   return new Set(lastAssistantMessageIdByResponseKey.values());
+}
+
+function deriveAttachmentAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
+  return new Set(
+    timelineEntries.flatMap((entry) =>
+      entry.kind === "message" &&
+      entry.message.role === "assistant" &&
+      entry.message.attachments &&
+      entry.message.attachments.length > 0
+        ? [entry.message.id]
+        : [],
+    ),
+  );
 }
 
 interface TurnFold {
@@ -528,6 +584,7 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
+  attachmentAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unsettledTurnId: TurnId | null;
 }): ReadonlyMap<string, TurnFold> {
@@ -598,7 +655,16 @@ function deriveTurnFolds(input: {
     );
     const hiddenEntryIds = new Set<string>();
     for (const entry of group.entries) {
-      if (entry.id === firstAssistantEntry?.id || entry.id === group.terminalEntry?.id) {
+      const isTerminalMessage =
+        entry.kind === "message" && input.terminalAssistantMessageIds.has(entry.message.id);
+      const isAttachmentMessage =
+        entry.kind === "message" && input.attachmentAssistantMessageIds.has(entry.message.id);
+      if (
+        entry.id === firstAssistantEntry?.id ||
+        entry.id === group.terminalEntry?.id ||
+        isTerminalMessage ||
+        isAttachmentMessage
+      ) {
         continue;
       }
       // Agent-spawn CTA rows never fold: workflows outlive their launching
@@ -672,6 +738,7 @@ export function deriveMessagesTimelineRows(input: {
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const attachmentAssistantMessageIds = deriveAttachmentAssistantMessageIds(input.timelineEntries);
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -679,6 +746,7 @@ export function deriveMessagesTimelineRows(input: {
   const foldsByAnchorEntryId = deriveTurnFolds({
     timelineEntries: input.timelineEntries,
     terminalAssistantMessageIds,
+    attachmentAssistantMessageIds,
     latestTurn: input.latestTurn ?? null,
     unsettledTurnId,
   });

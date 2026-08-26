@@ -17,6 +17,7 @@ import {
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
@@ -37,8 +38,89 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  makeClaudeAdapter,
+  normalizeClaudeUserInputRequest,
+  summarizeClaudeToolRequestForDiagnostics,
+  toClaudeSdkUserInputAnswers,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+
+describe("Claude adapter diagnostics", () => {
+  it("bounds tool labels without serializing arbitrary SDK input", () => {
+    let toJsonCalls = 0;
+    const detail = summarizeClaudeToolRequestForDiagnostics("custom-tool", {
+      payload: "x".repeat(1024 * 1024),
+      toJSON() {
+        toJsonCalls += 1;
+        return { secret: "must-not-run" };
+      },
+    });
+
+    assert(detail.length <= 400);
+    assert.equal(toJsonCalls, 0);
+  });
+});
+
+describe("Claude user-input normalization", () => {
+  it("round-trips an oversized question through a bounded client id", () => {
+    const providerQuestion = "question ".repeat(
+      Math.ceil(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH / "question ".length) + 1,
+    );
+    const normalized = normalizeClaudeUserInputRequest([
+      {
+        question: providerQuestion,
+        header: "Choice",
+        options: [{ label: "Yes", description: "Continue" }],
+        multiSelect: false,
+      },
+    ]);
+
+    assert.isDefined(normalized);
+    const question = normalized?.questions[0];
+    assert.equal(question?.id, "claude-question-0");
+    assert.isAtMost(question?.id.length ?? Infinity, PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH);
+    assert.deepEqual(
+      toClaudeSdkUserInputAnswers(
+        { "claude-question-0": "Yes" },
+        normalized?.providerQuestionById ?? new Map(),
+      ),
+      { [providerQuestion]: "Yes" },
+    );
+  });
+
+  it("rejects malformed and duplicate provider questions", () => {
+    assert.equal(normalizeClaudeUserInputRequest([null]), undefined);
+    const duplicate = {
+      question: "Same question",
+      header: "Choice",
+      options: [],
+      multiSelect: false,
+    };
+    assert.equal(normalizeClaudeUserInputRequest([duplicate, duplicate]), undefined);
+  });
+
+  it("keeps derived ids unique when question text matches the fallback", () => {
+    const normalized = normalizeClaudeUserInputRequest([
+      {
+        question: "claude-question-1",
+        header: "First",
+        options: [],
+      },
+      {
+        question: "x".repeat(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH + 1),
+        header: "Second",
+        options: [],
+      },
+    ]);
+
+    assert.deepEqual(
+      normalized?.questions.map((question) => question.id),
+      ["claude-question-1", "claude-question-1-1"],
+    );
+  });
+});
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
@@ -4677,6 +4759,76 @@ describe("ClaudeAdapterLive", () => {
 
       const permissionResult = yield* Effect.promise(() => permissionPromise);
       assert.deepEqual(permissionResult, {
+        behavior: "deny",
+        message: "User cancelled tool execution.",
+      } satisfies PermissionResult);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("settles user input and approvals when the signal is already aborted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const canUseTool = harness.getLastCreateQueryInput()?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const inputController = new AbortController();
+      inputController.abort();
+      const inputPromise = canUseTool(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              question: "Continue?",
+              header: "Continue",
+              options: [{ label: "Yes", description: "Proceed" }],
+              multiSelect: false,
+            },
+          ],
+        },
+        { signal: inputController.signal, toolUseID: "tool-ask-pre-abort" },
+      );
+      const inputEvents = Array.from(
+        yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect),
+      );
+      assert.deepEqual(
+        inputEvents.map((event) => event.type),
+        ["user-input.requested", "user-input.resolved"],
+      );
+      assert.deepEqual(yield* Effect.promise(() => inputPromise), {
+        behavior: "deny",
+        message: "User cancelled tool execution.",
+      } satisfies PermissionResult);
+
+      const approvalController = new AbortController();
+      approvalController.abort();
+      const approvalPromise = canUseTool(
+        "Bash",
+        { command: "pwd" },
+        { signal: approvalController.signal, toolUseID: "tool-approval-pre-abort" },
+      );
+      const approvalEvents = Array.from(
+        yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect),
+      );
+      assert.deepEqual(
+        approvalEvents.map((event) => event.type),
+        ["request.opened", "request.resolved"],
+      );
+      assert.deepEqual(yield* Effect.promise(() => approvalPromise), {
         behavior: "deny",
         message: "User cancelled tool execution.",
       } satisfies PermissionResult);

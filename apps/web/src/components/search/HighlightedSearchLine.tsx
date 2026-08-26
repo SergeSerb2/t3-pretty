@@ -169,7 +169,10 @@ export const HighlightedSearchLine = memo(function HighlightedSearchLine(props: 
   );
 
   return (
-    <RenderErrorBoundary fallback={fallback}>
+    <RenderErrorBoundary
+      fallback={fallback}
+      resetKeys={[props.match.lineContent, props.path, props.theme]}
+    >
       <Suspense fallback={fallback}>
         <SyntaxHighlightedTokens
           line={props.match.lineContent}

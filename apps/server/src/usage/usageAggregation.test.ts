@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { UsageAggregator } from "./usageAggregation.ts";
+import {
+  type AggregateOptions,
+  isValidUsageTimeZone,
+  UsageAggregator,
+} from "./usageAggregation.ts";
 import type { RateTable } from "./usagePricing.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
 
@@ -40,6 +44,12 @@ function aggregate(
   records: readonly UsageRecord[],
   timeZone = "UTC",
   resolution: "day" | "hour" = "day",
+  limits: Partial<
+    Pick<
+      AggregateOptions,
+      "maxBucketsPerProvider" | "maxDedupeKeysPerProvider" | "maxSessionMembershipsPerProvider"
+    >
+  > = {},
 ) {
   const hourlyBounds =
     resolution === "hour"
@@ -54,6 +64,7 @@ function aggregate(
     untilDay: "2026-08-31",
     resolution,
     ...hourlyBounds,
+    ...limits,
     rates,
   });
   for (const item of records) aggregator.add(item);
@@ -61,6 +72,11 @@ function aggregate(
 }
 
 describe("UsageAggregator", () => {
+  it("recognizes valid and invalid reporting time zones", () => {
+    expect(isValidUsageTimeZone("America/Los_Angeles")).toBe(true);
+    expect(isValidUsageTimeZone("not/a-real-time-zone")).toBe(false);
+  });
+
   it("requires exact bounds for hourly aggregation", () => {
     expect(
       () =>
@@ -85,6 +101,30 @@ describe("UsageAggregator", () => {
     expect(result.buckets).toHaveLength(1);
     expect(result.buckets[0]?.records).toBe(1);
     expect(result.buckets[0]?.totals.outputTokens).toBe(50);
+  });
+
+  it("scopes dedupe identities to their provider", () => {
+    const result = aggregate([
+      record({ provider: "claude", dedupeKey: "shared-provider-id" }),
+      record({ provider: "codex", dedupeKey: "shared-provider-id" }),
+    ]);
+
+    expect(result.duplicatesDropped).toBe(0);
+    expect(result.buckets).toHaveLength(2);
+  });
+
+  it("does not let an out-of-window copy suppress an in-window record", () => {
+    const result = aggregate([
+      record({
+        timestampMs: Date.parse("2026-07-01T12:00:00Z"),
+        dedupeKey: "copied-record",
+      }),
+      record({ dedupeKey: "copied-record" }),
+    ]);
+
+    expect(result.outOfWindow).toBe(1);
+    expect(result.duplicatesDropped).toBe(0);
+    expect(result.buckets[0]?.records).toBe(1);
   });
 
   it("still sums records that carry no dedupe key", () => {
@@ -209,5 +249,42 @@ describe("UsageAggregator", () => {
     ]);
 
     expect(result.buckets).toHaveLength(3);
+  });
+
+  it("bounds buckets per provider and reports omitted records", () => {
+    const result = aggregate(
+      [record({ model: "model-a" }), record({ model: "model-b" })],
+      "UTC",
+      "day",
+      { maxBucketsPerProvider: 1 },
+    );
+
+    expect(result.buckets).toHaveLength(1);
+    expect(result.capacityDropped).toBe(1);
+  });
+
+  it("bounds retained dedupe identities per provider", () => {
+    const result = aggregate(
+      [record({ dedupeKey: "record-a" }), record({ dedupeKey: "record-b" })],
+      "UTC",
+      "day",
+      { maxDedupeKeysPerProvider: 1 },
+    );
+
+    expect(result.buckets[0]?.records).toBe(1);
+    expect(result.capacityDropped).toBe(1);
+  });
+
+  it("bounds bucket session membership without dropping usage totals", () => {
+    const result = aggregate(
+      [record({ sessionId: "session-a" }), record({ sessionId: "session-b" })],
+      "UTC",
+      "day",
+      { maxSessionMembershipsPerProvider: 1 },
+    );
+
+    expect(result.buckets[0]?.records).toBe(2);
+    expect(result.buckets[0]?.sessions).toBe(1);
+    expect(result.sessionMembershipsOmitted).toBe(1);
   });
 });

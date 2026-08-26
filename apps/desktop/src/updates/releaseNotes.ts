@@ -17,6 +17,9 @@ function isElectronReleaseNoteInfo(value: unknown): value is ElectronReleaseNote
 const MAX_RELEASE_NOTE_GROUPS = 6;
 const MAX_RELEASE_NOTE_ITEMS_PER_GROUP = 8;
 const MAX_RELEASE_NOTE_ITEM_LENGTH = 220;
+const MAX_RELEASE_NOTE_CANDIDATES = 24;
+const MAX_RELEASE_NOTE_SOURCE_LENGTH = 64 * 1024;
+const MAX_RELEASE_NOTE_VERSION_LENGTH = 128;
 
 const HTML_ENTITY_REPLACEMENTS: Readonly<Record<string, string>> = {
   amp: "&",
@@ -91,7 +94,7 @@ function extractReleaseNoteItems(note: string | null | undefined): ReadonlyArray
   if (!note) return [];
 
   const items: string[] = [];
-  for (const rawLine of stripMarkup(note).split("\n")) {
+  for (const rawLine of stripMarkup(note.slice(0, MAX_RELEASE_NOTE_SOURCE_LENGTH)).split("\n")) {
     const item = rawLine
       .trim()
       .replace(/^[-*]\s+/, "")
@@ -108,18 +111,25 @@ export function normalizeDesktopUpdateReleaseNotes(
   releaseNotes: unknown,
   fallbackVersion: string,
 ): ReadonlyArray<DesktopUpdateReleaseNote> {
-  const rawNotes =
+  const rawNotes: ReadonlyArray<unknown> =
     typeof releaseNotes === "string"
       ? [{ version: fallbackVersion, note: releaseNotes }]
       : Array.isArray(releaseNotes)
-        ? releaseNotes.filter(isElectronReleaseNoteInfo)
+        ? releaseNotes
         : [];
-
-  return rawNotes
-    .map((entry) => ({
-      version: entry.version,
-      items: extractReleaseNoteItems(entry.note),
-    }))
-    .filter((entry) => entry.items.length > 0)
-    .slice(0, MAX_RELEASE_NOTE_GROUPS);
+  const normalized: DesktopUpdateReleaseNote[] = [];
+  let candidates = 0;
+  for (const candidate of rawNotes) {
+    if (candidates >= MAX_RELEASE_NOTE_CANDIDATES) break;
+    candidates += 1;
+    if (!isElectronReleaseNoteInfo(candidate)) continue;
+    const items = extractReleaseNoteItems(candidate.note);
+    if (items.length === 0) continue;
+    normalized.push({
+      version: candidate.version.slice(0, MAX_RELEASE_NOTE_VERSION_LENGTH),
+      items,
+    });
+    if (normalized.length >= MAX_RELEASE_NOTE_GROUPS) break;
+  }
+  return normalized;
 }

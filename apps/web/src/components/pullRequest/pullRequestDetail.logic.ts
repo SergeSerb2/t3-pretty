@@ -18,6 +18,7 @@ import type {
 import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 
 /** Activity changes only when the same host resource reports a newer revision. */
 export function shouldRefreshPullRequestActivity(
@@ -194,7 +195,7 @@ export function groupPullRequestConversation(
     ...items,
     ...unseenThreads.map((thread) => ({ kind: "thread" as const, thread })),
   ].toSorted((left, right) => {
-    const cmp = activityAt(left).localeCompare(activityAt(right));
+    const cmp = compareIsoDateTimes(activityAt(left), activityAt(right));
     return order === "newest" ? -cmp : cmp;
   });
 }
@@ -204,8 +205,8 @@ function threadActivityAt(thread: PullRequestReviewThread, order: "newest" | "ol
   const times = thread.comments.map((comment) => comment.createdAt);
   if (times.length === 0) return "";
   return order === "newest"
-    ? times.reduce((latest, at) => (at > latest ? at : latest))
-    : times.reduce((earliest, at) => (at < earliest ? at : earliest));
+    ? times.reduce((latest, at) => (compareIsoDateTimes(at, latest) > 0 ? at : latest))
+    : times.reduce((earliest, at) => (compareIsoDateTimes(at, earliest) < 0 ? at : earliest));
 }
 
 export function countUnresolvedReviewThreads(
@@ -396,18 +397,20 @@ export function groupPullRequestTimelineConversations(
   events: ReadonlyArray<PullRequestTimelineEvent>,
 ): ReadonlyArray<PullRequestTimelineRow> {
   const rows: PullRequestTimelineRow[] = [];
+  let commentBatch: PullRequestTimelineEvent[] | null = null;
   for (const event of events) {
     if (
       (event.kind === "comment" || event.kind === "review") &&
       pullRequestReviewOutcome(event.reviewState) === null
     ) {
-      const last = rows.at(-1);
-      if (last?.kind === "comments") {
-        rows[rows.length - 1] = { kind: "comments", events: [...last.events, event] };
-      } else {
-        rows.push({ kind: "comments", events: [event] });
+      if (commentBatch !== null) {
+        commentBatch.push(event);
+        continue;
       }
+      commentBatch = [event];
+      rows.push({ kind: "comments", events: commentBatch });
     } else {
+      commentBatch = null;
       rows.push({ kind: "event", event });
     }
   }
@@ -536,7 +539,7 @@ export function buildPullRequestTimeline(
           },
         ]
       : []),
-  ].toSorted((left, right) => right.at.localeCompare(left.at));
+  ].toSorted((left, right) => compareIsoDateTimes(right.at, left.at));
 }
 
 const FINDING_LIMIT = 20;
@@ -786,6 +789,17 @@ export function countFixableFindings(input: {
   return collected.threads.length + collected.remarks.length + collected.failingChecks.length;
 }
 
+/** Fix all needs a current finding; continuous can start on pending CI with none. */
+export function canStartContinuousFix(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): boolean {
+  return (
+    countFixableFindings(input) > 0 || input.checks.some((check) => check.status === "pending")
+  );
+}
+
 /**
  * The task for handing a pull request's review findings to a fresh thread. Everything derived
  * from the pull request is explicitly marked untrusted: review bodies and check output are
@@ -805,6 +819,7 @@ export function buildFixFindingsHandoff(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
+  readonly continuous?: boolean;
   /**
    * Whether this viewer may resolve review threads on the host — host capability and
    * `viewerPermissions.resolve` together, matching the Resolve control.
@@ -871,6 +886,11 @@ export function buildFixFindingsHandoff(input: {
       includedRemarks.length === 0
         ? [
             "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
+          ]
+        : []),
+      ...(input.continuous
+        ? [
+            "Keep working until the pull request is green on its latest commit. After every push, wait for the next automated review cycle when configured and all required checks for that exact head to finish, then refresh the host's review and check state. Fix each new valid actionable finding or code-caused failure, resolve the conversations you address when permitted, push, and repeat. Do not stop while an expected latest-head review or required check is pending or failing, or while actionable feedback remains unresolved. If an external failure or missing permission blocks progress, report the evidence instead of changing unrelated code.",
           ]
         : []),
       // Checks and top-level review remarks are not resolvable threads — only threaded findings are.

@@ -48,9 +48,10 @@ steps:
     agents:
       queue: macos-release
       os: macos
+    # Buildkite interpolates ${VAR} in command: before the step runs.
+    # Check the sourced secret in mirror-github.sh, not in this block.
     command: |
       . scripts/fork/load-buildkite-secrets.sh GITHUB_MIRROR_SSH_KEY
-      test -n "${GITHUB_MIRROR_SSH_KEY:-}" || { echo "GITHUB_MIRROR_SSH_KEY secret is required for the GitHub mirror" >&2; exit 1; }
       export GITHUB_MIRROR_REPO="${GITHUB_MIRROR_REPO:-SergeSerb2/t3-pretty}"
       bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
@@ -145,7 +146,7 @@ steps:
     # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
     # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
     # from a failed or non-desktop revision.
-    if: build.branch == "main"
+    if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 40
     agents:
       queue: linux-small

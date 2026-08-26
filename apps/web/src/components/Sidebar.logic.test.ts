@@ -3,6 +3,7 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import {
   animatePinnedLayoutChanges,
   archiveSelectedThreadEntries,
+  unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
   countThreadsAwaitingUser,
@@ -22,6 +23,10 @@ import {
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
+  isSettledThreadPastArchiveAge,
+  reserveSettledArchiveAttempts,
+  reserveUndonePastArchiveAgeAttempts,
+  retainSettledAutoArchiveAttempts,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -154,6 +159,19 @@ describe("archiveSelectedThreadEntries", () => {
     });
   });
 
+  it("records success when the archive callback skips onArchived", async () => {
+    const outcome = await archiveSelectedThreadEntries({
+      entries,
+      archive: async () => success,
+    });
+
+    expect(outcome).toEqual({
+      archivedThreadKeys: ["one", "two", "three"],
+      mutationFailure: null,
+      followupFailures: [],
+    });
+  });
+
   it("stops at a mutation failure and retains prior successes", async () => {
     const archive = vi.fn(async (entry: (typeof entries)[number], onArchived: () => void) => {
       if (entry.threadKey === "two") return failure;
@@ -182,6 +200,34 @@ describe("archiveSelectedThreadEntries", () => {
       archivedThreadKeys: ["one", "two", "three"],
       mutationFailure: null,
       followupFailures: [failure],
+    });
+  });
+});
+
+describe("unarchiveSelectedThreadEntries", () => {
+  const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;
+  const success = { _tag: "Success" } as const;
+  const failure = { _tag: "Failure" } as const;
+
+  it("restores every entry after full success", async () => {
+    const outcome = await unarchiveSelectedThreadEntries({
+      entries,
+      unarchive: async () => success,
+    });
+
+    expect(outcome).toEqual({ restored: [...entries], failures: [] });
+  });
+
+  it("continues after a failure and reports it", async () => {
+    const unarchive = vi.fn(async (entry: (typeof entries)[number]) =>
+      entry.threadKey === "two" ? failure : success,
+    );
+    const outcome = await unarchiveSelectedThreadEntries({ entries, unarchive });
+
+    expect(unarchive).toHaveBeenCalledTimes(3);
+    expect(outcome).toEqual({
+      restored: [entries[0], entries[2]],
+      failures: [failure],
     });
   });
 });
@@ -1102,6 +1148,102 @@ describe("sortSettledThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isSettledThreadPastArchiveAge", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (input: { settledAt?: string | null; latestUserMessageAt?: string | null }) => ({
+    settledAt: input.settledAt ?? null,
+    latestUserMessageAt: input.latestUserMessageAt ?? null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("archives a thread settled at least the configured days ago", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-02-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a thread settled more recently than the window", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-03-15T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses last activity for auto-settled threads without a settledAt stamp", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ latestUserMessageAt: "2026-01-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("never archives a thread with no resolvable timestamp", () => {
+    expect(isSettledThreadPastArchiveAge(thread({}), { nowMs, afterDays: 30 })).toBe(false);
+  });
+});
+
+describe("retainSettledAutoArchiveAttempts", () => {
+  it("keeps keys still in the settled tail and drops keys that left so undo can retry", () => {
+    expect(
+      retainSettledAutoArchiveAttempts(
+        new Set(["lagging", "unarchived"]),
+        new Set(["lagging", "other"]),
+      ),
+    ).toEqual(new Set(["lagging"]));
+  });
+});
+
+describe("reserveSettledArchiveAttempts", () => {
+  it("skips keys already reserved and claims the rest", () => {
+    const attempted = new Set(["busy"]);
+    expect(reserveSettledArchiveAttempts(attempted, ["busy", "free", "also-free"])).toEqual([
+      "free",
+      "also-free",
+    ]);
+    expect(attempted).toEqual(new Set(["busy", "free", "also-free"]));
+  });
+});
+
+describe("reserveUndonePastArchiveAgeAttempts", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (settledAt: string) => ({
+    settledAt,
+    latestUserMessageAt: null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("reserves only restored keys already past archive age", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [
+        { threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") },
+        { threadKey: "young", thread: thread("2026-03-15T00:00:00.000Z") },
+      ],
+      { nowMs, afterDays: 30 },
+    );
+    expect(attempted).toEqual(new Set(["old"]));
+  });
+
+  it("reserves nothing when auto-archive is off", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [{ threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") }],
+      { nowMs, afterDays: null },
+    );
+    expect(attempted).toEqual(new Set());
   });
 });
 

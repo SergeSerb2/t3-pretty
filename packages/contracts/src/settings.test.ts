@@ -1,16 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
+  PROVIDER_INSTANCE_MAX_COUNT,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "./providerInstance.ts";
+import {
+  BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS,
+  BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS,
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH,
+  SERVER_SETTINGS_PATH_MAX_LENGTH,
   defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
+import { SKILL_SETTINGS_MAX_ENABLED } from "./skills.ts";
+import { SUBAGENT_POLICY_MAX_CHILDREN } from "./subagentPolicy.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -164,9 +177,55 @@ describe("ClientSettings sidebar", () => {
     );
   });
 
-  it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
+  it.each([-1, 0, 1.5, 91])("rejects an invalid auto-settle threshold: %s", (value) => {
     expect(() => decodeClientSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
+  });
+
+  it("keeps auto-archive off until enabled at a value inside the shared day bounds", () => {
+    expect(decodeClientSettings({}).sidebarAutoArchiveSettledAfterDays).toBeNull();
+    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeGreaterThanOrEqual(
+      MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    );
+    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeLessThanOrEqual(
+      MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    );
+    expect(
+      decodeClientSettings({
+        sidebarAutoArchiveSettledAfterDays: DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
+      }).sidebarAutoArchiveSettledAfterDays,
+    ).toBe(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS);
+  });
+});
+
+describe("ServerSettings background activity intervals", () => {
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])(
+    "rejects a non-finite or negative legacy interval: %s",
+    (value) => {
+      expect(() => decodeServerSettings({ automaticGitFetchInterval: value })).toThrow();
+      expect(() => decodeServerSettingsPatch({ providerHealthRefreshInterval: value })).toThrow();
+    },
+  );
+
+  it("rejects override intervals below their operational minima", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        backgroundActivity: {
+          overrides: {
+            hostPowerMonitorActiveInterval: BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS - 1,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        backgroundActivity: {
+          overrides: {
+            idleClientTtl: BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS - 1,
+          },
+        },
+      }),
+    ).toThrow();
   });
 });
 
@@ -407,5 +466,47 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
+  });
+});
+
+describe("ServerSettings collection and string bounds", () => {
+  it("rejects oversized custom-model lists in full settings and patches", () => {
+    const customModels = Array.from(
+      { length: SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH + 1 },
+      (_, index) => `model-${index}`,
+    );
+
+    expect(() => decodeServerSettings({ providers: { codex: { customModels } } })).toThrow();
+    expect(() => decodeServerSettingsPatch({ providers: { codex: { customModels } } })).toThrow();
+  });
+
+  it("rejects oversized provider, skill, and subagent maps before persistence", () => {
+    const providerInstances = Object.fromEntries(
+      Array.from({ length: PROVIDER_INSTANCE_MAX_COUNT + 1 }, (_, index) => [
+        `provider${index}`,
+        { driver: "codex" },
+      ]),
+    );
+    const enabledSkillIds = Array.from(
+      { length: SKILL_SETTINGS_MAX_ENABLED + 1 },
+      (_, index) => `example/skills:skill-${index}`,
+    );
+    const children = Object.fromEntries(
+      Array.from({ length: SUBAGENT_POLICY_MAX_CHILDREN + 1 }, (_, index) => [
+        `provider${index}`,
+        { model: "gpt-5.6-luna" },
+      ]),
+    );
+
+    expect(() => decodeServerSettingsPatch({ providerInstances })).toThrow();
+    expect(() => decodeServerSettingsPatch({ skills: { enabledSkillIds } })).toThrow();
+    expect(() => decodeServerSettingsPatch({ subagentPolicy: { children } })).toThrow();
+  });
+
+  it("rejects path fields beyond the supported ceiling", () => {
+    const oversizedPath = `/${"a".repeat(SERVER_SETTINGS_PATH_MAX_LENGTH)}`;
+
+    expect(() => decodeServerSettings({ addProjectBaseDirectory: oversizedPath })).toThrow();
+    expect(() => decodeServerSettingsPatch({ addProjectBaseDirectory: oversizedPath })).toThrow();
   });
 });

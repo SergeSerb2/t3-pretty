@@ -528,11 +528,14 @@ function cacheCommandResolution(
   resolvedPath: string | null,
   nowNanos: bigint,
 ): void {
-  if (cache.size >= COMMAND_RESOLUTION_CACHE_MAX_ENTRIES) {
+  // Remove replacements first: Map.set does not refresh insertion order, and
+  // evicting before replacing a full-cache key would discard an unrelated
+  // entry while leaving this key in its stale FIFO position.
+  cache.delete(cacheKey);
+  while (cache.size >= COMMAND_RESOLUTION_CACHE_MAX_ENTRIES) {
     const oldestKey = cache.keys().next().value;
-    if (oldestKey !== undefined) {
-      cache.delete(oldestKey);
-    }
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
   }
   cache.set(cacheKey, {
     resolvedPath,

@@ -32,6 +32,7 @@ import {
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { shellEnvironment } from "~/state/shell";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { toastManager } from "../ui/toast";
 
 // The JetBrains logos are gradient-heavy SVGs most users never see, so the
 // module loads on first render of one of them. The fallback is an empty svg
@@ -249,11 +250,25 @@ export const OpenInPicker = memo(function OpenInPicker({
           host: remote.host.host,
           absolutePath: openInCwd,
         });
-        if (url === undefined) return;
+        if (url === undefined) {
+          toastManager.add({
+            type: "error",
+            title: "Could not open editor",
+            description: "This editor does not support remote file links.",
+          });
+          return;
+        }
         // Only record hint-seen/preferred when the shell actually accepted
         // the URL (an older desktop build can refuse the editor scheme).
         void openRemoteEditorUrl(url).then((opened) => {
-          if (!opened) return;
+          if (!opened) {
+            toastManager.add({
+              type: "error",
+              title: "Could not open editor",
+              description: "The operating system did not accept the editor link.",
+            });
+            return;
+          }
           markRemoteHintSeen();
           setPreferredEditor(editor);
         });
@@ -328,13 +343,7 @@ export const OpenInPicker = memo(function OpenInPicker({
       <GroupSeparator {...(!compact ? { className: "hidden @3xl/header-actions:block" } : {})} />
       <Menu>
         <MenuTrigger
-          render={
-            <Button
-              aria-label={compact ? "Choose editor" : "Copy options"}
-              size="icon-xs"
-              variant="outline"
-            />
-          }
+          render={<Button aria-label="Choose editor" size="icon-xs" variant="outline" />}
         >
           <ChevronDownIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>

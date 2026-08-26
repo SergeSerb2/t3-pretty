@@ -454,6 +454,30 @@ const mobileEndorsementRows = [
     }
   }
 
+  function pauseOffscreenMarquee() {
+    const section = document.getElementById("endorsements");
+    if (!section || !("IntersectionObserver" in window)) return;
+    let intersects = false;
+    const update = () => {
+      section.toggleAttribute("data-motion-paused", !intersects || document.hidden);
+    };
+    const observer = new IntersectionObserver(([entry]) => {
+      intersects = entry?.isIntersecting ?? false;
+      update();
+    });
+    observer.observe(section);
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener(
+      "pagehide",
+      () => {
+        observer.disconnect();
+        document.removeEventListener("visibilitychange", update);
+      },
+      { once: true },
+    );
+  }
+
+  pauseOffscreenMarquee();
   init();
 </script>
 
@@ -646,7 +670,6 @@ const mobileEndorsementRows = [
     box-shadow:
       0 20px 48px -16px rgba(0, 0, 0, 0.65),
       0 2px 0 0 rgba(255, 255, 255, 0.04) inset;
-    animation: floatDrift 9s ease-in-out infinite;
   }
 
   .hero-float-mark img {
@@ -931,6 +954,10 @@ const mobileEndorsementRows = [
     will-change: transform;
   }
 
+  #endorsements[data-motion-paused] .endorsement-track {
+    animation-play-state: paused;
+  }
+
   .endorsement-track-group {
     display: flex;
     gap: 12px;
@@ -1127,7 +1154,6 @@ const mobileEndorsementRows = [
     width: 7px; height: 14px;
     background: var(--fg);
     margin-left: 4px;
-    animation: blink 1s steps(2) infinite;
   }
 
   .open-pitch {
@@ -1251,6 +1277,14 @@ const mobileEndorsementRows = [
     }
     to {
       transform: translateX(-50%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .endorsement-track {
+      animation: none;
+      transform: none;
+      will-change: auto;
     }
   }
 

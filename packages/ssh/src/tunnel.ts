@@ -1,6 +1,8 @@
-import type {
-  DesktopSshEnvironmentBootstrap,
-  DesktopSshEnvironmentTarget,
+import {
+  DesktopCredentialSchema,
+  PortSchema,
+  type DesktopSshEnvironmentBootstrap,
+  type DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
 import { forkCliTarballUrl, T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import {
@@ -55,6 +57,7 @@ const REMOTE_PORT_SCAN_WINDOW = 200;
 const SSH_READY_TIMEOUT_MS = 20_000;
 const SSH_READY_PROBE_TIMEOUT_MS = 1_000;
 const TUNNEL_SHUTDOWN_TIMEOUT_MS = 2_000;
+const TUNNEL_SHUTDOWN_CONCURRENCY = 8;
 const REMOTE_READY_TIMEOUT_MS = 60_000;
 const REMOTE_LAUNCH_TIMEOUT_MS = 90_000;
 const REMOTE_REUSE_READY_TIMEOUT_MS = 2_000;
@@ -183,12 +186,12 @@ export interface SshEnvironmentManagerShape {
 }
 
 const RemoteLaunchResult = Schema.Struct({
-  remotePort: Schema.Number,
+  remotePort: PortSchema,
   serverKind: Schema.optional(Schema.Literals(["external", "managed"])),
 });
 
 const RemotePairingResult = Schema.Struct({
-  credential: Schema.String,
+  credential: DesktopCredentialSchema,
 });
 
 const decodeRemoteLaunchResult = Schema.decodeEffect(fromLenientJson(RemoteLaunchResult));
@@ -296,7 +299,25 @@ const net = require("node:net");
 const filePath = process.argv[2] ?? "";
 const defaultPort = Number.parseInt(process.argv[3] ?? "", 10);
 const scanWindow = Number.parseInt(process.argv[4] ?? "", 10);
-const raw = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8").trim() : "";
+function readSmallFile(path) {
+  let descriptor;
+  try {
+    descriptor = fs.openSync(path, "r");
+    const bytes = Buffer.allocUnsafe(65);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    return offset <= 64 ? bytes.subarray(0, offset).toString("utf8").trim() : "";
+  } catch {
+    return "";
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+const raw = readSmallFile(filePath);
 const preferred = Number.parseInt(raw, 10);
 const start = Number.isInteger(preferred) ? preferred : defaultPort;
 const end = start + scanWindow;
@@ -555,19 +576,49 @@ wait_for_pid_exit() {
     sleep 0.1
   done
 }
+read_small_state() {
+  if [ ! -f "$1" ]; then
+    return 0
+  fi
+  STATE_VALUE="$(head -c 65 "$1" 2>/dev/null || true)"
+  STATE_BYTES="$(printf '%s' "$STATE_VALUE" | wc -c | tr -d ' ')"
+  if [ "\${STATE_BYTES:-65}" -le 64 ]; then
+    printf '%s' "$STATE_VALUE"
+  fi
+}
 resolve_default_runtime_port() {
   node - "$DEFAULT_RUNTIME_FILE" <<'NODE'
 const fs = require("node:fs");
 const runtimePath = process.argv[2] ?? "";
+function readTextWithinLimit(filePath, maximumBytes) {
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const bytes = Buffer.allocUnsafe(maximumBytes + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > maximumBytes) throw new Error("runtime state is oversized");
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
 try {
-	  const runtime = JSON.parse(fs.readFileSync(runtimePath, "utf8"));
+	  const runtime = JSON.parse(readTextWithinLimit(runtimePath, 64 * 1024));
 	  const pid = Number(runtime.pid);
 	  const port = Number(runtime.port);
-	  if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(port)) {
+	  if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
 	    process.exit(1);
 	  }
   const origin = new URL(String(runtime.origin ?? ""));
-  if (origin.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(origin.hostname)) {
+  if (
+    origin.protocol !== "http:" ||
+    !["127.0.0.1", "localhost"].includes(origin.hostname) ||
+    Number(origin.port || 80) !== port
+  ) {
     process.exit(1);
   }
   process.kill(pid, 0);
@@ -577,9 +628,9 @@ try {
 }
 NODE
 }
-REMOTE_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-REMOTE_PORT="$(cat "$PORT_FILE" 2>/dev/null || true)"
-REMOTE_MANAGED="$(cat "$MANAGED_FILE" 2>/dev/null || true)"
+REMOTE_PID="$(read_small_state "$PID_FILE")"
+REMOTE_PORT="$(read_small_state "$PORT_FILE")"
+REMOTE_MANAGED="$(read_small_state "$MANAGED_FILE")"
 DEFAULT_RUNTIME_INFO="$(resolve_default_runtime_port 2>/dev/null || true)"
 DEFAULT_RUNTIME_PID=""
 DEFAULT_REMOTE_PORT=""
@@ -590,28 +641,22 @@ fi
 if [ -n "$DEFAULT_REMOTE_PORT" ]; then
   REMOTE_PORT="$DEFAULT_REMOTE_PORT"
   if wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
-    if [ "$REMOTE_MANAGED" = "managed" ]; then
-      PID_TO_STOP="\${REMOTE_PID:-$DEFAULT_RUNTIME_PID}"
-      if [ -n "$PID_TO_STOP" ] && kill -0 "$PID_TO_STOP" 2>/dev/null; then
-        kill "$PID_TO_STOP" 2>/dev/null || true
-        wait_for_pid_exit "$PID_TO_STOP"
-      fi
-      REMOTE_PID=""
+    if [ "$REMOTE_MANAGED" = "managed" ] && [ "$REMOTE_PID" = "$DEFAULT_RUNTIME_PID" ]; then
+      # The runtime file is the authoritative live identity. Keep managing the
+      # server only when it names the exact PID we previously persisted;
+      # otherwise the state PID may have been reused by an unrelated process.
       REMOTE_PORT="$DEFAULT_REMOTE_PORT"
-      REMOTE_MANAGED="external"
-      rm -f "$PID_FILE"
-      printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
-      printf 'external\\n' >"$MANAGED_FILE"
     else
       printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
       printf 'external\\n' >"$MANAGED_FILE"
       REMOTE_PID=""
       REMOTE_MANAGED="external"
+      rm -f "$PID_FILE"
     fi
   else
-    REMOTE_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-    REMOTE_PORT="$(cat "$PORT_FILE" 2>/dev/null || true)"
-    REMOTE_MANAGED="$(cat "$MANAGED_FILE" 2>/dev/null || true)"
+    REMOTE_PID="$(read_small_state "$PID_FILE")"
+    REMOTE_PORT="$(read_small_state "$PORT_FILE")"
+    REMOTE_MANAGED="$(read_small_state "$MANAGED_FILE")"
   fi
 fi
 if [ "$REMOTE_MANAGED" = "external" ]; then
@@ -620,7 +665,7 @@ if [ "$REMOTE_MANAGED" = "external" ]; then
     REMOTE_PORT=""
     REMOTE_MANAGED=""
   fi
-elif [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
+elif [ "$REMOTE_MANAGED" = "managed" ] && [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && [ "$REMOTE_PID" = "$DEFAULT_RUNTIME_PID" ] && [ "$REMOTE_PORT" = "$DEFAULT_REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
   if [ "$RUNNER_CHANGED" -eq 1 ]; then
     kill "$REMOTE_PID" 2>/dev/null || true
     wait_for_pid_exit "$REMOTE_PID"
@@ -646,22 +691,35 @@ if [ -z "$REMOTE_PORT" ]; then
     exit 1
   fi
   nohup env T3CODE_NO_BROWSER=1 "$RUNNER_FILE" serve --host 127.0.0.1 --port "$REMOTE_PORT" --base-dir "$DEFAULT_SERVER_HOME" >>"$LOG_FILE" 2>&1 < /dev/null &
-  REMOTE_PID="$!"
-  printf '%s\\n' "$REMOTE_PID" >"$PID_FILE"
-  printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
-  printf 'managed\\n' >"$MANAGED_FILE"
+  SPAWNED_PID="$!"
   if ! wait_ready "@@T3_READY_TIMEOUT_MS@@"; then
     printf 'Remote T3 server did not become ready on 127.0.0.1:%s.\\n' "$REMOTE_PORT" >&2
     if [ -s "$LOG_FILE" ]; then
-      tail -n 80 "$LOG_FILE" >&2 2>/dev/null || true
+      tail -c 262144 "$LOG_FILE" 2>/dev/null | tail -n 80 | tail -c 65536 >&2 || true
     else
       printf 'It wrote nothing to %s, so it exited before producing any output.\\n' "$LOG_FILE" >&2
     fi
-    kill "$REMOTE_PID" 2>/dev/null || true
-    wait_for_pid_exit "$REMOTE_PID"
+    # SPAWNED_PID was captured by this invocation, so it is safe to signal.
+    kill "$SPAWNED_PID" 2>/dev/null || true
+    wait_for_pid_exit "$SPAWNED_PID"
     rm -f "$PID_FILE" "$PORT_FILE" "$MANAGED_FILE"
     exit 1
   fi
+  STARTED_RUNTIME_INFO="$(resolve_default_runtime_port 2>/dev/null || true)"
+  REMOTE_PID="\${STARTED_RUNTIME_INFO%% *}"
+  STARTED_RUNTIME_PORT="\${STARTED_RUNTIME_INFO#* }"
+  if [ -z "$STARTED_RUNTIME_INFO" ] || [ "$STARTED_RUNTIME_PORT" != "$REMOTE_PORT" ]; then
+    # A successful HTTP probe is not ownership proof: another service could
+    # have won the port race. Refuse to persist an unverifiable PID.
+    kill "$SPAWNED_PID" 2>/dev/null || true
+    wait_for_pid_exit "$SPAWNED_PID"
+    rm -f "$PID_FILE" "$PORT_FILE" "$MANAGED_FILE"
+    printf 'Remote T3 server became reachable, but its runtime identity could not be verified.\\n' >&2
+    exit 1
+  fi
+  printf '%s\\n' "$REMOTE_PID" >"$PID_FILE"
+  printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
+  printf 'managed\\n' >"$MANAGED_FILE"
 fi
 printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGED:-managed}"
 `;
@@ -684,9 +742,68 @@ STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/@@T3_STATE_KEY@@"
 PID_FILE="$STATE_DIR/pid"
 PORT_FILE="$STATE_DIR/port"
 MANAGED_FILE="$STATE_DIR/managed"
-REMOTE_MANAGED="$(cat "$MANAGED_FILE" 2>/dev/null || true)"
-REMOTE_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-if [ "$REMOTE_MANAGED" != "external" ] && [ -n "$REMOTE_PID" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
+read_small_state() {
+  if [ ! -f "$1" ]; then
+    return 0
+  fi
+  STATE_VALUE="$(head -c 65 "$1" 2>/dev/null || true)"
+  STATE_BYTES="$(printf '%s' "$STATE_VALUE" | wc -c | tr -d ' ')"
+  if [ "\${STATE_BYTES:-65}" -le 64 ]; then
+    printf '%s' "$STATE_VALUE"
+  fi
+}
+REMOTE_MANAGED="$(read_small_state "$MANAGED_FILE")"
+REMOTE_PID="$(read_small_state "$PID_FILE")"
+REMOTE_PORT="$(read_small_state "$PORT_FILE")"
+runtime_matches_managed_state() {
+  node - "$DEFAULT_RUNTIME_FILE" "$REMOTE_PID" "$REMOTE_PORT" <<'NODE'
+const fs = require("node:fs");
+const [runtimePath, expectedPidText, expectedPortText] = process.argv.slice(2);
+function readTextWithinLimit(filePath, maximumBytes) {
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const bytes = Buffer.allocUnsafe(maximumBytes + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > maximumBytes) throw new Error("runtime state is oversized");
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+try {
+  const runtime = JSON.parse(readTextWithinLimit(runtimePath, 64 * 1024));
+  const pid = Number(runtime.pid);
+  const port = Number(runtime.port);
+  const expectedPid = Number(expectedPidText);
+  const expectedPort = Number(expectedPortText);
+  const origin = new URL(String(runtime.origin ?? ""));
+  if (
+    Number.isInteger(pid) &&
+    pid > 0 &&
+    Number.isInteger(port) &&
+    port >= 1 &&
+    port <= 65535 &&
+    Number.isInteger(expectedPid) &&
+    expectedPid > 0 &&
+    Number.isInteger(expectedPort) &&
+    port === expectedPort &&
+    pid === expectedPid &&
+    origin.protocol === "http:" &&
+    ["127.0.0.1", "localhost"].includes(origin.hostname) &&
+    Number(origin.port || 80) === port
+  ) {
+    process.exit(0);
+  }
+} catch {}
+process.exit(1);
+NODE
+}
+if [ "$REMOTE_MANAGED" = "managed" ] && runtime_matches_managed_state && kill -0 "$REMOTE_PID" 2>/dev/null; then
   kill "$REMOTE_PID" 2>/dev/null || true
   WAIT_COUNT=0
   while kill -0 "$REMOTE_PID" 2>/dev/null && [ "$WAIT_COUNT" -lt 20 ]; do
@@ -702,7 +819,7 @@ const REMOTE_LOG_TAIL_SCRIPT = `set -eu
 STATE_DIR="$HOME/${REMOTE_BASE_DIR_NAME}/ssh-launch/@@T3_STATE_KEY@@"
 LOG_FILE="$STATE_DIR/server.log"
 if [ -f "$LOG_FILE" ]; then
-  tail -n 80 "$LOG_FILE" 2>/dev/null || true
+  tail -c 262144 "$LOG_FILE" 2>/dev/null | tail -n 80 | tail -c 65536 || true
 fi
 `;
 
@@ -804,9 +921,58 @@ const readyTimeoutMs = @@T3_READY_TIMEOUT_MS@@;
 const reuseReadyTimeoutMs = @@T3_REUSE_READY_TIMEOUT_MS@@;
 const readyProbeTimeoutMs = @@T3_READY_PROBE_TIMEOUT_MS@@;
 
-function readTrimmed(filePath) {
+function readTextWithinLimit(filePath, maximumBytes) {
+  const descriptor = fs.openSync(filePath, "r");
   try {
-    return fs.readFileSync(filePath, "utf8").trim();
+    const chunks = [];
+    let totalBytes = 0;
+    while (totalBytes <= maximumBytes) {
+      const bytes = Buffer.allocUnsafe(Math.min(64 * 1024, maximumBytes + 1 - totalBytes));
+      const bytesRead = fs.readSync(descriptor, bytes, 0, bytes.length, totalBytes);
+      if (bytesRead === 0) break;
+      chunks.push(bytes.subarray(0, bytesRead));
+      totalBytes += bytesRead;
+    }
+    if (totalBytes > maximumBytes) throw new Error("remote state is oversized");
+    return Buffer.concat(chunks, totalBytes).toString("utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function readTailWithinLimit(filePath, maximumBytes) {
+  const descriptor = fs.openSync(filePath, "r");
+  try {
+    const size = fs.fstatSync(descriptor).size;
+    if (!Number.isSafeInteger(size) || size < 0) return "";
+    const start = Math.max(0, size - maximumBytes);
+    const bytes = Buffer.allocUnsafe(size - start);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(
+        descriptor,
+        bytes,
+        offset,
+        bytes.length - offset,
+        start + offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    let text = bytes.subarray(0, offset).toString("utf8");
+    if (start > 0) {
+      const firstNewline = text.indexOf("\n");
+      text = firstNewline < 0 ? "" : text.slice(firstNewline + 1);
+    }
+    return text;
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function readTrimmed(filePath, maximumBytes = 4096) {
+  try {
+    return readTextWithinLimit(filePath, maximumBytes).trim();
   } catch {
     return "";
   }
@@ -909,7 +1075,7 @@ async function pickPort(preferredPort) {
 
 function readDefaultRuntime() {
   try {
-    const runtime = JSON.parse(fs.readFileSync(defaultRuntimeFile, "utf8"));
+    const runtime = JSON.parse(readTextWithinLimit(defaultRuntimeFile, 64 * 1024));
     const pid = Number(runtime.pid);
     const port = Number(runtime.port);
     const origin = new URL(String(runtime.origin || ""));
@@ -917,8 +1083,11 @@ function readDefaultRuntime() {
       !Number.isInteger(pid) ||
       pid <= 0 ||
       !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535 ||
       origin.protocol !== "http:" ||
       !["127.0.0.1", "localhost"].includes(origin.hostname) ||
+      Number(origin.port || 80) !== port ||
       !isPidRunning(pid)
     ) {
       return null;
@@ -931,7 +1100,12 @@ function readDefaultRuntime() {
 
 function tailLog() {
   try {
-    return fs.readFileSync(logFile, "utf8").split(/\r?\n/).slice(-80).join("\n").trim();
+    return readTailWithinLimit(logFile, 256 * 1024)
+      .split(/\r?\n/)
+      .slice(-80)
+      .join("\n")
+      .trim()
+      .slice(-64 * 1024);
   } catch {
     return "";
   }
@@ -981,7 +1155,7 @@ async function main() {
     publicEnvironment: T3_PUBLIC_ENVIRONMENT,
     node: process.execPath,
   });
-  const runnerChanged = readTrimmed(runnerFile) !== runnerSignature;
+  const runnerChanged = readTrimmed(runnerFile, 1024 * 1024) !== runnerSignature;
   fs.writeFileSync(runnerFile, runnerSignature + "\n", "utf8");
 
   let remotePid = readInteger(pidFile);
@@ -993,10 +1167,9 @@ async function main() {
     if (remoteManaged === "managed" && remotePid === defaultRuntime.pid) {
       remotePort = defaultRuntime.port;
     } else {
-      if (remoteManaged === "managed" && remotePid) {
-        stopProcessTree(remotePid);
-        await waitForPidExit(remotePid);
-      }
+      // A persisted PID that does not match the live runtime identity may
+      // already belong to another process. Reuse the verified T3 runtime and
+      // discard the stale ownership record without signaling it.
       remotePid = null;
       remotePort = defaultRuntime.port;
       remoteManaged = "external";
@@ -1011,8 +1184,10 @@ async function main() {
     }
   } else if (remoteManaged === "managed" && remotePid && remotePort && isPidRunning(remotePid)) {
     if (runnerChanged || !(await waitReady(remotePort, reuseReadyTimeoutMs))) {
-      stopProcessTree(remotePid);
-      await waitForPidExit(remotePid);
+      if (defaultRuntime?.pid === remotePid && defaultRuntime.port === remotePort) {
+        stopProcessTree(remotePid);
+        await waitForPidExit(remotePid);
+      }
       remotePid = null;
       remotePort = null;
       remoteManaged = "";
@@ -1028,15 +1203,13 @@ async function main() {
     if (!remotePort) {
       throw new Error("Failed to find an available port on the remote Windows host.");
     }
-    remotePid = await spawnManagedServer(remotePort);
+    const spawnedPid = await spawnManagedServer(remotePort);
     remoteManaged = "managed";
-    writeState(pidFile, remotePid);
-    writeState(portFile, remotePort);
-    writeState(managedFile, remoteManaged);
     if (!(await waitReady(remotePort, readyTimeoutMs))) {
       const logTail = tailLog();
-      stopProcessTree(remotePid);
-      await waitForPidExit(remotePid);
+      // spawnedPid was captured by this invocation, so it is safe to signal.
+      stopProcessTree(spawnedPid);
+      await waitForPidExit(spawnedPid);
       removeStateFiles();
       throw new Error(
         "Remote T3 server did not become ready on 127.0.0.1:" +
@@ -1045,6 +1218,19 @@ async function main() {
           (logTail ? "\n" + logTail : ""),
       );
     }
+    const startedRuntime = readDefaultRuntime();
+    if (!startedRuntime || startedRuntime.port !== remotePort) {
+      stopProcessTree(spawnedPid);
+      await waitForPidExit(spawnedPid);
+      removeStateFiles();
+      throw new Error(
+        "Remote T3 server became reachable, but its runtime identity could not be verified.",
+      );
+    }
+    remotePid = startedRuntime.pid;
+    writeState(pidFile, remotePid);
+    writeState(portFile, remotePort);
+    writeState(managedFile, remoteManaged);
   } else {
     writeState(portFile, remotePort);
     writeState(managedFile, remoteManaged || "managed");
@@ -1119,22 +1305,63 @@ const stateDirectory = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}", "ssh-l
 const pidFile = path.join(stateDirectory, "pid");
 const portFile = path.join(stateDirectory, "port");
 const managedFile = path.join(stateDirectory, "managed");
-const managed = (() => {
+function readSmallFile(filePath) {
+  let descriptor;
   try {
-    return fs.readFileSync(managedFile, "utf8").trim();
+    descriptor = fs.openSync(filePath, "r");
+    const bytes = Buffer.allocUnsafe(65);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    return offset <= 64 ? bytes.subarray(0, offset).toString("utf8").trim() : "";
   } catch {
     return "";
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
-})();
-const pid = (() => {
+}
+const managed = readSmallFile(managedFile);
+const parsedPid = Number.parseInt(readSmallFile(pidFile), 10);
+const pid = Number.isInteger(parsedPid) && parsedPid > 0 ? parsedPid : null;
+const parsedPort = Number.parseInt(readSmallFile(portFile), 10);
+const port = Number.isInteger(parsedPort) ? parsedPort : null;
+function readDefaultRuntime() {
+  let descriptor;
   try {
-    const parsed = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    descriptor = fs.openSync(defaultRuntimeFile, "r");
+    const bytes = Buffer.allocUnsafe(64 * 1024 + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > 64 * 1024) return null;
+    const runtime = JSON.parse(bytes.subarray(0, offset).toString("utf8"));
+    const runtimePid = Number(runtime.pid);
+    const runtimePort = Number(runtime.port);
+    const origin = new URL(String(runtime.origin || ""));
+    return Number.isInteger(runtimePid) &&
+      runtimePid > 0 &&
+      Number.isInteger(runtimePort) &&
+      runtimePort >= 1 &&
+      runtimePort <= 65535 &&
+      origin.protocol === "http:" &&
+      ["127.0.0.1", "localhost"].includes(origin.hostname) &&
+      Number(origin.port || 80) === runtimePort
+      ? { pid: runtimePid, port: runtimePort }
+      : null;
   } catch {
     return null;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
-})();
-if (managed !== "external" && pid) {
+}
+const runtime = readDefaultRuntime();
+if (managed === "managed" && pid && port && runtime?.pid === pid && runtime.port === port) {
   childProcess.spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
     stdio: "ignore",
     windowsHide: true,
@@ -1161,8 +1388,8 @@ if (!/^[0-9a-f]{16}$/.test(stateKey)) {
 }
 const logFile = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}", "ssh-launch", stateKey, "server.log");
 try {
-  const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/);
-  process.stdout.write(lines.slice(-80).join("\n"));
+  const lines = readTail(logFile, 256 * 1024).split(/\r?\n/);
+  process.stdout.write(lines.slice(-80).join("\n").slice(-64 * 1024));
 } catch (error) {
   if (!error || error.code !== "ENOENT") throw error;
 }
@@ -1798,7 +2025,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     managerScope,
     Effect.sync(() => [...tunnels.values()]).pipe(
       Effect.flatMap((entries) =>
-        Effect.forEach(entries, closeTunnelEntry, { concurrency: "unbounded" }),
+        Effect.forEach(entries, closeTunnelEntry, { concurrency: TUNNEL_SHUTDOWN_CONCURRENCY }),
       ),
       Effect.ignore,
     ),
@@ -2185,17 +2412,23 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       hasTunnel: entry !== null,
       hasPendingTunnel: pendingTunnelEntries.has(key),
     });
-    if (entry !== null) {
-      yield* closeTunnelEntry(entry);
-    }
-    yield* cancelPendingTunnelEntry(key, resolvedTarget);
-    if (entry === null) {
-      yield* runWithSshAuth({
-        key,
-        target: resolvedTarget,
-        operation: (authOptions) => stopRemoteServer(resolvedTarget, authOptions),
-      });
-    }
+    yield* Effect.gen(function* () {
+      if (entry !== null) {
+        yield* closeTunnelEntry(entry);
+      }
+      yield* cancelPendingTunnelEntry(key, resolvedTarget);
+      if (entry === null) {
+        yield* runWithSshAuth({
+          key,
+          target: resolvedTarget,
+          operation: (authOptions) => stopRemoteServer(resolvedTarget, authOptions),
+        });
+      }
+    }).pipe(
+      // Passwords are needed through remote cleanup, but retaining one for
+      // every host ever disconnected grows secret-bearing memory forever.
+      Effect.ensuring(Effect.sync(() => authSecrets.delete(key))),
+    );
     yield* Effect.logInfo("ssh.environment.disconnect.succeeded", {
       ...sshTargetLogFields(resolvedTarget),
       key,

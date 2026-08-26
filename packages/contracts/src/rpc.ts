@@ -27,6 +27,7 @@ import {
 import {
   HostSkillId,
   HostSkillsState,
+  SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES,
   SkillId,
   SkillMarketplaceListing,
   SkillMarketplaceSource,
@@ -818,13 +819,17 @@ const SkillsMarketplaceQuery = Schema.Struct({
 
 export const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
 export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 

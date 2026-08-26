@@ -12,8 +12,11 @@ import {
   isBinaryAssetConflict,
   isGeneratedLockfile,
   prepareConflictPrompt,
+  pruneResolutionCache,
   readCachedResolution,
+  readResponseTextBounded,
   readReusedSyncReport,
+  readTextFileBounded,
   resolutionCacheKey,
   writeCachedResolution,
 } from "./resolve-git-conflicts.mjs";
@@ -36,6 +39,58 @@ const mobileReleasePath = NodePath.resolve(
 );
 
 describe("T3 Pretty upstream conflict resolver", () => {
+  it("bounds model response and cached-file reads", async () => {
+    assert.equal(await readResponseTextBounded(new Response("small"), 5), "small");
+    let responseFailure;
+    try {
+      await readResponseTextBounded(new Response("too-large"), 5);
+    } catch (error) {
+      responseFailure = error;
+    }
+    assert.match(String(responseFailure), /safety limit/u);
+
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-bounds-"));
+    const path = NodePath.join(directory, "entry.json");
+    NodeFS.writeFileSync(path, "123456");
+    assert.throws(() => readTextFileBounded(path, 5, path), /safety limit/u);
+  });
+
+  it("bounds the aggregate resolution cache and removes non-cache entries", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-prune-"));
+    try {
+      const keys = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
+      for (const [index, key] of keys.entries()) {
+        const path = NodePath.join(directory, `${key}.json`);
+        NodeFS.writeFileSync(path, "12345");
+        NodeFS.utimesSync(path, index + 1, index + 1);
+      }
+      NodeFS.writeFileSync(NodePath.join(directory, "unexpected.json"), "ignored");
+
+      assert.deepEqual(pruneResolutionCache({ cacheDir: directory, maxEntries: 2, maxBytes: 10 }), {
+        kept: 2,
+        removed: 2,
+        bytes: 10,
+      });
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, `${keys[0]}.json`)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[1]}.json`)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[2]}.json`)));
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, "unexpected.json")));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to prune a broad temporary-directory root", () => {
+    assert.throws(() => pruneResolutionCache({ cacheDir: NodeOS.tmpdir() }), /broad or protected/u);
+  });
+
+  it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, '["diff", "--name-only", "--diff-filter=U", "-z"]');
+    assert.include(resolver, '["ls-files", "-u", "-z"]');
+    assert.include(resolver, '["ls-files", "-u", "-z", "--", path]');
+  });
+
   it("makes fork preservation, compatible parent integration, and omission reporting explicit", () => {
     const prompt = buildConflictPrompt({
       path: "apps/web/src/components/Sidebar.tsx",
@@ -359,10 +414,18 @@ ${">".repeat(7)} theirs
     // Only the workflow's own metadata file is whitespace-checked. Resolver
     // output is model-composed content; a blank line at EOF must not fail an
     // otherwise complete merge after all conflicts resolved.
-    assert.include(script, "resolver_paths+=(");
+    assert.include(script, "lockfile_conflicted=true");
+    assert.notInclude(script, "resolver_paths");
     assert.include(script, "git diff --check --cached -- .t3-fork/upstream-nightly");
-    assert.notInclude(script, '"${resolver_paths[@]}" \\');
     assert.notInclude(script, "          git diff --check --cached\n");
+  });
+
+  it("keeps Origin pull request bodies bounded while retaining the durable report", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, "write_sync_pr_body");
+    assert.include(script, "The complete conflict-resolution audit");
+    assert.notInclude(script, "cat .t3-fork/upstream-sync-report.md");
   });
 
   it("refuses to reuse a legacy resolution branch without its durable report", () => {
@@ -454,7 +517,7 @@ ${">".repeat(7)} theirs
     assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
 
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
-    assert.include(script, 'grep -qx "pnpm-lock.yaml"');
+    assert.include(script, '[[ "$lockfile_conflicted" == "true" ]]');
     assert.include(script, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
     assert.include(script, "git add pnpm-lock.yaml");
   });

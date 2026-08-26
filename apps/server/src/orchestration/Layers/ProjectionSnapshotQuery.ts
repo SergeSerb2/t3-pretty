@@ -146,6 +146,11 @@ const ProjectionMergedPullRequestCandidateRowSchema = Schema.Struct({
   branchHeadOwner: Schema.NullOr(Schema.String),
   branchHeadIsCrossRepository: Schema.NullOr(NonNegativeInt),
 });
+const ProjectionMergedPullRequestCandidatePageRequest = Schema.Struct({
+  afterThreadId: Schema.NullOr(ThreadId),
+  limit: Schema.Int,
+});
+const MERGED_PULL_REQUEST_CANDIDATE_MAX_PAGE_SIZE = 100;
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
   limit: Schema.Int,
@@ -818,9 +823,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   });
 
   const listMergedPullRequestCandidateRows = SqlSchema.findAll({
-    Request: Schema.Void,
+    Request: ProjectionMergedPullRequestCandidatePageRequest,
     Result: ProjectionMergedPullRequestCandidateRowSchema,
-    execute: () =>
+    execute: ({ afterThreadId, limit }) =>
       sql`
         SELECT
           threads.thread_id AS "threadId",
@@ -870,7 +875,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           AND threads.pending_approval_count = 0
           AND threads.pending_user_input_count = 0
           AND (sessions.status IS NULL OR sessions.status NOT IN ('starting', 'running'))
-        ORDER BY threads.created_at ASC, threads.thread_id ASC
+          AND (${afterThreadId} IS NULL OR threads.thread_id > ${afterThreadId})
+        ORDER BY threads.thread_id ASC
+        LIMIT ${limit}
       `,
   });
 
@@ -2526,8 +2533,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     );
 
   const listMergedPullRequestCandidates: ProjectionSnapshotQueryShape["listMergedPullRequestCandidates"] =
-    () =>
-      listMergedPullRequestCandidateRows(undefined).pipe(
+    (input) => {
+      const requestedLimit = input?.limit ?? MERGED_PULL_REQUEST_CANDIDATE_MAX_PAGE_SIZE;
+      const limit =
+        Number.isFinite(requestedLimit) && requestedLimit > 0
+          ? Math.min(Math.floor(requestedLimit), MERGED_PULL_REQUEST_CANDIDATE_MAX_PAGE_SIZE)
+          : MERGED_PULL_REQUEST_CANDIDATE_MAX_PAGE_SIZE;
+      return listMergedPullRequestCandidateRows({
+        afterThreadId: input?.afterThreadId ?? null,
+        limit,
+      }).pipe(
         Effect.mapError(
           toPersistenceSqlOrDecodeError(
             "ProjectionSnapshotQuery.listMergedPullRequestCandidates:query",
@@ -2542,6 +2557,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           })),
         ),
       );
+    };
 
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",

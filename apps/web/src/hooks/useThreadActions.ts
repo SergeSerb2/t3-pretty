@@ -16,6 +16,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useThreadDepartureStore } from "../threadDepartureStore";
+import { removeDeletedThreadUiState } from "../lib/deletedThreadUiStateCleanup";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
@@ -32,7 +33,6 @@ import {
   readThreadShell,
   readThreadShells,
 } from "../state/entities";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
@@ -177,11 +177,9 @@ export function useThreadActions() {
   });
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
-  const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
-  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
@@ -208,7 +206,10 @@ export function useThreadActions() {
   }, [router]);
 
   const archiveThread = useCallback(
-    async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
+    async (
+      target: ScopedThreadRef,
+      opts: { onArchived?: () => void; navigateIfCurrent?: boolean } = {},
+    ) => {
       const resolved = resolveThreadTarget(target);
       if (!resolved) return AsyncResult.success(undefined);
       const { thread, threadRef } = resolved;
@@ -225,6 +226,7 @@ export function useThreadActions() {
 
       const currentRouteThreadRef = getCurrentRouteThreadRef();
       const shouldNavigateToDraft =
+        opts.navigateIfCurrent !== false &&
         currentRouteThreadRef?.threadId === threadRef.threadId &&
         currentRouteThreadRef.environmentId === threadRef.environmentId;
       const archiveResult = await archiveThreadMutation({
@@ -281,6 +283,7 @@ export function useThreadActions() {
         });
         if (result._tag === "Success") {
           refreshArchivedThreadsForEnvironment(target.environmentId);
+          removeDeletedThreadUiState(target);
         }
         return result;
       }
@@ -365,12 +368,11 @@ export function useThreadActions() {
         return deleteResult;
       }
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
-      clearComposerDraftForThread(threadRef);
+      removeDeletedThreadUiState(threadRef);
       clearProjectDraftThreadById(
         scopeProjectRef(threadRef.environmentId, thread.projectId),
         threadRef,
       );
-      clearTerminalUiState(threadRef);
 
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
@@ -454,9 +456,7 @@ export function useThreadActions() {
       return deleteResult;
     },
     [
-      clearComposerDraftForThread,
       clearProjectDraftThreadById,
-      clearTerminalUiState,
       closeTerminal,
       deleteThreadMutation,
       getCurrentRouteThreadRef,

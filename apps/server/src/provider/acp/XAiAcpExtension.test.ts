@@ -3,6 +3,11 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
+} from "@t3tools/contracts";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -38,6 +43,50 @@ const makePromptCompletionRuntime = (env: NodeJS.ProcessEnv) =>
 const decodeXAiAskUserQuestionRequest = Schema.decodeUnknownSync(XAiAskUserQuestionRequest);
 
 describe("XAiAcpExtension", () => {
+  it("rejects question and option collections beyond runtime event limits", () => {
+    const baseQuestion = { question: "Prompt", options: [] };
+    expect(() =>
+      decodeXAiAskUserQuestionRequest({
+        sessionId: "session-1",
+        toolCallId: "tool-1",
+        mode: "default",
+        questions: Array.from(
+          { length: PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS + 1 },
+          () => baseQuestion,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeXAiAskUserQuestionRequest({
+        sessionId: "session-1",
+        toolCallId: "tool-1",
+        mode: "default",
+        questions: [
+          {
+            ...baseQuestion,
+            question: "x".repeat(PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH + 1),
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeXAiAskUserQuestionRequest({
+        sessionId: "session-1",
+        toolCallId: "tool-1",
+        mode: "default",
+        questions: [
+          {
+            ...baseQuestion,
+            options: Array.from(
+              { length: PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS + 1 },
+              (_, index) => ({ label: String(index) }),
+            ),
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("extracts questions from the real xAI ask_user_question payload shape", () => {
     const questions = extractXAiAskUserQuestions({
       sessionId: "session-1",

@@ -18,6 +18,7 @@ import { useThreadShells } from "./entities";
 const optimisticStartingThreadsAtom = Atom.make<Readonly<Record<string, OptimisticStartingThread>>>(
   {},
 ).pipe(Atom.keepAlive, Atom.withLabel("mobile:optimistic-starting-threads"));
+const MAX_OPTIMISTIC_STARTING_THREADS = 32;
 
 export function registerOptimisticStartingThread(thread: OptimisticStartingThread): void {
   const key = optimisticStartingThreadKey(thread);
@@ -25,10 +26,17 @@ export function registerOptimisticStartingThread(thread: OptimisticStartingThrea
   if (current[key] === thread) {
     return;
   }
-  appAtomRegistry.set(optimisticStartingThreadsAtom, {
-    ...current,
-    [key]: thread,
-  });
+  const next: Record<string, OptimisticStartingThread> = { ...current };
+  delete next[key];
+  next[key] = thread;
+  while (Object.keys(next).length > MAX_OPTIMISTIC_STARTING_THREADS) {
+    const oldestKey = Object.keys(next)[0];
+    if (oldestKey === undefined) {
+      break;
+    }
+    delete next[oldestKey];
+  }
+  appAtomRegistry.set(optimisticStartingThreadsAtom, next);
 }
 
 export function clearOptimisticStartingThread(

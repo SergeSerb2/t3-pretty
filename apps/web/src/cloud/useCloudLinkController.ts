@@ -9,6 +9,7 @@ import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/con
 import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
+import { useCopyTraceId } from "../hooks/useCopyTraceId";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
 import { isCloudLinkOnConfiguredRelayForAccount } from "./linkEnvironment";
@@ -36,6 +37,7 @@ export interface CloudLinkDesiredState {
  */
 export function useCloudLinkController() {
   const { getToken, isSignedIn, userId } = useAuth();
+  const copyTraceId = useCopyTraceId();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -70,7 +72,7 @@ export function useCloudLinkController() {
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,

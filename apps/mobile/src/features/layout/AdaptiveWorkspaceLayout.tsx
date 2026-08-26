@@ -35,6 +35,7 @@ import {
   type WorkspacePaneLayout,
 } from "../../lib/layout";
 import { resolveThreadSelectionNavigationAction } from "../../lib/adaptive-navigation";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { markThreadOpenStarted } from "../observability/threadPerformance";
 import { mobilePreferencesAtom } from "../../state/preferences";
@@ -232,7 +233,12 @@ function AdaptiveWorkspaceLayoutContent(
   const [fileInspectorPreferredWidth, setFileInspectorPreferredWidth] = useState<number | null>(
     null,
   );
-  const [primarySidebarSearchQuery, setPrimarySidebarSearchQuery] = useState("");
+  const [primarySidebarSearchQuery, setPrimarySidebarSearchQueryState] = useState("");
+  const setPrimarySidebarSearchQuery = useCallback((query: string) => {
+    setPrimarySidebarSearchQueryState(
+      limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH),
+    );
+  }, []);
   const [focusedAuxiliaryPaneRole, setFocusedAuxiliaryPaneRole] =
     useState<WorkspaceAuxiliaryPaneRole | null>(null);
   const baseLayout = useMemo(() => deriveLayout({ width, height }), [height, width]);

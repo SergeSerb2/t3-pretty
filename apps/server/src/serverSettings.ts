@@ -51,15 +51,18 @@ import {
   type ServerSettingsInternalPatch,
 } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import { readFilePrefix } from "./boundedFileRead.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
+const isServerSettingsError = Schema.is(ServerSettingsError);
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+const SERVER_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
 /**
  * Fold the legacy in-config `enabled` flag into the envelope-level
@@ -306,7 +309,10 @@ const make = Effect.gen(function* () {
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
-  const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
+  const changesPubSub = yield* Effect.acquireRelease(
+    PubSub.sliding<ServerSettings>(1),
+    PubSub.shutdown,
+  );
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, ServerSettingsError>();
   const watcherScope = yield* Scope.make("sequential");
@@ -326,7 +332,7 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  const readRawConfig = fs.readFileString(settingsPath).pipe(
+  const readRawConfig = readFilePrefix(fs, settingsPath, SERVER_SETTINGS_FILE_MAX_BYTES + 1).pipe(
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -342,7 +348,15 @@ const make = Effect.gen(function* () {
       return DEFAULT_SERVER_SETTINGS;
     }
 
-    const raw = yield* readRawConfig;
+    const rawBytes = yield* readRawConfig;
+    if (rawBytes.byteLength > SERVER_SETTINGS_FILE_MAX_BYTES) {
+      yield* Effect.logWarning("settings.json exceeds the supported size, using defaults", {
+        path: settingsPath,
+        maximumBytes: SERVER_SETTINGS_FILE_MAX_BYTES,
+      });
+      return DEFAULT_SERVER_SETTINGS;
+    }
+    const raw = textDecoder.decode(rawBytes);
     const decoded = decodeServerSettingsJsonExit(raw);
     if (decoded._tag === "Failure") {
       yield* Effect.logWarning("failed to parse settings.json, using defaults", {
@@ -530,6 +544,15 @@ const make = Effect.gen(function* () {
       const sparseSettingsJson = yield* encodeServerSettingsJson(
         stripDefaultServerSettings(settings, DEFAULT_SERVER_SETTINGS) ?? {},
       );
+      if (textEncoder.encode(sparseSettingsJson).byteLength > SERVER_SETTINGS_FILE_MAX_BYTES) {
+        return yield* new ServerSettingsError({
+          settingsPath,
+          operation: "write-file",
+          cause: new Error(
+            `Encoded server settings exceed ${SERVER_SETTINGS_FILE_MAX_BYTES} bytes.`,
+          ),
+        });
+      }
 
       return yield* writeFileStringAtomically({
         filePath: settingsPath,
@@ -539,13 +562,14 @@ const make = Effect.gen(function* () {
         Effect.provideService(Path.Path, pathService),
       );
     },
-    Effect.mapError(
-      (cause) =>
-        new ServerSettingsError({
-          settingsPath,
-          operation: "write-file",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      isServerSettingsError(cause)
+        ? cause
+        : new ServerSettingsError({
+            settingsPath,
+            operation: "write-file",
+            cause,
+          }),
     ),
   );
 

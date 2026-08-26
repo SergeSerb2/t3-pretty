@@ -86,8 +86,10 @@ describe("compressImageForStash", () => {
   it("re-encodes an oversized image to WebP within the budget", async () => {
     // Comfortably under budget at the very first quality step.
     const { close, fillRect } = stubCanvasPipeline(() => 120_000);
+    const source = makeFile(4_000_000);
+    const sourceRead = vi.spyOn(source, "arrayBuffer");
 
-    const result = await compressImageForStash(makeFile(4_000_000));
+    const result = await compressImageForStash(source);
 
     expect(result.ok).toBe(true);
     expect(result.ok && result.image.recompressed).toBe(true);
@@ -98,6 +100,23 @@ describe("compressImageForStash", () => {
     // WebP keeps alpha, so no white matte should be painted.
     expect(fillRect).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
+    // Its byte count already proves the original data URL cannot fit, so the
+    // source must not also be materialized as an ArrayBuffer + base64 string.
+    expect(sourceRead).not.toHaveBeenCalled();
+  });
+
+  it("refuses stash sources above the decode-safety ceiling without reading or decoding", async () => {
+    const source = makeFile(MAX_COMPRESSIBLE_SOURCE_BYTES + 1);
+    const sourceRead = vi.spyOn(source, "arrayBuffer");
+    const bitmapSpy = vi.fn();
+    vi.stubGlobal("createImageBitmap", bitmapSpy);
+
+    expect(await compressImageForStash(source)).toEqual({
+      ok: false,
+      reason: "too-large",
+    });
+    expect(sourceRead).not.toHaveBeenCalled();
+    expect(bitmapSpy).not.toHaveBeenCalled();
   });
 
   it("falls back to JPEG with a white matte when WebP encoding is unavailable", async () => {

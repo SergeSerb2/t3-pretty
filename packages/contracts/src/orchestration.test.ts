@@ -10,8 +10,11 @@ import {
   OrchestrationDispatchCommandError,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
+  OrchestrationGetWorkflowScriptInput,
+  OrchestrationGetWorkflowScriptResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationSearchThreadsResult,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -31,11 +34,24 @@ import {
   ClientOrchestrationCommand,
   OrchestrationThreadSearchMatch,
   isProviderSendTurnSupportedImageMimeType,
+  PROJECT_SCRIPT_MAX_COUNT,
+  ORCHESTRATION_THREAD_SEARCH_MAX_RESULTS,
+  PROVIDER_USER_INPUT_MAX_ANSWERS,
+  PROVIDER_INTERACTION_MAX_KEY_LENGTH,
+  PROVIDER_INTERACTION_MAX_NODES,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderUserInputAnswers,
+  THREAD_SCENERY_URL_MAX_LENGTH,
+  ThreadSceneryPhoto,
+  WORKFLOW_SCRIPT_MAX_BYTES,
+  WORKFLOW_SCRIPT_PATH_MAX_LENGTH,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
+const decodeWorkflowScriptInput = Schema.decodeUnknownEffect(OrchestrationGetWorkflowScriptInput);
+const decodeWorkflowScriptResult = Schema.decodeUnknownEffect(OrchestrationGetWorkflowScriptResult);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
@@ -45,10 +61,12 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
+const decodeSearchThreadsResult = Schema.decodeUnknownEffect(OrchestrationSearchThreadsResult);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
 
 function getOptionValue(
@@ -244,6 +262,46 @@ it.effect("decodes thread.turn.start defaults for provider and runtime mode", ()
     assert.strictEqual(parsed.modelSelection, undefined);
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("accepts eight client turn attachments and rejects a ninth", () =>
+  Effect.gen(function* () {
+    const commandWithAttachmentCount = (attachmentCount: number) => ({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-attachments",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-turn-attachments",
+        role: "user",
+        text: "hello",
+        attachments: Array.from({ length: attachmentCount }, (_, index) => ({
+          type: "image",
+          name: `image-${index}.png`,
+          mimeType: "image/png",
+          sizeBytes: 1,
+          dataUrl: "data:image/png;base64,AA==",
+        })),
+      },
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const accepted = yield* decodeClientOrchestrationCommand(
+      commandWithAttachmentCount(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    );
+    assert.strictEqual(
+      accepted.type === "thread.turn.start" ? accepted.message.attachments.length : undefined,
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+    );
+
+    const rejected = yield* Effect.exit(
+      decodeClientOrchestrationCommand(
+        commandWithAttachmentCount(PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1),
+      ),
+    );
+    assert.strictEqual(rejected._tag, "Failure");
   }),
 );
 

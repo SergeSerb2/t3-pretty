@@ -26,6 +26,7 @@ import { useOpenInPreferredEditor } from "../editorPreferences";
 import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
+import { compareIsoDateTimes } from "~/lib/threadSort";
 import { cn } from "~/lib/utils";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
 import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
@@ -174,7 +175,7 @@ export default function DiffPanel({
         if (leftTurnCount !== rightTurnCount) {
           return rightTurnCount - leftTurnCount;
         }
-        return right.completedAt.localeCompare(left.completedAt);
+        return compareIsoDateTimes(right.completedAt, left.completedAt);
       }),
     [inferredCheckpointTurnCountByTurnId, turnDiffSummaries],
   );

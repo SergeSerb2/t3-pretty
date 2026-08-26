@@ -19,6 +19,10 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
+    "./preview-automation-calls": {
+      "types": "./src/previewAutomationCalls.ts",
+      "default": "./src/previewAutomationCalls.ts"
+    },
     "./errors": {
       "types": "./src/errors/index.ts",
       "default": "./src/errors/index.ts"

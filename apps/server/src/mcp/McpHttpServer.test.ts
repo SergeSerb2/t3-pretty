@@ -52,6 +52,20 @@ it("normalizes empty successful notification responses to accepted", () => {
   expect(resultResponse.status).toBe(200);
 });
 
+it.effect("rejects an MCP request stream as soon as it crosses the byte budget", () =>
+  McpHttpServer.collectMcpRequestTextWithinByteLimit(
+    Stream.make(new Uint8Array(3), new Uint8Array(3)),
+    5,
+  ).pipe(
+    Effect.flip,
+    Effect.tap((error) => {
+      expect(error).toBeInstanceOf(McpHttpServer.McpRequestBodyTooLarge);
+      expect(error.observedBytes).toBe(6);
+      return Effect.void;
+    }),
+  ),
+);
+
 it.effect("returns bounded structural preview snapshot failures", () =>
   Effect.scoped(
     Effect.gen(function* () {

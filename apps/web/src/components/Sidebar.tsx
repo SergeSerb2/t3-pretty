@@ -68,6 +68,7 @@ import {
   type ReactNode,
 } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   isAtomCommandInterrupted,
@@ -89,6 +90,8 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
+import { subscribeSecondTick } from "~/lib/secondTicker";
+import { compareIsoDateTimes } from "~/lib/threadSort";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
@@ -126,6 +129,8 @@ import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
+  archiveSelectedThreadEntries,
+  unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   countThreadsAwaitingUser,
   formatWorkingDurationLabel,
@@ -136,6 +141,10 @@ import {
   orderItemsByPreferredIds,
   planPinnedReorder,
   resolveAdjacentThreadId,
+  isSettledThreadPastArchiveAge,
+  reserveSettledArchiveAttempts,
+  reserveUndonePastArchiveAgeAttempts,
+  retainSettledAutoArchiveAttempts,
   resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
@@ -237,18 +246,21 @@ function JumpHintBadge(props: { label: string }) {
   );
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row.
+// Direct text updates keep the one-second label out of React's render path.
 function WorkingDuration(props: { startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
-  const [, setTick] = useState(0);
+  const textRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
-    const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
-    return () => window.clearInterval(id);
+    return subscribeSecondTick(() => {
+      if (textRef.current) {
+        textRef.current.textContent = formatWorkingDurationLabel(Date.now() - startedMs);
+      }
+    });
   }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
   return (
-    <span className="font-mono tabular-nums">
+    <span ref={textRef} className="font-mono tabular-nums">
       {formatWorkingDurationLabel(Date.now() - startedMs)}
     </span>
   );
@@ -611,7 +623,6 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
   const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
   // The open draft's row is FROZEN at the moment the draft became the route:
   // it stays visible (like a thread row) but never repaints while the user
@@ -637,21 +648,36 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     }
     setFrozenActive({ routeDraftId: props.routeDraftId, row });
   }
-  const drafts = useMemo(() => {
-    const rows: SidebarDraftRowData[] = [];
-    // Every non-promoted session with content gets a row, mapped or not:
-    // new-thread surfaces mint fresh drafts and leave invested ones behind
-    // unmapped, so the mapping only knows about the latest per project.
+  const draftCandidates = useMemo(() => {
+    const candidates: Array<{ draftKey: string; session: DraftSessionState }> = [];
     for (const [draftKey, session] of Object.entries(draftThreadsByThreadKey)) {
-      if (session.promotedTo != null) {
-        continue;
-      }
+      if (session.promotedTo != null) continue;
       if (
         props.scopedProjectKeys !== null &&
         !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
       ) {
         continue;
       }
+      candidates.push({ draftKey, session });
+    }
+    candidates.sort((left, right) =>
+      compareIsoDateTimes(right.session.createdAt, left.session.createdAt),
+    );
+    return candidates;
+  }, [draftThreadsByThreadKey, props.scopedProjectKeys]);
+  const inactiveDraftCandidates = useMemo(
+    () => draftCandidates.filter(({ draftKey }) => draftKey !== props.routeDraftId),
+    [draftCandidates, props.routeDraftId],
+  );
+  const inactiveDraftComposers = useComposerDraftStore(
+    useShallow((store) =>
+      inactiveDraftCandidates.map(({ draftKey }) => store.draftsByThreadKey[draftKey]),
+    ),
+  );
+  const drafts = useMemo(() => {
+    const rows: SidebarDraftRowData[] = [];
+    let inactiveIndex = 0;
+    for (const { draftKey, session } of draftCandidates) {
       if (draftKey === props.routeDraftId) {
         // Open draft: render the frozen entry snapshot, or nothing for a
         // draft that has never been left. Gated on the LIVE session above so
@@ -661,7 +687,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         }
         continue;
       }
-      const composer = draftsByThreadKey[draftKey];
+      const composer = inactiveDraftComposers[inactiveIndex];
+      inactiveIndex += 1;
       if (!draftHasInvestedContent(composer, session)) {
         continue;
       }
@@ -671,15 +698,8 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
         composer: composer ?? EMPTY_SIDEBAR_DRAFT_COMPOSER,
       });
     }
-    rows.sort((left, right) => right.session.createdAt.localeCompare(left.session.createdAt));
     return rows;
-  }, [
-    draftThreadsByThreadKey,
-    draftsByThreadKey,
-    frozenActive,
-    props.routeDraftId,
-    props.scopedProjectKeys,
-  ]);
+  }, [draftCandidates, frozenActive, inactiveDraftComposers, props.routeDraftId]);
   const handleDiscard = useCallback(
     (draftId: DraftId) => {
       // The /draft/$draftId route redirects home on its own when the draft
@@ -1764,6 +1784,9 @@ export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
+  const autoArchiveSettledAfterDays = useClientSettings(
+    (s) => s.sidebarAutoArchiveSettledAfterDays,
+  );
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -1778,6 +1801,7 @@ export default function Sidebar() {
     unpinThread,
     reorderPinnedThread,
     archiveThread,
+    unarchiveThread,
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -2294,6 +2318,237 @@ export default function Sidebar() {
     );
     return routeThread === undefined ? [] : [routeThread];
   }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
+
+  // Clear settled: archive the whole settled tail (the full scoped list, not
+  // just the rendered page) in one confirmed action. Skip the open thread so
+  // Clear cannot yank the conversation out from under the user — same as
+  // auto-archive. Archive is the existing reversible "remove from sidebar" —
+  // the toast offers Undo and archived threads stay reachable from the
+  // project's archived list.
+  const clearableSettledThreads = useMemo(() => {
+    if (routeThreadKey === null) return settledThreads;
+    return settledThreads.filter(
+      (thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) !== routeThreadKey,
+    );
+  }, [routeThreadKey, settledThreads]);
+  const [clearingSettled, setClearingSettled] = useState(false);
+  // Bulk/auto archive must not navigate away if the user opened a candidate
+  // after the batch was planned. Row archive still passes the default.
+  const archiveSettledQuietly = useCallback(
+    (threadRef: ScopedThreadRef, onArchived?: () => void) =>
+      archiveThread(threadRef, {
+        navigateIfCurrent: false,
+        ...(onArchived === undefined ? {} : { onArchived }),
+      }),
+    [archiveThread],
+  );
+  // Attempted keys are remembered so a successful archive isn't retried
+  // every minute while the projection still lists the thread. Keys that
+  // leave the tail are dropped so an unarchive can be attempted again.
+  // Failures are dropped so a transient error can retry on the next tick.
+  // Clear undo re-adds restored keys already past archive age so
+  // auto-archive cannot immediately re-grab them. Younger restored keys
+  // stay unreserved so they can still auto-archive once they age out.
+  const autoArchiveAttemptedRef = useRef(new Set<string>());
+  const autoArchiveWindowRef = useRef(autoArchiveSettledAfterDays);
+  const clearSettledThreads = useCallback(async () => {
+    const api = readLocalApi();
+    if (!api || clearableSettledThreads.length === 0 || clearingSettled) return;
+    const alreadyArchivingSettledToast = stackedThreadToast({
+      type: "error",
+      title: "Those settled threads are already being archived",
+    });
+    const candidates = clearableSettledThreads.map((thread) => {
+      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+      return { threadKey: scopedThreadKey(threadRef), threadRef, thread };
+    });
+    const available = candidates.filter(
+      (entry) => !autoArchiveAttemptedRef.current.has(entry.threadKey),
+    );
+    if (available.length === 0) {
+      toastManager.add(alreadyArchivingSettledToast);
+      return;
+    }
+    const count = available.length;
+    const confirmed = await settlePromise(() =>
+      api.dialogs.confirm(
+        `Archive ${count === 1 ? "1 settled thread" : `all ${count} settled threads`}?`,
+      ),
+    );
+    if (confirmed._tag === "Failure" || !confirmed.value) return;
+    setClearingSettled(true);
+    try {
+      // Skip keys auto-archive already claimed, then mark the rest before the
+      // first await so a minute sweep cannot archive the same rows mid-Clear.
+      const reservedKeys = new Set(
+        reserveSettledArchiveAttempts(
+          autoArchiveAttemptedRef.current,
+          available.map((entry) => entry.threadKey),
+        ),
+      );
+      const entries = available.filter((entry) => reservedKeys.has(entry.threadKey));
+      if (entries.length === 0) {
+        toastManager.add(alreadyArchivingSettledToast);
+        return;
+      }
+      const outcome = await archiveSelectedThreadEntries({
+        entries,
+        archive: (entry, onArchived) => archiveSettledQuietly(entry.threadRef, onArchived),
+      });
+      const archivedKeySet = new Set(outcome.archivedThreadKeys);
+      for (const entry of entries) {
+        if (!archivedKeySet.has(entry.threadKey)) {
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
+        }
+      }
+      const archivedEntries = entries.filter((entry) => archivedKeySet.has(entry.threadKey));
+      const archivedRefs = archivedEntries.map((entry) => entry.threadRef);
+      const undoAction =
+        archivedRefs.length > 0
+          ? {
+              children: "Undo",
+              onClick: () => {
+                void (async () => {
+                  reserveUndonePastArchiveAgeAttempts(
+                    autoArchiveAttemptedRef.current,
+                    archivedEntries,
+                    { nowMs: Date.now(), afterDays: autoArchiveSettledAfterDays },
+                  );
+                  const restored = await unarchiveSelectedThreadEntries({
+                    entries: archivedRefs,
+                    unarchive: unarchiveThread,
+                  });
+                  const restoredKeys = new Set(
+                    restored.restored.map((threadRef) => scopedThreadKey(threadRef)),
+                  );
+                  for (const threadRef of archivedRefs) {
+                    const threadKey = scopedThreadKey(threadRef);
+                    if (!restoredKeys.has(threadKey)) {
+                      autoArchiveAttemptedRef.current.delete(threadKey);
+                    }
+                  }
+                  const failures = restored.failures.filter(
+                    (failure) => !isAtomCommandInterrupted(failure),
+                  );
+                  if (failures.length === 0) return;
+                  const error = squashAtomCommandFailure(failures[0]!);
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title:
+                        restored.restored.length > 0
+                          ? `Restored ${restored.restored.length} of ${archivedRefs.length} settled threads`
+                          : "Failed to restore settled threads",
+                      description: error instanceof Error ? error.message : "An error occurred.",
+                    }),
+                  );
+                })();
+              },
+            }
+          : undefined;
+      const reportedFailure =
+        outcome.mutationFailure !== null && !isAtomCommandInterrupted(outcome.mutationFailure)
+          ? outcome.mutationFailure
+          : (outcome.followupFailures.find((failure) => !isAtomCommandInterrupted(failure)) ??
+            null);
+      if (reportedFailure !== null) {
+        const error = squashAtomCommandFailure(reportedFailure);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title:
+              archivedRefs.length > 0
+                ? `Archived ${archivedRefs.length} of ${count} settled threads`
+                : "Failed to clear settled threads",
+            description: error instanceof Error ? error.message : "An error occurred.",
+            ...(undoAction === undefined ? {} : { timeout: 5_000, actionProps: undoAction }),
+          }),
+        );
+        return;
+      }
+      if (undoAction === undefined) return;
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: `Archived ${archivedRefs.length} settled thread${archivedRefs.length === 1 ? "" : "s"}`,
+          timeout: 5_000,
+          actionProps: undoAction,
+        }),
+      );
+    } finally {
+      setClearingSettled(false);
+    }
+  }, [
+    archiveSettledQuietly,
+    autoArchiveSettledAfterDays,
+    clearableSettledThreads,
+    clearingSettled,
+    unarchiveThread,
+  ]);
+
+  // Auto-archive: settled threads past the configured age leave the sidebar
+  // on their own. Candidates come from the scoped partition on the minute
+  // clock; a scoped-out project's tail sweeps next time it is in view.
+  // One archive at a time so a long tail cannot open a mutation per row.
+  useEffect(() => {
+    if (autoArchiveWindowRef.current !== autoArchiveSettledAfterDays) {
+      autoArchiveAttemptedRef.current = new Set();
+      autoArchiveWindowRef.current = autoArchiveSettledAfterDays;
+    }
+    if (autoArchiveSettledAfterDays === null) return;
+    // Clear already reserved its rows; a concurrent sweep would double-archive.
+    if (clearingSettled) return;
+    const nowMs = Date.parse(`${nowMinute}:00.000Z`);
+    if (Number.isNaN(nowMs)) return;
+    const settledKeys = new Set(
+      settledThreads.map((thread) =>
+        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      ),
+    );
+    autoArchiveAttemptedRef.current = retainSettledAutoArchiveAttempts(
+      autoArchiveAttemptedRef.current,
+      settledKeys,
+    );
+    const candidates = settledThreads.flatMap((thread) => {
+      if (!isSettledThreadPastArchiveAge(thread, { nowMs, afterDays: autoArchiveSettledAfterDays }))
+        return [];
+      const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+      const threadKey = scopedThreadKey(threadRef);
+      // Never yank the open thread out from under the user; it archives
+      // after they navigate away.
+      if (threadKey === routeThreadKey) return [];
+      return [{ threadKey, threadRef }];
+    });
+    const reservedKeys = new Set(
+      reserveSettledArchiveAttempts(
+        autoArchiveAttemptedRef.current,
+        candidates.map((entry) => entry.threadKey),
+      ),
+    );
+    const entries = candidates.filter((entry) => reservedKeys.has(entry.threadKey));
+    if (entries.length === 0) return;
+    void (async () => {
+      for (const entry of entries) {
+        // Re-check after each prior await: a thread opened mid-sweep stays.
+        if (routeThreadKeyRef.current === entry.threadKey) {
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
+          continue;
+        }
+        const result = await archiveSettledQuietly(entry.threadRef);
+        if (result._tag === "Failure") {
+          autoArchiveAttemptedRef.current.delete(entry.threadKey);
+        }
+      }
+    })();
+  }, [
+    archiveSettledQuietly,
+    autoArchiveSettledAfterDays,
+    clearingSettled,
+    nowMinute,
+    routeThreadKey,
+    settledThreads,
+  ]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
   // Collapsed threads don't render (and so don't participate in jump
@@ -4025,28 +4280,48 @@ export default function Sidebar() {
                         data-thread-selection-safe
                         className="list-none"
                       >
-                        <button
-                          type="button"
-                          onClick={toggleSettledShelf}
-                          aria-expanded={settledShelfExpanded}
-                          data-testid="sidebar-settled-shelf-toggle"
-                          className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/50">
-                            Settled
-                          </span>
-                          <span className="h-px flex-1 bg-sidebar-border/60" />
-                          <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
-                            {settledThreads.length}
-                          </span>
-                          <ChevronDownIcon
-                            aria-hidden
-                            className={cn(
-                              "size-3 text-muted-foreground/50 transition-transform",
-                              settledShelfExpanded && "rotate-180",
-                            )}
-                          />
-                        </button>
+                        <div className="mb-1 mt-3 flex w-full items-center gap-2 px-2.5">
+                          <button
+                            type="button"
+                            onClick={toggleSettledShelf}
+                            aria-expanded={settledShelfExpanded}
+                            data-testid="sidebar-settled-shelf-toggle"
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                          >
+                            <span className="text-xs font-medium text-muted-foreground/50">
+                              Settled
+                            </span>
+                            <span className="h-px flex-1 bg-sidebar-border/60" />
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
+                              {settledThreads.length}
+                            </span>
+                            <ChevronDownIcon
+                              aria-hidden
+                              className={cn(
+                                "size-3 text-muted-foreground/50 transition-transform",
+                                settledShelfExpanded && "rotate-180",
+                              )}
+                            />
+                          </button>
+                          {clearableSettledThreads.length > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    onClick={() => void clearSettledThreads()}
+                                    disabled={clearingSettled}
+                                    data-testid="sidebar-settled-clear"
+                                    className="cursor-pointer text-xs font-medium text-muted-foreground/50 transition-colors hover:text-sidebar-foreground disabled:cursor-default disabled:opacity-50"
+                                  />
+                                }
+                              >
+                                {clearingSettled ? "Clearing…" : "Clear"}
+                              </TooltipTrigger>
+                              <TooltipPopup>Archive settled threads</TooltipPopup>
+                            </Tooltip>
+                          ) : null}
+                        </div>
                       </li>,
                     );
                   }

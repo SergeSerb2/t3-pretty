@@ -203,6 +203,9 @@ function ThreadNavigationSidebarPane(
   const [headerIsOverContent, setHeaderIsOverContent] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
   const searchBarRef = useRef<SearchBarCommands>(null);
+  const focusSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sidebarVisibleRef = useRef(props.visible);
+  sidebarVisibleRef.current = props.visible;
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const headerIsOverContentRef = useRef(false);
   const sidebarScrollGesture = useMemo(() => Gesture.Native(), []);
@@ -590,7 +593,7 @@ function ThreadNavigationSidebarPane(
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
   useEffect(() => {
-    if (nextSnoozeWakeAt === null) return;
+    if (!props.visible || nextSnoozeWakeAt === null) return;
     const wakeAtMs = Date.parse(nextSnoozeWakeAt);
     if (Number.isNaN(wakeAtMs)) return;
     const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
@@ -599,7 +602,7 @@ function ThreadNavigationSidebarPane(
     // snoozeWakeTick must re-arm the timer even when nextSnoozeWakeAt is
     // unchanged: after a clamped fire (wake beyond the 32-bit setTimeout
     // range) the boundary string is identical and the chain would die.
-  }, [nextSnoozeWakeAt, snoozeWakeTick]);
+  }, [nextSnoozeWakeAt, props.visible, snoozeWakeTick]);
   const listItems = useMemo<readonly SidebarListItem[]>(() => {
     if (!threadListV2Enabled) return listLayout.items;
     // Queued offline tasks are not thread shells, so the v2 item builder
@@ -899,12 +902,25 @@ function ThreadNavigationSidebarPane(
     };
     if (!props.visible) {
       props.onRequestVisibility();
-      setTimeout(focus, 240);
+      if (focusSearchTimerRef.current !== null) clearTimeout(focusSearchTimerRef.current);
+      focusSearchTimerRef.current = setTimeout(() => {
+        focusSearchTimerRef.current = null;
+        if (sidebarVisibleRef.current) focus();
+      }, 240);
     } else {
       focus();
     }
     return true;
   }, [props.nativeChrome, props.onRequestVisibility, props.visible]);
+  useEffect(
+    () => () => {
+      if (focusSearchTimerRef.current !== null) {
+        clearTimeout(focusSearchTimerRef.current);
+        focusSearchTimerRef.current = null;
+      }
+    },
+    [],
+  );
   useHardwareKeyboardCommand("focusSearch", focusSearch);
   const renderListItem = useCallback(
     ({ item }: { readonly item: SidebarListItem }) => {

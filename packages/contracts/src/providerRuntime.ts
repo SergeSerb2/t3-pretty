@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
+  ENTITY_ID_MAX_LENGTH,
   EventId,
   IsoDateTime,
   NonNegativeInt,
@@ -13,10 +14,37 @@ import {
   TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas.ts";
+import { ProviderInteractionOpaquePayload, ProviderUserInputAnswers } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
-const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
+export const PROVIDER_RUNTIME_MAX_RECORD_PROPERTIES = 512;
+export const PROVIDER_RUNTIME_MAX_PLAN_STEPS = 256;
+export const PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS = 32;
+export const PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS = 64;
+export const PROVIDER_RUNTIME_MAX_WORKFLOW_PHASES = 256;
+export const PROVIDER_RUNTIME_MAX_TOOL_REFERENCES = 4_096;
+export const PROVIDER_RUNTIME_MAX_AUTH_OUTPUT_LINES = 256;
+export const PROVIDER_RUNTIME_MAX_PERSISTED_FILES = 4_096;
+export const PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH = 64 * 1024;
+export const PROVIDER_RUNTIME_PATH_MAX_LENGTH = 32 * 1024;
+export const PROVIDER_RUNTIME_REQUEST_DECISION_MAX_LENGTH = 4_096;
+export const PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH = 512;
+export const PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH = 512;
+export const PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH = 64 * 1024;
+export const PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH = 4_096;
+export const PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH = 64 * 1024;
+export const PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS = 1024 * 1024;
+export const PROVIDER_RUNTIME_MAX_FINITE_NUMBER = Number.MAX_SAFE_INTEGER;
+
+const ProviderRuntimeNonNegativeNumber = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isBetween({ minimum: 0, maximum: PROVIDER_RUNTIME_MAX_FINITE_NUMBER }),
+);
+
+const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown).check(
+  Schema.isMaxProperties(PROVIDER_RUNTIME_MAX_RECORD_PROPERTIES),
+);
 
 const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("codex.app-server.notification"),
@@ -40,7 +68,9 @@ export const RuntimeEventRaw = Schema.Struct({
 });
 export type RuntimeEventRaw = typeof RuntimeEventRaw.Type;
 
-const ProviderRequestId = TrimmedNonEmptyStringSchema;
+const ProviderRequestId = TrimmedNonEmptyStringSchema.check(
+  Schema.isMaxLength(ENTITY_ID_MAX_LENGTH),
+);
 export type ProviderRequestId = typeof ProviderRequestId.Type;
 
 const ProviderRefs = Schema.Struct({
@@ -369,7 +399,7 @@ const TurnCompletedPayload = Schema.Struct({
   stopReason: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
   usage: Schema.optional(Schema.Unknown),
   modelUsage: Schema.optional(UnknownRecordSchema),
-  totalCostUsd: Schema.optional(Schema.Number),
+  totalCostUsd: Schema.optional(ProviderRuntimeNonNegativeNumber),
   errorMessage: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnCompletedPayload = typeof TurnCompletedPayload.Type;
@@ -387,7 +417,7 @@ export type RuntimePlanStep = typeof RuntimePlanStep.Type;
 
 const TurnPlanUpdatedPayload = Schema.Struct({
   explanation: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
-  plan: Schema.Array(RuntimePlanStep),
+  plan: Schema.Array(RuntimePlanStep).check(Schema.isMaxLength(PROVIDER_RUNTIME_MAX_PLAN_STEPS)),
 });
 export type TurnPlanUpdatedPayload = typeof TurnPlanUpdatedPayload.Type;
 
@@ -432,29 +462,47 @@ export type ContentDeltaPayload = typeof ContentDeltaPayload.Type;
 
 const RequestOpenedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
-  detail: Schema.optional(TrimmedNonEmptyStringSchema),
-  args: Schema.optional(Schema.Unknown),
+  detail: Schema.optional(
+    TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH)),
+  ),
+  args: Schema.optional(ProviderInteractionOpaquePayload),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;
 
 const RequestResolvedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
-  decision: Schema.optional(TrimmedNonEmptyStringSchema),
-  resolution: Schema.optional(Schema.Unknown),
+  decision: Schema.optional(
+    TrimmedNonEmptyStringSchema.check(
+      Schema.isMaxLength(PROVIDER_RUNTIME_REQUEST_DECISION_MAX_LENGTH),
+    ),
+  ),
+  resolution: Schema.optional(ProviderInteractionOpaquePayload),
 });
 export type RequestResolvedPayload = typeof RequestResolvedPayload.Type;
 
 const UserInputQuestionOption = Schema.Struct({
-  label: TrimmedNonEmptyStringSchema,
-  description: TrimmedNonEmptyStringSchema,
+  label: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH),
+  ),
+  description: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH),
+  ),
 });
 export type UserInputQuestionOption = typeof UserInputQuestionOption.Type;
 
 export const UserInputQuestion = Schema.Struct({
-  id: TrimmedNonEmptyStringSchema,
-  header: TrimmedNonEmptyStringSchema,
-  question: TrimmedNonEmptyStringSchema,
-  options: Schema.Array(UserInputQuestionOption),
+  id: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH),
+  ),
+  header: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH),
+  ),
+  question: TrimmedNonEmptyStringSchema.check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH),
+  ),
+  options: Schema.Array(UserInputQuestionOption).check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS),
+  ),
   multiSelect: Schema.optional(Schema.Boolean).pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
   ),
@@ -462,12 +510,28 @@ export const UserInputQuestion = Schema.Struct({
 export type UserInputQuestion = typeof UserInputQuestion.Type;
 
 const UserInputRequestedPayload = Schema.Struct({
-  questions: Schema.Array(UserInputQuestion),
-});
+  questions: Schema.Array(UserInputQuestion).check(
+    Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS),
+  ),
+}).check(
+  Schema.makeFilter(({ questions }) => {
+    let totalChars = 0;
+    for (const question of questions) {
+      totalChars += question.id.length + question.header.length + question.question.length;
+      for (const option of question.options) {
+        totalChars += option.label.length + option.description.length;
+      }
+      if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
+        return `User input request must not exceed ${PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS} characters.`;
+      }
+    }
+    return true;
+  }),
+);
 export type UserInputRequestedPayload = typeof UserInputRequestedPayload.Type;
 
 const UserInputResolvedPayload = Schema.Struct({
-  answers: UnknownRecordSchema,
+  answers: ProviderUserInputAnswers,
 });
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 
@@ -573,7 +637,9 @@ const taskAgentLinkageFields = {
   agentIndex: Schema.optional(NonNegativeInt),
   phaseIndex: Schema.optional(NonNegativeInt),
   phaseTitle: Schema.optional(TrimmedNonEmptyStringSchema),
-  phases: Schema.optional(Schema.Array(TaskWorkflowPhase)),
+  phases: Schema.optional(
+    Schema.Array(TaskWorkflowPhase).check(Schema.isMaxLength(PROVIDER_RUNTIME_MAX_WORKFLOW_PHASES)),
+  ),
   attempt: Schema.optional(NonNegativeInt),
   runHandles: Schema.optional(TaskRunHandles),
   outputFile: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -677,7 +743,7 @@ const ToolProgressPayload = Schema.Struct({
   toolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
   toolName: Schema.optional(TrimmedNonEmptyStringSchema),
   summary: Schema.optional(TrimmedNonEmptyStringSchema),
-  elapsedSeconds: Schema.optional(Schema.Number),
+  elapsedSeconds: Schema.optional(ProviderRuntimeNonNegativeNumber),
   /** Owning task/agent when the tool ran inside a subagent. */
   taskId: Schema.optional(RuntimeTaskId),
   parentToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
@@ -686,13 +752,21 @@ export type ToolProgressPayload = typeof ToolProgressPayload.Type;
 
 const ToolSummaryPayload = Schema.Struct({
   summary: TrimmedNonEmptyStringSchema,
-  precedingToolUseIds: Schema.optional(Schema.Array(TrimmedNonEmptyStringSchema)),
+  precedingToolUseIds: Schema.optional(
+    Schema.Array(TrimmedNonEmptyStringSchema).check(
+      Schema.isMaxLength(PROVIDER_RUNTIME_MAX_TOOL_REFERENCES),
+    ),
+  ),
 });
 export type ToolSummaryPayload = typeof ToolSummaryPayload.Type;
 
 const AuthStatusPayload = Schema.Struct({
   isAuthenticating: Schema.optional(Schema.Boolean),
-  output: Schema.optional(Schema.Array(Schema.String)),
+  output: Schema.optional(
+    Schema.Array(
+      Schema.String.check(Schema.isMaxLength(PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH)),
+    ).check(Schema.isMaxLength(PROVIDER_RUNTIME_MAX_AUTH_OUTPUT_LINES)),
+  ),
   error: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type AuthStatusPayload = typeof AuthStatusPayload.Type;
@@ -743,17 +817,25 @@ export type DeprecationNoticePayload = typeof DeprecationNoticePayload.Type;
 const FilesPersistedPayload = Schema.Struct({
   files: Schema.Array(
     Schema.Struct({
-      filename: TrimmedNonEmptyStringSchema,
-      fileId: TrimmedNonEmptyStringSchema,
+      filename: TrimmedNonEmptyStringSchema.check(
+        Schema.isMaxLength(PROVIDER_RUNTIME_PATH_MAX_LENGTH),
+      ),
+      fileId: TrimmedNonEmptyStringSchema.check(
+        Schema.isMaxLength(PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH),
+      ),
     }),
-  ),
+  ).check(Schema.isMaxLength(PROVIDER_RUNTIME_MAX_PERSISTED_FILES)),
   failed: Schema.optional(
     Schema.Array(
       Schema.Struct({
-        filename: TrimmedNonEmptyStringSchema,
-        error: TrimmedNonEmptyStringSchema,
+        filename: TrimmedNonEmptyStringSchema.check(
+          Schema.isMaxLength(PROVIDER_RUNTIME_PATH_MAX_LENGTH),
+        ),
+        error: TrimmedNonEmptyStringSchema.check(
+          Schema.isMaxLength(PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH),
+        ),
       }),
-    ),
+    ).check(Schema.isMaxLength(PROVIDER_RUNTIME_MAX_PERSISTED_FILES)),
   ),
 });
 export type FilesPersistedPayload = typeof FilesPersistedPayload.Type;

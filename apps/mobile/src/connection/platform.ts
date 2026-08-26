@@ -17,6 +17,7 @@ import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/cl
 import { AuthStandardClientScopes } from "@t3tools/contracts";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -35,6 +36,9 @@ import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import { connectionStorageLayer } from "./storage";
 
+const MOBILE_NATIVE_OPERATION_TIMEOUT_MS = 10_000;
+const MOBILE_ENVIRONMENT_CLEANUP_TIMEOUT_MS = 30_000;
+
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
   if (state.isConnected === false) {
     return "offline";
@@ -45,21 +49,26 @@ function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "on
   return "unknown";
 }
 
+const readNetworkStatus = Effect.tryPromise({
+  try: () => Network.getNetworkStateAsync(),
+  catch: () => undefined,
+}).pipe(
+  Effect.map(networkStatus),
+  Effect.orElseSucceed(() => "unknown" as const),
+  Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+  Effect.map(Option.getOrElse(() => "unknown" as const)),
+);
+
 const connectivityLayer = Connectivity.layer({
-  status: Effect.tryPromise({
-    try: () => Network.getNetworkStateAsync(),
-    catch: () => undefined,
-  }).pipe(
-    Effect.match({
-      onFailure: () => "unknown" as const,
-      onSuccess: networkStatus,
-    }),
-  ),
+  status: readNetworkStatus,
   changes: Stream.callback((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
         let active = true;
+        let networkRevision = 0;
+        let foregroundProbe: Promise<void> | null = null;
         const networkSubscription = Network.addNetworkStateListener((state) => {
+          networkRevision += 1;
           Queue.offerUnsafe(queue, networkStatus(state));
         });
         // Re-query on resume so a network that came back while JS was
@@ -68,21 +77,41 @@ const connectivityLayer = Connectivity.layer({
         // only ever restores connectivity; genuine loss still arrives through
         // the persistent listener above.
         const appStateSubscription = AppState.addEventListener("change", (state) => {
-          if (state !== "active") {
+          if (state !== "active" || foregroundProbe !== null) {
             return;
           }
-          void Network.getNetworkStateAsync()
+          const revisionAtStart = networkRevision;
+          let timeout: ReturnType<typeof setTimeout> | null = null;
+          const probe = Promise.race([
+            Network.getNetworkStateAsync(),
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error("Mobile foreground network probe timed out.")),
+                MOBILE_NATIVE_OPERATION_TIMEOUT_MS,
+              );
+            }),
+          ])
             .then((current) => {
               const status = networkStatus(current);
               if (active && status !== "offline") {
                 Queue.offerUnsafe(queue, status);
               }
             })
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+              if (timeout !== null) {
+                clearTimeout(timeout);
+              }
+              if (foregroundProbe === probe) {
+                foregroundProbe = null;
+              }
+            });
+          foregroundProbe = probe;
         });
         return {
           close: () => {
             active = false;
+            foregroundProbe = null;
             networkSubscription.remove();
             appStateSubscription.remove();
           },
@@ -145,6 +174,19 @@ const capabilitiesLayer = Layer.effectContext(
                   detail: error.message,
                 }),
             ),
+            Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    new ConnectionTransientError({
+                      reason: "network",
+                      detail: `Obtaining the ${SURGE_CONNECT_NAME} session timed out.`,
+                    }),
+                  ),
+                onSome: Effect.succeed,
+              }),
+            ),
           );
           if (token === null) {
             return yield* new ConnectionBlockedError({
@@ -171,7 +213,19 @@ const capabilitiesLayer = Layer.effectContext(
                   detail: `Could not load the mobile device identity: ${String(cause)}`,
                 }),
             ),
-            Effect.map(Option.some),
+            Effect.timeoutOption(Duration.millis(MOBILE_NATIVE_OPERATION_TIMEOUT_MS)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () =>
+                  Effect.fail(
+                    new ConnectionTransientError({
+                      reason: "remote-unavailable",
+                      detail: "Loading the mobile device identity timed out.",
+                    }),
+                  ),
+                onSome: (deviceId) => Effect.succeed(Option.some(deviceId)),
+              }),
+            ),
           ),
         }),
       ),
@@ -220,23 +274,50 @@ const providedCapabilitiesLayer = capabilitiesLayer.pipe(
   Layer.provide(Runtime.runtimeContextLayer),
 );
 
+function cleanupEnvironmentResource(
+  environmentId: string,
+  resource: string,
+  cleanup: () => Promise<void>,
+) {
+  return Effect.tryPromise({
+    try: cleanup,
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.timeoutOption(Duration.millis(MOBILE_ENVIRONMENT_CLEANUP_TIMEOUT_MS)),
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.logWarning("Mobile environment-owned data cleanup timed out.", {
+            environmentId,
+            resource,
+          }),
+        onSome: Effect.succeed,
+      }),
+    ),
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not clear mobile environment-owned data.", {
+        environmentId,
+        resource,
+        cause,
+      }),
+    ),
+  );
+}
+
 const environmentOwnedDataCleanupLayer = Layer.succeed(
   EnvironmentOwnedDataCleanup,
   EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) =>
       Effect.all(
         [
-          Effect.promise(() => clearThreadOutboxEnvironment(environmentId)),
-          Effect.promise(() => clearComposerDraftsEnvironment(environmentId)),
+          cleanupEnvironmentResource(environmentId, "thread outbox", () =>
+            clearThreadOutboxEnvironment(environmentId),
+          ),
+          cleanupEnvironmentResource(environmentId, "composer drafts", () =>
+            clearComposerDraftsEnvironment(environmentId),
+          ),
         ],
         { concurrency: "unbounded", discard: true },
-      ).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Could not clear mobile environment-owned data.", {
-            environmentId,
-            cause,
-          }),
-        ),
       ),
   }),
 );

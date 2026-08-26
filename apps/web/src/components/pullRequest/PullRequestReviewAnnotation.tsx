@@ -24,6 +24,7 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { FixFindingButton } from "./FixFindingButton";
 import { Textarea } from "../ui/textarea";
+import { toastManager } from "../ui/toast";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import {
   editPullRequestThreadComment,
@@ -144,20 +145,30 @@ export function ReviewThreadCard({
 }) {
   // A resolved thread is finished work, so it opens collapsed and stays one line until asked for.
   const [expanded, setExpanded] = useState(!thread.isResolved);
+  const mountedRef = useRef(false);
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const savingEditRef = useRef(false);
   const sendingRef = useRef(false);
   const [loadedPage, setLoadedPage] = useState<
     (PullRequestThreadCommentsResult & { readonly threadId: string }) | null
   >(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const currentPage = loadedPage?.threadId === thread.id ? loadedPage : null;
   const comments = mergePullRequestThreadComments(thread.comments, currentPage?.comments ?? []);
   const nextCommentsCursor =
     currentPage === null ? (thread.nextCommentsCursor ?? null) : currentPage.nextCursor;
   const commentCount = thread.commentCount ?? comments.length;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // The host (or this page) marked it resolved after the card mounted: collapse it the same way
   // a first render of a resolved conversation would, rather than leaving the remarks open as if
@@ -167,20 +178,33 @@ export function ReviewThreadCard({
   }, [thread.isResolved]);
 
   const saveEdit = async (commentId: string, body: string) => {
-    if (savingEdit) return;
+    if (savingEditRef.current) return;
+    savingEditRef.current = true;
     setSavingEdit(true);
-    const saved = await onEditComment(commentId, body);
-    setSavingEdit(false);
-    if (saved) {
-      setLoadedPage((previous) =>
-        previous?.threadId === thread.id
-          ? {
-              ...previous,
-              comments: editPullRequestThreadComment(previous.comments, commentId, body),
-            }
-          : previous,
-      );
-      setEditingId(null);
+    try {
+      const saved = await onEditComment(commentId, body);
+      if (!mountedRef.current) return;
+      if (saved) {
+        setLoadedPage((previous) =>
+          previous?.threadId === thread.id
+            ? {
+                ...previous,
+                comments: editPullRequestThreadComment(previous.comments, commentId, body),
+              }
+            : previous,
+        );
+        setEditingId(null);
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "The comment could not be saved",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      savingEditRef.current = false;
+      if (mountedRef.current) setSavingEdit(false);
     }
   };
 
@@ -191,7 +215,9 @@ export function ReviewThreadCard({
     // Cleared only once the host has it. Otherwise a failed reply leaves an error toast and an
     // empty box, and the words have to be written again.
     try {
-      if (await onReply(trimmed)) {
+      const sent = await onReply(trimmed);
+      if (!mountedRef.current) return;
+      if (sent) {
         // The mutation returns no comment. Keep what the reader loaded and reopen its cursor so
         // the new reply remains reachable without spending requests until they ask to load it.
         setLoadedPage((previous) =>
@@ -205,15 +231,24 @@ export function ReviewThreadCard({
         setReply("");
         setReplying(false);
       }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "Reply could not be posted",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
     } finally {
       sendingRef.current = false;
     }
   };
   const loadMore = async () => {
-    if (nextCommentsCursor === null || loadingMore) return;
+    if (nextCommentsCursor === null || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
       const page = await onLoadMore(nextCommentsCursor);
+      if (!mountedRef.current) return;
       if (page === null) return;
       setLoadedPage((previous) => ({
         threadId: thread.id,
@@ -223,8 +258,16 @@ export function ReviewThreadCard({
         ),
         nextCursor: page.nextCursor,
       }));
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "More comments could not be loaded",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
     } finally {
-      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      if (mountedRef.current) setLoadingMore(false);
     }
   };
 

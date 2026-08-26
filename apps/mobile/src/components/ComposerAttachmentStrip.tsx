@@ -88,6 +88,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   }}
                   hitSlop={6}
                   accessibilityLabel="Remove attachment"
+                  accessibilityRole="button"
                   onPress={() => props.onRemove(image.id)}
                 >
                   <SymbolView
@@ -115,9 +116,20 @@ export function ComposerAttachmentThumb(props: {
   readonly preparing?: boolean;
   readonly onPress?: () => void;
 }) {
+  const accessibilityLabel = props.preparing
+    ? "Preparing image attachment"
+    : props.onPress
+      ? "Preview image attachment"
+      : "Image attachment";
   const image = (
-    <View style={{ width: props.size, height: props.size }}>
+    <View
+      accessible={!props.onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={!props.onPress ? "image" : undefined}
+      style={{ width: props.size, height: props.size }}
+    >
       <Image
+        accessible={false}
         source={{ uri: props.previewUri }}
         style={{
           width: props.size,
@@ -145,7 +157,15 @@ export function ComposerAttachmentThumb(props: {
     return image;
   }
 
-  return <Pressable onPress={props.onPress}>{image}</Pressable>;
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={props.onPress}
+    >
+      {image}
+    </Pressable>
+  );
 }
 
 export function ComposerDispatchStatusLabel(props: { readonly label: string }) {
