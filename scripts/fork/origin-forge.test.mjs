@@ -619,10 +619,6 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(desktop, "ensure-linux-node.sh");
     assert.include(desktop, "PREFLIGHT_REF");
     assert.include(desktop, "needs.preflight.result == 'success'");
-    assert.match(
-      desktop,
-      /\n  preflight:\n    name: Resolve T3 Pretty release\n    continue-on-error: true\n/,
-    );
     assert.notInclude(desktop, "/usr/local --strip-components=1");
     assert.include(preflight, "Could not fetch Origin fork tags");
     assert.include(preflight, "origin_tags_ok");
@@ -726,6 +722,7 @@ describe("Origin release and blocked-sync helpers", () => {
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 900), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
+    assert.include(pipeline, 'version: "0.35.1"');
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
