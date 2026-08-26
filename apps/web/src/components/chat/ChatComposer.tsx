@@ -38,6 +38,7 @@ import {
   useRef,
   useState,
 } from "react";
+import * as Option from "effect/Option";
 import { createPortal } from "react-dom";
 import { useRouter } from "@tanstack/react-router";
 import {
@@ -157,6 +158,8 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { usePreparedConnection } from "../../state/session";
+import { useBrowserDictation } from "./useBrowserDictation";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -274,7 +277,15 @@ import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { BotIcon, CircleAlertIcon, PencilRulerIcon, RotateCcwIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  CircleAlertIcon,
+  MicIcon,
+  PencilRulerIcon,
+  RotateCcwIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
@@ -562,6 +573,7 @@ export interface ChatComposerProps {
   environmentId: EnvironmentId;
   attachmentUploadsCapabilityKnown: boolean;
   supportsAttachmentUploads: boolean;
+  supportsVoiceDictation: boolean;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
@@ -697,6 +709,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentId,
     attachmentUploadsCapabilityKnown,
     supportsAttachmentUploads,
+    supportsVoiceDictation,
     routeKind,
     routeThreadRef,
     draftId,
@@ -1101,6 +1114,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   const isMobileViewport = useMediaQuery("max-sm");
   const router = useRouter();
+  const preparedConnection = usePreparedConnection(environmentId);
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
 
@@ -1525,15 +1539,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         : null,
     [activePendingIsResponding, activePendingProgress, activePendingResolvedAnswers],
   );
-  const collapsedComposerPrimaryActionDisabled =
-    turnInProgress ||
-    isSendBusy ||
-    isSendDisabled ||
-    isConnecting ||
-    noProviderAvailable ||
-    projectSelectionRequired ||
-    environmentUnavailable !== null ||
-    !composerSendState.hasSendableContent;
   const collapsedComposerPrimaryActionLabel = "Send message";
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
@@ -1937,6 +1942,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [composerCursor, composerTerminalContexts, promptRef]);
 
+  const replaceDictationInsertion = useCallback(
+    (start: number, previous: string, next: string) =>
+      applyPromptReplacement(start, start + previous.length, next, {
+        expectedText: previous,
+        focusEditorAfterReplace: false,
+      }),
+    [applyPromptReplacement],
+  );
+  const reportDictationError = useCallback((message: string) => {
+    toastManager.add({ type: "error", title: message });
+  }, []);
+  const dictationEnabled =
+    supportsVoiceDictation &&
+    Option.isSome(preparedConnection) &&
+    !isConnecting &&
+    !isComposerApprovalState &&
+    activePendingProgress === null &&
+    !projectSelectionRequired;
+  const dictation = useBrowserDictation({
+    enabled: dictationEnabled,
+    prepared: Option.getOrNull(preparedConnection),
+    readComposer: readComposerSnapshot,
+    replaceInsertion: replaceDictationInsertion,
+    reportError: reportDictationError,
+  });
+  const resolvedSendDisabledReason = dictation.active
+    ? "Finish voice dictation before sending."
+    : sendDisabledReason;
+  const collapsedComposerPrimaryActionDisabled =
+    dictation.active ||
+    turnInProgress ||
+    isSendBusy ||
+    isSendDisabled ||
+    isConnecting ||
+    noProviderAvailable ||
+    projectSelectionRequired ||
+    environmentUnavailable !== null ||
+    !composerSendState.hasSendableContent;
+
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -2161,7 +2205,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       intent: ComposerSubmissionIntent = "foreground",
       delivery?: TurnDeliveryMode,
     ) => {
-      if (noProviderAvailable || isSendDisabled) {
+      if (noProviderAvailable || isSendDisabled || dictation.active) {
         event?.preventDefault();
         return;
       }
@@ -2215,6 +2259,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activePendingProgress,
       blurMobileComposerAfterSend,
       isSendDisabled,
+      dictation.active,
       noProviderAvailable,
       onSend,
       promptRef,
@@ -3739,7 +3784,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
                                 : "Ask anything, @tag files or apps, $use skills, or / for commands"
                   }
-                  disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  disabled={
+                    isConnecting ||
+                    isComposerApprovalState ||
+                    projectSelectionRequired ||
+                    dictation.active
+                  }
                 />
                 {showMobilePendingAnswerActions ? (
                   <div
@@ -3915,6 +3965,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 >
                   {showMobilePendingAnswerActions ? null : inlineTasksBadge}
                   {showMobilePendingAnswerActions ? null : inlineStashBadge}
+                  {supportsVoiceDictation && !showMobilePendingAnswerActions ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <ComposerControl
+                            type="button"
+                            className={cn(
+                              "px-2",
+                              dictation.active && "bg-red-500/15 text-red-600 hover:bg-red-500/20",
+                            )}
+                            disabled={
+                              dictation.phase === "processing" ||
+                              (dictation.phase === "idle" && !dictationEnabled)
+                            }
+                            aria-label={
+                              dictation.phase === "recording"
+                                ? "Stop voice dictation"
+                                : dictation.phase === "processing"
+                                  ? "Finishing voice dictation"
+                                  : "Start voice dictation"
+                            }
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={() => void dictation.toggle()}
+                          />
+                        }
+                      >
+                        <ComposerControlIcon
+                          icon={dictation.phase === "recording" ? SquareIcon : MicIcon}
+                        />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">
+                        {dictation.phase === "recording"
+                          ? "Stop and compact dictation"
+                          : dictation.phase === "processing"
+                            ? "Compacting dictation…"
+                            : "Voice dictation"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     activeContextWindow={activeContextWindow}
@@ -3927,7 +4016,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
                     isInterrupting={isInterrupting}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={resolvedSendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||

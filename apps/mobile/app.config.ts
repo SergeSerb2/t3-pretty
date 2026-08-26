@@ -353,6 +353,18 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    ...(isInternalBuild
+      ? [
+          [
+            "expo-audio",
+            {
+              microphonePermission:
+                "Allow T3 Pretty Internal to use your microphone for voice dictation.",
+              enableBackgroundPlayback: false,
+            },
+          ] as NonNullable<ExpoConfig["plugins"]>[number],
+        ]
+      : []),
     ...(shareExtensionEnabled
       ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
       : [sharingPlugin]),

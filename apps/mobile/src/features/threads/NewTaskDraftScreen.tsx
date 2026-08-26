@@ -1,5 +1,6 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -30,8 +31,13 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/unstable/reactivity";
+import * as Option from "effect/Option";
 
-import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
+import {
+  ComposerEditor,
+  type ComposerEditorHandle,
+  type ComposerEditorSelection,
+} from "../../components/ComposerEditor";
 import {
   ComposerInlineControl,
   ComposerToolbarButton,
@@ -98,6 +104,8 @@ import {
   resolveNewTaskWorkspaceLabel,
 } from "./new-task-context-presentation";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { usePreparedConnection } from "../../state/session";
+import { useNativeDictation } from "./useNativeDictation";
 
 // KeyboardStickyView memos its animated style against `style` identity.
 const DRAFT_COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
@@ -261,6 +269,10 @@ export function NewTaskDraftScreen(props: {
       (environment) => environment.environmentId === selectedProject.environmentId,
     )?.connectionState === "connected";
   const promptInputRef = useRef<ComposerEditorHandle>(null);
+  const [promptSelection, setPromptSelection] = useState<ComposerEditorSelection>(() => ({
+    start: flow.prompt.length,
+    end: flow.prompt.length,
+  }));
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
@@ -1130,6 +1142,29 @@ export function NewTaskDraftScreen(props: {
           }
         : { kind: "idle" },
   );
+  const preparedConnection = usePreparedConnection(selectedProject?.environmentId ?? null);
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    selectedEnvironmentServerConfig?.environment.capabilities.voiceDictation === true;
+  const reportDictationError = useCallback((message: string) => {
+    Alert.alert("Voice dictation", message);
+  }, []);
+  const dictation = useNativeDictation({
+    enabled: supportsVoiceDictation && !isIncomingShareTransferPending && !isDispatching,
+    prepared: Option.getOrNull(preparedConnection),
+    value: flow.prompt,
+    cursor: promptSelection.end,
+    onChangeValue: flow.setPrompt,
+    onChangeCursor: (cursor) => setPromptSelection({ start: cursor, end: cursor }),
+    reportError: reportDictationError,
+  });
+  useEffect(() => {
+    const end = flow.prompt.length;
+    setPromptSelection((selection) => ({
+      start: Math.min(selection.start, end),
+      end: Math.min(selection.end, end),
+    }));
+  }, [flow.prompt.length]);
   const canStart =
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
@@ -1137,6 +1172,7 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !isDispatching &&
+    !dictation.active &&
     // The auto-PR choice must be settled (draft override or hydrated
     // preferences) so a cold-start send cannot race the stored setting.
     flow.autoCreatePullRequestSettled &&
@@ -1149,12 +1185,14 @@ export function NewTaskDraftScreen(props: {
       ref={promptInputRef}
       // The context-first screen intentionally opens with the keyboard closed.
       autoFocus={false}
-      editable={!isIncomingShareTransferPending && !isDispatching}
+      editable={!isIncomingShareTransferPending && !isDispatching && !dictation.active}
       multiline
       scrollEnabled
       value={flow.prompt}
+      selection={promptSelection}
       skills={flow.selectedProviderSkills}
       onChangeText={flow.setPrompt}
+      onSelectionChange={setPromptSelection}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
       placeholder="Ask anything…"
       singleLineCentered={false}
@@ -1363,6 +1401,27 @@ export function NewTaskDraftScreen(props: {
               onPress={() => void handlePickImages()}
               showChevron={false}
             />
+            {supportsVoiceDictation ? (
+              <ComposerToolbarButton
+                accessibilityLabel={
+                  dictation.phase === "recording"
+                    ? "Stop voice dictation"
+                    : dictation.phase === "processing"
+                      ? "Finishing voice dictation"
+                      : "Start voice dictation"
+                }
+                icon={dictation.phase === "recording" ? "stop.fill" : "mic.fill"}
+                variant={dictation.phase === "recording" ? "danger" : "default"}
+                disabled={
+                  dictation.phase === "processing" ||
+                  (dictation.phase === "idle" &&
+                    (isDispatching || Option.isNone(preparedConnection)))
+                }
+                loading={dictation.phase === "processing"}
+                onPress={() => void dictation.toggle()}
+                showChevron={false}
+              />
+            ) : null}
             <ThreadSettingsPickerPopover
               accessibilityLabel="Model and reasoning settings"
               disabled={isIncomingShareTransferPending}
@@ -1422,7 +1481,7 @@ export function NewTaskDraftScreen(props: {
                   ? "Start task"
                   : "Queue task"
             }
-            disabled={!canStart && !isDispatching}
+            disabled={dictation.active || (!canStart && !isDispatching)}
             icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
             loading={isDispatching}
             onPress={() => void handleStart()}

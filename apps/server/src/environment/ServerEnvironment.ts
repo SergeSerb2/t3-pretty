@@ -1,5 +1,6 @@
 import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -155,6 +156,7 @@ export const make = Effect.gen(function* () {
       connectionProbe: true,
       serverConfigHttp: true,
       attachmentUploads: true,
+      ...(T3CODE_BUILD_FLAVOR === "internal" ? { voiceDictation: true } : {}),
       pullRequests: true,
       threadSettlement: true,
       threadSnooze: true,

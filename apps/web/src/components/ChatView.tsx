@@ -54,6 +54,7 @@ import {
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import {
@@ -2368,6 +2369,9 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
   const supportsAttachmentUploads =
     attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    attachmentEnvironmentConfig?.environment.capabilities.voiceDictation === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -7701,6 +7705,7 @@ function ChatViewContent(props: ChatViewProps) {
                             environmentId={environmentId}
                             attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
                             supportsAttachmentUploads={supportsAttachmentUploads}
+                            supportsVoiceDictation={supportsVoiceDictation}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}

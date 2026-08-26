@@ -160,6 +160,8 @@ export function mapRemoteEnvironmentError(
       });
     case "RemoteEnvironmentAuthInvalidJsonError":
     case "RemoteEnvironmentAuthUndeclaredStatusError":
+    case "DictationUnavailableError":
+    case "DictationUpstreamError":
       return new ConnectionTransientError({
         reason: "remote-unavailable",
         detail: error.message,

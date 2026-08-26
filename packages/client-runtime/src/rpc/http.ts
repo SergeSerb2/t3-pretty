@@ -1,4 +1,6 @@
 import {
+  DictationUnavailableError,
+  DictationUpstreamError,
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type EnvironmentAuthInvalidError,
@@ -7,6 +9,8 @@ import {
   type EnvironmentRequestInvalidError,
   type EnvironmentResourceNotFoundError,
   type EnvironmentScopeRequiredError,
+  type DictationUnavailableError as DictationUnavailableErrorType,
+  type DictationUpstreamError as DictationUpstreamErrorType,
 } from "@t3tools/contracts";
 import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
 import * as Data from "effect/Data";
@@ -18,7 +22,9 @@ import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
-const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
+const isEnvironmentHttpRequestError = Schema.is(
+  Schema.Union([EnvironmentHttpCommonError, DictationUnavailableError, DictationUpstreamError]),
+);
 
 const REMOTE_ERROR_DETAIL_MAX_LENGTH = 4_096;
 const REMOTE_ERROR_NAME_MAX_LENGTH = 128;
@@ -120,6 +126,8 @@ export type RemoteEnvironmentRequestError =
   | EnvironmentOperationForbiddenError
   | EnvironmentResourceNotFoundError
   | EnvironmentInternalError
+  | DictationUnavailableErrorType
+  | DictationUpstreamErrorType
   | RemoteEnvironmentAuthFetchError
   | RemoteEnvironmentAuthInvalidJsonError
   | RemoteEnvironmentAuthUndeclaredStatusError
@@ -159,7 +167,7 @@ const failRemoteRequest = (
   if (cause instanceof RemoteEnvironmentAuthTimeoutError) {
     return Effect.fail(cause);
   }
-  if (isEnvironmentHttpCommonError(cause)) {
+  if (isEnvironmentHttpRequestError(cause)) {
     return Effect.fail(cause);
   }
   if (Schema.isSchemaError(cause)) {
