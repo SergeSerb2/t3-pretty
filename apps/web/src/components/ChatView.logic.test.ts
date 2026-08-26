@@ -1019,7 +1019,7 @@ describe("reconcileQueuedComposerMessages", () => {
     ).toEqual([{ ...queuedMessages[1], queuedBehindTurnId: nextTurnId }]);
   });
 
-  it("releases a queued message once the server associates it with a turn", () => {
+  it("releases a queued message once the server echoes it", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
@@ -1028,7 +1028,7 @@ describe("reconcileQueuedComposerMessages", () => {
             id: queuedMessages[0]!.id,
             role: "user",
             text: queuedMessages[0]!.text,
-            turnId: TurnId.make("turn-adopted"),
+            turnId: null,
             createdAt: queuedMessages[0]!.createdAt,
             updatedAt: queuedMessages[0]!.createdAt,
             streaming: false,

@@ -52,8 +52,7 @@ export function reconcileQueuedComposerMessages(input: {
   const head = input.queuedMessages[0];
   if (!head) return input.queuedMessages;
 
-  const serverMessage = input.serverMessages.find((message) => message.id === head.id);
-  const serverAssociatedMessage = serverMessage?.turnId != null;
+  const serverAssociatedMessage = input.serverMessages.some((message) => message.id === head.id);
   const queuedTurnStarted =
     input.activeTurnId !== null &&
     input.activeTurnId !== head.queuedBehindTurnId &&

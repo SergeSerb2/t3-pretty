@@ -4674,7 +4674,7 @@ function ChatViewContent(props: ChatViewProps) {
     setQueuedComposerMessages([]);
     resetLocalDispatch();
     setExpandedImage(null);
-  }, [draftId, resetLocalDispatch, threadId]);
+  }, [resetLocalDispatch, routeThreadKey]);
 
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
