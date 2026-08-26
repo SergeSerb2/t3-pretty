@@ -31,6 +31,7 @@ import {
   type ProviderSession,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -288,6 +289,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const sessionLifecycleLocks = yield* KeyedLock.make;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const hostPlatform = yield* HostProcessPlatform;
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
@@ -313,7 +315,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const mcpAttachmentPlan = serverSettings.getSettings.pipe(
     Effect.map((settings) => ({
       browserTools: settings.enableAgentBrowserAccess,
-      computerUse: settings.enableComputerUse,
+      computerUse: settings.enableComputerUse && hostPlatform === "darwin",
       apps: Object.values(settings.apps.connections).filter(isAppAttachable),
     })),
     Effect.catch((cause) =>

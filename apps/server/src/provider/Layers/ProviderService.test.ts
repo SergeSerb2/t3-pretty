@@ -21,6 +21,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, describe, vi } from "@effect/vitest";
 
@@ -2128,6 +2129,7 @@ describe("agent browser access", () => {
     enableAgentBrowserAccess: boolean,
     threadId: ThreadId,
     enableComputerUse = false,
+    platform: NodeJS.Platform = "darwin",
   ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
@@ -2161,6 +2163,7 @@ describe("agent browser access", () => {
         ),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(Layer.succeed(HostProcessPlatform, platform)),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -2226,6 +2229,19 @@ describe("agent browser access", () => {
 
       assert.deepEqual(issued, [threadId]);
       assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["computer-use"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds computer control on unsupported hosts", () =>
+    Effect.gen(function* () {
+      const issued = yield* startSessionWith(
+        false,
+        asThreadId("thread-computer-use-linux"),
+        true,
+        "linux",
+      );
+
+      assert.deepEqual(issued, []);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
