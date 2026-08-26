@@ -11,6 +11,7 @@ interface ReadAloudSession {
   readonly prepared: PreparedConnection;
   readonly audioContext: AudioContext;
   cancelled: boolean;
+  synthesisAbort: AbortController | null;
   source: AudioBufferSourceNode | null;
   finishPlayback: (() => void) | null;
 }
@@ -62,6 +63,8 @@ export function useBrowserReadAloud(input: {
 
   const closeSession = useCallback(
     (session: ReadAloudSession) => {
+      session.synthesisAbort?.abort();
+      session.synthesisAbort = null;
       releaseSource(session);
       void session.audioContext.close().catch(() => undefined);
       if (sessionRef.current !== session) return;
@@ -127,6 +130,7 @@ export function useBrowserReadAloud(input: {
         prepared: current.prepared,
         audioContext,
         cancelled: false,
+        synthesisAbort: null,
         source: null,
         finishPlayback: null,
       };
@@ -136,10 +140,15 @@ export function useBrowserReadAloud(input: {
       try {
         await audioReady;
         for (const chunk of chunks) {
+          if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "loading" });
+          const synthesisAbort = new AbortController();
+          session.synthesisAbort = synthesisAbort;
           const result = await runtime.runPromise(
             synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
+            { signal: synthesisAbort.signal },
           );
+          if (session.synthesisAbort === synthesisAbort) session.synthesisAbort = null;
           if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "playing" });
           await playAudio(session, result.audioBase64);

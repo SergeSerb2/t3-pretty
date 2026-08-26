@@ -13,6 +13,7 @@ interface ReadAloudSession {
   readonly messageId: string;
   readonly prepared: PreparedConnection;
   cancelled: boolean;
+  synthesisAbort: AbortController | null;
   player: ExpoAudioPlayer | null;
   subscription: { remove(): void } | null;
   file: File | null;
@@ -65,6 +66,8 @@ export function useNativeReadAloud(input: {
 
   const closeSession = useCallback(
     (session: ReadAloudSession) => {
+      session.synthesisAbort?.abort();
+      session.synthesisAbort = null;
       releaseAudio(session);
       if (sessionRef.current !== session) return;
       sessionRef.current = null;
@@ -84,6 +87,10 @@ export function useNativeReadAloud(input: {
     async (session: ReadAloudSession, audio: ExpoAudio, audioBase64: string) => {
       const file = new File(Paths.cache, `t3-read-aloud-${Date.now()}-${audioFileSequence++}.wav`);
       file.write(audioBase64, { encoding: "base64" });
+      if (session.cancelled || sessionRef.current !== session) {
+        file.delete();
+        return;
+      }
       const player = audio.createAudioPlayer(file.uri);
       session.file = file;
       session.player = player;
@@ -128,6 +135,7 @@ export function useNativeReadAloud(input: {
         messageId,
         prepared: current.prepared,
         cancelled: false,
+        synthesisAbort: null,
         player: null,
         subscription: null,
         file: null,
@@ -140,10 +148,15 @@ export function useNativeReadAloud(input: {
         const audio = await import("expo-audio");
         await audio.setAudioModeAsync({ playsInSilentMode: true });
         for (const chunk of chunks) {
+          if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "loading" });
+          const synthesisAbort = new AbortController();
+          session.synthesisAbort = synthesisAbort;
           const result = await runtime.runPromise(
             synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
+            { signal: synthesisAbort.signal },
           );
+          if (session.synthesisAbort === synthesisAbort) session.synthesisAbort = null;
           if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "playing" });
           await playAudio(session, audio, result.audioBase64);

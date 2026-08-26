@@ -1789,6 +1789,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     prepared: Option.getOrNull(preparedConnection),
     reportError: reportReadAloudError,
   });
+  const onToggleReadAloud = useCallback(
+    (messageId: string, text: string) => void readAloud.toggle(messageId, text),
+    [readAloud.toggle],
+  );
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
@@ -2215,6 +2219,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       readAloudEnabled: props.readAloudEnabled === true,
       readAloudMessageId: readAloud.activeMessageId,
       readAloudPhase: readAloud.phase,
+      onToggleReadAloud,
     }),
     [
       copiedRowId,
@@ -2230,6 +2235,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.readAloudEnabled,
       readAloud.activeMessageId,
       readAloud.phase,
+      onToggleReadAloud,
     ],
   );
 
@@ -2431,7 +2437,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         readAloudEnabled: props.readAloudEnabled === true,
         readAloudMessageId: readAloud.activeMessageId,
         readAloudPhase: readAloud.phase,
-        onToggleReadAloud: (messageId, text) => void readAloud.toggle(messageId, text),
+        onToggleReadAloud,
       }),
     [
       copiedRowId,
@@ -2459,7 +2465,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       renderMarkdownImage,
       readAloud.activeMessageId,
       readAloud.phase,
-      readAloud.toggle,
+      onToggleReadAloud,
     ],
   );
 
