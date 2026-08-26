@@ -15,6 +15,7 @@ import {
   buildFixFindingsHandoff,
   canStartContinuousFix,
   countFixableFindings,
+  hasActionableComments,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -1082,6 +1083,56 @@ describe("fix findings handoff", () => {
         reviewThreads: [],
         comments: [],
         checks: [failingCheck],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions unless a PR has unresolved review comments", () => {
+    expect(hasActionableComments({ reviewThreads: [], comments: [] })).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-talk",
+            kind: "issue-comment",
+            author: { login: "octocat", name: null, avatarUrl: null },
+            body: "please also update the docs",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: null,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("please rename this")],
+        comments: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-review",
+            kind: "review",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Also drop the unused export.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: "CHANGES_REQUESTED",
+          },
+        ],
       }),
     ).toBe(true);
   });

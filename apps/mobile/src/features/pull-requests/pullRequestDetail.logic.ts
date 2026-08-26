@@ -518,6 +518,15 @@ export function canStartContinuousFix(input: {
   );
 }
 
+/** Unresolved review remarks — not failing checks or pending CI. */
+export function hasActionableComments(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): boolean {
+  const { threads, remarks } = collectFixableFindings({ ...input, checks: [] });
+  return threads.length > 0 || remarks.length > 0;
+}
+
 export function buildFixFindingsPrompt(input: {
   readonly provider: SourceControlProviderKind;
   readonly host: string;
