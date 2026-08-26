@@ -34,6 +34,39 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export interface QueuedComposerMessage {
+  readonly id: MessageId;
+  readonly text: string;
+  readonly attachmentCount: number;
+  readonly createdAt: string;
+  readonly queuedBehindTurnId: TurnId | null;
+}
+
+/** Keep queued copy at the composer until the server starts its turn. */
+export function reconcileQueuedComposerMessages(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+  activeTurnId: TurnId | null;
+}): ReadonlyArray<QueuedComposerMessage> {
+  const head = input.queuedMessages[0];
+  if (!head) return input.queuedMessages;
+
+  const serverMessage = input.serverMessages.find((message) => message.id === head.id);
+  const serverAssociatedMessage = serverMessage?.turnId != null;
+  const queuedTurnStarted =
+    input.activeTurnId !== null &&
+    input.activeTurnId !== head.queuedBehindTurnId &&
+    input.latestTurn?.turnId === input.activeTurnId &&
+    Date.parse(input.latestTurn.requestedAt) >= Date.parse(head.createdAt);
+  if (!serverAssociatedMessage && !queuedTurnStarted) return input.queuedMessages;
+
+  return input.queuedMessages.slice(1).map((message) => ({
+    ...message,
+    queuedBehindTurnId: input.activeTurnId,
+  }));
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
 export function shouldDockDraftHeroForSubmission(input: {

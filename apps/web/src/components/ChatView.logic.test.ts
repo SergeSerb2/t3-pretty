@@ -25,6 +25,7 @@ import {
   hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
@@ -968,6 +969,75 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("reconcileQueuedComposerMessages", () => {
+  const queuedBehindTurnId = TurnId.make("turn-running");
+  const queuedMessages = [
+    {
+      id: MessageId.make("message-queued-1"),
+      text: "First queued follow-up",
+      attachmentCount: 0,
+      createdAt: "2026-03-29T00:00:05.000Z",
+      queuedBehindTurnId,
+    },
+    {
+      id: MessageId.make("message-queued-2"),
+      text: "Second queued follow-up",
+      attachmentCount: 1,
+      createdAt: "2026-03-29T00:00:06.000Z",
+      queuedBehindTurnId,
+    },
+  ];
+
+  it("holds queued copy while the same turn is running", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: { ...completedTurn, turnId: queuedBehindTurnId, state: "running" },
+        activeTurnId: queuedBehindTurnId,
+      }),
+    ).toBe(queuedMessages);
+  });
+
+  it("releases one queued message when its next turn starts", () => {
+    const nextTurnId = TurnId.make("turn-next");
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: {
+          ...completedTurn,
+          turnId: nextTurnId,
+          state: "running",
+          requestedAt: "2026-03-29T00:00:07.000Z",
+        },
+        activeTurnId: nextTurnId,
+      }),
+    ).toEqual([{ ...queuedMessages[1], queuedBehindTurnId: nextTurnId }]);
+  });
+
+  it("releases a queued message once the server associates it with a turn", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[0]!.id,
+            role: "user",
+            text: queuedMessages[0]!.text,
+            turnId: TurnId.make("turn-adopted"),
+            createdAt: queuedMessages[0]!.createdAt,
+            updatedAt: queuedMessages[0]!.createdAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: completedTurn,
+        activeTurnId: null,
+      }),
+    ).toEqual([{ ...queuedMessages[1], queuedBehindTurnId: null }]);
   });
 });
 
