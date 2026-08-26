@@ -29,6 +29,7 @@ import {
 } from "react-native-nitro-markdown";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -139,6 +140,9 @@ import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-prev
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
+import { usePreparedConnection } from "../../state/session";
+import * as Option from "effect/Option";
+import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -224,6 +228,7 @@ export interface ThreadFeedProps {
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
   readonly onListReady?: () => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly readAloudEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: {
     readonly loading: boolean;
@@ -1170,6 +1175,10 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly readAloudEnabled: boolean;
+    readonly readAloudMessageId: string | null;
+    readonly readAloudPhase: ReadAloudPhase;
+    readonly onToggleReadAloud: (messageId: string, text: string) => void;
   },
 ) {
   const entry = info.item;
@@ -1350,6 +1359,14 @@ function renderFeedEntry(
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
+            {props.readAloudEnabled ? (
+              <ReadAloudButton
+                active={props.readAloudMessageId === message.id}
+                phase={props.readAloudPhase}
+                tintColor={iconSubtleColor}
+                onPress={() => props.onToggleReadAloud(message.id, message.text)}
+              />
+            ) : null}
             <CopyTextButton
               accessibilityLabel="Copy message"
               text={message.text}
@@ -1379,6 +1396,49 @@ function renderFeedEntry(
       threadId={props.threadId}
       workspaceRoot={props.workspaceRoot}
     />
+  );
+}
+
+function ReadAloudButton(props: {
+  readonly active: boolean;
+  readonly phase: ReadAloudPhase;
+  readonly tintColor: ColorValue;
+  readonly onPress: () => void;
+}) {
+  const loading = props.active && props.phase === "loading";
+  const label = props.active
+    ? loading
+      ? "Stop preparing read aloud"
+      : "Stop read aloud"
+    : "Read response aloud";
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ busy: loading, selected: props.active }}
+      hitSlop={8}
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        width: 28,
+        height: 28,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 9,
+        opacity: pressed ? 0.52 : 1,
+      })}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={props.tintColor} />
+      ) : (
+        <SymbolView
+          name={props.active ? "stop.fill" : "play"}
+          size={13}
+          tintColor={props.tintColor}
+          type="monochrome"
+        />
+      )}
+    </Pressable>
   );
 }
 
@@ -1720,6 +1780,15 @@ function ThreadFeedPlaceholder(props: {
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
+  const preparedConnection = usePreparedConnection(props.environmentId);
+  const reportReadAloudError = useCallback((message: string) => {
+    Alert.alert("Read aloud", message);
+  }, []);
+  const readAloud = useNativeReadAloud({
+    enabled: props.readAloudEnabled === true,
+    prepared: Option.getOrNull(preparedConnection),
+    reportError: reportReadAloudError,
+  });
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
@@ -2143,6 +2212,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      readAloudEnabled: props.readAloudEnabled === true,
+      readAloudMessageId: readAloud.activeMessageId,
+      readAloudPhase: readAloud.phase,
     }),
     [
       copiedRowId,
@@ -2155,6 +2227,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      props.readAloudEnabled,
+      readAloud.activeMessageId,
+      readAloud.phase,
     ],
   );
 
@@ -2353,6 +2428,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
+        readAloudEnabled: props.readAloudEnabled === true,
+        readAloudMessageId: readAloud.activeMessageId,
+        readAloudPhase: readAloud.phase,
+        onToggleReadAloud: (messageId, text) => void readAloud.toggle(messageId, text),
       }),
     [
       copiedRowId,
@@ -2373,10 +2452,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,
+      props.readAloudEnabled,
       props.skills,
       props.threadId,
       props.workspaceRoot,
       renderMarkdownImage,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      readAloud.toggle,
     ],
   );
 

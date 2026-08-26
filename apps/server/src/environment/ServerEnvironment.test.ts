@@ -95,6 +95,9 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.voiceDictation).toBe(
         resolveDictationAvailability().available ? true : undefined,
       );
+      expect(second.capabilities.readAloud).toBe(
+        resolveDictationAvailability().available ? true : undefined,
+      );
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);

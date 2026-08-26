@@ -39,6 +39,12 @@ import {
   DictationUnavailableError,
   DictationUpstreamError,
 } from "./dictation.ts";
+import {
+  ReadAloudRequest,
+  ReadAloudResult,
+  ReadAloudUnavailableError,
+  ReadAloudUpstreamError,
+} from "./readAloud.ts";
 import { ServerConfig } from "./server.ts";
 import {
   ClientOrchestrationCommand,
@@ -623,6 +629,20 @@ export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").add(
+  HttpApiEndpoint.post("synthesize", "/api/read-aloud/synthesize", {
+    headers: OptionalBearerHeaders,
+    payload: ReadAloudRequest,
+    success: ReadAloudResult,
+    error: [
+      ReadAloudUnavailableError,
+      ReadAloudUpstreamError,
+      EnvironmentScopeRequiredError,
+      EnvironmentInternalError,
+    ],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -691,4 +711,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentDictationHttpApi)
+  .add(EnvironmentReadAloudHttpApi)
   .add(EnvironmentConnectHttpApi) {}

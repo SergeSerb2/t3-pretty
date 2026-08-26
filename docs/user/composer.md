@@ -10,6 +10,15 @@ becomes available after every upload finishes. Failed uploads can be retried or 
 On web and desktop, HEIC and HEIF photos are automatically converted to JPEG when you drag them into
 the composer or paste them into a message.
 
+## Voice input and read aloud
+
+On builds and connected environments that offer voice features, use the microphone in the composer
+to dictate a message. Settled final agent responses also show a play button beside the copy button;
+select it to read the complete response aloud, and select it again to stop.
+
+Voice processing runs through the external Groq account configured on the connected host. Audio and
+response text travel through that host, and provider credentials are never sent to the client.
+
 ## Commands and skills
 
 Type `/` to open the command menu. Type `$` to find and add a skill. Skill rows show their source,

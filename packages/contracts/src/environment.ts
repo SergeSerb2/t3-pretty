@@ -82,6 +82,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequests: Schema.optionalKey(Schema.Boolean),
   /** Internal server can proxy Groq transcription and cleanup for connected clients. */
   voiceDictation: Schema.optionalKey(Schema.Boolean),
+  /** Internal server can proxy Groq speech generation for connected clients. */
+  readAloud: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.settle / thread.unsettle commands. Absent on
       pre-settlement servers, so clients treat missing as unsupported and
       never send the commands under version skew. */
