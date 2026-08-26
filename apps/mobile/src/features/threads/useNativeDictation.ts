@@ -92,6 +92,8 @@ export function useNativeDictation(input: {
     const replacement = replaceDictationInsertion({
       value: valueRef.current,
       start: session.start,
+      before: session.before,
+      after: session.after,
       previous: session.insertion,
       next,
     });
@@ -278,7 +280,7 @@ export function useNativeDictation(input: {
       const recorder = new audio.AudioModule.AudioRecorder(
         nativeRecordingOptions(audio.RecordingPresets.HIGH_QUALITY),
       );
-      const cursor = Math.max(0, Math.min(valueRef.current.length, current.cursor));
+      const cursor = Math.max(0, Math.min(valueRef.current.length, inputRef.current.cursor));
       session = {
         prepared: current.prepared,
         start: cursor,
@@ -298,8 +300,8 @@ export function useNativeDictation(input: {
         closed: false,
       };
       sessionRef.current = session;
-      await audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       setPhase("recording");
+      await audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await beginChunkRef.current(session);
     } catch (error) {
       if (session) await closeSession(session);

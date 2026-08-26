@@ -41,6 +41,8 @@ describe("dictation composer insertion", () => {
       replaceDictationInsertion({
         value: "Pleasetoday.",
         start: 6,
+        before: "Please",
+        after: "today.",
         previous: "",
         next: insertion,
       }),
@@ -52,8 +54,23 @@ describe("dictation composer insertion", () => {
       replaceDictationInsertion({
         value: "edited elsewhere",
         start: 0,
+        before: "",
+        after: "",
         previous: "old transcript",
         next: "new transcript",
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses the first insertion after the surrounding composer text changed", () => {
+    expect(
+      replaceDictationInsertion({
+        value: "replaced prompt",
+        start: 6,
+        before: "Please",
+        after: "today.",
+        previous: "",
+        next: " dictated text ",
       }),
     ).toBeNull();
   });

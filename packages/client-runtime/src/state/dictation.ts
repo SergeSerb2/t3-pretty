@@ -134,14 +134,19 @@ export function formatDictationInsertion(input: {
 export function replaceDictationInsertion(input: {
   readonly value: string;
   readonly start: number;
+  readonly before: string;
+  readonly after: string;
   readonly previous: string;
   readonly next: string;
 }): { readonly value: string; readonly cursor: number } | null {
-  if (input.value.slice(input.start, input.start + input.previous.length) !== input.previous) {
+  if (
+    input.start !== input.before.length ||
+    input.value !== `${input.before}${input.previous}${input.after}`
+  ) {
     return null;
   }
   return {
-    value: `${input.value.slice(0, input.start)}${input.next}${input.value.slice(input.start + input.previous.length)}`,
+    value: `${input.before}${input.next}${input.after}`,
     cursor: input.start + input.next.length,
   };
 }

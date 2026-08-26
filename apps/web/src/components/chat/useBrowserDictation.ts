@@ -4,6 +4,7 @@ import {
   cleanupDictation,
   fetchDictationStatus,
   formatDictationInsertion,
+  replaceDictationInsertion,
   transcribeDictationAudio,
 } from "@t3tools/client-runtime/state/dictation";
 import type { DictationAudioMimeType } from "@t3tools/contracts";
@@ -105,6 +106,23 @@ export function useBrowserDictation(input: {
     if (mountedRef.current) setPhase("idle");
   }, []);
 
+  const replaceSessionInsertion = useCallback((session: DictationSession, next: string) => {
+    const current = inputRef.current;
+    if (
+      replaceDictationInsertion({
+        value: current.readComposer().value,
+        start: session.start,
+        before: session.before,
+        after: session.after,
+        previous: session.insertion,
+        next,
+      }) === null
+    ) {
+      return false;
+    }
+    return current.replaceInsertion(session.start, session.insertion, next);
+  }, []);
+
   const finishSession = useCallback(
     async (session: DictationSession) => {
       if (session.finalizing || session.closed) return;
@@ -136,7 +154,7 @@ export function useBrowserDictation(input: {
             after: session.after,
             transcript: result.text,
           });
-          if (!inputRef.current.replaceInsertion(session.start, session.insertion, insertion)) {
+          if (!replaceSessionInsertion(session, insertion)) {
             inputRef.current.reportError("The composer changed; the raw transcript was kept.");
           }
         } catch {
@@ -147,7 +165,7 @@ export function useBrowserDictation(input: {
       }
       closeSession(session);
     },
-    [closeSession],
+    [closeSession, replaceSessionInsertion],
   );
 
   const transcribeChunk = useCallback(
@@ -168,12 +186,12 @@ export function useBrowserDictation(input: {
         after: session.after,
         transcript: session.transcript,
       });
-      if (!inputRef.current.replaceInsertion(session.start, session.insertion, insertion)) {
+      if (!replaceSessionInsertion(session, insertion)) {
         throw new Error("The composer changed while dictation was running.");
       }
       session.insertion = insertion;
     },
-    [],
+    [replaceSessionInsertion],
   );
 
   const beginChunkRef = useRef<(session: DictationSession) => void>(() => {});
@@ -232,6 +250,7 @@ export function useBrowserDictation(input: {
   const start = useCallback(async () => {
     const current = inputRef.current;
     if (!current.enabled || !current.prepared || sessionRef.current) return;
+    let stream: MediaStream | null = null;
     try {
       const status = await runtime.runPromise(fetchDictationStatus(current.prepared));
       if (!status.available) {
@@ -246,12 +265,12 @@ export function useBrowserDictation(input: {
       if (typeof MediaRecorder === "undefined") {
         throw new Error("This browser does not support audio recording.");
       }
-      const snapshot = current.readComposer();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
+      const snapshot = inputRef.current.readComposer();
       const session: DictationSession = {
         prepared: current.prepared,
         stream,
@@ -270,6 +289,7 @@ export function useBrowserDictation(input: {
         closed: false,
       };
       sessionRef.current = session;
+      stream = null;
       setPhase("recording");
       beginChunkRef.current(session);
     } catch (error) {
@@ -277,6 +297,8 @@ export function useBrowserDictation(input: {
       if (session) {
         session.cancelled = true;
         closeSession(session);
+      } else if (stream) {
+        for (const track of stream.getTracks()) track.stop();
       }
       current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
