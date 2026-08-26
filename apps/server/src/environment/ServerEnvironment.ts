@@ -182,7 +182,9 @@ export const make = Effect.gen(function* () {
         ...descriptor,
         capabilities: {
           ...descriptor.capabilities,
-          ...(resolveDictationAvailability().available ? { voiceDictation: true } : {}),
+          ...(resolveDictationAvailability().available
+            ? { voiceDictation: true, readAloud: true }
+            : {}),
           agentActivityPublishing,
         },
       })),

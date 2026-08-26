@@ -58,6 +58,7 @@ import {
   GlobeIcon,
   HammerIcon,
   ImageIcon,
+  LoaderCircleIcon,
   MessageCircleIcon,
   MinusIcon,
   MousePointerClickIcon,
@@ -65,8 +66,10 @@ import {
   PaintbrushIcon,
   SearchIcon,
   SquarePenIcon,
+  SquareIcon,
   TerminalIcon,
   Undo2Icon,
+  Volume2Icon,
   WrenchIcon,
   XIcon,
   ZapIcon,
@@ -78,6 +81,7 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { useBrowserReadAloud, type ReadAloudPhase } from "./useBrowserReadAloud";
 import {
   computeStableMessagesTimelineRows,
   deriveTimelineMinimapTurns,
@@ -135,6 +139,10 @@ import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
+import { usePreparedConnection } from "../../state/session";
+import * as Option from "effect/Option";
+import { toastManager } from "../ui/toast";
+import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 
 import {
   buildInlineTerminalContextText,
@@ -173,6 +181,10 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  readAloudEnabled: boolean;
+  readAloudMessageId: string | null;
+  readAloudPhase: ReadAloudPhase;
+  onToggleReadAloud: (messageId: string, text: string) => void;
 }
 
 interface TimelineRowActivityState {
@@ -277,6 +289,7 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
+  readAloudEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +329,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
+  readAloudEnabled = false,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -325,6 +339,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const disclosureSettleFrameRef = useRef<number | null>(null);
   const disclosureSettleSecondFrameRef = useRef<number | null>(null);
   const previousContentInsetEndAdjustmentRef = useRef(contentInsetEndAdjustment);
+  const preparedConnection = usePreparedConnection(activeThreadEnvironmentId);
+  const reportReadAloudError = useCallback((message: string) => {
+    toastManager.add({ title: "Read aloud failed", description: message });
+  }, []);
+  const readAloud = useBrowserReadAloud({
+    enabled: readAloudEnabled,
+    prepared: Option.getOrNull(preparedConnection),
+    reportError: reportReadAloudError,
+  });
 
   useLayoutEffect(() => {
     keepTimelineEndVisibleAfterOverlayGrowth({
@@ -574,6 +597,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      readAloudEnabled,
+      readAloudMessageId: readAloud.activeMessageId,
+      readAloudPhase: readAloud.phase,
+      onToggleReadAloud: (messageId, text) => void readAloud.toggle(messageId, text),
     }),
     [
       timestampFormat,
@@ -591,6 +618,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      readAloudEnabled,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      readAloud.toggle,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1229,6 +1260,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
+            <AssistantReadAloudButton row={row} />
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
@@ -1246,6 +1278,54 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  if (
+    !ctx.readAloudEnabled ||
+    row.message.streaming ||
+    !row.message.text?.trim() ||
+    readAloudChunks(row.message.text).length === 0
+  ) {
+    return null;
+  }
+
+  const active = ctx.readAloudMessageId === row.message.id;
+  const loading = active && ctx.readAloudPhase === "loading";
+  const label = active
+    ? loading
+      ? "Stop preparing read aloud"
+      : "Stop read aloud"
+    : "Read response aloud";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-busy={loading}
+            aria-label={label}
+            aria-pressed={active}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => ctx.onToggleReadAloud(row.message.id, row.message.text ?? "")}
+            size="xs"
+            type="button"
+            variant="ghost"
+          />
+        }
+      >
+        {loading ? (
+          <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+        ) : active ? (
+          <SquareIcon className="size-3" />
+        ) : (
+          <Volume2Icon className="size-3" />
+        )}
+      </TooltipTrigger>
+      <TooltipPopup>{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 

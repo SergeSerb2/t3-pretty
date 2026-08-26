@@ -2372,6 +2372,9 @@ function ChatViewContent(props: ChatViewProps) {
   const supportsVoiceDictation =
     T3CODE_BUILD_FLAVOR === "internal" &&
     attachmentEnvironmentConfig?.environment.capabilities.voiceDictation === true;
+  const supportsReadAloud =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    attachmentEnvironmentConfig?.environment.capabilities.readAloud === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -7608,6 +7611,7 @@ function ChatViewContent(props: ChatViewProps) {
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
+                readAloudEnabled={supportsReadAloud}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}

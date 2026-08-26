@@ -1324,4 +1324,24 @@ describe("MessagesTimeline", () => {
       }),
     ).toContain('aria-expanded="false"');
   });
+
+  it("offers read aloud on a settled final assistant response", () => {
+    const turnId = TurnId.make("turn-read-aloud");
+    const entry = buildAssistantTimelineEntry("The complete response.");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        readAloudEnabled
+        latestTurn={{
+          turnId,
+          state: "completed",
+          startedAt: MESSAGE_CREATED_AT,
+          completedAt: MESSAGE_CREATED_AT,
+        }}
+        timelineEntries={[{ ...entry, message: { ...entry.message, turnId } }]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Read response aloud"');
+  });
 });
