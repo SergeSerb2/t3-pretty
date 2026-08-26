@@ -394,6 +394,7 @@ import {
   isBranchMismatchDismissedForSession,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -403,6 +404,7 @@ import {
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
+  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
@@ -413,6 +415,7 @@ import {
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
+  type QueuedComposerMessage,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
@@ -1641,6 +1644,10 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
+  const [queuedComposerMessages, setQueuedComposerMessages] = useState<
+    ReadonlyArray<QueuedComposerMessage>
+  >([]);
+  const previousComposerRouteIdentityRef = useRef({ draftId, routeKind, routeThreadKey });
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
@@ -2803,6 +2810,15 @@ function ChatViewContent(props: ChatViewProps) {
       };
     });
   }, [serverAttachmentUrlById, serverMessages]);
+  const reconciledQueuedComposerMessages = useMemo(
+    () =>
+      reconcileQueuedComposerMessages({
+        queuedMessages: queuedComposerMessages,
+        serverMessages: displayServerMessages,
+        latestTurn: activeThread?.latestTurn ?? null,
+      }),
+    [activeThread?.latestTurn, displayServerMessages, queuedComposerMessages],
+  );
   useEffect(() => {
     if (typeof Image === "undefined" || displayServerMessages.length === 0) {
       return;
@@ -2914,7 +2930,8 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [attachmentPreviewHandoffByMessageId, clearAttachmentPreviewHandoff, displayServerMessages]);
   const timelineMessages = useMemo(() => {
-    const messages = displayServerMessages;
+    const queuedMessageIds = new Set(reconciledQueuedComposerMessages.map((message) => message.id));
+    const messages = displayServerMessages.filter((message) => !queuedMessageIds.has(message.id));
     const serverMessagesWithPreviewHandoff =
       Object.keys(attachmentPreviewHandoffByMessageId).length === 0
         ? messages
@@ -2956,7 +2973,7 @@ function ChatViewContent(props: ChatViewProps) {
           });
 
     const localMessages = [
-      ...optimisticUserMessages,
+      ...optimisticUserMessages.filter((message) => !queuedMessageIds.has(message.id)),
       ...feedbackSubmissions.flatMap((submission) =>
         submission.status === "interrupted"
           ? []
@@ -2977,6 +2994,7 @@ function ChatViewContent(props: ChatViewProps) {
     displayServerMessages,
     feedbackSubmissions,
     optimisticUserMessages,
+    reconciledQueuedComposerMessages,
   ]);
   const timelineEntries = useMemo(
     () =>
@@ -4643,15 +4661,29 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
 
   useEffect(() => {
+    if (reconciledQueuedComposerMessages !== queuedComposerMessages) {
+      setQueuedComposerMessages(reconciledQueuedComposerMessages);
+    }
+  }, [queuedComposerMessages, reconciledQueuedComposerMessages]);
+
+  useEffect(() => {
+    const currentRouteIdentity = { draftId, routeKind, routeThreadKey };
+    const shouldReset = shouldResetComposerQueueForRouteChange(
+      previousComposerRouteIdentityRef.current,
+      currentRouteIdentity,
+    );
+    previousComposerRouteIdentityRef.current = currentRouteIdentity;
+    if (!shouldReset) return;
     setOptimisticUserMessages((existing) => {
       for (const message of existing) {
         revokeUserMessagePreviewUrls(message);
       }
       return [];
     });
+    setQueuedComposerMessages([]);
     resetLocalDispatch();
     setExpandedImage(null);
-  }, [draftId, resetLocalDispatch, threadId]);
+  }, [draftId, resetLocalDispatch, routeKind, routeThreadKey]);
 
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
@@ -6117,6 +6149,16 @@ function ChatViewContent(props: ChatViewProps) {
     } else {
       scrollToEnd();
     }
+    if (options?.delivery === "queue") {
+      setQueuedComposerMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          text: trimmed,
+          attachmentCount: optimisticAttachments.length,
+        },
+      ]);
+    }
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
@@ -6350,6 +6392,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      setQueuedComposerMessages((existing) =>
+        existing.filter((message) => message.id !== messageIdForSend),
+      );
       // The bubble must go even when the composer is busy: nothing else prunes
       // it, so leaving it would claim a message that never reached the server.
       setOptimisticUserMessages((existing) => {
@@ -7704,6 +7749,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
                             activeLatestTurnId={activeLatestTurn?.turnId ?? null}
+                            queuedMessages={reconciledQueuedComposerMessages}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             autoCreatePullRequest={autoCreatePullRequest}

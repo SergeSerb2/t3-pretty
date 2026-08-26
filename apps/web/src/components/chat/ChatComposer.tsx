@@ -51,7 +51,11 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import {
+  deriveComposerSendState,
+  readFileAsDataUrl,
+  type QueuedComposerMessage,
+} from "../ChatView.logic";
 import { serializeComposerImageAttachments } from "./composerImagePersistence";
 import {
   dataTransferHasComposerMention,
@@ -612,6 +616,7 @@ export interface ChatComposerProps {
   activeTasksProgress: ComposerTasksProgress | null;
   activeTaskSteps: readonly ComposerTaskStep[] | null;
   activeLatestTurnId: TurnId | null;
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
 
   // Mode
   runtimeMode: RuntimeMode;
@@ -726,6 +731,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeTasksProgress,
     activeTaskSteps,
     activeLatestTurnId,
+    queuedMessages,
     runtimeMode,
     interactionMode,
     autoCreatePullRequest,
@@ -1395,7 +1401,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const showComposerTopDrawer =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
-    (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
+    (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null) ||
+    queuedMessages.length > 0;
   const showCollapsedMobilePromptRow =
     isComposerCollapsedMobile && !isComposerApprovalState && pendingUserInputs.length === 0;
 
@@ -3208,7 +3215,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className={cn("mx-auto w-full min-w-0 max-w-3xl", hasShoulderTab && "pt-7")}
       data-chat-composer-form="true"
     >
-      {showComposerTopDrawer && (!isTasksDrawerOpen || hasBlockingComposerTopDrawer) ? (
+      {showComposerTopDrawer &&
+      (!isTasksDrawerOpen || hasBlockingComposerTopDrawer || queuedMessages.length > 0) ? (
         <div
           className="chat-composer-top-drawer"
           data-chat-composer-top-drawer="true"
@@ -3317,6 +3325,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : null}
                 </div>
               </div>
+            </div>
+          ) : null}
+          {queuedMessages.length > 0 ? (
+            <div
+              role="status"
+              aria-label={`${queuedMessages.length} queued message${queuedMessages.length === 1 ? "" : "s"}`}
+              className="max-h-32 overflow-y-auto px-3 py-2 sm:px-4"
+              data-chat-composer-queued-messages="true"
+            >
+              {queuedMessages.map((message, index) => {
+                const text = message.text.replace(/\s+/g, " ").trim();
+                const attachmentLabel =
+                  message.attachmentCount > 0
+                    ? `${message.attachmentCount} attachment${message.attachmentCount === 1 ? "" : "s"}`
+                    : null;
+                return (
+                  <div
+                    key={message.id}
+                    className="flex min-w-0 items-center gap-2 py-1 text-xs"
+                    data-chat-composer-queued-message={message.id}
+                  >
+                    <span className="shrink-0 font-medium text-info">
+                      {index === 0 ? "Queued" : `Queued ${index + 1}`}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-foreground">
+                      {text || attachmentLabel || "Message"}
+                    </span>
+                    {text && attachmentLabel ? (
+                      <span className="shrink-0 text-muted-foreground">{attachmentLabel}</span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </div>

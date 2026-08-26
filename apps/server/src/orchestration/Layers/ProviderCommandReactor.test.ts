@@ -161,6 +161,7 @@ describe("ProviderCommandReactor", () => {
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
+    readonly activeTurnSessionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly stopSessionEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
@@ -453,6 +454,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(SqlitePersistenceMemory),
     );
     let titleRegenerationCompletionDispatchAttempts = 0;
+    let activeTurnSessionDispatchAttempts = 0;
     const reactorOrchestrationLayer = Layer.effect(
       OrchestrationEngineService,
       Effect.gen(function* () {
@@ -460,6 +462,17 @@ describe("ProviderCommandReactor", () => {
         return {
           readEvents: engine.readEvents,
           dispatch: (command) => {
+            if (
+              command.type === "thread.session.set" &&
+              command.activeUserMessageId !== undefined
+            ) {
+              activeTurnSessionDispatchAttempts += 1;
+              if (
+                activeTurnSessionDispatchAttempts <= (input?.activeTurnSessionDispatchFailures ?? 0)
+              ) {
+                return Effect.die(new Error("Injected active turn session dispatch failure"));
+              }
+            }
             if (command.type === "thread.title.regeneration.complete") {
               titleRegenerationCompletionDispatchAttempts += 1;
               if (
@@ -4192,6 +4205,43 @@ describe("ProviderCommandReactor", () => {
     );
   });
 
+  it("does not recover a successful provider send as a turn start failure", async () => {
+    const harness = await createHarness({
+      activeTurnSessionDispatchFailures: 1,
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-bookkeeping-failure"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-bookkeeping-failure"),
+          role: "user",
+          text: "provider accepted this turn",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await waitFor(async () => {
+      const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+      return thread?.activities.some((activity) => activity.kind === "skill.loaded") === true;
+    });
+    await harness.drain();
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
+    ).toBe(false);
+    expect(thread?.activities.some((activity) => activity.kind === "skill.loaded")).toBe(true);
+  });
+
   it("does not flush a second queued start on a stale ready session-set", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -4269,6 +4319,8 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn.mock.calls[0]?.[0]?.input).toEqual(
       expect.stringMatching(/queued first$/),
     );
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    expect(thread?.latestTurn?.userMessageId).toBe("user-message-queued-a");
   });
 
   it("sends a mid-turn start immediately when delivery is left at the steer default", async () => {

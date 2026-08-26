@@ -610,6 +610,7 @@ export type OrchestrationLatestTurnState = typeof OrchestrationLatestTurnState.T
 
 export const OrchestrationLatestTurn = Schema.Struct({
   turnId: TurnId,
+  userMessageId: Schema.optional(MessageId),
   state: OrchestrationLatestTurnState,
   requestedAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
@@ -1409,6 +1410,7 @@ const ThreadSessionSetCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   session: OrchestrationSession,
+  activeUserMessageId: Schema.optional(MessageId),
   createdAt: IsoDateTime,
 });
 
@@ -1765,6 +1767,7 @@ export const ThreadSessionStopRequestedPayload = Schema.Struct({
 export const ThreadSessionSetPayload = Schema.Struct({
   threadId: ThreadId,
   session: OrchestrationSession,
+  activeUserMessageId: Schema.optional(MessageId),
 });
 
 export const ThreadProposedPlanUpsertedPayload = Schema.Struct({

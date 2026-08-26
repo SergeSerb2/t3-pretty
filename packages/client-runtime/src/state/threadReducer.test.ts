@@ -783,6 +783,7 @@ describe("applyThreadDetailEvent", () => {
         type: "thread.session-set",
         payload: {
           threadId: ThreadId.make("thread-1"),
+          activeUserMessageId: MessageId.make("message-1"),
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",
@@ -799,6 +800,7 @@ describe("applyThreadDetailEvent", () => {
       if (result.kind === "updated") {
         expect(result.thread.session?.status).toBe("running");
         expect(result.thread.latestTurn?.turnId).toBe("turn-1");
+        expect(result.thread.latestTurn?.userMessageId).toBe("message-1");
         expect(result.thread.latestTurn?.state).toBe("running");
       }
     });

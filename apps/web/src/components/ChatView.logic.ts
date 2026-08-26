@@ -34,6 +34,62 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export interface QueuedComposerMessage {
+  readonly id: MessageId;
+  readonly text: string;
+  readonly attachmentCount: number;
+}
+
+/** Identify the queued message whose server turn has started. */
+export function startedQueuedComposerMessageId(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): MessageId | null {
+  if (input.queuedMessages.length === 0 || input.latestTurn === null) return null;
+  const queuedIds = new Set(input.queuedMessages.map((message) => message.id));
+  if (input.latestTurn.userMessageId !== undefined) {
+    return queuedIds.has(input.latestTurn.userMessageId) ? input.latestTurn.userMessageId : null;
+  }
+  return (
+    input.serverMessages.find(
+      (message) => queuedIds.has(message.id) && message.createdAt === input.latestTurn?.requestedAt,
+    )?.id ?? null
+  );
+}
+
+/** Keep queued copy at the composer until the server starts its turn. */
+export function reconcileQueuedComposerMessages(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): ReadonlyArray<QueuedComposerMessage> {
+  const startedMessageId = startedQueuedComposerMessageId(input);
+  const startedIndex = input.queuedMessages.findIndex((message) => message.id === startedMessageId);
+  return startedIndex < 0 ? input.queuedMessages : input.queuedMessages.slice(startedIndex + 1);
+}
+
+export interface ChatViewRouteIdentity {
+  readonly routeKind: "draft" | "server";
+  readonly routeThreadKey: string;
+  readonly draftId: string | null;
+}
+
+export function shouldResetComposerQueueForRouteChange(
+  previous: ChatViewRouteIdentity,
+  current: ChatViewRouteIdentity,
+): boolean {
+  const unchanged =
+    previous.routeKind === current.routeKind &&
+    previous.routeThreadKey === current.routeThreadKey &&
+    previous.draftId === current.draftId;
+  const promoted =
+    previous.routeKind === "draft" &&
+    current.routeKind === "server" &&
+    previous.routeThreadKey === current.routeThreadKey;
+  return !unchanged && !promoted;
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
 
 export function shouldDockDraftHeroForSubmission(input: {
