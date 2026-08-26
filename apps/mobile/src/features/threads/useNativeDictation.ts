@@ -88,6 +88,7 @@ export function useNativeDictation(input: {
   }, []);
 
   const replaceInsertion = useCallback((session: DictationSession, next: string): boolean => {
+    if (session.cancelled || session.closed) return false;
     const replacement = replaceDictationInsertion({
       value: valueRef.current,
       start: session.start,
@@ -104,11 +105,11 @@ export function useNativeDictation(input: {
 
   const finishSession = useCallback(
     async (session: DictationSession) => {
-      if (session.finalizing) return;
+      if (session.finalizing || session.closed) return;
       session.finalizing = true;
       if (mountedRef.current) setPhase("processing");
       await session.queue;
-      if (session.cancelled) {
+      if (session.cancelled || session.closed) {
         await closeSession(session);
         return;
       }
@@ -127,6 +128,7 @@ export function useNativeDictation(input: {
               after: session.after.slice(0, CONTEXT_LENGTH),
             }),
           );
+          if (session.cancelled || session.closed) return;
           if (
             !replaceInsertion(
               session,
@@ -140,7 +142,9 @@ export function useNativeDictation(input: {
             inputRef.current.reportError("The composer changed; the raw transcript was kept.");
           }
         } catch {
-          inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+          if (!session.cancelled && !session.closed) {
+            inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+          }
         }
       }
       await closeSession(session);
@@ -161,6 +165,7 @@ export function useNativeDictation(input: {
           // The platform also reclaims recorder cache files; deletion is best effort.
         }
       }
+      if (session.cancelled || session.closed) return;
       const result = await runtime.runPromise(
         transcribeDictationAudio({
           prepared: session.prepared,
@@ -168,7 +173,7 @@ export function useNativeDictation(input: {
           mimeType: "audio/m4a",
         }),
       );
-      if (session.cancelled) return;
+      if (session.cancelled || session.closed) return;
       session.transcript = appendDictationSegment(session.transcript, result.text);
       const insertion = formatDictationInsertion({
         before: session.before,
@@ -186,13 +191,13 @@ export function useNativeDictation(input: {
   const stopChunkRef = useRef<(session: DictationSession) => Promise<void>>(async () => {});
 
   beginChunkRef.current = async (session) => {
-    if (session.stopRequested || session.cancelled) {
+    if (session.stopRequested || session.cancelled || session.closed) {
       await finishSession(session);
       return;
     }
     try {
       await session.recorder.prepareToRecordAsync();
-      if (session.stopRequested || session.cancelled) {
+      if (session.stopRequested || session.cancelled || session.closed) {
         await finishSession(session);
         return;
       }
@@ -206,7 +211,7 @@ export function useNativeDictation(input: {
   };
 
   stopChunkRef.current = async (session) => {
-    if (session.stoppingChunk || session.finalizing) return;
+    if (session.stoppingChunk || session.finalizing || session.closed) return;
     session.stoppingChunk = true;
     if (session.timer !== null) clearTimeout(session.timer);
     session.timer = null;
@@ -215,15 +220,18 @@ export function useNativeDictation(input: {
       const uri = session.recorder.uri;
       if (uri && !session.error) {
         session.queue = session.queue.then(async () => {
-          if (session.error || session.cancelled) return;
+          if (session.error || session.cancelled || session.closed) return;
           try {
             await transcribeFile(session, uri);
           } catch (error) {
+            if (session.cancelled || session.closed) return;
             session.error = error;
             session.stopRequested = true;
             if (session.recorder.isRecording) void stopChunkRef.current(session);
-            else void finishSession(session);
           }
+        });
+        void session.queue.then(() => {
+          if (session.error && !session.closed) void finishSession(session);
         });
       }
     } catch (error) {

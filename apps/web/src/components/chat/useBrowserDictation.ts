@@ -36,6 +36,7 @@ interface DictationSession {
   finalizing: boolean;
   error: unknown;
   cancelled: boolean;
+  closed: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -90,7 +91,15 @@ export function useBrowserDictation(input: {
   inputRef.current = input;
 
   const closeSession = useCallback((session: DictationSession) => {
+    if (session.closed) return;
+    session.closed = true;
     if (session.timer !== null) window.clearTimeout(session.timer);
+    const recorder = session.recorder;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      if (recorder.state === "recording") recorder.stop();
+    }
     for (const track of session.stream.getTracks()) track.stop();
     if (sessionRef.current === session) sessionRef.current = null;
     if (mountedRef.current) setPhase("idle");
@@ -98,11 +107,11 @@ export function useBrowserDictation(input: {
 
   const finishSession = useCallback(
     async (session: DictationSession) => {
-      if (session.finalizing) return;
+      if (session.finalizing || session.closed) return;
       session.finalizing = true;
       if (mountedRef.current) setPhase("processing");
       await session.queue;
-      if (session.cancelled) {
+      if (session.cancelled || session.closed) {
         closeSession(session);
         return;
       }
@@ -121,6 +130,7 @@ export function useBrowserDictation(input: {
               after: session.after.slice(0, CONTEXT_LENGTH),
             }),
           );
+          if (session.cancelled || session.closed) return;
           const insertion = formatDictationInsertion({
             before: session.before,
             after: session.after,
@@ -130,7 +140,9 @@ export function useBrowserDictation(input: {
             inputRef.current.reportError("The composer changed; the raw transcript was kept.");
           }
         } catch {
-          inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+          if (!session.cancelled && !session.closed) {
+            inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+          }
         }
       }
       closeSession(session);
@@ -141,6 +153,7 @@ export function useBrowserDictation(input: {
   const transcribeChunk = useCallback(
     async (session: DictationSession, blob: Blob, apiMimeType: DictationAudioMimeType) => {
       const audioBase64 = await blobBase64(blob);
+      if (session.cancelled || session.closed) return;
       const result = await runtime.runPromise(
         transcribeDictationAudio({
           prepared: session.prepared,
@@ -148,7 +161,7 @@ export function useBrowserDictation(input: {
           mimeType: apiMimeType,
         }),
       );
-      if (session.cancelled) return;
+      if (session.cancelled || session.closed) return;
       session.transcript = appendDictationSegment(session.transcript, result.text);
       const insertion = formatDictationInsertion({
         before: session.before,
@@ -165,7 +178,7 @@ export function useBrowserDictation(input: {
 
   const beginChunkRef = useRef<(session: DictationSession) => void>(() => {});
   beginChunkRef.current = (session) => {
-    if (session.stopRequested || session.cancelled) {
+    if (session.stopRequested || session.cancelled || session.closed) {
       void finishSession(session);
       return;
     }
@@ -177,19 +190,24 @@ export function useBrowserDictation(input: {
       if (event.data.size > 0) chunks.push(event.data);
     };
     recorder.onstop = () => {
+      if (session.closed) return;
       if (session.timer !== null) window.clearTimeout(session.timer);
       session.timer = null;
       const blob = new Blob(chunks, { type: format.mimeType });
       if (blob.size > 0 && !session.error) {
         session.queue = session.queue.then(async () => {
-          if (session.error || session.cancelled) return;
+          if (session.error || session.cancelled || session.closed) return;
           try {
             await transcribeChunk(session, blob, format.apiMimeType);
           } catch (error) {
+            if (session.cancelled || session.closed) return;
             session.error = error;
             session.stopRequested = true;
             if (session.recorder?.state === "recording") session.recorder.stop();
           }
+        });
+        void session.queue.then(() => {
+          if (session.error && !session.closed) void finishSession(session);
         });
       }
       if (session.stopRequested || session.error) {
@@ -249,6 +267,7 @@ export function useBrowserDictation(input: {
         finalizing: false,
         error: null,
         cancelled: false,
+        closed: false,
       };
       sessionRef.current = session;
       setPhase("recording");
