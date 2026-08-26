@@ -222,15 +222,23 @@ const TYPE_TEXT_SCRIPT = `function run(argv) {
   ObjC.import("Foundation");
   ObjC.bindFunction("CGEventKeyboardSetUnicodeString", ["void", ["id", "unsigned long", "pointer"]]);
   ObjC.import("CoreGraphics");
-  var utf16 = $(argv[0]).dataUsingEncoding($.NSUTF16LittleEndianStringEncoding);
-  var length = utf16.length / 2;
   var source = $.CGEventSourceCreate($.kCGEventSourceStateHIDSystemState);
-  var down = $.CGEventCreateKeyboardEvent(source, 0, true);
-  $.CGEventKeyboardSetUnicodeString(down, length, utf16.bytes);
-  $.CGEventPost($.kCGHIDEventTap, down);
-  var up = $.CGEventCreateKeyboardEvent(source, 0, false);
-  $.CGEventKeyboardSetUnicodeString(up, length, utf16.bytes);
-  $.CGEventPost($.kCGHIDEventTap, up);
+  var text = argv[0];
+  var offset = 0;
+  while (offset < text.length) {
+    var end = Math.min(offset + 20, text.length);
+    var lastUnit = text.charCodeAt(end - 1);
+    if (end < text.length && lastUnit >= 0xD800 && lastUnit <= 0xDBFF) end -= 1;
+    var utf16 = $(text.slice(offset, end)).dataUsingEncoding($.NSUTF16LittleEndianStringEncoding);
+    var length = utf16.length / 2;
+    var down = $.CGEventCreateKeyboardEvent(source, 0, true);
+    $.CGEventKeyboardSetUnicodeString(down, length, utf16.bytes);
+    $.CGEventPost($.kCGHIDEventTap, down);
+    var up = $.CGEventCreateKeyboardEvent(source, 0, false);
+    $.CGEventKeyboardSetUnicodeString(up, length, utf16.bytes);
+    $.CGEventPost($.kCGHIDEventTap, up);
+    offset = end;
+  }
 }`;
 
 const keyCodeScript = (modifiers: ReadonlyArray<ComputerKeyModifier>): string => {

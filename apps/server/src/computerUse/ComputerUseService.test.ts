@@ -114,6 +114,8 @@ it.effect("computer_type emits arbitrary Unicode from argv as an explicit UTF-16
     assert.include(script, 'ObjC.bindFunction("CGEventKeyboardSetUnicodeString"');
     assert.include(script, "NSUTF16LittleEndianStringEncoding");
     assert.include(script, "utf16.bytes");
+    assert.include(script, "offset + 20");
+    assert.include(script, "lastUnit >= 0xD800 && lastUnit <= 0xDBFF");
     assert.isFalse(
       script.includes(payload),
       "typed text must not be interpolated into the AppleScript source",
