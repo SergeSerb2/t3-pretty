@@ -375,8 +375,12 @@ export function buildServerProvider(input: {
 
 export const collectStreamAsString = <E>(
   stream: Stream.Stream<Uint8Array, E>,
+  options?: { readonly maxBytes?: number | undefined },
 ): Effect.Effect<string, E> =>
   collectUint8StreamText({
     stream,
-    maxBytes: PROVIDER_PROBE_OUTPUT_MAX_BYTES,
+    maxBytes: Math.min(
+      options?.maxBytes ?? PROVIDER_PROBE_OUTPUT_MAX_BYTES,
+      PROVIDER_PROBE_OUTPUT_MAX_BYTES,
+    ),
   }).pipe(Effect.map((collected) => collected.text));

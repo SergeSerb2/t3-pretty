@@ -51,6 +51,7 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }),
     ).toThrow();
   });
+
   it("treats a missing provider-handoff capability as unsupported under version skew", () => {
     expect(decodeDescriptor(descriptor).capabilities.providerHandoff).toBeUndefined();
   });
@@ -87,6 +88,19 @@ describe("ExecutionEnvironmentDescriptor", () => {
         ...descriptor,
         capabilities: { ...descriptor.capabilities, storageInventoryStream: true },
       }).capabilities.storageInventoryStream,
+    ).toBe(true);
+  });
+
+  it("treats a missing attachment upload capability as unsupported", () => {
+    expect(decodeDescriptor(descriptor).capabilities.attachmentUploads).toBeUndefined();
+  });
+
+  it("preserves an advertised attachment upload capability", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, attachmentUploads: true },
+      }).capabilities.attachmentUploads,
     ).toBe(true);
   });
 });

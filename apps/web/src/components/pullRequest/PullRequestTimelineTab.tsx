@@ -61,11 +61,21 @@ interface ReactionSurface {
   readonly onRefresh: () => void;
 }
 
-function TimelineBody({ body, markdown, cwd }: { body: string; markdown: boolean; cwd: string }) {
+function TimelineBody({
+  body,
+  markdown,
+  cwd,
+  environmentId,
+}: {
+  body: string;
+  markdown: boolean;
+  cwd: string;
+  environmentId: EnvironmentId;
+}) {
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} cwd={cwd} />
+        <PullRequestMarkdown text={body} cwd={cwd} environmentId={environmentId} />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
@@ -265,6 +275,7 @@ function ConversationCard({
           <PullRequestMarkdownEditor
             value={editable.body}
             cwd={cwd}
+            environmentId={reactions.environmentId}
             label="Edit comment"
             saving={saving}
             onSave={(body) => void save(body)}
@@ -273,7 +284,12 @@ function ConversationCard({
         </div>
       ) : event.body ? (
         <div className="px-2 pb-2">
-          <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+          <TimelineBody
+            body={event.body}
+            markdown={event.markdown}
+            cwd={cwd}
+            environmentId={reactions.environmentId}
+          />
         </div>
       ) : null}
       {reactions.canReact || event.reactions.length > 0 ? (
@@ -543,7 +559,12 @@ function ReviewVerdictEvent({
           {/* An approval usually carries no words. When it does they are the review, so they stay
               visible rather than being folded away with the ordinary conversation. */}
           {event.body ? (
-            <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+            <TimelineBody
+              body={event.body}
+              markdown={event.markdown}
+              cwd={cwd}
+              environmentId={reactions.environmentId}
+            />
           ) : null}
         </div>
         <OpenOnHostButton url={event.url} onOpen={onOpen} />

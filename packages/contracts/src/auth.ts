@@ -229,6 +229,8 @@ export const AuthClientPresentationMetadata = Schema.Struct({
   label: Schema.optionalKey(AuthClientLabel),
   deviceType: Schema.optionalKey(AuthClientMetadataDeviceType),
   os: Schema.optionalKey(AuthClientOperatingSystem),
+  osMajorVersion: Schema.optionalKey(Schema.Int),
+  deviceModel: Schema.optionalKey(TrimmedNonEmptyString),
   surface: Schema.optionalKey(ClientSurface),
   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
