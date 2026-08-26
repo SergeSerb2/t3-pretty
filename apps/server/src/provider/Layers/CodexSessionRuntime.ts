@@ -188,6 +188,7 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
+  readonly browserToolsAvailable?: boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -2266,7 +2267,9 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
+            browserToolsAvailable:
+              options.browserToolsAvailable ??
+              hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
           });
           // A send that lands while a turn is running is a steer: inject into
           // the active turn instead of letting Codex queue a follow-up turn.

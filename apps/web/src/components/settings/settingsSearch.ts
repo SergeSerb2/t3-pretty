@@ -359,6 +359,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "browser",
   },
   {
+    id: "agent-computer-control",
+    title: "Agent computer control",
+    to: "/settings/integrations",
+    targetId: "computer-control",
+  },
+  {
     id: "browser-default-viewport",
     title: "Default browser viewport",
     to: "/settings/integrations",

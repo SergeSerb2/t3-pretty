@@ -60,6 +60,7 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
@@ -2121,8 +2122,13 @@ validation.layer("ProviderServiceLive validation", (it) => {
 
 describe("agent browser access", () => {
   const revokedThreads: Array<ThreadId> = [];
+  const issuedCapabilities = new Map<ThreadId, ReadonlySet<McpInvocationContext.McpCapability>>();
 
-  const startSessionWith = (enableAgentBrowserAccess: boolean, threadId: ThreadId) =>
+  const startSessionWith = (
+    enableAgentBrowserAccess: boolean,
+    threadId: ThreadId,
+    enableComputerUse = false,
+  ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
       const codex = makeFakeCodexAdapter();
@@ -2140,13 +2146,19 @@ describe("agent browser access", () => {
         issueMcpCredential: (request) =>
           Effect.sync(() => {
             issued.push(request.threadId);
+            issuedCapabilities.set(request.threadId, request.capabilities ?? new Set());
             return undefined;
           }),
         revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess })),
+        Layer.provide(
+          ServerSettings.ServerSettingsService.layerTest({
+            enableAgentBrowserAccess,
+            enableComputerUse,
+          }),
+        ),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
@@ -2202,6 +2214,18 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["preview"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("requests a computer-use-only credential when computer control is on", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-computer-use-on");
+
+      const issued = yield* startSessionWith(false, threadId, true);
+
+      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["computer-use"]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

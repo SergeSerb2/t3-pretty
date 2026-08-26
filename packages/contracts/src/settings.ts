@@ -701,6 +701,11 @@ export const ServerSettings = Schema.Struct({
    */
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
+   * Whether agents receive the host's macOS screen, mouse, and keyboard tools.
+   * Opt-in because these tools act outside the project and browser sandboxes.
+   */
+  enableComputerUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
    * When on, Grok or Codex generates a project icon for new projects and for
    * existing projects that still use automatic detection. Opt-in: generation
    * uses the user's Grok/Codex subscription and is skipped for other providers.
@@ -929,6 +934,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enableComputerUse: Schema.optionalKey(Schema.Boolean),
   autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
   generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(

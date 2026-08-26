@@ -1,5 +1,7 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
+import type { McpCapability } from "./McpInvocationContext.ts";
+
 /** One MCP server to attach to a provider session. All share the session's bearer. */
 export interface McpProviderSessionServer {
   /** Server name as the provider will show it (`t3-code`, or an app slug). */
@@ -17,8 +19,9 @@ export interface McpProviderSessionConfig {
   /** The built-in `t3-code` endpoint; `servers` decides whether it is attached. */
   readonly endpoint: string;
   readonly authorizationHeader: string;
+  readonly capabilities: ReadonlySet<McpCapability>;
   /**
-   * Every server to attach, in order: `t3-code` when agent browser access is
+   * Every server to attach, in order: `t3-code` when a built-in capability is
    * on, then each attachable app behind the `/mcp/apps/<id>` proxy. Adapters
    * map this list into their own config dialect and never consult
    * `endpoint` directly.
@@ -26,9 +29,9 @@ export interface McpProviderSessionConfig {
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
 }
 
-/** Whether the built-in `t3-code` toolkit (preview tools) is attached. */
+/** Whether the built-in `t3-code` toolkit includes preview tools. */
 export function hasBrowserTools(config: McpProviderSessionConfig | undefined): boolean {
-  return config?.servers.some((server) => server.name === T3_CODE_MCP_SERVER_NAME) === true;
+  return config?.capabilities.has("preview") === true;
 }
 
 const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();

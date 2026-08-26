@@ -57,6 +57,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as AppsHttp from "./apps/AppsHttp.ts";
 import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as ComputerUseService from "./computerUse/ComputerUseService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -593,6 +594,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // fanned out to every WebSocket subscriber (see ShellStream).
   Layer.provide(ShellStream.layer),
   Layer.provide(PreviewAutomationBroker.layer),
+  Layer.provide(ComputerUseService.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
   Layer.provide(requestBodyLimitLayer),

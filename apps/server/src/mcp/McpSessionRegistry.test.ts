@@ -55,6 +55,22 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("stores only the capabilities requested for a provider session", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-computer-use"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["computer-use"]),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "computer-use",
+    ]);
+  }),
+);
+
 it.effect("rejects oversized bearer tokens before hashing", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);

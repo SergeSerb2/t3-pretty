@@ -1,0 +1,168 @@
+/**
+ * Computer-use contracts: cross-provider host automation tool schemas.
+ *
+ * The MCP tools defined here are exposed to every provider session through the
+ * in-house `t3-code` MCP server (toolkit lives in
+ * `apps/server/src/mcp/toolkits/computerUse/`, host automation in
+ * `apps/server/src/computerUse/`).
+ *
+ * Keep this module schema-only; the runtime lives in `apps/server`.
+ */
+import * as Schema from "effect/Schema";
+
+export const ComputerUseErrorReason = Schema.Literals([
+  "capability-unavailable",
+  "unsupported-platform",
+  "action-failed",
+]);
+export type ComputerUseErrorReason = typeof ComputerUseErrorReason.Type;
+
+export class ComputerUseError extends Schema.TaggedErrorClass<ComputerUseError>()(
+  "ComputerUseError",
+  {
+    reason: ComputerUseErrorReason,
+    message: Schema.String,
+  },
+) {}
+
+const PointCoordinate = Schema.Number.annotate({
+  description:
+    "Coordinate in main-display points, origin at the top-left corner of the primary screen.",
+});
+
+export const ComputerScreenInfoInput = Schema.Struct({});
+export type ComputerScreenInfoInput = typeof ComputerScreenInfoInput.Type;
+
+export const ComputerScreenInfoResult = Schema.Struct({
+  screenWidth: Schema.Number.annotate({ description: "Main display width in points." }),
+  screenHeight: Schema.Number.annotate({ description: "Main display height in points." }),
+  scaleFactor: Schema.Number.annotate({
+    description:
+      "Backing scale factor (2 on Retina displays). Multiply point coordinates by this to get pixels.",
+  }),
+});
+export type ComputerScreenInfoResult = typeof ComputerScreenInfoResult.Type;
+
+export const ComputerScreenshotRegion = Schema.Struct({
+  x: PointCoordinate,
+  y: PointCoordinate,
+  width: Schema.Number,
+  height: Schema.Number,
+});
+export type ComputerScreenshotRegion = typeof ComputerScreenshotRegion.Type;
+
+export const ComputerScreenshotInput = Schema.Struct({
+  display: Schema.optional(
+    Schema.Int.annotate({
+      description: "1-based display index to capture. Defaults to the main display.",
+      default: 1,
+    }),
+  ),
+  region: Schema.optional(
+    ComputerScreenshotRegion.annotate({
+      description: "Optional screen region in points to capture instead of the full display.",
+    }),
+  ),
+});
+export type ComputerScreenshotInput = typeof ComputerScreenshotInput.Type;
+
+export const ComputerScreenshotResult = Schema.Struct({
+  path: Schema.String.annotate({
+    description: "Absolute path of the captured PNG. Read/view it with your normal file tools.",
+  }),
+  width: Schema.Number.annotate({ description: "Image width in pixels." }),
+  height: Schema.Number.annotate({ description: "Image height in pixels." }),
+});
+export type ComputerScreenshotResult = typeof ComputerScreenshotResult.Type;
+
+export const ComputerMouseButton = Schema.Literals(["left", "right", "middle"]);
+export type ComputerMouseButton = typeof ComputerMouseButton.Type;
+
+export const ComputerClickInput = Schema.Struct({
+  x: PointCoordinate,
+  y: PointCoordinate,
+  button: Schema.optional(
+    ComputerMouseButton.annotate({ description: "Mouse button to click.", default: "left" }),
+  ),
+  clickCount: Schema.optional(
+    Schema.Literals([1, 2]).annotate({
+      description: "1 for a single click, 2 for a double click.",
+      default: 1,
+    }),
+  ),
+});
+export type ComputerClickInput = typeof ComputerClickInput.Type;
+
+export const ComputerMoveInput = Schema.Struct({
+  x: PointCoordinate,
+  y: PointCoordinate,
+});
+export type ComputerMoveInput = typeof ComputerMoveInput.Type;
+
+export const ComputerTypeInput = Schema.Struct({
+  text: Schema.String.annotate({
+    description: "Text to type as keyboard input, exactly as if the user typed it.",
+  }),
+});
+export type ComputerTypeInput = typeof ComputerTypeInput.Type;
+
+export const ComputerKeyName = Schema.Literals([
+  "return",
+  "tab",
+  "space",
+  "delete",
+  "escape",
+  "leftArrow",
+  "rightArrow",
+  "downArrow",
+  "upArrow",
+  "home",
+  "end",
+  "pageUp",
+  "pageDown",
+]);
+export type ComputerKeyName = typeof ComputerKeyName.Type;
+
+export const ComputerKeyModifier = Schema.Literals(["command", "shift", "option", "control"]);
+export type ComputerKeyModifier = typeof ComputerKeyModifier.Type;
+
+export const ComputerKeyInput = Schema.Struct({
+  key: ComputerKeyName,
+  modifiers: Schema.optional(
+    Schema.Array(ComputerKeyModifier).annotate({
+      description: 'Modifier keys held while pressing the key (e.g. ["command"] for Cmd+key).',
+    }),
+  ),
+});
+export type ComputerKeyInput = typeof ComputerKeyInput.Type;
+
+export const ComputerScrollInput = Schema.Struct({
+  deltaY: Schema.Int.annotate({
+    description:
+      "Vertical scroll amount in line units. Positive values scroll the content up (wheel down); negative values scroll content down (wheel up).",
+  }),
+  deltaX: Schema.optional(
+    Schema.Int.annotate({
+      description: "Horizontal scroll amount in line units. Defaults to 0.",
+      default: 0,
+    }),
+  ),
+  x: Schema.optional(
+    PointCoordinate.annotate({
+      description:
+        "Optional pointer x position to scroll at. Defaults to scrolling under the current pointer.",
+    }),
+  ),
+  y: Schema.optional(
+    PointCoordinate.annotate({
+      description:
+        "Optional pointer y position to scroll at. Defaults to scrolling under the current pointer.",
+    }),
+  ),
+});
+export type ComputerScrollInput = typeof ComputerScrollInput.Type;
+
+export const ComputerActionResult = Schema.Struct({
+  ok: Schema.Literal(true),
+});
+export type ComputerActionResult = typeof ComputerActionResult.Type;
