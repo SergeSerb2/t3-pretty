@@ -1121,6 +1121,45 @@ const turnMethods = (peer: SteerPeer) =>
 // it.live: the runtime drives a real child process, and it.effect's TestClock
 // freezes the transport's own timers.
 describe("CodexSessionRuntime sendTurn steering", () => {
+  it.live("infers built-in tool instructions from MCP config after resume", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: false });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-resume-tools"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+        resumeCursor: { threadId: "provider-thread-resume-tools" },
+        appServerArgs: [
+          "-c",
+          "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+          "-c",
+          "mcp_servers.t3-code-computer.url=http://127.0.0.1/mcp/computer-use",
+        ],
+      });
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "inspect the desktop", interactionMode: "default" });
+
+      const turnStart = peer.requests().find((request) => request.method === "turn/start");
+      const params = turnStart?.params as
+        | {
+            readonly collaborationMode?: {
+              readonly settings?: { readonly developer_instructions?: string };
+            };
+          }
+        | undefined;
+      const instructions = params?.collaborationMode?.settings?.developer_instructions ?? "";
+      NodeAssert.match(instructions, /preview_open/);
+      NodeAssert.match(instructions, /t3-code-computer/);
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("steers the active turn instead of starting a second one mid-turn", () =>
     Effect.gen(function* () {
       const peer = makeSteerPeer({ rejectSteer: false });

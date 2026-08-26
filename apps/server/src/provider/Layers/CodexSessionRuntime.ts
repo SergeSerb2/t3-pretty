@@ -48,6 +48,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import {
+  T3_CODE_COMPUTER_MCP_SERVER_NAME,
+  T3_CODE_MCP_SERVER_NAME,
+} from "../../mcp/McpProviderSession.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
@@ -2273,8 +2277,12 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: options.browserToolsAvailable ?? false,
-            computerToolsAvailable: options.computerToolsAvailable ?? false,
+            browserToolsAvailable:
+              options.browserToolsAvailable ??
+              hasConfiguredMcpServer(options.appServerArgs, T3_CODE_MCP_SERVER_NAME),
+            computerToolsAvailable:
+              options.computerToolsAvailable ??
+              hasConfiguredMcpServer(options.appServerArgs, T3_CODE_COMPUTER_MCP_SERVER_NAME),
           });
           // A send that lands while a turn is running is a steer: inject into
           // the active turn instead of letting Codex queue a follow-up turn.
