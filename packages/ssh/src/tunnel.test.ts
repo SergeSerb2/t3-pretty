@@ -138,9 +138,14 @@ describe("ssh tunnel scripts", () => {
     };
 
     assert.isDefined(nodeScript);
-    assert.doesNotThrow(() => new Function("process", nodeScript)(remoteProcess));
+    const anonymousHelperNodeScript = nodeScript.replace(
+      "function satisfiesSemverRange(",
+      "function(",
+    );
+    assert.notEqual(anonymousHelperNodeScript, nodeScript);
+    assert.doesNotThrow(() => new Function("process", anonymousHelperNodeScript)(remoteProcess));
     assert.deepEqual(stderr, []);
-    assert.notInclude(nodeScript, "const satisfiesSemverRange =");
+    assert.notInclude(anonymousHelperNodeScript, "const satisfiesSemverRange =");
   });
 
   it("builds the remote t3 runner with npx and npm fallbacks", () => {
