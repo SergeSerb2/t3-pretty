@@ -4303,7 +4303,7 @@ export default function Sidebar() {
                         data-thread-selection-safe
                         className="list-none"
                       >
-                        <div className="mb-1 mt-3 flex w-full items-center gap-2 px-2.5">
+                        <div className="group/settled-header mb-1 mt-3 flex w-full items-center px-2.5">
                           <button
                             type="button"
                             onClick={toggleSettledShelf}
@@ -4327,22 +4327,45 @@ export default function Sidebar() {
                             />
                           </button>
                           {clearableSettledThreads.length > 0 ? (
-                            <Tooltip>
-                              <TooltipTrigger
-                                render={
-                                  <button
-                                    type="button"
-                                    onClick={() => void clearSettledThreads()}
-                                    disabled={clearingSettled}
-                                    data-testid="sidebar-settled-clear"
-                                    className="cursor-pointer text-xs font-medium text-muted-foreground/50 transition-colors hover:text-sidebar-foreground disabled:cursor-default disabled:opacity-50"
-                                  />
-                                }
-                              >
-                                {clearingSettled ? "Clearing…" : "Clear"}
-                              </TooltipTrigger>
-                              <TooltipPopup>Archive settled threads</TooltipPopup>
-                            </Tooltip>
+                            <span
+                              className={cn(
+                                "grid min-w-0 grid-cols-[0fr] overflow-hidden transition-[grid-template-columns] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                                "group-hover/settled-header:grid-cols-[1fr] group-hover/settled-header:duration-200",
+                                "has-[:focus-visible]:grid-cols-[1fr] has-[:disabled]:grid-cols-[1fr]",
+                                "pointer-coarse:grid-cols-[1fr]",
+                                "motion-reduce:transition-none",
+                              )}
+                            >
+                              <span className="min-w-0 overflow-hidden">
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <button
+                                        type="button"
+                                        onClick={() => void clearSettledThreads()}
+                                        disabled={clearingSettled}
+                                        data-testid="sidebar-settled-clear"
+                                        className={cn(
+                                          "cursor-pointer ps-2 text-xs font-medium text-muted-foreground/50",
+                                          "origin-right translate-x-1 scale-95 opacity-0",
+                                          "transition-[color,opacity,transform] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                                          "group-hover/settled-header:translate-x-0 group-hover/settled-header:scale-100 group-hover/settled-header:duration-200",
+                                          "enabled:group-hover/settled-header:opacity-100",
+                                          "focus-visible:translate-x-0 focus-visible:scale-100 focus-visible:opacity-100",
+                                          "enabled:hover:text-sidebar-foreground",
+                                          "disabled:cursor-default disabled:translate-x-0 disabled:scale-100 disabled:opacity-50",
+                                          "pointer-coarse:translate-x-0 pointer-coarse:scale-100 enabled:pointer-coarse:opacity-100",
+                                          "motion-reduce:translate-x-0 motion-reduce:scale-100 motion-reduce:transition-[color,opacity]",
+                                        )}
+                                      />
+                                    }
+                                  >
+                                    {clearingSettled ? "Clearing…" : "Clear"}
+                                  </TooltipTrigger>
+                                  <TooltipPopup>Archive settled threads</TooltipPopup>
+                                </Tooltip>
+                              </span>
+                            </span>
                           ) : null}
                         </div>
                       </li>,
