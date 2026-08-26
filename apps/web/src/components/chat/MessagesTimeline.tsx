@@ -142,6 +142,7 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { usePreparedConnection } from "../../state/session";
 import * as Option from "effect/Option";
 import { toastManager } from "../ui/toast";
+import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 
 import {
   buildInlineTerminalContextText,
@@ -1282,7 +1283,14 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
 function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  if (!ctx.readAloudEnabled || row.message.streaming || !row.message.text?.trim()) return null;
+  if (
+    !ctx.readAloudEnabled ||
+    row.message.streaming ||
+    !row.message.text?.trim() ||
+    readAloudChunks(row.message.text).length === 0
+  ) {
+    return null;
+  }
 
   const active = ctx.readAloudMessageId === row.message.id;
   const loading = active && ctx.readAloudPhase === "loading";

@@ -143,6 +143,7 @@ import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./mar
 import { usePreparedConnection } from "../../state/session";
 import * as Option from "effect/Option";
 import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
+import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -1359,7 +1360,10 @@ function renderFeedEntry(
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
-            {props.readAloudEnabled && !message.streaming && message.text.trim() ? (
+            {props.readAloudEnabled &&
+            !message.streaming &&
+            message.text.trim() &&
+            readAloudChunks(message.text).length > 0 ? (
               <ReadAloudButton
                 active={props.readAloudMessageId === message.id}
                 phase={props.readAloudPhase}

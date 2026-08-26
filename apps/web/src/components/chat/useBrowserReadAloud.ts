@@ -144,9 +144,10 @@ export function useBrowserReadAloud(input: {
 
       try {
         await audioReady;
+        let hasPlayedAudio = false;
         for (const chunk of chunks) {
           if (session.cancelled || sessionRef.current !== session) return;
-          setState({ activeMessageId: messageId, phase: "loading" });
+          if (!hasPlayedAudio) setState({ activeMessageId: messageId, phase: "loading" });
           const synthesisAbort = new AbortController();
           session.synthesisAbort = synthesisAbort;
           const result = await runtime.runPromise(
@@ -159,6 +160,7 @@ export function useBrowserReadAloud(input: {
           await playAudio(session, result.audioBase64);
           releaseSource(session);
           if (session.cancelled || sessionRef.current !== session) return;
+          hasPlayedAudio = true;
         }
       } catch (error) {
         if (!session.cancelled) inputRef.current.reportError(errorMessage(error));

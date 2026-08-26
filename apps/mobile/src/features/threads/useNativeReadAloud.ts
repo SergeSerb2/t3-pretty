@@ -182,9 +182,10 @@ export function useNativeReadAloud(input: {
       try {
         const audio = await import("expo-audio");
         await audio.setAudioModeAsync({ playsInSilentMode: true });
+        let hasPlayedAudio = false;
         for (const chunk of chunks) {
           if (session.cancelled || sessionRef.current !== session) return;
-          setState({ activeMessageId: messageId, phase: "loading" });
+          if (!hasPlayedAudio) setState({ activeMessageId: messageId, phase: "loading" });
           const synthesisAbort = new AbortController();
           session.synthesisAbort = synthesisAbort;
           const result = await runtime.runPromise(
@@ -197,6 +198,7 @@ export function useNativeReadAloud(input: {
           await playAudio(session, audio, result.audioBase64);
           releaseAudio(session);
           if (session.cancelled || sessionRef.current !== session) return;
+          hasPlayedAudio = true;
         }
       } catch (error) {
         if (!session.cancelled) inputRef.current.reportError(errorMessage(error));
