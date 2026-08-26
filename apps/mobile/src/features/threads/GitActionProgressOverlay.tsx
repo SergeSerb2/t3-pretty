@@ -31,9 +31,11 @@ export function GitActionProgressOverlay(props: {
     prevPhaseRef.current = progress.phase;
 
     if (prev === "running" && progress.phase === "success") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+        () => undefined,
+      );
     } else if (prev === "running" && progress.phase === "error") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     }
   }, [progress.phase]);
 

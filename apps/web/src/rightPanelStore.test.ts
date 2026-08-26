@@ -1,7 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
+import { usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
 import {
   migratePersistedRightPanelState,
   pullRequestSurfaceId,
@@ -18,6 +19,7 @@ const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"))
 
 beforeEach(() => {
   useRightPanelStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {}, dismissedTabIdsByThreadKey: {} });
 });
 
 describe("rightPanelStore", () => {
@@ -73,6 +75,43 @@ describe("rightPanelStore", () => {
         },
       },
     });
+  });
+
+  it("bounds persisted and runtime terminal groups to the supported pane limit", () => {
+    const persisted = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "terminal:term-1",
+          surfaces: [
+            {
+              id: "terminal:term-1",
+              kind: "terminal",
+              resourceId: "term-1",
+              terminalIds: ["term-1", "term-2", "term-3", "term-4", "term-5"],
+              activeTerminalId: "term-5",
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      persisted.byThreadKey["env-1:thread-A"]?.surfaces[0]?.kind === "terminal"
+        ? persisted.byThreadKey["env-1:thread-A"].surfaces[0].terminalIds
+        : [],
+    ).toEqual(["term-1", "term-2", "term-3", "term-4"]);
+
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    for (const terminalId of ["term-2", "term-3", "term-4", "term-5"]) {
+      useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", terminalId);
+    }
+    const surface = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(surface?.kind === "terminal" ? surface.terminalIds : []).toEqual([
+      "term-1",
+      "term-2",
+      "term-3",
+      "term-4",
+    ]);
   });
 
   it("upgrades saved file surfaces with neutral reveal state", () => {
@@ -204,6 +243,35 @@ describe("rightPanelStore", () => {
           surfaces: [],
         },
         "env-1:thread-B": {
+          isOpen: true,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        },
+      },
+    });
+  });
+
+  it("drops malformed surfaces and canonicalizes duplicate persisted tabs", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "diff",
+            surfaces: [
+              null,
+              "diff",
+              { id: "not-diff", kind: "diff", retainedGarbage: "ignored" },
+              { id: "diff", kind: "diff" },
+              { id: "browser:tab-a", kind: "preview", resourceId: 42 },
+              { id: "file:README.md", kind: "file", relativePath: null },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
           isOpen: true,
           activeSurfaceId: "diff",
           surfaces: [{ id: "diff", kind: "diff" }],
@@ -390,6 +458,20 @@ describe("rightPanelStore", () => {
   it("close on never-opened thread is a no-op", () => {
     useRightPanelStore.getState().close(refA);
     expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+  });
+
+  it("undismisses that tab's floating preview when opening the browser panel", () => {
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-b");
+
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-b"],
+    });
+    expect(usePreviewMiniPlayerStore.getState().byThreadKey[scopedThreadKey(refA)]).toBeUndefined();
   });
 
   it("tracks one surface per browser session", () => {

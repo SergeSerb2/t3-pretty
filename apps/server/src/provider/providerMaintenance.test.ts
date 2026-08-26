@@ -8,7 +8,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import {
   createProviderVersionAdvisory,
   enrichProviderSnapshotWithVersionAdvisory,
@@ -131,6 +131,28 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           latestVersion: null,
           checkedAt: "2026-04-10T00:00:00.000Z",
         });
+      }),
+    ),
+  );
+
+  it.effect("rejects an oversized npm version response before reading it", () =>
+    resolveLatestProviderVersion(packageToolUpdate.resolve()).pipe(
+      Effect.provideService(ProviderVersionCache, new Map()),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response("{}", {
+                headers: { "content-length": String(64 * 1024 + 1) },
+              }),
+            ),
+          ),
+        ),
+      ),
+      Effect.map((version) => {
+        expect(version).toBeNull();
       }),
     ),
   );

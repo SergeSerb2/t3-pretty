@@ -7,6 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildFixFindingsPrompt,
+  canStartContinuousFix,
   countFixableFindings,
   buildPullRequestTimeline,
   buildResolveConflictsPrompt,
@@ -294,6 +295,17 @@ describe("handoffs and failures", () => {
     canResolve: true,
   };
 
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsPrompt({ ...findingsBase, continuous: true });
+    const once = buildFixFindingsPrompt(findingsBase);
+
+    expect(continuous).toContain("green on its latest commit");
+    expect(continuous).toContain("wait for the next automated review cycle");
+    expect(continuous).toContain("required checks for that exact head");
+    expect(continuous).toContain("while actionable feedback remains unresolved");
+    expect(once).not.toContain("green on its latest commit");
+  });
+
   it("omits a thread whose comments are only HTML markers", () => {
     const prompt = buildFixFindingsPrompt({
       ...findingsBase,
@@ -344,6 +356,23 @@ describe("handoffs and failures", () => {
         checks: [],
       }),
     ).toBe(0);
+  });
+
+  it("lets a continuous fix start on pending checks with no current findings", () => {
+    const pendingOnly = {
+      reviewThreads: [] as PullRequestReviewThread[],
+      comments: [] as PullRequestComment[],
+      checks: [{ name: "build", status: "pending" as const, description: null, url: null }],
+    };
+    expect(countFixableFindings(pendingOnly)).toBe(0);
+    expect(canStartContinuousFix(pendingOnly)).toBe(true);
+    expect(canStartContinuousFix({ ...pendingOnly, checks: [] })).toBe(false);
+    expect(
+      canStartContinuousFix({
+        ...pendingOnly,
+        checks: [{ name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(false);
   });
 
   it("does not treat a general issue comment as a review finding", () => {

@@ -49,8 +49,15 @@ export type DesktopSecondaryBootstrapsRead =
     };
 
 export interface DesktopSecondaryBootstrapsReader {
-  readonly readResult: () => DesktopSecondaryBootstrapsRead;
+  readonly readResult: () => Promise<DesktopSecondaryBootstrapsRead>;
   readonly readSnapshot: () => ReadonlyArray<DesktopEnvironmentBootstrap>;
+  readonly subscribe: (
+    listener: (bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => void,
+  ) => () => void;
+}
+
+interface DesktopSecondaryBootstrapsReaderOptions {
+  readonly readTimeoutMs?: number;
 }
 
 /**
@@ -61,37 +68,84 @@ export interface DesktopSecondaryBootstrapsReader {
  */
 export function createDesktopSecondaryBootstrapsReader(
   resolveBridge: () => Pick<DesktopBridge, "getLocalEnvironmentBootstraps"> | undefined,
+  options: DesktopSecondaryBootstrapsReaderOptions = {},
 ): DesktopSecondaryBootstrapsReader {
+  const readTimeoutMs = options.readTimeoutMs ?? 5_000;
   let snapshot: ReadonlyArray<DesktopEnvironmentBootstrap> = [];
+  let inFlight:
+    | {
+        readonly read: DesktopBridge["getLocalEnvironmentBootstraps"];
+        readonly promise: Promise<DesktopSecondaryBootstrapsRead>;
+      }
+    | undefined;
+  let readGeneration = 0;
+  const listeners = new Set<(bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => void>();
 
-  const readResult = (): DesktopSecondaryBootstrapsRead => {
+  const commit = (bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => {
+    snapshot = bootstraps.filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
+    for (const listener of listeners) {
+      listener(snapshot);
+    }
+    return snapshot;
+  };
+
+  const readResult = (): Promise<DesktopSecondaryBootstrapsRead> => {
     const bridge = resolveBridge();
     if (bridge === undefined) {
-      snapshot = [];
-      return { _tag: "Success", bootstraps: snapshot };
+      readGeneration += 1;
+      inFlight = undefined;
+      return Promise.resolve({ _tag: "Success", bootstraps: commit([]) });
     }
+    if (inFlight?.read === bridge.getLocalEnvironmentBootstraps) {
+      return inFlight.promise;
+    }
+    // Selecting a different bridge read invalidates the older result even when
+    // the replacement throws synchronously. Otherwise that stale async read
+    // can settle later and resurrect topology from the bridge we replaced.
+    const generation = ++readGeneration;
+    inFlight = undefined;
     try {
       const result = bridge.getLocalEnvironmentBootstraps();
       if (Array.isArray(result)) {
-        snapshot = result.filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
-        return { _tag: "Success", bootstraps: snapshot };
+        return Promise.resolve({ _tag: "Success", bootstraps: commit(result) });
       }
-      void Promise.resolve(result)
-        .then((bootstraps) => {
-          snapshot = bootstraps.filter((entry) => entry.id !== PRIMARY_LOCAL_ENVIRONMENT_ID);
-        })
-        .catch(() => undefined);
-      return { _tag: "Success", bootstraps: snapshot };
+      const promise = new Promise<DesktopSecondaryBootstrapsRead>((resolve) => {
+        const timeout = setTimeout(() => {
+          if (generation === readGeneration) readGeneration += 1;
+          resolve({
+            _tag: "Failure",
+            cause: new Error(`Desktop topology read timed out after ${readTimeoutMs}ms.`),
+          });
+        }, readTimeoutMs);
+        void Promise.resolve(result).then(
+          (bootstraps) => {
+            clearTimeout(timeout);
+            const next = generation === readGeneration ? commit(bootstraps) : snapshot;
+            resolve({ _tag: "Success", bootstraps: next });
+          },
+          (cause) => {
+            clearTimeout(timeout);
+            resolve({ _tag: "Failure", cause });
+          },
+        );
+      }).finally(() => {
+        if (inFlight?.promise === promise) {
+          inFlight = undefined;
+        }
+      });
+      inFlight = { read: bridge.getLocalEnvironmentBootstraps, promise };
+      return promise;
     } catch (cause) {
-      return { _tag: "Failure", cause };
+      return Promise.resolve({ _tag: "Failure", cause });
     }
   };
 
   return {
     readResult,
-    readSnapshot: () => {
-      const result = readResult();
-      return result._tag === "Success" ? result.bootstraps : snapshot;
+    readSnapshot: () => snapshot,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }
@@ -101,11 +155,19 @@ const desktopSecondaryBootstrapsReader = createDesktopSecondaryBootstrapsReader(
 );
 
 /** Read the topology while preserving failures for platform cache policy. */
-export function readDesktopSecondaryBootstrapsResult(): DesktopSecondaryBootstrapsRead {
+export function readDesktopSecondaryBootstrapsResult(): Promise<DesktopSecondaryBootstrapsRead> {
   return desktopSecondaryBootstrapsReader.readResult();
 }
 
 /** Read the latest successful topology snapshot for renderer consumers. */
 export function readDesktopSecondaryBootstraps(): ReadonlyArray<DesktopEnvironmentBootstrap> {
+  void desktopSecondaryBootstrapsReader.readResult();
   return desktopSecondaryBootstrapsReader.readSnapshot();
+}
+
+/** Notify renderer stores as soon as an async desktop topology read settles. */
+export function subscribeDesktopSecondaryBootstraps(
+  listener: (bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => void,
+): () => void {
+  return desktopSecondaryBootstrapsReader.subscribe(listener);
 }

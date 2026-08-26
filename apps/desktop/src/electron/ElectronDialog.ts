@@ -103,9 +103,21 @@ export class ElectronDialog extends Context.Service<
   }
 >()("@t3tools/desktop/electron/ElectronDialog") {}
 
+const liveOwner = (
+  owner: Option.Option<Electron.BrowserWindow>,
+): Option.Option<Electron.BrowserWindow> =>
+  Option.filter(owner, (window) => {
+    try {
+      return !window.isDestroyed();
+    } catch {
+      return false;
+    }
+  });
+
 export const make = ElectronDialog.of({
   pickFolder: Effect.fn("desktop.electron.dialog.pickFolder")(function* (input) {
-    const ownerWindowId = Option.match(input.owner, {
+    const owner = liveOwner(input.owner);
+    const ownerWindowId = Option.match(owner, {
       onNone: () => null,
       onSome: (owner) => owner.id,
     });
@@ -121,7 +133,7 @@ export const make = ElectronDialog.of({
     });
     const result = yield* Effect.tryPromise({
       try: () =>
-        Option.match(input.owner, {
+        Option.match(owner, {
           onNone: () => Electron.dialog.showOpenDialog(openDialogOptions),
           onSome: (owner) => Electron.dialog.showOpenDialog(owner, openDialogOptions),
         }),
@@ -139,7 +151,8 @@ export const make = ElectronDialog.of({
     return Option.fromNullishOr(result.filePaths[0]);
   }),
   pickFiles: Effect.fn("desktop.electron.dialog.pickFiles")(function* (input) {
-    const ownerWindowId = Option.match(input.owner, {
+    const owner = liveOwner(input.owner);
+    const ownerWindowId = Option.match(owner, {
       onNone: () => null,
       onSome: (owner) => owner.id,
     });
@@ -151,7 +164,7 @@ export const make = ElectronDialog.of({
     };
     const result = yield* Effect.tryPromise({
       try: () =>
-        Option.match(input.owner, {
+        Option.match(owner, {
           onNone: () => Electron.dialog.showOpenDialog(openDialogOptions),
           onSome: (owner) => Electron.dialog.showOpenDialog(owner, openDialogOptions),
         }),

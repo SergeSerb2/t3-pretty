@@ -55,6 +55,33 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("rejects oversized bearer tokens before hashing", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+
+    expect(
+      yield* registry.resolve("x".repeat(McpSessionRegistry.MCP_BEARER_TOKEN_MAX_CHARS + 1)),
+    ).toBeUndefined();
+  }),
+);
+
+it.effect("atomically replaces the previous credential for the same thread", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const request = {
+      threadId: ThreadId.make("thread-replaced"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    };
+    const first = yield* registry.issue(request);
+    const second = yield* registry.issue(request);
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.threadId).toBe(request.threadId);
+  }),
+);
+
 it.effect("builds MCP endpoints from the bound server host", () =>
   Effect.gen(function* () {
     const cases = [

@@ -9,6 +9,8 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 
+export const PREVIEW_STATE_IDLE_TTL_MS = 60_000;
+
 export const previewAutomationHostFocusConcurrencyKey = (value: {
   readonly environmentId: string;
   readonly input: {
@@ -33,10 +35,12 @@ export function createPreviewEnvironmentAtoms<R, E>(
       label: "environment-data:preview:list",
       tag: WS_METHODS.previewList,
       staleTimeMs: 5_000,
+      idleTtlMs: PREVIEW_STATE_IDLE_TTL_MS,
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:events",
       tag: WS_METHODS.subscribePreviewEvents,
+      idleTtlMs: PREVIEW_STATE_IDLE_TTL_MS,
     }),
     discoveredServers: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:discovered-servers",

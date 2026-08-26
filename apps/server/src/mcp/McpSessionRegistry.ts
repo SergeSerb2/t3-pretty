@@ -71,6 +71,7 @@ export interface McpSessionRegistryOptions {
  * the only thing guarding the preview toolkit on a remote-reachable server.
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
+export const MCP_BEARER_TOKEN_MAX_CHARS = 128;
 
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -133,6 +134,11 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
         const next = new Map(pruneDead(records, issuedAt));
+        for (const [existingTokenHash, record] of next) {
+          if (record.scope.threadId === scope.threadId) {
+            next.delete(existingTokenHash);
+          }
+        }
         next.set(tokenHash, { tokenHash, scope, lastAliveAt: issuedAt });
         return { records: next };
       });
@@ -152,7 +158,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const resolve: McpSessionRegistryShape["resolve"] = Effect.fn("McpSessionRegistry.resolve")(
     function* (rawToken) {
-      if (rawToken.length === 0) return undefined;
+      if (rawToken.length === 0 || rawToken.length > MCP_BEARER_TOKEN_MAX_CHARS) return undefined;
       const tokenHash = yield* hashToken(rawToken);
       const timestamp = yield* currentTimeMillis;
       return yield* SynchronizedRef.modify(state, ({ records }) => {
@@ -227,9 +233,7 @@ export const issueActiveMcpCredential = (
   request: McpCredentialRequest,
 ): Effect.Effect<McpIssuedCredential | undefined> =>
   activeMcpSessionRegistry
-    ? activeMcpSessionRegistry
-        .revokeThread(request.threadId)
-        .pipe(Effect.andThen(activeMcpSessionRegistry.issue(request)))
+    ? activeMcpSessionRegistry.issue(request)
     : Effect.sync((): McpIssuedCredential | undefined => undefined);
 
 /**

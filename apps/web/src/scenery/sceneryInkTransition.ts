@@ -25,6 +25,7 @@ import { useMotionStore } from "./motionStore";
 
 export const SCENERY_INK_TRANSITION_MS = 300;
 export const SCENERY_INK_TRANSITION_EASING = "cubic-bezier(0.77, 0, 0.175, 1)";
+const SCENERY_INK_TRANSITION_SETTLE_TIMEOUT_MS = SCENERY_INK_TRANSITION_MS + 1_000;
 
 type InkViewTransition = {
   readonly finished: Promise<void>;
@@ -120,7 +121,12 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
     updateStarted = true;
     update(animating);
   };
+  let settleTimeoutId: ReturnType<typeof setTimeout> | null = null;
   const clearGate = () => {
+    if (settleTimeoutId !== null) {
+      clearTimeout(settleTimeoutId);
+      settleTimeoutId = null;
+    }
     if (inkTransitionGateGeneration !== generation) {
       return;
     }
@@ -142,6 +148,10 @@ export function runSceneryInkTransition(update: (animating: boolean) => void): v
       runUpdate(true);
       pinActiveChatTranscript(transitionDocument);
     });
+    settleTimeoutId = setTimeout(() => {
+      runUpdate(false);
+      clearGate();
+    }, SCENERY_INK_TRANSITION_SETTLE_TIMEOUT_MS);
     void transition.finished.then(clearGate, () => {
       runUpdate(false);
       clearGate();

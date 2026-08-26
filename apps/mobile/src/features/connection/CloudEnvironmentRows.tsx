@@ -6,7 +6,7 @@ import {
 } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -85,18 +85,57 @@ function CloudEnvironmentRowsContent(
     ? (props.showcaseAvailableEnvironments ?? controller.availableRelayEnvironments)
     : [];
   const [expandedErrorId, setExpandedErrorId] = useState<string | null>(null);
+  const pendingMutationIdsRef = useRef(new Set<string>());
+  const refreshPendingRef = useRef(false);
   const hasCloudRows =
     props.connectedCloudEnvironments.length > 0 || availableCloudEnvironments.length > 0;
 
+  const runEnvironmentMutation = useCallback(
+    (environmentId: string, operation: () => Promise<unknown>) => {
+      if (pendingMutationIdsRef.current.has(environmentId)) return;
+      pendingMutationIdsRef.current.add(environmentId);
+      void Promise.resolve()
+        .then(operation)
+        .then(
+          () => pendingMutationIdsRef.current.delete(environmentId),
+          () => pendingMutationIdsRef.current.delete(environmentId),
+        );
+    },
+    [],
+  );
+
   const handleConnectCloudEnvironment = useCallback(
-    (entry: RelayEnvironmentView) => controller.connectRelayEnvironment(entry.environment),
-    [controller],
+    (entry: RelayEnvironmentView) => {
+      runEnvironmentMutation(String(entry.environment.environmentId), () =>
+        controller.connectRelayEnvironment(entry.environment),
+      );
+    },
+    [controller, runEnvironmentMutation],
   );
 
   const handleDisconnectCloudEnvironment = useCallback(
-    (environmentId: EnvironmentId) => controller.removeEnvironment(environmentId),
-    [controller],
+    (environmentId: EnvironmentId) => {
+      runEnvironmentMutation(String(environmentId), () =>
+        controller.removeEnvironment(environmentId),
+      );
+    },
+    [controller, runEnvironmentMutation],
   );
+
+  const handleRefresh = useCallback(() => {
+    if (refreshPendingRef.current) return;
+    refreshPendingRef.current = true;
+    void Promise.resolve()
+      .then(() => controller.refreshRelayEnvironments())
+      .then(
+        () => {
+          refreshPendingRef.current = false;
+        },
+        () => {
+          refreshPendingRef.current = false;
+        },
+      );
+  }, [controller]);
 
   const handleToggleCloudError = useCallback((environmentId: string) => {
     setExpandedErrorId((current) => (current === environmentId ? null : environmentId));
@@ -113,11 +152,14 @@ function CloudEnvironmentRowsContent(
           </Text>
           {discoveryAvailable ? (
             <Pressable
+              accessibilityLabel={`Refresh ${SURGE_CONNECT_NAME} environments`}
               accessibilityRole="button"
-              disabled={controller.relayDiscovery.isRefreshing}
-              onPress={() => {
-                void controller.refreshRelayEnvironments();
+              accessibilityState={{
+                busy: controller.relayDiscovery.isRefreshing,
+                disabled: controller.relayDiscovery.isRefreshing,
               }}
+              disabled={controller.relayDiscovery.isRefreshing}
+              onPress={handleRefresh}
               className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
             >
               {controller.relayDiscovery.isRefreshing ? (
@@ -189,9 +231,7 @@ function CloudEnvironmentRowsContent(
           ) : null}
           <Pressable
             accessibilityRole="button"
-            onPress={() => {
-              void controller.refreshRelayEnvironments();
-            }}
+            onPress={handleRefresh}
             className="self-start rounded-full bg-subtle px-3.5 py-2 active:opacity-70"
           >
             <Text className="text-xs font-t3-bold text-foreground">Try again</Text>

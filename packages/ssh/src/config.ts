@@ -1,4 +1,8 @@
-import type { DesktopDiscoveredSshHost } from "@t3tools/contracts";
+import {
+  DESKTOP_SSH_ALIAS_MAX_LENGTH,
+  DESKTOP_SSH_DESTINATION_MAX_LENGTH,
+  type DesktopDiscoveredSshHost,
+} from "@t3tools/contracts";
 
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -10,6 +14,59 @@ import * as PlatformError from "effect/PlatformError";
 import { SshHostDiscoveryError } from "./errors.ts";
 
 const NO_HOSTS: ReadonlyArray<string> = [] as const;
+const SSH_CONFIG_FILE_MAX_BYTES = 1024 * 1024;
+const SSH_KNOWN_HOSTS_FILE_MAX_BYTES = 8 * 1024 * 1024;
+const SSH_CONFIG_VISITED_FILE_MAX_COUNT = 256;
+const SSH_CONFIG_GLOB_MATCH_MAX_COUNT = 256;
+export const SSH_DISCOVERED_HOST_MAX_COUNT = 4_096;
+const SSH_FILE_READ_CHUNK_BYTES = 64 * 1024;
+
+export const readSshFileStringWithinLimit = Effect.fnUntraced(function* (
+  filePath: string,
+  maxBytes: number,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* fs.open(filePath, { flag: "r" });
+      const info = yield* handle.stat;
+      if (info.size > BigInt(maxBytes)) return Option.none<string>();
+
+      const initial = new Uint8Array(Number(info.size));
+      let totalBytes = 0;
+      while (totalBytes < initial.length) {
+        const bytesRead = Number(yield* handle.read(initial.subarray(totalBytes)));
+        if (bytesRead === 0) break;
+        totalBytes += bytesRead;
+      }
+      if (totalBytes < initial.length) {
+        return Option.some(new TextDecoder().decode(initial.subarray(0, totalBytes)));
+      }
+
+      const chunks: Uint8Array[] = initial.length === 0 ? [] : [initial];
+      const readCeiling = maxBytes + 1;
+      while (totalBytes < readCeiling) {
+        const chunk = yield* handle.readAlloc(
+          Math.min(SSH_FILE_READ_CHUNK_BYTES, readCeiling - totalBytes),
+        );
+        if (Option.isNone(chunk)) break;
+        chunks.push(chunk.value);
+        totalBytes += chunk.value.byteLength;
+      }
+      if (totalBytes > maxBytes) return Option.none<string>();
+      if (chunks.length === 0) return Option.some("");
+      if (chunks.length === 1) return Option.some(new TextDecoder().decode(chunks[0]!));
+
+      const bytes = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return Option.some(new TextDecoder().decode(bytes));
+    }),
+  );
+});
 
 function stripInlineComment(line: string): string {
   const hashIndex = line.indexOf("#");
@@ -84,6 +141,7 @@ const expandGlob = Effect.fnUntraced(function* (pattern: string) {
     const entryPath = path.join(directory, entry);
     if (yield* fs.exists(entryPath)) {
       matchedPaths.push(entryPath);
+      if (matchedPaths.length >= SSH_CONFIG_GLOB_MATCH_MAX_COUNT) break;
     }
   }
   return matchedPaths.toSorted((left, right) => left.localeCompare(right));
@@ -101,16 +159,22 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const resolvedPath = path.resolve(filePath);
-  if (visited.has(resolvedPath) || !(yield* fs.exists(resolvedPath))) {
+  if (
+    visited.has(resolvedPath) ||
+    visited.size >= SSH_CONFIG_VISITED_FILE_MAX_COUNT ||
+    !(yield* fs.exists(resolvedPath))
+  ) {
     return NO_HOSTS;
   }
   visited.add(resolvedPath);
 
   const aliases = new Set<string>();
   const directory = path.dirname(resolvedPath);
-  const raw = yield* fs.readFileString(resolvedPath);
+  const raw = yield* readSshFileStringWithinLimit(resolvedPath, SSH_CONFIG_FILE_MAX_BYTES);
+  if (Option.isNone(raw)) return NO_HOSTS;
 
-  for (const line of raw.split(/\r?\n/u)) {
+  for (const line of raw.value.split(/\r?\n/u)) {
+    if (aliases.size >= SSH_DISCOVERED_HOST_MAX_COUNT) break;
     const stripped = stripInlineComment(line);
     if (stripped.length === 0) {
       continue;
@@ -134,6 +198,7 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
           );
           for (const alias of includedAliases) {
             aliases.add(alias);
+            if (aliases.size >= SSH_DISCOVERED_HOST_MAX_COUNT) break;
           }
         }
       }
@@ -148,7 +213,8 @@ export const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
       if (alias.length === 0 || hasSshPattern(alias)) {
         continue;
       }
-      aliases.add(alias);
+      if (alias.length <= DESKTOP_SSH_ALIAS_MAX_LENGTH) aliases.add(alias);
+      if (aliases.size >= SSH_DISCOVERED_HOST_MAX_COUNT) break;
     }
   }
 
@@ -189,10 +255,17 @@ export function parseKnownHostsHostnames(raw: string): ReadonlyArray<string> {
 
     for (const rawHost of hostField.split(",")) {
       const host = normalizeKnownHostsHostname(rawHost).trim();
-      if (host.length === 0 || hasSshPattern(host)) {
+      if (
+        host.length === 0 ||
+        host.length > DESKTOP_SSH_DESTINATION_MAX_LENGTH ||
+        hasSshPattern(host)
+      ) {
         continue;
       }
       hostnames.add(host);
+      if (hostnames.size >= SSH_DISCOVERED_HOST_MAX_COUNT) {
+        return [...hostnames].toSorted((left, right) => left.localeCompare(right));
+      }
     }
   }
 
@@ -204,7 +277,8 @@ const readKnownHostsHostnames = Effect.fnUntraced(function* (filePath: string) {
   if (!(yield* fs.exists(filePath))) {
     return NO_HOSTS;
   }
-  return parseKnownHostsHostnames(yield* fs.readFileString(filePath));
+  const raw = yield* readSshFileStringWithinLimit(filePath, SSH_KNOWN_HOSTS_FILE_MAX_BYTES);
+  return Option.isSome(raw) ? parseKnownHostsHostnames(raw.value) : NO_HOSTS;
 });
 
 export const discoverSshHosts = Effect.fnUntraced(
@@ -240,9 +314,11 @@ export const discoverSshHosts = Effect.fnUntraced(
         port: null,
         source: "ssh-config",
       });
+      if (discovered.size >= SSH_DISCOVERED_HOST_MAX_COUNT) break;
     }
 
     for (const hostname of knownHosts) {
+      if (discovered.size >= SSH_DISCOVERED_HOST_MAX_COUNT) break;
       if (discovered.has(hostname)) {
         continue;
       }

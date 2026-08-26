@@ -196,7 +196,7 @@ describe("Origin Grok review workflow wiring", () => {
     );
     assert.notInclude(trusted, "refs/remotes/origin/main");
     assert.notInclude(trusted, "fetch --deepen=");
-    assert.include(trusted, "refs/t3-pretty/origin-main");
+    assert.include(trusted, '"+refs/heads/main:${main_ref}"');
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 1200), "queue: macos-release");
     assert.include(reviewStep, "automation");
@@ -208,6 +208,7 @@ describe("Origin Grok review workflow wiring", () => {
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "origin-forge.mjs");
     assert.include(reviewCi, "brew install node");
+    assert.include(reviewCi, "HOMEBREW_NO_ASK=1");
     assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "XAI_API_KEY");
     assert.notInclude(reviewCi, "api.x.ai");

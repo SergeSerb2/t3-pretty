@@ -10,9 +10,15 @@ import {
 } from "./pullRequestPanelView.logic";
 
 const views = new Map<string, PullRequestPanelViewSnapshot>();
+const MAX_PULL_REQUEST_PANEL_VIEWS = 128;
 
 export function readPullRequestPanelView(key: string): PullRequestPanelViewSnapshot | undefined {
-  return views.get(key);
+  const view = views.get(key);
+  if (view !== undefined) {
+    views.delete(key);
+    views.set(key, view);
+  }
+  return view;
 }
 
 export function writePullRequestPanelView(
@@ -20,7 +26,13 @@ export function writePullRequestPanelView(
   patch: PullRequestPanelViewSnapshot,
 ): PullRequestPanelViewSnapshot {
   const next = mergePullRequestPanelView(views.get(key), patch);
+  views.delete(key);
   views.set(key, next);
+  while (views.size > MAX_PULL_REQUEST_PANEL_VIEWS) {
+    const oldest = views.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    views.delete(oldest);
+  }
   return next;
 }
 

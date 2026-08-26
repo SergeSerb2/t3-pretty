@@ -19,6 +19,22 @@ export function toSortableTimestamp(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * Chronological comparison for wire timestamps. Plain string ordering breaks
+ * when equivalent producers use different fractional precision or offsets.
+ * Invalid legacy values stay deterministic and sort before valid timestamps.
+ */
+export function compareIsoDateTimes(left: string, right: string): number {
+  const leftTimestamp = toSortableTimestamp(left);
+  const rightTimestamp = toSortableTimestamp(right);
+  if (leftTimestamp === null) {
+    if (rightTimestamp !== null) return -1;
+    return left === right ? 0 : left < right ? -1 : 1;
+  }
+  if (rightTimestamp === null) return 1;
+  return Math.sign(leftTimestamp - rightTimestamp);
+}
+
 function getFirstSortableTimestamp(...values: Array<string | null | undefined>): number | null {
   for (const value of values) {
     const timestamp = toSortableTimestamp(value ?? undefined);

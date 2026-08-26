@@ -23,6 +23,7 @@ import {
   RuntimeTaskId,
   type RuntimeTaskUsage,
   ProviderApprovalDecision,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   ThreadId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
@@ -54,11 +55,14 @@ import {
 } from "../Errors.ts";
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { readFilePrefix } from "../../boundedFileRead.ts";
 import { ServerConfig } from "../../config.ts";
 import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
+  describeMcpElicitation,
   makeCodexSessionRuntime,
+  normalizeCodexUserInputQuestions,
   type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeShape,
@@ -73,6 +77,7 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 
 const PROVIDER = ProviderDriverKind.make("codex");
+const CODEX_RUNTIME_EVENT_QUEUE_CAPACITY = 512;
 
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
@@ -128,10 +133,6 @@ function mapCodexRuntimeError(
 type CodexLifecycleItem =
   | EffectCodexSchema.V2ItemStartedNotification["item"]
   | EffectCodexSchema.V2ItemCompletedNotification["item"];
-
-type CodexToolUserInputQuestion =
-  | EffectCodexSchema.ServerRequest__ToolRequestUserInputQuestion
-  | EffectCodexSchema.ToolRequestUserInputParams__ToolRequestUserInputQuestion;
 
 const ApprovalDecisionPayload = Schema.Struct({
   decision: ProviderApprovalDecision,
@@ -311,6 +312,8 @@ function toRequestTypeFromMethod(method: string): CanonicalRequestType {
       return "file_read_approval";
     case "item/fileChange/requestApproval":
       return "file_change_approval";
+    case "mcpServer/elicitation/request":
+      return "mcp_elicitation_approval";
     case "applyPatchApproval":
       return "apply_patch_approval";
     case "execCommandApproval":
@@ -334,6 +337,8 @@ function toRequestTypeFromKind(kind: ProviderRequestKind | undefined): Canonical
       return "file_read_approval";
     case "file-change":
       return "file_change_approval";
+    case "mcp-elicitation":
+      return "mcp_elicitation_approval";
     default:
       return "unknown";
   }
@@ -348,40 +353,6 @@ function toCanonicalUserInputAnswers(
       return [questionId, normalizedAnswers] as const;
     }),
   );
-}
-
-function toUserInputQuestions(questions: ReadonlyArray<CodexToolUserInputQuestion>) {
-  const parsedQuestions = questions
-    .map((question) => {
-      const options =
-        question.options
-          ?.map((option) => {
-            const label = trimText(option.label);
-            const description = trimText(option.description);
-            if (!label || !description) {
-              return undefined;
-            }
-            return { label, description };
-          })
-          .filter((option) => option !== undefined) ?? [];
-
-      const id = trimText(question.id);
-      const header = trimText(question.header);
-      const prompt = trimText(question.question);
-      if (!id || !header || !prompt || options.length === 0) {
-        return undefined;
-      }
-      return {
-        id,
-        header,
-        question: prompt,
-        options,
-        multiSelect: false,
-      };
-    })
-    .filter((question) => question !== undefined);
-
-  return parsedQuestions.length > 0 ? parsedQuestions : undefined;
 }
 
 function toThreadState(
@@ -794,7 +765,7 @@ function mapToRuntimeEvents(
       const payload =
         readPayload(EffectCodexSchema.ServerRequest__ToolRequestUserInputParams, event.payload) ??
         readPayload(EffectCodexSchema.ToolRequestUserInputParams, event.payload);
-      const questions = payload ? toUserInputQuestions(payload.questions) : undefined;
+      const questions = payload ? normalizeCodexUserInputQuestions(payload.questions) : undefined;
       if (!questions) {
         return [];
       }
@@ -809,6 +780,11 @@ function mapToRuntimeEvents(
       ];
     }
 
+    const elicitation =
+      event.method === "mcpServer/elicitation/request"
+        ? readPayload(EffectCodexSchema.McpServerElicitationRequestParams, event.payload)
+        : undefined;
+    const elicitationApproval = elicitation ? describeMcpElicitation(elicitation) : undefined;
     const detail = (() => {
       switch (event.method) {
         case "item/commandExecution/requestApproval": {
@@ -825,6 +801,8 @@ function mapToRuntimeEvents(
           );
           return payload?.reason ?? undefined;
         }
+        case "mcpServer/elicitation/request":
+          return elicitation?.message;
         case "applyPatchApproval": {
           const payload = readPayload(
             EffectCodexSchema.ServerRequest__ApplyPatchApprovalParams,
@@ -858,6 +836,12 @@ function mapToRuntimeEvents(
         payload: {
           requestType: toRequestTypeFromMethod(event.method),
           ...(detail ? { detail } : {}),
+          ...(elicitationApproval
+            ? {
+                appName: elicitationApproval.appName,
+                options: elicitationApproval.options,
+              }
+            : {}),
           ...(event.payload !== undefined ? { args: event.payload } : {}),
         },
       },
@@ -1645,7 +1629,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       : undefined);
   const managedNativeEventLogger =
     options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
-  const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventQueue = yield* Queue.bounded<ProviderRuntimeEvent>(
+    CODEX_RUNTIME_EVENT_QUEUE_CAPACITY,
+  );
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>
@@ -1790,7 +1776,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         detail: `Invalid attachment id '${attachment.id}'.`,
       });
     }
-    const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+    const bytes = yield* readFilePrefix(
+      fileSystem,
+      attachmentPath,
+      PROVIDER_SEND_TURN_MAX_IMAGE_BYTES + 1,
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new ProviderAdapterRequestError({
@@ -1801,6 +1791,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           }),
       ),
     );
+    if (bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "turn/start",
+        detail: `Attachment '${attachment.name}' exceeds the ${PROVIDER_SEND_TURN_MAX_IMAGE_BYTES}-byte image limit.`,
+      });
+    }
     return {
       type: "image" as const,
       url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,

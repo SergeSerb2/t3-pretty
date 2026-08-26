@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import { pipe } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import {
   isRelayManagedConnection,
@@ -63,6 +64,33 @@ export interface RecentThreadShortcut {
   readonly title: string;
 }
 
+function isSavedRemoteConnection(value: unknown): value is SavedRemoteConnection {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const connection = value as Partial<SavedRemoteConnection>;
+  if (
+    typeof connection.environmentId !== "string" ||
+    connection.environmentId.length === 0 ||
+    typeof connection.environmentLabel !== "string" ||
+    typeof connection.pairingUrl !== "string" ||
+    typeof connection.displayUrl !== "string" ||
+    typeof connection.httpBaseUrl !== "string" ||
+    typeof connection.wsBaseUrl !== "string" ||
+    (connection.bearerToken !== null && typeof connection.bearerToken !== "string") ||
+    (connection.authenticationMethod !== undefined &&
+      connection.authenticationMethod !== "bearer" &&
+      connection.authenticationMethod !== "dpop") ||
+    (connection.dpopAccessToken !== undefined && typeof connection.dpopAccessToken !== "string") ||
+    (connection.relayManaged !== undefined && connection.relayManaged !== true)
+  ) {
+    return false;
+  }
+  return Boolean(
+    connection.bearerToken?.trim() || isRelayManagedConnection(connection as SavedRemoteConnection),
+  );
+}
+
 export class MobileStorage extends Context.Service<
   MobileStorage,
   {
@@ -119,6 +147,9 @@ export class MobileStorage extends Context.Service<
 
 export const make = Effect.fn("MobileStorage.make")(function* () {
   const secureStorage = yield* MobileSecureStorage.MobileSecureStorage;
+  const deviceIdSemaphore = yield* Semaphore.make(1);
+  const connectionsSemaphore = yield* Semaphore.make(1);
+  let cachedDeviceId: string | null = null;
 
   const parseJson = <A>(key: string, raw: string): A | null => {
     if (!raw.trim()) return null;
@@ -147,57 +178,61 @@ export const make = Effect.fn("MobileStorage.make")(function* () {
   });
 
   const loadSavedConnections = readJson<{
-    readonly connections?: ReadonlyArray<SavedRemoteConnection>;
+    readonly connections?: unknown;
   }>(CONNECTIONS_KEY).pipe(
     Effect.map((parsed) =>
-      pipe(
-        parsed?.connections ?? [],
-        Arr.filter(
-          (connection) =>
-            !!connection.environmentId &&
-            (!!connection.bearerToken?.trim() || isRelayManagedConnection(connection)),
-        ),
-      ),
+      Array.isArray(parsed?.connections) ? parsed.connections.filter(isSavedRemoteConnection) : [],
     ),
   );
 
-  const saveConnection = Effect.fn("MobileStorage.saveConnection")(function* (
-    connection: SavedRemoteConnection,
-  ) {
-    const current = yield* loadSavedConnections;
-    const stableConnection = toStableSavedRemoteConnection(connection);
-    const next = current.some((entry) => entry.environmentId === connection.environmentId)
-      ? pipe(
+  const saveConnection = Effect.fn("MobileStorage.saveConnection")((connection) =>
+    connectionsSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* loadSavedConnections;
+        const stableConnection = toStableSavedRemoteConnection(connection);
+        const next = current.some((entry) => entry.environmentId === connection.environmentId)
+          ? pipe(
+              current,
+              Arr.map((entry) =>
+                entry.environmentId === connection.environmentId ? stableConnection : entry,
+              ),
+            )
+          : pipe(current, Arr.append(stableConnection));
+        yield* writeJson(CONNECTIONS_KEY, { connections: next });
+      }),
+    ),
+  );
+
+  const clearSavedConnection = Effect.fn("MobileStorage.clearSavedConnection")((environmentId) =>
+    connectionsSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* loadSavedConnections;
+        const next = pipe(
           current,
-          Arr.map((entry) =>
-            entry.environmentId === connection.environmentId ? stableConnection : entry,
-          ),
-        )
-      : pipe(current, Arr.append(stableConnection));
-    yield* writeJson(CONNECTIONS_KEY, { connections: next });
-  });
+          Arr.filter((entry) => entry.environmentId !== environmentId),
+        );
+        yield* writeJson(CONNECTIONS_KEY, { connections: next });
+      }),
+    ),
+  );
 
-  const clearSavedConnection = Effect.fn("MobileStorage.clearSavedConnection")(function* (
-    environmentId: EnvironmentId,
-  ) {
-    const current = yield* loadSavedConnections;
-    const next = pipe(
-      current,
-      Arr.filter((entry) => entry.environmentId !== environmentId),
-    );
-    yield* writeJson(CONNECTIONS_KEY, { connections: next });
-  });
-
-  const loadOrCreateAgentAwarenessDeviceId = Effect.gen(function* () {
-    const existing = yield* secureStorage.getItem(AGENT_AWARENESS_DEVICE_ID_KEY);
-    if (existing?.trim()) return existing;
-    const deviceId = yield* Effect.tryPromise({
-      try: () => import("../lib/uuid").then(({ uuidv4 }) => uuidv4()),
-      catch: (cause) => new MobileDeviceIdGenerationError({ cause }),
-    });
-    yield* secureStorage.setItem(AGENT_AWARENESS_DEVICE_ID_KEY, deviceId);
-    return deviceId;
-  });
+  const loadOrCreateAgentAwarenessDeviceId = deviceIdSemaphore.withPermits(1)(
+    Effect.gen(function* () {
+      if (cachedDeviceId !== null) return cachedDeviceId;
+      const existing = yield* secureStorage.getItem(AGENT_AWARENESS_DEVICE_ID_KEY);
+      if (existing?.trim()) {
+        cachedDeviceId = existing;
+        return existing;
+      }
+      const deviceId = yield* Effect.tryPromise({
+        try: () => import("../lib/uuid").then(({ uuidv4 }) => uuidv4()),
+        catch: (cause) => new MobileDeviceIdGenerationError({ cause }),
+      });
+      yield* secureStorage.setItem(AGENT_AWARENESS_DEVICE_ID_KEY, deviceId);
+      cachedDeviceId = deviceId;
+      return deviceId;
+    }),
+  );
 
   const loadAgentAwarenessDeviceId = secureStorage
     .getItem(AGENT_AWARENESS_DEVICE_ID_KEY)
@@ -228,20 +263,24 @@ export const make = Effect.fn("MobileStorage.make")(function* () {
   // Threads most recently opened on this device, newest first — the source
   // for the launcher's dynamic "recent thread" app shortcuts.
   const loadRecentThreadShortcuts = readJson<{
-    readonly threads?: ReadonlyArray<RecentThreadShortcut>;
+    readonly threads?: unknown;
   }>(RECENT_THREAD_SHORTCUTS_KEY).pipe(
     Effect.map((parsed) =>
-      pipe(
-        parsed?.threads ?? [],
-        Arr.filter(
-          (thread) =>
-            typeof thread?.environmentId === "string" &&
-            thread.environmentId.length > 0 &&
-            typeof thread.threadId === "string" &&
-            thread.threadId.length > 0 &&
-            typeof thread.title === "string",
-        ),
-      ),
+      Array.isArray(parsed?.threads)
+        ? parsed.threads.filter(
+            (thread): thread is RecentThreadShortcut =>
+              typeof thread === "object" &&
+              thread !== null &&
+              "environmentId" in thread &&
+              typeof thread.environmentId === "string" &&
+              thread.environmentId.length > 0 &&
+              "threadId" in thread &&
+              typeof thread.threadId === "string" &&
+              thread.threadId.length > 0 &&
+              "title" in thread &&
+              typeof thread.title === "string",
+          )
+        : [],
     ),
   );
 
@@ -254,9 +293,8 @@ export const make = Effect.fn("MobileStorage.make")(function* () {
     loadAgentAwarenessRegistrationRecord,
     saveAgentAwarenessRegistrationRecord: (record) =>
       writeJson(AGENT_AWARENESS_REGISTRATION_KEY, record),
-    clearAgentAwarenessRegistrationRecord: secureStorage.setItem(
+    clearAgentAwarenessRegistrationRecord: secureStorage.removeItem(
       AGENT_AWARENESS_REGISTRATION_KEY,
-      "",
     ),
     loadRecentThreadShortcuts,
     saveRecentThreadShortcuts: (threads) => writeJson(RECENT_THREAD_SHORTCUTS_KEY, { threads }),

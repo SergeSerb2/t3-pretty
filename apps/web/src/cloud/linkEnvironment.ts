@@ -210,14 +210,25 @@ function decodedRelayClientError(message: string) {
   };
 }
 
-function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
-  if (isEnvironmentCloudApiError(cause)) {
-    return cause;
+const MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES = 64;
+
+export function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
+  const seen = new Set<object>();
+  let current = cause;
+  for (let inspected = 0; inspected < MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES; inspected += 1) {
+    if (isEnvironmentCloudApiError(current)) {
+      return current;
+    }
+    if (typeof current !== "object" || current === null || seen.has(current)) {
+      return null;
+    }
+    seen.add(current);
+    if (!("cause" in current)) {
+      return null;
+    }
+    current = current.cause;
   }
-  if (typeof cause !== "object" || cause === null) {
-    return null;
-  }
-  return "cause" in cause ? findEnvironmentCloudApiError(cause.cause) : null;
+  return null;
 }
 
 const environmentApiError = (message: string) => (cause: unknown) => {

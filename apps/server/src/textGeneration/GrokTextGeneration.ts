@@ -22,6 +22,9 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -65,7 +68,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
-      const outputRef = yield* Ref.make("");
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
       const runtime = yield* makeGrokAcpRuntime({
         grokSettings,
         environment,
@@ -83,7 +86,9 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         if (content.type !== "text") {
           return Effect.void;
         }
-        return Ref.update(outputRef, (current) => current + content.text);
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
       });
 
       const promptResult = yield* Effect.gen(function* () {
@@ -125,7 +130,14 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         ),
       );
 
-      const trimmed = (yield* Ref.get(outputRef)).trim();
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Grok Agent returned structured output above the one MiB limit.",
+        });
+      }
+      const trimmed = decodeBoundedTextGenerationOutput(output).trim();
       if (!trimmed) {
         return yield* new TextGenerationError({
           operation,

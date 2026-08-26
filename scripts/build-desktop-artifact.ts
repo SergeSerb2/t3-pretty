@@ -630,21 +630,18 @@ export class LinuxIconResizeError extends Schema.TaggedErrorClass<LinuxIconResiz
   }
 }
 
-const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
-    ),
-  );
-
 const COMMAND_OUTPUT_TAIL_LENGTH = 20_000;
 
 function appendOutputTail(acc: string, chunk: string): string {
   const next = acc + chunk;
   return next.length > COMMAND_OUTPUT_TAIL_LENGTH ? next.slice(-COMMAND_OUTPUT_TAIL_LENGTH) : next;
 }
+
+const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold(() => "", appendOutputTail),
+  );
 
 function formatOutputSection(label: string, output: string): string | undefined {
   const trimmed = output.trim();
@@ -831,6 +828,11 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // extraResources and the Linux AppImage asar fallback.
   "!apps/desktop/prod-resources/dmg",
   "!apps/desktop/prod-resources/dmg/**/*",
+] as const;
+// Windows terminal helpers cannot run on macOS and slow signing and notarization.
+export const MAC_FILE_EXCLUSIONS = [
+  "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
+  "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
 // Windows ships the server tree (bundle + node_modules) as a separate
 // resources/server.asar sidecar instead of loose files: the NSIS installer
@@ -1150,6 +1152,19 @@ export function resolveFffNativeDependencies(
   );
 }
 
+export function resolveMacStageDependencies(input: {
+  readonly serverDependencies: Record<string, string>;
+  readonly desktopDependencies: Record<string, string>;
+  readonly arch: typeof BuildArch.Type;
+  readonly fffNodeVersion: string;
+}) {
+  return {
+    ...selectCliRuntimeExternalDependencies(input.serverDependencies),
+    ...input.desktopDependencies,
+    ...resolveFffNativeDependencies("mac", input.arch, input.fffNodeVersion),
+  };
+}
+
 export interface ClerkPasskeyNativeArtifact {
   readonly packageName: string;
   readonly binaryFileName: string;
@@ -1289,6 +1304,98 @@ const AzureTrustedSigningOptionsConfig = Config.all({
     Config.withDefault("http://timestamp.acs.microsoft.com"),
   ),
 });
+
+export interface AzureTrustedSigningOptions {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampRfc3161: string;
+}
+
+function resolveTrustedSigningText(value: string, field: string, maxBytes: number): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > maxBytes ||
+    [...normalized].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+    })
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} is outside its safety boundary.`);
+  }
+  return normalized;
+}
+
+function resolveTrustedSigningUrl(
+  value: string,
+  field: string,
+  allowedProtocols: ReadonlySet<string>,
+): string {
+  const normalized = resolveTrustedSigningText(value, field, 4096);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  if (
+    !allowedProtocols.has(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  return parsed.toString();
+}
+
+function resolveTrustedSigningDigest(
+  value: string,
+  field: string,
+): AzureTrustedSigningOptions["fileDigest"] {
+  const normalized = resolveTrustedSigningText(value, field, 16).toUpperCase();
+  if (normalized !== "SHA256" && normalized !== "SHA384" && normalized !== "SHA512") {
+    throw new Error(`Azure Trusted Signing ${field} is unsupported.`);
+  }
+  return normalized;
+}
+
+export function resolveAzureTrustedSigningOptions(input: {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: string;
+  readonly timestampDigest: string;
+  readonly timestampRfc3161: string;
+}): AzureTrustedSigningOptions {
+  return {
+    publisherName: resolveTrustedSigningText(input.publisherName, "publisher name", 1024),
+    endpoint: resolveTrustedSigningUrl(input.endpoint, "endpoint", new Set(["https:"])),
+    certificateProfileName: resolveTrustedSigningText(
+      input.certificateProfileName,
+      "certificate profile name",
+      256,
+    ),
+    codeSigningAccountName: resolveTrustedSigningText(
+      input.codeSigningAccountName,
+      "account name",
+      256,
+    ),
+    fileDigest: resolveTrustedSigningDigest(input.fileDigest, "file digest"),
+    timestampDigest: resolveTrustedSigningDigest(input.timestampDigest, "timestamp digest"),
+    timestampRfc3161: resolveTrustedSigningUrl(
+      input.timestampRfc3161,
+      "timestamp URL",
+      new Set(["http:", "https:"]),
+    ),
+  };
+}
 
 const BuildEnvConfig = Config.all({
   platform: Config.schema(BuildPlatform, "T3CODE_DESKTOP_PLATFORM").pipe(Config.option),
@@ -2086,20 +2193,34 @@ export function resolveDesktopRuntimeDependencies(
 }
 
 export function resolveGenericUpdateFeedUrl(raw: string): string | undefined {
+  if (Buffer.byteLength(raw, "utf8") > 4096) return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return undefined;
+  }
 
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return undefined;
+    }
+    // Channel manifests are resolved relative to this directory. Query and
+    // fragment state cannot authenticate those relative requests and would be
+    // exposed in packaged updater metadata, so only a public directory URL is
+    // accepted here.
+    if (!parsed.pathname.endsWith("/")) parsed.pathname = `${parsed.pathname}/`;
+    return parsed.toString();
   } catch {
     return undefined;
   }
-
-  // electron-updater resolves channel files with `new URL(file, baseUrl)`. A
-  // base without a trailing slash replaces the last path segment, so
-  // `.../releases/latest/download` + `nightly.yml` would miss `/download/`.
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
@@ -2149,6 +2270,10 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+}
+
+function isDesktopPreviewVersion(version: string): boolean {
+  return /-pr\./.test(version);
 }
 
 export function resolveDesktopWebAssetBrand(
@@ -2233,7 +2358,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     productName,
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
-    files: [...DESKTOP_FILE_EXCLUSIONS],
+    files: [...DESKTOP_FILE_EXCLUSIONS, ...(platform === "mac" ? MAC_FILE_EXCLUSIONS : [])],
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -2247,19 +2372,23 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-  if (publishConfig) {
-    buildConfig.publish = [publishConfig];
-  } else if (mockUpdates) {
-    buildConfig.publish = [
-      {
-        provider: "generic",
-        url: resolveMockUpdateServerUrl(mockUpdateServerPort),
-      },
-    ];
+  if (!isDesktopPreviewVersion(version)) {
+    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+    if (publishConfig) {
+      buildConfig.publish = [publishConfig];
+    } else if (mockUpdates) {
+      buildConfig.publish = [
+        {
+          provider: "generic",
+          url: resolveMockUpdateServerUrl(mockUpdateServerPort),
+        },
+      ];
+    }
   }
 
   if (platform === "mac") {
+    const path = yield* Path.Path;
+    const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
@@ -2272,6 +2401,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           schemes: ["t3code", "t3code-dev"],
         },
       ],
+      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -2350,7 +2480,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       verifyUpdateCodeSignature: signed,
     };
     if (signed) {
-      winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      winConfig.azureSignOptions = resolveAzureTrustedSigningOptions(
+        yield* AzureTrustedSigningOptionsConfig,
+      );
     }
     buildConfig.win = winConfig;
   }
@@ -3100,21 +3232,28 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   // Windows splits dependencies per process: app.asar carries only the
   // desktop main-process runtime deps, while the server bundle's deps live in
-  // the server.asar sidecar (see stageWindowsServerSidecar). macOS and Linux
-  // keep a single tree, but only the server runtime-externals (natives the
-  // bundled bin.mjs still loads from disk) plus desktop runtime deps.
+  // the server.asar sidecar (see stageWindowsServerSidecar). macOS uses the
+  // parent stage resolver to add only packages external to its merged app.asar.
+  // Linux likewise keeps only server runtime externals plus desktop runtime deps.
   const stageDependencies =
     options.platform === "win"
       ? { ...resolvedDesktopRuntimeDependencies }
-      : {
-          ...resolvedServerRuntimeExternalDependencies,
-          ...resolvedDesktopRuntimeDependencies,
-          ...resolveFffNativeDependencies(
-            options.platform,
-            options.arch,
-            serverPackageJson.dependencies["@ff-labs/fff-node"],
-          ),
-        };
+      : options.platform === "mac"
+        ? resolveMacStageDependencies({
+            serverDependencies: resolvedServerDependencies,
+            desktopDependencies: resolvedDesktopRuntimeDependencies,
+            arch: options.arch,
+            fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+          })
+        : {
+            ...resolvedServerRuntimeExternalDependencies,
+            ...resolvedDesktopRuntimeDependencies,
+            ...resolveFffNativeDependencies(
+              options.platform,
+              options.arch,
+              serverPackageJson.dependencies["@ff-labs/fff-node"],
+            ),
+          };
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
     stageDependencies,
@@ -3236,10 +3375,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     buildEnv.GYP_MSVS_VERSION = buildEnv.GYP_MSVS_VERSION ?? "2022";
   }
   if (options.verbose) {
-    buildEnv.DEBUG =
-      buildEnv.DEBUG === undefined
-        ? "electron-builder,electron-builder:*"
-        : `${buildEnv.DEBUG},electron-builder,electron-builder:*`;
+    const debugNamespaces = [
+      "electron-builder",
+      "electron-builder:*",
+      ...(options.platform === "mac" ? ["electron-osx-sign*", "electron-notarize*"] : []),
+    ];
+    buildEnv.DEBUG = [buildEnv.DEBUG, ...debugNamespaces].filter(Boolean).join(",");
   }
 
   yield* Effect.log(

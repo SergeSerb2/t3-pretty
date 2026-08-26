@@ -66,39 +66,41 @@ export function SettingsProjectGroupingRouteScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         <SettingsSection title="Default grouping">
-          {GROUPING_OPTIONS.map((option, index) => (
-            <Pressable
-              key={option.mode}
-              accessibilityRole="radio"
-              accessibilityState={{
-                checked: selectedMode === option.mode,
-                disabled: !preferencesReady,
-              }}
-              disabled={!preferencesReady}
-              onPress={() => savePreferences(mobileProjectGroupingModePatch(option.mode))}
-              className={
-                index === 0
-                  ? "flex-row items-center gap-4 p-4"
-                  : "flex-row items-center gap-4 border-t border-border-subtle p-4"
-              }
-            >
-              <View className="min-w-0 flex-1 gap-1">
-                <Text className="text-lg text-foreground">{option.label}</Text>
-                <Text className="text-sm leading-normal text-foreground-muted">
-                  {option.description}
-                </Text>
-              </View>
-              {selectedMode === option.mode ? (
-                <SymbolView
-                  name="checkmark"
-                  size={18}
-                  tintColor={checkmarkColor}
-                  type="monochrome"
-                  weight="semibold"
-                />
-              ) : null}
-            </Pressable>
-          ))}
+          <View accessibilityLabel="Default project grouping" accessibilityRole="radiogroup">
+            {GROUPING_OPTIONS.map((option, index) => (
+              <Pressable
+                key={option.mode}
+                accessibilityRole="radio"
+                accessibilityState={{
+                  checked: selectedMode === option.mode,
+                  disabled: !preferencesReady,
+                }}
+                disabled={!preferencesReady}
+                onPress={() => savePreferences(mobileProjectGroupingModePatch(option.mode))}
+                className={
+                  index === 0
+                    ? "flex-row items-center gap-4 p-4"
+                    : "flex-row items-center gap-4 border-t border-border-subtle p-4"
+                }
+              >
+                <View className="min-w-0 flex-1 gap-1">
+                  <Text className="text-lg text-foreground">{option.label}</Text>
+                  <Text className="text-sm leading-normal text-foreground-muted">
+                    {option.description}
+                  </Text>
+                </View>
+                {selectedMode === option.mode ? (
+                  <SymbolView
+                    name="checkmark"
+                    size={18}
+                    tintColor={checkmarkColor}
+                    type="monochrome"
+                    weight="semibold"
+                  />
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
         </SettingsSection>
       </ScrollView>
     </View>

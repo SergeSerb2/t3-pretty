@@ -67,7 +67,7 @@ const {
       <footer class="footer">
         <div class="footer-inner">
           <div class="footer-brand">
-            <img src="/icon.webp" alt="" />
+            <img src="/icon.webp" alt="" width="20" height="20" />
             <span>&copy; {new Date().getFullYear()} T3 Tools Inc · MIT licensed</span>
           </div>
           <div class="footer-links">
@@ -86,13 +86,26 @@ const {
 
     <script>
       const nav = document.querySelector(".nav");
-      const onScroll = () => {
+      let frame = 0;
+      const updateNav = () => {
+        frame = 0;
         if (!nav) return;
         if (window.scrollY > 12) nav.classList.add("is-scrolled");
         else nav.classList.remove("is-scrolled");
       };
+      const onScroll = () => {
+        frame ||= window.requestAnimationFrame(updateNav);
+      };
       window.addEventListener("scroll", onScroll, { passive: true });
-      onScroll();
+      updateNav();
+      window.addEventListener(
+        "pagehide",
+        () => {
+          if (frame) window.cancelAnimationFrame(frame);
+          window.removeEventListener("scroll", onScroll);
+        },
+        { once: true },
+      );
     </script>
   </body>
 </html>
@@ -124,6 +137,20 @@ const {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto !important;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
   }
 
   html {

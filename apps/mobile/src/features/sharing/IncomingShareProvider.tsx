@@ -10,6 +10,8 @@ import {
 import React, { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Platform } from "react-native";
 
+import { deleteComposerPreviewFiles, writeComposerPreviewFile } from "../../lib/composerImages";
+
 import {
   buildIncomingShareDraft,
   type IncomingShareDestination,
@@ -38,6 +40,7 @@ type IncomingShareContextValue = {
 };
 
 const IncomingShareContext = React.createContext<IncomingShareContextValue | null>(null);
+const INCOMING_SHARE_METADATA_TIMEOUT_MS = 10_000;
 
 function receiveSharingEnabled(): boolean {
   if (Platform.OS === "android") {
@@ -55,8 +58,17 @@ const getIncomingSharePayloads = createIncomingSharePayloadReader({
 });
 
 async function resolvedPayloadsForImages(): Promise<ReadonlyArray<ResolvedSharePayload>> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
-    return await getResolvedSharedPayloadsAsync();
+    return await Promise.race([
+      getResolvedSharedPayloadsAsync(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Shared file metadata resolution timed out.")),
+          INCOMING_SHARE_METADATA_TIMEOUT_MS,
+        );
+      }),
+    ]);
   } catch (error) {
     // iOS already gives the containing app a copied file:// URL, so raw
     // payloads remain usable. Android normally resolves content:// into a
@@ -64,6 +76,10 @@ async function resolvedPayloadsForImages(): Promise<ReadonlyArray<ResolvedShareP
     // resolution fails.
     console.warn("[incoming-share] could not resolve shared file metadata", error);
     return [];
+  } finally {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -79,9 +95,20 @@ async function incomingShareIdForPayloads(payloads: ReadonlyArray<SharePayload>)
   return `share-${digest}`;
 }
 
-async function readBase64(uri: string): Promise<string> {
+async function readBase64(uri: string, maxBytes: number): Promise<string | null> {
   const { File } = await import("expo-file-system");
-  return new File(uri).base64();
+  const file = new File(uri);
+  let size: number | null = null;
+  try {
+    size = file.size;
+  } catch {
+    // Some Android content providers allow reads but not metadata access. The
+    // post-read base64 bound remains the fallback for those URIs.
+  }
+  if (size !== null && size > maxBytes) {
+    return null;
+  }
+  return file.base64();
 }
 
 async function removeOwnedFile(uri: string): Promise<void> {
@@ -131,6 +158,7 @@ const incomingShareInbox = new IncomingShareInbox({
   clearPayloads: clearSharedPayloads,
   buildDraft: async ({ payloads, id, createdAt }) => {
     const cleanupUris = new Set<string>();
+    const previewUris = new Set<string>();
     const resolvedPayloads = payloads.some((payload) => payload.shareType === "image")
       ? await resolvedPayloadsForImages()
       : [];
@@ -139,6 +167,13 @@ const incomingShareInbox = new IncomingShareInbox({
       resolvedPayloads,
       fileReader: {
         readBase64,
+        writePreviewFile: async (input) => {
+          const uri = await writeComposerPreviewFile(input);
+          if (uri !== null) {
+            previewUris.add(uri);
+          }
+          return uri;
+        },
         removeOwnedFile: (uri) => {
           cleanupUris.add(uri);
         },
@@ -151,6 +186,7 @@ const incomingShareInbox = new IncomingShareInbox({
       cleanup: async () => {
         await Promise.all([...cleanupUris].map(removeOwnedFile));
       },
+      rollback: () => deleteComposerPreviewFiles([...previewUris]),
     };
   },
   cleanupReplayedPayloads: removeReplayedImagePayloadFiles,
@@ -170,6 +206,7 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const trailingRefreshRequestedRef = useRef(false);
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -181,30 +218,41 @@ export function IncomingShareProvider(props: React.PropsWithChildren) {
 
   const refresh = useCallback(async () => {
     if (refreshPromiseRef.current) {
+      trailingRefreshRequestedRef.current = true;
       return refreshPromiseRef.current;
     }
 
     const operation = (async () => {
       try {
-        const snapshot = await incomingShareInbox.refresh({ ingestNative: enabled });
-        if (mountedRef.current) {
-          setDrafts(snapshot);
-          setError(null);
-        }
-      } catch (cause) {
-        const persisted = await incomingShareInbox
-          .refresh({ ingestNative: false })
-          .catch(() => null);
-        if (mountedRef.current) {
-          if (persisted) {
-            setDrafts(persisted);
+        do {
+          trailingRefreshRequestedRef.current = false;
+          try {
+            const snapshot = await incomingShareInbox.refresh({ ingestNative: enabled });
+            if (mountedRef.current) {
+              setDrafts(snapshot);
+              setError(null);
+            }
+          } catch (cause) {
+            const persisted = await incomingShareInbox
+              .refresh({ ingestNative: false })
+              .catch(() => null);
+            if (mountedRef.current) {
+              if (persisted) {
+                setDrafts(persisted);
+              }
+              setError(
+                cause instanceof Error ? cause : new Error("Could not import shared content."),
+              );
+            }
           }
-          setError(cause instanceof Error ? cause : new Error("Could not import shared content."));
-        }
+        } while (trailingRefreshRequestedRef.current);
+      } finally {
+        // This finally runs inside the owning async operation, with no await
+        // between the final trailing check and releasing ownership. A refresh
+        // arriving afterward sees no owner and starts its own pass.
+        refreshPromiseRef.current = null;
       }
-    })().finally(() => {
-      refreshPromiseRef.current = null;
-    });
+    })();
 
     refreshPromiseRef.current = operation;
     return operation;

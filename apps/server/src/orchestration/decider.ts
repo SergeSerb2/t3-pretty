@@ -962,6 +962,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.linkedPullRequest !== undefined
+            ? { linkedPullRequest: command.linkedPullRequest }
+            : {}),
           updatedAt: occurredAt,
         },
       };
@@ -1308,6 +1311,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           session: command.session,
+          ...(command.activeUserMessageId !== undefined
+            ? { activeUserMessageId: command.activeUserMessageId }
+            : {}),
         },
       };
       // Only a session coming alive is activity worth waking a settled thread

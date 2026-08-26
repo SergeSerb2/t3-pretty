@@ -164,7 +164,17 @@ export interface RelayDeployOutcome {
 
 export function serializeGithubOutput(entries: Readonly<Record<string, string | boolean>>): string {
   return Object.entries(entries)
-    .map(([key, value]) => `${key}=${value}\n`)
+    .map(([key, rawValue]) => {
+      const value = String(rawValue);
+      if (
+        !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/u.test(key) ||
+        Buffer.byteLength(value, "utf8") > 8192 ||
+        hasControlCharacter(value)
+      ) {
+        throw new Error("GitHub output key or value is outside its safety boundary.");
+      }
+      return `${key}=${value}\n`;
+    })
     .join("");
 }
 
@@ -174,6 +184,10 @@ export function serializeRelayClientTracingEnvironment(config: RelayPublicConfig
     T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: config.clientTracingDataset,
     T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: config.clientTracingToken,
   });
+}
+
+export function escapeGithubWorkflowCommandData(value: string): string {
+  return value.replace(/%/gu, "%25").replace(/\r/gu, "%0D").replace(/\n/gu, "%0A");
 }
 
 const relayRoot = Effect.service(Path.Path).pipe(
@@ -251,10 +265,13 @@ const writeGithubEnvFile = Effect.fn("relay.deploy.writeGithubEnvFile")(function
     });
   }
   const fs = yield* FileSystem.FileSystem;
-  yield* Console.log(`::add-mask::${outcome.publicConfig.value.clientTracingToken}`);
+  yield* Console.log(
+    `::add-mask::${escapeGithubWorkflowCommandData(outcome.publicConfig.value.clientTracingToken)}`,
+  );
   yield* fs.writeFileString(
     outputPath,
     serializeRelayClientTracingEnvironment(outcome.publicConfig.value),
+    { flag: "wx", mode: 0o600 },
   );
 });
 
@@ -269,6 +286,47 @@ const deployBaseServices = Layer.mergeAll(
   LoggingCli,
 );
 const deployServices = deployBaseServices;
+
+function hasControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) return true;
+  }
+  return false;
+}
+
+function boundedRelayConfigValue(value: unknown, maxBytes: number): string | undefined {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    Buffer.byteLength(value, "utf8") > maxBytes ||
+    hasControlCharacter(value)
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+function relayConfigUrl(value: unknown, originOnly: boolean): string | undefined {
+  const source = boundedRelayConfigValue(value, 4096);
+  if (!source) return undefined;
+  try {
+    const parsed = new URL(source);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      (originOnly && parsed.pathname !== "/")
+    ) {
+      return undefined;
+    }
+    return originOnly ? parsed.origin : parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
 
 function relayPublicConfigValues(
   output: unknown,
@@ -285,26 +343,21 @@ function relayPublicConfigValues(
     };
   }
   const value = output as Record<string, unknown>;
-  const text = (name: string) => {
-    const candidate = value[name];
-    return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
-  };
-  const secret = (name: string): string | undefined => {
+  const secret = (name: string, maxBytes: number): string | undefined => {
     const candidate = value[name];
     if (!Redacted.isRedacted(candidate)) {
-      return text(name);
+      return boundedRelayConfigValue(candidate, maxBytes);
     }
-    const redacted = Redacted.value(candidate);
-    return typeof redacted === "string" && redacted.length > 0 ? redacted : undefined;
+    return boundedRelayConfigValue(Redacted.value(candidate), maxBytes);
   };
   return {
-    url: text("url"),
-    mobileTracingUrl: text("mobileTracingUrl"),
-    mobileTracingDataset: text("mobileTracingDataset"),
-    mobileTracingToken: secret("mobileTracingToken"),
-    clientTracingUrl: text("clientTracingUrl"),
-    clientTracingDataset: text("clientTracingDataset"),
-    clientTracingToken: secret("clientTracingToken"),
+    url: relayConfigUrl(value.url, true),
+    mobileTracingUrl: relayConfigUrl(value.mobileTracingUrl, false),
+    mobileTracingDataset: boundedRelayConfigValue(value.mobileTracingDataset, 512),
+    mobileTracingToken: secret("mobileTracingToken", 8192),
+    clientTracingUrl: relayConfigUrl(value.clientTracingUrl, false),
+    clientTracingDataset: boundedRelayConfigValue(value.clientTracingDataset, 512),
+    clientTracingToken: secret("clientTracingToken", 8192),
   };
 }
 

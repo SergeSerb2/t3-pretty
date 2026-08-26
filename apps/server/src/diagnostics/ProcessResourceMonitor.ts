@@ -71,6 +71,7 @@ export const make = Effect.fn("makeProcessResourceMonitor")(function* () {
             maxProcessCount: bucket.maxProcessCount,
           })),
           topProcesses,
+          ...(history.topProcessesTruncated === true ? { topProcessesTruncated: true } : {}),
           error: history.health.native.lastError.pipe(
             Option.map((message) => ({
               failureTag: "ProcessDiagnosticsQueryFailedError" as const,

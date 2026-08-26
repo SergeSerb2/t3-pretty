@@ -13,6 +13,7 @@ function currentMinute(): string {
 let nowMinute = currentMinute();
 let timerId: number | null = null;
 let timerIsInterval = false;
+let timerGeneration = 0;
 const listeners = new Set<() => void>();
 
 function tick(): void {
@@ -26,10 +27,16 @@ function tick(): void {
 function startTimer(): void {
   // Align to the next UTC minute boundary, then tick every 60s. Ticks re-read
   // the clock, so a throttled or late timer self-corrects when it fires.
+  const generation = ++timerGeneration;
   timerIsInterval = false;
   timerId = window.setTimeout(
     () => {
+      if (timerGeneration !== generation || listeners.size === 0) return;
       tick();
+      // A listener can unsubscribe (and another can subscribe) synchronously
+      // while tick publishes. Never overwrite that cleanup or replacement
+      // timer with an orphaned interval from this older callback.
+      if (timerGeneration !== generation || listeners.size === 0) return;
       timerIsInterval = true;
       timerId = window.setInterval(tick, 60_000);
     },
@@ -45,6 +52,7 @@ function subscribe(listener: () => void): () => void {
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0 && timerId !== null) {
+      timerGeneration += 1;
       if (timerIsInterval) window.clearInterval(timerId);
       else window.clearTimeout(timerId);
       timerId = null;

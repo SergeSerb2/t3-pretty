@@ -17,6 +17,30 @@ it("round-trips environment keys in sorted order", () => {
   expect(parseArchivedThreadsEnvironmentKey(key)).toEqual([envA, envB]);
 });
 
+it("encodes environment sets without delimiter collisions", () => {
+  const first = [EnvironmentId.make("env\u001fpart"), EnvironmentId.make("tail")];
+  const second = [EnvironmentId.make("env"), EnvironmentId.make("part\u001ftail")];
+
+  expect(makeArchivedThreadsEnvironmentKey(first)).not.toBe(
+    makeArchivedThreadsEnvironmentKey(second),
+  );
+});
+
+it("deduplicates environment IDs before reading snapshots", () => {
+  const environmentId = EnvironmentId.make("environment-1");
+
+  expect(makeArchivedThreadsEnvironmentKey([environmentId, environmentId])).toBe(
+    makeArchivedThreadsEnvironmentKey([environmentId]),
+  );
+});
+
+it("ignores malformed environment keys", () => {
+  expect(parseArchivedThreadsEnvironmentKey("not json{{")).toEqual([]);
+  expect(parseArchivedThreadsEnvironmentKey(JSON.stringify(["", null, "environment-1"]))).toEqual(
+    [],
+  );
+});
+
 it("does not expose an archived snapshot failure message", () => {
   const environmentId = EnvironmentId.make("env-sensitive");
   const snapshotsAtom = createArchivedThreadSnapshotsAtomFamily<Error>({
