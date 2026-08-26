@@ -2810,6 +2810,15 @@ function ChatViewContent(props: ChatViewProps) {
       };
     });
   }, [serverAttachmentUrlById, serverMessages]);
+  const reconciledQueuedComposerMessages = useMemo(
+    () =>
+      reconcileQueuedComposerMessages({
+        queuedMessages: queuedComposerMessages,
+        serverMessages: displayServerMessages,
+        latestTurn: activeThread?.latestTurn ?? null,
+      }),
+    [activeThread?.latestTurn, displayServerMessages, queuedComposerMessages],
+  );
   useEffect(() => {
     if (typeof Image === "undefined" || displayServerMessages.length === 0) {
       return;
@@ -2921,13 +2930,7 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [attachmentPreviewHandoffByMessageId, clearAttachmentPreviewHandoff, displayServerMessages]);
   const timelineMessages = useMemo(() => {
-    const queuedMessageIds = new Set(
-      reconcileQueuedComposerMessages({
-        queuedMessages: queuedComposerMessages,
-        serverMessages: displayServerMessages,
-        latestTurn: activeThread?.latestTurn ?? null,
-      }).map((message) => message.id),
-    );
+    const queuedMessageIds = new Set(reconciledQueuedComposerMessages.map((message) => message.id));
     const messages = displayServerMessages.filter((message) => !queuedMessageIds.has(message.id));
     const serverMessagesWithPreviewHandoff =
       Object.keys(attachmentPreviewHandoffByMessageId).length === 0
@@ -2987,12 +2990,11 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
   }, [
-    activeThread?.latestTurn,
     attachmentPreviewHandoffByMessageId,
     displayServerMessages,
     feedbackSubmissions,
     optimisticUserMessages,
-    queuedComposerMessages,
+    reconciledQueuedComposerMessages,
   ]);
   const timelineEntries = useMemo(
     () =>
@@ -4659,16 +4661,10 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
 
   useEffect(() => {
-    if (!activeThread || queuedComposerMessages.length === 0) return;
-    const reconciled = reconcileQueuedComposerMessages({
-      queuedMessages: queuedComposerMessages,
-      serverMessages: activeThread.messages,
-      latestTurn: activeThread.latestTurn,
-    });
-    if (reconciled !== queuedComposerMessages) {
-      setQueuedComposerMessages(reconciled);
+    if (reconciledQueuedComposerMessages !== queuedComposerMessages) {
+      setQueuedComposerMessages(reconciledQueuedComposerMessages);
     }
-  }, [activeThread, queuedComposerMessages]);
+  }, [queuedComposerMessages, reconciledQueuedComposerMessages]);
 
   useEffect(() => {
     const currentRouteIdentity = { draftId, routeKind, routeThreadKey };
@@ -7753,7 +7749,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
                             activeLatestTurnId={activeLatestTurn?.turnId ?? null}
-                            queuedMessages={queuedComposerMessages}
+                            queuedMessages={reconciledQueuedComposerMessages}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             autoCreatePullRequest={autoCreatePullRequest}
