@@ -223,12 +223,14 @@ const decodeRemoteLaunchOutput = (stdout: string) =>
 const decodeRemotePairingOutput = (stdout: string) =>
   decodeRemoteJsonOutput(stdout, decodeRemotePairingResult);
 
-const remoteNodeEngineCheckMain = function remoteNodeEngineCheckMain() {
+const remoteNodeEngineCheckMain = function remoteNodeEngineCheckMain(
+  satisfiesRange: typeof satisfiesSemverRange,
+) {
   const range = process.argv[2] || "";
   const rawVersion =
     process.versions && process.versions.node ? process.versions.node : process.version;
 
-  if (!satisfiesSemverRange(rawVersion, range)) {
+  if (!satisfiesRange(rawVersion, range)) {
     process.stderr.write(
       "Remote node " + rawVersion + " does not satisfy required range " + range + ".\n",
     );
@@ -237,8 +239,7 @@ const remoteNodeEngineCheckMain = function remoteNodeEngineCheckMain() {
 };
 
 function buildRemoteNodeEngineCheckScript(): string {
-  return `const satisfiesSemverRange = ${satisfiesSemverRange.toString()};
-(${remoteNodeEngineCheckMain.toString()})();`;
+  return `(${remoteNodeEngineCheckMain.toString()})(${satisfiesSemverRange.toString()});`;
 }
 
 export function normalizeSshErrorMessage(stderr: string, fallbackMessage: string): string {

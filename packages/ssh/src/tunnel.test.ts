@@ -123,14 +123,24 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 }
 
 describe("ssh tunnel scripts", () => {
-  it("keeps the remote Node probe valid when bundling anonymizes functions", () => {
+  it("passes the checker into the remote Node probe instead of closing over its bundle name", () => {
     const script = buildRemoteNodeEnvScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
     const nodeScript = script.match(/<<'NODE'\n([\s\S]+?)\nNODE/)?.[1];
+    const stderr: Array<string> = [];
+    const remoteProcess = {
+      argv: ["node", "-", TEST_NODE_ENGINE_RANGE],
+      versions: { node: "24.13.1" },
+      version: "v24.13.1",
+      stderr: { write: (message: string) => stderr.push(message) },
+      exit: (code: number) => {
+        throw new Error(`unexpected exit ${code}`);
+      },
+    };
 
     assert.isDefined(nodeScript);
-    assert.doesNotThrow(
-      () => new Function(nodeScript.replace("function satisfiesSemverRange(", "function(")),
-    );
+    assert.doesNotThrow(() => new Function("process", nodeScript)(remoteProcess));
+    assert.deepEqual(stderr, []);
+    assert.notInclude(nodeScript, "const satisfiesSemverRange =");
   });
 
   it("builds the remote t3 runner with npx and npm fallbacks", () => {
@@ -149,7 +159,7 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
     assert.include(script, "remote_node_satisfies_engine()");
     assert.include(script, "function satisfiesSemverRange");
-    assert.include(script, "satisfiesSemverRange(rawVersion, range)");
+    assert.include(script, "satisfiesRange(rawVersion, range)");
     assert.include(script, 'prepend_path_if_dir "$VOLTA_HOME/bin"');
     assert.include(script, 'prepend_path_if_dir "$HOME/.asdf/shims"');
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/share/mise/shims"');
