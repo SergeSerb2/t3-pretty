@@ -108,6 +108,17 @@ const unauthorized = HttpServerResponse.jsonUnsafe(
   },
 );
 
+const forbidden = HttpServerResponse.jsonUnsafe(
+  {
+    error: "mcp_capability_unavailable",
+    message: "This provider-scoped MCP credential does not grant access to this toolkit.",
+  },
+  {
+    status: 403,
+    headers: { "cache-control": "no-store" },
+  },
+);
+
 type AuthenticatedHttpEffect = Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   Types.unhandled,
@@ -134,49 +145,52 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
-const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
-  Effect.map(
-    (registry): McpAuthMiddleware =>
-      Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        if (mcpDeclaredContentLengthExceedsLimit(request.headers["content-length"])) {
-          return mcpPayloadTooLargeResponse;
-        }
-        const authorization = request.headers.authorization;
-        const token =
-          authorization?.startsWith("Bearer ") === true
-            ? authorization.slice("Bearer ".length).trim()
-            : "";
-        const invocation = yield* registry.resolve(token);
-        if (!invocation) {
-          // Without this the only symptom of a dead credential is the agent
-          // quietly losing the whole `t3-code` toolkit for the rest of its
-          // session, with nothing on the server to explain why.
-          yield* Effect.logWarning("rejected MCP request with an unusable credential", {
-            reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
-          });
-          return unauthorized;
-        }
-        const boundedRequest = withBoundedMcpRequestBody(request);
-        return yield* httpEffect.pipe(
-          Effect.provideService(HttpServerRequest.HttpServerRequest, boundedRequest),
-          Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.map(normalizeMcpHttpResponse),
-          Effect.catchDefect((defect) =>
-            defect instanceof McpRequestBodyTooLarge
-              ? Effect.succeed(mcpPayloadTooLargeResponse)
-              : Effect.die(defect),
-          ),
-        );
-      }),
-  ),
-  Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
-);
+const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =>
+  McpSessionRegistry.McpSessionRegistry.pipe(
+    Effect.map(
+      (registry): McpAuthMiddleware =>
+        Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (mcpDeclaredContentLengthExceedsLimit(request.headers["content-length"])) {
+            return mcpPayloadTooLargeResponse;
+          }
+          const authorization = request.headers.authorization;
+          const token =
+            authorization?.startsWith("Bearer ") === true
+              ? authorization.slice("Bearer ".length).trim()
+              : "";
+          const invocation = yield* registry.resolve(token);
+          if (!invocation) {
+            // Without this the only symptom of a dead credential is the agent
+            // quietly losing the whole `t3-code` toolkit for the rest of its
+            // session, with nothing on the server to explain why.
+            yield* Effect.logWarning("rejected MCP request with an unusable credential", {
+              reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
+            });
+            return unauthorized;
+          }
+          if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
+          const boundedRequest = withBoundedMcpRequestBody(request);
+          return yield* httpEffect.pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, boundedRequest),
+            Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.map(normalizeMcpHttpResponse),
+            Effect.catchDefect((defect) =>
+              defect instanceof McpRequestBodyTooLarge
+                ? Effect.succeed(mcpPayloadTooLargeResponse)
+                : Effect.die(defect),
+            ),
+          );
+        }),
+    ),
+    Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
+  );
 
-const McpAuthMiddlewareLive = HttpRouter.middleware<{
-  provides: McpInvocationContext.McpInvocationContext;
-}>()(makeMcpAuthMiddleware).layer;
+const mcpAuthMiddlewareLive = (capability: McpInvocationContext.McpCapability) =>
+  HttpRouter.middleware<{
+    provides: McpInvocationContext.McpInvocationContext;
+  }>()(makeMcpAuthMiddleware(capability)).layer;
 
 const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
   if (Cause.hasInterrupts(cause) || cause.reasons.some(Cause.isDieReason)) {
@@ -302,20 +316,23 @@ export const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseT
   Layer.provide(ComputerUseToolkitHandlersLive),
 );
 
-const mcpTransportLive = (path: HttpRouter.PathInput) =>
+const mcpTransportLive = (
+  path: HttpRouter.PathInput,
+  capability: McpInvocationContext.McpCapability,
+) =>
   McpServer.layerHttp({
     name: "T3 Code",
     version: packageJson.version,
     path,
     protocols: [McpProtocol.v2025_06_18],
-  }).pipe(Layer.provide(McpAuthMiddlewareLive));
+  }).pipe(Layer.provide(mcpAuthMiddlewareLive(capability)));
 
 const PreviewMcpServerLive = PreviewToolkitRegistrationLive.pipe(
-  Layer.provide(mcpTransportLive("/mcp")),
+  Layer.provide(mcpTransportLive("/mcp", "preview")),
 );
 
 const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
-  Layer.provide(mcpTransportLive("/mcp/computer-use")),
+  Layer.provide(mcpTransportLive("/mcp/computer-use", "computer-use")),
 );
 
 export const layer = Layer.mergeAll(PreviewMcpServerLive, ComputerUseMcpServerLive);

@@ -24,12 +24,17 @@ export class McpInvocationContext extends Context.Service<
   McpInvocationScope
 >()("t3/mcp/McpInvocationContext") {}
 
+export const hasMcpCapability = (
+  invocation: McpInvocationScope,
+  capability: McpCapability,
+): boolean => invocation.capabilities.has(capability);
+
 export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* <E>(
   capability: McpCapability,
   unavailable: (invocation: McpInvocationScope) => E,
 ) {
   const invocation = yield* McpInvocationContext;
-  if (!invocation.capabilities.has(capability)) {
+  if (!hasMcpCapability(invocation, capability)) {
     return yield* Effect.fail(unavailable(invocation));
   }
   return invocation;
