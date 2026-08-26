@@ -91,20 +91,29 @@ export function useBrowserDictation(input: {
   const inputRef = useRef(input);
   inputRef.current = input;
 
-  const closeSession = useCallback((session: DictationSession) => {
-    if (session.closed) return;
-    session.closed = true;
+  const releaseCapture = useCallback((session: DictationSession) => {
     if (session.timer !== null) window.clearTimeout(session.timer);
+    session.timer = null;
     const recorder = session.recorder;
+    session.recorder = null;
     if (recorder) {
       recorder.ondataavailable = null;
       recorder.onstop = null;
       if (recorder.state === "recording") recorder.stop();
     }
     for (const track of session.stream.getTracks()) track.stop();
-    if (sessionRef.current === session) sessionRef.current = null;
-    if (mountedRef.current) setPhase("idle");
   }, []);
+
+  const closeSession = useCallback(
+    (session: DictationSession) => {
+      if (session.closed) return;
+      session.closed = true;
+      releaseCapture(session);
+      if (sessionRef.current === session) sessionRef.current = null;
+      if (mountedRef.current) setPhase("idle");
+    },
+    [releaseCapture],
+  );
 
   const replaceSessionInsertion = useCallback((session: DictationSession, next: string) => {
     const current = inputRef.current;
@@ -128,44 +137,45 @@ export function useBrowserDictation(input: {
       if (session.finalizing || session.closed) return;
       session.finalizing = true;
       if (mountedRef.current) setPhase("processing");
-      await session.queue;
-      if (session.cancelled || session.closed) {
-        closeSession(session);
-        return;
-      }
-      if (session.error) {
-        inputRef.current.reportError(errorMessage(session.error));
-        closeSession(session);
-        return;
-      }
-      if (session.transcript) {
-        try {
-          const result = await runtime.runPromise(
-            cleanupDictation({
-              prepared: session.prepared,
-              transcript: session.transcript,
-              before: session.before.slice(-CONTEXT_LENGTH),
-              after: session.after.slice(0, CONTEXT_LENGTH),
-            }),
-          );
-          if (session.cancelled || session.closed) return;
-          const insertion = formatDictationInsertion({
-            before: session.before,
-            after: session.after,
-            transcript: result.text,
-          });
-          if (!replaceSessionInsertion(session, insertion)) {
-            inputRef.current.reportError("The composer changed; the raw transcript was kept.");
-          }
-        } catch {
-          if (!session.cancelled && !session.closed) {
-            inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+      releaseCapture(session);
+      try {
+        await session.queue;
+        if (session.cancelled || session.closed) return;
+        if (session.error) {
+          inputRef.current.reportError(errorMessage(session.error));
+          return;
+        }
+        if (session.transcript) {
+          try {
+            const result = await runtime.runPromise(
+              cleanupDictation({
+                prepared: session.prepared,
+                transcript: session.transcript,
+                before: session.before.slice(-CONTEXT_LENGTH),
+                after: session.after.slice(0, CONTEXT_LENGTH),
+              }),
+            );
+            if (!session.cancelled && !session.closed) {
+              const insertion = formatDictationInsertion({
+                before: session.before,
+                after: session.after,
+                transcript: result.text,
+              });
+              if (!replaceSessionInsertion(session, insertion)) {
+                inputRef.current.reportError("The composer changed; the raw transcript was kept.");
+              }
+            }
+          } catch {
+            if (!session.cancelled && !session.closed) {
+              inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+            }
           }
         }
+      } finally {
+        closeSession(session);
       }
-      closeSession(session);
     },
-    [closeSession, replaceSessionInsertion],
+    [closeSession, releaseCapture, replaceSessionInsertion],
   );
 
   const transcribeChunk = useCallback(
@@ -211,6 +221,7 @@ export function useBrowserDictation(input: {
       if (session.closed) return;
       if (session.timer !== null) window.clearTimeout(session.timer);
       session.timer = null;
+      if (session.recorder === recorder) session.recorder = null;
       const blob = new Blob(chunks, { type: format.mimeType });
       if (blob.size > 0 && !session.error) {
         session.queue = session.queue.then(async () => {
@@ -227,6 +238,9 @@ export function useBrowserDictation(input: {
         void session.queue.then(() => {
           if (session.error && !session.closed) void finishSession(session);
         });
+      } else if (!session.stopRequested && !session.error) {
+        session.error = new Error("Voice recorder produced no audio.");
+        session.stopRequested = true;
       }
       if (session.stopRequested || session.error) {
         void finishSession(session);

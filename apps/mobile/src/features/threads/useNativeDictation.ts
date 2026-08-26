@@ -75,20 +75,28 @@ export function useNativeDictation(input: {
   if (sessionRef.current === null) valueRef.current = input.value;
   inputRef.current = input;
 
-  const closeSession = useCallback(async (session: DictationSession) => {
-    if (session.closed) return;
-    session.closed = true;
+  const releaseCapture = useCallback(async (session: DictationSession) => {
     if (session.timer !== null) clearTimeout(session.timer);
-    const recorder = session.stoppingChunk ? null : session.recorder;
+    session.timer = null;
+    const recorder = session.recorder;
+    session.recorder = null;
     if (recorder) {
-      session.recorder = null;
       if (recorder.isRecording) await recorder.stop().catch(() => undefined);
       recorder.release();
     }
     await session.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
-    if (sessionRef.current === session) sessionRef.current = null;
-    if (mountedRef.current) setPhase("idle");
   }, []);
+
+  const closeSession = useCallback(
+    async (session: DictationSession) => {
+      if (session.closed) return;
+      session.closed = true;
+      await releaseCapture(session);
+      if (sessionRef.current === session) sessionRef.current = null;
+      if (mountedRef.current) setPhase("idle");
+    },
+    [releaseCapture],
+  );
 
   const replaceInsertion = useCallback((session: DictationSession, next: string): boolean => {
     if (session.cancelled || session.closed) return false;
@@ -113,48 +121,49 @@ export function useNativeDictation(input: {
       if (session.finalizing || session.closed) return;
       session.finalizing = true;
       if (mountedRef.current) setPhase("processing");
-      await session.queue;
-      if (session.cancelled || session.closed) {
-        await closeSession(session);
-        return;
-      }
-      if (session.error) {
-        inputRef.current.reportError(errorMessage(session.error));
-        await closeSession(session);
-        return;
-      }
-      if (session.transcript) {
-        try {
-          const result = await runtime.runPromise(
-            cleanupDictation({
-              prepared: session.prepared,
-              transcript: session.transcript,
-              before: session.before.slice(-CONTEXT_LENGTH),
-              after: session.after.slice(0, CONTEXT_LENGTH),
-            }),
-          );
-          if (session.cancelled || session.closed) return;
-          if (
-            !replaceInsertion(
-              session,
-              formatDictationInsertion({
-                before: session.before,
-                after: session.after,
-                transcript: result.text,
+      try {
+        await releaseCapture(session);
+        await session.queue;
+        if (session.cancelled || session.closed) return;
+        if (session.error) {
+          inputRef.current.reportError(errorMessage(session.error));
+          return;
+        }
+        if (session.transcript) {
+          try {
+            const result = await runtime.runPromise(
+              cleanupDictation({
+                prepared: session.prepared,
+                transcript: session.transcript,
+                before: session.before.slice(-CONTEXT_LENGTH),
+                after: session.after.slice(0, CONTEXT_LENGTH),
               }),
-            )
-          ) {
-            inputRef.current.reportError("The composer changed; the raw transcript was kept.");
-          }
-        } catch {
-          if (!session.cancelled && !session.closed) {
-            inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+            );
+            if (
+              !session.cancelled &&
+              !session.closed &&
+              !replaceInsertion(
+                session,
+                formatDictationInsertion({
+                  before: session.before,
+                  after: session.after,
+                  transcript: result.text,
+                }),
+              )
+            ) {
+              inputRef.current.reportError("The composer changed; the raw transcript was kept.");
+            }
+          } catch {
+            if (!session.cancelled && !session.closed) {
+              inputRef.current.reportError("Voice cleanup failed; the raw transcript was kept.");
+            }
           }
         }
+      } finally {
+        await closeSession(session);
       }
-      await closeSession(session);
     },
-    [closeSession, replaceInsertion],
+    [closeSession, releaseCapture, replaceInsertion],
   );
 
   const transcribeFile = useCallback(
@@ -230,6 +239,7 @@ export function useNativeDictation(input: {
       await finishSession(session);
       return;
     }
+    session.recorder = null;
     let uri: string | null = null;
     try {
       await recorder.stop();
@@ -258,10 +268,7 @@ export function useNativeDictation(input: {
       session.error = error;
       session.stopRequested = true;
     } finally {
-      if (session.recorder === recorder) {
-        session.recorder = null;
-        recorder.release();
-      }
+      recorder.release();
       session.stoppingChunk = false;
     }
     if (session.stopRequested || session.error) await finishSession(session);
@@ -323,6 +330,10 @@ export function useNativeDictation(input: {
       sessionRef.current = session;
       setPhase("recording");
       await audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (session.cancelled || session.closed) {
+        await audio.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        return;
+      }
       await beginChunkRef.current(session);
     } catch (error) {
       if (session) await closeSession(session);
