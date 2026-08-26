@@ -78,7 +78,7 @@ function actionFailureMessage(action: ThreadListAction, cause: Cause.Cause<unkno
 }
 
 function selectionHaptic(): void {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
 }
 
 function actionFailureTitle(action: ThreadListAction): string {

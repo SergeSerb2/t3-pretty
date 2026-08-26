@@ -3,6 +3,7 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import type * as Electron from "electron";
 import { beforeEach, vi } from "vite-plus/test";
 
@@ -131,6 +132,67 @@ describe("ElectronWindow", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("falls through a destroyed first window to the next live window", () =>
+    Effect.gen(function* () {
+      const destroyedWindow = makeBrowserWindow({ id: 1, destroyed: true });
+      const liveWindow = makeBrowserWindow({ id: 2, destroyed: false });
+      getAllWindowsMock.mockReturnValue([destroyedWindow, liveWindow]);
+
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      const selected = yield* electronWindow.currentMainOrFirst;
+
+      assert.strictEqual(Option.getOrNull(selected), liveWindow);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("skips windows whose renderer contents were already destroyed", () =>
+    Effect.gen(function* () {
+      const staleSend = vi.fn();
+      const liveSend = vi.fn();
+      const staleWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => true, send: staleSend },
+      } as unknown as Electron.BrowserWindow;
+      const liveWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, send: liveSend },
+      } as unknown as Electron.BrowserWindow;
+      getAllWindowsMock.mockReturnValue([staleWindow, liveWindow]);
+
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      yield* electronWindow.sendAll("desktop:update", { ready: true });
+
+      assert.equal(staleSend.mock.calls.length, 0);
+      assert.deepEqual(liveSend.mock.calls, [["desktop:update", { ready: true }]]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("does not destroy windows that became stale before shutdown", () =>
+    Effect.gen(function* () {
+      const staleDestroy = vi.fn();
+      const liveDestroy = vi.fn();
+      const staleWindow = {
+        id: 1,
+        isDestroyed: () => true,
+        destroy: staleDestroy,
+      } as unknown as Electron.BrowserWindow;
+      const liveWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        destroy: liveDestroy,
+      } as unknown as Electron.BrowserWindow;
+      getAllWindowsMock.mockReturnValue([staleWindow, liveWindow]);
+
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      yield* electronWindow.destroyAll;
+
+      assert.equal(staleDestroy.mock.calls.length, 0);
+      assert.equal(liveDestroy.mock.calls.length, 1);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("preserves window enumeration failures as structured defects", () =>
     Effect.gen(function* () {
       const cause = new Error("window enumeration failed");
@@ -189,6 +251,7 @@ describe("ElectronWindow", () => {
         id: 42,
         isDestroyed: vi.fn(() => false),
         webContents: {
+          isDestroyed: vi.fn(() => false),
           send: vi.fn(() => {
             throw cause;
           }),

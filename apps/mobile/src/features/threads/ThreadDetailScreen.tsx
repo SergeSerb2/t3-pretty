@@ -240,7 +240,7 @@ function useStreamingHaptics(
     }
 
     lastStreamHapticAtRef.current = now;
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
   }, [enabled, threadId, feed]);
 }
 
@@ -676,7 +676,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   }, []);
 
   const handleScrollToEnd = useCallback(() => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     void scrollMessageToEnd({ animated: true, closeKeyboard: false }).catch(() => {
       freeze.set(false);
     });

@@ -48,9 +48,10 @@ steps:
     agents:
       queue: macos-release
       os: macos
+    # Buildkite interpolates ${VAR} in command: before the step runs.
+    # Check the sourced secret in mirror-github.sh, not in this block.
     command: |
       . scripts/fork/load-buildkite-secrets.sh GITHUB_MIRROR_SSH_KEY
-      test -n "${GITHUB_MIRROR_SSH_KEY:-}" || { echo "GITHUB_MIRROR_SSH_KEY secret is required for the GitHub mirror" >&2; exit 1; }
       export GITHUB_MIRROR_REPO="${GITHUB_MIRROR_REPO:-SergeSerb2/t3-pretty}"
       bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
@@ -145,7 +146,7 @@ steps:
     # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
     # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
     # from a failed or non-desktop revision.
-    if: build.branch == "main"
+    if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 40
     agents:
       queue: linux-small
@@ -182,6 +183,9 @@ steps:
 
   - label: ":mac: macOS arm64 DMG"
     key: macos-dmg
+    # Both Apple builds replace the user keychain search list while signing.
+    concurrency: 1
+    concurrency_group: "t3-pretty/apple-signing"
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 60
     agents:
@@ -198,7 +202,7 @@ steps:
   - label: ":iphone: iOS OTA + TestFlight"
     key: ios-mobile
     concurrency: 1
-    concurrency_group: "t3-pretty/ios-mobile"
+    concurrency_group: "t3-pretty/apple-signing"
     # Ahead of Origin PR review on the packaging Mac so a
     # feature-branch review cannot sit in front of TestFlight.
     priority: 20

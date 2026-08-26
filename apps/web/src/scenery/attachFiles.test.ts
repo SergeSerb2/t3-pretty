@@ -106,6 +106,17 @@ describe("resolvePickedFilePath", () => {
     expect(resolvePickedFilePath(empty)).toBeNull();
   });
 
+  it("preserves whitespace in real paths and contains bridge failures", () => {
+    const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    stubGetPathForFile(() => "/tmp/notes.pdf ");
+    expect(resolvePickedFilePath(file)).toBe("/tmp/notes.pdf ");
+
+    stubGetPathForFile(() => {
+      throw new Error("bridge unavailable");
+    });
+    expect(resolvePickedFilePath(file)).toBeNull();
+  });
+
   it("ignores the removed Electron File.path property", () => {
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
     Object.defineProperty(file, "path", { value: "/tmp/notes.pdf" });
@@ -145,6 +156,12 @@ describe("textAttachmentPayload", () => {
       "Attached file `a.txt`:\n````txt\nhi\n````\n",
     );
   });
+
+  it("chooses a fence longer than any backtick run in the content", () => {
+    expect(textAttachmentPayload("a.md", "before ```` after")).toContain(
+      "`````md\nbefore ```` after\n`````",
+    );
+  });
 });
 
 describe("looksBinary", () => {
@@ -160,7 +177,7 @@ describe("attached file path suffix", () => {
     expect(result.startsWith("Please review")).toBe(true);
     expect(result).toContain("Attached `notes.pdf`.");
     expect(result).toContain(ATTACHED_FILE_PATHS_OPEN_MARKER);
-    expect(result).toContain("- `/Users/serge/Desktop/notes.pdf`");
+    expect(result).toContain('- "/Users/serge/Desktop/notes.pdf"');
     expect(result.trimEnd().endsWith(ATTACHED_FILE_PATHS_CLOSE_MARKER)).toBe(true);
   });
 
@@ -183,6 +200,15 @@ describe("attached file path suffix", () => {
   it("leaves user-authored marker quotes alone", () => {
     const typed = `Discuss ${ATTACHED_FILE_PATHS_OPEN_MARKER} in docs`;
     expect(stripAttachedFilePathsSuffix(typed)).toBe(typed);
+  });
+
+  it("JSON-quotes path control characters without changing the real path", () => {
+    const result = applyAttachedFilePathsSuffix("Review", [
+      fileRef({ name: "odd`name.pdf", path: "/tmp/line\n`name.pdf" }),
+    ]);
+    expect(result).toContain('Attached "odd`name.pdf".');
+    expect(result).toContain('- "/tmp/line\\n`name.pdf"');
+    expect(result).not.toContain("/tmp/line\n`name.pdf");
   });
 });
 

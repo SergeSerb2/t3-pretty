@@ -31,14 +31,19 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as Semaphore from "effect/Semaphore";
+import { HttpClient } from "effect/unstable/http";
 
+import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerConfig } from "../config.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { resolveKimiHomePath } from "../provider/Drivers/KimiHome.ts";
-import { UsageAggregator } from "./usageAggregation.ts";
+import { isValidUsageTimeZone, UsageAggregator } from "./usageAggregation.ts";
 import { parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
   listTranscriptFiles,
@@ -51,6 +56,8 @@ import {
   encodeScanCache,
   pruneScanCache,
   type ScanCache,
+  USAGE_SCAN_CACHE_MAX_FILES,
+  USAGE_SCAN_CACHE_MAX_RECORDS,
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
 
@@ -59,6 +66,13 @@ const LITELLM_RATES_URL =
 
 /** Rates move rarely; a day-old table keeps the page working offline. */
 const RATES_TTL_MS = 24 * 60 * 60 * 1000;
+const RATES_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
+const RATES_CACHE_MAX_BYTES = 20 * 1024 * 1024;
+const SCAN_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const TRANSCRIPT_FILE_MAX_BYTES = 512 * 1024 * 1024;
+const TRANSCRIPT_PROVIDER_MAX_BYTES = 4 * 1024 * 1024 * 1024;
+const TRANSCRIPT_PROVIDER_RECORD_MAX = 200_000;
+const TRANSCRIPT_PROVIDER_SESSION_MAX = 50_000;
 
 /**
  * Files are filtered by mtime before opening. The slack covers a session whose
@@ -124,8 +138,10 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
+  const scanSemaphore = yield* Semaphore.make(1);
 
   const fileCache: ScanCache = new Map();
+  let cachedRecordCount = 0;
   let cacheDirty = false;
 
   const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
@@ -133,6 +149,11 @@ export const make = Effect.gen(function* () {
   let rates: RateTable = new Map();
   let ratesFetchedAtMs: number | null = null;
   let ratesStatus: UsageSummary["pricing"]["status"] = "unavailable";
+  const writeCacheFile = (filePath: string, contents: string) =>
+    writeFileStringAtomically({ filePath, contents }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
 
   /**
    * Loads the LiteLLM rate table, preferring a fresh copy and falling back to
@@ -144,7 +165,11 @@ export const make = Effect.gen(function* () {
     if (ratesFetchedAtMs !== null && now - ratesFetchedAtMs < RATES_TTL_MS) return;
 
     if (ratesFetchedAtMs === null) {
-      const fromDisk = yield* fileSystem.readFileString(ratesCachePath).pipe(
+      const fromDisk = yield* readTextWithinLimit(
+        fileSystem,
+        ratesCachePath,
+        RATES_CACHE_MAX_BYTES,
+      ).pipe(
         Effect.flatMap((raw) => decodeRatesCache(raw)),
         Effect.catchCause(() => Effect.succeed(null)),
       );
@@ -160,8 +185,28 @@ export const make = Effect.gen(function* () {
     }
 
     const fetched = yield* httpClient.get(LITELLM_RATES_URL).pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.flatMap((response) => response.json),
+      Effect.flatMap((response) => {
+        return Effect.gen(function* () {
+          if (response.status < 200 || response.status >= 300) {
+            yield* releaseHttpClientResponseBody(response);
+            return yield* Effect.fail("rates-request-failed" as const);
+          }
+          const declaredLength = Number(response.headers["content-length"]);
+          if (Number.isFinite(declaredLength) && declaredLength > RATES_RESPONSE_MAX_BYTES) {
+            yield* releaseHttpClientResponseBody(response);
+            return yield* Effect.fail("rates-response-too-large" as const);
+          }
+          const collected = yield* collectUint8StreamText({
+            stream: response.stream,
+            maxBytes: RATES_RESPONSE_MAX_BYTES,
+            drainAfterTruncation: false,
+          });
+          if (collected.truncated) {
+            return yield* Effect.fail("rates-response-too-large" as const);
+          }
+          return yield* decodeScanCacheFile(collected.text);
+        });
+      }),
       Effect.timeout(10_000),
       Effect.catchCause(() => Effect.succeed(null)),
     );
@@ -180,7 +225,11 @@ export const make = Effect.gen(function* () {
     ratesStatus = "fresh";
 
     yield* encodeRatesCache({ fetchedAtMs: now, document: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(ratesCachePath, serialized)),
+      Effect.flatMap((serialized) =>
+        new TextEncoder().encode(serialized).byteLength > RATES_CACHE_MAX_BYTES
+          ? Effect.void
+          : writeCacheFile(ratesCachePath, serialized),
+      ),
       Effect.catchCause(() => Effect.void),
     );
   });
@@ -246,12 +295,26 @@ export const make = Effect.gen(function* () {
    */
   const ensureScanCacheLoaded = yield* Effect.cached(
     Effect.gen(function* () {
-      const document = yield* fileSystem.readFileString(scanCachePath).pipe(
+      const document = yield* readTextWithinLimit(
+        fileSystem,
+        scanCachePath,
+        SCAN_CACHE_MAX_BYTES,
+      ).pipe(
         Effect.flatMap((raw) => decodeScanCacheFile(raw)),
         Effect.catchCause(() => Effect.succeed(null)),
       );
       if (document === null) return;
-      for (const [path, entry] of decodeScanCache(document)) fileCache.set(path, entry);
+      for (const [filePath, entry] of decodeScanCache(document)) {
+        if (
+          fileCache.size >= USAGE_SCAN_CACHE_MAX_FILES ||
+          cachedRecordCount + entry.records.length > USAGE_SCAN_CACHE_MAX_RECORDS
+        ) {
+          cacheDirty = true;
+          break;
+        }
+        fileCache.set(filePath, entry);
+        cachedRecordCount += entry.records.length;
+      }
     }),
   );
 
@@ -260,7 +323,16 @@ export const make = Effect.gen(function* () {
     // Cleared only after the write lands, so a failed persist is retried on
     // the next scan instead of leaving disk permanently stale.
     yield* encodeScanCacheFile(encodeScanCache(fileCache)).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(scanCachePath, serialized)),
+      Effect.flatMap((serialized) => {
+        const encodedBytes = new TextEncoder().encode(serialized).byteLength;
+        if (encodedBytes > SCAN_CACHE_MAX_BYTES) {
+          return Effect.logWarning("usage scan cache exceeds the persistence limit, skipping", {
+            encodedBytes,
+            maximumBytes: SCAN_CACHE_MAX_BYTES,
+          });
+        }
+        return writeCacheFile(scanCachePath, serialized);
+      }),
       Effect.map(() => {
         cacheDirty = false;
       }),
@@ -275,7 +347,13 @@ export const make = Effect.gen(function* () {
     size: number,
     mtimeMs: number,
     provider: UsageProviderKind,
-  ): Effect.Effect<readonly UsageRecord[]> =>
+    maxRecords: number,
+  ): Effect.Effect<{
+    readonly records: readonly UsageRecord[];
+    readonly oversizedRecords: number;
+    readonly unreadable: boolean;
+    readonly recordLimitReached: boolean;
+  }> =>
     Effect.gen(function* () {
       const cached = fileCache.get(filePath);
       // Provider is part of the identity: if both providers were ever pointed
@@ -286,23 +364,76 @@ export const make = Effect.gen(function* () {
         cached.mtimeMs === mtimeMs &&
         cached.provider === provider
       ) {
-        return cached.records;
+        return cached.records.length > maxRecords
+          ? {
+              records: cached.records.slice(0, maxRecords),
+              oversizedRecords: 0,
+              unreadable: false,
+              recordLimitReached: true,
+            }
+          : {
+              records: cached.records,
+              oversizedRecords: 0,
+              unreadable: false,
+              recordLimitReached: false,
+            };
       }
 
-      const parsed = yield* Effect.promise(() => readTranscriptRecords(filePath, provider));
+      // A changed file's old records are no longer a valid cache entry. Drop
+      // them before parsing so repeated edits cannot accumulate stale records
+      // behind one path when the replacement is partial or unreadable.
+      if (cached !== undefined) {
+        fileCache.delete(filePath);
+        cachedRecordCount -= cached.records.length;
+        cacheDirty = true;
+      }
+
+      const parsed = yield* Effect.promise(() =>
+        readTranscriptRecords(filePath, provider, maxRecords),
+      );
       // A read failure is not an empty transcript: caching it under this
       // (size, mtime) would silently drop the file's usage until it changes.
-      if (parsed === null) return [];
+      if (parsed === null) {
+        return {
+          records: [],
+          oversizedRecords: 0,
+          unreadable: true,
+          recordLimitReached: false,
+        };
+      }
       // Stored already de-duplicated within the file, which is 99% of all
       // duplicates. The aggregator still runs the cross-file dedupe pass.
-      const records = dedupeWithinFile(parsed);
+      const records = dedupeWithinFile(parsed.records);
 
-      fileCache.set(filePath, { size, mtimeMs, provider, records });
-      cacheDirty = true;
-      return records;
+      // A partial parse must be tried again on the next scan and must keep
+      // surfacing as partial rather than turning into a clean warm-cache hit.
+      if (
+        parsed.oversizedRecords === 0 &&
+        !parsed.recordLimitReached &&
+        fileCache.size < USAGE_SCAN_CACHE_MAX_FILES &&
+        cachedRecordCount + records.length <= USAGE_SCAN_CACHE_MAX_RECORDS
+      ) {
+        fileCache.set(filePath, { size, mtimeMs, provider, records });
+        cachedRecordCount += records.length;
+        cacheDirty = true;
+      }
+      return {
+        records,
+        oversizedRecords: parsed.oversizedRecords,
+        unreadable: false,
+        recordLimitReached: parsed.recordLimitReached,
+      };
     });
 
-  const readSummary = Effect.fn("UsageService.readSummary")(function* (input: UsageSummaryInput) {
+  const readSummaryCore = Effect.fn("UsageService.readSummary")(function* (
+    input: UsageSummaryInput,
+  ) {
+    if (!isValidUsageTimeZone(input.timeZone)) {
+      return yield* new UsageReadError({
+        reason: "invalidWindow",
+        detail: `timeZone '${input.timeZone}' is not supported`,
+      });
+    }
     if (input.sinceDay > input.untilDay) {
       return yield* new UsageReadError({
         reason: "invalidWindow",
@@ -343,10 +474,11 @@ export const make = Effect.gen(function* () {
     // instance we already hold so `readSummary` stays context-free.
     const dirs = yield* resolveTranscriptDirs().pipe(Effect.provideService(Path.Path, path));
     const windowStart = DateTime.make(`${input.sinceDay}T00:00:00Z`);
-    if (Option.isNone(windowStart)) {
+    const windowEnd = DateTime.make(`${input.untilDay}T00:00:00Z`);
+    if (Option.isNone(windowStart) || Option.isNone(windowEnd)) {
       return yield* new UsageReadError({
         reason: "invalidWindow",
-        detail: `sinceDay '${input.sinceDay}' is not a valid date`,
+        detail: `Usage window '${input.sinceDay}' through '${input.untilDay}' contains an invalid date`,
       });
     }
     const windowStartMs =
@@ -384,19 +516,70 @@ export const make = Effect.gen(function* () {
         continue;
       }
 
-      walkedRoots.push(dir);
-      const files = yield* Effect.promise(() => listTranscriptFiles(dir, windowStartMs, fileName));
+      const listing = yield* Effect.promise(() =>
+        listTranscriptFiles(dir, windowStartMs, fileName),
+      );
+      // Absence only proves deletion after a complete walk. Treating a
+      // truncated or partially unreadable listing as authoritative would evict
+      // valid warm entries that the walk simply never reached.
+      if (!listing.truncated && listing.unreadableDirectories === 0) walkedRoots.push(dir);
+      const { files } = listing;
       let scannedFiles = 0;
       let skippedFiles = 0;
+      let malformedRecords = 0;
+      let unreadableFiles = 0;
+      let oversizedFiles = 0;
+      let corpusBytes = 0;
+      let corpusLimitReached = false;
+      let recordLimitReached = false;
+      let sessionLimitReached = false;
+      let retainedRecords = 0;
       // Distinct per directory. Buckets carry per-cell session counts, but a
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
 
-      for (const file of files) {
-        livePaths.add(file.path);
-        const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
+      for (const file of files) livePaths.add(file.path);
+      const orderedFiles = files.toSorted((left, right) => right.mtimeMs - left.mtimeMs);
+
+      for (let index = 0; index < orderedFiles.length; index += 1) {
+        const file = orderedFiles[index]!;
+        if (file.size > TRANSCRIPT_FILE_MAX_BYTES) {
+          oversizedFiles += 1;
+          skippedFiles += 1;
+          continue;
+        }
+        if (corpusBytes + file.size > TRANSCRIPT_PROVIDER_MAX_BYTES) {
+          corpusLimitReached = true;
+          skippedFiles += orderedFiles.length - index;
+          break;
+        }
+        corpusBytes += file.size;
+
+        const remainingRecords = TRANSCRIPT_PROVIDER_RECORD_MAX - retainedRecords;
+        if (remainingRecords <= 0) {
+          recordLimitReached = true;
+          skippedFiles += orderedFiles.length - index;
+          break;
+        }
+
+        const result = yield* readFileRecords(
+          file.path,
+          file.size,
+          file.mtimeMs,
+          provider,
+          remainingRecords,
+        );
+        malformedRecords += result.oversizedRecords;
+        if (result.unreadable) unreadableFiles += 1;
+        const { records } = result;
+        retainedRecords += records.length;
         if (records.length === 0) {
           skippedFiles += 1;
+          if (result.recordLimitReached) {
+            recordLimitReached = true;
+            skippedFiles += orderedFiles.length - index - 1;
+            break;
+          }
           continue;
         }
         scannedFiles += 1;
@@ -404,19 +587,75 @@ export const make = Effect.gen(function* () {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
           if (aggregator.add(record) && record.sessionId.length > 0) {
-            sessionIds.add(record.sessionId);
+            if (sessionIds.has(record.sessionId)) continue;
+            if (sessionIds.size < TRANSCRIPT_PROVIDER_SESSION_MAX) {
+              sessionIds.add(record.sessionId);
+            } else {
+              sessionLimitReached = true;
+            }
           }
+        }
+        if (result.recordLimitReached || retainedRecords >= TRANSCRIPT_PROVIDER_RECORD_MAX) {
+          recordLimitReached = true;
+          skippedFiles += orderedFiles.length - index - 1;
+          break;
         }
       }
 
+      const aggregateCapacity = aggregator.capacityForProvider(provider);
+      const isPartial =
+        malformedRecords > 0 ||
+        unreadableFiles > 0 ||
+        oversizedFiles > 0 ||
+        corpusLimitReached ||
+        recordLimitReached ||
+        sessionLimitReached ||
+        aggregateCapacity.droppedRecords > 0 ||
+        aggregateCapacity.omittedSessionMemberships > 0 ||
+        listing.truncated ||
+        listing.unreadableDirectories > 0;
+
       sources.push({
         fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: "ok",
+        status: isPartial ? "partial" : "ok",
         scannedFiles,
         skippedFiles,
-        malformedRecords: 0,
+        malformedRecords,
         distinctSessions: sessionIds.size,
-        message: null,
+        message: isPartial
+          ? [
+              malformedRecords > 0
+                ? `${malformedRecords} oversized transcript record${malformedRecords === 1 ? " was" : "s were"} skipped.`
+                : null,
+              unreadableFiles > 0
+                ? `${unreadableFiles} transcript file${unreadableFiles === 1 ? " was" : "s were"} unreadable.`
+                : null,
+              oversizedFiles > 0
+                ? `${oversizedFiles} transcript file${oversizedFiles === 1 ? " exceeded" : "s exceeded"} 512 MiB and ${oversizedFiles === 1 ? "was" : "were"} skipped.`
+                : null,
+              corpusLimitReached
+                ? "Transcript discovery exceeded the 4 GiB per-provider scan budget."
+                : null,
+              recordLimitReached
+                ? "Transcript parsing reached the 200,000-record per-provider limit."
+                : null,
+              sessionLimitReached
+                ? "Distinct-session counting reached the 50,000-session per-provider limit."
+                : null,
+              aggregateCapacity.droppedRecords > 0
+                ? `${aggregateCapacity.droppedRecords} usage record${aggregateCapacity.droppedRecords === 1 ? " exceeded" : "s exceeded"} aggregate identity or bucket limits and ${aggregateCapacity.droppedRecords === 1 ? "was" : "were"} omitted.`
+                : null,
+              aggregateCapacity.omittedSessionMemberships > 0
+                ? `${aggregateCapacity.omittedSessionMemberships} bucket session membership${aggregateCapacity.omittedSessionMemberships === 1 ? " exceeded" : "s exceeded"} the aggregate limit.`
+                : null,
+              listing.unreadableDirectories > 0
+                ? `${listing.unreadableDirectories} transcript director${listing.unreadableDirectories === 1 ? "y was" : "ies were"} unreadable.`
+                : null,
+              listing.truncated ? "Transcript discovery reached its safety limit." : null,
+            ]
+              .filter((part): part is string => part !== null)
+              .join(" ")
+          : null,
       });
     }
 
@@ -426,7 +665,11 @@ export const make = Effect.gen(function* () {
       windowStartMs,
       retentionCutoffMs: startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
     });
-    if (pruned > 0) cacheDirty = true;
+    if (pruned > 0) {
+      cachedRecordCount = 0;
+      for (const entry of fileCache.values()) cachedRecordCount += entry.records.length;
+      cacheDirty = true;
+    }
     yield* persistScanCache();
 
     const aggregated = aggregator.finish();
@@ -453,6 +696,9 @@ export const make = Effect.gen(function* () {
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
     } satisfies UsageSummary;
   });
+
+  const readSummary: UsageService["Service"]["readSummary"] = (input) =>
+    scanSemaphore.withPermits(1)(readSummaryCore(input));
 
   return { readSummary } as const;
 });

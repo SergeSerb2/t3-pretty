@@ -78,6 +78,12 @@ describe("effectiveSnoozed", () => {
     expect(effectiveSnoozed(makeShell({ snoozedUntil: "not-a-date" }), { now: NOW })).toBe(false);
   });
 
+  it("never hides when the client clock input is malformed", () => {
+    expect(effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE }), { now: "not-a-date" })).toBe(
+      false,
+    );
+  });
+
   it("wakes early when the agent is blocked on the user", () => {
     expect(
       effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" }), {
@@ -156,6 +162,26 @@ describe("threadRaisedHandWhileSnoozed", () => {
     expect(
       threadRaisedHandWhileSnoozed(
         makeShell({ snoozedUntil: FUTURE_WAKE, sessionStatus: "error" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails visible when snooze or event timestamps are malformed", () => {
+    expect(
+      threadRaisedHandWhileSnoozed(
+        makeShell({
+          snoozedUntil: FUTURE_WAKE,
+          snoozedAt: "not-a-date",
+          sessionStatus: "error",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      threadRaisedHandWhileSnoozed(
+        makeShell({
+          snoozedUntil: FUTURE_WAKE,
+          turnCompletedAt: "not-a-date",
+        }),
       ),
     ).toBe(true);
   });

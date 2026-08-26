@@ -154,6 +154,14 @@ describe("stripCreatePullRequestSuffix", () => {
     expect(sent).toBe(`${typed}${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`);
     expect(stripCreatePullRequestSuffix(sent)).toBe(typed);
   });
+
+  it("strips repeated historical suffixes without repeatedly copying the visible prefix", () => {
+    const sent = `Visible request${CREATE_PULL_REQUEST_MESSAGE_SUFFIX.repeat(400)}`;
+    const started = performance.now();
+
+    expect(stripCreatePullRequestSuffix(sent)).toBe("Visible request");
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe("hasCreatePullRequestSuffix", () => {

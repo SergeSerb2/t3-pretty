@@ -20,6 +20,53 @@ import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
+const REMOTE_ERROR_DETAIL_MAX_LENGTH = 4_096;
+const REMOTE_ERROR_NAME_MAX_LENGTH = 128;
+
+function readRemoteErrorText(
+  value: object,
+  key: PropertyKey,
+  maxLength: number,
+): string | undefined {
+  try {
+    const text = Reflect.get(value, key);
+    return typeof text === "string" ? text.slice(0, maxLength) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function describeRemoteRequestCause(cause: unknown): string {
+  if ((typeof cause === "object" && cause !== null) || typeof cause === "function") {
+    const message = readRemoteErrorText(cause, "message", REMOTE_ERROR_DETAIL_MAX_LENGTH);
+    const name = readRemoteErrorText(cause, "name", REMOTE_ERROR_NAME_MAX_LENGTH);
+    if (message !== undefined) {
+      return (name === undefined ? message : `${name}: ${message}`).slice(
+        0,
+        REMOTE_ERROR_DETAIL_MAX_LENGTH,
+      );
+    }
+    return name ?? typeof cause;
+  }
+  if (typeof cause === "string") {
+    return cause.slice(0, REMOTE_ERROR_DETAIL_MAX_LENGTH);
+  }
+  if (typeof cause === "symbol") {
+    return cause.description?.slice(0, REMOTE_ERROR_DETAIL_MAX_LENGTH) ?? "symbol";
+  }
+  if (cause === null) {
+    return "null";
+  }
+  switch (typeof cause) {
+    case "bigint":
+    case "boolean":
+    case "number":
+    case "undefined":
+      return String(cause);
+  }
+  return "unknown";
+}
+
 export class RemoteEnvironmentAuthFetchError extends Data.TaggedError(
   "RemoteEnvironmentAuthFetchError",
 )<{
@@ -139,7 +186,7 @@ const failRemoteRequest = (
   }
   return Effect.fail(
     new RemoteEnvironmentAuthFetchError({
-      message: `Failed to fetch remote environment endpoint ${requestUrl} (${String(cause)}).`,
+      message: `Failed to fetch remote environment endpoint ${requestUrl} (${describeRemoteRequestCause(cause)}).`,
       cause,
     }),
   );

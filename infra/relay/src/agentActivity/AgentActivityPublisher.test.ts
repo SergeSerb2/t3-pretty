@@ -1,4 +1,8 @@
-import type { RelayAgentActivityState, RelayDeliveryResult } from "@t3tools/contracts/relay";
+import {
+  RELAY_DEVICE_MAX_COUNT,
+  type RelayAgentActivityState,
+  type RelayDeliveryResult,
+} from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -74,7 +78,6 @@ function makeEnvironmentLinks(
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
     upsert: () => Effect.void,
-    listUsersForEnvironment: () => Effect.succeed(["dev:julius"]),
     listDeliveryUsersForEnvironment: () =>
       Effect.succeed([
         {
@@ -83,7 +86,6 @@ function makeEnvironmentLinks(
           liveActivitiesEnabled: true,
         },
       ]),
-    listPublicKeysForEnvironment: () => Effect.succeed([]),
     listForUser: () => Effect.succeed([]),
     getForUser: () => Effect.succeed(null),
     revokeForUser: () => Effect.succeed(false),
@@ -298,6 +300,69 @@ describe("AgentActivityPublisher", () => {
       ]);
       expect(result).toEqual({ ok: true, deliveries: [deliveryResult] });
     });
+  });
+
+  it.effect("retains bounded diagnostics while still publishing every delivery user", () => {
+    const deliveryUsers = Array.from({ length: RELAY_DEVICE_MAX_COUNT + 1 }, (_, index) => ({
+      userId: `user-${index}`,
+      notificationsEnabled: false,
+      liveActivitiesEnabled: true,
+    }));
+    let sentCount = 0;
+
+    return Effect.gen(function* () {
+      const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+      const result = yield* publisher.publish({
+        environmentId: "env",
+        environmentPublicKey: "environment-public-key",
+        threadId: "thread",
+        state,
+      });
+
+      expect(sentCount).toBe(RELAY_DEVICE_MAX_COUNT + 1);
+      expect(result.deliveries).toHaveLength(RELAY_DEVICE_MAX_COUNT);
+    }).pipe(
+      Effect.provide(
+        AgentActivityPublisher.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+              Layer.succeed(
+                EnvironmentLinks.EnvironmentLinks,
+                makeEnvironmentLinks({
+                  listDeliveryUsersForEnvironment: () => Effect.succeed(deliveryUsers),
+                }),
+              ),
+              Layer.succeed(
+                LiveActivities.LiveActivities,
+                makeLiveActivities({
+                  listTargets: ({ userId }) =>
+                    Effect.succeed([{ ...target(userId), user_id: userId }]),
+                }),
+              ),
+              Layer.succeed(
+                ApnsDeliveries.ApnsDeliveries,
+                makeApnsDeliveries({
+                  sendForTarget: (input) =>
+                    Effect.sync(() => {
+                      sentCount += 1;
+                      return {
+                        deviceId: input.target.device_id,
+                        kind: "live_activity_update" as const,
+                        ok: true,
+                        queued: true,
+                        apnsStatus: null,
+                        apnsReason: null,
+                        apnsId: null,
+                      };
+                    }),
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   });
 
   it.effect("ends the last remote Live Activity with a terminal content state", () => {

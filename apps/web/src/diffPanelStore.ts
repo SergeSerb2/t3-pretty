@@ -1,9 +1,9 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { type ScopedThreadRef, TurnId } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "./lib/storage";
+import { resolveLocalStorage } from "./lib/storage";
 
 export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
@@ -30,6 +30,76 @@ interface DiffPanelStoreState {
 function normalizeBaseRef(baseRef: string | null): string | null {
   const normalized = baseRef?.trim();
   return normalized ? normalized : null;
+}
+
+function sanitizePersistedDiffSelection(value: unknown): DiffPanelSelection | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const selection = value as Record<string, unknown>;
+  switch (selection.kind) {
+    case "branch":
+      return {
+        kind: "branch",
+        baseRef: typeof selection.baseRef === "string" ? normalizeBaseRef(selection.baseRef) : null,
+      };
+    case "unstaged":
+      return { kind: "unstaged" };
+    case "turn":
+      if (typeof selection.turnId !== "string" || selection.turnId.length === 0) return null;
+      return {
+        kind: "turn",
+        turnId: TurnId.make(selection.turnId),
+        filePath: typeof selection.filePath === "string" ? selection.filePath.trim() || null : null,
+        revealRequestId:
+          typeof selection.revealRequestId === "number" &&
+          Number.isSafeInteger(selection.revealRequestId) &&
+          selection.revealRequestId >= 0
+            ? selection.revealRequestId
+            : 0,
+      };
+    default:
+      return null;
+  }
+}
+
+export function migratePersistedDiffPanelState(
+  persistedState: unknown,
+): Pick<DiffPanelStoreState, "byThreadKey" | "branchBaseRefByThreadKey" | "diffRenderMode"> {
+  if (!persistedState || typeof persistedState !== "object" || Array.isArray(persistedState)) {
+    return { byThreadKey: {}, branchBaseRefByThreadKey: {}, diffRenderMode: "stacked" };
+  }
+  const candidate = persistedState as Record<string, unknown>;
+  const rawSelections =
+    candidate.byThreadKey &&
+    typeof candidate.byThreadKey === "object" &&
+    !Array.isArray(candidate.byThreadKey)
+      ? (candidate.byThreadKey as Record<string, unknown>)
+      : {};
+  const byThreadKey = Object.fromEntries(
+    Object.entries(rawSelections).flatMap(([threadKey, value]) => {
+      if (!parseScopedThreadKey(threadKey)) return [];
+      const selection = sanitizePersistedDiffSelection(value);
+      return selection ? [[threadKey, selection] as const] : [];
+    }),
+  );
+  const rawBaseRefs =
+    candidate.branchBaseRefByThreadKey &&
+    typeof candidate.branchBaseRefByThreadKey === "object" &&
+    !Array.isArray(candidate.branchBaseRefByThreadKey)
+      ? (candidate.branchBaseRefByThreadKey as Record<string, unknown>)
+      : {};
+  const branchBaseRefByThreadKey = Object.fromEntries(
+    Object.entries(rawBaseRefs).flatMap(([threadKey, value]) => {
+      if (!parseScopedThreadKey(threadKey)) return [];
+      if (value === null) return [[threadKey, null] as const];
+      if (typeof value !== "string") return [];
+      return [[threadKey, normalizeBaseRef(value)] as const];
+    }),
+  );
+  return {
+    byThreadKey,
+    branchBaseRefByThreadKey,
+    diffRenderMode: candidate.diffRenderMode === "split" ? "split" : "stacked",
+  };
 }
 
 export const useDiffPanelStore = create<DiffPanelStoreState>()(
@@ -126,13 +196,15 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     {
       name: "t3code:diff-panel-state:v1",
       version: 1,
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-      ),
+      storage: createJSONStorage(resolveLocalStorage),
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,
         branchBaseRefByThreadKey: state.branchBaseRefByThreadKey,
         diffRenderMode: state.diffRenderMode,
+      }),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...migratePersistedDiffPanelState(persistedState),
       }),
     },
   ),

@@ -76,6 +76,7 @@ export function SceneryMotion() {
     const seenRowIds = seenRowIdsRef.current;
     const enterCleanups = new Set<() => void>();
     let queued = false;
+    let syncFrame: number | null = null;
 
     const clearEnter = (wrapper: HTMLElement) => {
       wrapper.classList.remove(ENTER_CLASS);
@@ -161,6 +162,7 @@ export function SceneryMotion() {
 
     const sync = () => {
       queued = false;
+      syncFrame = null;
       syncRowArrivals();
     };
 
@@ -170,7 +172,7 @@ export function SceneryMotion() {
       }
       if (!queued) {
         queued = true;
-        requestAnimationFrame(sync);
+        syncFrame = requestAnimationFrame(sync);
       }
     });
     observer.observe(document.body, {
@@ -183,6 +185,9 @@ export function SceneryMotion() {
 
     return () => {
       observer.disconnect();
+      if (syncFrame !== null) {
+        cancelAnimationFrame(syncFrame);
+      }
       for (const cleanup of enterCleanups) {
         cleanup();
       }

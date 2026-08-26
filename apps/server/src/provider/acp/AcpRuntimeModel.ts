@@ -7,7 +7,18 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import { classifyImageToolItemType } from "@t3tools/shared/imageTool";
 import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
 import { classifySkillLoadItemType } from "@t3tools/shared/skillTool";
-import type { RuntimeContentStreamKind, ToolLifecycleItemType } from "@t3tools/contracts";
+import {
+  PROVIDER_OPTION_AGGREGATE_MAX_CHOICES,
+  PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS,
+  PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_OPTION_ID_MAX_LENGTH,
+  PROVIDER_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_OPTION_MAX_COUNT,
+  PROVIDER_OPTION_VALUE_MAX_LENGTH,
+  PROVIDER_RUNTIME_MAX_PLAN_STEPS,
+  type RuntimeContentStreamKind,
+  type ToolLifecycleItemType,
+} from "@t3tools/contracts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,6 +85,43 @@ export interface AcpPlanUpdate {
     readonly step: string;
     readonly status: "pending" | "inProgress" | "completed";
   }>;
+}
+
+/**
+ * Stable, allocation-bounded fingerprint for repeated cumulative ACP plan
+ * notifications. Serializing the full provider payload solely for deduplication
+ * can briefly duplicate a very large plan and retain that copy for the session.
+ */
+export function fingerprintAcpPlanUpdate(payload: AcpPlanUpdate): string {
+  let left = 0x811c9dc5;
+  let right = 0x9e3779b9;
+  let characterCount = 0;
+
+  const mixNumber = (value: number) => {
+    left = Math.imul(left ^ (value & 0xffff), 0x01000193);
+    left = Math.imul(left ^ ((value >>> 16) & 0xffff), 0x01000193);
+    right = Math.imul(right ^ (value & 0xffff), 0x85ebca6b);
+    right = Math.imul(right ^ ((value >>> 16) & 0xffff), 0x85ebca6b);
+  };
+  const mixText = (value: string) => {
+    mixNumber(value.length);
+    characterCount += value.length;
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      left = Math.imul(left ^ code, 0x01000193);
+      right = Math.imul(right ^ code, 0x85ebca6b);
+    }
+  };
+
+  mixText(payload.explanation ?? "");
+  mixNumber(payload.plan.length);
+  for (const entry of payload.plan) {
+    mixText(entry.step);
+    mixText(entry.status);
+  }
+  return `${payload.plan.length}:${characterCount}:${(left >>> 0).toString(16)}:${(
+    right >>> 0
+  ).toString(16)}`;
 }
 
 export interface AcpPermissionRequest {
@@ -148,15 +196,271 @@ export function findSessionConfigOption(
   return configOptions.find((option) => option.id.trim() === normalizedConfigId);
 }
 
+interface AcpConfigBudget {
+  choices: number;
+  textChars: number;
+}
+
+function boundedAcpConfigIdentity(value: string, maximumChars: number): string | undefined {
+  if (value.length > maximumChars) return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function boundedAcpConfigPresentation(value: string, maximumChars: number): string | undefined {
+  const normalized = value.slice(0, maximumChars).trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function consumeAcpConfigText(budget: AcpConfigBudget, values: ReadonlyArray<string>): boolean {
+  let addedChars = 0;
+  for (const value of values) addedChars += value.length;
+  if (budget.textChars + addedChars > PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS) return false;
+  budget.textChars += addedChars;
+  return true;
+}
+
+function boundAcpConfigSelectOption(
+  option: EffectAcpSchema.SessionConfigSelectOption,
+): EffectAcpSchema.SessionConfigSelectOption | undefined {
+  const value = boundedAcpConfigIdentity(option.value, PROVIDER_OPTION_VALUE_MAX_LENGTH);
+  if (!value) return undefined;
+  const name = boundedAcpConfigPresentation(option.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? value;
+  const description = option.description
+    ? boundedAcpConfigPresentation(option.description, PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH)
+    : undefined;
+  return {
+    value,
+    name,
+    ...(description ? { description } : {}),
+  };
+}
+
+function acpConfigSelectOptionText(
+  option: EffectAcpSchema.SessionConfigSelectOption,
+): ReadonlyArray<string> {
+  return [option.value, option.name, ...(option.description ? [option.description] : [])];
+}
+
+/**
+ * Keeps the first representable ACP session options within the same budgets as
+ * ModelCapabilities. Provider metadata is intentionally dropped: consumers of
+ * this state use only canonical ids, labels, categories, and choices.
+ */
+export function boundAcpSessionConfigOptions(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
+): ReadonlyArray<EffectAcpSchema.SessionConfigOption> {
+  if (!configOptions) return [];
+
+  const bounded: Array<EffectAcpSchema.SessionConfigOption> = [];
+  const budget: AcpConfigBudget = { choices: 0, textChars: 0 };
+  let textBudgetExhausted = false;
+
+  for (const option of configOptions) {
+    if (bounded.length >= PROVIDER_OPTION_MAX_COUNT || textBudgetExhausted) break;
+
+    const id = boundedAcpConfigIdentity(option.id, PROVIDER_OPTION_ID_MAX_LENGTH);
+    if (!id) continue;
+    const name = boundedAcpConfigPresentation(option.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? id;
+    const description = option.description
+      ? boundedAcpConfigPresentation(option.description, PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH)
+      : undefined;
+    const category = option.category
+      ? boundedAcpConfigIdentity(option.category, PROVIDER_OPTION_ID_MAX_LENGTH)
+      : undefined;
+
+    if (option.type === "boolean") {
+      if (
+        !consumeAcpConfigText(budget, [
+          id,
+          name,
+          ...(description ? [description] : []),
+          ...(category ? [category] : []),
+        ])
+      ) {
+        break;
+      }
+      bounded.push({
+        type: "boolean",
+        id,
+        name,
+        currentValue: option.currentValue,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+      continue;
+    }
+
+    const currentValue = boundedAcpConfigIdentity(
+      option.currentValue,
+      PROVIDER_OPTION_VALUE_MAX_LENGTH,
+    );
+    if (!currentValue) continue;
+    const descriptorText = [
+      id,
+      name,
+      currentValue,
+      ...(description ? [description] : []),
+      ...(category ? [category] : []),
+    ];
+    const descriptorTextStart = budget.textChars;
+    if (!consumeAcpConfigText(budget, descriptorText)) break;
+
+    const firstEntry = option.options[0];
+    const grouped = firstEntry !== undefined && !("value" in firstEntry);
+    let descriptorChoices = 0;
+
+    if (grouped) {
+      const groups: Array<EffectAcpSchema.SessionConfigSelectGroup> = [];
+      for (const entry of option.options) {
+        if ("value" in entry || descriptorChoices >= PROVIDER_OPTION_MAX_COUNT) break;
+        if (budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES) break;
+
+        const group = boundedAcpConfigIdentity(entry.group, PROVIDER_OPTION_ID_MAX_LENGTH);
+        if (!group) continue;
+        const groupName =
+          boundedAcpConfigPresentation(entry.name, PROVIDER_OPTION_LABEL_MAX_LENGTH) ?? group;
+        const groupTextStart = budget.textChars;
+        if (!consumeAcpConfigText(budget, [group, groupName])) {
+          textBudgetExhausted = true;
+          break;
+        }
+
+        const groupOptions: Array<EffectAcpSchema.SessionConfigSelectOption> = [];
+        for (const nested of entry.options) {
+          if (
+            descriptorChoices >= PROVIDER_OPTION_MAX_COUNT ||
+            budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES
+          ) {
+            break;
+          }
+          const choice = boundAcpConfigSelectOption(nested);
+          if (!choice) continue;
+          if (!consumeAcpConfigText(budget, acpConfigSelectOptionText(choice))) {
+            textBudgetExhausted = true;
+            break;
+          }
+          groupOptions.push(choice);
+          descriptorChoices += 1;
+          budget.choices += 1;
+        }
+
+        if (groupOptions.length > 0) {
+          groups.push({ group, name: groupName, options: groupOptions });
+        } else {
+          budget.textChars = groupTextStart;
+        }
+        if (textBudgetExhausted) break;
+      }
+
+      if (option.options.length > 0 && descriptorChoices === 0) {
+        budget.textChars = descriptorTextStart;
+        if (textBudgetExhausted) break;
+        continue;
+      }
+      bounded.push({
+        type: "select",
+        id,
+        name,
+        currentValue,
+        options: groups,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+    } else {
+      const choices: Array<EffectAcpSchema.SessionConfigSelectOption> = [];
+      for (const entry of option.options) {
+        if (!("value" in entry)) break;
+        if (
+          descriptorChoices >= PROVIDER_OPTION_MAX_COUNT ||
+          budget.choices >= PROVIDER_OPTION_AGGREGATE_MAX_CHOICES
+        ) {
+          break;
+        }
+        const choice = boundAcpConfigSelectOption(entry);
+        if (!choice) continue;
+        if (!consumeAcpConfigText(budget, acpConfigSelectOptionText(choice))) {
+          textBudgetExhausted = true;
+          break;
+        }
+        choices.push(choice);
+        descriptorChoices += 1;
+        budget.choices += 1;
+      }
+
+      if (option.options.length > 0 && descriptorChoices === 0) {
+        budget.textChars = descriptorTextStart;
+        if (textBudgetExhausted) break;
+        continue;
+      }
+      bounded.push({
+        type: "select",
+        id,
+        name,
+        currentValue,
+        options: choices,
+        ...(description ? { description } : {}),
+        ...(category ? { category } : {}),
+      });
+    }
+  }
+
+  return bounded;
+}
+
+function visitSessionConfigOptionValues(
+  configOption: EffectAcpSchema.SessionConfigOption,
+  visit: (value: string) => boolean,
+): void {
+  if (configOption.type !== "select") return;
+  for (const entry of configOption.options) {
+    if ("value" in entry) {
+      if (!visit(entry.value)) return;
+      continue;
+    }
+    for (const option of entry.options) {
+      if (!visit(option.value)) return;
+    }
+  }
+}
+
 export function collectSessionConfigOptionValues(
   configOption: EffectAcpSchema.SessionConfigOption,
 ): ReadonlyArray<string> {
-  if (configOption.type !== "select") {
-    return [];
-  }
-  return configOption.options.flatMap((entry) =>
-    "value" in entry ? [entry.value] : entry.options.map((option) => option.value),
-  );
+  const values: Array<string> = [];
+  visitSessionConfigOptionValues(configOption, (value) => {
+    if (values.length >= PROVIDER_OPTION_MAX_COUNT) return false;
+    values.push(value);
+    return true;
+  });
+  return values;
+}
+
+export function sessionConfigOptionIncludesValue(
+  configOption: EffectAcpSchema.SessionConfigOption,
+  expected: string,
+): boolean {
+  let found = false;
+  visitSessionConfigOptionValues(configOption, (value) => {
+    found = value === expected;
+    return !found;
+  });
+  return found;
+}
+
+export function summarizeSessionConfigOptionValuesForError(
+  configOption: EffectAcpSchema.SessionConfigOption,
+): { readonly values: ReadonlyArray<string>; readonly count: number } {
+  const values: Array<string> = [];
+  let count = 0;
+  visitSessionConfigOptionValues(configOption, (value) => {
+    count += 1;
+    if (values.length < 16) {
+      values.push(boundedAcpConfigPresentation(value, 256) ?? "[empty]");
+    }
+    return true;
+  });
+  return { values, count };
 }
 
 export function parseSessionModeState(
@@ -267,25 +571,97 @@ function extractToolCallCommand(rawInput: unknown, title: string | undefined): s
   return extractCommandFromTitle(title);
 }
 
+// Some ACP agents (observed with Grok's CLI) resend the ENTIRE accumulated tool-call
+// output on every `tool_call_update` notification instead of a delta, so a redrawing
+// terminal progress bar can balloon a single tool call to hundreds of KB per update at
+// several updates per second. Cap what we retain/emit to a bounded tail so one busy tool
+// call cannot flood runtime event ingestion. We always keep the tail: `tool_call_update`
+// deltas routinely omit `kind`, so there is no reliable way to tell a redrawing terminal
+// from another tool here, and the end is the useful part of any live-growing output.
+const TOOL_CALL_CONTENT_MAX_CHARS = 8_000;
+const TOOL_CALL_CONTENT_TRUNCATION_MARKER = "[Earlier output truncated]\n\n";
+
+function boundToolCallOutputText(text: string): string {
+  if (text.length <= TOOL_CALL_CONTENT_MAX_CHARS) {
+    return text;
+  }
+  const tail = text.slice(text.length - TOOL_CALL_CONTENT_MAX_CHARS);
+  return `${TOOL_CALL_CONTENT_TRUNCATION_MARKER}${tail}`;
+}
+
+const RAW_OUTPUT_TEXT_FIELDS = ["content", "stdout", "stderr", "output"] as const;
+
+// `rawOutput` is provider-defined and, for terminal-shaped tools, mirrors the same
+// cumulative text-growth problem as `content` (see the comment above). Bound its known
+// text-bearing fields the same way so a chatty provider cannot smuggle unbounded output
+// through this field instead.
+function boundToolCallRawOutput(rawOutput: unknown): unknown {
+  if (!isRecord(rawOutput)) {
+    return rawOutput;
+  }
+  let changed = false;
+  const bounded: Record<string, unknown> = { ...rawOutput };
+  for (const field of RAW_OUTPUT_TEXT_FIELDS) {
+    const value = rawOutput[field];
+    if (typeof value === "string" && value.length > TOOL_CALL_CONTENT_MAX_CHARS) {
+      bounded[field] = boundToolCallOutputText(value);
+      changed = true;
+    }
+  }
+  return changed ? bounded : rawOutput;
+}
+
+interface ExtractedToolCallContent {
+  readonly text: string | undefined;
+  readonly content: ReadonlyArray<EffectAcpSchema.ToolCallContent> | undefined;
+}
+
+function toolCallContentText(entry: EffectAcpSchema.ToolCallContent): string | undefined {
+  if (entry.type !== "content" || entry.content.type !== "text") {
+    return undefined;
+  }
+  return entry.content.text;
+}
+
 function extractTextContentFromToolCallContent(
   content: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined,
-): string | undefined {
-  if (!content) return undefined;
+): ExtractedToolCallContent {
+  if (!content) {
+    return { text: undefined, content: undefined };
+  }
   const chunks: Array<string> = [];
   for (const entry of content) {
-    if (entry.type !== "content") {
-      continue;
-    }
-    const nestedContent = entry.content;
-    if (nestedContent.type !== "text") {
-      continue;
-    }
-    const text = nestedContent.text.trim();
-    if (text.length > 0) {
+    const text = toolCallContentText(entry)?.trim();
+    if (text) {
       chunks.push(text);
     }
   }
-  return chunks.length > 0 ? chunks.join("\n") : undefined;
+  if (chunks.length === 0) {
+    return { text: undefined, content };
+  }
+  const joined = chunks.join("\n");
+  if (joined.length <= TOOL_CALL_CONTENT_MAX_CHARS) {
+    return { text: joined, content };
+  }
+  const bounded = boundToolCallOutputText(joined);
+  // Collapse the text entries into a single bounded one at the final contributing text entry,
+  // and leave every other entry kind (diffs, images, resource links) in its original relative
+  // order. The retained tail came from that text entry, so placing it there also preserves its
+  // ordering relative to interleaved non-text content and ignores later blank text entries.
+  const lastContributingTextIndex = content.reduce(
+    (lastIndex, entry, index) => (toolCallContentText(entry)?.trim() ? index : lastIndex),
+    -1,
+  );
+  const boundedContent = content.flatMap((entry, index) => {
+    if (toolCallContentText(entry) === undefined) {
+      return [entry];
+    }
+    if (index !== lastContributingTextIndex) {
+      return [];
+    }
+    return [{ type: "content", content: { type: "text", text: bounded } } as const];
+  });
+  return { text: bounded, content: boundedContent };
 }
 
 function normalizeToolKind(kind: unknown): string | undefined {
@@ -333,7 +709,8 @@ function makeToolCallState(
   }
   const title = input.title?.trim() || undefined;
   const command = extractToolCallCommand(input.rawInput, title);
-  const textContent = extractTextContentFromToolCallContent(input.content);
+  const extractedContent = extractTextContentFromToolCallContent(input.content);
+  const textContent = extractedContent.text;
   const normalizedTitle =
     title && title.toLowerCase() !== "terminal" && title.toLowerCase() !== "tool call"
       ? title
@@ -350,10 +727,10 @@ function makeToolCallState(
     data.rawInput = input.rawInput;
   }
   if (input.rawOutput !== undefined) {
-    data.rawOutput = input.rawOutput;
+    data.rawOutput = boundToolCallRawOutput(input.rawOutput);
   }
   if (input.content !== undefined) {
-    data.content = input.content;
+    data.content = extractedContent.content ?? input.content;
   }
   if (input.locations !== undefined) {
     data.locations = input.locations;
@@ -432,6 +809,53 @@ export function mergeToolCallState(
       ...next.data,
     },
   };
+}
+
+// Even with bounded content (see TOOL_CALL_CONTENT_MAX_CHARS above), a redrawing terminal
+// can still shift its bounded tail window on nearly every notification, which would emit
+// a runtime event per redraw. Coalesce those: only emit early when the tool call's detail
+// has grown meaningfully since the last emission, otherwise batch up to a small number of
+// skipped updates before emitting anyway, so the UI still gets periodic progress and the
+// final (completed/failed) state is always emitted immediately.
+const TOOL_CALL_UPDATE_MIN_DETAIL_GROWTH_CHARS = 256;
+const TOOL_CALL_UPDATE_COALESCE_LIMIT = 10;
+
+export interface AcpToolCallEmitDecisionInput {
+  readonly previous: AcpToolCallState | undefined;
+  readonly next: AcpToolCallState;
+  readonly lastEmittedDetailLength: number | undefined;
+  readonly skippedSinceEmit: number;
+}
+
+export interface AcpToolCallEmitDecision {
+  readonly emit: boolean;
+  readonly skippedSinceEmit: number;
+}
+
+export function decideToolCallUpdateEmission(
+  input: AcpToolCallEmitDecisionInput,
+): AcpToolCallEmitDecision {
+  const { previous, next, lastEmittedDetailLength, skippedSinceEmit } = input;
+  if (next.status === "completed" || next.status === "failed") {
+    return { emit: true, skippedSinceEmit: 0 };
+  }
+  if (!next.detail) {
+    return { emit: false, skippedSinceEmit };
+  }
+  if (previous === undefined || previous.title !== next.title) {
+    return { emit: true, skippedSinceEmit: 0 };
+  }
+  if (previous.detail === next.detail) {
+    return { emit: false, skippedSinceEmit };
+  }
+  const grewMeaningfully =
+    lastEmittedDetailLength === undefined ||
+    Math.abs(next.detail.length - lastEmittedDetailLength) >=
+      TOOL_CALL_UPDATE_MIN_DETAIL_GROWTH_CHARS;
+  if (grewMeaningfully || skippedSinceEmit + 1 >= TOOL_CALL_UPDATE_COALESCE_LIMIT) {
+    return { emit: true, skippedSinceEmit: 0 };
+  }
+  return { emit: false, skippedSinceEmit: skippedSinceEmit + 1 };
 }
 
 export function parsePermissionRequest(
@@ -515,6 +939,33 @@ export function syntheticLoadSessionResponseFromInitialize(
   };
 }
 
+// The parsed AcpToolCallState already carries bounded content (see makeToolCallState /
+// extractTextContentFromToolCallContent above), but the raw JSON-RPC notification is also
+// threaded through as `rawPayload` for logging/debugging and ends up persisted on the
+// runtime event. Substitute the same bounded `content`/`rawOutput` there so an oversized
+// cumulative update cannot smuggle the unbounded buffer back in through the raw payload.
+function boundToolCallRawPayload(
+  params: EffectAcpSchema.SessionNotification,
+  update: AcpToolCallUpdate,
+  toolCall: AcpToolCallState,
+): unknown {
+  const boundedContent = toolCall.data.content;
+  const boundedRawOutput = toolCall.data.rawOutput;
+  const contentBounded = update.content !== undefined && boundedContent !== update.content;
+  const rawOutputBounded = update.rawOutput !== undefined && boundedRawOutput !== update.rawOutput;
+  if (!contentBounded && !rawOutputBounded) {
+    return params;
+  }
+  return {
+    ...params,
+    update: {
+      ...update,
+      ...(contentBounded ? { content: boundedContent } : {}),
+      ...(rawOutputBounded ? { rawOutput: boundedRawOutput } : {}),
+    },
+  };
+}
+
 export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotification): {
   readonly modeId?: string;
   readonly events: ReadonlyArray<AcpParsedSessionEvent>;
@@ -535,10 +986,13 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       break;
     }
     case "plan": {
-      const plan = upd.entries.map((entry, index) => ({
-        step: entry.content.trim().length > 0 ? entry.content.trim() : `Step ${index + 1}`,
-        status: normalizePlanStepStatus(entry.status),
-      }));
+      const plan = upd.entries.slice(0, PROVIDER_RUNTIME_MAX_PLAN_STEPS).map((entry, index) => {
+        const step = entry.content.trim();
+        return {
+          step: step.length > 0 ? step : `Step ${index + 1}`,
+          status: normalizePlanStepStatus(entry.status),
+        };
+      });
       if (plan.length > 0) {
         events.push({
           _tag: "PlanUpdated",
@@ -558,7 +1012,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
         events.push({
           _tag: "ToolCallUpdated",
           toolCall,
-          rawPayload: params,
+          rawPayload: boundToolCallRawPayload(params, upd, toolCall),
         });
       }
       break;
@@ -569,7 +1023,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
         events.push({
           _tag: "ToolCallUpdated",
           toolCall,
-          rawPayload: params,
+          rawPayload: boundToolCallRawPayload(params, upd, toolCall),
         });
       }
       break;

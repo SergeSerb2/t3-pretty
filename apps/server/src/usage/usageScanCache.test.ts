@@ -93,6 +93,41 @@ describe("scan cache round trip", () => {
     expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).size).toBe(0);
   });
 
+  it("rejects overlong interned fields from an old or corrupt cache", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+
+    expect(decodeScanCache({ ...encoded, models: ["m".repeat(513)] }).size).toBe(0);
+    expect(decodeScanCache({ ...encoded, sessions: ["s".repeat(1_025)] }).size).toBe(0);
+  });
+
+  it("rejects caches whose file or record cardinality exceeds hydration limits", () => {
+    const encoded = encodeScanCache(
+      cacheWith([
+        ["/a.jsonl", 100, [record()]],
+        ["/b.jsonl", 200, [record({ dedupeKey: "msg_2:" })]],
+      ]),
+    );
+
+    expect(decodeScanCache(encoded, { maxFiles: 1 }).size).toBe(0);
+    expect(decodeScanCache(encoded, { maxRecords: 1 }).size).toBe(0);
+  });
+
+  it("drops entries with out-of-range cached usage fields", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+    const row = encoded.files["/a.jsonl"]!.r[0]!;
+    const poisoned = {
+      ...encoded,
+      files: {
+        "/a.jsonl": {
+          ...encoded.files["/a.jsonl"]!,
+          r: [[...row.slice(0, 3), 10_000_000_001, ...row.slice(4)]],
+        },
+      },
+    };
+
+    expect(decodeScanCache(poisoned).has("/a.jsonl")).toBe(false);
+  });
+
   it("drops the whole entry when any row is corrupt, forcing a cold re-parse", () => {
     // Keeping the surviving rows under the original (size, mtime) would read
     // as a valid warm hit and the file would never be re-parsed.

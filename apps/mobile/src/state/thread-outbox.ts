@@ -29,6 +29,10 @@ export function ensureThreadOutboxLoaded(): void {
 }
 
 export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
+  // A startup read failure resets the manager's memoized load. Retry before a
+  // new enqueue so persisted prompts cannot remain hidden for the whole active
+  // session merely because the app has not backgrounded yet.
+  ensureThreadOutboxLoaded();
   rememberOutgoingMessageDraftAttachments(message.messageId, message.attachments);
   return threadOutboxManager.enqueue(message);
 }

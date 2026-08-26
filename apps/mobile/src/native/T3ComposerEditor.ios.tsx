@@ -1,4 +1,3 @@
-import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
 import { requireNativeView } from "expo";
 import {
   useCallback,
@@ -27,6 +26,7 @@ import {
   resolveComposerControlledEventCount,
   type ComposerNativeEventSnapshot,
 } from "./composerEditorRevision";
+import { collectNativeComposerInlineTokens } from "./composerEditorTokens";
 import type { ComposerEditorProps, ComposerEditorSelection } from "./T3ComposerEditor.types";
 
 const NATIVE_MODULE_NAME = "T3ComposerEditor";
@@ -110,7 +110,7 @@ export function ComposerEditor({
   // first controlled payload must be a non-echo so a restored draft (or a
   // recycled native view) is applied rather than skipped.
   const nativeEventSnapshotsRef = useRef<ComposerNativeEventSnapshot[]>([]);
-  const confirmedTokensRef = useRef(collectComposerInlineTokens(props.value));
+  const confirmedTokensRef = useRef(collectNativeComposerInlineTokens(props.value));
   const bodyText = useScaledTextRole("body");
   const textColor = useThemeColor("--color-foreground");
   const placeholderColor = useThemeColor("--color-placeholder");
@@ -140,7 +140,7 @@ export function ComposerEditor({
     [skills],
   );
   const tokensJson = useMemo(() => {
-    const tokens = collectComposerInlineTokens(props.value, {
+    const tokens = collectNativeComposerInlineTokens(props.value, {
       preserveTrailingFrom: confirmedTokensRef.current,
     });
     confirmedTokensRef.current = tokens;

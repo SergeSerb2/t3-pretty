@@ -5,13 +5,21 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { DpopPublicJwk as DpopPublicJwkSchema, normalizeDpopHtu } from "./dpopCommon.ts";
+import {
+  DPOP_ACCESS_TOKEN_MAX_LENGTH,
+  DPOP_IDENTIFIER_MAX_LENGTH,
+  DPOP_METHOD_MAX_LENGTH,
+  DPOP_URL_MAX_LENGTH,
+  DpopPublicJwk as DpopPublicJwkSchema,
+  normalizeDpopHtu,
+} from "./dpopCommon.ts";
 import type { DpopPublicJwk as DpopPublicJwkType } from "./dpopCommon.ts";
 import { stableStringify } from "./relaySigning.ts";
 
 const DPOP_TYP = "dpop+jwt";
 const DPOP_ALG = "ES256";
 const DEFAULT_MAX_AGE_SECONDS = 300;
+export const DPOP_PROOF_MAX_LENGTH = 64 * 1024;
 
 export const DpopPublicJwk = DpopPublicJwkSchema;
 export type DpopPublicJwk = DpopPublicJwkType;
@@ -33,11 +41,11 @@ const decodeDpopJwtHeaderJson = Schema.decodeUnknownOption(DpopJwtHeaderJson);
 
 const DpopJwtPayloadJson = Schema.fromJsonString(
   Schema.Struct({
-    htm: Schema.String.check(Schema.isNonEmpty()),
-    htu: Schema.String.check(Schema.isNonEmpty()),
-    jti: Schema.String.check(Schema.isNonEmpty()),
+    htm: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_METHOD_MAX_LENGTH)),
+    htu: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_URL_MAX_LENGTH)),
+    jti: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_IDENTIFIER_MAX_LENGTH)),
     iat: Schema.Int,
-    ath: Schema.optionalKey(Schema.String),
+    ath: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(DPOP_IDENTIFIER_MAX_LENGTH))),
   }),
 );
 const decodeDpopJwtPayloadJson = Schema.decodeUnknownOption(DpopJwtPayloadJson);
@@ -133,6 +141,9 @@ export function verifyDpopProof(input: {
   if (!input.proof?.trim()) {
     return { ok: false, reason: "Missing DPoP proof." };
   }
+  if (input.proof.length > DPOP_PROOF_MAX_LENGTH) {
+    return { ok: false, reason: "Invalid DPoP proof." };
+  }
 
   const parts = input.proof.split(".");
   if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
@@ -161,6 +172,9 @@ export function verifyDpopProof(input: {
       return { ok: false, reason: "DPoP URL mismatch." };
     }
     if (input.expectedAccessToken) {
+      if (input.expectedAccessToken.length > DPOP_ACCESS_TOKEN_MAX_LENGTH) {
+        return { ok: false, reason: "Invalid DPoP access token." };
+      }
       const expectedAth = computeDpopAccessTokenHash(input.expectedAccessToken);
       if (payload.value.ath !== expectedAth) {
         return { ok: false, reason: "DPoP access token hash mismatch." };

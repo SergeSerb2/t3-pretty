@@ -10,12 +10,15 @@ import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
+
+const ENVIRONMENT_ID_FILE_MAX_BYTES = 1024;
 
 export class ServerEnvironmentIdPersistenceError extends Schema.TaggedErrorClass<ServerEnvironmentIdPersistenceError>()(
   "ServerEnvironmentIdPersistenceError",
@@ -88,7 +91,11 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    const raw = yield* fileSystem.readFileString(serverConfig.environmentIdPath).pipe(
+    const raw = yield* readTextWithinLimit(
+      fileSystem,
+      serverConfig.environmentIdPath,
+      ENVIRONMENT_ID_FILE_MAX_BYTES,
+    ).pipe(
       Effect.map((value) => value.trim()),
       Effect.mapError(
         (cause) =>
@@ -147,6 +154,7 @@ export const make = Effect.gen(function* () {
       repositoryIdentity: true,
       connectionProbe: true,
       serverConfigHttp: true,
+      attachmentUploads: true,
       pullRequests: true,
       threadSettlement: true,
       threadSnooze: true,
@@ -157,6 +165,7 @@ export const make = Effect.gen(function* () {
       providerHandoff: true,
       storageInventory: true,
       storageInventoryStream: true,
+      threadPullRequestLinking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },
