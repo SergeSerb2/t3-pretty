@@ -5,21 +5,11 @@ import { ComputerUseService } from "../../../computerUse/ComputerUseService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { ComputerUseToolkit } from "./tools.ts";
 
-const requireComputerUse = Effect.fn("ComputerUseToolkit.requireComputerUse")(function* () {
-  const invocation = yield* McpInvocationContext.McpInvocationContext;
-  if (!invocation.capabilities.has("computer-use")) {
-    return yield* new ComputerUseError({
-      reason: "capability-unavailable",
-      message: "This MCP credential does not grant computer control.",
-    });
-  }
-});
-
 const invoke = <A>(
   action: (service: ComputerUseService["Service"]) => Effect.Effect<A, ComputerUseError>,
 ) =>
   Effect.gen(function* () {
-    yield* requireComputerUse();
+    yield* McpInvocationContext.requireComputerUseCapability();
     return yield* action(yield* ComputerUseService);
   });
 
