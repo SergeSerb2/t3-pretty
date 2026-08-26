@@ -72,6 +72,9 @@ steps:
       queue: linux-small
     plugins:
       - github-actions#v0.13.0:
+          # Plugin and runtime releases are independent. Do not follow a
+          # newly tagged runtime before its release binaries exist.
+          version: "0.35.1"
           workflows:
             - .github/workflows/fork-release.yml
           runners:
