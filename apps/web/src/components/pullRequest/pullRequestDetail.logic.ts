@@ -801,12 +801,19 @@ export function canStartContinuousFix(input: {
 }
 
 /** Unresolved review remarks — not failing checks or pending CI. */
+export function countActionableComments(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): number {
+  const { threads, remarks } = collectFixableFindings({ ...input, checks: [] });
+  return threads.length + remarks.length;
+}
+
 export function hasActionableComments(input: {
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
   readonly comments: ReadonlyArray<PullRequestComment>;
 }): boolean {
-  const { threads, remarks } = collectFixableFindings({ ...input, checks: [] });
-  return threads.length > 0 || remarks.length > 0;
+  return countActionableComments(input) > 0;
 }
 
 /**

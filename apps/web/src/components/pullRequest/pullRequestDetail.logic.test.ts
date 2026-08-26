@@ -14,6 +14,7 @@ import {
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   canStartContinuousFix,
+  countActionableComments,
   countFixableFindings,
   hasActionableComments,
   countResolvedReviewThreads,
@@ -1039,28 +1040,31 @@ describe("fix findings handoff", () => {
       "",
       "Keep the hook on one node.",
     ].join("\n");
+    const reviewThreads = [
+      thread("please rename this"),
+      thread("already done", { id: "t-resolved", isResolved: true }),
+      thread(grokBody, { id: "t-grok", path: null, line: null }),
+    ];
+    const comments = [
+      {
+        id: "c-review",
+        kind: "review" as const,
+        author: { login: "reviewer", name: null, avatarUrl: null },
+        body: "Also drop the unused export.",
+        createdAt: "2026-07-03T00:00:00Z",
+        url: null,
+        path: null,
+        reviewState: "CHANGES_REQUESTED" as const,
+      },
+    ];
     expect(
       countFixableFindings({
-        reviewThreads: [
-          thread("please rename this"),
-          thread("already done", { id: "t-resolved", isResolved: true }),
-          thread(grokBody, { id: "t-grok", path: null, line: null }),
-        ],
-        comments: [
-          {
-            id: "c-review",
-            kind: "review",
-            author: { login: "reviewer", name: null, avatarUrl: null },
-            body: "Also drop the unused export.",
-            createdAt: "2026-07-03T00:00:00Z",
-            url: null,
-            path: null,
-            reviewState: "CHANGES_REQUESTED",
-          },
-        ],
+        reviewThreads,
+        comments,
         checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
     ).toBe(4);
+    expect(countActionableComments({ reviewThreads, comments })).toBe(3);
   });
 
   it("lets a continuous fix start on pending checks with no current findings", () => {

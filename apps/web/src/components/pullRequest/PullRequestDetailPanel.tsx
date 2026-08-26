@@ -113,8 +113,7 @@ import {
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   buildResolveConflictsPrompt,
-  countFixableFindings,
-  hasActionableComments,
+  countActionableComments,
   handoffPrompt,
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
@@ -957,17 +956,11 @@ export function PullRequestDetailPanel({
   const findingCount =
     detail === null
       ? 0
-      : countFixableFindings({
+      : countActionableComments({
           reviewThreads: detail.reviewThreads,
           comments: detail.comments,
-          checks: detail.checks,
         });
-  const showFixActions =
-    detail !== null &&
-    hasActionableComments({
-      reviewThreads: detail.reviewThreads,
-      comments: detail.comments,
-    });
+  const showFixActions = findingCount > 0;
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
