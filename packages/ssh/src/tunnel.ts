@@ -237,7 +237,7 @@ const remoteNodeEngineCheckMain = function remoteNodeEngineCheckMain() {
 };
 
 function buildRemoteNodeEngineCheckScript(): string {
-  return `${satisfiesSemverRange.toString()}
+  return `const satisfiesSemverRange = ${satisfiesSemverRange.toString()};
 (${remoteNodeEngineCheckMain.toString()})();`;
 }
 

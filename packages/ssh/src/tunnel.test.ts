@@ -16,6 +16,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { SshPasswordPrompt } from "./auth.ts";
 import {
   buildRemoteLaunchScript,
+  buildRemoteNodeEnvScript,
   buildRemotePairingScript,
   buildRemoteStopScript,
   buildRemoteT3RunnerScript,
@@ -122,6 +123,16 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 }
 
 describe("ssh tunnel scripts", () => {
+  it("keeps the remote Node probe valid when bundling anonymizes functions", () => {
+    const script = buildRemoteNodeEnvScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
+    const nodeScript = script.match(/<<'NODE'\n([\s\S]+?)\nNODE/)?.[1];
+
+    assert.isDefined(nodeScript);
+    assert.doesNotThrow(
+      () => new Function(nodeScript.replace("function satisfiesSemverRange(", "function(")),
+    );
+  });
+
   it("builds the remote t3 runner with npx and npm fallbacks", () => {
     const script = buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
     const packageSpec = forkCliTarballUrl();
