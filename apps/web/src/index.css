@@ -1466,8 +1466,7 @@ html[data-window-inactive]
      lip. A wider halo (::after) sits under the core and blooms from 72% to
      full size on hover; `scale` transitions independently of the per-frame
      `translate` updates, so tracking stays instant while the bloom settles.
-     Opacity is asymmetric: enter is slower so the bubble fades in instead of
-     popping; leave stays short so the glow doesn't trail the pointer. */
+     Opacity and bloom use the same duration both ways so leave matches enter. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
       position: absolute;
@@ -1477,7 +1476,7 @@ html[data-window-inactive]
       border-radius: 22px;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 180ms cubic-bezier(0.32, 0.72, 0, 1);
+      transition: opacity 480ms cubic-bezier(0.33, 0, 0.2, 1);
     }
 
     .chat-composer-glass-shell-with-context .chat-composer-specular {
@@ -1515,7 +1514,6 @@ html[data-window-inactive]
 
     .chat-composer-glass-shell:hover .chat-composer-specular {
       opacity: 1;
-      transition: opacity 480ms cubic-bezier(0.33, 0, 0.2, 1);
     }
 
     .chat-composer-specular::before {
@@ -1555,7 +1553,7 @@ html[data-window-inactive]
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: 0.72;
       will-change: translate;
-      transition: scale 280ms cubic-bezier(0.32, 0.72, 0, 1);
+      transition: scale 520ms cubic-bezier(0.22, 1, 0.36, 1);
 
       @variant dark {
         background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
@@ -1564,7 +1562,6 @@ html[data-window-inactive]
 
     .chat-composer-glass-shell:hover .chat-composer-specular::after {
       scale: 1;
-      transition: scale 520ms cubic-bezier(0.22, 1, 0.36, 1);
     }
   }
 
