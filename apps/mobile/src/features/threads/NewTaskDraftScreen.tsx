@@ -1150,7 +1150,11 @@ export function NewTaskDraftScreen(props: {
     Alert.alert("Voice dictation", message);
   }, []);
   const dictation = useNativeDictation({
-    enabled: supportsVoiceDictation && !isIncomingShareTransferPending && !isDispatching,
+    enabled:
+      supportsVoiceDictation &&
+      Option.isSome(preparedConnection) &&
+      !isIncomingShareTransferPending &&
+      !isDispatching,
     prepared: Option.getOrNull(preparedConnection),
     value: flow.prompt,
     cursor: promptSelection.end,

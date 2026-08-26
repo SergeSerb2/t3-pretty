@@ -429,7 +429,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     Alert.alert("Voice dictation", message);
   }, []);
   const dictation = useNativeDictation({
-    enabled: supportsVoiceDictation && !isDispatching,
+    enabled: supportsVoiceDictation && Option.isSome(preparedConnection) && !isDispatching,
     prepared: Option.getOrNull(preparedConnection),
     value: props.draftMessage,
     cursor: composerSelection.end,

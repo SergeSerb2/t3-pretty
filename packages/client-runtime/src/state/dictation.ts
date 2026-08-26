@@ -1,16 +1,24 @@
-import type { DictationAudioMimeType } from "@t3tools/contracts";
+import {
+  DictationUnavailableError,
+  DictationUpstreamError,
+  type DictationAudioMimeType,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { PreparedConnection } from "../connection/model.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
-  executeEnvironmentHttpRequest,
+  executeEnvironmentHttpRequestWithAdditionalError,
   makeEnvironmentHttpApiClient,
   makeEnvironmentHttpApiUrlBuilder,
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
 
 const DEFAULT_DICTATION_TIMEOUT_MS = 45_000;
+const isDictationHttpError = Schema.is(
+  Schema.Union([DictationUnavailableError, DictationUpstreamError]),
+);
 
 export const fetchDictationStatus = Effect.fn("clientRuntime.state.dictation.status")(function* (
   prepared: PreparedConnection,
@@ -24,10 +32,11 @@ export const fetchDictationStatus = Effect.fn("clientRuntime.state.dictation.sta
     requestUrl,
     signer,
   );
-  return yield* executeEnvironmentHttpRequest(
+  return yield* executeEnvironmentHttpRequestWithAdditionalError(
     requestUrl,
     DEFAULT_DICTATION_TIMEOUT_MS,
     withEnvironmentCredentials(prepared.httpAuthorization, client.dictation.status({ headers })),
+    isDictationHttpError,
   );
 });
 
@@ -48,7 +57,7 @@ export const transcribeDictationAudio = Effect.fn("clientRuntime.state.dictation
       requestUrl,
       signer,
     );
-    return yield* executeEnvironmentHttpRequest(
+    return yield* executeEnvironmentHttpRequestWithAdditionalError(
       requestUrl,
       DEFAULT_DICTATION_TIMEOUT_MS,
       withEnvironmentCredentials(
@@ -58,6 +67,7 @@ export const transcribeDictationAudio = Effect.fn("clientRuntime.state.dictation
           payload: { audioBase64: input.audioBase64, mimeType: input.mimeType },
         }),
       ),
+      isDictationHttpError,
     );
   },
 );
@@ -80,7 +90,7 @@ export const cleanupDictation = Effect.fn("clientRuntime.state.dictation.cleanup
       requestUrl,
       signer,
     );
-    return yield* executeEnvironmentHttpRequest(
+    return yield* executeEnvironmentHttpRequestWithAdditionalError(
       requestUrl,
       DEFAULT_DICTATION_TIMEOUT_MS,
       withEnvironmentCredentials(
@@ -90,6 +100,7 @@ export const cleanupDictation = Effect.fn("clientRuntime.state.dictation.cleanup
           payload: { transcript: input.transcript, before: input.before, after: input.after },
         }),
       ),
+      isDictationHttpError,
     );
   },
 );

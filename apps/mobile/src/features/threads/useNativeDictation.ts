@@ -7,14 +7,9 @@ import {
   replaceDictationInsertion,
   transcribeDictationAudio,
 } from "@t3tools/client-runtime/state/dictation";
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-} from "expo-audio";
 import { File } from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 import { runtime } from "../../lib/runtime";
 
@@ -22,12 +17,17 @@ const CHUNK_DURATION_MS = 5_000;
 const CONTEXT_LENGTH = 8_000;
 
 type DictationPhase = "idle" | "recording" | "processing";
+type ExpoAudio = typeof import("expo-audio");
+type ExpoAudioRecorder = InstanceType<ExpoAudio["AudioModule"]["AudioRecorder"]>;
+type RecordingPreset = ExpoAudio["RecordingPresets"]["HIGH_QUALITY"];
 
 interface DictationSession {
   readonly prepared: PreparedConnection;
   readonly start: number;
   readonly before: string;
   readonly after: string;
+  readonly recorder: ExpoAudioRecorder;
+  readonly setAudioModeAsync: ExpoAudio["setAudioModeAsync"];
   transcript: string;
   insertion: string;
   timer: ReturnType<typeof setTimeout> | null;
@@ -37,6 +37,7 @@ interface DictationSession {
   finalizing: boolean;
   error: unknown;
   cancelled: boolean;
+  closed: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -45,6 +46,15 @@ function errorMessage(error: unknown): string {
     if (typeof message === "string" && message.trim()) return message;
   }
   return "Voice dictation failed. Please try again.";
+}
+
+function nativeRecordingOptions(preset: RecordingPreset) {
+  const { ios, android, web, ...common } = preset;
+  return {
+    ...common,
+    isMeteringEnabled: preset.isMeteringEnabled ?? false,
+    ...(Platform.OS === "ios" ? ios : Platform.OS === "android" ? android : web),
+  };
 }
 
 export function useNativeDictation(input: {
@@ -56,7 +66,6 @@ export function useNativeDictation(input: {
   readonly onChangeCursor: (cursor: number) => void;
   readonly reportError: (message: string) => void;
 }) {
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const sessionRef = useRef<DictationSession | null>(null);
   const mountedRef = useRef(true);
@@ -66,8 +75,14 @@ export function useNativeDictation(input: {
   inputRef.current = input;
 
   const closeSession = useCallback(async (session: DictationSession) => {
+    if (session.closed) return;
+    session.closed = true;
     if (session.timer !== null) clearTimeout(session.timer);
-    await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    if (session.recorder.isRecording) {
+      await session.recorder.stop().catch(() => undefined);
+    }
+    await session.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    session.recorder.release();
     if (sessionRef.current === session) sessionRef.current = null;
     if (mountedRef.current) setPhase("idle");
   }, []);
@@ -176,12 +191,12 @@ export function useNativeDictation(input: {
       return;
     }
     try {
-      await recorder.prepareToRecordAsync();
+      await session.recorder.prepareToRecordAsync();
       if (session.stopRequested || session.cancelled) {
         await finishSession(session);
         return;
       }
-      recorder.record();
+      session.recorder.record();
       session.timer = setTimeout(() => void stopChunkRef.current(session), CHUNK_DURATION_MS);
     } catch (error) {
       session.error = error;
@@ -196,8 +211,8 @@ export function useNativeDictation(input: {
     if (session.timer !== null) clearTimeout(session.timer);
     session.timer = null;
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
+      await session.recorder.stop();
+      const uri = session.recorder.uri;
       if (uri && !session.error) {
         session.queue = session.queue.then(async () => {
           if (session.error || session.cancelled) return;
@@ -206,7 +221,7 @@ export function useNativeDictation(input: {
           } catch (error) {
             session.error = error;
             session.stopRequested = true;
-            if (recorder.isRecording) void stopChunkRef.current(session);
+            if (session.recorder.isRecording) void stopChunkRef.current(session);
             else void finishSession(session);
           }
         });
@@ -232,6 +247,7 @@ export function useNativeDictation(input: {
   const start = useCallback(async () => {
     const current = inputRef.current;
     if (!current.enabled || !current.prepared || sessionRef.current) return;
+    let session: DictationSession | null = null;
     try {
       const status = await runtime.runPromise(fetchDictationStatus(current.prepared));
       if (!status.available) {
@@ -242,18 +258,26 @@ export function useNativeDictation(input: {
         );
         return;
       }
-      const permission = await requestRecordingPermissionsAsync();
+      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
+      const audio = await import("expo-audio");
+      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
+      const permission = await audio.requestRecordingPermissionsAsync();
       if (!permission.granted) {
         current.reportError("Microphone access is required for voice dictation.");
         return;
       }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
+      const recorder = new audio.AudioModule.AudioRecorder(
+        nativeRecordingOptions(audio.RecordingPresets.HIGH_QUALITY),
+      );
       const cursor = Math.max(0, Math.min(valueRef.current.length, current.cursor));
-      const session: DictationSession = {
+      session = {
         prepared: current.prepared,
         start: cursor,
         before: valueRef.current.slice(0, cursor),
         after: valueRef.current.slice(cursor),
+        recorder,
+        setAudioModeAsync: audio.setAudioModeAsync,
         transcript: "",
         insertion: "",
         timer: null,
@@ -263,15 +287,22 @@ export function useNativeDictation(input: {
         finalizing: false,
         error: null,
         cancelled: false,
+        closed: false,
       };
       sessionRef.current = session;
+      await audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       setPhase("recording");
       await beginChunkRef.current(session);
     } catch (error) {
+      if (session) await closeSession(session);
       current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
     }
-  }, []);
+  }, [closeSession]);
+
+  useEffect(() => {
+    if (!input.enabled && phase === "recording") stop();
+  }, [input.enabled, phase, stop]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -282,10 +313,9 @@ export function useNativeDictation(input: {
       session.cancelled = true;
       session.stopRequested = true;
       if (session.timer !== null) clearTimeout(session.timer);
-      if (recorder.isRecording) void recorder.stop();
-      void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      void closeSession(session);
     };
-  }, [recorder]);
+  }, [closeSession]);
 
   return {
     phase,

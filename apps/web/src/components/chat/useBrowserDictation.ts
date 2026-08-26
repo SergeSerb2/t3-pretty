@@ -224,11 +224,16 @@ export function useBrowserDictation(input: {
         );
         return;
       }
+      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
       if (typeof MediaRecorder === "undefined") {
         throw new Error("This browser does not support audio recording.");
       }
       const snapshot = current.readComposer();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
       const session: DictationSession = {
         prepared: current.prepared,
         stream,
@@ -249,10 +254,19 @@ export function useBrowserDictation(input: {
       setPhase("recording");
       beginChunkRef.current(session);
     } catch (error) {
+      const session = sessionRef.current;
+      if (session) {
+        session.cancelled = true;
+        closeSession(session);
+      }
       current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
     }
-  }, []);
+  }, [closeSession]);
+
+  useEffect(() => {
+    if (!input.enabled && phase === "recording") stop();
+  }, [input.enabled, phase, stop]);
 
   useEffect(() => {
     mountedRef.current = true;
