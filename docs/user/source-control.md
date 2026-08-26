@@ -56,9 +56,11 @@ T3 Code works with the platforms your team already uses:
 - **Fix all** on an open pull request starts a thread that works through every unresolved review
   finding — GitHub, GitLab, Bitbucket, Azure DevOps, Origin, and Grok Origin comments — then
   resolves the conversations it fixed. You pick the agent and reasoning effort first. Per-comment
-  **Fix in a thread** buttons still handle one finding at a time
+  **Fix in a thread** buttons still handle one finding at a time. The action stays hidden until
+  the pull request has unresolved review comments
 - **Fix continuously** starts the same focused sweep, then keeps the agent watching latest-commit
-  reviews and checks, fixing new actionable feedback until the pull request is green
+  reviews and checks, fixing new actionable feedback until the pull request is green. It appears
+  with **Fix all**, only when those comments are present
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you

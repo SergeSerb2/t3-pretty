@@ -53,9 +53,8 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
-  canStartContinuousFix,
-  countFixableFindings,
   groupPullRequestConversation,
+  hasActionableComments,
   pullRequestUrlHost,
   readableFailure,
 } from "./pullRequestDetail.logic";
@@ -302,20 +301,11 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [detail, handoff],
   );
 
-  const findingCount =
-    detail === null
-      ? 0
-      : countFixableFindings({
-          reviewThreads: detail.reviewThreads,
-          comments: detail.comments,
-          checks: detail.checks,
-        });
-  const canFixContinuously =
+  const showFixActions =
     detail !== null &&
-    canStartContinuousFix({
+    hasActionableComments({
       reviewThreads: detail.reviewThreads,
       comments: detail.comments,
-      checks: detail.checks,
     });
 
   const openOnHost = useCallback(() => {
@@ -364,19 +354,19 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       },
     ];
     if (activityQuery.data !== null) {
-      if (findingCount > 0) {
-        items.push({
-          type: "action",
-          title: "Fix all findings",
-          onPress: () => startFixFindings(false),
-        });
-      }
-      if (canFixContinuously) {
-        items.push({
-          type: "action",
-          title: "Fix continuously",
-          onPress: () => startFixFindings(true),
-        });
+      if (showFixActions) {
+        items.push(
+          {
+            type: "action",
+            title: "Fix all findings",
+            onPress: () => startFixFindings(false),
+          },
+          {
+            type: "action",
+            title: "Fix continuously",
+            onPress: () => startFixFindings(true),
+          },
+        );
       }
     } else if (activityQuery.error !== null) {
       items.push({
@@ -443,8 +433,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     can,
     detail,
     environmentId,
-    canFixContinuously,
-    findingCount,
+    showFixActions,
     handoff,
     startFixFindings,
     navigation,
@@ -723,10 +712,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
-                    onFixAll={findingCount > 0 ? () => startFixFindings(false) : undefined}
-                    onFixContinuously={
-                      canFixContinuously ? () => startFixFindings(true) : undefined
-                    }
+                    onFixAll={showFixActions ? () => startFixFindings(false) : undefined}
+                    onFixContinuously={showFixActions ? () => startFixFindings(true) : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({

@@ -9,6 +9,7 @@ import {
   buildFixFindingsPrompt,
   canStartContinuousFix,
   countFixableFindings,
+  hasActionableComments,
   buildPullRequestTimeline,
   buildResolveConflictsPrompt,
   countResolvedReviewThreads,
@@ -373,6 +374,76 @@ describe("handoffs and failures", () => {
         checks: [{ name: "build", status: "success", description: null, url: null }],
       }),
     ).toBe(false);
+    expect(hasActionableComments(pendingOnly)).toBe(false);
+  });
+
+  it("hides Fix actions unless a PR has unresolved review comments", () => {
+    expect(hasActionableComments({ reviewThreads: [], comments: [] })).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [
+          {
+            id: "t1",
+            path: "src/app.ts",
+            line: 12,
+            side: "right",
+            isResolved: true,
+            isOutdated: false,
+            comments: [
+              {
+                id: "rc1",
+                author: { login: "reviewer", name: null, avatarUrl: null },
+                body: "already done",
+                createdAt: "2026-07-02T00:00:00Z",
+                url: null,
+              },
+            ],
+          },
+        ],
+        comments: [],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [
+          {
+            id: "t1",
+            path: "src/app.ts",
+            line: 12,
+            side: "right",
+            isResolved: false,
+            isOutdated: false,
+            comments: [
+              {
+                id: "rc1",
+                author: { login: "reviewer", name: null, avatarUrl: null },
+                body: "please rename this",
+                createdAt: "2026-07-02T00:00:00Z",
+                url: null,
+              },
+            ],
+          },
+        ],
+        comments: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "r1",
+            kind: "review",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "This breaks SSO auth, revert the middleware change.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: "CHANGES_REQUESTED",
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 
   it("does not treat a general issue comment as a review finding", () => {

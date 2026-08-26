@@ -14,7 +14,9 @@ import {
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
   canStartContinuousFix,
+  countActionableComments,
   countFixableFindings,
+  hasActionableComments,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -1038,28 +1040,31 @@ describe("fix findings handoff", () => {
       "",
       "Keep the hook on one node.",
     ].join("\n");
+    const reviewThreads = [
+      thread("please rename this"),
+      thread("already done", { id: "t-resolved", isResolved: true }),
+      thread(grokBody, { id: "t-grok", path: null, line: null }),
+    ];
+    const comments = [
+      {
+        id: "c-review",
+        kind: "review" as const,
+        author: { login: "reviewer", name: null, avatarUrl: null },
+        body: "Also drop the unused export.",
+        createdAt: "2026-07-03T00:00:00Z",
+        url: null,
+        path: null,
+        reviewState: "CHANGES_REQUESTED" as const,
+      },
+    ];
     expect(
       countFixableFindings({
-        reviewThreads: [
-          thread("please rename this"),
-          thread("already done", { id: "t-resolved", isResolved: true }),
-          thread(grokBody, { id: "t-grok", path: null, line: null }),
-        ],
-        comments: [
-          {
-            id: "c-review",
-            kind: "review",
-            author: { login: "reviewer", name: null, avatarUrl: null },
-            body: "Also drop the unused export.",
-            createdAt: "2026-07-03T00:00:00Z",
-            url: null,
-            path: null,
-            reviewState: "CHANGES_REQUESTED",
-          },
-        ],
+        reviewThreads,
+        comments,
         checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
     ).toBe(4);
+    expect(countActionableComments({ reviewThreads, comments })).toBe(3);
   });
 
   it("lets a continuous fix start on pending checks with no current findings", () => {
@@ -1082,6 +1087,56 @@ describe("fix findings handoff", () => {
         reviewThreads: [],
         comments: [],
         checks: [failingCheck],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions unless a PR has unresolved review comments", () => {
+    expect(hasActionableComments({ reviewThreads: [], comments: [] })).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-talk",
+            kind: "issue-comment",
+            author: { login: "octocat", name: null, avatarUrl: null },
+            body: "please also update the docs",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: null,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("please rename this")],
+        comments: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-review",
+            kind: "review",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Also drop the unused export.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: "CHANGES_REQUESTED",
+          },
+        ],
       }),
     ).toBe(true);
   });
