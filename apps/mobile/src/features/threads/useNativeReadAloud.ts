@@ -122,7 +122,7 @@ export function useNativeReadAloud(input: {
         const handleStatus = (status: ExpoAudioPlayer["currentStatus"]) => {
           if (status.error) {
             fail(new Error(status.error));
-          } else if (!started && status.isLoaded && status.duration > 0) {
+          } else if (!started && status.isLoaded) {
             started = true;
             if (loadTimeout) clearTimeout(loadTimeout);
             loadTimeout = null;
