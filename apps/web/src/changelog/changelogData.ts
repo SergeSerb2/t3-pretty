@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.35-nightly.20260826.1195001002",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195000998",
     date: "2026-08-26",
     items: [
