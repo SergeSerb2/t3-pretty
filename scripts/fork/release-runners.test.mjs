@@ -278,6 +278,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
     assert.include(persistHook, "origin_cli_helper_ready");
     assert.include(persistHook, "macos-review-only-hook.sh");
+    assert.include(persistHook, "refresh-origin-git-credentials.sh");
+    assert.include(persistHook, 'mkdir -p "$HOME/.local/bin"');
     assert.include(
       persistHook,
       'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
