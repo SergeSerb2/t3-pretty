@@ -33,6 +33,13 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("ServerSettings computer control", () => {
+  it("is opt-in and accepts an explicit toggle", () => {
+    expect(decodeServerSettings({}).enableComputerUse).toBe(false);
+    expect(decodeServerSettingsPatch({ enableComputerUse: true }).enableComputerUse).toBe(true);
+  });
+});
+
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {
     expect(decodeClaudeSettings({}).autoCompactWindow).toBe("");

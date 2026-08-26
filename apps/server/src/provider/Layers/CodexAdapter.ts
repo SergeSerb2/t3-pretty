@@ -1686,6 +1686,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 ]),
               }
             : {}),
+          browserToolsAvailable: McpProviderSession.hasBrowserTools(mcpSession),
+          computerToolsAvailable: McpProviderSession.hasComputerTools(mcpSession),
         };
         const sessionScope = yield* Scope.make("sequential");
         let sessionScopeTransferred = false;

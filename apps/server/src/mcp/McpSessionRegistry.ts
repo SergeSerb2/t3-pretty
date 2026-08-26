@@ -14,6 +14,7 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -124,12 +125,13 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const capabilities = new Set<McpInvocationContext.McpCapability>(request.capabilities ?? []);
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
+        capabilities,
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -150,7 +152,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
-          servers: [{ name: McpProviderSession.T3_CODE_MCP_SERVER_NAME, url: endpoint }],
+          capabilities: scope.capabilities,
+          servers: McpProviderSession.builtInMcpServers(endpoint, capabilities),
         },
       };
     },

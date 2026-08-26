@@ -207,6 +207,7 @@ describe("buildTurnStartParams", () => {
         model: "gpt-5.3-codex",
         effort: "medium",
         interactionMode: "plan",
+        browserToolsAvailable: true,
       }),
     );
 
@@ -230,10 +231,14 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("plan", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions(
+            "plan",
+            {
+              model: "gpt-5.3-codex",
+              reasoningEffort: "medium",
+            },
+            true,
+          ),
         },
       },
     });
@@ -247,6 +252,7 @@ describe("buildTurnStartParams", () => {
         prompt: "Implement it",
         model: "gpt-5.3-codex",
         interactionMode: "default",
+        browserToolsAvailable: true,
         attachments: [
           {
             type: "image",
@@ -279,10 +285,14 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("default", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions(
+            "default",
+            {
+              model: "gpt-5.3-codex",
+              reasoningEffort: "medium",
+            },
+            true,
+          ),
         },
       },
     });
@@ -564,7 +574,7 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "high",
     });
 
-    NodeAssert.ok(instructions.startsWith(codexDefaultModeDeveloperInstructions(true)));
+    NodeAssert.ok(instructions.startsWith(codexDefaultModeDeveloperInstructions(false)));
     NodeAssert.match(instructions, /T3 Code/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
@@ -576,7 +586,7 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "medium",
     });
 
-    NodeAssert.ok(instructions.startsWith(codexPlanModeDeveloperInstructions(true)));
+    NodeAssert.ok(instructions.startsWith(codexPlanModeDeveloperInstructions(false)));
     NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
   });
 
@@ -642,6 +652,21 @@ describe("T3 browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it.effect("defaults to no browser instructions without an explicit preview capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-computer-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /preview_open/,
+      );
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {
@@ -653,6 +678,36 @@ describe("hasConfiguredMcpServer", () => {
       true,
     );
   });
+});
+
+describe("T3 computer developer instructions", () => {
+  it("tracks the turn's attached computer-use capability", () => {
+    const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+    const enabled = buildCodexDeveloperInstructions("default", runtime, false, true);
+    const disabled = buildCodexDeveloperInstructions("default", runtime, false, false);
+
+    NodeAssert.match(enabled, /t3-code-computer/);
+    NodeAssert.match(enabled, /computer_screen_info/);
+    NodeAssert.match(enabled, /Quartz global display coordinates/);
+    NodeAssert.doesNotMatch(disabled, /t3-code-computer/);
+    NodeAssert.doesNotMatch(disabled, /computer_screen_info/);
+  });
+
+  it.effect("defaults to no computer instructions without an explicit capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-preview-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        browserToolsAvailable: true,
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /t3-code-computer/,
+      );
+    }),
+  );
 });
 
 function makeThreadStartedNotification(
@@ -1074,6 +1129,45 @@ const turnMethods = (peer: SteerPeer) =>
 // it.live: the runtime drives a real child process, and it.effect's TestClock
 // freezes the transport's own timers.
 describe("CodexSessionRuntime sendTurn steering", () => {
+  it.live("infers built-in tool instructions from MCP config after resume", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: false });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-resume-tools"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+        resumeCursor: { threadId: "provider-thread-resume-tools" },
+        appServerArgs: [
+          "-c",
+          "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+          "-c",
+          "mcp_servers.t3-code-computer.url=http://127.0.0.1/mcp/computer-use",
+        ],
+      });
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "inspect the desktop", interactionMode: "default" });
+
+      const turnStart = peer.requests().find((request) => request.method === "turn/start");
+      const params = turnStart?.params as
+        | {
+            readonly collaborationMode?: {
+              readonly settings?: { readonly developer_instructions?: string };
+            };
+          }
+        | undefined;
+      const instructions = params?.collaborationMode?.settings?.developer_instructions ?? "";
+      NodeAssert.match(instructions, /preview_open/);
+      NodeAssert.match(instructions, /t3-code-computer/);
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("steers the active turn instead of starting a second one mid-turn", () =>
     Effect.gen(function* () {
       const peer = makeSteerPeer({ rejectSteer: false });

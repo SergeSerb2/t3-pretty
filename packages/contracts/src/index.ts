@@ -1,6 +1,7 @@
 export * from "./baseSchemas.ts";
 export * from "./background.ts";
 export * from "./auth.ts";
+export * from "./computerUse.ts";
 export * from "./environment.ts";
 export * from "./environmentHttp.ts";
 export * from "./relayClient.ts";

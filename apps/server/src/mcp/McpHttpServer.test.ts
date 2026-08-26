@@ -195,7 +195,7 @@ it.effect("registers annotated tools and preserves authenticated request context
                   loading: false,
                   visibleText: "Example",
                   interactiveElements: [],
-                  accessibilityTree: {},
+                  accessibilityTree: { nodes: [] },
                   consoleEntries: [],
                   networkEntries: [],
                   actionTimeline: [],

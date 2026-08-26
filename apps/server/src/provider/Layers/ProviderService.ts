@@ -31,6 +31,7 @@ import {
   type ProviderSession,
 } from "@t3tools/contracts";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -62,6 +63,7 @@ import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { isAppAttachable } from "../../apps/AppsService.ts";
@@ -287,6 +289,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const sessionLifecycleLocks = yield* KeyedLock.make;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const hostPlatform = yield* HostProcessPlatform;
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
@@ -297,7 +300,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    * Attach the `t3-code` MCP server to the session that is about to start.
    *
    * This is the only place a credential is minted, so withholding one here is
-   * what disables agent browser access everywhere: every adapter already
+   * what disables built-in browser and computer tools everywhere: every adapter already
    * treats a missing session as "no MCP server", and the `/mcp` endpoint
    * accepts nothing but tokens issued from this path.
    */
@@ -307,25 +310,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
    * a union every caller handles, for a branch that only decides whether one
    * optional toolset is attached. Denying is the safe direction — an explicit
    * "off" silently becoming "on" would violate the user's stated choice,
-   * whereas the reverse costs an agent one toolset and is visible immediately.
+   * whereas the reverse costs an agent optional tools and is visible immediately.
    */
   const mcpAttachmentPlan = serverSettings.getSettings.pipe(
     Effect.map((settings) => ({
       browserTools: settings.enableAgentBrowserAccess,
+      computerUse: settings.enableComputerUse && hostPlatform === "darwin",
       apps: Object.values(settings.apps.connections).filter(isAppAttachable),
     })),
     Effect.catch((cause) =>
       Effect.logWarning(
-        "Could not read server settings; withholding agent browser access and apps for this session.",
+        "Could not read server settings; withholding built-in MCP tools and apps for this session.",
         { cause },
-      ).pipe(Effect.as({ browserTools: false, apps: [] as ReadonlyArray<AppConnection> })),
+      ).pipe(
+        Effect.as({
+          browserTools: false,
+          computerUse: false,
+          apps: [] as ReadonlyArray<AppConnection>,
+        }),
+      ),
     ),
   );
 
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const plan = yield* mcpAttachmentPlan;
-      if (!plan.browserTools && plan.apps.length === 0) {
+      if (!plan.browserTools && !plan.computerUse && plan.apps.length === 0) {
         // Revoke as well as clear. Every other prepare path reaches
         // `issueActiveMcpCredential`, which atomically replaces the thread's
         // prior credential, so
@@ -337,21 +347,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
         return undefined;
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      const capabilities = new Set<McpInvocationContext.McpCapability>([
+        ...(plan.browserTools ? (["preview"] as const) : []),
+        ...(plan.computerUse ? (["computer-use"] as const) : []),
+      ]);
+      const credential = yield* issueMcpCredential({
+        threadId,
+        providerInstanceId,
+        capabilities,
+      });
       if (!credential) return undefined;
-      // One bearer, many servers: apps ride the `/mcp/apps/<id>` proxy next to
-      // the built-in `t3-code` endpoint, and the proxy resolves the same token.
+      // One bearer, many servers: built-in toolkits use distinct catalogs and
+      // apps ride the `/mcp/apps/<id>` proxy; every endpoint resolves the same token.
       const config: McpProviderSession.McpProviderSessionConfig = {
         ...credential.config,
+        capabilities,
         servers: [
-          ...(plan.browserTools
-            ? [
-                {
-                  name: McpProviderSession.T3_CODE_MCP_SERVER_NAME,
-                  url: credential.config.endpoint,
-                },
-              ]
-            : []),
+          ...credential.config.servers,
           ...plan.apps.map((app) => ({
             name: app.slug,
             url: `${credential.config.endpoint}/apps/${encodeURIComponent(app.id)}`,
