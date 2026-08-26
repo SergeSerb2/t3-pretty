@@ -57,9 +57,8 @@ export type ComputerScreenshotRegion = typeof ComputerScreenshotRegion.Type;
 
 export const ComputerScreenshotInput = Schema.Struct({
   display: Schema.optional(
-    Schema.Int.annotate({
-      description:
-        "1-based display index to capture. Defaults to the main display. Cannot be combined with region.",
+    Schema.Literal(1).annotate({
+      description: "Main display selector. Defaults to 1 and cannot be combined with region.",
       default: 1,
     }),
   ),

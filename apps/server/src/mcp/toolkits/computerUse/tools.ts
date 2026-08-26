@@ -36,7 +36,7 @@ export const ComputerScreenInfoTool = computerTool(
 export const ComputerScreenshotTool = computerTool(
   Tool.make("computer_screenshot", {
     description:
-      "Capture a PNG screenshot normalized so one image pixel equals one Quartz coordinate unit. Returns its temporary path and dimensions; read it promptly because it expires after 10 minutes.",
+      "Capture a PNG screenshot of the main display or a region, normalized so one image pixel equals one Quartz coordinate unit. Returns its temporary path and dimensions; read it promptly because it expires after 10 minutes.",
     parameters: ComputerScreenshotInput,
     success: ComputerScreenshotResult,
     failure: ComputerUseError,

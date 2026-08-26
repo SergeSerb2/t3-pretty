@@ -128,7 +128,7 @@ it.effect("delegates computer tools to the host service", () =>
       yield* runHandler(computerUseToolkitHandlers.computer_screen_info(), provide),
       { screenWidth: 1512, screenHeight: 982, scaleFactor: 2 },
     );
-    const screenshotInput = { display: 2, region: { x: 1, y: 2, width: 3, height: 4 } };
+    const screenshotInput = { region: { x: 1, y: 2, width: 3, height: 4 } };
     assert.deepEqual(
       yield* runHandler(computerUseToolkitHandlers.computer_screenshot(screenshotInput), provide),
       { path: "/tmp/shot.png", width: 100, height: 80 },

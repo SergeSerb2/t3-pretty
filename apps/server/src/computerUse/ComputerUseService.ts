@@ -152,11 +152,8 @@ const MODIFIER_TOKENS: Record<ComputerKeyModifier, string> = {
 const SCREEN_INFO_SCRIPT = `function run(argv) {
   ObjC.import("AppKit");
   ObjC.import("CoreGraphics");
-  var index = parseInt(argv[0], 10) - 1;
-  var screens = $.NSScreen.screens;
-  if (index < 0 || index >= screens.count) throw new Error("Display index is out of range");
-  var screen = screens.objectAtIndex(index);
-  var frame = index === 0 ? $.CGDisplayBounds($.CGMainDisplayID()) : screen.frame;
+  var screen = $.NSScreen.mainScreen;
+  var frame = $.CGDisplayBounds($.CGMainDisplayID());
   return JSON.stringify({
     screenWidth: Number(frame.size.width),
     screenHeight: Number(frame.size.height),
@@ -221,14 +218,18 @@ const SCROLL_SCRIPT = `function run(argv) {
   $.CGEventPost($.kCGHIDEventTap, event);
 }`;
 
-/**
- * AppleScript argv style: the text travels strictly as `item 1 of argv` and is
- * never interpolated into the script source, so quotes/newlines/unicode in the
- * payload cannot break or inject into the script.
- */
-const TYPE_TEXT_SCRIPT = `on run argv
-  tell application "System Events" to keystroke (item 1 of argv)
-end run`;
+const TYPE_TEXT_SCRIPT = `function run(argv) {
+  ObjC.import("CoreGraphics");
+  var source = $.CGEventSourceCreate($.kCGEventSourceStateHIDSystemState);
+  Array.from(argv[0]).forEach(function(symbol) {
+    var down = $.CGEventCreateKeyboardEvent(source, 0, true);
+    $.CGEventKeyboardSetUnicodeString(down, symbol.length, symbol);
+    $.CGEventPost($.kCGHIDEventTap, down);
+    var up = $.CGEventCreateKeyboardEvent(source, 0, false);
+    $.CGEventKeyboardSetUnicodeString(up, symbol.length, symbol);
+    $.CGEventPost($.kCGHIDEventTap, up);
+  });
+}`;
 
 const keyCodeScript = (modifiers: ReadonlyArray<ComputerKeyModifier>): string => {
   const keyCodeExpression = "key code ((item 1 of argv) as integer)";
@@ -280,10 +281,8 @@ export const make = Effect.gen(function* () {
   const runAppleScript = (script: string, args: ReadonlyArray<string>) =>
     executor.run({ command: "osascript", args: ["-e", script, "--", ...args] });
 
-  const readScreenInfo = Effect.fn("ComputerUseService.readScreenInfo")(function* (
-    display: number,
-  ) {
-    const result = yield* runJxa(SCREEN_INFO_SCRIPT, [String(display)]);
+  const readScreenInfo = Effect.fn("ComputerUseService.readScreenInfo")(function* () {
+    const result = yield* runJxa(SCREEN_INFO_SCRIPT, []);
     return yield* Schema.decodeUnknownEffect(ScreenInfoJson)(result.stdout).pipe(
       Effect.mapError(
         () =>
@@ -297,7 +296,7 @@ export const make = Effect.gen(function* () {
 
   const screenInfo = Effect.fn("ComputerUseService.screenInfo")(function* () {
     yield* requireDarwin();
-    return yield* readScreenInfo(1);
+    return yield* readScreenInfo();
   });
 
   const screenshot = Effect.fn("ComputerUseService.screenshot")(function* (
@@ -309,6 +308,8 @@ export const make = Effect.gen(function* () {
     const screenshotPath = `${NodeOS.tmpdir()}/t3code-screenshot-${NodeCrypto.randomUUID()}.png`;
     const result = yield* Effect.gen(function* () {
       const captureArgs = ["-x"];
+      // ponytail: main display only; enumerate CG display IDs and expose their
+      // global origins before accepting secondary indexes.
       if (input.display !== undefined && input.region !== undefined) {
         return yield* new ComputerUseError({
           reason: "action-failed",
@@ -358,7 +359,7 @@ export const make = Effect.gen(function* () {
         width = Math.round(input.region.width);
         height = Math.round(input.region.height);
       } else {
-        const displayInfo = yield* readScreenInfo(input.display ?? 1);
+        const displayInfo = yield* readScreenInfo();
         width = Math.round(displayInfo.screenWidth);
         height = Math.round(displayInfo.screenHeight);
       }
@@ -413,7 +414,7 @@ export const make = Effect.gen(function* () {
 
   const typeText = Effect.fn("ComputerUseService.typeText")(function* (input: ComputerTypeInput) {
     yield* requireDarwin();
-    yield* runAppleScript(TYPE_TEXT_SCRIPT, [input.text]);
+    yield* runJxa(TYPE_TEXT_SCRIPT, [input.text]);
     return { ok: true as const } satisfies ComputerActionResult;
   });
 

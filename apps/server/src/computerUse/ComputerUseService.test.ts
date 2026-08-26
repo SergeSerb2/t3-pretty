@@ -97,7 +97,7 @@ it.effect("computer_move passes coordinates via argv", () =>
   }),
 );
 
-it.effect("computer_type passes the text as an argv entry, never inside the script", () =>
+it.effect("computer_type emits arbitrary Unicode from argv through Core Graphics", () =>
   Effect.gen(function* () {
     const { calls, getService } = makeServiceHarness();
     const service = yield* getService;
@@ -108,8 +108,10 @@ it.effect("computer_type passes the text as an argv entry, never inside the scri
     assert.equal(calls.length, 1);
     const call = calls[0]!;
     assert.equal(call.command, "osascript");
-    assert.equal(call.args[0], "-e");
-    const script = call.args[1]!;
+    assert.deepEqual(call.args.slice(0, 3), ["-l", "JavaScript", "-e"]);
+    const script = call.args[3]!;
+    assert.include(script, "CGEventKeyboardSetUnicodeString");
+    assert.include(script, "Array.from(argv[0])");
     assert.isFalse(
       script.includes(payload),
       "typed text must not be interpolated into the AppleScript source",
@@ -239,7 +241,7 @@ it.effect("computer_screenshot rejects combining display and global region", () 
   Effect.gen(function* () {
     const { calls, getService } = makeServiceHarness();
     const service = yield* getService;
-    const input = { display: 2, region: { x: 10, y: 20, width: 300, height: 200 } };
+    const input = { display: 1 as const, region: { x: 10, y: 20, width: 300, height: 200 } };
 
     const error = yield* service.screenshot(input).pipe(Effect.flip);
 
@@ -248,6 +250,10 @@ it.effect("computer_screenshot rejects combining display and global region", () 
     assert.equal(calls.length, 0);
   }),
 );
+
+it("computer_screenshot rejects unsupported secondary display indexes", () => {
+  assert.isFalse(Schema.is(ComputerScreenshotInput)({ display: 2 }));
+});
 
 it.effect("computer_screenshot removes its temporary file after the documented TTL", () =>
   Effect.gen(function* () {
@@ -301,7 +307,7 @@ it.effect("computer_screen_info uses Quartz display coordinates instead of backi
     assert.notInclude(call.args[3]!, "CGDisplayPixelsWide");
     assert.notInclude(call.args[3]!, "CGDisplayPixelsHigh");
     assert.include(call.args[3]!, "Number(frame.size.width)");
-    assert.deepEqual(scriptArgsAfterSeparator(call), ["1"]);
+    assert.deepEqual(scriptArgsAfterSeparator(call), []);
   }),
 );
 
