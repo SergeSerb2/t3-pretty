@@ -19,6 +19,7 @@ import { LoadingScreen } from "../../components/LoadingScreen";
 import { resolveFileSelectionNavigationAction } from "../../lib/adaptive-navigation";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
@@ -50,6 +51,7 @@ import {
   isImagePreviewFile,
   isMarkdownPreviewFile,
   isSvgImagePreviewFile,
+  normalizeMobileFileRoutePath,
 } from "./filePath";
 import { useWorkspaceFileAssetUrl } from "./workspaceFileAssetUrl";
 
@@ -61,14 +63,6 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   }
 
   return value ?? null;
-}
-
-function normalizeRoutePath(value: string | string[] | undefined): string | null {
-  const path = Array.isArray(value) ? value.join("/") : value;
-  if (path === undefined || path.trim().length === 0) {
-    return null;
-  }
-  return path;
 }
 
 function normalizeRouteLine(value: string | null): number | null {
@@ -242,7 +236,10 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
   const navigation = useNavigation();
   const { fileInspector, layout, panes, showAuxiliaryPane, togglePrimarySidebar } =
     useAdaptiveWorkspaceLayout();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQueryState] = useState("");
+  const setSearchQuery = useCallback((query: string) => {
+    setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
+  }, []);
   const isAndroid = Platform.OS === "android";
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
   const iconColor = String(useThemeColor("--color-icon-muted"));
@@ -469,7 +466,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const { fileInspector, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const iconColor = useThemeColor("--color-icon");
   const params = props.route.params;
-  const relativePath = normalizeRoutePath(params.path);
+  const relativePath = normalizeMobileFileRoutePath(params.path);
   const targetLine = normalizeRouteLine(firstRouteParam(params.line));
   const { cwd, environmentId, projectName, selectedThread, threadId } = useThreadFilesWorkspace(
     props.route.params,

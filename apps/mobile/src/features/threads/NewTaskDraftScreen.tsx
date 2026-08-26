@@ -782,12 +782,15 @@ export function NewTaskDraftScreen(props: {
         })),
       );
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: flow.attachments.length,
         });
-        if (images.length > 0) {
-          flow.appendAttachments(images);
+        if (result.images.length > 0) {
+          flow.appendAttachments(result.images);
+        }
+        if (result.error) {
+          Alert.alert("Could not attach image", result.error);
         }
       } catch (error) {
         console.error("[native paste] error converting images", error);

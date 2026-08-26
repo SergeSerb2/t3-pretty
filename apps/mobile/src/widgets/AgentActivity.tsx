@@ -572,7 +572,7 @@ function createAgentActivityFactory() {
       getInstances() {
         return [];
       },
-    } as ReturnType<typeof createLiveActivity<AgentActivityProps>>;
+    } as unknown as ReturnType<typeof createLiveActivity<AgentActivityProps>>;
   }
 }
 

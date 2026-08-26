@@ -29,6 +29,38 @@ export const WINDOWS_GPU_STABILITY_SWITCHES: ReadonlyArray<readonly [string, str
   ["disable-gpu-process-crash-limit"],
   ["disable-features", "CalculateNativeWinOcclusion"],
 ];
+const EARLY_DESKTOP_SETTINGS_MAX_BYTES = 1024 * 1024;
+
+function readEarlyDesktopSettings(path: string): string {
+  const descriptor = NodeFS.openSync(path, "r");
+  try {
+    const size = NodeFS.fstatSync(descriptor).size;
+    if (size > EARLY_DESKTOP_SETTINGS_MAX_BYTES) {
+      throw new Error("Desktop settings exceed the supported pre-ready size.");
+    }
+
+    const bytes = Buffer.allocUnsafe(size);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const bytesRead = NodeFS.readSync(
+        descriptor,
+        bytes,
+        offset,
+        bytes.byteLength - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const probe = Buffer.allocUnsafe(1);
+    if (NodeFS.readSync(descriptor, probe, 0, 1, offset) > 0) {
+      throw new Error("Desktop settings changed during the pre-ready read.");
+    }
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    NodeFS.closeSync(descriptor);
+  }
+}
 
 export function applyWindowsGpuStabilitySwitches(
   commandLine: DesktopPreReadyCommandLineWriter,
@@ -60,7 +92,7 @@ export const resolveEarlyLinuxElectronOptionsFromProcess =
       env: process.env,
       homeDirectory: NodeOS.homedir(),
       joinPath: NodePath.posix.join,
-      readFileString: (path) => NodeFS.readFileSync(path, "utf8"),
+      readFileString: readEarlyDesktopSettings,
     });
 
 export class DesktopPreReadyElectronOptions extends Context.Service<

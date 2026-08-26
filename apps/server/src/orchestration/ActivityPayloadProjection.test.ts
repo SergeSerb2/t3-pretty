@@ -210,6 +210,102 @@ describe("projectActivityPayload", () => {
     expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
   });
 
+  it("normalizes small Claude MCP input to arguments for client rendering", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__preview_click",
+          input: { locator: "role=button[name='Send']" },
+          result: { content: [{ type: "text", text: "{}" }] },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.arguments).toEqual({ locator: "role=button[name='Send']" });
+    expect(data.input).toBeUndefined();
+  });
+
+  it("drops oversized Codex MCP arguments instead of shipping them", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_evaluate",
+            server: "t3-code",
+            status: "completed",
+            arguments: { expression: "e".repeat(50_000) },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.tool).toBe("preview_evaluate");
+    expect(item.arguments).toBeUndefined();
+  });
+
+  it("caps reconstructed MCP arguments at the wire budget", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              extra: "x".repeat(3_900),
+              more: "y".repeat(3_900),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    const argumentsValue = item.arguments as Record<string, unknown>;
+    expect(argumentsValue.locator).toBe("role=textbox[name='Prompt']");
+    expect(argumentsValue.text).toBe("hello");
+    expect(argumentsValue.more).toBeUndefined();
+    expect(JSON.stringify(argumentsValue).length).toBeLessThanOrEqual(4_000);
+  });
+
+  it("keeps locator and text when only an MCP argument field is oversized", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              expression: "e".repeat(50_000),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.arguments).toEqual({
+      locator: "role=textbox[name='Prompt']",
+      text: "hello",
+    });
+  });
+
   it("keeps first-line summary semantics across MCP text blocks", () => {
     const projected = projectActivityPayload(
       activity({

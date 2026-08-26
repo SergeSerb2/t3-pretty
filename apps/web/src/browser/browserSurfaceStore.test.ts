@@ -172,4 +172,32 @@ describe("browserSurfaceStore", () => {
       visible: false,
     });
   });
+
+  it("forgets presentation state when a runtime tab disappears", () => {
+    const removedTabId = "removed-browser-surface";
+    const retainedTabId = "retained-browser-surface";
+    useBrowserSurfaceStore.getState().presentContent(removedTabId, {
+      x: 0,
+      y: 0,
+      width: 1_280,
+      height: 720,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    useBrowserSurfaceStore.getState().presentContent(retainedTabId, {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 480,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+
+    useBrowserSurfaceStore.getState().remove(removedTabId);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[removedTabId]).toBeUndefined();
+    expect(useBrowserSurfaceStore.getState().byTabId[retainedTabId]).toBeDefined();
+  });
 });

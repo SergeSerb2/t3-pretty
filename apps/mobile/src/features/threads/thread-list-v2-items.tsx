@@ -3,11 +3,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import {
-  canSnooze,
-  resolveSnoozePresets,
-  type ChangeRequestSettleSource,
-} from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
 import {
   memo,
@@ -52,10 +48,12 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import {
+  resolveThreadListV2ChangeRequestState,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
   resolveThreadListV2SwipeActions,
+  type ThreadListV2ChangeRequestState,
   type ThreadListV2Status,
 } from "./threadListV2";
 import { threadListV2CardPlateStyle } from "./threadListV2Chrome";
@@ -245,6 +243,7 @@ const SNOOZE_ACCENT_DARK = "#60a5fa";
 const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
   readonly kind: "snoozed" | "settled";
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
@@ -268,8 +267,9 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
       }
       accessibilityLabel={props.count === 1 ? `1 ${noun} thread` : `${props.count} ${noun} threads`}
       accessibilityRole="button"
-      accessibilityState={{ expanded: props.expanded }}
+      accessibilityState={{ disabled: props.disabled, expanded: props.expanded }}
       className="w-full"
+      disabled={props.disabled}
       onPress={props.onToggle}
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
@@ -320,6 +320,7 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(props: {
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
@@ -330,6 +331,7 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
 
 export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledShelfHeader(props: {
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
@@ -541,7 +543,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       merge and close rules. Mirrors web's onChangeRequestState. */
   readonly onChangeRequestState?: (
     threadKey: string,
-    changeRequest: ChangeRequestSettleSource | null,
+    changeRequest: ThreadListV2ChangeRequestState | null,
   ) => void;
   readonly projectCwd?: string | null;
   readonly searchMatch?: EnvironmentThreadSearchMatch;
@@ -576,11 +578,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const prUpdatedAt = pr?.updatedAt ?? null;
   const threadKey = `${thread.environmentId}:${thread.id}`;
   useEffect(() => {
-    onChangeRequestState?.(
-      threadKey,
-      prState === null ? null : { state: prState, updatedAt: prUpdatedAt },
-    );
-  }, [onChangeRequestState, prState, prUpdatedAt, threadKey]);
+    const changeRequest = resolveThreadListV2ChangeRequestState({
+      linkedPullRequest: thread.linkedPullRequest,
+      state: prState,
+      updatedAt: prUpdatedAt,
+    });
+    if (changeRequest === undefined) return;
+    onChangeRequestState?.(threadKey, changeRequest);
+  }, [onChangeRequestState, prState, prUpdatedAt, thread.linkedPullRequest, threadKey]);
 
   const departure = useThreadDepartureAnimation(threadKey, {
     snoozed: snoozedRow,

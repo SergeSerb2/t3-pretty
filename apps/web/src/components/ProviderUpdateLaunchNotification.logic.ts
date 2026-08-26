@@ -11,6 +11,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { compareIsoDateTimes } from "../lib/threadSort";
 
 export type ProviderUpdateCandidate = ServerProvider & {
   readonly versionAdvisory: NonNullable<ServerProvider["versionAdvisory"]> & {
@@ -77,7 +78,7 @@ function chooseRepresentativeProvider(
   if (current.instanceId === defaultInstanceId) {
     return current;
   }
-  return candidate.checkedAt.localeCompare(current.checkedAt) >= 0 ? candidate : current;
+  return compareIsoDateTimes(candidate.checkedAt, current.checkedAt) >= 0 ? candidate : current;
 }
 
 function dedupeProvidersByDriver<T extends ServerProvider>(providers: ReadonlyArray<T>): T[] {
@@ -98,7 +99,7 @@ function dedupeProvidersByInstanceId<T extends ServerProvider>(providers: Readon
 
   for (const provider of providers) {
     const current = latestProviderByInstanceId.get(provider.instanceId);
-    if (!current || provider.checkedAt.localeCompare(current.checkedAt) >= 0) {
+    if (!current || compareIsoDateTimes(provider.checkedAt, current.checkedAt) >= 0) {
       latestProviderByInstanceId.set(provider.instanceId, provider);
     }
   }
@@ -396,7 +397,7 @@ function isRecentTerminalProvider(
     return true;
   }
   const finishedAt = getUpdateFinishedAt(provider);
-  return finishedAt !== null && finishedAt >= visibleAfterIso;
+  return finishedAt !== null && compareIsoDateTimes(finishedAt, visibleAfterIso) >= 0;
 }
 
 function latestFinishedAtForProviders(providers: ReadonlyArray<ServerProvider>): string | null {
@@ -405,7 +406,7 @@ function latestFinishedAtForProviders(providers: ReadonlyArray<ServerProvider>):
     if (finishedAt === null) {
       return latest;
     }
-    return latest === null || finishedAt > latest ? finishedAt : latest;
+    return latest === null || compareIsoDateTimes(finishedAt, latest) > 0 ? finishedAt : latest;
   }, null);
 }
 
@@ -531,7 +532,7 @@ export function getProviderUpdateSidebarPillView(
               : succeededProviders;
         const leftFinishedAt = latestFinishedAtForProviders(leftProviders) ?? "";
         const rightFinishedAt = latestFinishedAtForProviders(rightProviders) ?? "";
-        return rightFinishedAt.localeCompare(leftFinishedAt);
+        return compareIsoDateTimes(rightFinishedAt, leftFinishedAt);
       })
       .find((candidate) => !options?.dismissedKeys?.has(candidate.key)) ?? null
   );

@@ -129,6 +129,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "key: publish-cli");
     assert.include(pipeline, "CLI tarball");
     assert.include(pipeline, "depends_on: macos-dmg");
+    assert.match(pipeline, /key: publish-cli[\s\S]*?build\.source != "schedule"/u);
     const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
     assert.include(publishCli, "cli.ts pack");
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
@@ -142,6 +143,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
     assert.include(publishCli, "https://vite.plus");
+    const secretsHelper = NodeFS.readFileSync(
+      NodePath.resolve(here, "load-buildkite-secrets.sh"),
+      "utf8",
+    );
+    assert.include(secretsHelper, ".local/share/vite-plus/bin");
     const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
     assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
     assert.include(installCli, "turn on T3 Connect");
@@ -163,7 +169,10 @@ describe("T3 Pretty release runner placement", () => {
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
-    assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.equal(
+      (pipeline.match(/concurrency_group: "t3-pretty\/apple-signing"/g) || []).length,
+      2,
+    );
     assert.include(pipeline, "priority: 20");
     assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
@@ -184,6 +193,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
     assert.include(mobileRelease, "Xcode-beta.app");
+    assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
+    assert.include(mobileRelease, "brew install cocoapods");
+    assert.include(mobileRelease, "brew install fastlane");
     assert.include(mobileRelease, "security-eas-local-keychain");
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
     assert.include(mobileRelease, "did not write should_build");
@@ -252,6 +264,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(macosAgent, "macos-review-only-hook.sh");
     assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
     assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
+    assert.include(macosAgent, "HOMEBREW_NO_ASK");
+    assert.include(macosAgent, "HOMEBREW_NO_AUTO_UPDATE");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
     assert.include(macosAgent, "refresh-origin-git-credentials.sh");
     const persistHook = NodeFS.readFileSync(
@@ -264,6 +278,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
     assert.include(persistHook, "origin_cli_helper_ready");
     assert.include(persistHook, "macos-review-only-hook.sh");
+    assert.include(persistHook, "refresh-origin-git-credentials.sh");
+    assert.include(persistHook, 'mkdir -p "$HOME/.local/bin"');
     assert.include(
       persistHook,
       'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',

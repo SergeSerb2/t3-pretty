@@ -1,5 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { RelayEnvironmentStatusScope } from "@t3tools/contracts/relay";
+import { DPOP_METHOD_MAX_LENGTH, DPOP_URL_MAX_LENGTH } from "@t3tools/shared/dpopCommon";
+import { SECURE_RELAY_URL_MAX_LENGTH } from "@t3tools/shared/relayUrl";
 import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -39,6 +41,21 @@ function clerkToken(subject: string, nonce: string): string {
 }
 
 describe("ManagedRelayClient", () => {
+  it("bounds DPoP proof input retained by diagnostics", () => {
+    const error = ManagedRelay.makeManagedRelayDpopProofCreationError(
+      {
+        method: "M".repeat(
+          DPOP_METHOD_MAX_LENGTH + 1,
+        ) as ManagedRelay.ManagedRelayDpopProofInput["method"],
+        url: "u".repeat(DPOP_URL_MAX_LENGTH + 1),
+      },
+      new Error("proof failed"),
+    );
+
+    expect(error.method).toHaveLength(DPOP_METHOD_MAX_LENGTH);
+    expect(error.url).toHaveLength(DPOP_URL_MAX_LENGTH);
+  });
+
   it.effect("owns tracing at service and implementation boundaries", () => {
     const spanNames: Array<string> = [];
     const tracer = Tracer.make({
@@ -129,6 +146,25 @@ describe("ManagedRelayClient", () => {
       });
       expect(requestCount).toBe(0);
     }).pipe(Effect.provide(managedRelayTestLayer(fetchFn, "http://relay.example.test")));
+  });
+
+  it.effect("bounds an oversized invalid relay URL retained by the disabled client", () => {
+    const relayUrl = `https://relay.example.test/${"a".repeat(SECURE_RELAY_URL_MAX_LENGTH)}`;
+    const fetchFn = (() => Promise.resolve(Response.json({}))) satisfies typeof globalThis.fetch;
+
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      const error = yield* relayClient
+        .listEnvironments({ clerkToken: "clerk-token" })
+        .pipe(Effect.flip);
+
+      expect(relayClient.relayUrl).toHaveLength(SECURE_RELAY_URL_MAX_LENGTH);
+      expect(error._tag).toBe("ManagedRelayUrlInvalidError");
+      if (error._tag !== "ManagedRelayUrlInvalidError") {
+        throw new Error(`Unexpected relay error: ${error._tag}`);
+      }
+      expect(error.relayUrl).toHaveLength(SECURE_RELAY_URL_MAX_LENGTH);
+    }).pipe(Effect.provide(managedRelayTestLayer(fetchFn, relayUrl)));
   });
 
   it.effect("reuses usable DPoP tokens and refreshes cleared or expiring cache entries", () => {

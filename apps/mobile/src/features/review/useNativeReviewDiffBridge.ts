@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { NativeSyntheticEvent } from "react-native";
 
 import { createNativeReviewDiffTheme, type NativeReviewDiffData } from "./nativeReviewDiffAdapter";
@@ -34,6 +34,10 @@ export function useNativeReviewDiffBridge(input: {
   const [collapsedCommentIds, setCollapsedCommentIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+
+  useEffect(() => {
+    setCollapsedCommentIds(new Set());
+  }, [sectionId, threadKey]);
 
   const theme = useMemo(() => createNativeReviewDiffTheme(scheme, themeId), [scheme, themeId]);
   const rowsJson = useMemo(() => JSON.stringify(data.rows), [data.rows]);

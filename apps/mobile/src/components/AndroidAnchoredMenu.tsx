@@ -282,10 +282,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
       {levelActions.map((row, index) => {
         if (row.type === "header") {
           return (
-            <View
-              key={`header-${row.title}-${index}`}
-              className={cn("px-3.5 pb-1", index === 0 ? "pt-2.5" : "pt-3")}
-            >
+            <View key={row.key} className={cn("px-3.5 pb-1", index === 0 ? "pt-2.5" : "pt-3")}>
               <Text className="text-3xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
                 {row.title}
               </Text>
@@ -364,7 +361,12 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
 
   const overlayMenu =
     !placeable || local === null ? null : (
-      <Animated.View entering={MENU_ENTERING} style={menuFrameStyle}>
+      <Animated.View
+        accessibilityViewIsModal
+        entering={MENU_ENTERING}
+        onAccessibilityEscape={close}
+        style={menuFrameStyle}
+      >
         {Platform.OS === "ios" && isLiquidGlassSupported ? (
           <View style={{ backgroundColor: chromeFill, flexGrow: 1 }}>
             <LiquidGlassView

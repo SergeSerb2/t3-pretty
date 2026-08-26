@@ -29,6 +29,7 @@ import type {
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
+import { PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
@@ -108,6 +109,10 @@ const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
+const MAX_ACCESSIBILITY_TREE_DEPTH = 12;
+const MAX_ACCESSIBILITY_TREE_NODES = PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES;
+const MAX_ACCESSIBILITY_TREE_BYTES = 1_000_000;
+const MAX_ACCESSIBILITY_NODE_BYTES = 64_000;
 const RECORDING_FRAME_INTERVAL_MS = Math.ceil(1_000 / 12);
 const RECORDING_JPEG_QUALITY = 80;
 // Longest edge of a recording/PiP frame; bounds both screencast and fallback encodes.
@@ -135,7 +140,9 @@ const HANDLED_DEBUGGER_EVENTS: ReadonlySet<string> = new Set([
   "Network.loadingFinished",
 ]);
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
-const AGENT_CURSOR_MOVE_MS = 160;
+// Must exceed the renderer cursor's longest glide (280ms) so the click
+// ripple fires after the cursor has visibly arrived at the target.
+const AGENT_CURSOR_MOVE_MS = 300;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
 const encodeUnknownJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
@@ -157,6 +164,46 @@ const DEFAULT_ANNOTATION_THEME: DesktopPreviewAnnotationTheme = {
   fontSans: "system-ui, sans-serif",
   fontMono: "ui-monospace, monospace",
 };
+
+export function boundAccessibilityTree(
+  value: unknown,
+): PreviewAutomationSnapshot["accessibilityTree"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return { nodes: [] };
+  const tree = value as Record<string, unknown>;
+  const nodes = tree["nodes"];
+  if (!Array.isArray(nodes)) return { nodes: [] };
+  const retainedNodes: Array<unknown> = [];
+  const candidateCount = Math.min(nodes.length, MAX_ACCESSIBILITY_TREE_NODES);
+  let retainedBytes = 0;
+  let truncatedNodeCount = nodes.length - candidateCount;
+  for (let index = 0; index < candidateCount; index += 1) {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(nodes[index]);
+    } catch {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (serialized === undefined) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    const nodeBytes = Buffer.byteLength(serialized, "utf8");
+    if (nodeBytes > MAX_ACCESSIBILITY_NODE_BYTES) {
+      truncatedNodeCount += 1;
+      continue;
+    }
+    if (retainedBytes + nodeBytes > MAX_ACCESSIBILITY_TREE_BYTES) {
+      truncatedNodeCount += candidateCount - index;
+      break;
+    }
+    retainedBytes += nodeBytes;
+    retainedNodes.push(nodes[index]);
+  }
+  return truncatedNodeCount === 0
+    ? { nodes: retainedNodes }
+    : { nodes: retainedNodes, t3TruncatedNodeCount: truncatedNodeCount };
+}
 
 export const buildPreviewPictureInPictureDataUrl = (): string => {
   const html = `<!doctype html>
@@ -3343,7 +3390,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         // The disable must run even after human input bumps the control
         // epoch mid-snapshot, or the AX tree stays enabled for the session.
         send("Accessibility.enable").pipe(
-          Effect.andThen(send("Accessibility.getFullAXTree")),
+          Effect.andThen(
+            send("Accessibility.getFullAXTree", { depth: MAX_ACCESSIBILITY_TREE_DEPTH }),
+          ),
           Effect.ensuring(sendCleanup("Accessibility.disable").pipe(Effect.ignore)),
         ),
         attemptPromise(
@@ -3365,7 +3414,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const browserDiagnostics = diagnostics.get(wc.id);
       return {
         ...page,
-        accessibilityTree: accessibility,
+        accessibilityTree: boundAccessibilityTree(accessibility),
         consoleEntries: [...(browserDiagnostics?.consoleEntries ?? [])],
         networkEntries: [...(browserDiagnostics?.networkEntries ?? [])],
         actionTimeline: [...(timelines.get(tabId) ?? [])],
@@ -3455,6 +3504,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const emitAutomationPointer = Effect.fn("PreviewManager.emitAutomationPointer")(function* (
+    tabId: string,
+    phase: DesktopPreviewPointerEvent["phase"],
+    point: { readonly x?: number; readonly y?: number },
+  ) {
+    // Cursor emission is presentation-only; a page script returning odd
+    // coordinates must never fail or misplace the pointer overlay.
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    const sequence = yield* nextCounter(pointerSequenceRef);
+    const createdAt = yield* currentIso;
+    yield* emitPointerEvent({ tabId, phase, x: point.x!, y: point.y!, sequence, createdAt });
+  });
+
   const performAutomationClick = Effect.fn("PreviewManager.performAutomationClick")(function* (
     tabId: string,
     input: PreviewAutomationClickInput,
@@ -3477,25 +3539,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         viewportHeight: viewport.height,
       });
     }
-    const moveSequence = yield* nextCounter(pointerSequenceRef);
-    const moveCreatedAt = yield* currentIso;
-    yield* emitPointerEvent({
-      tabId,
-      phase: "move",
-      ...point,
-      sequence: moveSequence,
-      createdAt: moveCreatedAt,
-    });
+    yield* emitAutomationPointer(tabId, "move", point);
     yield* Effect.sleep(AGENT_CURSOR_MOVE_MS);
-    const clickSequence = yield* nextCounter(pointerSequenceRef);
-    const clickCreatedAt = yield* currentIso;
-    yield* emitPointerEvent({
-      tabId,
-      phase: "click",
-      ...point,
-      sequence: clickSequence,
-      createdAt: clickCreatedAt,
-    });
+    yield* emitAutomationPointer(tabId, "click", point);
     yield* Effect.sleep(AGENT_CURSOR_CLICK_LEAD_MS);
     yield* expectAgentInput(tabId, { kind: "pointer", ...point, button: 0 });
     yield* send("Input.dispatchMouseEvent", {
@@ -3537,7 +3583,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       input.text,
     );
     const result = yield* evaluateWithDebugger<
-      | { ok: true }
+      | { ok: true; x: number; y: number }
       | { invalidSelector: true; message: string }
       | { notEditable: true }
       | { notFound: true }
@@ -3596,7 +3642,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             }
             if (!inserted) return { notEditable: true };
             element.dispatchEvent(new Event("change", { bubbles: true }));
-            return { ok: true };
+            const rect = element.getBoundingClientRect();
+            return {
+              ok: true,
+              x: Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth),
+              y: Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight),
+            };
           } catch (error) {
             return { invalidSelector: true, message: String(error) };
           }
@@ -3625,7 +3676,41 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
+    yield* emitAutomationPointer(tabId, "type", result);
   });
+
+  const emitFocusedElementPointer = Effect.fn("PreviewManager.emitFocusedElementPointer")(
+    function* (
+      tabId: string,
+      send: SendCommand,
+      phase: Extract<DesktopPreviewPointerEvent["phase"], "press">,
+    ) {
+      const focusedPoint = yield* evaluateWithDebugger<{
+        readonly x?: number;
+        readonly y?: number;
+      }>(
+        tabId,
+        send,
+        `(() => {
+        const element = document.activeElement;
+        const rect =
+          element && element !== document.body && element !== document.documentElement
+            ? element.getBoundingClientRect()
+            : null;
+        return {
+          x: rect
+            ? Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth)
+            : window.innerWidth / 2,
+          y: rect
+            ? Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight)
+            : window.innerHeight / 2,
+        };
+      })()`,
+        true,
+      ).pipe(Effect.orElseSucceed(() => ({})));
+      yield* emitAutomationPointer(tabId, phase, focusedPoint ?? {});
+    },
+  );
 
   const performAutomationType = Effect.fn("PreviewManager.performAutomationType")(function* (
     tabId: string,
@@ -3656,6 +3741,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     sendCleanup: SendCommand,
   ) {
     yield* prepareAutomationInput(send, false);
+    yield* emitFocusedElementPointer(tabId, send, "press");
     const keySequence = makePreviewAutomationKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });
@@ -3722,7 +3808,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       ? yield* encodeJson({ operation: "automationScroll.encodeLocator", tabId }, locator)
       : null;
     const result = yield* evaluateWithDebugger<
-      { ok: true } | { invalidSelector: true; message: string } | { notFound: true }
+      | { ok: true; x: number; y: number }
+      | { invalidSelector: true; message: string }
+      | { notFound: true }
     >(
       tabId,
       send,
@@ -3731,7 +3819,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const target = ${locatorJson ? `(() => { const injected = globalThis.__t3PlaywrightInjected; return injected.querySelector(injected.parseSelector(${locatorJson}), document, true); })()` : "window"};
           if (!target) return { notFound: true };
           target.scrollBy({ left: ${input.deltaX ?? 0}, top: ${input.deltaY ?? 0}, behavior: "instant" });
-          return { ok: true };
+          const rect = target === window ? null : target.getBoundingClientRect();
+          return {
+            ok: true,
+            x: rect ? Math.min(Math.max(rect.left + rect.width / 2, 0), window.innerWidth) : window.innerWidth / 2,
+            y: rect ? Math.min(Math.max(rect.top + rect.height / 2, 0), window.innerHeight) : window.innerHeight / 2,
+          };
         } catch (error) {
           return { invalidSelector: true, message: String(error) };
         }
@@ -3754,6 +3847,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ...automationSelectorDiagnostics(input),
       });
     }
+    yield* emitAutomationPointer(tabId, "scroll", result);
   });
 
   const automationScroll = Effect.fn("PreviewManager.automationScroll")(function* (

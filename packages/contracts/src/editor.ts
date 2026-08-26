@@ -69,9 +69,20 @@ export const EDITORS = [
 export const EditorId = Schema.Literals(EDITORS.map((e) => e.id));
 export type EditorId = typeof EditorId.Type;
 
+export const EDITOR_LAUNCH_PATH_MAX_LENGTH = 32 * 1024;
+export const REMOTE_OPEN_TARGET_HOST_MAX_LENGTH = 253;
+export const REMOTE_OPEN_TARGET_MAX_COUNT = 2;
+
+export const FileManagerRevealKind = Schema.Literals(["finder", "file-explorer", "files"]);
+export type FileManagerRevealKind = typeof FileManagerRevealKind.Type;
+
 export const LaunchEditorInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(EDITOR_LAUNCH_PATH_MAX_LENGTH)),
   editor: EditorId,
+  /** Reveal (select) `cwd` in the file manager instead of opening it. Only
+      honored by the "file-manager" editor; clients must check the server's
+      `shellRevealInFileManager` config flag before sending this. */
+  reveal: Schema.optional(Schema.Boolean),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
 
@@ -119,7 +130,7 @@ export type RemoteOpenTargetKind = typeof RemoteOpenTargetKind.Type;
 
 export const RemoteOpenTarget = Schema.Struct({
   kind: RemoteOpenTargetKind,
-  host: TrimmedNonEmptyString,
+  host: TrimmedNonEmptyString.check(Schema.isMaxLength(REMOTE_OPEN_TARGET_HOST_MAX_LENGTH)),
 });
 export type RemoteOpenTarget = typeof RemoteOpenTarget.Type;
 

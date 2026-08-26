@@ -5,7 +5,6 @@ import type {
   PullRequestRef,
 } from "@t3tools/contracts";
 
-import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -14,10 +13,12 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   PullRequestCheckStatusIcon,
+  pullRequestCheckListKeys,
   pullRequestCheckStatusLabel,
   pullRequestChecksStatePresentation,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+import { openPullRequestLinkOnHost } from "./pullRequestLinkContextMenu";
 
 /**
  * The checks behind the rollup, for a row that only carries the rollup. Mounted by the popup, so
@@ -51,12 +52,11 @@ function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
   if (checks.length === 0) {
     return <p className="text-muted-foreground text-xs">No checks reported</p>;
   }
+  const checkKeys = pullRequestCheckListKeys(checks);
   return (
     <ul className="flex flex-col gap-1">
-      {/* Keyed by position as well as by name: the host is the one that decides how many runs
-          share a name, and a repeated key is a rendering fault rather than a wrong list. */}
       {checks.map((check, index) => (
-        <li key={`${index}:${check.name}`} className="flex items-center gap-2 text-xs">
+        <li key={checkKeys[index]!} className="flex items-center gap-2 text-xs">
           <PullRequestCheckStatusIcon status={check.status} />
           <Tooltip>
             <TooltipTrigger
@@ -71,7 +71,7 @@ function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
             <button
               type="button"
               className="shrink-0 text-primary hover:underline"
-              onClick={() => void readLocalApi()?.shell.openExternal(check.url ?? "")}
+              onClick={() => void openPullRequestLinkOnHost(check.url ?? "")}
             >
               Details
             </button>

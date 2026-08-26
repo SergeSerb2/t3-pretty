@@ -32,20 +32,23 @@ archive_tip="$(git rev-parse --verify "refs/remotes/github/$archive_branch" 2>/d
 
 if [[ -n "$github_tip" ]]; then
   if [[ -n "$archive_tip" ]]; then
+    if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+      git fetch --unshallow origin
+    fi
     git merge-base --is-ancestor "$github_tip" "$local_tip" || {
       echo "GitHub main diverged from Origin; refusing mirror" >&2; exit 1;
     }
   else
     # Preserve the pre-mirror GitHub tip exactly once before replacing main.
-    git push --force-with-lease="refs/heads/$archive_branch:" github "$github_tip:refs/heads/$archive_branch"
+    git push --no-thin --force-with-lease="refs/heads/$archive_branch:" github "$github_tip:refs/heads/$archive_branch"
   fi
 fi
 
 if [[ -n "$github_tip" ]]; then
-  git push --force-with-lease="refs/heads/main:$github_tip" github "$local_tip:refs/heads/main"
+  git push --no-thin --force-with-lease="refs/heads/main:$github_tip" github "$local_tip:refs/heads/main"
 else
-  git push github "$local_tip:refs/heads/main"
+  git push --no-thin github "$local_tip:refs/heads/main"
 fi
 while IFS= read -r tag; do
-  [[ "$tag" =~ $release_tag_pattern ]] && git push github "refs/tags/$tag:refs/tags/$tag"
+  [[ "$tag" =~ $release_tag_pattern ]] && git push --no-thin github "refs/tags/$tag:refs/tags/$tag"
 done < <(git for-each-ref --format='%(refname:strip=2)' refs/tags)

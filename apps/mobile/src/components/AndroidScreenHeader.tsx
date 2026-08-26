@@ -27,6 +27,7 @@ export function AndroidHeaderIconButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true }}
       disabled={props.disabled}
       hitSlop={8}
       onPress={props.onPress}

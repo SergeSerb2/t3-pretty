@@ -1,7 +1,11 @@
-import type {
-  AuthClientMetadata,
-  AuthClientMetadataDeviceType,
-  AuthClientPresentationMetadata,
+import {
+  AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH,
+  AUTH_CLIENT_LABEL_MAX_LENGTH,
+  AUTH_CLIENT_OS_MAX_LENGTH,
+  AUTH_CLIENT_USER_AGENT_MAX_LENGTH,
+  type AuthClientMetadata,
+  type AuthClientMetadataDeviceType,
+  type AuthClientPresentationMetadata,
 } from "@t3tools/contracts";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as NodeCrypto from "node:crypto";
@@ -89,16 +93,22 @@ export function timingSafeEqualBase64Url(left: string, right: string): boolean {
   return NodeCrypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function normalizeNonEmptyString(value: string | null | undefined): string | undefined {
+function normalizeNonEmptyString(
+  value: string | null | undefined,
+  maxLength?: number,
+): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return maxLength === undefined ? trimmed : trimmed.slice(0, maxLength);
 }
 
 function normalizeIpAddress(value: string | null | undefined): string | undefined {
-  const normalized = normalizeNonEmptyString(value);
+  const normalized = normalizeNonEmptyString(value, AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH);
   if (!normalized) {
     return undefined;
   }
@@ -169,12 +179,17 @@ export function deriveAuthClientMetadata(input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presented?: AuthClientPresentationMetadata;
 }): AuthClientMetadata {
-  const userAgent = normalizeNonEmptyString(input.request.headers["user-agent"]);
+  const userAgent = normalizeNonEmptyString(
+    input.request.headers["user-agent"],
+    AUTH_CLIENT_USER_AGENT_MAX_LENGTH,
+  );
   const ipAddress = readRemoteAddressFromSource(input.request.source);
-  const os = input.presented?.os ?? inferOs(userAgent);
+  const label = normalizeNonEmptyString(input.presented?.label, AUTH_CLIENT_LABEL_MAX_LENGTH);
+  const os =
+    normalizeNonEmptyString(input.presented?.os, AUTH_CLIENT_OS_MAX_LENGTH) ?? inferOs(userAgent);
   const browser = inferBrowser(userAgent);
   return {
-    ...(input.presented?.label ? { label: input.presented.label } : {}),
+    ...(label ? { label } : {}),
     ...(ipAddress ? { ipAddress } : {}),
     ...(userAgent ? { userAgent } : {}),
     deviceType: input.presented?.deviceType ?? inferDeviceType(userAgent),

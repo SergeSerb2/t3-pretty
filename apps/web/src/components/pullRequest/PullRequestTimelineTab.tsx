@@ -18,10 +18,9 @@ import {
   MessageSquareIcon,
   PencilIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -52,6 +51,7 @@ import {
   pullRequestReviewOutcomeStaleLabel,
   pullRequestReviewOutcomeToneClassName,
 } from "./pullRequestPresentation";
+import { openPullRequestLinkOnHost } from "./pullRequestLinkContextMenu";
 
 /** What every comment on the timeline needs to react; only the subject differs between them. */
 interface ReactionSurface {
@@ -61,11 +61,21 @@ interface ReactionSurface {
   readonly onRefresh: () => void;
 }
 
-function TimelineBody({ body, markdown, cwd }: { body: string; markdown: boolean; cwd: string }) {
+function TimelineBody({
+  body,
+  markdown,
+  cwd,
+  environmentId,
+}: {
+  body: string;
+  markdown: boolean;
+  cwd: string;
+  environmentId: EnvironmentId;
+}) {
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} cwd={cwd} />
+        <PullRequestMarkdown text={body} cwd={cwd} environmentId={environmentId} />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
@@ -176,26 +186,48 @@ function ConversationCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const mountedRef = useRef(false);
   const updateComment = useAtomCommand(pullRequestEnvironment.updateComment, {
     reportFailure: false,
   });
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const save = async (body: string) => {
     // A review's own summary is not a kind any host rewrites, which is why `editable` is never
     // one; the check is here because the comment's own type still allows it.
-    if (editable === null || saving || editable.kind === "review") return;
+    if (editable === null || savingRef.current || editable.kind === "review") return;
+    savingRef.current = true;
     setSaving(true);
-    const result = await updateComment({
-      environmentId: reactions.environmentId,
-      input: { ...reactions.reference, commentId: editable.id, kind: editable.kind, body },
-    });
-    setSaving(false);
-    if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Could not save the comment" });
-      return;
+    try {
+      const result = await updateComment({
+        environmentId: reactions.environmentId,
+        input: { ...reactions.reference, commentId: editable.id, kind: editable.kind, body },
+      });
+      if (!mountedRef.current) return;
+      if (result._tag === "Failure") {
+        toastManager.add({ type: "error", title: "Could not save the comment" });
+        return;
+      }
+      setEditing(false);
+      reactions.onRefresh();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "Could not save the comment",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      savingRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
-    setEditing(false);
-    reactions.onRefresh();
   };
 
   return (
@@ -243,6 +275,7 @@ function ConversationCard({
           <PullRequestMarkdownEditor
             value={editable.body}
             cwd={cwd}
+            environmentId={reactions.environmentId}
             label="Edit comment"
             saving={saving}
             onSave={(body) => void save(body)}
@@ -251,7 +284,12 @@ function ConversationCard({
         </div>
       ) : event.body ? (
         <div className="px-2 pb-2">
-          <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+          <TimelineBody
+            body={event.body}
+            markdown={event.markdown}
+            cwd={cwd}
+            environmentId={reactions.environmentId}
+          />
         </div>
       ) : null}
       {reactions.canReact || event.reactions.length > 0 ? (
@@ -340,7 +378,13 @@ function ConversationGroup({
                     // Named with the pull request too: a remark's id is the host's own, and two
                     // pull requests can hand out the same one — which would leave one card's open
                     // editor standing over the other's remark.
-                    key={`${reactions.reference.projectId}#${reactions.reference.number}:${event.id}`}
+                    key={JSON.stringify([
+                      reactions.environmentId,
+                      reactions.reference.projectId,
+                      reactions.reference.repository,
+                      reactions.reference.number,
+                      event.id,
+                    ])}
                     event={event}
                     editable={editable.get(event.id) ?? null}
                     cwd={cwd}
@@ -515,7 +559,12 @@ function ReviewVerdictEvent({
           {/* An approval usually carries no words. When it does they are the review, so they stay
               visible rather than being folded away with the ordinary conversation. */}
           {event.body ? (
-            <TimelineBody body={event.body} markdown={event.markdown} cwd={cwd} />
+            <TimelineBody
+              body={event.body}
+              markdown={event.markdown}
+              cwd={cwd}
+              environmentId={reactions.environmentId}
+            />
           ) : null}
         </div>
         <OpenOnHostButton url={event.url} onOpen={onOpen} />
@@ -562,7 +611,7 @@ export function PullRequestTimelineTab({
   const orderedEvents = order === "newest" ? events : events.toReversed();
   const rows = groupPullRequestTimelineConversations(orderedEvents);
   const openOnHost = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    void openPullRequestLinkOnHost(url);
   };
 
   return (

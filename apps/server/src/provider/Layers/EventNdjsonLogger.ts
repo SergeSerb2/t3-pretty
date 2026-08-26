@@ -459,13 +459,20 @@ function drainPending(input: {
 
   const retentionDue =
     input.now - input.state.lastRetentionAt >= input.options.retentionCheckIntervalMs;
+  // RotatingFileSink holds no open descriptor. On retention passes, evict
+  // inactive sinks before selecting protected paths so the cache cannot grow
+  // forever or permanently exempt every historical thread from retention.
+  // Between passes, keep them to avoid synchronous sink reconstruction churn.
+  const retainedSinks = retentionDue
+    ? new Map(Array.from(sinks).filter(([threadSegment]) => recordsBySegment.has(threadSegment)))
+    : sinks;
   const retention = retentionDue
     ? enforceRetention({
         directory: input.directory,
         maxTotalBytes: input.options.maxTotalBytes,
         maxAgeMs: input.options.maxAgeMs,
         activeFilePaths: new Set(
-          Array.from(sinks.keys(), (threadSegment) =>
+          Array.from(retainedSinks.keys(), (threadSegment) =>
             providerLogPath(input.directory, input.filePrefix, threadSegment),
           ),
         ),
@@ -485,7 +492,7 @@ function drainPending(input: {
     {
       pending: [],
       pendingBytes: 0,
-      sinks,
+      sinks: retainedSinks,
       flushScheduled: input.timerFired ? false : input.state.flushScheduled,
       closed: input.close,
       lastRetentionAt: retentionDue ? input.now : input.state.lastRetentionAt,
@@ -618,14 +625,26 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
       const observedAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
       const line = `[${observedAt}] ${resolveStreamLabel(stream)}: ${payload}\n`;
       const bytes = Buffer.byteLength(line);
+      const threadSegment = resolveThreadSegment(threadId);
+      const maxRecordBytes = Math.min(
+        resolved.maxBytes,
+        resolved.maxBufferedBytes,
+        resolved.maxTotalBytes,
+      );
+      if (bytes > maxRecordBytes) {
+        yield* logWarning("provider event log record exceeded byte limit", {
+          stream,
+          threadSegment,
+          recordBytes: bytes,
+          maxRecordBytes,
+        });
+        return;
+      }
       const action = yield* SynchronizedRef.modifyEffect(stateRef, (state) => {
         if (state.closed) {
           return Effect.succeed([{ flush: false }, state] as const);
         }
-        const pending = [
-          ...state.pending,
-          { stream, threadSegment: resolveThreadSegment(threadId), line, bytes },
-        ];
+        const pending = [...state.pending, { stream, threadSegment, line, bytes }];
         const pendingBytes = state.pendingBytes + bytes;
         const flush =
           resolved.batchWindowMs === 0 ||

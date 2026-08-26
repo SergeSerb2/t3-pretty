@@ -31,7 +31,7 @@ describe("ElectronDialog", () => {
   it.effect("preserves folder picker request context and cause", () =>
     Effect.gen(function* () {
       const cause = new Error("folder picker failed");
-      const owner = { id: 7 } as BrowserWindow;
+      const owner = { id: 7, isDestroyed: () => false } as BrowserWindow;
       showOpenDialogMock.mockRejectedValue(cause);
       const dialog = yield* ElectronDialog.ElectronDialog;
 

@@ -3,6 +3,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -11,6 +12,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
@@ -22,6 +24,8 @@ import {
   CommandId,
   type DiscoveredLocalServerList,
   EventId,
+  type EditorId,
+  type FileManagerRevealKind,
   type OrchestrationClientOrigin,
   type OrchestrationCommand,
   type GitActionProgressEvent,
@@ -83,7 +87,10 @@ import {
   shouldSkipBootstrapWorktreePrepare,
 } from "./orchestration/bootstrapCreateThread.ts";
 import { isThreadAlreadyExistsInvariant } from "./orchestration/Errors.ts";
-import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import {
+  cleanupFailedUploadedAttachments,
+  normalizeDispatchCommand,
+} from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ToolProgressService } from "./orchestration/ToolProgress.ts";
@@ -98,7 +105,7 @@ import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import { loadServerConfig, resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
+import { loadServerConfig as loadServerConfigBase } from "./serverConfigSnapshot.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AppsService from "./apps/AppsService.ts";
@@ -107,6 +114,7 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { grokSessionIdFromResumeCursor } from "./assets/GrokSessionImages.ts";
+import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -127,8 +135,6 @@ import {
   releaseReplacedManagedProjectFavicon,
   removeManagedProjectFaviconFile,
 } from "./project/ProjectFaviconStore.ts";
-import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
@@ -160,6 +166,21 @@ const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchComma
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 export { resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
+
+const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
+
+const resolveDiscoveryForConfig = <A, E, R>(
+  discovery: Effect.Effect<A, E, R>,
+  onTimeout: () => A,
+) =>
+  discovery.pipe(
+    Effect.timeoutOption(CONFIG_DISCOVERY_TIMEOUT),
+    Effect.map(Option.getOrElse(onTimeout)),
+  );
+
+export const resolveFileManagerRevealKindForConfig = <E, R>(
+  discovery: Effect.Effect<FileManagerRevealKind | undefined, E, R>,
+) => resolveDiscoveryForConfig(discovery, () => undefined);
 
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
@@ -277,6 +298,8 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspaceFileTooLargeError":
+      return { failure: "too_large", resolvedPath: error.resolvedPath };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -375,6 +398,7 @@ function toAuthAccessStreamEvent(
 
 const isClientSurface = Schema.is(ClientSurface);
 const MAX_CLIENT_APP_VERSION_LENGTH = 64;
+const MAX_CLIENT_DEVICE_MODEL_LENGTH = 80;
 
 // Optional client identity announced on the /ws upgrade URL next to wsTicket.
 // Lenient by design: absent or malformed values degrade to {} so a connection
@@ -400,6 +424,28 @@ const clientOriginAnalyticsProps = (origin: OrchestrationClientOrigin) => ({
   ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
   ...(origin.appVersion !== undefined ? { appVersion: origin.appVersion } : {}),
 });
+
+function readMobileDeviceAnalyticsProps(request: HttpServerRequest.HttpServerRequest) {
+  const url = HttpServerRequest.toURL(request);
+  if (Option.isNone(url) || url.value.searchParams.get("clientSurface") !== "mobile") {
+    return {};
+  }
+
+  const os = url.value.searchParams.get("clientOs");
+  const rawOsMajorVersion = url.value.searchParams.get("clientOsMajorVersion") ?? "";
+  const osMajorVersion = Number(rawOsMajorVersion);
+  const deviceModel = url.value.searchParams.get("clientDeviceModel")?.trim() ?? "";
+
+  return {
+    ...(os === "iOS" || os === "Android" ? { os } : {}),
+    ...(rawOsMajorVersion !== "" && Number.isInteger(osMajorVersion) && osMajorVersion > 0
+      ? { osMajorVersion }
+      : {}),
+    ...(deviceModel !== "" && deviceModel.length <= MAX_CLIENT_DEVICE_MODEL_LENGTH
+      ? { deviceModel }
+      : {}),
+  };
+}
 
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
@@ -446,7 +492,6 @@ const makeWsRpcLayer = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
-      const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -473,9 +518,11 @@ const makeWsRpcLayer = (
       const hostSkills = yield* HostSkills.HostSkills;
       const appsService = yield* AppsService.AppsService;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-      const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
+      const connectionBackgroundScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+        Scope.close(scope, Exit.void),
+      );
       yield* Effect.addFinalizer(() =>
         Ref.get(rpcClientIds).pipe(
           Effect.flatMap((clientIds) =>
@@ -1003,10 +1050,41 @@ const makeWsRpcLayer = (
           );
       };
 
+      const loadServerConfig = loadServerConfigBase.pipe(
+        Effect.flatMap((serverConfig) => {
+          const availableEditors: ReadonlyArray<EditorId> = serverConfig.availableEditors;
+          if (!availableEditors.includes("file-manager")) {
+            return Effect.succeed(serverConfig);
+          }
+
+          return resolveFileManagerRevealKindForConfig(
+            externalLauncher.resolveFileManagerRevealKind(),
+          ).pipe(
+            Effect.map((fileManagerRevealKind) =>
+              fileManagerRevealKind === undefined
+                ? serverConfig
+                : {
+                    ...serverConfig,
+                    shellRevealInFileManager: true,
+                    shellRevealInFileManagerKind: fileManagerRevealKind,
+                  },
+            ),
+          );
+        }),
+      );
+
       const refreshGitStatus = (cwd: string) =>
-        vcsStatusBroadcaster
-          .refreshStatus(cwd)
-          .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+        vcsStatusBroadcaster.refreshStatus(cwd).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning("background VCS status refresh failed", {
+                  cause: Cause.pretty(cause),
+                }),
+          ),
+          Effect.forkIn(connectionBackgroundScope),
+          Effect.asVoid,
+        );
 
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
@@ -1046,7 +1124,9 @@ const makeWsRpcLayer = (
                     ),
                   )
                 : false;
-              const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              const result = yield* dispatchNormalizedCommand(normalizedCommand).pipe(
+                Effect.tapError(() => cleanupFailedUploadedAttachments(command, normalizedCommand)),
+              );
               yield* recordClientCommandAnalytics(normalizedCommand);
               if (parkingCommand) {
                 const parkingKind = parkingCommand.type === "thread.archive" ? "archive" : "settle";
@@ -2038,6 +2118,16 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.attachmentsCreateUploadUrl]: (input) =>
+          observeRpcEffect(WS_METHODS.attachmentsCreateUploadUrl, issueAttachmentUploadUrl(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.attachmentsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.attachmentsDelete,
+            deletePendingAttachment(input.attachmentId),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
@@ -2389,7 +2479,12 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerConfig,
             Effect.gen(function* () {
-              const keybindingsUpdates = keybindings.streamChanges.pipe(
+              const [keybindingChanges, providerChanges, settingsChanges] = yield* Effect.all([
+                keybindings.subscribeChanges,
+                providerRegistry.subscribeChanges,
+                serverSettings.subscribeChanges,
+              ]);
+              const keybindingsUpdates = keybindingChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
                   type: "keybindingsUpdated" as const,
@@ -2399,7 +2494,7 @@ const makeWsRpcLayer = (
                   },
                 })),
               );
-              const providerStatuses = providerRegistry.streamChanges.pipe(
+              const providerStatuses = providerChanges.pipe(
                 Stream.map((providers) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,
@@ -2407,7 +2502,7 @@ const makeWsRpcLayer = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
-              const settingsUpdates = serverSettings.streamChanges.pipe(
+              const settingsUpdates = settingsChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
                 Stream.map((settings) => ({
                   version: 1 as const,
@@ -2420,9 +2515,9 @@ const makeWsRpcLayer = (
                 .refresh()
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
-              const liveUpdates = Stream.merge(
-                keybindingsUpdates,
-                Stream.merge(providerStatuses, settingsUpdates),
+              const liveUpdates = keybindingsUpdates.pipe(
+                Stream.merge(providerStatuses),
+                Stream.merge(settingsUpdates),
               );
 
               const snapshot = yield* loadServerConfig.pipe(
@@ -2445,14 +2540,11 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerLifecycle,
             Effect.gen(function* () {
-              const snapshot = yield* lifecycleEvents.snapshot;
+              const { snapshot, changes } = yield* lifecycleEvents.subscribe;
               const snapshotEvents = Array.from(snapshot.events).toSorted(
                 (left, right) => left.sequence - right.sequence,
               );
-              const liveEvents = lifecycleEvents.stream.pipe(
-                Stream.filter((event) => event.sequence > snapshot.sequence),
-              );
-              return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
+              return Stream.concat(Stream.fromIterable(snapshotEvents), changes);
             }),
             { "rpc.aggregate": "server" },
           ),
@@ -2460,11 +2552,13 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeAuthAccess,
             Effect.gen(function* () {
+              const pairingLinkChanges = yield* bootstrapCredentials.subscribeChanges;
+              const sessionChanges = yield* sessions.subscribeChanges;
               const initialSnapshot = yield* loadAuthAccessSnapshot();
               const revisionRef = yield* Ref.make(1);
               const accessChanges: Stream.Stream<
                 PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
+              > = Stream.merge(pairingLinkChanges, sessionChanges);
 
               const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
                 Stream.mapEffect((change) =>
@@ -2536,7 +2630,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         );
         const clientOrigin = readClientConnectionOrigin(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
-        yield* analytics.record("client.connected", clientOriginAnalyticsProps(clientOrigin));
+        yield* analytics.record("client.connected", {
+          ...clientOriginAnalyticsProps(clientOrigin),
+          ...readMobileDeviceAnalyticsProps(request),
+        });
         const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
           disableTracing: true,
         }).pipe(

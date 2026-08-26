@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
 // Packaged Windows builds ship the server tree inside resources/server.asar
 // (see scripts/build-desktop-artifact.ts). The Windows primary reads it in
@@ -27,6 +28,8 @@ export type WslServerTreeResult =
 
 const MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
 const COPY_CONCURRENCY = 8;
+const COPY_CHUNK_BYTES = 64 * 1024;
+const MARKER_FILE_MAX_BYTES = 64 * 1024;
 
 const Marker = Schema.Struct({ version: Schema.String });
 const decodeMarker = Schema.decodeUnknownEffect(Schema.fromJsonString(Marker));
@@ -81,6 +84,25 @@ interface CopyTreeEntry {
   readonly targetPath: string;
 }
 
+const copyFileInChunks = Effect.fnUntraced(function* (
+  fs: FileSystem.FileSystem,
+  sourcePath: string,
+  targetPath: string,
+) {
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const source = yield* fs.open(sourcePath, { flag: "r" });
+      const target = yield* fs.open(targetPath, { flag: "w" });
+      const buffer = new Uint8Array(COPY_CHUNK_BYTES);
+      while (true) {
+        const bytesRead = Number(yield* source.read(buffer));
+        if (bytesRead === 0) break;
+        yield* target.writeAll(buffer.subarray(0, bytesRead));
+      }
+    }),
+  );
+});
+
 // Copy using only operations supported by Electron's asar-patched fs. Symlinks
 // are not expected because the sidecar is installed with a hoisted, physical
 // layout; anything that is neither a file nor a directory is skipped.
@@ -104,10 +126,7 @@ const copyTree = (
           }));
         }
         if (info.type === "File") {
-          // Read and write stay in the same bounded task, so at most eight file
-          // buffers can be retained while their writes complete.
-          const bytes = yield* fs.readFile(sourcePath);
-          yield* fs.writeFile(targetPath, bytes);
+          yield* copyFileInChunks(fs, sourcePath, targetPath);
         }
         return [];
       }),
@@ -136,7 +155,11 @@ export const make = Effect.gen(function* () {
   });
 
   const markerMatches = Effect.gen(function* () {
-    const raw = yield* fs.readFileString(join(versionDir, MARKER_FILE_NAME));
+    const raw = yield* readFileStringWithinLimit(
+      fs,
+      join(versionDir, MARKER_FILE_NAME),
+      MARKER_FILE_MAX_BYTES,
+    );
     const marker = yield* decodeMarker(raw);
     return marker.version === version;
   }).pipe(Effect.orElseSucceed(() => false));

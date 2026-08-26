@@ -13,6 +13,7 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  canStartContinuousFix,
   countFixableFindings,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
@@ -599,6 +600,31 @@ describe("pull request timeline", () => {
     ]);
   });
 
+  it("orders mixed-precision instants chronologically", () => {
+    const source = {
+      ...TIMELINE_SOURCE,
+      createdAt: "2026-07-01T00:00:00Z",
+      commits: [
+        {
+          ...TIMELINE_SOURCE.commits[0]!,
+          committedDate: "2026-07-01T00:00:00.8Z",
+        },
+      ],
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          createdAt: "2026-07-01T00:00:00.9Z",
+        },
+      ],
+    };
+
+    expect(buildPullRequestTimeline(source).map((event) => event.id)).toEqual([
+      "c1",
+      "1baf7bdcafe",
+      "created",
+    ]);
+  });
+
   it("carries the comment url, and leaves the events the host cannot address without one", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,
@@ -1036,6 +1062,30 @@ describe("fix findings handoff", () => {
     ).toBe(4);
   });
 
+  it("lets a continuous fix start on pending checks with no current findings", () => {
+    const pendingOnly = {
+      reviewThreads: [] as PullRequestReviewThread[],
+      comments: [] as PullRequestComment[],
+      checks: [{ name: "build", status: "pending" as const, description: null, url: null }],
+    };
+    expect(countFixableFindings(pendingOnly)).toBe(0);
+    expect(canStartContinuousFix(pendingOnly)).toBe(true);
+    expect(canStartContinuousFix({ ...pendingOnly, checks: [] })).toBe(false);
+    expect(
+      canStartContinuousFix({
+        ...pendingOnly,
+        checks: [{ name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(false);
+    expect(
+      canStartContinuousFix({
+        reviewThreads: [],
+        comments: [],
+        checks: [failingCheck],
+      }),
+    ).toBe(true);
+  });
+
   it("still hands a Grok finding whose file was parsed from the body", () => {
     const grokBody = [
       "<!-- t3-pretty-grok-review sha=deadbeef -->",
@@ -1068,6 +1118,26 @@ describe("fix findings handoff", () => {
     expect(handoff.reviewComments).toEqual([]);
     // A check is CI, not a conversation — resolving review threads does not apply.
     expect(handoff.prompt).not.toContain("resolveReviewThread");
+  });
+
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+      continuous: true,
+    });
+    const once = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+    });
+
+    expect(continuous.prompt).toContain("green on its latest commit");
+    expect(continuous.prompt).toContain("wait for the next automated review cycle");
+    expect(continuous.prompt).toContain("required checks for that exact head");
+    expect(continuous.prompt).toContain("while actionable feedback remains unresolved");
+    expect(once.prompt).not.toContain("green on its latest commit");
   });
 
   it("leaves out a resolved conversation, and one nobody wrote in", () => {

@@ -15,17 +15,27 @@ import * as Layer from "effect/Layer";
 import * as LayerMap from "effect/LayerMap";
 import * as Schema from "effect/Schema";
 
-import type {
-  ProjectEntry,
-  ProjectEntryKind,
-  ProjectListEntriesResult,
-  ProjectSearchContentsInput,
-  ProjectSearchContentsResult,
-  ProjectSearchEntriesResult,
+import {
+  PROJECT_PATH_MAX_LENGTH,
+  PROJECT_LIST_ENTRIES_MAX,
+  PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX,
+  PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH,
+  PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX,
+  PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH,
+  PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX,
+  PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX,
+  PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX,
+  type ProjectContentMatchRange,
+  type ProjectEntry,
+  type ProjectEntryKind,
+  type ProjectListEntriesResult,
+  type ProjectSearchContentsInput,
+  type ProjectSearchContentsResult,
+  type ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 
-const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
+const WORKSPACE_INDEX_MAX_ENTRIES = PROJECT_LIST_ENTRIES_MAX;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
 const WORKSPACE_INDEX_SCAN_TIMEOUT = "15 seconds";
 const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
@@ -139,7 +149,7 @@ function parentPathOf(input: string): string | undefined {
 
 function toProjectEntry(item: MixedItem): ProjectEntry | null {
   const normalizedPath = trimDirectorySeparator(toPosixPath(item.item.relativePath));
-  if (!normalizedPath) {
+  if (!normalizedPath || normalizedPath.length > PROJECT_PATH_MAX_LENGTH) {
     return null;
   }
 
@@ -151,12 +161,16 @@ function toProjectEntry(item: MixedItem): ProjectEntry | null {
 
 function toFileEntry(item: FileItem): ProjectEntry | null {
   const normalizedPath = trimDirectorySeparator(toPosixPath(item.relativePath));
-  return normalizedPath ? { path: normalizedPath, kind: "file" } : null;
+  return normalizedPath && normalizedPath.length <= PROJECT_PATH_MAX_LENGTH
+    ? { path: normalizedPath, kind: "file" }
+    : null;
 }
 
 function toDirectoryEntry(item: DirItem): ProjectEntry | null {
   const normalizedPath = trimDirectorySeparator(toPosixPath(item.relativePath));
-  return normalizedPath ? { path: normalizedPath, kind: "directory" } : null;
+  return normalizedPath && normalizedPath.length <= PROJECT_PATH_MAX_LENGTH
+    ? { path: normalizedPath, kind: "directory" }
+    : null;
 }
 
 function mapFileSearchResult(
@@ -164,13 +178,19 @@ function mapFileSearchResult(
   limit: number,
   imageOnly = false,
 ): ProjectSearchEntriesResult {
+  let skippedInvalidPath = false;
   const entries = result.items.flatMap((item) => {
     const entry = toFileEntry(item);
-    return entry && (!imageOnly || isWorkspaceImagePreviewPath(entry.path)) ? [entry] : [];
+    if (!entry) {
+      skippedInvalidPath = true;
+      return [];
+    }
+    return !imageOnly || isWorkspaceImagePreviewPath(entry.path) ? [entry] : [];
   });
   return {
     entries: entries.slice(0, limit),
-    truncated: entries.length > limit || result.totalMatched > result.items.length,
+    truncated:
+      skippedInvalidPath || entries.length > limit || result.totalMatched > result.items.length,
   };
 }
 
@@ -185,7 +205,9 @@ function mapDirectorySearchResult(
   const rootDirectoryCount = result.items.some((item) => item.relativePath.length === 0) ? 1 : 0;
   return {
     entries: entries.slice(0, limit),
-    truncated: result.totalMatched - rootDirectoryCount > limit,
+    truncated:
+      entries.length < result.items.length - rootDirectoryCount ||
+      result.totalMatched - rootDirectoryCount > limit,
   };
 }
 
@@ -194,10 +216,13 @@ function mapMixedSearchResult(
   limit: number,
 ): { readonly entries: ProjectEntry[]; readonly truncated: boolean } {
   const entries: ProjectEntry[] = [];
+  let skippedInvalidPath = false;
   for (const item of result.items) {
     const entry = toProjectEntry(item);
     if (entry) {
       entries.push(entry);
+    } else if (!(item.type === "directory" && item.item.relativePath.length === 0)) {
+      skippedInvalidPath = true;
     }
     if (entries.length >= limit) {
       break;
@@ -211,7 +236,7 @@ function mapMixedSearchResult(
     : 0;
   return {
     entries,
-    truncated: result.totalMatched - rootDirectoryCount > limit,
+    truncated: skippedInvalidPath || result.totalMatched - rootDirectoryCount > limit,
   };
 }
 
@@ -244,16 +269,104 @@ function buildContentSearchQuery(input: Omit<ProjectSearchContentsInput, "cwd">)
     : { searchQuery: input.query.toLowerCase(), regexMode: false };
 }
 
-function mapContentMatchRanges(
+function utf8ByteLength(codePoint: number): number {
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
+}
+
+export function mapContentMatchRanges(
   line: string,
   byteRanges: ReadonlyArray<readonly [number, number]>,
 ): Array<{ readonly start: number; readonly end: number }> {
-  const lineBytes = Buffer.from(line);
-  const toStringIndex = (byteOffset: number) => lineBytes.subarray(0, byteOffset).toString().length;
+  const boundaries = [
+    ...new Set(byteRanges.flatMap(([start, end]) => [Math.max(0, start), Math.max(0, end)])),
+  ].toSorted((left, right) => left - right);
+  const stringIndexByByteOffset = new Map<number, number>();
+  let boundaryIndex = 0;
+  let byteOffset = 0;
+  let stringIndex = 0;
+
+  while (stringIndex < line.length && boundaryIndex < boundaries.length) {
+    while (boundaries[boundaryIndex] !== undefined && boundaries[boundaryIndex]! <= byteOffset) {
+      stringIndexByByteOffset.set(boundaries[boundaryIndex]!, stringIndex);
+      boundaryIndex += 1;
+    }
+    if (boundaryIndex >= boundaries.length) break;
+    const codePoint = line.codePointAt(stringIndex)!;
+    const nextByteOffset = byteOffset + utf8ByteLength(codePoint);
+    while (boundaries[boundaryIndex] !== undefined && boundaries[boundaryIndex]! < nextByteOffset) {
+      stringIndexByByteOffset.set(boundaries[boundaryIndex]!, stringIndex);
+      boundaryIndex += 1;
+    }
+    byteOffset = nextByteOffset;
+    stringIndex += codePoint > 0xffff ? 2 : 1;
+  }
+  while (boundaryIndex < boundaries.length) {
+    stringIndexByByteOffset.set(boundaries[boundaryIndex]!, line.length);
+    boundaryIndex += 1;
+  }
+
   return byteRanges.map(([startByte, endByte]) => ({
-    start: toStringIndex(startByte),
-    end: toStringIndex(endByte),
+    start: stringIndexByByteOffset.get(Math.max(0, startByte)) ?? line.length,
+    end: stringIndexByByteOffset.get(Math.max(0, endByte)) ?? line.length,
   }));
+}
+
+export function boundContentMatchLine(
+  line: string,
+  ranges: ReadonlyArray<ProjectContentMatchRange>,
+  maxLength = PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH,
+): {
+  readonly lineContent: string;
+  readonly matchRanges: ProjectContentMatchRange[];
+  readonly truncated: boolean;
+} {
+  const boundedMaxLength = Math.max(1, Math.floor(maxLength));
+  if (line.length <= boundedMaxLength) {
+    return {
+      lineContent: line,
+      matchRanges: ranges
+        .flatMap((range) => {
+          const start = Math.max(0, Math.min(line.length, range.start));
+          const end = Math.max(0, Math.min(line.length, range.end));
+          return end < start ? [] : [{ start, end }];
+        })
+        .slice(0, PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX),
+      truncated: ranges.length > PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX,
+    };
+  }
+
+  const anchor = ranges[0] ?? { start: 0, end: 0 };
+  const anchorStart = Math.max(0, Math.min(line.length, anchor.start));
+  const anchorEnd = Math.max(anchorStart, Math.min(line.length, anchor.end));
+  const anchorWidth = Math.min(boundedMaxLength, anchorEnd - anchorStart);
+  const maximumStart = line.length - boundedMaxLength;
+  const windowStart = Math.max(
+    0,
+    Math.min(maximumStart, anchorStart - Math.floor((boundedMaxLength - anchorWidth) / 2)),
+  );
+  const windowEnd = windowStart + boundedMaxLength;
+  const matchRanges = ranges
+    .flatMap((range) => {
+      const start = Math.max(0, Math.min(line.length, range.start));
+      const end = Math.max(start, Math.min(line.length, range.end));
+      if (end < windowStart || start > windowEnd) return [];
+      return [
+        {
+          start: Math.max(start, windowStart) - windowStart,
+          end: Math.min(end, windowEnd) - windowStart,
+        },
+      ];
+    })
+    .slice(0, PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX);
+
+  return {
+    lineContent: line.slice(windowStart, windowEnd),
+    matchRanges,
+    truncated: true,
+  };
 }
 
 /**
@@ -295,6 +408,26 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
     }
   }
   return [...entryByPath.values()];
+}
+
+function boundProjectListEntries(entries: ReadonlyArray<ProjectEntry>): {
+  readonly entries: ProjectEntry[];
+  readonly truncated: boolean;
+} {
+  const bounded: ProjectEntry[] = [];
+  let totalPathCharacters = 0;
+  for (const entry of entries) {
+    const nextTotalPathCharacters = totalPathCharacters + entry.path.length;
+    if (
+      bounded.length >= PROJECT_LIST_ENTRIES_MAX ||
+      nextTotalPathCharacters > PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX
+    ) {
+      return { entries: bounded, truncated: true };
+    }
+    bounded.push(entry);
+    totalPathCharacters = nextTotalPathCharacters;
+  }
+  return { entries: bounded, truncated: false };
 }
 
 const loadFffNode = () => import("@ff-labs/fff-node");
@@ -451,10 +584,10 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
         left.path.localeCompare(right.path),
       );
-      const entries = sortedEntries.slice(0, WORKSPACE_INDEX_MAX_ENTRIES);
+      const bounded = boundProjectListEntries(sortedEntries);
       return {
-        entries,
-        truncated: mapped.truncated || entries.length < sortedEntries.length,
+        entries: bounded.entries,
+        truncated: mapped.truncated || bounded.truncated,
       };
     },
   );
@@ -494,6 +627,11 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     const matches: Array<ProjectSearchContentsResult["matches"][number]> = [];
     let nextCursor: GrepCursor | null = null;
     let regexFallbackError: string | undefined;
+    let totalLineCharacters = 0;
+    let totalPathCharacters = 0;
+    let totalMatchRanges = 0;
+    let resultTruncated = false;
+    let aggregateBudgetExhausted = false;
 
     do {
       const remainingTimeBudgetMs = Math.max(1, Math.ceil(deadline - performance.now()));
@@ -510,24 +648,59 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       );
 
       for (const match of result.items) {
-        const matchRanges = mapContentMatchRanges(match.lineContent, match.matchRanges).filter(
+        const path = toPosixPath(match.relativePath);
+        if (path.length === 0 || path.length > PROJECT_PATH_MAX_LENGTH) {
+          resultTruncated = true;
+          continue;
+        }
+        const fullMatchRanges = mapContentMatchRanges(match.lineContent, match.matchRanges).filter(
           (range) => !input.wholeWord || isWholeWordRange(match.lineContent, range),
         );
-        if (matchRanges.length === 0) continue;
+        if (fullMatchRanges.length === 0) continue;
+        const bounded = boundContentMatchLine(match.lineContent, fullMatchRanges);
+        if (bounded.matchRanges.length === 0) {
+          resultTruncated = true;
+          continue;
+        }
+        const nextLineCharacters = totalLineCharacters + bounded.lineContent.length;
+        const nextPathCharacters = totalPathCharacters + path.length;
+        const nextMatchRanges = totalMatchRanges + bounded.matchRanges.length;
+        if (
+          matches.length >= input.limit ||
+          nextLineCharacters > PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX ||
+          nextPathCharacters > PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX ||
+          nextMatchRanges > PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX
+        ) {
+          resultTruncated = true;
+          aggregateBudgetExhausted = true;
+          break;
+        }
         matches.push({
-          path: toPosixPath(match.relativePath),
+          path,
           lineNumber: match.lineNumber,
-          lineContent: match.lineContent,
-          matchRanges,
+          lineContent: bounded.lineContent,
+          matchRanges: bounded.matchRanges,
         });
+        totalLineCharacters = nextLineCharacters;
+        totalPathCharacters = nextPathCharacters;
+        totalMatchRanges = nextMatchRanges;
+        resultTruncated ||= bounded.truncated;
       }
       nextCursor = result.nextCursor;
-      regexFallbackError ??= result.regexFallbackError;
-    } while (matches.length < input.limit && nextCursor !== null && performance.now() < deadline);
+      regexFallbackError ??= result.regexFallbackError?.slice(
+        0,
+        PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH,
+      );
+    } while (
+      !aggregateBudgetExhausted &&
+      matches.length < input.limit &&
+      nextCursor !== null &&
+      performance.now() < deadline
+    );
 
     return {
-      matches: matches.slice(0, input.limit),
-      truncated: matches.length > input.limit || nextCursor !== null,
+      matches,
+      truncated: resultTruncated || nextCursor !== null,
       ...(regexFallbackError !== undefined ? { regexFallbackError } : {}),
     };
   });

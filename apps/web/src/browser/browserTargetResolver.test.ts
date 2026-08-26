@@ -25,6 +25,18 @@ describe("browser target resolver", () => {
     });
   });
 
+  it("keeps network-path environment targets on the selected environment host", async () => {
+    readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" });
+    const { resolveBrowserNavigationTarget } = await import("./browserTargetResolver");
+    expect(
+      resolveBrowserNavigationTarget(EnvironmentId.make("environment-1"), {
+        kind: "environment-port",
+        port: 5173,
+        path: "//attacker.example/api?mode=test#result",
+      }).resolvedUrl,
+    ).toBe("http://192.168.1.25:5173//attacker.example/api?mode=test#result");
+  });
+
   it("maps localhost URL navigation onto a remote Tailscale IPv4 host", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://100.65.180.100:3773" });
     const { resolveBrowserNavigationTarget } = await import("./browserTargetResolver");

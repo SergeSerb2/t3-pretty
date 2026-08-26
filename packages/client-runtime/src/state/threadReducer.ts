@@ -275,6 +275,9 @@ export function applyThreadDetailEvent(
           ...(event.payload.worktreePath !== undefined
             ? { worktreePath: event.payload.worktreePath }
             : {}),
+          ...(event.payload.linkedPullRequest !== undefined
+            ? { linkedPullRequest: event.payload.linkedPullRequest }
+            : {}),
           updatedAt: event.payload.updatedAt,
         },
       };
@@ -453,10 +456,16 @@ export function applyThreadDetailEvent(
       // Leaving the "running" session status is the turn-end signal: settle a
       // still-running latest turn so its duration reflects the whole turn.
       const settledTurnState = settledTurnStateForSessionStatus(event.payload.session.status);
+      const activeUserMessageId =
+        event.payload.activeUserMessageId ??
+        (thread.latestTurn?.turnId === event.payload.session.activeTurnId
+          ? thread.latestTurn.userMessageId
+          : undefined);
       const latestTurn: OrchestrationLatestTurn | null =
         event.payload.session.status === "running" && event.payload.session.activeTurnId !== null
           ? {
               turnId: event.payload.session.activeTurnId,
+              ...(activeUserMessageId !== undefined ? { userMessageId: activeUserMessageId } : {}),
               state: "running",
               requestedAt:
                 thread.latestTurn?.turnId === event.payload.session.activeTurnId

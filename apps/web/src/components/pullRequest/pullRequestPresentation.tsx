@@ -143,6 +143,21 @@ export function pullRequestCheckStatusLabel(status: PullRequestCheckStatus): str
   return CHECK_STATUS_PRESENTATION[status].label;
 }
 
+/** Stable row identities across host reordering and status updates. */
+export function pullRequestCheckListKeys(
+  checks: ReadonlyArray<PullRequestCheck>,
+): ReadonlyArray<string> {
+  const occurrences = new Map<string, number>();
+  return checks.map((check) => {
+    // A host may report reruns with the same display name. URL distinguishes
+    // normal reruns; the occurrence keeps identical duplicates renderable.
+    const identity = JSON.stringify([check.name, check.url]);
+    const occurrence = occurrences.get(identity) ?? 0;
+    occurrences.set(identity, occurrence + 1);
+    return JSON.stringify([check.name, check.url, occurrence]);
+  });
+}
+
 export function PullRequestCheckStatusIcon({ status }: { status: PullRequestCheckStatus }) {
   const presentation = CHECK_STATUS_PRESENTATION[status];
   return (
@@ -192,10 +207,10 @@ export function pullRequestChecksState(
   checks: ReadonlyArray<PullRequestCheck>,
 ): PullRequestChecksState | null {
   if (checks.length === 0) return null;
-  const statuses = checks.map((check) => check.status);
-  if (statuses.includes("failure") || statuses.includes("cancelled")) return "failing";
-  if (statuses.includes("pending")) return "pending";
-  return statuses.includes("success") ? "passing" : null;
+  const statuses = new Set(checks.map((check) => check.status));
+  if (statuses.has("failure") || statuses.has("cancelled")) return "failing";
+  if (statuses.has("pending")) return "pending";
+  return statuses.has("success") ? "passing" : null;
 }
 
 /**

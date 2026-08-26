@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { AUTH_CREDENTIAL_MAX_LENGTH, EnvironmentId } from "@t3tools/contracts";
 import type {
   RelayClientDeviceRecord,
   RelayClientEnvironmentRecord,
@@ -161,6 +161,51 @@ describe("createManagedRelayQueryManager", () => {
 
       expect(error).toBeInstanceOf(ManagedRelaySessionError);
       expect(unlinkEnvironment).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("rejects deregistration when the account changes during its token read", () =>
+    Effect.gen(function* () {
+      let resolveToken!: (token: string) => void;
+      const unlinkEnvironment = vi.fn(() => Effect.succeed({ ok: true }));
+      setManagedRelaySession(registry, {
+        accountId: "account-1",
+        readClerkToken: () =>
+          new Promise<string>((resolve) => {
+            resolveToken = resolve;
+          }),
+      });
+
+      const deregistration = yield* deregisterManagedRelayEnvironment(registry, {
+        accountId: "account-1",
+        environmentId: environment.environmentId,
+      }).pipe(
+        Effect.provideService(ManagedRelay.ManagedRelayClient, createClient({ unlinkEnvironment })),
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      setManagedRelaySession(registry, {
+        accountId: "account-2",
+        readClerkToken: () => Promise.resolve("new-account-token"),
+      });
+      resolveToken("old-account-token");
+
+      expect(yield* Fiber.join(deregistration)).toBeInstanceOf(ManagedRelaySessionError);
+      expect(unlinkEnvironment).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("rejects oversized Clerk session tokens before relay use", () =>
+    Effect.gen(function* () {
+      setManagedRelaySession(registry, {
+        accountId: "account-1",
+        readClerkToken: () => Promise.resolve("t".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
+      });
+
+      const error = yield* waitForManagedRelayClerkToken(registry).pipe(Effect.flip);
+
+      expect(error.message).toContain("invalid");
     }),
   );
 

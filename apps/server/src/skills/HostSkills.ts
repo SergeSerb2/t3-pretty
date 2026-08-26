@@ -20,6 +20,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   SkillsError,
+  SKILL_FRONTMATTER_READ_MAX_BYTES,
   type HostSkill,
   type HostSkillsState,
 } from "@t3tools/contracts";
@@ -33,6 +34,7 @@ import * as Path from "effect/Path";
 import { expandHomePath } from "../pathExpansion.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
+import { readTextPrefix } from "../boundedFileRead.ts";
 
 const HOST_SKILL_ID_PREFIX = "host:";
 /** Built-in root marker; empty so no configured ProviderInstanceId can collide with it. */
@@ -298,14 +300,18 @@ export const make = Effect.gen(function* () {
       }
       const skillFilePath = path.join(skillDir, SKILL_FILE);
       const disabledFilePath = path.join(skillDir, HOST_SKILL_DISABLED_FILE);
-      const skillContents = yield* fileSystem
-        .readFileString(skillFilePath)
-        .pipe(Effect.orElseSucceed(() => undefined));
+      const skillContents = yield* readTextPrefix(
+        fileSystem,
+        skillFilePath,
+        SKILL_FRONTMATTER_READ_MAX_BYTES,
+      ).pipe(Effect.orElseSucceed(() => undefined));
       const disabledContents =
         skillContents === undefined
-          ? yield* fileSystem
-              .readFileString(disabledFilePath)
-              .pipe(Effect.orElseSucceed(() => undefined))
+          ? yield* readTextPrefix(
+              fileSystem,
+              disabledFilePath,
+              SKILL_FRONTMATTER_READ_MAX_BYTES,
+            ).pipe(Effect.orElseSucceed(() => undefined))
           : undefined;
       if (skillContents === undefined && disabledContents === undefined) {
         continue;
@@ -389,14 +395,18 @@ export const make = Effect.gen(function* () {
       }
       const skillFilePath = path.join(target, SKILL_FILE);
       const disabledFilePath = path.join(target, HOST_SKILL_DISABLED_FILE);
-      const skillContents = yield* fileSystem
-        .readFileString(skillFilePath)
-        .pipe(Effect.orElseSucceed(() => undefined));
+      const skillContents = yield* readTextPrefix(
+        fileSystem,
+        skillFilePath,
+        SKILL_FRONTMATTER_READ_MAX_BYTES,
+      ).pipe(Effect.orElseSucceed(() => undefined));
       const disabledContents =
         skillContents === undefined
-          ? yield* fileSystem
-              .readFileString(disabledFilePath)
-              .pipe(Effect.orElseSucceed(() => undefined))
+          ? yield* readTextPrefix(
+              fileSystem,
+              disabledFilePath,
+              SKILL_FRONTMATTER_READ_MAX_BYTES,
+            ).pipe(Effect.orElseSucceed(() => undefined))
           : undefined;
       if (skillContents === undefined && disabledContents === undefined) {
         continue;

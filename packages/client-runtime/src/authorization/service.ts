@@ -62,6 +62,7 @@ const TOKEN_EXPIRY_SAFETY_MARGIN_MS = 60_000;
 // handshake through the relay; a stale endpoint still fails fast on DNS/TCP.
 const CACHED_ENDPOINT_SOCKET_TIMEOUT_MS = 6_000;
 const BEARER_DESCRIPTOR_CACHE_TTL_MS = 10_000;
+const BEARER_DESCRIPTOR_CACHE_MAX_ENTRIES = 1_024;
 
 function mapDpopSocketError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return error._tag === "ConnectionTransientError" || error._tag === "ConnectionBlockedError"
@@ -120,7 +121,18 @@ export const make = Effect.gen(function* () {
       }
       if (!canReuseDescriptor) {
         yield* Ref.update(bearerDescriptors, (current) => {
-          const next = new Map(current);
+          const next = new Map(
+            [...current].filter(
+              ([, candidate]) =>
+                candidate.validatedAtEpochMs + BEARER_DESCRIPTOR_CACHE_TTL_MS > now,
+            ),
+          );
+          next.delete(input.expectedEnvironmentId);
+          while (next.size >= BEARER_DESCRIPTOR_CACHE_MAX_ENTRIES) {
+            const oldestEnvironmentId = next.keys().next().value;
+            if (oldestEnvironmentId === undefined) break;
+            next.delete(oldestEnvironmentId);
+          }
           next.set(input.expectedEnvironmentId, {
             httpBaseUrl: input.httpBaseUrl,
             descriptor,

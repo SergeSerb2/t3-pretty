@@ -230,7 +230,14 @@ export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | und
   if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
     return "";
   }
-  return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
+  const directoryName = lastSegment.toLowerCase().endsWith(".git")
+    ? lastSegment.slice(0, -".git".length)
+    : lastSegment;
+  // Never let a pasted remote turn the proposed clone destination into the
+  // selected directory's parent (or the directory itself). The server still
+  // validates the final path, but the shared confirmation model should not
+  // present a traversal segment as a repository folder.
+  return directoryName === "." || directoryName === ".." ? "" : directoryName;
 }
 
 /**

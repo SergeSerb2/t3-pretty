@@ -29,6 +29,35 @@ export function shouldOpenPreviewMiniPlayer(
   return input.open ?? input.show ?? autoShowFloatingPreview;
 }
 
+/** Input actions that surface the floating player when their tab is hidden. */
+export const AUTO_PRESENT_AUTOMATION_OPERATIONS: ReadonlySet<string> = new Set([
+  "click",
+  "type",
+  "press",
+  "scroll",
+]);
+
+/**
+ * Whether an agent input action should pop the floating player so the human
+ * can watch. Act → show, unless the user turned auto-show off, already sees
+ * the tab (panel or player), or dismissed this tab's player.
+ */
+export function shouldPresentAutomationActivity(input: {
+  readonly operation: string;
+  readonly autoShowFloatingPreview: boolean;
+  readonly tabId: string;
+  readonly dismissedTabIds: readonly string[];
+  readonly miniPlayerTabId: string | null;
+  readonly panelPreviewTabId: string | null;
+}): boolean {
+  if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(input.operation)) return false;
+  if (!input.autoShowFloatingPreview) return false;
+  if (input.dismissedTabIds.includes(input.tabId)) return false;
+  if (input.miniPlayerTabId === input.tabId) return false;
+  if (input.panelPreviewTabId === input.tabId) return false;
+  return true;
+}
+
 export function previewAutomationOpenNeedsOverlay(
   input: PreviewAutomationOpenInput,
   snapshot: PreviewSessionSnapshot,

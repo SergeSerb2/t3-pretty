@@ -190,27 +190,30 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       );
       const removedMessageIds = new Set<MessageId>();
 
-      await Promise.all(
-        allMessages
-          .filter((message) => message.environmentId === environmentId)
-          .map(async (message) => {
-            try {
-              await options.storage.remove(message);
-              removedMessageIds.add(message.messageId);
-            } catch (cause) {
-              warn(
-                "[thread-outbox] failed to clear persisted message",
-                new ThreadOutboxManagerError({
-                  operation: "clear-environment-remove",
-                  environmentId: message.environmentId,
-                  threadId: message.threadId,
-                  messageId: message.messageId,
-                  cause,
-                }),
-              );
-            }
-          }),
-      );
+      // Environment removal is rare and file deletion is cheap. Keep it
+      // sequential so a large offline queue cannot burst-open every outbox
+      // file operation at once while the registry is tearing the environment
+      // down in parallel with its SQLite/draft cleanup.
+      for (const message of allMessages) {
+        if (message.environmentId !== environmentId) {
+          continue;
+        }
+        try {
+          await options.storage.remove(message);
+          removedMessageIds.add(message.messageId);
+        } catch (cause) {
+          warn(
+            "[thread-outbox] failed to clear persisted message",
+            new ThreadOutboxManagerError({
+              operation: "clear-environment-remove",
+              environmentId: message.environmentId,
+              threadId: message.threadId,
+              messageId: message.messageId,
+              cause,
+            }),
+          );
+        }
+      }
 
       setMessages(allMessages.filter((message) => !removedMessageIds.has(message.messageId)));
     });

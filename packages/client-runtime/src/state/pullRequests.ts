@@ -1,4 +1,9 @@
-import { WS_METHODS, type PullRequestDiffInput } from "@t3tools/contracts";
+import {
+  WS_METHODS,
+  type PullRequestDetail,
+  type PullRequestDiffInput,
+  type VcsStatusResult,
+} from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -25,10 +30,37 @@ export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequest
  * GitHub in the app down with it.
  */
 export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
+export const PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS = 60_000;
 
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
+
+/** Refresh a linked PR while its thread is visible so merges update the sidebar. */
+export function createLinkedPullRequestDetailAtomFamily<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pull-requests:linked-detail",
+    tag: WS_METHODS.pullRequestsDetail,
+    staleTimeMs: 15_000,
+    refreshIntervalMs: 30_000,
+  });
+}
+
+export function pullRequestDetailToVcsStatus(
+  detail: PullRequestDetail,
+): NonNullable<VcsStatusResult["pr"]> {
+  return {
+    number: detail.number,
+    title: detail.title,
+    url: detail.url,
+    baseRef: detail.baseBranch,
+    headRef: detail.headBranch,
+    state: detail.state,
+    updatedAt: detail.updatedAt,
+  };
+}
 
 /**
  * Every read shells out to the GitHub CLI, so results are reused for a short while and
@@ -69,6 +101,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       label: "environment-data:pull-requests:activity",
       tag: WS_METHODS.pullRequestsActivity,
       staleTimeMs: 20_000,
+      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
     }),
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
@@ -83,6 +116,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
       staleTimeMs: 60_000,
+      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {
           const supervisor = yield* EnvironmentSupervisor;

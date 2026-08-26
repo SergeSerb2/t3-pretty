@@ -9,9 +9,13 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
-  normalizeCliError,
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
+  normalizeCliError,
   sanitizeThreadTitle,
+  TEXT_GENERATION_RESULT_MAX_BYTES,
 } from "./TextGenerationUtils.ts";
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -358,5 +362,28 @@ describe("normalizeCliError", () => {
 
     expect(result.detail).toBe("Failed to generate a commit message");
     expect(result.message).not.toContain("secret-token");
+  });
+});
+
+describe("bounded text-generation output", () => {
+  it("reassembles streamed output without repeated whole-string copies", () => {
+    let output = makeBoundedTextGenerationOutput();
+    output = appendBoundedTextGenerationOutput(output, "hello ");
+    output = appendBoundedTextGenerationOutput(output, "world");
+
+    expect(output.truncated).toBe(false);
+    expect(decodeBoundedTextGenerationOutput(output)).toBe("hello world");
+  });
+
+  it("stops retaining streamed output at the byte limit", () => {
+    let output = makeBoundedTextGenerationOutput();
+    output = appendBoundedTextGenerationOutput(
+      output,
+      "a".repeat(TEXT_GENERATION_RESULT_MAX_BYTES - 2),
+    );
+    output = appendBoundedTextGenerationOutput(output, "🌍");
+
+    expect(output.truncated).toBe(true);
+    expect(output.byteLength).toBe(TEXT_GENERATION_RESULT_MAX_BYTES);
   });
 });

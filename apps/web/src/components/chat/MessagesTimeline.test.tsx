@@ -748,6 +748,9 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('href="https://example.com"');
     expect(markup).toContain('src="https://example.com/image.png"');
+    expect(markup).toContain('loading="lazy"');
+    expect(markup).toContain('decoding="async"');
+    expect(markup).toContain('referrerPolicy="no-referrer"');
     expect(markup).not.toContain('title="link tip"');
     expect(markup).not.toContain('title="image tip"');
   });

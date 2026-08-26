@@ -80,6 +80,7 @@ import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchor
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
+  deriveTimelineMinimapTurns,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
@@ -711,45 +712,16 @@ interface TimelinePositionState {
 function deriveTimelineMinimapItems(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): TimelineMinimapItem[] {
-  const items: TimelineMinimapItem[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
-      continue;
-    }
-
-    items.push({
-      id: row.id,
-      rowIndex: index,
-      // Match the bubble: agent-facing auto-PR and attached-filepath blocks
-      // stay out of the minimap preview and its accessible label.
-      userText: compactMinimapPreview(
-        stripAttachedFilePathsSuffix(stripCreatePullRequestSuffix(row.message.text)),
-      ),
-      assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
-    });
-  }
-  return items;
-}
-
-function resolveFinalAssistantTextForTurn(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-  userRowIndex: number,
-) {
-  let finalAssistantText: string | null = null;
-  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message") {
-      continue;
-    }
-    if (row.message.role === "user") {
-      break;
-    }
-    if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
-    }
-  }
-  return finalAssistantText;
+  return deriveTimelineMinimapTurns(rows).map((turn) => ({
+    id: turn.id,
+    rowIndex: turn.rowIndex,
+    // Match the bubble: agent-facing auto-PR and attached-filepath blocks
+    // stay out of the minimap preview and its accessible label.
+    userText: compactMinimapPreview(
+      stripAttachedFilePathsSuffix(stripCreatePullRequestSuffix(turn.userText ?? "")),
+    ),
+    assistantText: compactMinimapPreview(turn.assistantText),
+  }));
 }
 
 /**
@@ -1579,6 +1551,8 @@ function toolGroupSummaryIconName(
       return "globe";
     case "code-search":
       return "search";
+    case "browser":
+      return "mouse-pointer";
     case "other":
       return "wrench";
     case "dynamic-tool":
@@ -2230,6 +2204,7 @@ type WorkEntryIconName =
   | "hammer"
   | "image"
   | "message-circle"
+  | "mouse-pointer"
   | "package"
   | "search"
   | "square-pen"
@@ -2256,6 +2231,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <ImageIcon className={className} aria-hidden />;
     case "message-circle":
       return <MessageCircleIcon className={className} aria-hidden />;
+    case "mouse-pointer":
+      return <MousePointerClickIcon className={className} aria-hidden />;
     case "package":
       return <PackageIcon className={className} aria-hidden />;
     case "search":
@@ -2490,6 +2467,7 @@ function liveWorkEntryLabel(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
 ): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   const command = workEntry.command?.trim();
   if (command) {
     // This row describes the active parent turn, not the command lifecycle.
@@ -2525,6 +2503,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  if (workEntry.previewAutomation) return "mouse-pointer";
   if (workEntry.itemType === "image_generation") return "image";
 
   const action = toolGroupAction(workEntry);
@@ -2571,6 +2550,7 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -2708,7 +2688,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
-  const rawPreview = workEntryPreview(workEntry, workspaceRoot);
+  // Browser-automation rows label themselves; the raw detail (provider JSON)
+  // stays available behind the disclosure instead of trailing the heading.
+  const rawPreview = workEntry.previewAutomation
+    ? null
+    : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===
