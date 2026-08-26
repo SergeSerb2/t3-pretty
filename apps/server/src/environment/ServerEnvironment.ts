@@ -16,6 +16,7 @@ import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { resolveDictationAvailability } from "../dictation/availability.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 
 const ENVIRONMENT_ID_FILE_MAX_BYTES = 1024;
@@ -179,7 +180,11 @@ export const make = Effect.gen(function* () {
     getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
       Effect.map((agentActivityPublishing) => ({
         ...descriptor,
-        capabilities: { ...descriptor.capabilities, agentActivityPublishing },
+        capabilities: {
+          ...descriptor.capabilities,
+          ...(resolveDictationAvailability().available ? { voiceDictation: true } : {}),
+          agentActivityPublishing,
+        },
       })),
     ),
   });

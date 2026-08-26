@@ -17,6 +17,8 @@ Object.assign(process.env, repoEnv);
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const internalMicrophonePermission =
+  "Allow T3 Pretty Internal to use your microphone for voice dictation.";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -156,6 +158,22 @@ function resolveAppVariant(value: string | undefined): AppVariant {
     default:
       return "production";
   }
+}
+
+export function resolveVoiceDictationPlugins(
+  internalBuild: boolean,
+): NonNullable<ExpoConfig["plugins"]> {
+  return internalBuild
+    ? [
+        [
+          "expo-audio",
+          {
+            microphonePermission: internalMicrophonePermission,
+            enableBackgroundPlayback: false,
+          },
+        ],
+      ]
+    : ["./plugins/withoutPublicExpoAudio.cjs"];
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
@@ -353,6 +371,7 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    ...resolveVoiceDictationPlugins(isInternalBuild),
     ...(shareExtensionEnabled
       ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
       : [sharingPlugin]),
@@ -387,10 +406,16 @@ const config: ExpoConfig = {
         cameraPermission: "Allow T3 Pretty to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
-        recordAudioAndroid: false,
+        recordAudioAndroid: isInternalBuild,
       },
     ],
-    ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: false,
+        microphonePermission: isInternalBuild ? internalMicrophonePermission : false,
+      },
+    ],
     [
       "expo-splash-screen",
       {

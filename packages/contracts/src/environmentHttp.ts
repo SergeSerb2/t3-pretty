@@ -30,6 +30,15 @@ import {
 } from "./auth.ts";
 import { AuthSessionId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import {
+  DictationCleanupRequest,
+  DictationCleanupResult,
+  DictationStatusResult,
+  DictationTranscriptionRequest,
+  DictationTranscriptionResult,
+  DictationUnavailableError,
+  DictationUpstreamError,
+} from "./dictation.ts";
 import { ServerConfig } from "./server.ts";
 import {
   ClientOrchestrationCommand,
@@ -579,6 +588,41 @@ export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullReque
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
+  .add(
+    HttpApiEndpoint.get("status", "/api/dictation/status", {
+      headers: OptionalBearerHeaders,
+      success: DictationStatusResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("transcribe", "/api/dictation/transcribe", {
+      headers: OptionalBearerHeaders,
+      payload: DictationTranscriptionRequest,
+      success: DictationTranscriptionResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("cleanup", "/api/dictation/cleanup", {
+      headers: OptionalBearerHeaders,
+      payload: DictationCleanupRequest,
+      success: DictationCleanupResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
@@ -646,4 +690,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
+  .add(EnvironmentDictationHttpApi)
   .add(EnvironmentConnectHttpApi) {}
