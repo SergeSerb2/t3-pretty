@@ -4665,6 +4665,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread, queuedComposerMessages]);
 
   useEffect(() => {
+    // Draft promotion keeps the same environment/thread key; real conversation navigation does not.
     setOptimisticUserMessages((existing) => {
       for (const message of existing) {
         revokeUserMessagePreviewUrls(message);

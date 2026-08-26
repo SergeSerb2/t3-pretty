@@ -56,8 +56,7 @@ export function reconcileQueuedComposerMessages(input: {
   const queuedTurnStarted =
     input.activeTurnId !== null &&
     input.activeTurnId !== head.queuedBehindTurnId &&
-    input.latestTurn?.turnId === input.activeTurnId &&
-    Date.parse(input.latestTurn.requestedAt) >= Date.parse(head.createdAt);
+    input.latestTurn?.turnId === input.activeTurnId;
   if (!serverAssociatedMessage && !queuedTurnStarted) return input.queuedMessages;
 
   return input.queuedMessages.slice(1).map((message) => ({

@@ -1002,7 +1002,7 @@ describe("reconcileQueuedComposerMessages", () => {
     ).toBe(queuedMessages);
   });
 
-  it("releases one queued message when its next turn starts", () => {
+  it("releases one queued message when its next turn starts despite clock skew", () => {
     const nextTurnId = TurnId.make("turn-next");
     expect(
       reconcileQueuedComposerMessages({
@@ -1012,7 +1012,7 @@ describe("reconcileQueuedComposerMessages", () => {
           ...completedTurn,
           turnId: nextTurnId,
           state: "running",
-          requestedAt: "2026-03-29T00:00:07.000Z",
+          requestedAt: "2026-03-29T00:00:04.000Z",
         },
         activeTurnId: nextTurnId,
       }),
