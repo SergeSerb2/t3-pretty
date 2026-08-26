@@ -21,6 +21,7 @@ interface ReadAloudSession {
 }
 
 let audioFileSequence = 0;
+const AUDIO_LOAD_TIMEOUT_MS = 10_000;
 
 function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -96,20 +97,51 @@ export function useNativeReadAloud(input: {
       session.player = player;
 
       await new Promise<void>((resolve, reject) => {
-        const finish = () => {
+        let started = false;
+        let settled = false;
+        let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+        const cleanup = () => {
+          if (loadTimeout) clearTimeout(loadTimeout);
+          loadTimeout = null;
+          session.subscription?.remove();
+          session.subscription = null;
           session.finishPlayback = null;
+        };
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
           resolve();
         };
-        session.finishPlayback = finish;
-        session.subscription = player.addListener("playbackStatusUpdate", (status) => {
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(error);
+        };
+        const handleStatus = (status: ExpoAudioPlayer["currentStatus"]) => {
           if (status.error) {
-            session.finishPlayback = null;
-            reject(new Error(status.error));
-          } else if (status.didJustFinish) {
+            fail(new Error(status.error));
+          } else if (!started && status.isLoaded && status.duration > 0) {
+            started = true;
+            if (loadTimeout) clearTimeout(loadTimeout);
+            loadTimeout = null;
+            try {
+              player.play();
+            } catch (error) {
+              fail(error instanceof Error ? error : new Error("Audio playback failed."));
+            }
+          } else if (started && status.didJustFinish) {
             finish();
           }
-        });
-        player.play();
+        };
+        session.finishPlayback = finish;
+        loadTimeout = setTimeout(
+          () => fail(new Error("The generated audio did not become playable.")),
+          AUDIO_LOAD_TIMEOUT_MS,
+        );
+        session.subscription = player.addListener("playbackStatusUpdate", handleStatus);
+        handleStatus(player.currentStatus);
       });
     },
     [],
@@ -124,7 +156,10 @@ export function useNativeReadAloud(input: {
         return;
       }
       const chunks = readAloudChunks(markdown);
-      if (chunks.length === 0) return;
+      if (chunks.length === 0) {
+        current.reportError("This response has no readable text.");
+        return;
+      }
       if (sessionRef.current?.messageId === messageId) {
         stop();
         return;

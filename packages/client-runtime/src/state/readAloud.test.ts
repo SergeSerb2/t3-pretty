@@ -39,6 +39,10 @@ describe("read aloud text", () => {
     expect(chunks.every((chunk) => chunk.length > 0 && chunk.length <= 200)).toBe(true);
     expect(chunks.join(" ").replace(/\s+/g, " ")).toBe(readAloudPlainText(markdown));
   });
+
+  it("recognizes content with no readable text", () => {
+    expect(readAloudChunks("https://example.com/image.png")).toEqual([]);
+  });
 });
 
 describe("synthesizeReadAloud", () => {

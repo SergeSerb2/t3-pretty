@@ -110,7 +110,10 @@ export function useBrowserReadAloud(input: {
         return;
       }
       const chunks = readAloudChunks(markdown);
-      if (chunks.length === 0) return;
+      if (chunks.length === 0) {
+        current.reportError("This response has no readable text.");
+        return;
+      }
       if (sessionRef.current?.messageId === messageId) {
         stop();
         return;
