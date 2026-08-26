@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.35-nightly.20260826.1195000996",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195000993",
     date: "2026-08-26",
     items: [
