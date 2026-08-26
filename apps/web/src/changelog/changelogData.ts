@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.35-nightly.20260826.1195001053",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195001043",
     date: "2026-08-26",
     items: [
