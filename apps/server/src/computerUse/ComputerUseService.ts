@@ -148,7 +148,7 @@ const MODIFIER_TOKENS: Record<ComputerKeyModifier, string> = {
 };
 
 const SCREEN_INFO_SCRIPT =
-  'ObjC.import("AppKit"); var s = $.NSScreen.mainScreen; var f = s.frame; JSON.stringify({ screenWidth: f.size.width, screenHeight: f.size.height, scaleFactor: s.backingScaleFactor })';
+  'ObjC.import("AppKit"); ObjC.import("CoreGraphics"); var s = $.NSScreen.mainScreen; var f = $.CGDisplayBounds($.CGMainDisplayID()); JSON.stringify({ screenWidth: Number(f.size.width), screenHeight: Number(f.size.height), scaleFactor: Number(s.backingScaleFactor) })';
 
 const MOUSE_CLICK_SCRIPT = `function run(argv) {
   ObjC.import("CoreGraphics");
@@ -167,10 +167,10 @@ const MOUSE_CLICK_SCRIPT = `function run(argv) {
     upType = $.kCGEventOtherMouseUp;
     cgButton = $.kCGMouseButtonCenter;
   }
-  var down = $.CGEventCreateMouseEvent($, downType, point, cgButton);
+  var down = $.CGEventCreateMouseEvent(null, downType, point, cgButton);
   $.CGEventSetIntegerValueField(down, $.kCGMouseEventClickState, clickCount);
   $.CGEventPost($.kCGHIDEventTap, down);
-  var up = $.CGEventCreateMouseEvent($, upType, point, cgButton);
+  var up = $.CGEventCreateMouseEvent(null, upType, point, cgButton);
   $.CGEventSetIntegerValueField(up, $.kCGMouseEventClickState, clickCount);
   $.CGEventPost($.kCGHIDEventTap, up);
 }`;
@@ -178,13 +178,13 @@ const MOUSE_CLICK_SCRIPT = `function run(argv) {
 const MOUSE_MOVE_SCRIPT = `function run(argv) {
   ObjC.import("CoreGraphics");
   var point = $.CGPointMake(Number(argv[0]), Number(argv[1]));
-  var event = $.CGEventCreateMouseEvent($, $.kCGEventMouseMoved, point, $.kCGMouseButtonLeft);
+  var event = $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, point, $.kCGMouseButtonLeft);
   $.CGEventPost($.kCGHIDEventTap, event);
 }`;
 
 const SCROLL_SCRIPT = `function run(argv) {
   ObjC.import("CoreGraphics");
-  var event = $.CGEventCreateScrollWheelEvent($, $.kCGScrollEventUnitLine, 2, parseInt(argv[0], 10), parseInt(argv[1], 10));
+  var event = $.CGEventCreateScrollWheelEvent(null, $.kCGScrollEventUnitLine, 2, parseInt(argv[0], 10), parseInt(argv[1], 10));
   if (argv[2] !== "" && argv[3] !== "") {
     $.CGEventSetLocation(event, $.CGPointMake(Number(argv[2]), Number(argv[3])));
   }

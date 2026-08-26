@@ -63,6 +63,7 @@ it.effect("computer_click passes coordinates, button, and click count via argv",
     const call = calls[0]!;
     assert.equal(call.command, "osascript");
     assert.deepEqual(call.args.slice(0, 3), ["-l", "JavaScript", "-e"]);
+    assert.include(call.args[3]!, "CGEventCreateMouseEvent(null,");
     assert.deepEqual(scriptArgsAfterSeparator(call), ["100", "200.5", "right", "2"]);
   }),
 );
@@ -216,6 +217,8 @@ it.effect("computer_screen_info parses the JXA JSON payload", () =>
     const call = calls[0]!;
     assert.equal(call.command, "osascript");
     assert.deepEqual(call.args.slice(0, 3), ["-l", "JavaScript", "-e"]);
+    assert.include(call.args[3]!, "CGDisplayBounds($.CGMainDisplayID())");
+    assert.include(call.args[3]!, "Number(f.size.width)");
   }),
 );
 
