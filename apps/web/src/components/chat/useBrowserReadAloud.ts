@@ -9,9 +9,9 @@ export type ReadAloudPhase = "idle" | "loading" | "playing";
 interface ReadAloudSession {
   readonly messageId: string;
   readonly prepared: PreparedConnection;
+  readonly audioContext: AudioContext;
   cancelled: boolean;
-  audio: HTMLAudioElement | null;
-  objectUrl: string | null;
+  source: AudioBufferSourceNode | null;
   finishPlayback: (() => void) | null;
 }
 
@@ -23,13 +23,13 @@ function errorMessage(error: unknown): string {
   return "Read aloud failed. Please try again.";
 }
 
-function wavBlob(audioBase64: string): Blob {
+function wavBuffer(audioBase64: string): ArrayBuffer {
   const binary = atob(audioBase64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);
   }
-  return new Blob([bytes], { type: "audio/wav" });
+  return bytes.buffer;
 }
 
 export function useBrowserReadAloud(input: {
@@ -46,29 +46,29 @@ export function useBrowserReadAloud(input: {
   const inputRef = useRef(input);
   inputRef.current = input;
 
-  const releaseAudio = useCallback((session: ReadAloudSession, preservePlayer = false) => {
+  const releaseSource = useCallback((session: ReadAloudSession) => {
     session.finishPlayback?.();
     session.finishPlayback = null;
-    if (session.audio) {
-      session.audio.pause();
-      session.audio.removeAttribute("src");
-      session.audio.load();
-      if (!preservePlayer) session.audio = null;
-    }
-    if (session.objectUrl) {
-      URL.revokeObjectURL(session.objectUrl);
-      session.objectUrl = null;
+    if (session.source) {
+      try {
+        session.source.stop();
+      } catch {
+        // An ended source is already stopped.
+      }
+      session.source.disconnect();
+      session.source = null;
     }
   }, []);
 
   const closeSession = useCallback(
     (session: ReadAloudSession) => {
-      releaseAudio(session);
+      releaseSource(session);
+      void session.audioContext.close().catch(() => undefined);
       if (sessionRef.current !== session) return;
       sessionRef.current = null;
       if (mountedRef.current) setState({ activeMessageId: null, phase: "idle" });
     },
-    [releaseAudio],
+    [releaseSource],
   );
 
   const stop = useCallback(() => {
@@ -79,30 +79,22 @@ export function useBrowserReadAloud(input: {
   }, [closeSession]);
 
   const playAudio = useCallback(async (session: ReadAloudSession, audioBase64: string) => {
-    const objectUrl = URL.createObjectURL(wavBlob(audioBase64));
-    const audio = session.audio ?? new Audio();
-    audio.src = objectUrl;
-    session.objectUrl = objectUrl;
-    session.audio = audio;
+    const buffer = await session.audioContext.decodeAudioData(wavBuffer(audioBase64));
+    if (session.cancelled) return;
+    const source = session.audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(session.audioContext.destination);
+    session.source = source;
 
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        audio.removeEventListener("ended", finish);
-        audio.removeEventListener("error", fail);
-        session.finishPlayback = null;
-      };
+    await new Promise<void>((resolve) => {
       const finish = () => {
-        cleanup();
+        source.removeEventListener("ended", finish);
+        session.finishPlayback = null;
         resolve();
       };
-      const fail = () => {
-        cleanup();
-        reject(new Error("The generated audio could not be played."));
-      };
       session.finishPlayback = finish;
-      audio.addEventListener("ended", finish);
-      audio.addEventListener("error", fail);
-      void audio.play().catch(fail);
+      source.addEventListener("ended", finish, { once: true });
+      source.start();
     });
   }, []);
 
@@ -122,26 +114,36 @@ export function useBrowserReadAloud(input: {
       }
       stop();
 
+      let audioContext: AudioContext;
+      try {
+        audioContext = new AudioContext();
+      } catch (error) {
+        current.reportError(errorMessage(error));
+        return;
+      }
+      const audioReady = audioContext.resume();
       const session: ReadAloudSession = {
         messageId,
         prepared: current.prepared,
+        audioContext,
         cancelled: false,
-        audio: null,
-        objectUrl: null,
+        source: null,
         finishPlayback: null,
       };
       sessionRef.current = session;
       setState({ activeMessageId: messageId, phase: "loading" });
 
       try {
+        await audioReady;
         for (const chunk of chunks) {
+          setState({ activeMessageId: messageId, phase: "loading" });
           const result = await runtime.runPromise(
             synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
           );
           if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "playing" });
           await playAudio(session, result.audioBase64);
-          releaseAudio(session, true);
+          releaseSource(session);
           if (session.cancelled || sessionRef.current !== session) return;
         }
       } catch (error) {
@@ -150,7 +152,7 @@ export function useBrowserReadAloud(input: {
         closeSession(session);
       }
     },
-    [closeSession, playAudio, releaseAudio, stop],
+    [closeSession, playAudio, releaseSource, stop],
   );
 
   useEffect(() => {

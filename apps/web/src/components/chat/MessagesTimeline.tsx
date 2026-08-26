@@ -58,6 +58,7 @@ import {
   GlobeIcon,
   HammerIcon,
   ImageIcon,
+  LoaderCircleIcon,
   MessageCircleIcon,
   MinusIcon,
   MousePointerClickIcon,
@@ -1284,8 +1285,9 @@ function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "
   if (!ctx.readAloudEnabled || row.message.streaming || !row.message.text?.trim()) return null;
 
   const active = ctx.readAloudMessageId === row.message.id;
+  const loading = active && ctx.readAloudPhase === "loading";
   const label = active
-    ? ctx.readAloudPhase === "loading"
+    ? loading
       ? "Stop preparing read aloud"
       : "Stop read aloud"
     : "Read response aloud";
@@ -1295,6 +1297,7 @@ function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "
       <TooltipTrigger
         render={
           <Button
+            aria-busy={loading}
             aria-label={label}
             aria-pressed={active}
             className="text-muted-foreground hover:text-foreground"
@@ -1305,7 +1308,13 @@ function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "
           />
         }
       >
-        {active ? <SquareIcon className="size-3" /> : <Volume2Icon className="size-3" />}
+        {loading ? (
+          <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+        ) : active ? (
+          <SquareIcon className="size-3" />
+        ) : (
+          <Volume2Icon className="size-3" />
+        )}
       </TooltipTrigger>
       <TooltipPopup>{label}</TooltipPopup>
     </Tooltip>

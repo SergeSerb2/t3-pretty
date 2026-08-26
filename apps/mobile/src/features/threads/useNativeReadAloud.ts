@@ -140,6 +140,7 @@ export function useNativeReadAloud(input: {
         const audio = await import("expo-audio");
         await audio.setAudioModeAsync({ playsInSilentMode: true });
         for (const chunk of chunks) {
+          setState({ activeMessageId: messageId, phase: "loading" });
           const result = await runtime.runPromise(
             synthesizeReadAloud({ prepared: session.prepared, text: chunk }),
           );
