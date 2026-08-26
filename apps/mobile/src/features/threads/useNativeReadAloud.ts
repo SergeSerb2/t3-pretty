@@ -210,7 +210,14 @@ export function useNativeReadAloud(input: {
   useEffect(() => {
     const session = sessionRef.current;
     if (!session) return;
-    if (!input.enabled || input.prepared !== session.prepared) stop();
+    if (
+      !input.enabled ||
+      !input.prepared ||
+      input.prepared.environmentId !== session.prepared.environmentId ||
+      input.prepared.httpBaseUrl !== session.prepared.httpBaseUrl
+    ) {
+      stop();
+    }
   }, [input.enabled, input.prepared, stop]);
 
   useEffect(() => {

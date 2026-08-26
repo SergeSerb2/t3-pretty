@@ -84,6 +84,8 @@ export function useBrowserReadAloud(input: {
   const playAudio = useCallback(async (session: ReadAloudSession, audioBase64: string) => {
     const buffer = await session.audioContext.decodeAudioData(wavBuffer(audioBase64));
     if (session.cancelled) return;
+    if (session.audioContext.state !== "running") await session.audioContext.resume();
+    if (session.cancelled) return;
     const source = session.audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(session.audioContext.destination);
@@ -170,7 +172,14 @@ export function useBrowserReadAloud(input: {
   useEffect(() => {
     const session = sessionRef.current;
     if (!session) return;
-    if (!input.enabled || input.prepared !== session.prepared) stop();
+    if (
+      !input.enabled ||
+      !input.prepared ||
+      input.prepared.environmentId !== session.prepared.environmentId ||
+      input.prepared.httpBaseUrl !== session.prepared.httpBaseUrl
+    ) {
+      stop();
+    }
   }, [input.enabled, input.prepared, stop]);
 
   useEffect(() => {
