@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics globalTimers:off - screenshot paths must expire independently of request scope.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -150,6 +152,22 @@ const MODIFIER_TOKENS: Record<ComputerKeyModifier, string> = {
 const SCREEN_INFO_SCRIPT =
   'ObjC.import("AppKit"); ObjC.import("CoreGraphics"); var s = $.NSScreen.mainScreen; var f = $.CGDisplayBounds($.CGMainDisplayID()); JSON.stringify({ screenWidth: Number(f.size.width), screenHeight: Number(f.size.height), scaleFactor: Number(s.backingScaleFactor) })';
 
+export const COMPUTER_SCREENSHOT_TTL_MS = 10 * 60_000;
+
+export const scheduleScreenshotCleanup = (
+  path: string,
+  delayMs = COMPUTER_SCREENSHOT_TTL_MS,
+): Promise<void> =>
+  new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      NodeFS.rm(path, { force: true }, () => resolve());
+    }, delayMs);
+    timer.unref();
+  });
+
+const removeScreenshot = (path: string): Effect.Effect<void> =>
+  Effect.promise(() => NodeFS.promises.rm(path, { force: true }).catch(() => undefined));
+
 const MOUSE_CLICK_SCRIPT = `function run(argv) {
   ObjC.import("CoreGraphics");
   var point = $.CGPointMake(Number(argv[0]), Number(argv[1]));
@@ -274,43 +292,50 @@ export const make = Effect.gen(function* () {
     // Keep the dedicated screenshot write primitive confined to the OS temp
     // directory; callers can copy the returned file with their normal tools.
     const screenshotPath = `${NodeOS.tmpdir()}/t3code-screenshot-${NodeCrypto.randomUUID()}.png`;
-    const captureArgs = ["-x"];
-    if (input.display !== undefined) {
-      captureArgs.push("-D", String(input.display));
-    }
-    if (input.region !== undefined) {
-      const { x, y, width, height } = input.region;
-      yield* requireFiniteCoordinates([
-        ["x", x],
-        ["y", y],
-        ["width", width],
-        ["height", height],
-      ]);
-      captureArgs.push(
-        "-R",
-        `${formatCoordinate(x)},${formatCoordinate(y)},${formatCoordinate(width)},${formatCoordinate(height)}`,
-      );
-    }
-    captureArgs.push(screenshotPath);
-    yield* executor.run({ command: "screencapture", args: captureArgs });
+    const result = yield* Effect.gen(function* () {
+      const captureArgs = ["-x"];
+      if (input.display !== undefined) {
+        captureArgs.push("-D", String(input.display));
+      }
+      if (input.region !== undefined) {
+        const { x, y, width, height } = input.region;
+        yield* requireFiniteCoordinates([
+          ["x", x],
+          ["y", y],
+          ["width", width],
+          ["height", height],
+        ]);
+        captureArgs.push(
+          "-R",
+          `${formatCoordinate(x)},${formatCoordinate(y)},${formatCoordinate(width)},${formatCoordinate(height)}`,
+        );
+      }
+      captureArgs.push(screenshotPath);
+      yield* executor.run({ command: "screencapture", args: captureArgs });
 
-    const sips = yield* executor.run({
-      command: "sips",
-      args: ["-g", "pixelWidth", "-g", "pixelHeight", screenshotPath],
-    });
-    const widthMatch = sips.stdout.match(/pixelWidth:\s*(\d+)/);
-    const heightMatch = sips.stdout.match(/pixelHeight:\s*(\d+)/);
-    if (!widthMatch || !heightMatch) {
-      return yield* new ComputerUseError({
-        reason: "action-failed",
-        message: `Could not parse screenshot dimensions from sips output: ${sips.stdout.trim()}`,
+      const sips = yield* executor.run({
+        command: "sips",
+        args: ["-g", "pixelWidth", "-g", "pixelHeight", screenshotPath],
       });
-    }
-    return {
-      path: screenshotPath,
-      width: Number.parseInt(widthMatch[1] ?? "0", 10),
-      height: Number.parseInt(heightMatch[1] ?? "0", 10),
-    } satisfies ComputerScreenshotResult;
+      const widthMatch = sips.stdout.match(/pixelWidth:\s*(\d+)/);
+      const heightMatch = sips.stdout.match(/pixelHeight:\s*(\d+)/);
+      if (!widthMatch || !heightMatch) {
+        return yield* new ComputerUseError({
+          reason: "action-failed",
+          message: `Could not parse screenshot dimensions from sips output: ${sips.stdout.trim()}`,
+        });
+      }
+      return {
+        path: screenshotPath,
+        width: Number.parseInt(widthMatch[1] ?? "0", 10),
+        height: Number.parseInt(heightMatch[1] ?? "0", 10),
+      } satisfies ComputerScreenshotResult;
+    }).pipe(Effect.tapError(() => removeScreenshot(screenshotPath)));
+
+    yield* Effect.sync(() => {
+      void scheduleScreenshotCleanup(screenshotPath);
+    });
+    return result;
   });
 
   const click = Effect.fn("ComputerUseService.click")(function* (input: ComputerClickInput) {

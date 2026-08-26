@@ -1,3 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off - cleanup tests exercise the real temp-file boundary.
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { ComputerUseError } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
@@ -13,6 +18,7 @@ import {
   ComputerUseExecutorLive,
   ComputerUseService,
   make,
+  scheduleScreenshotCleanup,
 } from "./ComputerUseService.ts";
 
 interface RecordedCall {
@@ -204,7 +210,42 @@ it.effect("computer_screenshot honors display and region while using a temp path
   }),
 );
 
-it.effect("computer_screen_info parses the JXA JSON payload", () =>
+it.effect("computer_screenshot removes its temporary file after the documented TTL", () =>
+  Effect.gen(function* () {
+    const screenshotPath = `${NodeOS.tmpdir()}/t3code-screenshot-test-${NodeCrypto.randomUUID()}.png`;
+    NodeFS.writeFileSync(screenshotPath, "png");
+
+    yield* Effect.promise(() => scheduleScreenshotCleanup(screenshotPath, 0));
+
+    assert.isFalse(NodeFS.existsSync(screenshotPath));
+  }),
+);
+
+it.effect("computer_screenshot removes its temporary file when inspection fails", () =>
+  Effect.gen(function* () {
+    let screenshotPath: string | undefined;
+    const { getService } = makeServiceHarness({
+      stdoutFor: (input) => {
+        if (input.command === "screencapture") {
+          const path = input.args[input.args.length - 1];
+          assert.isDefined(path);
+          screenshotPath = path;
+          NodeFS.writeFileSync(path, "png");
+        }
+        return "";
+      },
+    });
+    const service = yield* getService;
+
+    const error = yield* service.screenshot({}).pipe(Effect.flip);
+
+    assert.equal(error.reason, "action-failed");
+    assert.isDefined(screenshotPath);
+    assert.isFalse(NodeFS.existsSync(screenshotPath));
+  }),
+);
+
+it.effect("computer_screen_info uses Quartz display coordinates instead of backing pixels", () =>
   Effect.gen(function* () {
     const { calls, getService } = makeServiceHarness({
       stdoutFor: () => '{"screenWidth":1512,"screenHeight":982,"scaleFactor":2}\n',
@@ -218,6 +259,8 @@ it.effect("computer_screen_info parses the JXA JSON payload", () =>
     assert.equal(call.command, "osascript");
     assert.deepEqual(call.args.slice(0, 3), ["-l", "JavaScript", "-e"]);
     assert.include(call.args[3]!, "CGDisplayBounds($.CGMainDisplayID())");
+    assert.notInclude(call.args[3]!, "CGDisplayPixelsWide");
+    assert.notInclude(call.args[3]!, "CGDisplayPixelsHigh");
     assert.include(call.args[3]!, "Number(f.size.width)");
   }),
 );

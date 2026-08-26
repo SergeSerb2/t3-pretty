@@ -24,7 +24,7 @@ const computerTool = <T extends Tool.Any>(tool: T, destructive: boolean): T =>
 export const ComputerScreenInfoTool = computerTool(
   Tool.make("computer_screen_info", {
     description:
-      "Get the main display size in points and its backing scale factor. Coordinates use the top-left of the main display.",
+      "Get the main display size in Quartz global display coordinates and its backing pixel scale. Use the returned coordinates directly; do not multiply them by scaleFactor.",
     parameters: ComputerScreenInfoInput,
     success: ComputerScreenInfoResult,
     failure: ComputerUseError,
@@ -36,7 +36,7 @@ export const ComputerScreenInfoTool = computerTool(
 export const ComputerScreenshotTool = computerTool(
   Tool.make("computer_screenshot", {
     description:
-      "Capture a PNG screenshot of a display or region and return its path and pixel dimensions. Read the returned file to inspect the screen.",
+      "Capture a PNG screenshot of a display or region and return its temporary path and pixel dimensions. Read the file promptly; it expires after 10 minutes.",
     parameters: ComputerScreenshotInput,
     success: ComputerScreenshotResult,
     failure: ComputerUseError,
@@ -48,7 +48,7 @@ export const ComputerScreenshotTool = computerTool(
 export const ComputerClickTool = computerTool(
   Tool.make("computer_click", {
     description:
-      "Click at main-display point coordinates. Take a screenshot before choosing coordinates and after to verify the result.",
+      "Click in Quartz global display coordinates. Take a screenshot before choosing coordinates and after to verify the result.",
     parameters: ComputerClickInput,
     success: ComputerActionResult,
     failure: ComputerUseError,
@@ -59,7 +59,7 @@ export const ComputerClickTool = computerTool(
 
 export const ComputerMoveTool = computerTool(
   Tool.make("computer_move", {
-    description: "Move the pointer to main-display point coordinates without clicking.",
+    description: "Move the pointer in Quartz global display coordinates without clicking.",
     parameters: ComputerMoveInput,
     success: ComputerActionResult,
     failure: ComputerUseError,

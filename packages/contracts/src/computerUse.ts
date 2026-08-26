@@ -25,27 +25,31 @@ export class ComputerUseError extends Schema.TaggedErrorClass<ComputerUseError>(
   },
 ) {}
 
-const PointCoordinate = Schema.Number.annotate({
+const QuartzCoordinate = Schema.Number.annotate({
   description:
-    "Coordinate in main-display points, origin at the top-left corner of the primary screen.",
+    "Coordinate in Quartz global display space, origin at the top-left of the main display. Use screen-info coordinates directly; do not multiply by scaleFactor.",
 });
 
 export const ComputerScreenInfoInput = Schema.Struct({});
 export type ComputerScreenInfoInput = typeof ComputerScreenInfoInput.Type;
 
 export const ComputerScreenInfoResult = Schema.Struct({
-  screenWidth: Schema.Number.annotate({ description: "Main display width in points." }),
-  screenHeight: Schema.Number.annotate({ description: "Main display height in points." }),
+  screenWidth: Schema.Number.annotate({
+    description: "Main display width in Quartz global display coordinates.",
+  }),
+  screenHeight: Schema.Number.annotate({
+    description: "Main display height in Quartz global display coordinates.",
+  }),
   scaleFactor: Schema.Number.annotate({
     description:
-      "Backing scale factor (2 on Retina displays). Multiply point coordinates by this to get pixels.",
+      "Backing pixel scale for captured image dimensions. Do not apply it to input coordinates.",
   }),
 });
 export type ComputerScreenInfoResult = typeof ComputerScreenInfoResult.Type;
 
 export const ComputerScreenshotRegion = Schema.Struct({
-  x: PointCoordinate,
-  y: PointCoordinate,
+  x: QuartzCoordinate,
+  y: QuartzCoordinate,
   width: Schema.Number,
   height: Schema.Number,
 });
@@ -60,7 +64,8 @@ export const ComputerScreenshotInput = Schema.Struct({
   ),
   region: Schema.optional(
     ComputerScreenshotRegion.annotate({
-      description: "Optional screen region in points to capture instead of the full display.",
+      description:
+        "Optional screen region in Quartz global display coordinates to capture instead of the full display.",
     }),
   ),
 });
@@ -68,7 +73,8 @@ export type ComputerScreenshotInput = typeof ComputerScreenshotInput.Type;
 
 export const ComputerScreenshotResult = Schema.Struct({
   path: Schema.String.annotate({
-    description: "Absolute path of the captured PNG. Read/view it with your normal file tools.",
+    description:
+      "Absolute path of the captured PNG. Read/view it promptly; the temporary file expires after 10 minutes.",
   }),
   width: Schema.Number.annotate({ description: "Image width in pixels." }),
   height: Schema.Number.annotate({ description: "Image height in pixels." }),
@@ -79,8 +85,8 @@ export const ComputerMouseButton = Schema.Literals(["left", "right", "middle"]);
 export type ComputerMouseButton = typeof ComputerMouseButton.Type;
 
 export const ComputerClickInput = Schema.Struct({
-  x: PointCoordinate,
-  y: PointCoordinate,
+  x: QuartzCoordinate,
+  y: QuartzCoordinate,
   button: Schema.optional(
     ComputerMouseButton.annotate({ description: "Mouse button to click.", default: "left" }),
   ),
@@ -94,8 +100,8 @@ export const ComputerClickInput = Schema.Struct({
 export type ComputerClickInput = typeof ComputerClickInput.Type;
 
 export const ComputerMoveInput = Schema.Struct({
-  x: PointCoordinate,
-  y: PointCoordinate,
+  x: QuartzCoordinate,
+  y: QuartzCoordinate,
 });
 export type ComputerMoveInput = typeof ComputerMoveInput.Type;
 
@@ -148,13 +154,13 @@ export const ComputerScrollInput = Schema.Struct({
     }),
   ),
   x: Schema.optional(
-    PointCoordinate.annotate({
+    QuartzCoordinate.annotate({
       description:
         "Optional pointer x position to scroll at. Defaults to scrolling under the current pointer.",
     }),
   ),
   y: Schema.optional(
-    PointCoordinate.annotate({
+    QuartzCoordinate.annotate({
       description:
         "Optional pointer y position to scroll at. Defaults to scrolling under the current pointer.",
     }),
