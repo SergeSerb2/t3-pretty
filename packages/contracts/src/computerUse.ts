@@ -42,7 +42,7 @@ export const ComputerScreenInfoResult = Schema.Struct({
   }),
   scaleFactor: Schema.Number.annotate({
     description:
-      "Backing pixel scale for captured image dimensions. Do not apply it to input coordinates.",
+      "Native backing pixel scale. Computer screenshots are normalized to Quartz coordinates, so do not apply it to input coordinates.",
   }),
 });
 export type ComputerScreenInfoResult = typeof ComputerScreenInfoResult.Type;
@@ -50,8 +50,8 @@ export type ComputerScreenInfoResult = typeof ComputerScreenInfoResult.Type;
 export const ComputerScreenshotRegion = Schema.Struct({
   x: QuartzCoordinate,
   y: QuartzCoordinate,
-  width: Schema.Number,
-  height: Schema.Number,
+  width: Schema.Int.check(Schema.isGreaterThan(0)),
+  height: Schema.Int.check(Schema.isGreaterThan(0)),
 });
 export type ComputerScreenshotRegion = typeof ComputerScreenshotRegion.Type;
 
@@ -84,8 +84,12 @@ export const ComputerScreenshotResult = Schema.Struct({
     description:
       "Absolute path of the captured PNG. Read/view it promptly; the temporary file expires after 10 minutes.",
   }),
-  width: Schema.Number.annotate({ description: "Image width in pixels." }),
-  height: Schema.Number.annotate({ description: "Image height in pixels." }),
+  width: Schema.Number.annotate({
+    description: "Image width in normalized pixels; one pixel is one Quartz coordinate unit.",
+  }),
+  height: Schema.Number.annotate({
+    description: "Image height in normalized pixels; one pixel is one Quartz coordinate unit.",
+  }),
 });
 export type ComputerScreenshotResult = typeof ComputerScreenshotResult.Type;
 

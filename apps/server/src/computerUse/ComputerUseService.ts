@@ -149,8 +149,20 @@ const MODIFIER_TOKENS: Record<ComputerKeyModifier, string> = {
   control: "control down",
 };
 
-const SCREEN_INFO_SCRIPT =
-  'ObjC.import("AppKit"); ObjC.import("CoreGraphics"); var s = $.NSScreen.mainScreen; var f = $.CGDisplayBounds($.CGMainDisplayID()); JSON.stringify({ screenWidth: Number(f.size.width), screenHeight: Number(f.size.height), scaleFactor: Number(s.backingScaleFactor) })';
+const SCREEN_INFO_SCRIPT = `function run(argv) {
+  ObjC.import("AppKit");
+  ObjC.import("CoreGraphics");
+  var index = parseInt(argv[0], 10) - 1;
+  var screens = $.NSScreen.screens;
+  if (index < 0 || index >= screens.count) throw new Error("Display index is out of range");
+  var screen = screens.objectAtIndex(index);
+  var frame = index === 0 ? $.CGDisplayBounds($.CGMainDisplayID()) : screen.frame;
+  return JSON.stringify({
+    screenWidth: Number(frame.size.width),
+    screenHeight: Number(frame.size.height),
+    scaleFactor: Number(screen.backingScaleFactor)
+  });
+}`;
 
 export const COMPUTER_SCREENSHOT_TTL_MS = 10 * 60_000;
 
@@ -268,12 +280,10 @@ export const make = Effect.gen(function* () {
   const runAppleScript = (script: string, args: ReadonlyArray<string>) =>
     executor.run({ command: "osascript", args: ["-e", script, "--", ...args] });
 
-  const screenInfo = Effect.fn("ComputerUseService.screenInfo")(function* () {
-    yield* requireDarwin();
-    const result = yield* executor.run({
-      command: "osascript",
-      args: ["-l", "JavaScript", "-e", SCREEN_INFO_SCRIPT],
-    });
+  const readScreenInfo = Effect.fn("ComputerUseService.readScreenInfo")(function* (
+    display: number,
+  ) {
+    const result = yield* runJxa(SCREEN_INFO_SCRIPT, [String(display)]);
     return yield* Schema.decodeUnknownEffect(ScreenInfoJson)(result.stdout).pipe(
       Effect.mapError(
         () =>
@@ -283,6 +293,11 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
+  });
+
+  const screenInfo = Effect.fn("ComputerUseService.screenInfo")(function* () {
+    yield* requireDarwin();
+    return yield* readScreenInfo(1);
   });
 
   const screenshot = Effect.fn("ComputerUseService.screenshot")(function* (
@@ -308,6 +323,12 @@ export const make = Effect.gen(function* () {
           ["width", width],
           ["height", height],
         ]);
+        if (width <= 0 || height <= 0 || !Number.isInteger(width) || !Number.isInteger(height)) {
+          return yield* new ComputerUseError({
+            reason: "action-failed",
+            message: "Screenshot region width and height must be positive integers.",
+          });
+        }
         captureArgs.push(
           "-R",
           `${formatCoordinate(x)},${formatCoordinate(y)},${formatCoordinate(width)},${formatCoordinate(height)}`,
@@ -330,10 +351,30 @@ export const make = Effect.gen(function* () {
           message: `Could not parse screenshot dimensions from sips output: ${sips.stdout.trim()}`,
         });
       }
+
+      let width: number;
+      let height: number;
+      if (input.region !== undefined) {
+        width = Math.round(input.region.width);
+        height = Math.round(input.region.height);
+      } else {
+        const displayInfo = yield* readScreenInfo(input.display ?? 1);
+        width = Math.round(displayInfo.screenWidth);
+        height = Math.round(displayInfo.screenHeight);
+      }
+      if (
+        Number.parseInt(widthMatch[1] ?? "0", 10) !== width ||
+        Number.parseInt(heightMatch[1] ?? "0", 10) !== height
+      ) {
+        yield* executor.run({
+          command: "sips",
+          args: ["-z", String(height), String(width), screenshotPath],
+        });
+      }
       return {
         path: screenshotPath,
-        width: Number.parseInt(widthMatch[1] ?? "0", 10),
-        height: Number.parseInt(heightMatch[1] ?? "0", 10),
+        width,
+        height,
       } satisfies ComputerScreenshotResult;
     }).pipe(Effect.tapError(() => removeScreenshot(screenshotPath)));
 

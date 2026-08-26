@@ -17,7 +17,7 @@ const T3_CODE_COMPUTER_TOOL_INSTRUCTIONS = `
 
 The \`t3-code-computer\` MCP server controls the macOS host shared with the user. For desktop work, call \`computer_screen_info\` and \`computer_screenshot\` before choosing coordinates, then use the focused \`computer_*\` action tools and take another screenshot to verify the result.
 
-Mouse, scroll, and screenshot-region inputs use Quartz global display coordinates from \`computer_screen_info\`, with the origin at the top-left of the main display. Use those coordinates directly; do not multiply them by \`scaleFactor\`. Read screenshot paths promptly because their temporary files expire after 10 minutes.
+Mouse, scroll, and screenshot-region inputs use Quartz global display coordinates from \`computer_screen_info\`, with the origin at the top-left of the main display. Returned PNGs are normalized so one image pixel equals one Quartz coordinate unit; use those coordinates directly and do not multiply them by \`scaleFactor\`. Read screenshot paths promptly because their temporary files expire after 10 minutes.
 `;
 
 /**

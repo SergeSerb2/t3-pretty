@@ -173,17 +173,22 @@ it.effect("computer_scroll rejects a partial location", () =>
   }),
 );
 
-it.effect("computer_screenshot builds screencapture argv and parses sips dimensions", () =>
+it.effect("computer_screenshot normalizes Retina pixels to Quartz dimensions", () =>
   Effect.gen(function* () {
     const sipsOutput = "/tmp/shot.png\n  pixelWidth: 3024\n  pixelHeight: 1964\n";
     const { calls, getService } = makeServiceHarness({
-      stdoutFor: (input) => (input.command === "sips" ? sipsOutput : ""),
+      stdoutFor: (input) =>
+        input.command === "sips"
+          ? sipsOutput
+          : input.command === "osascript"
+            ? '{"screenWidth":1512,"screenHeight":982,"scaleFactor":2}\n'
+            : "",
     });
     const service = yield* getService;
 
     const result = yield* service.screenshot({});
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 4);
     const capture = calls[0]!;
     assert.equal(capture.command, "screencapture");
     assert.deepEqual(capture.args.slice(0, 3), ["-x", "-D", "1"]);
@@ -194,8 +199,12 @@ it.effect("computer_screenshot builds screencapture argv and parses sips dimensi
     const sips = calls[1]!;
     assert.equal(sips.command, "sips");
     assert.deepEqual(sips.args, ["-g", "pixelWidth", "-g", "pixelHeight", outputPath]);
+    assert.deepEqual(calls[3], {
+      command: "sips",
+      args: ["-z", "982", "1512", outputPath],
+    });
 
-    assert.deepEqual(result, { path: outputPath, width: 3024, height: 1964 });
+    assert.deepEqual(result, { path: outputPath, width: 1512, height: 982 });
   }),
 );
 
@@ -204,7 +213,7 @@ it.effect("computer_screenshot captures a Quartz region without display-local co
     const { calls, getService } = makeServiceHarness({
       stdoutFor: (input) =>
         input.command === "sips"
-          ? "/tmp/generated.png\n  pixelWidth: 300\n  pixelHeight: 200\n"
+          ? "/tmp/generated.png\n  pixelWidth: 600\n  pixelHeight: 400\n"
           : "",
     });
     const service = yield* getService;
@@ -218,6 +227,10 @@ it.effect("computer_screenshot captures a Quartz region without display-local co
     assert.notInclude(capture.args, "-D");
     const outputPath = capture.args[capture.args.length - 1]!;
     assert.match(outputPath, /t3code-screenshot-.+\.png$/u);
+    assert.deepEqual(calls[2], {
+      command: "sips",
+      args: ["-z", "200", "300", outputPath],
+    });
     assert.deepEqual(result, { path: outputPath, width: 300, height: 200 });
   }),
 );
@@ -287,7 +300,8 @@ it.effect("computer_screen_info uses Quartz display coordinates instead of backi
     assert.include(call.args[3]!, "CGDisplayBounds($.CGMainDisplayID())");
     assert.notInclude(call.args[3]!, "CGDisplayPixelsWide");
     assert.notInclude(call.args[3]!, "CGDisplayPixelsHigh");
-    assert.include(call.args[3]!, "Number(f.size.width)");
+    assert.include(call.args[3]!, "Number(frame.size.width)");
+    assert.deepEqual(scriptArgsAfterSeparator(call), ["1"]);
   }),
 );
 
