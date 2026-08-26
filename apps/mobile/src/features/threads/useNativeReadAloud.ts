@@ -116,14 +116,14 @@ export function useNativeReadAloud(input: {
         current.reportError("Reconnect to the environment to use read aloud.");
         return;
       }
+      const chunks = readAloudChunks(markdown);
+      if (chunks.length === 0) return;
       if (sessionRef.current?.messageId === messageId) {
         stop();
         return;
       }
       stop();
 
-      const chunks = readAloudChunks(markdown);
-      if (chunks.length === 0) return;
       const session: ReadAloudSession = {
         messageId,
         prepared: current.prepared,

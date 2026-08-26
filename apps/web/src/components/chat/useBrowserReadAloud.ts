@@ -46,14 +46,14 @@ export function useBrowserReadAloud(input: {
   const inputRef = useRef(input);
   inputRef.current = input;
 
-  const releaseAudio = useCallback((session: ReadAloudSession) => {
+  const releaseAudio = useCallback((session: ReadAloudSession, preservePlayer = false) => {
     session.finishPlayback?.();
     session.finishPlayback = null;
     if (session.audio) {
       session.audio.pause();
       session.audio.removeAttribute("src");
       session.audio.load();
-      session.audio = null;
+      if (!preservePlayer) session.audio = null;
     }
     if (session.objectUrl) {
       URL.revokeObjectURL(session.objectUrl);
@@ -80,26 +80,29 @@ export function useBrowserReadAloud(input: {
 
   const playAudio = useCallback(async (session: ReadAloudSession, audioBase64: string) => {
     const objectUrl = URL.createObjectURL(wavBlob(audioBase64));
-    const audio = new Audio(objectUrl);
+    const audio = session.audio ?? new Audio();
+    audio.src = objectUrl;
     session.objectUrl = objectUrl;
     session.audio = audio;
 
     await new Promise<void>((resolve, reject) => {
-      const finish = () => {
+      const cleanup = () => {
+        audio.removeEventListener("ended", finish);
+        audio.removeEventListener("error", fail);
         session.finishPlayback = null;
+      };
+      const finish = () => {
+        cleanup();
         resolve();
       };
+      const fail = () => {
+        cleanup();
+        reject(new Error("The generated audio could not be played."));
+      };
       session.finishPlayback = finish;
-      audio.addEventListener("ended", finish, { once: true });
-      audio.addEventListener(
-        "error",
-        () => {
-          session.finishPlayback = null;
-          reject(new Error("The generated audio could not be played."));
-        },
-        { once: true },
-      );
-      void audio.play().catch(reject);
+      audio.addEventListener("ended", finish);
+      audio.addEventListener("error", fail);
+      void audio.play().catch(fail);
     });
   }, []);
 
@@ -111,14 +114,14 @@ export function useBrowserReadAloud(input: {
         current.reportError("Reconnect to the environment to use read aloud.");
         return;
       }
+      const chunks = readAloudChunks(markdown);
+      if (chunks.length === 0) return;
       if (sessionRef.current?.messageId === messageId) {
         stop();
         return;
       }
       stop();
 
-      const chunks = readAloudChunks(markdown);
-      if (chunks.length === 0) return;
       const session: ReadAloudSession = {
         messageId,
         prepared: current.prepared,
@@ -138,7 +141,7 @@ export function useBrowserReadAloud(input: {
           if (session.cancelled || sessionRef.current !== session) return;
           setState({ activeMessageId: messageId, phase: "playing" });
           await playAudio(session, result.audioBase64);
-          releaseAudio(session);
+          releaseAudio(session, true);
           if (session.cancelled || sessionRef.current !== session) return;
         }
       } catch (error) {

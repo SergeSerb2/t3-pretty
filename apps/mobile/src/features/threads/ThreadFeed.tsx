@@ -1359,7 +1359,7 @@ function renderFeedEntry(
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
-            {props.readAloudEnabled ? (
+            {props.readAloudEnabled && !message.streaming && message.text.trim() ? (
               <ReadAloudButton
                 active={props.readAloudMessageId === message.id}
                 phase={props.readAloudPhase}
