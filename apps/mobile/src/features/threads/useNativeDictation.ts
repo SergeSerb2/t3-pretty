@@ -244,7 +244,7 @@ export function useNativeDictation(input: {
     try {
       await recorder.stop();
       if (!session.closed) uri = recorder.uri;
-      if (!uri && !session.closed) {
+      if (!uri && !session.closed && !session.stopRequested) {
         session.error = new Error("Voice recorder produced no audio file.");
         session.stopRequested = true;
       } else if (uri && !session.error) {

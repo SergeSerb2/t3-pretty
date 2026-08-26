@@ -210,46 +210,52 @@ export function useBrowserDictation(input: {
       void finishSession(session);
       return;
     }
-    const format = recordingFormat();
-    const chunks: Blob[] = [];
-    const recorder = new MediaRecorder(session.stream, { mimeType: format.mimeType });
-    session.recorder = recorder;
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
-    };
-    recorder.onstop = () => {
-      if (session.closed) return;
-      if (session.timer !== null) window.clearTimeout(session.timer);
-      session.timer = null;
-      if (session.recorder === recorder) session.recorder = null;
-      const blob = new Blob(chunks, { type: format.mimeType });
-      if (blob.size > 0 && !session.error) {
-        session.queue = session.queue.then(async () => {
-          if (session.error || session.cancelled || session.closed) return;
-          try {
-            await transcribeChunk(session, blob, format.apiMimeType);
-          } catch (error) {
-            if (session.cancelled || session.closed) return;
-            session.error = error;
-            session.stopRequested = true;
-            if (session.recorder?.state === "recording") session.recorder.stop();
-          }
-        });
-        void session.queue.then(() => {
-          if (session.error && !session.closed) void finishSession(session);
-        });
-      } else if (!session.stopRequested && !session.error) {
-        session.error = new Error("Voice recorder produced no audio.");
-        session.stopRequested = true;
-      }
-      if (session.stopRequested || session.error) {
-        void finishSession(session);
-      } else {
-        beginChunkRef.current(session);
-      }
-    };
-    recorder.start();
-    session.timer = window.setTimeout(() => recorder.stop(), CHUNK_DURATION_MS);
+    try {
+      const format = recordingFormat();
+      const chunks: Blob[] = [];
+      const recorder = new MediaRecorder(session.stream, { mimeType: format.mimeType });
+      session.recorder = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        if (session.closed) return;
+        if (session.timer !== null) window.clearTimeout(session.timer);
+        session.timer = null;
+        if (session.recorder === recorder) session.recorder = null;
+        const blob = new Blob(chunks, { type: format.mimeType });
+        if (blob.size > 0 && !session.error) {
+          session.queue = session.queue.then(async () => {
+            if (session.error || session.cancelled || session.closed) return;
+            try {
+              await transcribeChunk(session, blob, format.apiMimeType);
+            } catch (error) {
+              if (session.cancelled || session.closed) return;
+              session.error = error;
+              session.stopRequested = true;
+              if (session.recorder?.state === "recording") session.recorder.stop();
+            }
+          });
+          void session.queue.then(() => {
+            if (session.error && !session.closed) void finishSession(session);
+          });
+        } else if (!session.stopRequested && !session.error) {
+          session.error = new Error("Voice recorder produced no audio.");
+          session.stopRequested = true;
+        }
+        if (session.stopRequested || session.error) {
+          void finishSession(session);
+        } else {
+          beginChunkRef.current(session);
+        }
+      };
+      recorder.start();
+      session.timer = window.setTimeout(() => recorder.stop(), CHUNK_DURATION_MS);
+    } catch (error) {
+      session.error = error;
+      session.stopRequested = true;
+      void finishSession(session);
+    }
   };
 
   const stop = useCallback(() => {
