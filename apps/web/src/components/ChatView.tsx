@@ -394,6 +394,7 @@ import {
   isBranchMismatchDismissedForSession,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -1646,6 +1647,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [queuedComposerMessages, setQueuedComposerMessages] = useState<
     ReadonlyArray<QueuedComposerMessage>
   >([]);
+  const previousComposerRouteIdentityRef = useRef({ draftId, routeKind, routeThreadKey });
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
@@ -4651,13 +4653,9 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThread || queuedComposerMessages.length === 0) return;
-    const activeTurnId =
-      activeThread.session?.status === "running" ? activeThread.session.activeTurnId : null;
     const reconciled = reconcileQueuedComposerMessages({
       queuedMessages: queuedComposerMessages,
-      serverMessages: activeThread.messages,
       latestTurn: activeThread.latestTurn,
-      activeTurnId,
     });
     if (reconciled !== queuedComposerMessages) {
       setQueuedComposerMessages(reconciled);
@@ -4665,7 +4663,13 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread, queuedComposerMessages]);
 
   useEffect(() => {
-    // Draft promotion keeps the same environment/thread key; real conversation navigation does not.
+    const currentRouteIdentity = { draftId, routeKind, routeThreadKey };
+    const shouldReset = shouldResetComposerQueueForRouteChange(
+      previousComposerRouteIdentityRef.current,
+      currentRouteIdentity,
+    );
+    previousComposerRouteIdentityRef.current = currentRouteIdentity;
+    if (!shouldReset) return;
     setOptimisticUserMessages((existing) => {
       for (const message of existing) {
         revokeUserMessagePreviewUrls(message);
@@ -4675,7 +4679,7 @@ function ChatViewContent(props: ChatViewProps) {
     setQueuedComposerMessages([]);
     resetLocalDispatch();
     setExpandedImage(null);
-  }, [resetLocalDispatch, routeThreadKey]);
+  }, [draftId, resetLocalDispatch, routeKind, routeThreadKey]);
 
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
@@ -6148,9 +6152,6 @@ function ChatViewContent(props: ChatViewProps) {
           id: messageIdForSend,
           text: trimmed,
           attachmentCount: optimisticAttachments.length,
-          createdAt: messageCreatedAt,
-          queuedBehindTurnId:
-            activeThread.session?.activeTurnId ?? activeThread.latestTurn?.turnId ?? null,
         },
       ]);
     }

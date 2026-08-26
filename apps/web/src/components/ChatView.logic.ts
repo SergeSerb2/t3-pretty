@@ -38,31 +38,39 @@ export interface QueuedComposerMessage {
   readonly id: MessageId;
   readonly text: string;
   readonly attachmentCount: number;
-  readonly createdAt: string;
-  readonly queuedBehindTurnId: TurnId | null;
 }
 
 /** Keep queued copy at the composer until the server starts its turn. */
 export function reconcileQueuedComposerMessages(input: {
   queuedMessages: ReadonlyArray<QueuedComposerMessage>;
-  serverMessages: ReadonlyArray<ChatMessage>;
   latestTurn: Thread["latestTurn"] | null;
-  activeTurnId: TurnId | null;
 }): ReadonlyArray<QueuedComposerMessage> {
   const head = input.queuedMessages[0];
   if (!head) return input.queuedMessages;
+  return input.latestTurn?.userMessageId === head.id
+    ? input.queuedMessages.slice(1)
+    : input.queuedMessages;
+}
 
-  const serverAssociatedMessage = input.serverMessages.some((message) => message.id === head.id);
-  const queuedTurnStarted =
-    input.activeTurnId !== null &&
-    input.activeTurnId !== head.queuedBehindTurnId &&
-    input.latestTurn?.turnId === input.activeTurnId;
-  if (!serverAssociatedMessage && !queuedTurnStarted) return input.queuedMessages;
+export interface ChatViewRouteIdentity {
+  readonly routeKind: "draft" | "server";
+  readonly routeThreadKey: string;
+  readonly draftId: string | null;
+}
 
-  return input.queuedMessages.slice(1).map((message) => ({
-    ...message,
-    queuedBehindTurnId: input.activeTurnId,
-  }));
+export function shouldResetComposerQueueForRouteChange(
+  previous: ChatViewRouteIdentity,
+  current: ChatViewRouteIdentity,
+): boolean {
+  const unchanged =
+    previous.routeKind === current.routeKind &&
+    previous.routeThreadKey === current.routeThreadKey &&
+    previous.draftId === current.draftId;
+  const promoted =
+    previous.routeKind === "draft" &&
+    current.routeKind === "server" &&
+    previous.routeThreadKey === current.routeThreadKey;
+  return !unchanged && !promoted;
 }
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);

@@ -628,6 +628,11 @@ export function projectEvent(
         // Leaving the "running" session status is the turn-end signal: settle
         // a still-running latest turn so its duration reflects the whole turn.
         const settledTurnState = settledTurnStateForSessionStatus(session.status);
+        const activeUserMessageId =
+          payload.activeUserMessageId ??
+          (thread.latestTurn?.turnId === session.activeTurnId
+            ? thread.latestTurn.userMessageId
+            : undefined);
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
@@ -636,6 +641,9 @@ export function projectEvent(
               session.status === "running" && session.activeTurnId !== null
                 ? {
                     turnId: session.activeTurnId,
+                    ...(activeUserMessageId !== undefined
+                      ? { userMessageId: activeUserMessageId }
+                      : {}),
                     state: "running",
                     requestedAt:
                       thread.latestTurn?.turnId === session.activeTurnId

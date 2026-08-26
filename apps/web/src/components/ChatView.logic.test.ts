@@ -41,6 +41,7 @@ import {
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -973,71 +974,72 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
 });
 
 describe("reconcileQueuedComposerMessages", () => {
-  const queuedBehindTurnId = TurnId.make("turn-running");
   const queuedMessages = [
     {
       id: MessageId.make("message-queued-1"),
       text: "First queued follow-up",
       attachmentCount: 0,
-      createdAt: "2026-03-29T00:00:05.000Z",
-      queuedBehindTurnId,
     },
     {
       id: MessageId.make("message-queued-2"),
       text: "Second queued follow-up",
       attachmentCount: 1,
-      createdAt: "2026-03-29T00:00:06.000Z",
-      queuedBehindTurnId,
     },
   ];
 
-  it("holds queued copy while the same turn is running", () => {
+  it("holds queued copy until the server identifies its turn", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
-        serverMessages: [],
-        latestTurn: { ...completedTurn, turnId: queuedBehindTurnId, state: "running" },
-        activeTurnId: queuedBehindTurnId,
+        latestTurn: { ...completedTurn, turnId: TurnId.make("turn-other"), state: "running" },
       }),
     ).toBe(queuedMessages);
   });
 
-  it("releases one queued message when its next turn starts despite clock skew", () => {
-    const nextTurnId = TurnId.make("turn-next");
+  it("releases one queued message when the server identifies its turn", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
-        serverMessages: [],
         latestTurn: {
           ...completedTurn,
-          turnId: nextTurnId,
+          turnId: TurnId.make("turn-next"),
+          userMessageId: queuedMessages[0]!.id,
           state: "running",
-          requestedAt: "2026-03-29T00:00:04.000Z",
         },
-        activeTurnId: nextTurnId,
       }),
-    ).toEqual([{ ...queuedMessages[1], queuedBehindTurnId: nextTurnId }]);
+    ).toEqual([queuedMessages[1]]);
   });
 
-  it("releases a queued message once the server echoes it", () => {
+  it("releases a queued message after its turn finishes before reconciliation", () => {
     expect(
       reconcileQueuedComposerMessages({
         queuedMessages,
-        serverMessages: [
-          {
-            id: queuedMessages[0]!.id,
-            role: "user",
-            text: queuedMessages[0]!.text,
-            turnId: null,
-            createdAt: queuedMessages[0]!.createdAt,
-            updatedAt: queuedMessages[0]!.createdAt,
-            streaming: false,
-          },
-        ],
-        latestTurn: completedTurn,
-        activeTurnId: null,
+        latestTurn: { ...completedTurn, userMessageId: queuedMessages[0]!.id },
       }),
-    ).toEqual([{ ...queuedMessages[1], queuedBehindTurnId: null }]);
+    ).toEqual([queuedMessages[1]]);
+  });
+});
+
+describe("shouldResetComposerQueueForRouteChange", () => {
+  const draft = { routeKind: "draft" as const, routeThreadKey: "env:thread", draftId: "draft-1" };
+
+  it("preserves promotion but resets other route identity changes", () => {
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        routeKind: "server",
+        routeThreadKey: draft.routeThreadKey,
+        draftId: null,
+      }),
+    ).toBe(false);
+    expect(shouldResetComposerQueueForRouteChange(draft, { ...draft, draftId: "draft-2" })).toBe(
+      true,
+    );
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        ...draft,
+        routeThreadKey: "env:other-thread",
+      }),
+    ).toBe(true);
   });
 });
 

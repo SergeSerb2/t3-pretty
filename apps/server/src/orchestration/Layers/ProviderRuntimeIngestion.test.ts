@@ -375,6 +375,45 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("associates a started turn with its requested user message", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const messageId = MessageId.make("message-started-turn");
+    const createdAt = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-associated-message"),
+        threadId,
+        message: {
+          messageId,
+          role: "user",
+          text: "Start this turn",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      }),
+    );
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-associated-message"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      createdAt,
+      turnId: asTurnId("turn-associated-message"),
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.latestTurn?.userMessageId === messageId,
+    );
+    expect(thread.latestTurn?.userMessageId).toBe(messageId);
+  });
+
   it("applies provider session.state.changed transitions directly", async () => {
     const harness = await createHarness();
     const waitingAt = "2026-01-01T00:00:00.000Z";
