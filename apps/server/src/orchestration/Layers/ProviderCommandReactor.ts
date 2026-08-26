@@ -1765,8 +1765,7 @@ const make = Effect.gen(function* () {
                 createdAt: acceptedAt,
               });
             }
-            yield* sendTurnRequest.value.afterSendTurn;
-          }),
+          }).pipe(Effect.ensuring(sendTurnRequest.value.afterSendTurn)),
       }),
       Effect.forkScoped,
     );

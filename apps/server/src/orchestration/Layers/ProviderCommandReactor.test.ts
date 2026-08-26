@@ -4206,7 +4206,10 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("does not recover a successful provider send as a turn start failure", async () => {
-    const harness = await createHarness({ activeTurnSessionDispatchFailures: 1 });
+    const harness = await createHarness({
+      activeTurnSessionDispatchFailures: 1,
+      globalEnabledSkillIds: ["acme/skills:global-skill"],
+    });
     const now = "2026-01-01T00:00:00.000Z";
 
     await harness.runEffect(
@@ -4227,11 +4230,16 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await waitFor(async () => {
+      const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+      return thread?.activities.some((activity) => activity.kind === "skill.loaded") === true;
+    });
     await harness.drain();
     const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
     expect(
       thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed"),
     ).toBe(false);
+    expect(thread?.activities.some((activity) => activity.kind === "skill.loaded")).toBe(true);
   });
 
   it("does not flush a second queued start on a stale ready session-set", async () => {
