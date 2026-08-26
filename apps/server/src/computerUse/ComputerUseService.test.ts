@@ -4,7 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { ComputerScrollInput, ComputerUseError } from "@t3tools/contracts";
+import { ComputerScreenshotInput, ComputerScrollInput, ComputerUseError } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -186,8 +186,7 @@ it.effect("computer_screenshot builds screencapture argv and parses sips dimensi
     assert.equal(calls.length, 2);
     const capture = calls[0]!;
     assert.equal(capture.command, "screencapture");
-    assert.equal(capture.args[0], "-x");
-    assert.notInclude(capture.args, "-D");
+    assert.deepEqual(capture.args.slice(0, 3), ["-x", "-D", "1"]);
     assert.notInclude(capture.args, "-R");
     const outputPath = capture.args[capture.args.length - 1]!;
     assert.match(outputPath, /t3code-screenshot-.+\.png$/u);
@@ -200,7 +199,7 @@ it.effect("computer_screenshot builds screencapture argv and parses sips dimensi
   }),
 );
 
-it.effect("computer_screenshot honors display and region while using a temp path", () =>
+it.effect("computer_screenshot captures a Quartz region without display-local coordinates", () =>
   Effect.gen(function* () {
     const { calls, getService } = makeServiceHarness({
       stdoutFor: (input) =>
@@ -211,16 +210,29 @@ it.effect("computer_screenshot honors display and region while using a temp path
     const service = yield* getService;
 
     const result = yield* service.screenshot({
-      display: 2,
       region: { x: 10, y: 20, width: 300, height: 200 },
     });
 
     const capture = calls[0]!;
-    assert.equal(capture.args[0], "-x");
-    assert.deepEqual(capture.args.slice(0, 5), ["-x", "-D", "2", "-R", "10,20,300,200"]);
+    assert.deepEqual(capture.args.slice(0, 3), ["-x", "-R", "10,20,300,200"]);
+    assert.notInclude(capture.args, "-D");
     const outputPath = capture.args[capture.args.length - 1]!;
     assert.match(outputPath, /t3code-screenshot-.+\.png$/u);
     assert.deepEqual(result, { path: outputPath, width: 300, height: 200 });
+  }),
+);
+
+it.effect("computer_screenshot rejects combining display and global region", () =>
+  Effect.gen(function* () {
+    const { calls, getService } = makeServiceHarness();
+    const service = yield* getService;
+    const input = { display: 2, region: { x: 10, y: 20, width: 300, height: 200 } };
+
+    const error = yield* service.screenshot(input).pipe(Effect.flip);
+
+    assert.include(error.message, "either display or region");
+    assert.isFalse(Schema.is(ComputerScreenshotInput)(input));
+    assert.equal(calls.length, 0);
   }),
 );
 

@@ -204,7 +204,7 @@ export function buildCodexDeveloperInstructions(
    * it from the session's actual MCP configuration rather than re-reading the
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
-  browserToolsAvailable = true,
+  browserToolsAvailable = false,
   /** Whether the `t3-code-computer` MCP server is attached to this turn. */
   computerToolsAvailable = false,
 ): string {

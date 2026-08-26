@@ -58,17 +58,25 @@ export type ComputerScreenshotRegion = typeof ComputerScreenshotRegion.Type;
 export const ComputerScreenshotInput = Schema.Struct({
   display: Schema.optional(
     Schema.Int.annotate({
-      description: "1-based display index to capture. Defaults to the main display.",
+      description:
+        "1-based display index to capture. Defaults to the main display. Cannot be combined with region.",
       default: 1,
     }),
   ),
   region: Schema.optional(
     ComputerScreenshotRegion.annotate({
       description:
-        "Optional screen region in Quartz global display coordinates to capture instead of the full display.",
+        "Optional screen region in Quartz global display coordinates. Cannot be combined with display.",
     }),
   ),
-});
+}).check(
+  Schema.makeFilter(
+    (input) =>
+      input.display === undefined ||
+      input.region === undefined ||
+      "Screenshot capture accepts either display or region, not both.",
+  ),
+);
 export type ComputerScreenshotInput = typeof ComputerScreenshotInput.Type;
 
 export const ComputerScreenshotResult = Schema.Struct({

@@ -294,8 +294,11 @@ export const make = Effect.gen(function* () {
     const screenshotPath = `${NodeOS.tmpdir()}/t3code-screenshot-${NodeCrypto.randomUUID()}.png`;
     const result = yield* Effect.gen(function* () {
       const captureArgs = ["-x"];
-      if (input.display !== undefined) {
-        captureArgs.push("-D", String(input.display));
+      if (input.display !== undefined && input.region !== undefined) {
+        return yield* new ComputerUseError({
+          reason: "action-failed",
+          message: "Screenshot capture accepts either display or region, not both.",
+        });
       }
       if (input.region !== undefined) {
         const { x, y, width, height } = input.region;
@@ -309,6 +312,8 @@ export const make = Effect.gen(function* () {
           "-R",
           `${formatCoordinate(x)},${formatCoordinate(y)},${formatCoordinate(width)},${formatCoordinate(height)}`,
         );
+      } else {
+        captureArgs.push("-D", String(input.display ?? 1));
       }
       captureArgs.push(screenshotPath);
       yield* executor.run({ command: "screencapture", args: captureArgs });
