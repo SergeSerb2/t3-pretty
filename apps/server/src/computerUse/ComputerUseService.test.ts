@@ -4,7 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { ComputerUseError } from "@t3tools/contracts";
+import { ComputerScrollInput, ComputerUseError } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -156,6 +156,20 @@ it.effect("computer_scroll passes line deltas and optional location via argv", (
 
     yield* service.scroll({ deltaY: 5 });
     assert.deepEqual(scriptArgsAfterSeparator(calls[1]!), ["5", "0", "", ""]);
+  }),
+);
+
+it.effect("computer_scroll rejects a partial location", () =>
+  Effect.gen(function* () {
+    const { calls, getService } = makeServiceHarness();
+    const service = yield* getService;
+
+    const error = yield* service.scroll({ deltaY: 1, x: 10 }).pipe(Effect.flip);
+
+    assert.equal(error.reason, "action-failed");
+    assert.include(error.message, "both x and y");
+    assert.isFalse(Schema.is(ComputerScrollInput)({ deltaY: 1, x: 10 }));
+    assert.equal(calls.length, 0);
   }),
 );
 

@@ -156,16 +156,22 @@ export const ComputerScrollInput = Schema.Struct({
   x: Schema.optional(
     QuartzCoordinate.annotate({
       description:
-        "Optional pointer x position to scroll at. Defaults to scrolling under the current pointer.",
+        "Optional pointer x position to scroll at. Supply x and y together; omit both to use the current pointer.",
     }),
   ),
   y: Schema.optional(
     QuartzCoordinate.annotate({
       description:
-        "Optional pointer y position to scroll at. Defaults to scrolling under the current pointer.",
+        "Optional pointer y position to scroll at. Supply x and y together; omit both to use the current pointer.",
     }),
   ),
-});
+}).check(
+  Schema.makeFilter(
+    (input) =>
+      (input.x === undefined) === (input.y === undefined) ||
+      "Scroll location requires both x and y coordinates.",
+  ),
+);
 export type ComputerScrollInput = typeof ComputerScrollInput.Type;
 
 export const ComputerActionResult = Schema.Struct({

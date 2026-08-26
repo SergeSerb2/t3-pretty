@@ -380,6 +380,12 @@ export const make = Effect.gen(function* () {
 
   const scroll = Effect.fn("ComputerUseService.scroll")(function* (input: ComputerScrollInput) {
     yield* requireDarwin();
+    if ((input.x === undefined) !== (input.y === undefined)) {
+      return yield* new ComputerUseError({
+        reason: "action-failed",
+        message: "Scroll location requires both x and y coordinates.",
+      });
+    }
     const deltaX = input.deltaX ?? 0;
     yield* requireFiniteCoordinates([
       ["deltaY", input.deltaY],
