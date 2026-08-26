@@ -334,6 +334,7 @@ export function ReviewThreadCard({
                       className="mt-1"
                       value={comment.body}
                       cwd={workspaceRoot}
+                      environmentId={environmentId}
                       label="Edit comment"
                       saving={savingEdit}
                       onSave={(body) => void saveEdit(comment.id, body)}
@@ -352,6 +353,7 @@ export function ReviewThreadCard({
                             className="text-sm"
                             text={grokFinding?.body ?? comment.body}
                             cwd={workspaceRoot}
+                            environmentId={environmentId}
                           />
                         ) : null}
                       </div>

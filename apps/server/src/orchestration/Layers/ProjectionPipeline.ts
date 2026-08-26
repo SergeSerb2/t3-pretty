@@ -153,6 +153,19 @@ function isStalePendingApprovalFailureDetail(detail: string | null): boolean {
   );
 }
 
+// A full refresh loads all thread history, so skip events that cannot change the summary.
+function shouldRefreshThreadShellSummary(event: OrchestrationEvent): boolean {
+  if (event.type === "thread.message-sent") {
+    return event.payload.role === "user";
+  }
+
+  if (event.type !== "thread.activity-appended") {
+    return true;
+  }
+
+  return SHELL_SUMMARY_COUNT_ACTIVITY_KINDS.has(event.payload.activity.kind);
+}
+
 function retainProjectionMessagesAfterRevert(
   messages: ReadonlyArray<ProjectionThreadMessage>,
   turns: ReadonlyArray<ProjectionTurn>,
@@ -605,6 +618,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             branchHeadOwner: null,
             branchHeadIsCrossRepository: null,
             worktreePath: event.payload.worktreePath,
+            linkedPullRequest: null,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -850,6 +864,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
               : {}),
+            ...(event.payload.linkedPullRequest !== undefined
+              ? { linkedPullRequest: event.payload.linkedPullRequest }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -958,7 +975,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             updatedAt: event.occurredAt,
           });
-          yield* refreshThreadShellSummary(event.payload.threadId);
+          if (shouldRefreshThreadShellSummary(event)) {
+            yield* refreshThreadShellSummary(event.payload.threadId);
+          }
           return;
         }
 
@@ -1646,6 +1665,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             const resolvedDecision =
               resolvedDecisionRaw === "accept" ||
               resolvedDecisionRaw === "acceptForSession" ||
+              resolvedDecisionRaw === "acceptAlways" ||
               resolvedDecisionRaw === "decline" ||
               resolvedDecisionRaw === "cancel"
                 ? resolvedDecisionRaw

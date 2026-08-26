@@ -270,6 +270,10 @@
     "./skillTool": {
       "types": "./src/skillTool.ts",
       "import": "./src/skillTool.ts"
+    },
+    "./claudeCompaction": {
+      "types": "./src/claudeCompaction.ts",
+      "import": "./src/claudeCompaction.ts"
     }
   },
   "scripts": {

@@ -16,6 +16,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInteractionOpaquePayload, ProviderUserInputAnswers } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 export const PROVIDER_RUNTIME_MAX_RECORD_PROPERTIES = 512;
@@ -171,6 +172,7 @@ export const CanonicalRequestType = Schema.Literals([
   "file_change_approval",
   "apply_patch_approval",
   "exec_command_approval",
+  "mcp_elicitation_approval",
   "tool_user_input",
   "dynamic_tool_call",
   "auth_tokens_refresh",
@@ -355,6 +357,7 @@ export const ThreadTokenUsageSnapshot = Schema.Struct({
   toolUses: Schema.optional(NonNegativeInt),
   durationMs: Schema.optional(NonNegativeInt),
   compactsAutomatically: Schema.optional(Schema.Boolean),
+  autoCompactThreshold: Schema.optional(PositiveInt),
 });
 export type ThreadTokenUsageSnapshot = typeof ThreadTokenUsageSnapshot.Type;
 
@@ -465,6 +468,8 @@ const RequestOpenedPayload = Schema.Struct({
   detail: Schema.optional(
     TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(PROVIDER_RUNTIME_DIAGNOSTIC_MAX_LENGTH)),
   ),
+  appName: Schema.optional(TrimmedNonEmptyStringSchema),
+  options: Schema.optional(Schema.Array(ProviderApprovalOption)),
   args: Schema.optional(ProviderInteractionOpaquePayload),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;

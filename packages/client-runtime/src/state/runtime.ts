@@ -8,6 +8,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
+import type { ConnectionAttemptError } from "../connection/model.ts";
 import { EnvironmentNotRegisteredError, EnvironmentRegistry } from "../connection/registry.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 import {
@@ -17,6 +18,7 @@ import {
   type EnvironmentStreamCommandRpcTag,
   type EnvironmentSubscriptionRpcTag,
   type EnvironmentUnaryRpcTag,
+  EnvironmentRpcUnavailableError,
   request,
   runStream,
   subscribe,
@@ -594,14 +596,11 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   readonly environmentId: EnvironmentIdType;
   readonly input: Input;
 }) => Atom.Atom<AsyncResult.AsyncResult<A, E | ER | Error>> {
-  // Revalidation epoch: ticks on every connected generation (a reconnect) and
-  // on a foreground return after a long background stint whose session
-  // survived — the data is just as old either way, and the staleTime gate
-  // below decides per query whether that age warrants a refetch. The survivor
-  // tick waits out the supervisor's wake probe so a session that turns out to
-  // be dead revalidates once, through its replacement's generation, instead of
-  // first on the dead socket.
-  const rpcGenerationAtom = Atom.family((environmentId: EnvironmentIdType) =>
+  // Connection snapshots track the supervisor state and session introduced by
+  // upstream. They also repeat after a foreground return whose connected
+  // generation survives the mobile wake probe, allowing the staleTime gate
+  // below to revalidate old data without first querying a dead socket.
+  const connectionAtom = Atom.family((environmentId: EnvironmentIdType) =>
     runtime.atom(
       followStreamInEnvironment(
         environmentId,
@@ -609,16 +608,13 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
           Effect.gen(function* () {
             const supervisor = yield* EnvironmentSupervisor;
             const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
-            const generations = SubscriptionRef.changes(supervisor.state).pipe(
-              Stream.filterMap((state) =>
-                state.phase === "connected" ? Result.succeed(state.generation) : Result.failVoid,
-              ),
-              Stream.changes,
+            const connections = SubscriptionRef.changes(supervisor.state).pipe(
+              Stream.zipLatest(SubscriptionRef.changes(supervisor.session)),
             );
             const connectedGeneration = SubscriptionRef.get(supervisor.state).pipe(
               Effect.map((state) => (state.phase === "connected" ? state.generation : null)),
             );
-            const foregroundReturns = Option.match(wakeups, {
+            const foregroundReturns: Stream.Stream<boolean> = Option.match(wakeups, {
               onNone: () => Stream.never,
               onSome: (service) =>
                 service.changes.pipe(
@@ -634,13 +630,15 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
                   Stream.filter((survived) => survived),
                 ),
             });
-            return Stream.merge(generations, foregroundReturns).pipe(
-              Stream.mapAccum(
-                () => 0,
-                (epoch) => [epoch + 1, [epoch + 1]] as const,
+            const foregroundSnapshots = foregroundReturns.pipe(
+              Stream.mapEffect(() =>
+                Effect.all([
+                  SubscriptionRef.get(supervisor.state),
+                  SubscriptionRef.get(supervisor.session),
+                ] as const),
               ),
-              Stream.map<number, number | null>((epoch) => epoch),
             );
+            return connections.pipe(Stream.merge(foregroundSnapshots));
           }),
         ),
       ),
@@ -652,30 +650,63 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     const idleTtlMs = options.idleTtlMs ?? 5 * 60_000;
     const staleTimeMs = options.staleTimeMs ?? 30_000;
     // Atom.swr already skips automatic revalidation while data is fresh, but
-    // this inner read also short-circuits on reconnect (epoch bump).
+    // this inner read also short-circuits on reconnect-triggered updates.
     // Manual `registry.refresh` must still hit the server — otherwise a
     // mutation's onSettled refresh is a no-op for 30s and the UI stays stale.
     let skipStaleTime = false;
+    // A terminal connection error must be retried once connectivity returns,
+    // even when its retained previous success is still fresh.
+    let retryAfterConnectionUnavailable = false;
     const queryAtom = runtime
-      .atom((get) => {
-        const generation = Option.getOrNull(
-          AsyncResult.value(get(rpcGenerationAtom(target.environmentId))),
+      .atom<
+        A,
+        E | ConnectionAttemptError | EnvironmentNotRegisteredError | EnvironmentRpcUnavailableError
+      >((get) => {
+        const connection = Option.getOrNull(
+          AsyncResult.value(get(connectionAtom(target.environmentId))),
         );
-        if (generation === null) {
+        if (connection === null) {
           return Effect.never;
         }
-        const execute = runInEnvironment(target.environmentId, options.execute(target.input));
-        const previous = get.self<AsyncResult.AsyncResult<A, E | ER | Error>>();
-        const forceRefresh = skipStaleTime;
-        skipStaleTime = false;
-        if (
-          !forceRefresh &&
-          Option.isSome(previous) &&
-          isFreshSettledResult(previous.value, staleTimeMs)
-        ) {
-          return previous.value as unknown as typeof execute;
+        const [connectionState, session] = connection;
+        switch (connectionState.phase) {
+          case "connected": {
+            if (Option.isNone(session)) {
+              return Effect.never;
+            }
+            const execute = runInEnvironment(target.environmentId, options.execute(target.input));
+            const previous = get.self<AsyncResult.AsyncResult<A, E | ER | Error>>();
+            const forceRefresh = skipStaleTime || retryAfterConnectionUnavailable;
+            skipStaleTime = false;
+            retryAfterConnectionUnavailable = false;
+            if (
+              !forceRefresh &&
+              Option.isSome(previous) &&
+              isFreshSettledResult(previous.value, staleTimeMs)
+            ) {
+              return previous.value as unknown as typeof execute;
+            }
+            return execute;
+          }
+          case "connecting":
+          case "backoff":
+            return Effect.never;
+          case "available":
+          case "offline":
+          case "blocked":
+            retryAfterConnectionUnavailable = true;
+            if (connectionState.lastFailure !== null) {
+              return Effect.fail(connectionState.lastFailure);
+            }
+            return Effect.fail(
+              new EnvironmentRpcUnavailableError({
+                environmentId: target.environmentId,
+                message: `Environment ${target.environmentId} is ${
+                  connectionState.phase === "available" ? "not connected" : connectionState.phase
+                }.`,
+              }),
+            );
         }
-        return execute;
       })
       .pipe(
         Atom.swr({

@@ -182,17 +182,29 @@ export function effectiveRuntimeModeForProviderDriver(
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
-export const ProviderRequestKind = Schema.Literals(["command", "file-read", "file-change"]);
+export const ProviderRequestKind = Schema.Literals([
+  "command",
+  "file-read",
+  "file-change",
+  "mcp-elicitation",
+]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const AssistantDeliveryMode = Schema.Literals(["buffered", "streaming"]);
 export type AssistantDeliveryMode = typeof AssistantDeliveryMode.Type;
 export const ProviderApprovalDecision = Schema.Literals([
   "accept",
   "acceptForSession",
+  "acceptAlways",
   "decline",
   "cancel",
 ]);
 export type ProviderApprovalDecision = typeof ProviderApprovalDecision.Type;
+export const ProviderApprovalOption = Schema.Struct({
+  decision: ProviderApprovalDecision,
+  label: TrimmedNonEmptyString,
+});
+export type ProviderApprovalOption = typeof ProviderApprovalOption.Type;
+
 export const PROVIDER_USER_INPUT_MAX_ANSWERS = 128;
 export const PROVIDER_INTERACTION_MAX_KEY_LENGTH = 512;
 export const PROVIDER_INTERACTION_MAX_STRING_CHARS = 1024 * 1024;
@@ -658,6 +670,14 @@ export const ThreadSceneryAssignment = Schema.Struct({
 });
 export type ThreadSceneryAssignment = typeof ThreadSceneryAssignment.Type;
 
+export const ThreadLinkedPullRequest = Schema.Struct({
+  projectId: ProjectId,
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  url: TrimmedNonEmptyString,
+});
+export type ThreadLinkedPullRequest = typeof ThreadLinkedPullRequest.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -672,6 +692,7 @@ export const OrchestrationThread = Schema.Struct({
   // Optional so snapshots from older servers remain decodable.
   branchEventId: Schema.optional(EventId),
   worktreePath: Schema.NullOr(OrchestrationPath),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -753,6 +774,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(OrchestrationBranch),
   worktreePath: Schema.NullOr(OrchestrationPath),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1145,6 +1167,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
   expectedBranch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
   worktreePath: Schema.optional(Schema.NullOr(OrchestrationPath)),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
 }).check(
   Schema.makeFilter(
     (input) =>
@@ -1259,7 +1282,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: ThreadTurnStartText,
-    attachments: Schema.Array(UploadChatAttachment).check(
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])).check(
       Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
     ),
   }),
@@ -1659,6 +1682,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
   worktreePath: Schema.optional(Schema.NullOr(OrchestrationPath)),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   updatedAt: IsoDateTime,
 });
 

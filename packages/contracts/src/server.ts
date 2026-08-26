@@ -17,7 +17,13 @@ import {
   KeybindingWhen,
   ResolvedKeybindingsConfig,
 } from "./keybindings.ts";
-import { EDITORS, EditorId, REMOTE_OPEN_TARGET_MAX_COUNT, RemoteOpenTarget } from "./editor.ts";
+import {
+  EDITORS,
+  EditorId,
+  FileManagerRevealKind,
+  REMOTE_OPEN_TARGET_MAX_COUNT,
+  RemoteOpenTarget,
+} from "./editor.ts";
 import { ModelCapabilities, PROVIDER_MODEL_ID_MAX_LENGTH } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -529,6 +535,11 @@ export const ServerConfig = Schema.Struct({
   settings: ServerSettings,
   /** Whether shell subscriptions can emit an opt-in catch-up completion marker. */
   shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /** Whether shell.openInEditor honors `LaunchEditorInput.reveal` for the
+      file-manager editor. */
+  shellRevealInFileManager: Schema.optionalKey(Schema.Boolean),
+  /** File-manager wording clients should use for reveal actions. */
+  shellRevealInFileManagerKind: Schema.optionalKey(FileManagerRevealKind),
   /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
   /**
