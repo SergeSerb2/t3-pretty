@@ -1745,28 +1745,29 @@ const make = Effect.gen(function* () {
     }
 
     yield* providerService.sendTurn(sendTurnRequest.value.request).pipe(
-      Effect.tap((turn) =>
-        Effect.gen(function* () {
-          const startedThread = yield* resolveThread(event.payload.threadId);
-          if (startedThread?.session) {
-            const acceptedAt = DateTime.formatIso(yield* DateTime.now);
-            yield* setThreadSession({
-              threadId: event.payload.threadId,
-              activeUserMessageId: event.payload.messageId,
-              session: {
-                ...startedThread.session,
-                status: "running",
-                activeTurnId: turn.turnId,
-                lastError: null,
-                updatedAt: acceptedAt,
-              },
-              createdAt: acceptedAt,
-            });
-          }
-          yield* sendTurnRequest.value.afterSendTurn;
-        }),
-      ),
-      Effect.catchCause(recoverTurnStartFailure),
+      Effect.matchCauseEffect({
+        onFailure: recoverTurnStartFailure,
+        onSuccess: (turn) =>
+          Effect.gen(function* () {
+            const startedThread = yield* resolveThread(event.payload.threadId);
+            if (startedThread?.session) {
+              const acceptedAt = DateTime.formatIso(yield* DateTime.now);
+              yield* setThreadSession({
+                threadId: event.payload.threadId,
+                activeUserMessageId: event.payload.messageId,
+                session: {
+                  ...startedThread.session,
+                  status: "running",
+                  activeTurnId: turn.turnId,
+                  lastError: null,
+                  updatedAt: acceptedAt,
+                },
+                createdAt: acceptedAt,
+              });
+            }
+            yield* sendTurnRequest.value.afterSendTurn;
+          }),
+      }),
       Effect.forkScoped,
     );
   });
