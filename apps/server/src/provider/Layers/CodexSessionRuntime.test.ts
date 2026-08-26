@@ -672,6 +672,36 @@ describe("hasConfiguredMcpServer", () => {
   });
 });
 
+describe("T3 computer developer instructions", () => {
+  it("tracks the turn's attached computer-use capability", () => {
+    const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+    const enabled = buildCodexDeveloperInstructions("default", runtime, false, true);
+    const disabled = buildCodexDeveloperInstructions("default", runtime, false, false);
+
+    NodeAssert.match(enabled, /t3-code-computer/);
+    NodeAssert.match(enabled, /computer_screen_info/);
+    NodeAssert.match(enabled, /Quartz global display coordinates/);
+    NodeAssert.doesNotMatch(disabled, /t3-code-computer/);
+    NodeAssert.doesNotMatch(disabled, /computer_screen_info/);
+  });
+
+  it.effect("defaults to no computer instructions without an explicit capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-preview-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        browserToolsAvailable: true,
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /t3-code-computer/,
+      );
+    }),
+  );
+});
+
 function makeThreadStartedNotification(
   threadId: string,
   source: EffectCodexSchema.V2ThreadStartedNotification["thread"]["source"],

@@ -47,6 +47,11 @@ export function hasBrowserTools(config: McpProviderSessionConfig | undefined): b
   return config?.capabilities.has("preview") === true;
 }
 
+/** Whether the built-in `t3-code-computer` toolkit is attached. */
+export function hasComputerTools(config: McpProviderSessionConfig | undefined): boolean {
+  return config?.capabilities.has("computer-use") === true;
+}
+
 const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();
 
 export function setMcpProviderSession(config: McpProviderSessionConfig): void {
