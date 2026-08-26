@@ -14,6 +14,7 @@ import {
   shouldRestorePersistedListFilters,
   writePersistedPullRequestListFilters,
 } from "./pullRequestListFiltersPersistence";
+import { parsePullRequestsSearch } from "./pullRequestsSearch";
 
 afterEach(() => {
   removeLocalStorageItem(PULL_REQUEST_LIST_FILTERS_STORAGE_KEY);
@@ -52,6 +53,23 @@ describe("persisted pull request list filters", () => {
     expect(shouldRestorePersistedListFilters({ draft: "hide" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ environmentId: "env-1" })).toBe(false);
     expect(shouldRestorePersistedListFilters({ repository: "acme/web", number: 12 })).toBe(false);
+  });
+
+  // The page decides from the validated match search, not the raw URL, so the defaults the
+  // validator fills in must still read as an unnamed list.
+  it("reads the validated route search like the raw URL", () => {
+    expect(shouldRestorePersistedListFilters({ ...parsePullRequestsSearch({}) })).toBe(true);
+    expect(shouldRestorePersistedListFilters({ ...parsePullRequestsSearch({ q: "fix" }) })).toBe(
+      true,
+    );
+    expect(
+      shouldRestorePersistedListFilters({ ...parsePullRequestsSearch({ state: "closed" }) }),
+    ).toBe(false);
+    expect(
+      shouldRestorePersistedListFilters({
+        ...parsePullRequestsSearch({ repository: "acme/web", number: 12 }),
+      }),
+    ).toBe(false);
   });
 
   it("replaces a bare URL with restored list params, not defaults or an already-named URL", () => {
