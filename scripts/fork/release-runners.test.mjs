@@ -169,7 +169,10 @@ describe("T3 Pretty release runner placement", () => {
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
-    assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.equal(
+      (pipeline.match(/concurrency_group: "t3-pretty\/apple-signing"/g) || []).length,
+      2,
+    );
     assert.include(pipeline, "priority: 20");
     assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");

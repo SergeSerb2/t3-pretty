@@ -183,6 +183,9 @@ steps:
 
   - label: ":mac: macOS arm64 DMG"
     key: macos-dmg
+    # Both Apple builds replace the user keychain search list while signing.
+    concurrency: 1
+    concurrency_group: "t3-pretty/apple-signing"
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 60
     agents:
@@ -199,7 +202,7 @@ steps:
   - label: ":iphone: iOS OTA + TestFlight"
     key: ios-mobile
     concurrency: 1
-    concurrency_group: "t3-pretty/ios-mobile"
+    concurrency_group: "t3-pretty/apple-signing"
     # Ahead of Origin PR review on the packaging Mac so a
     # feature-branch review cannot sit in front of TestFlight.
     priority: 20
