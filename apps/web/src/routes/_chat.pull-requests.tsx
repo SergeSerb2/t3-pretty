@@ -11,7 +11,7 @@ import type {
   PullRequestListState,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
-import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
   EyeIcon,
@@ -179,7 +179,6 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const searchStr = useLocation({ select: (location) => location.searchStr });
   // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
   const skipNextListPersist = useRef(false);
   const { environments } = useEnvironments();
@@ -373,10 +372,11 @@ function PullRequestsRouteView() {
   );
 
   // Restore browser state after pure URL validation, then keep the address bar and storage aligned.
+  // Reads this match's validated search, never `useLocation`: the location store flips to the
+  // next route while this page is still mounted, and a restore issued from that pending location
+  // navigated straight back to `/pull-requests`, so the page could not be left.
   useEffect(() => {
-    const raw = Object.fromEntries(
-      new URLSearchParams(searchStr.startsWith("?") ? searchStr.slice(1) : searchStr),
-    );
+    const raw: Record<string, unknown> = { ...search };
     if (skipNextListPersist.current) {
       skipNextListPersist.current = false;
       return;
@@ -420,7 +420,7 @@ function PullRequestsRouteView() {
     if (persistable !== null) {
       writePersistedPullRequestListFilters(persistable);
     }
-  }, [allProjects, environments, projectsKnown, search, searchStr, updateSearch]);
+  }, [allProjects, environments, projectsKnown, search, updateSearch]);
 
   // Changing what the list contains must not leave a selection from the previous view open.
   // The project filter is untouched: it is the user's scope, not part of the selection.
