@@ -56,6 +56,7 @@ import {
   type PullRequestPartitionsSnapshot,
 } from "../components/pullRequest/pullRequestList.logic";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
+import { linkedPullRequestKey } from "../components/pullRequest/pullRequestPanelView.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
 import {
   PullRequestFiltersMenu,
@@ -1174,10 +1175,18 @@ function PullRequestsRouteView() {
     [search.number, search.repository, selectedProject],
   );
   const rightPanelAvailable = selectedPullRequestSurface !== null;
+  // Open the linked pull request once per selection. `linkedSelection` is rebuilt whenever the
+  // project catalog re-emits (any thread or git activity on a live desktop), and opening on every
+  // rebuild reopened the panel right after the reader closed it, with no way out short of a
+  // restart. A new selection (another row, another link) still opens.
+  const linkedSelectionKey = linkedPullRequestKey(linkedSelection);
+  const openedLinkedSelectionKey = useRef<string | null>(null);
   useEffect(() => {
     if (!pullRequestsSupported || rightPanelRef === null || linkedSelection === null) return;
+    if (openedLinkedSelectionKey.current === linkedSelectionKey) return;
+    openedLinkedSelectionKey.current = linkedSelectionKey;
     useRightPanelStore.getState().openPullRequest(rightPanelRef, linkedSelection);
-  }, [linkedSelection, pullRequestsSupported, rightPanelRef]);
+  }, [linkedSelection, linkedSelectionKey, pullRequestsSupported, rightPanelRef]);
 
   const selected =
     rightPanelState.isOpen && activePullRequestSurface !== null
