@@ -97,7 +97,7 @@ it.effect("computer_move passes coordinates via argv", () =>
   }),
 );
 
-it.effect("computer_type emits arbitrary Unicode from argv through Core Graphics", () =>
+it.effect("computer_type emits arbitrary Unicode from argv as an explicit UTF-16 buffer", () =>
   Effect.gen(function* () {
     const { calls, getService } = makeServiceHarness();
     const service = yield* getService;
@@ -111,7 +111,9 @@ it.effect("computer_type emits arbitrary Unicode from argv through Core Graphics
     assert.deepEqual(call.args.slice(0, 3), ["-l", "JavaScript", "-e"]);
     const script = call.args[3]!;
     assert.include(script, "CGEventKeyboardSetUnicodeString");
-    assert.include(script, "Array.from(argv[0])");
+    assert.include(script, 'ObjC.bindFunction("CGEventKeyboardSetUnicodeString"');
+    assert.include(script, "NSUTF16LittleEndianStringEncoding");
+    assert.include(script, "utf16.bytes");
     assert.isFalse(
       script.includes(payload),
       "typed text must not be interpolated into the AppleScript source",

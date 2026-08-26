@@ -219,16 +219,18 @@ const SCROLL_SCRIPT = `function run(argv) {
 }`;
 
 const TYPE_TEXT_SCRIPT = `function run(argv) {
+  ObjC.import("Foundation");
+  ObjC.bindFunction("CGEventKeyboardSetUnicodeString", ["void", ["id", "unsigned long", "pointer"]]);
   ObjC.import("CoreGraphics");
+  var utf16 = $(argv[0]).dataUsingEncoding($.NSUTF16LittleEndianStringEncoding);
+  var length = utf16.length / 2;
   var source = $.CGEventSourceCreate($.kCGEventSourceStateHIDSystemState);
-  Array.from(argv[0]).forEach(function(symbol) {
-    var down = $.CGEventCreateKeyboardEvent(source, 0, true);
-    $.CGEventKeyboardSetUnicodeString(down, symbol.length, symbol);
-    $.CGEventPost($.kCGHIDEventTap, down);
-    var up = $.CGEventCreateKeyboardEvent(source, 0, false);
-    $.CGEventKeyboardSetUnicodeString(up, symbol.length, symbol);
-    $.CGEventPost($.kCGHIDEventTap, up);
-  });
+  var down = $.CGEventCreateKeyboardEvent(source, 0, true);
+  $.CGEventKeyboardSetUnicodeString(down, length, utf16.bytes);
+  $.CGEventPost($.kCGHIDEventTap, down);
+  var up = $.CGEventCreateKeyboardEvent(source, 0, false);
+  $.CGEventKeyboardSetUnicodeString(up, length, utf16.bytes);
+  $.CGEventPost($.kCGHIDEventTap, up);
 }`;
 
 const keyCodeScript = (modifiers: ReadonlyArray<ComputerKeyModifier>): string => {
