@@ -72,7 +72,7 @@ export function useNativeDictation(input: {
   const mountedRef = useRef(true);
   const valueRef = useRef(input.value);
   const inputRef = useRef(input);
-  valueRef.current = input.value;
+  if (sessionRef.current === null) valueRef.current = input.value;
   inputRef.current = input;
 
   const closeSession = useCallback(async (session: DictationSession) => {
