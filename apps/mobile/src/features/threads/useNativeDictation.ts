@@ -26,8 +26,9 @@ interface DictationSession {
   readonly start: number;
   readonly before: string;
   readonly after: string;
-  readonly recorder: ExpoAudioRecorder;
+  readonly makeRecorder: () => ExpoAudioRecorder;
   readonly setAudioModeAsync: ExpoAudio["setAudioModeAsync"];
+  recorder: ExpoAudioRecorder | null;
   transcript: string;
   insertion: string;
   timer: ReturnType<typeof setTimeout> | null;
@@ -78,11 +79,13 @@ export function useNativeDictation(input: {
     if (session.closed) return;
     session.closed = true;
     if (session.timer !== null) clearTimeout(session.timer);
-    if (session.recorder.isRecording) {
-      await session.recorder.stop().catch(() => undefined);
+    const recorder = session.stoppingChunk ? null : session.recorder;
+    if (recorder) {
+      session.recorder = null;
+      if (recorder.isRecording) await recorder.stop().catch(() => undefined);
+      recorder.release();
     }
     await session.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
-    session.recorder.release();
     if (sessionRef.current === session) sessionRef.current = null;
     if (mountedRef.current) setPhase("idle");
   }, []);
@@ -198,12 +201,14 @@ export function useNativeDictation(input: {
       return;
     }
     try {
-      await session.recorder.prepareToRecordAsync();
+      const recorder = session.makeRecorder();
+      session.recorder = recorder;
+      await recorder.prepareToRecordAsync();
       if (session.stopRequested || session.cancelled || session.closed) {
         await finishSession(session);
         return;
       }
-      session.recorder.record();
+      recorder.record();
       session.timer = setTimeout(() => void stopChunkRef.current(session), CHUNK_DURATION_MS);
     } catch (error) {
       session.error = error;
@@ -217,19 +222,32 @@ export function useNativeDictation(input: {
     session.stoppingChunk = true;
     if (session.timer !== null) clearTimeout(session.timer);
     session.timer = null;
+    const recorder = session.recorder;
+    if (!recorder) {
+      session.error = new Error("Voice recorder is unavailable.");
+      session.stopRequested = true;
+      session.stoppingChunk = false;
+      await finishSession(session);
+      return;
+    }
+    let uri: string | null = null;
     try {
-      await session.recorder.stop();
-      const uri = session.recorder.uri;
-      if (uri && !session.error) {
+      await recorder.stop();
+      if (!session.closed) uri = recorder.uri;
+      if (!uri && !session.closed) {
+        session.error = new Error("Voice recorder produced no audio file.");
+        session.stopRequested = true;
+      } else if (uri && !session.error) {
+        const audioUri = uri;
         session.queue = session.queue.then(async () => {
           if (session.error || session.cancelled || session.closed) return;
           try {
-            await transcribeFile(session, uri);
+            await transcribeFile(session, audioUri);
           } catch (error) {
             if (session.cancelled || session.closed) return;
             session.error = error;
             session.stopRequested = true;
-            if (session.recorder.isRecording) void stopChunkRef.current(session);
+            if (session.recorder?.isRecording) void stopChunkRef.current(session);
           }
         });
         void session.queue.then(() => {
@@ -240,6 +258,10 @@ export function useNativeDictation(input: {
       session.error = error;
       session.stopRequested = true;
     } finally {
+      if (session.recorder === recorder) {
+        session.recorder = null;
+        recorder.release();
+      }
       session.stoppingChunk = false;
     }
     if (session.stopRequested || session.error) await finishSession(session);
@@ -277,17 +299,16 @@ export function useNativeDictation(input: {
         return;
       }
       if (!inputRef.current.enabled || inputRef.current.prepared !== current.prepared) return;
-      const recorder = new audio.AudioModule.AudioRecorder(
-        nativeRecordingOptions(audio.RecordingPresets.HIGH_QUALITY),
-      );
+      const recordingOptions = nativeRecordingOptions(audio.RecordingPresets.HIGH_QUALITY);
       const cursor = Math.max(0, Math.min(valueRef.current.length, inputRef.current.cursor));
       session = {
         prepared: current.prepared,
         start: cursor,
         before: valueRef.current.slice(0, cursor),
         after: valueRef.current.slice(cursor),
-        recorder,
+        makeRecorder: () => new audio.AudioModule.AudioRecorder(recordingOptions),
         setAudioModeAsync: audio.setAudioModeAsync,
+        recorder: null,
         transcript: "",
         insertion: "",
         timer: null,
