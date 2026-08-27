@@ -369,6 +369,17 @@ ${">".repeat(7)} theirs
     assert.include(script, 'export PREVIOUS_UPSTREAM_TAG="$current_tag"');
   });
 
+  it("removes upstream workflows before restoring the fork-owned directory", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+    const remove = script.indexOf("git rm -r -f --ignore-unmatch -- .github/workflows");
+    const restore = script.indexOf(
+      "git restore --source=origin/main --staged --worktree -- .github/workflows",
+    );
+
+    assert.isAtLeast(remove, 0);
+    assert.isAbove(restore, remove);
+  });
+
   it("backfills upstream-only objects from the upstream promisor, not the fork", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
