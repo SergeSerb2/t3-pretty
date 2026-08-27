@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.36-nightly.20260827.1206001145",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195001114",
     date: "2026-08-27",
     items: [
