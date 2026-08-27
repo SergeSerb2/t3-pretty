@@ -114,8 +114,10 @@ import {
   buildFixFindingsHandoff,
   buildResolveConflictsPrompt,
   countActionableComments,
+  headerFitsFixActions,
   handoffPrompt,
   shouldOfferFixActions,
+  shouldShowFixActionsInMenu,
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
   pullRequestDiffIdentity,
@@ -548,6 +550,8 @@ export function PullRequestDetailPanel({
   const scrollerRef = useRef<HTMLElement | null>(null);
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [headerWideEnoughForFixActions, setHeaderWideEnoughForFixActions] = useState(false);
   // Refund after the fold commits so the content under the reader does not jump with its height.
   const compensationRef = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -968,6 +972,22 @@ export function PullRequestDetailPanel({
       reviewThreads: detail.reviewThreads,
       comments: detail.comments,
     });
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const remPx = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      setHeaderWideEnoughForFixActions(headerFitsFixActions(el.clientWidth, remPx));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [detail !== null]);
+  const showMenuFixActions = shouldShowFixActionsInMenu(
+    showFixActions,
+    headerWideEnoughForFixActions,
+  );
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -1451,7 +1471,10 @@ export function PullRequestDetailPanel({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
-      <div className="@container/pr-header grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
+      <div
+        ref={headerRef}
+        className="@container/pr-header grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60"
+      >
         <div className="ml-4 grid h-7 min-w-0 items-center overflow-hidden">
           <div
             aria-hidden={condensed}
@@ -1558,7 +1581,7 @@ export function PullRequestDetailPanel({
         <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1">
           {detail ? (
             <>
-              {/* Narrow headers keep these in the overflow menu so they cannot cover the number. */}
+              {/* Wide headers show these here; narrow ones keep the same actions in the more menu. */}
               <div
                 className={cn(
                   "hidden min-w-0 transition-[grid-template-columns,margin] duration-200 ease-out motion-reduce:transition-none @[32rem]/pr-header:grid",
@@ -1724,7 +1747,7 @@ export function PullRequestDetailPanel({
                       </span>
                     </span>
                   </MenuItem>
-                  {showFixActions ? (
+                  {showMenuFixActions ? (
                     <>
                       <MenuItem disabled={handoff !== null} onClick={() => setFixAllMode("once")}>
                         <HammerIcon className="mt-0.5 size-3.5 shrink-0 self-start" />

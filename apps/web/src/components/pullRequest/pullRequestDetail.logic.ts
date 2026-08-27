@@ -830,6 +830,18 @@ export function shouldOfferFixActions(input: {
   return input.state === "open" && hasActionableComments(input);
 }
 
+/** Keep in sync with `@[32rem]/pr-header` on the detail header. */
+export const PR_HEADER_FIX_ACTIONS_MIN_REM = 32;
+
+export function headerFitsFixActions(widthPx: number, remPx = 16): boolean {
+  return widthPx >= PR_HEADER_FIX_ACTIONS_MIN_REM * remPx;
+}
+
+/** Header when it fits; overflow menu only when it does not. Never both. */
+export function shouldShowFixActionsInMenu(offer: boolean, headerFits: boolean): boolean {
+  return offer && !headerFits;
+}
+
 /**
  * The task for handing a pull request's review findings to a fresh thread. Everything derived
  * from the pull request is explicitly marked untrusted: review bodies and check output are

@@ -18,6 +18,8 @@ import {
   countFixableFindings,
   hasActionableComments,
   shouldOfferFixActions,
+  headerFitsFixActions,
+  shouldShowFixActionsInMenu,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -1174,6 +1176,14 @@ describe("fix findings handoff", () => {
         comments: [],
       }),
     ).toBe(false);
+  });
+
+  it("puts Fix actions in the header or the overflow menu, never both", () => {
+    expect(headerFitsFixActions(511)).toBe(false);
+    expect(headerFitsFixActions(512)).toBe(true);
+    expect(shouldShowFixActionsInMenu(true, true)).toBe(false);
+    expect(shouldShowFixActionsInMenu(true, false)).toBe(true);
+    expect(shouldShowFixActionsInMenu(false, false)).toBe(false);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {
