@@ -15,6 +15,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
@@ -38,6 +39,18 @@ export interface QueuedComposerMessage {
   readonly id: MessageId;
   readonly text: string;
   readonly attachmentCount: number;
+}
+
+export function restoreFailedNativeResumePrompt(
+  currentPrompt: string,
+  optimisticMessageTexts: ReadonlyArray<string>,
+): string | null {
+  const command = optimisticMessageTexts
+    .map(parseNativeResumeCommand)
+    .findLast((candidate) => candidate?._tag === "Resume");
+  if (command?._tag !== "Resume") return null;
+  const retryPrompt = `/resume ${command.sessionId}`;
+  return currentPrompt.length > 0 ? `${retryPrompt}\n\n${currentPrompt}` : retryPrompt;
 }
 
 /** Identify the queued message whose server turn has started. */

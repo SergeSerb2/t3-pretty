@@ -417,6 +417,7 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveComposerRuntimeMode,
   resolveSendEnvMode,
+  restoreFailedNativeResumePrompt,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -4651,7 +4652,8 @@ function ChatViewContent(props: ChatViewProps) {
       (message) =>
         serverIds.has(message.id) ||
         (activeThread.messages.length === 0 &&
-          isNativeResumeSessionReady(activeThread.session?.status) &&
+          (isNativeResumeSessionReady(activeThread.session?.status) ||
+            activeThread.session?.status === "error") &&
           parseNativeResumeCommand(message.text)?._tag === "Resume"),
     );
     if (removedMessages.length === 0) {
@@ -4659,6 +4661,22 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const removedIds = new Set(removedMessages.map((message) => message.id));
     const timer = window.setTimeout(() => {
+      if (activeThread.session?.status === "error") {
+        const retryPrompt = restoreFailedNativeResumePrompt(
+          promptRef.current,
+          removedMessages.map((message) => message.text),
+        );
+        if (retryPrompt !== null) {
+          promptRef.current = retryPrompt;
+          setComposerDraftPrompt(composerDraftTarget, retryPrompt);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(retryPrompt, retryPrompt.length),
+            prompt: retryPrompt,
+            detectTrigger: true,
+          });
+          scrollToEnd();
+        }
+      }
       setOptimisticUserMessages((existing) =>
         existing.filter((message) => !removedIds.has(message.id)),
       );
@@ -4678,8 +4696,11 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.id,
     activeThread?.messages,
     activeThread?.session,
+    composerDraftTarget,
     handoffAttachmentPreviews,
     optimisticUserMessages,
+    scrollToEnd,
+    setComposerDraftPrompt,
   ]);
 
   useEffect(() => {
