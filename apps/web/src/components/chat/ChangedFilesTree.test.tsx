@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ChangedFilesCard, ChangedFilesTree } from "./ChangedFilesTree";
 
 describe("ChangedFilesCard", () => {
-  it("keeps its compact header sticky while preserving singular labels", () => {
+  it("keeps its compact header on the card glass while preserving singular labels", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
         turnId={TurnId.make("turn-1")}
@@ -21,7 +21,8 @@ describe("ChangedFilesCard", () => {
     );
 
     expect(markup).toContain('data-changed-files-state="expanded"');
-    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-secondary dark:bg-input/32");
+    expect(markup).toContain('class="flex items-center justify-between gap-2 rounded-xl mb-2"');
+    expect(markup).not.toContain("sticky top-2");
     expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain("whitespace-nowrap");
