@@ -1,3 +1,6 @@
+/** Same-point lastSpeed is only the just-sampled step, not a dwell. */
+export const COMPOSER_HOVER_SPEED_STALE_MS = 100;
+
 const DUR_MIN = 0.25;
 const DUR_MAX = 1.7;
 /** px/ms that keeps the CSS base durations (scale = 1). */
@@ -29,7 +32,8 @@ export function pointerSpeedPxPerMs(
  * Enter/leave speed from the last document sample to this event.
  * A stale gap still uses that crossing hypot/dt — only a missing prior
  * coordinate drops to 0. Capture pointermove may already have written
- * this point; a later enter/leave at the same coords keeps `lastSpeed`.
+ * this point; a later boundary event at the same coords keeps `lastSpeed`
+ * unless that sample is stale (dwell, then a same-point enter).
  */
 export function composerHoverPointerSpeed(
   lastX: number,
@@ -41,7 +45,9 @@ export function composerHoverPointerSpeed(
   toT: number,
 ): number {
   if (lastT === 0) return 0;
-  if (toT <= lastT) return lastSpeed;
-  if (toX === lastX && toY === lastY) return lastSpeed;
+  const dt = toT - lastT;
+  if (dt <= 0 || (toX === lastX && toY === lastY)) {
+    return dt >= COMPOSER_HOVER_SPEED_STALE_MS ? 0 : lastSpeed;
+  }
   return pointerSpeedPxPerMs(lastX, lastY, lastT, toX, toY, toT);
 }

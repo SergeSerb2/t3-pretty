@@ -17,9 +17,9 @@ import {
  * the layer for coarse pointers, reduced motion, and the Motion toggle.
  *
  * Hover in/out duration is a CSS multiplier (`--composer-hover-dur`) written
- * only on enter/leave from the last document pointer speed. The document
- * listener stores coordinates — no layout, no style — so approach velocity
- * exists before the pointer crosses the shell.
+ * on document capture pointerover/out when the pointer crosses the shell —
+ * earlier than pointerenter, so :hover transitions see the new duration.
+ * Document pointermove stores coordinates only (no layout, no style).
  */
 export function ComposerSpecular() {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -53,8 +53,11 @@ export function ComposerSpecular() {
       lastT = event.timeStamp;
     };
 
+    const insideHost = (node: EventTarget | null) => node instanceof Node && host.contains(node);
+
     const applyHoverDuration = (event: PointerEvent) => {
       if (event.pointerType !== "mouse") return;
+      if (insideHost(event.target) === insideHost(event.relatedTarget)) return;
       const speed = composerHoverPointerSpeed(
         lastX,
         lastY,
@@ -83,14 +86,14 @@ export function ComposerSpecular() {
       });
     };
     document.addEventListener("pointermove", sampleVelocity, { passive: true, capture: true });
+    document.addEventListener("pointerover", applyHoverDuration, { capture: true });
+    document.addEventListener("pointerout", applyHoverDuration, { capture: true });
     host.addEventListener("pointermove", onPointerMove, { passive: true });
-    host.addEventListener("pointerenter", applyHoverDuration);
-    host.addEventListener("pointerleave", applyHoverDuration);
     return () => {
       document.removeEventListener("pointermove", sampleVelocity, { capture: true });
+      document.removeEventListener("pointerover", applyHoverDuration, { capture: true });
+      document.removeEventListener("pointerout", applyHoverDuration, { capture: true });
       host.removeEventListener("pointermove", onPointerMove);
-      host.removeEventListener("pointerenter", applyHoverDuration);
-      host.removeEventListener("pointerleave", applyHoverDuration);
       if (frame !== 0) cancelAnimationFrame(frame);
     };
   }, []);

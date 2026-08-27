@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  COMPOSER_HOVER_SPEED_STALE_MS,
   composerHoverDurationScale,
   composerHoverPointerSpeed,
   pointerSpeedPxPerMs,
@@ -48,6 +49,12 @@ describe("composerHoverPointerSpeed", () => {
 
   it("reuses lastSpeed when enter/leave shares the sample point at a later time", () => {
     expect(composerHoverPointerSpeed(400, 0, 1150, 2.5, 400, 0, 1152)).toBe(2.5);
+  });
+
+  it("forgets lastSpeed after a same-point dwell", () => {
+    expect(
+      composerHoverPointerSpeed(400, 0, 1150, 2.5, 400, 0, 1150 + COMPOSER_HOVER_SPEED_STALE_MS),
+    ).toBe(0);
   });
 
   it("drops speed when there was no prior coordinate", () => {

@@ -1223,7 +1223,7 @@ html[data-window-inactive]
     --chat-composer-outline: rgb(0 0 0 / 8%);
     /* Light mode gets its own specular top edge; dark overrides below. */
     --chat-composer-highlight: rgb(255 255 255 / 60%);
-    /* Pointer speed multiplier; ComposerSpecular writes this on enter/leave. */
+    /* Pointer speed multiplier; ComposerSpecular writes this on hover cross. */
     --composer-hover-dur: 1;
 
     isolation: isolate;
@@ -1467,7 +1467,7 @@ html[data-window-inactive]
      transform on an existing layer. The listener (ComposerSpecular) only
      writes coordinates while the pointer moves inside the composer; a still
      pointer is zero work. Approach speed is sampled on document pointermove
-     (numbers only) and written to --composer-hover-dur on enter/leave.
+     (numbers only) and written to --composer-hover-dur on hover cross.
      The layer spans the whole glass shell — context strip included — clipped
      to the same joined silhouette as the shell's glass, so the glow follows
      the pointer down into the strip instead of cutting off at the composer
