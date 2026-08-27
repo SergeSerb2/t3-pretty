@@ -14,6 +14,10 @@ if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
 fi
 export GIT_TERMINAL_PROMPT=0
 
+if ! origin update; then
+  echo "Origin update failed; continuing with the installed version" >&2
+fi
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FILES=(
   review-origin-pr-ci.sh
