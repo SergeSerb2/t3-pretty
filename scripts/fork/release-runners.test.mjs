@@ -333,6 +333,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(androidRelease, 'flavor="${T3CODE_ANDROID_RELEASE_FLAVOR:-internal}"');
     assert.include(androidRelease, 'export T3CODE_BUILD_FLAVOR="$flavor"');
     assert.include(androidRelease, 'export T3CODE_RELAY_URL="https://relay.t3.codes"');
+    assert.include(androidRelease, 'load_dotenv "$root/.env.internal.example"');
+    assert.include(androidRelease, 'export T3CODE_RELAY_URL="$selected_relay_url"');
     assert.include(androidRelease, 'eas env:pull production --path "$tmp/eas.env"');
     assert.include(androidRelease, "--platform android");
     assert.include(androidRelease, "--profile production");
@@ -344,6 +346,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(androidRelease, "Google Play internal testing");
     assert.include(androidRelease, "scripts/lib/brand-assets.ts");
     assert.include(androidRelease, "scripts/lib/public-config.ts");
+    assert.include(androidRelease, ".env.internal.example");
     assert.include(androidRelease, "origin-forge.mjs merge-pr");
     assert.notInclude(androidRelease, "serviceAccountKeyPath");
   });

@@ -31,6 +31,37 @@ annotate() {
   fi
 }
 
+load_dotenv() {
+  local file="$1" line name value first last
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "$line" ]] || continue
+    [[ "$line" == \#* ]] && continue
+    if [[ "$line" == export[\ $'\t']* ]]; then
+      line="${line#export}"
+      line="${line#"${line%%[![:space:]]*}"}"
+    fi
+    [[ "$line" == *=* ]] || continue
+    name="${line%%=*}"
+    value="${line#*=}"
+    name="${name%"${name##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    if [[ ${#value} -ge 2 ]]; then
+      first="${value:0:1}"
+      last="${value:$((${#value} - 1)):1}"
+      if [[ "$first" == "$last" && ( "$first" == '"' || "$first" == "'" ) ]]; then
+        value="${value:1:$((${#value} - 2))}"
+      fi
+    fi
+    [[ -n "$name" ]] || continue
+    printf -v "$name" '%s' "$value"
+    export "$name"
+  done < "$file"
+}
+
 # Buildkite secrets stay on the release host or in its cluster store. Public
 # EAS identifiers are not secrets, but loading them here lets setup add them
 # without another source change.
@@ -51,6 +82,7 @@ if [[ "$flavor" == "internal" ]]; then
   export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_MOBILE_EAS_PROJECT_ID:-1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
   export T3CODE_MOBILE_EXPO_OWNER="${T3CODE_MOBILE_EXPO_OWNER:-sergeserbinenkoteam}"
   export T3CODE_MOBILE_EXPO_SLUG="${T3CODE_MOBILE_EXPO_SLUG:-t3-pretty}"
+  load_dotenv "$root/.env.internal.example"
 else
   export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID:-}"
   export T3CODE_MOBILE_EXPO_OWNER="${T3CODE_PUBLIC_MOBILE_EXPO_OWNER:-}"
@@ -73,6 +105,16 @@ export T3CODE_MOBILE_UPDATE_URL="https://u.expo.dev/${T3CODE_MOBILE_EAS_PROJECT_
 selected_eas_project_id="$T3CODE_MOBILE_EAS_PROJECT_ID"
 selected_expo_owner="$T3CODE_MOBILE_EXPO_OWNER"
 selected_expo_slug="$T3CODE_MOBILE_EXPO_SLUG"
+for name in T3CODE_CLERK_PUBLISHABLE_KEY T3CODE_CLERK_JWT_TEMPLATE T3CODE_CLERK_CLI_OAUTH_CLIENT_ID T3CODE_RELAY_URL; do
+  if [[ -z "${!name:-}" ]]; then
+    echo "$name is required for the $flavor Android release." >&2
+    exit 1
+  fi
+done
+selected_clerk_publishable_key="$T3CODE_CLERK_PUBLISHABLE_KEY"
+selected_clerk_jwt_template="$T3CODE_CLERK_JWT_TEMPLATE"
+selected_clerk_cli_oauth_client_id="$T3CODE_CLERK_CLI_OAUTH_CLIENT_ID"
+selected_relay_url="$T3CODE_RELAY_URL"
 
 if [[ -z "${EXPO_TOKEN:-}" ]]; then
   echo "EXPO_TOKEN is required for Android build and submission." >&2
@@ -102,6 +144,7 @@ if [[ "$flavor" == "internal" && "${T3CODE_FORCE_ANDROID:-}" != "1" ]]; then
   previous="$(head -n 1 "$checked_head" 2>/dev/null | tr -d '[:space:]' || true)"
   if [[ "$previous" =~ ^[0-9a-f]{40}$ ]] && git merge-base --is-ancestor "$previous" HEAD 2>/dev/null; then
     if git diff --quiet "$previous" HEAD -- \
+      .env.internal.example \
       apps/mobile \
       packages \
       patches \
@@ -138,37 +181,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-load_dotenv() {
-  local file="$1" line name value first last
-  [[ -f "$file" ]] || return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -n "$line" ]] || continue
-    [[ "$line" == \#* ]] && continue
-    if [[ "$line" == export[\ $'\t']* ]]; then
-      line="${line#export}"
-      line="${line#"${line%%[![:space:]]*}"}"
-    fi
-    [[ "$line" == *=* ]] || continue
-    name="${line%%=*}"
-    value="${line#*=}"
-    name="${name%"${name##*[![:space:]]}"}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    if [[ ${#value} -ge 2 ]]; then
-      first="${value:0:1}"
-      last="${value:$((${#value} - 1)):1}"
-      if [[ "$first" == "$last" && ( "$first" == '"' || "$first" == "'" ) ]]; then
-        value="${value:1:$((${#value} - 2))}"
-      fi
-    fi
-    [[ -n "$name" ]] || continue
-    printf -v "$name" '%s' "$value"
-    export "$name"
-  done < "$file"
-}
-
 (
   cd apps/mobile
   eas env:pull production --path "$tmp/eas.env" --non-interactive
@@ -182,12 +194,10 @@ export T3CODE_MOBILE_EAS_PROJECT_ID="$selected_eas_project_id"
 export T3CODE_MOBILE_EXPO_OWNER="$selected_expo_owner"
 export T3CODE_MOBILE_EXPO_SLUG="$selected_expo_slug"
 export T3CODE_MOBILE_UPDATE_URL="https://u.expo.dev/${selected_eas_project_id}"
-if [[ "$flavor" == "public" ]]; then
-  export T3CODE_CLERK_PUBLISHABLE_KEY="pk_live_Y2xlcmsudDMuY29kZXMk"
-  export T3CODE_CLERK_JWT_TEMPLATE="t3-relay"
-  export T3CODE_CLERK_CLI_OAUTH_CLIENT_ID="hzxSgY2cH10sDU2r"
-  export T3CODE_RELAY_URL="https://relay.t3.codes"
-fi
+export T3CODE_CLERK_PUBLISHABLE_KEY="$selected_clerk_publishable_key"
+export T3CODE_CLERK_JWT_TEMPLATE="$selected_clerk_jwt_template"
+export T3CODE_CLERK_CLI_OAUTH_CLIENT_ID="$selected_clerk_cli_oauth_client_id"
+export T3CODE_RELAY_URL="$selected_relay_url"
 
 fingerprint_file="$tmp/android-fingerprint.json"
 gate_file="$tmp/android-gate.txt"
