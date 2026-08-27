@@ -30,8 +30,9 @@ export const PROVIDER_PRESENTATION = {
     mark: CursorIcon,
   },
   grok: {
-    label: "Grok",
-    color: "#737373",
+    label: "Grok Build",
+    // Contrast-aware neutral between the Codex series and muted chart chrome.
+    color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     mark: GrokIcon,
   },
   kimi: {

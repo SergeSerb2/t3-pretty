@@ -996,15 +996,13 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
 }
 
 export function applyResolutionEdits({ path, source, conflicts, resolution }) {
-  const edits = resolution.edits.map((edit) => {
-    if (
-      typeof edit.old_text !== "string" ||
-      typeof edit.new_text !== "string" ||
-      edit.old_text.length === 0 ||
-      edit.old_text === edit.new_text
-    ) {
-      throw new Error(`${path} returned an invalid no-op or empty edit`);
+  const edits = resolution.edits.flatMap((edit) => {
+    if (typeof edit.old_text !== "string" || typeof edit.new_text !== "string") {
+      throw new Error(`${path} returned an invalid edit`);
     }
+    // Ignore harmless surplus edits. The conflict coverage check below still
+    // rejects a response when these were its only edits for a conflict.
+    if (edit.old_text.length === 0 || edit.old_text === edit.new_text) return [];
     if (LEFTOVER_MARKER_PATTERN.test(edit.new_text)) {
       throw new Error(`${path} returned new_text that reintroduces conflict markers`);
     }
@@ -1040,7 +1038,7 @@ export function applyResolutionEdits({ path, source, conflicts, resolution }) {
     if (distanceFromConflict(start, end, conflicts) > MAX_EDIT_DISTANCE) {
       throw new Error(`${path} returned an edit too far from a conflict`);
     }
-    return { start, end, replacement: edit.new_text };
+    return [{ start, end, replacement: edit.new_text }];
   });
   const sortedEdits = edits.toSorted((left, right) => left.start - right.start);
   for (let index = 1; index < sortedEdits.length; index += 1) {

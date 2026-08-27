@@ -807,4 +807,42 @@ ${">".repeat(7)} theirs
       /does not appear in the working file/u,
     );
   });
+
+  it("ignores surplus no-op edits without weakening conflict coverage", () => {
+    const conflictBlock = `${"<".repeat(7)} ours
+ours
+${"|".repeat(7)} base
+base
+${"=".repeat(7)}
+theirs
+${">".repeat(7)} theirs
+`;
+    const conflicts = [{ index: 0, start: 0, end: conflictBlock.length }];
+    const resolved = applyResolutionEdits({
+      path: "f.ts",
+      source: conflictBlock,
+      conflicts,
+      resolution: {
+        edits: [
+          { old_text: "", new_text: "unused", summary: "empty" },
+          { old_text: "ours", new_text: "ours", summary: "no-op" },
+          { old_text: conflictBlock, new_text: "resolved\n", summary: "resolution" },
+        ],
+      },
+    });
+    assert.equal(resolved, "resolved\n");
+
+    assert.throws(
+      () =>
+        applyResolutionEdits({
+          path: "f.ts",
+          source: conflictBlock,
+          conflicts,
+          resolution: {
+            edits: [{ old_text: "ours", new_text: "ours", summary: "no-op" }],
+          },
+        }),
+      /no edit for conflict 0/u,
+    );
+  });
 });

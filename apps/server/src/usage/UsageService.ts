@@ -1,9 +1,9 @@
 /**
  * UsageService - scans provider transcripts and returns priced usage buckets.
  *
- * The scan reads the provider CLIs' own session files rather than T3 Code's
- * orchestration projections, so usage covers turns driven outside T3 Code too.
- * This is the approach `ccusage` takes.
+ * The scan reads the provider CLIs' own session files (Claude Code, Codex, and
+ * Grok Build) rather than T3 Code's orchestration projections, so usage covers
+ * turns driven outside T3 Code too. This is the approach `ccusage` takes.
  *
  * Transcripts are append-only, so parsed records are memoised per file by
  * `(size, mtime)`. A cold 30-day scan of ~1.4 GB lands around 2-3 seconds; warm
@@ -21,6 +21,7 @@ import {
   type UsageSummaryInput,
   UsageReadError,
 } from "@t3tools/contracts";
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -37,6 +38,7 @@ import { HttpClient } from "effect/unstable/http";
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerConfig } from "../config.ts";
 import { readTextWithinLimit } from "../boundedFileRead.ts";
+import { expandHomePath } from "../pathExpansion.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -139,6 +141,7 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const scanSemaphore = yield* Semaphore.make(1);
+  const hostEnvironment = yield* HostProcessEnvironment;
 
   const fileCache: ScanCache = new Map();
   let cachedRecordCount = 0;
@@ -269,13 +272,20 @@ export const make = Effect.gen(function* () {
     const claudeDir = yield* resolveClaudeTranscriptDir(claudeHome);
     const codexLayout = yield* resolveCodexHomeLayout(settings.providers.codex);
     const kimiHome = yield* resolveKimiHomePath(settings.providers.kimi);
+    // Grok Settings only expose the binary path; home is `$GROK_HOME` or `~/.grok`.
+    // Empty/whitespace GROK_HOME must fall back: coalescing alone would scan cwd.
+    const grokHomeEnv = hostEnvironment["GROK_HOME"]?.trim() ?? "";
+    const grokHome =
+      grokHomeEnv.length > 0
+        ? path.resolve(expandHomePath(grokHomeEnv))
+        : path.join(NodeOS.homedir(), ".grok");
 
     return [
       { provider: "claude" as const, dir: claudeDir },
       { provider: "codex" as const, dir: path.join(codexLayout.sharedHomePath, "sessions") },
       {
         provider: "grok" as const,
-        dir: path.join(NodeOS.homedir(), ".grok", "sessions"),
+        dir: path.join(grokHome, "sessions"),
         fileName: "updates.jsonl",
       },
       {
@@ -517,7 +527,11 @@ export const make = Effect.gen(function* () {
       }
 
       const listing = yield* Effect.promise(() =>
-        listTranscriptFiles(dir, windowStartMs, fileName),
+        listTranscriptFiles(
+          dir,
+          windowStartMs,
+          fileName === undefined ? undefined : { fileName },
+        ),
       );
       // Absence only proves deletion after a complete walk. Treating a
       // truncated or partially unreadable listing as authoritative would evict
