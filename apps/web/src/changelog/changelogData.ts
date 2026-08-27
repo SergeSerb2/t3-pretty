@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.35-nightly.20260826.1195001095",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+      {
+        kind: "fixed",
+        title: "smooth composer hover glow",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195001093",
     date: "2026-08-27",
     items: [
