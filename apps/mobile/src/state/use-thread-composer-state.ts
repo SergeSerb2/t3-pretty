@@ -24,7 +24,11 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
-import { isNativeResumeSessionReady, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
+import {
+  isNativeResumeSessionReady,
+  parseNativeResumeCommand,
+  restoreFailedNativeResumePrompt,
+} from "@t3tools/shared/nativeResume";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
@@ -182,14 +186,31 @@ export function useThreadComposerState() {
     if (optimisticStarting === null || selectedThreadMessages === null) {
       return;
     }
+    const nativeResume = parseNativeResumeCommand(optimisticStarting.message.text);
+    const nativeResumeSettled =
+      selectedThreadMessages.length === 0 &&
+      nativeResume?._tag === "Resume" &&
+      (isNativeResumeSessionReady(selectedThreadDetail?.session?.status) ||
+        selectedThreadDetail?.session?.status === "error");
     if (
       selectedThreadMessages.some(
         (message) => message.id === optimisticStarting.message.messageId,
       ) ||
-      (selectedThreadMessages.length === 0 &&
-        isNativeResumeSessionReady(selectedThreadDetail?.session?.status) &&
-        parseNativeResumeCommand(optimisticStarting.message.text)?._tag === "Resume")
+      nativeResumeSettled
     ) {
+      if (nativeResumeSettled && selectedThreadDetail?.session?.status === "error") {
+        const threadKey = scopedThreadKey(
+          optimisticStarting.environmentId,
+          optimisticStarting.threadId,
+        );
+        const retryPrompt = restoreFailedNativeResumePrompt(
+          getComposerDraftSnapshot(threadKey).text,
+          [optimisticStarting.message.text],
+        );
+        if (retryPrompt !== null) {
+          setComposerDraftText(threadKey, retryPrompt);
+        }
+      }
       clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
     }
   }, [optimisticStarting, selectedThreadDetail?.session, selectedThreadMessages]);

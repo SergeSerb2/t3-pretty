@@ -4,7 +4,11 @@ import {
   buildCreatePullRequestMessageSuffix,
   CREATE_PULL_REQUEST_OPEN_MARKER,
 } from "./createPullRequestPrompt.ts";
-import { isNativeResumeSessionReady, parseNativeResumeCommand } from "./nativeResume.ts";
+import {
+  isNativeResumeSessionReady,
+  parseNativeResumeCommand,
+  restoreFailedNativeResumePrompt,
+} from "./nativeResume.ts";
 
 describe("parseNativeResumeCommand", () => {
   it("parses a native session id", () => {
@@ -39,5 +43,18 @@ describe("isNativeResumeSessionReady", () => {
     expect(isNativeResumeSessionReady("starting")).toBe(false);
     expect(isNativeResumeSessionReady("error")).toBe(false);
     expect(isNativeResumeSessionReady(null)).toBe(false);
+  });
+});
+
+describe("restoreFailedNativeResumePrompt", () => {
+  it("restores only the latest failed resume ahead of new draft text", () => {
+    expect(
+      restoreFailedNativeResumePrompt("new draft", [
+        "/resume old-session",
+        "ordinary prompt",
+        "/resume corrected-session",
+      ]),
+    ).toBe("/resume corrected-session\n\nnew draft");
+    expect(restoreFailedNativeResumePrompt("", ["ordinary prompt"])).toBeNull();
   });
 });

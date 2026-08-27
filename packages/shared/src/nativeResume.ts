@@ -14,6 +14,18 @@ export function isNativeResumeSessionReady(
   return status === "ready";
 }
 
+export function restoreFailedNativeResumePrompt(
+  currentPrompt: string,
+  optimisticMessageTexts: ReadonlyArray<string>,
+): string | null {
+  const command = optimisticMessageTexts
+    .map(parseNativeResumeCommand)
+    .findLast((candidate) => candidate?._tag === "Resume");
+  if (command?._tag !== "Resume") return null;
+  const retryPrompt = `/resume ${command.sessionId}`;
+  return currentPrompt.length > 0 ? `${retryPrompt}\n\n${currentPrompt}` : retryPrompt;
+}
+
 export function parseNativeResumeCommand(text: string): NativeResumeCommand | null {
   const visibleText = stripCreatePullRequestSuffix(text).trim();
   if (!/^\/resume(?:\s|$)/iu.test(visibleText)) {

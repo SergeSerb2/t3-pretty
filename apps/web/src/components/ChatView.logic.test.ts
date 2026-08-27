@@ -36,7 +36,6 @@ import {
   resolveComposerRuntimeMode,
   resolveSendEnvMode,
   resolveDraftHeroState,
-  restoreFailedNativeResumePrompt,
   storedComposerRuntimeMode,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
@@ -51,19 +50,6 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
-
-describe("restoreFailedNativeResumePrompt", () => {
-  it("restores only the latest failed resume ahead of new draft text", () => {
-    expect(
-      restoreFailedNativeResumePrompt("new draft", [
-        "/resume old-session",
-        "ordinary prompt",
-        "/resume corrected-session",
-      ]),
-    ).toBe("/resume corrected-session\n\nnew draft");
-    expect(restoreFailedNativeResumePrompt("", ["ordinary prompt"])).toBeNull();
-  });
-});
 
 describe("draft hero submission transition", () => {
   it("does not dock the composer before a background submission", () => {

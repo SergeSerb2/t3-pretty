@@ -60,6 +60,7 @@ import {
   isNativeResumeSessionReady,
   NATIVE_RESUME_THREAD_TITLE,
   parseNativeResumeCommand,
+  restoreFailedNativeResumePrompt,
 } from "@t3tools/shared/nativeResume";
 import { truncate } from "@t3tools/shared/String";
 import {
@@ -417,7 +418,6 @@ import {
   resolveThreadMetadataUpdateForNextTurn,
   resolveComposerRuntimeMode,
   resolveSendEnvMode,
-  restoreFailedNativeResumePrompt,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
