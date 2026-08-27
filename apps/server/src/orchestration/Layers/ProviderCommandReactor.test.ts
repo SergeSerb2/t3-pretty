@@ -683,6 +683,90 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  effectIt.effect("does not reactivate a turn that completed before sendTurn returns", () =>
+    Effect.gen(function* () {
+      const accepted = yield* Deferred.make<{
+        readonly threadId: ThreadId;
+        readonly turnId: TurnId;
+      }>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          globalEnabledSkillIds: ["acme/skills:completion-race"],
+          threadModelSelection: {
+            instanceId: ProviderInstanceId.make("cursor"),
+            model: "default",
+          },
+          sendTurnEffect: () => Deferred.await(accepted),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      const completedAt = "2026-01-01T00:00:01.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-completion-race"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-completion-race"),
+          role: "user",
+          text: "finish before acknowledging the send",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return harness.sendTurn.mock.calls.length === 1 && thread?.session?.status === "starting";
+        }),
+      );
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-ready-before-send-return"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "cursor",
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: completedAt,
+        },
+        createdAt: completedAt,
+      });
+      yield* Deferred.succeed(accepted, {
+        threadId: ThreadId.make("thread-1"),
+        turnId: asTurnId("turn-completed-before-send-return"),
+      });
+
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return thread?.activities.some((activity) => activity.kind === "skill.loaded") === true;
+        }),
+      );
+
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.session).toMatchObject({
+        status: "ready",
+        activeTurnId: null,
+        updatedAt: completedAt,
+      });
+    }),
+  );
+
   it("materializes the union of global and thread skills into the turn cwd before session start", async () => {
     const harness = await createHarness({
       globalEnabledSkillIds: ["acme/skills:global-skill"],
