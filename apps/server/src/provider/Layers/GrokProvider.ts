@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
@@ -32,6 +33,7 @@ import {
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
 import {
+  grokModelCapabilities,
   isValidGrokReasoningEffortToken,
   makeGrokAcpRuntime,
   resolveGrokAcpBaseModelId,
@@ -45,7 +47,10 @@ const GROK_PRESENTATION = {
   requiresNewThreadForModelChange: true,
   supportsNativeResume: true,
 } as const;
-const FALLBACK_CAPABILITIES: ModelCapabilities = EMPTY_CAPABILITIES;
+const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [],
+});
+const FALLBACK_CAPABILITIES: ModelCapabilities = grokModelCapabilities({ slug: "grok-build" });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -102,7 +107,15 @@ function grokModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES);
+  return providerModelsFromSettings(builtInModels, customModels ?? [], FALLBACK_CAPABILITIES).map(
+    (model) =>
+      model.isCustom
+        ? {
+            ...model,
+            capabilities: grokModelCapabilities({ slug: model.slug, name: model.name }),
+          }
+        : model,
+  );
 }
 
 function nonEmptyString(value: unknown): string | undefined {

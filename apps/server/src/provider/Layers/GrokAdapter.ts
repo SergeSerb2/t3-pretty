@@ -65,7 +65,6 @@ import {
   currentGrokReasoningEffortFromSessionSetup,
   grokReasoningEffortMenusFromSessionSetup,
   makeGrokAcpRuntime,
-  normalizeGrokReasoningEffort,
   requestedGrokReasoningEffort,
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
@@ -1284,10 +1283,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             livenessUpdatesInFlight: 0,
             promptResponsesReady: 0,
             currentModelId: boundModelId,
-            currentReasoningEffort:
-              requestedStartReasoningEffort !== undefined
-                ? normalizeGrokReasoningEffort(requestedStartReasoningEffort)
-                : currentStartReasoningEffort,
+            currentReasoningEffort: boundSelection.reasoningEffort,
             reasoningEffortMenus: grokReasoningEffortMenusFromSessionSetup(
               started.sessionSetupResult,
             ),
@@ -1563,7 +1559,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 });
               }
 
-              const currentModelId = yield* applyGrokAcpModelSelection({
+              const turnSelection = yield* applyGrokAcpModelSelection({
                 runtime: ctx.acp,
                 currentModelId: ctx.currentModelId,
                 currentReasoningEffort: ctx.currentReasoningEffort,
@@ -1572,12 +1568,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 mapError: (cause) =>
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
+              const currentModelId = turnSelection.modelId;
               ctx.currentModelId = currentModelId;
-              if (requestedTurnReasoningEffort !== undefined) {
-                ctx.currentReasoningEffort = normalizeGrokReasoningEffort(
-                  requestedTurnReasoningEffort,
-                );
-              }
+              ctx.currentReasoningEffort = turnSelection.reasoningEffort;
               const displayModel = currentModelId
                 ? resolveGrokAcpBaseModelId(currentModelId)
                 : undefined;
