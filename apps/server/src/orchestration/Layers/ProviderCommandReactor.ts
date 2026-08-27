@@ -1750,7 +1750,7 @@ const make = Effect.gen(function* () {
         onSuccess: (turn) =>
           Effect.gen(function* () {
             const startedThread = yield* resolveThread(event.payload.threadId);
-            if (startedThread?.session) {
+            if (startedThread?.session?.status === "starting") {
               const acceptedAt = DateTime.formatIso(yield* DateTime.now);
               yield* setThreadSession({
                 threadId: event.payload.threadId,
