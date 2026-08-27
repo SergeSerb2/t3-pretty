@@ -12,6 +12,7 @@ import {
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
+  MAX_VALIDATION_ATTEMPTS,
   prepareConflictPrompt,
   pruneResolutionCache,
   readCachedResolution,
@@ -655,9 +656,10 @@ ${">".repeat(7)} theirs
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
     // A non-unique or missing old_text is a sampling defect, not a hard
-    // failure: one fresh request usually validates (seen on nightly 1093).
+    // failure: bounded fresh requests usually validate (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
+    assert.equal(MAX_VALIDATION_ATTEMPTS, 3);
 
     const retryPrompt = buildValidationRetryPrompt(
       "original prompt",
@@ -665,6 +667,9 @@ ${">".repeat(7)} theirs
     );
     assert.include(retryPrompt, "The previous response failed validation");
     assert.include(retryPrompt, "old_text matching 2 locations");
+    assert.include(retryPrompt, "Discard the previous edits");
+    assert.include(retryPrompt, "only from the current conflict context");
+    assert.include(retryPrompt, "Copy every old_text byte-for-byte");
     assert.include(retryPrompt, "include enough unchanged surrounding lines");
     assert.equal(buildValidationRetryPrompt("original prompt", undefined), "original prompt");
   });
