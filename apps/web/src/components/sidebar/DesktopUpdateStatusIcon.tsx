@@ -53,6 +53,14 @@ export function desktopUpdateCheckMotionAfterSpinIteration({
   return prefersReducedMotion ? "idle" : "settle";
 }
 
+export const DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME = "desktop-update-check-settle";
+
+export function isDesktopUpdateCheckSettleAnimationEnd(event: {
+  readonly animationName: string;
+}): boolean {
+  return event.animationName === DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME;
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
@@ -138,12 +146,17 @@ export function DesktopUpdateStatusIcon({
     <RefreshCwIcon
       className={cn(
         "size-4",
-        status === "checking" &&
-          isCheckSettling &&
-          "animate-desktop-update-check-settle motion-reduce:animate-none",
-        status === "checking" && isCheckAnimating && !isCheckSettling && "animate-spin",
+        isCheckSettling && "animate-desktop-update-check-settle motion-reduce:animate-none",
+        isCheckAnimating && !isCheckSettling && "animate-spin",
       )}
-      onAnimationEnd={isCheckSettling ? onCheckAnimationEnd : undefined}
+      onAnimationEnd={
+        onCheckAnimationEnd
+          ? (event) => {
+              if (!isDesktopUpdateCheckSettleAnimationEnd(event)) return;
+              onCheckAnimationEnd(event);
+            }
+          : undefined
+      }
       onAnimationIteration={isCheckSettling ? undefined : onCheckAnimationIteration}
     />
   );

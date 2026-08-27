@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { desktopUpdateCheckMotionAfterSpinIteration } from "./DesktopUpdateStatusIcon";
+import {
+  DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME,
+  desktopUpdateCheckMotionAfterSpinIteration,
+  isDesktopUpdateCheckSettleAnimationEnd,
+} from "./DesktopUpdateStatusIcon";
 
 describe("desktopUpdateCheckMotionAfterSpinIteration", () => {
   it("keeps spinning while the check is still running", () => {
@@ -34,5 +38,17 @@ describe("desktopUpdateCheckMotionAfterSpinIteration", () => {
         prefersReducedMotion: true,
       }),
     ).toBe("idle");
+  });
+});
+
+describe("isDesktopUpdateCheckSettleAnimationEnd", () => {
+  it("accepts only the settle keyframe", () => {
+    expect(
+      isDesktopUpdateCheckSettleAnimationEnd({
+        animationName: DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME,
+      }),
+    ).toBe(true);
+    expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "spin" })).toBe(false);
+    expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "" })).toBe(false);
   });
 });
