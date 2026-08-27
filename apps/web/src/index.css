@@ -1466,7 +1466,9 @@ html[data-window-inactive]
      lip. A wider halo (::after) sits under the core and blooms from 72% to
      full size on hover; `scale` transitions independently of the per-frame
      `translate` updates, so tracking stays instant while the bloom settles.
-     Opacity and bloom use the same duration both ways so leave matches enter. */
+     Opacity and bloom use the same duration both ways so leave matches enter.
+     Each gradient keeps a full-range alpha ramp and applies its faintness as
+     post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
       position: absolute;
@@ -1524,16 +1526,14 @@ html[data-window-inactive]
       width: 320px;
       height: 320px;
       margin: -160px 0 0 -160px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 6%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
       will-change: translate;
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.05;
       }
     }
 
@@ -1545,18 +1545,16 @@ html[data-window-inactive]
       width: 560px;
       height: 560px;
       margin: -280px 0 0 -280px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 3.5%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: 0.72;
       will-change: translate;
       transition: scale 520ms cubic-bezier(0.22, 1, 0.36, 1);
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.025;
       }
     }
 
