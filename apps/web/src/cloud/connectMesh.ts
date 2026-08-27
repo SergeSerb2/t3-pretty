@@ -7,6 +7,16 @@ import type { Discovery } from "@t3tools/client-runtime/relay";
 import * as Option from "effect/Option";
 
 export const RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY = "t3code:relay-membership-observed:v1";
+const observedRelayMemberships = new Set<EnvironmentId>();
+
+function readObservedRelayMemberships(): string[] {
+  const value = localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY);
+  if (value === null) return [];
+  const parsed: unknown = JSON.parse(value);
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === "string")
+    : [];
+}
 
 function isRelayDiscoveryAuthoritative(
   discovery: Discovery.RelayEnvironmentDiscoveryState,
@@ -42,20 +52,28 @@ export function isRelayEnvironmentPresent(
 }
 
 export function hasObservedRelayMembership(environmentId: EnvironmentId): boolean {
+  if (observedRelayMemberships.has(environmentId)) return true;
   try {
-    return localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) === environmentId;
+    const observed = readObservedRelayMemberships().includes(environmentId);
+    if (observed) observedRelayMemberships.add(environmentId);
+    return observed;
   } catch {
-    return false;
+    // Without durable history, do not risk undoing an explicit account removal.
+    return true;
   }
 }
 
 export function rememberRelayMembership(environmentId: EnvironmentId): void {
+  observedRelayMemberships.add(environmentId);
   try {
-    if (localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) !== environmentId) {
-      localStorage.setItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY, environmentId);
-    }
+    const observed = readObservedRelayMemberships();
+    if (observed.includes(environmentId)) return;
+    localStorage.setItem(
+      RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY,
+      JSON.stringify([...observed, environmentId]),
+    );
   } catch {
-    // If storage is unavailable, the bounded in-memory attempt still prevents a loop this launch.
+    // The in-memory observation still preserves explicit removal for this launch.
   }
 }
 
