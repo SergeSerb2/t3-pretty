@@ -45,6 +45,7 @@ import {
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettingsModule from "../../serverSettings.ts";
 import { readProviderStatusCache, resolveProviderStatusCachePath } from "../providerStatusCache.ts";
+import { NATIVE_RESUME_SLASH_COMMAND } from "../providerSnapshot.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../Services/ProviderRegistry.ts";
@@ -382,6 +383,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             },
           ]);
           assert.deepStrictEqual(status.slashCommands, [
+            NATIVE_RESUME_SLASH_COMMAND,
             {
               name: "feedback",
               description: "Send this thread and Codex logs to OpenAI",
@@ -1840,6 +1842,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
 
           assert.deepStrictEqual(status.slashCommands, [
+            NATIVE_RESUME_SLASH_COMMAND,
             {
               name: "compact",
               description: "Summarize the conversation and reduce context usage",
@@ -1887,6 +1890,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
 
           assert.deepStrictEqual(status.slashCommands, [
+            NATIVE_RESUME_SLASH_COMMAND,
             {
               name: "compact",
               description: "Summarize the conversation and reduce context usage",

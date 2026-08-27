@@ -56,6 +56,35 @@ const testServices = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3code-kimi-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
+it.effect("loads an imported native Kimi session", () =>
+  Effect.gen(function* () {
+    const directory = yield* Effect.promise(() =>
+      NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "kimi-native-resume-")),
+    );
+    const requestLogPath = NodePath.join(directory, "requests.ndjson");
+    const binaryPath = yield* Effect.promise(() => makeKimiMockWrapper(requestLogPath));
+    const adapter = yield* makeKimiAdapter(decodeKimiSettings({ binaryPath }));
+    const threadId = ThreadId.make("kimi-native-resume-thread");
+
+    const session = yield* adapter.startSession({
+      threadId,
+      provider: ProviderDriverKind.make("kimi"),
+      cwd: process.cwd(),
+      nativeSessionId: "native-kimi-session",
+      runtimeMode: "full-access",
+    });
+
+    assert.deepEqual(session.resumeCursor, {
+      schemaVersion: 1,
+      sessionId: "native-kimi-session",
+    });
+    const requestLog = yield* Effect.promise(() => NodeFSP.readFile(requestLogPath, "utf8"));
+    assert.include(requestLog, '"method":"session/load"');
+    assert.include(requestLog, '"sessionId":"native-kimi-session"');
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(testServices)),
+);
+
 it.effect("runs Kimi sessions through ACP with models, thinking, modes, and streaming", () =>
   Effect.gen(function* () {
     const directory = yield* Effect.promise(() =>

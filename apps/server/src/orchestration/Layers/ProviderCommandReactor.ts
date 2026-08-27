@@ -79,6 +79,7 @@ type ProviderIntentEvent = Extract<
     type:
       | "thread.meta-updated"
       | "thread.runtime-mode-set"
+      | "thread.native-resume-requested"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
@@ -442,6 +443,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly kind:
       | "provider.turn.start.failed"
+      | "provider.session.resume.failed"
       | "provider.turn.interrupt.failed"
       | "provider.approval.respond.failed"
       | "provider.user-input.respond.failed"
@@ -862,6 +864,7 @@ const make = Effect.gen(function* () {
       readonly modelSelection?: ModelSelection;
       readonly pendingTurnStart?: boolean;
       readonly messageText?: string;
+      readonly nativeSessionId?: string;
     },
   ) {
     const thread = yield* resolveThread(threadId);
@@ -1065,7 +1068,7 @@ const make = Effect.gen(function* () {
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
-      readonly provider?: ProviderDriverKind;
+      readonly nativeSessionId?: string;
     }) =>
       resolveThreadSubagentPolicy({
         threadId,
@@ -1080,6 +1083,9 @@ const make = Effect.gen(function* () {
             ...(thread.title ? { title: thread.title } : {}),
             modelSelection: desiredModelSelection,
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+            ...(input?.nativeSessionId !== undefined
+              ? { nativeSessionId: input.nativeSessionId }
+              : {}),
             runtimeMode: desiredRuntimeMode,
             ...(subagentPolicy !== undefined ? { subagentPolicy } : {}),
           }),
@@ -1200,7 +1206,11 @@ const make = Effect.gen(function* () {
       };
     }
 
-    const startedSession = yield* startProviderSession(undefined);
+    const startedSession = yield* startProviderSession(
+      options?.nativeSessionId !== undefined
+        ? { nativeSessionId: options.nativeSessionId }
+        : undefined,
+    );
     yield* bindSessionToThread(startedSession);
     if (!isProviderHandoff) {
       yield* appendModelChangedNotice({ isHandoff: false });
@@ -2033,6 +2043,66 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const processNativeResumeRequested = Effect.fn("processNativeResumeRequested")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.native-resume-requested" }>,
+  ) {
+    const thread = yield* resolveThread(event.payload.threadId);
+    if (!thread) {
+      return;
+    }
+
+    const resumed = yield* Effect.gen(function* () {
+      yield* ensureThreadWorktree(thread);
+      yield* ensureSessionForThread(event.payload.threadId, event.payload.createdAt, {
+        nativeSessionId: event.payload.nativeSessionId,
+      });
+      return true;
+    }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        const detail = formatFailureDetail(cause);
+        return setThreadSessionErrorOnTurnStartFailure({
+          threadId: event.payload.threadId,
+          detail,
+          createdAt: event.payload.createdAt,
+        }).pipe(
+          Effect.andThen(
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.session.resume.failed",
+              summary: "Native provider session resume failed",
+              detail,
+              turnId: null,
+              createdAt: event.payload.createdAt,
+            }),
+          ),
+          Effect.as(false),
+        );
+      }),
+    );
+    if (!resumed) {
+      return;
+    }
+
+    yield* orchestrationEngine.dispatch({
+      type: "thread.activity.append",
+      commandId: yield* serverCommandId("provider-native-session-resumed"),
+      threadId: event.payload.threadId,
+      activity: {
+        id: yield* serverEventId(),
+        tone: "info",
+        kind: "provider.session.resumed",
+        summary: "Resumed native provider session",
+        payload: { nativeSessionId: event.payload.nativeSessionId },
+        turnId: null,
+        createdAt: event.payload.createdAt,
+      },
+      createdAt: event.payload.createdAt,
+    });
+  });
+
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (
     event: ProviderIntentEvent,
   ) {
@@ -2061,6 +2131,9 @@ const make = Effect.gen(function* () {
         );
         return;
       }
+      case "thread.native-resume-requested":
+        yield* processNativeResumeRequested(event);
+        return;
       case "thread.turn-start-requested":
         yield* processTurnStartRequested(event);
         return;
@@ -2121,6 +2194,7 @@ const make = Effect.gen(function* () {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
+        event.type === "thread.native-resume-requested" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||

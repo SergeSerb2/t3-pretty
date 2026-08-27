@@ -683,6 +683,45 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  effectIt.effect("resumes a native provider session without sending /resume as a turn", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-native-resume"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-native-resume"),
+          role: "user",
+          text: "/resume native-session-123",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+        nativeSessionId: "native-session-123",
+      });
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.messages).toEqual([]);
+      expect(thread?.session?.status).toBe("ready");
+      expect(
+        thread?.activities.some((activity) => activity.kind === "provider.session.resumed"),
+      ).toBe(true);
+    }),
+  );
+
   effectIt.effect("does not reactivate a turn that completed before sendTurn returns", () =>
     Effect.gen(function* () {
       const accepted = yield* Deferred.make<{

@@ -72,6 +72,16 @@ Type `/` at the start of a line to open the command menu. Keep typing to filter;
 commands, and the like. Picking one inserts it into the message and the agent runs it when
 you send.
 
+To continue a session that began in a provider's native CLI, create a new T3 Code thread with the
+same provider and send `/resume <native-session-id>` as its first command. Use the session ID shown
+by the native CLI's history or resume picker. T3 Code reconnects to the provider's stored context;
+it does not copy the earlier messages into the T3 Code timeline. Send your next message normally
+after the resume completes.
+
+The configured provider must use the same native data directory or account that owns the session.
+The command is available for Claude, Codex, Cursor, Grok, and Kimi providers that are installed and
+ready.
+
 ## Linking files and skills
 
 Type `@` to link a workspace file or folder, or a skill the selected agent knows about. The

@@ -965,7 +965,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         cwd: process.cwd(),
         runtimeMode: "full-access",
         modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
-        resumeCursor: { schemaVersion: 1, sessionId: "mock-session-1" },
+        nativeSessionId: "native-grok-session",
       });
 
       yield* adapter.sendTurn({
@@ -976,7 +976,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       assert.deepStrictEqual(session.resumeCursor, {
         schemaVersion: 1,
-        sessionId: "mock-session-1",
+        sessionId: "native-grok-session",
       });
       assert.isFalse(
         runtimeEvents.some(

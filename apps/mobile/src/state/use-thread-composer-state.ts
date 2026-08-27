@@ -24,6 +24,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
@@ -181,11 +182,17 @@ export function useThreadComposerState() {
       return;
     }
     if (
-      selectedThreadMessages.some((message) => message.id === optimisticStarting.message.messageId)
+      selectedThreadMessages.some(
+        (message) => message.id === optimisticStarting.message.messageId,
+      ) ||
+      (selectedThreadMessages.length === 0 &&
+        selectedThreadDetail?.session !== null &&
+        selectedThreadDetail?.session !== undefined &&
+        parseNativeResumeCommand(optimisticStarting.message.text)?._tag === "Resume")
     ) {
       clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
     }
-  }, [optimisticStarting, selectedThreadMessages]);
+  }, [optimisticStarting, selectedThreadDetail?.session, selectedThreadMessages]);
   useEffect(() => {
     if (!selectedThreadDetail || !selectedThreadShell) return;
     recordThreadFeedBuildPerformanceSpan(

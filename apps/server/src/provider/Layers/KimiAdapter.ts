@@ -585,7 +585,8 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
           );
           let ctx!: KimiSessionContext;
 
-          const resumeSessionId = parseKimiResume(input.resumeCursor)?.sessionId;
+          const resumeSessionId =
+            input.nativeSessionId ?? parseKimiResume(input.resumeCursor)?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
