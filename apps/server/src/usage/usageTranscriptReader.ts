@@ -281,7 +281,7 @@ export async function readTranscriptRecords(
 
       if (provider === "grok") {
         if (!mightCarryUsage(line, provider)) continue;
-        for (const grokRecord of parseGrokLine(line)) records.push(grokRecord);
+        if (parseGrokLine(line).some(appendRecord)) break;
         continue;
       }
 
