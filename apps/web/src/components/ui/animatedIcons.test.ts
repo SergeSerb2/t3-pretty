@@ -26,6 +26,9 @@ describe("animated icon boundaries", () => {
     expect(iconMotion).toContain('[data-slot="toggle"]');
     expect(iconMotion).toContain(".lucide-panel-bottom");
     expect(iconMotion).toContain(".lucide-git-pull-request");
+    expect(iconMotion).toContain(
+      "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
+    );
     expect(iconMotion).not.toContain("a[href]");
     expect(iconMotion).not.toContain('[data-slot="tooltip-trigger"]');
     expect(iconMotion).not.toContain("animation:");

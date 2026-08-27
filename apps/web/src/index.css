@@ -180,6 +180,14 @@
       scale: 0.86;
     }
   }
+
+  /* Click applies aria-disabled, which drops the hover tilt. Keep it under
+     spin/settle so the turn continues from 90deg instead of rewinding to 0. */
+  svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle) {
+    transform-box: fill-box;
+    transform-origin: center;
+    rotate: 90deg;
+  }
 }
 
 /* On mobile, morph the expanded hero composer into the compact docked
