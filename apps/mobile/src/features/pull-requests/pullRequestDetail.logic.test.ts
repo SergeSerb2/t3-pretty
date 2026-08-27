@@ -10,6 +10,7 @@ import {
   canStartContinuousFix,
   countFixableFindings,
   hasActionableComments,
+  shouldOfferFixActions,
   buildPullRequestTimeline,
   buildResolveConflictsPrompt,
   countResolvedReviewThreads,
@@ -443,7 +444,52 @@ describe("handoffs and failures", () => {
           },
         ],
       }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "r2",
+            kind: "review-comment",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Rename this helper.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: "src/app.ts",
+            reviewState: null,
+          },
+        ],
+      }),
     ).toBe(true);
+  });
+
+  it("hides Fix actions on a merged or closed pull request", () => {
+    const unresolved = {
+      reviewThreads: [
+        {
+          id: "t1",
+          path: "src/app.ts",
+          line: 12,
+          side: "right" as const,
+          isResolved: false,
+          isOutdated: false,
+          comments: [
+            {
+              id: "rc1",
+              author: { login: "reviewer", name: null, avatarUrl: null },
+              body: "please rename this",
+              createdAt: "2026-07-02T00:00:00Z",
+              url: null,
+            },
+          ],
+        },
+      ],
+      comments: [] as PullRequestComment[],
+    };
+    expect(shouldOfferFixActions({ state: "open", ...unresolved })).toBe(true);
+    expect(shouldOfferFixActions({ state: "merged", ...unresolved })).toBe(false);
+    expect(shouldOfferFixActions({ state: "closed", ...unresolved })).toBe(false);
   });
 
   it("does not treat a general issue comment as a review finding", () => {

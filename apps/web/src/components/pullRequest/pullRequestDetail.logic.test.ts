@@ -17,6 +17,7 @@ import {
   countActionableComments,
   countFixableFindings,
   hasActionableComments,
+  shouldOfferFixActions,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -1064,7 +1065,7 @@ describe("fix findings handoff", () => {
         checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
     ).toBe(4);
-    expect(countActionableComments({ reviewThreads, comments })).toBe(3);
+    expect(countActionableComments({ reviewThreads, comments })).toBe(2);
   });
 
   it("lets a continuous fix start on pending checks with no current findings", () => {
@@ -1138,7 +1139,41 @@ describe("fix findings handoff", () => {
           },
         ],
       }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-inline",
+            kind: "review-comment",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Rename this helper.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: "apps/web/src/page.tsx",
+            reviewState: null,
+          },
+        ],
+      }),
     ).toBe(true);
+  });
+
+  it("hides Fix actions on a merged or closed pull request", () => {
+    const unresolved = {
+      reviewThreads: [thread("please rename this")],
+      comments: [] as PullRequestComment[],
+    };
+    expect(shouldOfferFixActions({ state: "open", ...unresolved })).toBe(true);
+    expect(shouldOfferFixActions({ state: "merged", ...unresolved })).toBe(false);
+    expect(shouldOfferFixActions({ state: "closed", ...unresolved })).toBe(false);
+    expect(
+      shouldOfferFixActions({
+        state: "open",
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {

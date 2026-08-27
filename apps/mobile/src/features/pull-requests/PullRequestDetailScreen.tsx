@@ -54,7 +54,7 @@ import {
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
   groupPullRequestConversation,
-  hasActionableComments,
+  shouldOfferFixActions,
   pullRequestUrlHost,
   readableFailure,
 } from "./pullRequestDetail.logic";
@@ -303,7 +303,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
 
   const showFixActions =
     detail !== null &&
-    hasActionableComments({
+    shouldOfferFixActions({
+      state: detail.state,
       reviewThreads: detail.reviewThreads,
       comments: detail.comments,
     });

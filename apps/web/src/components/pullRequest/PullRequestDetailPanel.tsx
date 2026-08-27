@@ -115,6 +115,7 @@ import {
   buildResolveConflictsPrompt,
   countActionableComments,
   handoffPrompt,
+  shouldOfferFixActions,
   handoffReviewComments,
   latestPullRequestReviewOutcomes,
   pullRequestDiffIdentity,
@@ -960,7 +961,13 @@ export function PullRequestDetailPanel({
           reviewThreads: detail.reviewThreads,
           comments: detail.comments,
         });
-  const showFixActions = findingCount > 0;
+  const showFixActions =
+    detail !== null &&
+    shouldOfferFixActions({
+      state: detail.state,
+      reviewThreads: detail.reviewThreads,
+      comments: detail.comments,
+    });
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
     const store = useComposerDraftStore.getState();
@@ -1444,8 +1451,8 @@ export function PullRequestDetailPanel({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
-        <div className="ml-4 grid h-7 min-w-0 items-center">
+      <div className="@container/pr-header grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
+        <div className="ml-4 grid h-7 min-w-0 items-center overflow-hidden">
           <div
             aria-hidden={condensed}
             inert={condensed}
@@ -1548,12 +1555,13 @@ export function PullRequestDetailPanel({
             ) : null}
           </div>
         </div>
-        <div className="mr-4 flex h-7 min-w-0 flex-nowrap items-center justify-end gap-1">
+        <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1">
           {detail ? (
             <>
+              {/* Narrow headers keep these in the overflow menu so they cannot cover the number. */}
               <div
                 className={cn(
-                  "grid min-w-0 transition-[grid-template-columns,margin] duration-200 ease-out motion-reduce:transition-none",
+                  "hidden min-w-0 transition-[grid-template-columns,margin] duration-200 ease-out motion-reduce:transition-none @[32rem]/pr-header:grid",
                   showFixActions ? "shrink-0 grid-cols-[1fr]" : "-mr-1 grid-cols-[0fr]",
                 )}
               >
