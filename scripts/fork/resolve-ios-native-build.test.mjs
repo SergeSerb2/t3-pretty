@@ -279,6 +279,10 @@ describe("T3 Pretty iOS native-build gate", () => {
         ]),
       /safety limit/u,
     );
+
+    const source = NodeFS.readFileSync(mobileReleasePath, "utf8");
+    assert.include(source, '--submitted-fingerprint-file "$submitted_fingerprint_file"');
+    assert.notInclude(source, 'submitted_fingerprint="$(tr -d');
   });
 
   it("rejects fingerprint output injection and oversized files", () => {
