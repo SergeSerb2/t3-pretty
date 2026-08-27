@@ -11,7 +11,8 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
-import mobileAppConfig from "../apps/mobile/app.config.ts";
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "../apps/mobile/app-identity.ts";
+import { loadRepoEnv, resolveBuildFlavor } from "./lib/public-config.ts";
 
 import showcaseConfig, {
   type ShowcaseAppearance,
@@ -35,12 +36,20 @@ import {
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
-const ANDROID_PACKAGE = mobileAppConfig.android?.package;
-const IOS_BUNDLE_IDENTIFIER = mobileAppConfig.ios?.bundleIdentifier;
-if (!ANDROID_PACKAGE || !IOS_BUNDLE_IDENTIFIER) {
-  throw new Error("The mobile showcase requires configured Android and iOS application IDs.");
-}
-const APP_SCHEME = "t3code";
+const SHOWCASE_REPO_ENV = loadRepoEnv({
+  baseEnv: {
+    ...NodeProcess.env,
+    APP_VARIANT: NodeProcess.env.APP_VARIANT ?? "production",
+  },
+});
+const SHOWCASE_APP_VARIANT = resolveMobileAppVariant(SHOWCASE_REPO_ENV.APP_VARIANT);
+const SHOWCASE_APP_IDENTITY = resolveMobileAppIdentity(
+  SHOWCASE_APP_VARIANT,
+  resolveBuildFlavor(SHOWCASE_REPO_ENV),
+);
+const ANDROID_PACKAGE = SHOWCASE_APP_IDENTITY.androidPackage;
+const IOS_BUNDLE_IDENTIFIER = SHOWCASE_APP_IDENTITY.iosBundleIdentifier;
+const APP_SCHEME = SHOWCASE_APP_IDENTITY.scheme;
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
@@ -64,9 +73,9 @@ export function resolveAndroidSdkRoot(
 
 const ANDROID_SDK_ROOT = resolveAndroidSdkRoot(NodeProcess.env);
 const MOBILE_BUILD_ENV = {
-  ...NodeProcess.env,
+  ...SHOWCASE_REPO_ENV,
   ANDROID_HOME: ANDROID_SDK_ROOT,
-  APP_VARIANT: "production",
+  APP_VARIANT: SHOWCASE_APP_VARIANT,
   EXPO_NO_GIT_STATUS: "1",
   // Lets the capture build require full screen on iPad so the app can rotate
   // itself to landscape (see app.config.ts).
