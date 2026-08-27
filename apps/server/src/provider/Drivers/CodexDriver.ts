@@ -68,7 +68,6 @@ export const CodexProviderMaintenance = makePackageManagedProviderMaintenanceRes
   npmPackageName: "@openai/codex",
   homebrewFormula: "codex",
   nativeUpdate: {
-    executable: "codex",
     args: ["update"],
     lockKey: "codex-native",
     isCommandPath: (commandPath) =>
