@@ -37,6 +37,11 @@ export const DEFAULT_TIMEOUT_MS = 4_000;
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
 export const PROVIDER_PROBE_OUTPUT_MAX_BYTES = 1024 * 1024;
 const AUTH_BOOLEAN_SEARCH_MAX_NODES = 4_096;
+export const NATIVE_RESUME_SLASH_COMMAND = {
+  name: "resume",
+  description: "Resume a native provider session in a new T3 thread",
+  input: { hint: "Native session ID" },
+} satisfies ServerProviderSlashCommand;
 
 export interface CommandResult {
   readonly stdout: string;
@@ -73,6 +78,7 @@ export interface ServerProviderPresentation {
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
   readonly requiresNewThreadForModelChange?: boolean;
+  readonly supportsNativeResume?: boolean;
 }
 
 export type ServerProviderDraft = Omit<ServerProvider, "instanceId" | "driver">;
@@ -323,6 +329,17 @@ export function buildServerProvider(input: {
   skills?: ReadonlyArray<ServerProviderSkill>;
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
+  const slashCommands =
+    input.presentation.supportsNativeResume &&
+    input.probe.installed &&
+    input.probe.status !== "error"
+      ? [
+          NATIVE_RESUME_SLASH_COMMAND,
+          ...(input.slashCommands ?? []).filter(
+            (command) => command.name !== NATIVE_RESUME_SLASH_COMMAND.name,
+          ),
+        ]
+      : (input.slashCommands ?? []);
   const version =
     input.probe.version === null
       ? null
@@ -365,7 +382,7 @@ export function buildServerProvider(input: {
       ? { message: boundedText(input.probe.message, SERVER_PROVIDER_TEXT_MAX_LENGTH) }
       : {}),
     models: input.models.slice(0, SERVER_PROVIDER_MODELS_MAX_ITEMS).map(boundedProviderModel),
-    slashCommands: (input.slashCommands ?? [])
+    slashCommands: slashCommands
       .slice(0, SERVER_PROVIDER_SLASH_COMMANDS_MAX_ITEMS)
       .map(boundedProviderSlashCommand),
     skills: (input.skills ?? []).slice(0, SKILL_STATE_MAX_ITEMS).map(boundedProviderSkill),

@@ -16,6 +16,7 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ProviderNativeSessionId,
   ProviderItemId,
   ThreadId,
   TrimmedNonEmptyString,
@@ -1526,6 +1527,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.native-resume-requested",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1719,6 +1721,12 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadNativeResumeRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
+  nativeSessionId: ProviderNativeSessionId,
+  createdAt: IsoDateTime,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1937,6 +1945,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.native-resume-requested"),
+    payload: ThreadNativeResumeRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

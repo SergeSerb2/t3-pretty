@@ -21,6 +21,11 @@ export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximu
 export const ISO_DATE_TIME_MAX_LENGTH = 128;
 export const ENTITY_ID_MAX_LENGTH = 4_096;
 
+export const ProviderNativeSessionId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ENTITY_ID_MAX_LENGTH),
+);
+export type ProviderNativeSessionId = typeof ProviderNativeSessionId.Type;
+
 export const IsoDateTime = Schema.String.check(Schema.isMaxLength(ISO_DATE_TIME_MAX_LENGTH));
 export type IsoDateTime = typeof IsoDateTime.Type;
 

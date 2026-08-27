@@ -287,12 +287,40 @@ validationLayer("CodexAdapterLive validation", (it) => {
 
       NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
         binaryPath: "codex",
+        browserToolsAvailable: false,
+        computerToolsAvailable: false,
         cwd: process.cwd(),
         launchArgs: "",
         model: "gpt-5.3-codex",
         providerInstanceId: ProviderInstanceId.make("codex"),
         serviceTier: "priority",
         threadId: asThreadId("thread-1"),
+        runtimeMode: "full-access",
+      });
+    }),
+  );
+
+  it.effect("maps an imported native Codex session id to the runtime cursor", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-native-resume"),
+        nativeSessionId: "codex-native-thread-123",
+        runtimeMode: "full-access",
+      });
+
+      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+        binaryPath: "codex",
+        browserToolsAvailable: false,
+        computerToolsAvailable: false,
+        cwd: process.cwd(),
+        launchArgs: "",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resumeCursor: { threadId: "codex-native-thread-123" },
+        threadId: asThreadId("thread-native-resume"),
         runtimeMode: "full-access",
       });
     }),

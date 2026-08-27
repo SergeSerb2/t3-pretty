@@ -43,6 +43,10 @@
       "types": "./src/createPullRequestPrompt.ts",
       "import": "./src/createPullRequestPrompt.ts"
     },
+    "./nativeResume": {
+      "types": "./src/nativeResume.ts",
+      "import": "./src/nativeResume.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"

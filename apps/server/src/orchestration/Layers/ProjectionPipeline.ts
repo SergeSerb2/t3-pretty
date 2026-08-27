@@ -1265,6 +1265,25 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const applyThreadSessionsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadSessionsProjection",
     )(function* (event, _attachmentSideEffects) {
+      if (event.type === "thread.native-resume-requested") {
+        const thread = yield* projectionThreadRepository.getById({
+          threadId: event.payload.threadId,
+        });
+        if (Option.isNone(thread)) {
+          return;
+        }
+        yield* projectionThreadSessionRepository.upsert({
+          threadId: event.payload.threadId,
+          status: "starting",
+          providerName: null,
+          providerInstanceId: thread.value.modelSelection.instanceId,
+          runtimeMode: thread.value.runtimeMode,
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: event.payload.createdAt,
+        });
+        return;
+      }
       if (event.type !== "thread.session-set") {
         return;
       }

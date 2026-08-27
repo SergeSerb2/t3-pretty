@@ -70,6 +70,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -872,7 +873,10 @@ const makeWsRpcLayer = (
                   commandId: yield* serverCommandId("bootstrap-thread-create"),
                   threadId: command.threadId,
                   projectId: createThread.projectId,
-                  title: createThread.title,
+                  title:
+                    parseNativeResumeCommand(command.message.text)?._tag === "Resume"
+                      ? NATIVE_RESUME_THREAD_TITLE
+                      : createThread.title,
                   modelSelection: createThread.modelSelection,
                   runtimeMode: createThread.runtimeMode,
                   interactionMode: createThread.interactionMode,

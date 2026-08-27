@@ -56,6 +56,12 @@ import {
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
+import {
+  isNativeResumeSessionReady,
+  NATIVE_RESUME_THREAD_TITLE,
+  parseNativeResumeCommand,
+  restoreFailedNativeResumePrompt,
+} from "@t3tools/shared/nativeResume";
 import { truncate } from "@t3tools/shared/String";
 import {
   getTerminalLabel,
@@ -4641,22 +4647,43 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThread?.id) return;
-    if (activeThread.messages.length === 0) {
-      return;
-    }
     const serverIds = new Set(activeThread.messages.map((message) => message.id));
-    const removedMessages = optimisticUserMessages.filter((message) => serverIds.has(message.id));
+    const removedMessages = optimisticUserMessages.filter(
+      (message) =>
+        serverIds.has(message.id) ||
+        (activeThread.messages.length === 0 &&
+          (isNativeResumeSessionReady(activeThread.session?.status) ||
+            activeThread.session?.status === "error") &&
+          parseNativeResumeCommand(message.text)?._tag === "Resume"),
+    );
     if (removedMessages.length === 0) {
       return;
     }
+    const removedIds = new Set(removedMessages.map((message) => message.id));
     const timer = window.setTimeout(() => {
+      if (activeThread.session?.status === "error") {
+        const retryPrompt = restoreFailedNativeResumePrompt(
+          promptRef.current,
+          removedMessages.map((message) => message.text),
+        );
+        if (retryPrompt !== null) {
+          promptRef.current = retryPrompt;
+          setComposerDraftPrompt(composerDraftTarget, retryPrompt);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(retryPrompt, retryPrompt.length),
+            prompt: retryPrompt,
+            detectTrigger: true,
+          });
+          scrollToEnd();
+        }
+      }
       setOptimisticUserMessages((existing) =>
-        existing.filter((message) => !serverIds.has(message.id)),
+        existing.filter((message) => !removedIds.has(message.id)),
       );
     }, 0);
     for (const removedMessage of removedMessages) {
       const previewUrls = collectUserMessageBlobPreviewUrls(removedMessage);
-      if (previewUrls.length > 0) {
+      if (serverIds.has(removedMessage.id) && previewUrls.length > 0) {
         handoffAttachmentPreviews(removedMessage.id, previewUrls);
         continue;
       }
@@ -4665,7 +4692,16 @@ function ChatViewContent(props: ChatViewProps) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
+  }, [
+    activeThread?.id,
+    activeThread?.messages,
+    activeThread?.session,
+    composerDraftTarget,
+    handoffAttachmentPreviews,
+    optimisticUserMessages,
+    scrollToEnd,
+    setComposerDraftPrompt,
+  ]);
 
   useEffect(() => {
     if (reconciledQueuedComposerMessages !== queuedComposerMessages) {
@@ -6204,7 +6240,8 @@ function ChatViewContent(props: ChatViewProps) {
         firstComposerImageName = firstComposerImage.name;
       }
     }
-    let titleSeed = trimmed;
+    let titleSeed =
+      parseNativeResumeCommand(trimmed)?._tag === "Resume" ? NATIVE_RESUME_THREAD_TITLE : trimmed;
     if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;
