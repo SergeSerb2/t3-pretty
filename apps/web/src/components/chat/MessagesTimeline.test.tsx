@@ -347,7 +347,7 @@ describe("MessagesTimeline", () => {
     expect(fadedMarkup).toContain("topbar-scroll-fade");
   });
 
-  it("keeps assistant changed-files headers on the card glass without a sticky overlay", () => {
+  it("keeps assistant changed-files headers sticky on the card glass", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
     const markup = renderToStaticMarkup(
@@ -394,9 +394,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('class="flex items-center justify-between gap-2 rounded-xl mb-2"');
-    expect(markup).not.toContain("sticky top-2");
+    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-inherit");
     expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
+    expect(markup).not.toContain("backdrop-blur-md");
     expect(markup).not.toContain("self-start");
     expect(markup).toContain("whitespace-nowrap");
     expect(markup).toContain("!size-[22px]");

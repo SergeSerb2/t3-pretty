@@ -310,9 +310,8 @@ describe("changed-files card contract", () => {
     expect(changedFilesSource).toContain("data-changed-files-state");
   });
 
-  it("the expanded header stays on the card's glass instead of an overlay slab", () => {
-    expect(changedFilesSource).toContain('expanded && "mb-2"');
-    expect(changedFilesSource).not.toContain("sticky top-2");
+  it("the expanded header stays sticky on the card's glass instead of an opaque slab", () => {
+    expect(changedFilesSource).toContain('"sticky top-2 z-10 mb-2 bg-inherit"');
     expect(changedFilesSource).not.toContain("var(--contrast-foreground)_2.5%");
     expect(changedFilesSource).not.toContain("backdrop-blur-md");
   });
