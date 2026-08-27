@@ -17,6 +17,7 @@ import {
   deriveLiveTurnHeadline,
   deriveTimelineEntries,
   deriveWorkLogEntries,
+  fileChangeKindHeading,
   findLatestProposedPlan,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -1570,6 +1571,95 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.changedFiles).toEqual([
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",
+    ]);
+  });
+
+  it("extracts compact file diffs from projected file-change payloads", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-diff-tool",
+        kind: "tool.completed",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          data: {
+            files: [
+              { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
+              { path: "src/new.ts", kind: "add", diff: "+hello" },
+            ],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.changedFileDiffs).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
+      { path: "src/new.ts", kind: "add", diff: "+hello" },
+    ]);
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [{ path: "src/new.ts", kind: "add" }],
+      }),
+    ).toBe("File created");
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [{ path: "src/gone.ts", kind: "delete" }],
+      }),
+    ).toBe("File deleted");
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [
+          { path: "src/a.ts", kind: "add" },
+          { path: "src/b.ts", kind: "add" },
+        ],
+      }),
+    ).toBeNull();
+    expect(fileChangeKindHeading(entry!)).toBeNull();
+  });
+
+  it("keeps earlier file diffs when a later lifecycle row omits them", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-diff-updated",
+        kind: "tool.updated",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
+          },
+        },
+      }),
+      makeActivity({
+        id: "file-diff-completed",
+        kind: "tool.completed",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts" }],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.changedFileDiffs).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
     ]);
   });
 

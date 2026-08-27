@@ -21,6 +21,9 @@ import type {
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
   buildToolCallDisplaySections,
+  formatChangedFileDiffText,
+  isRedundantChangedFileOutput,
+  leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
 
@@ -89,6 +92,14 @@ const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
 
+type ChangedFileDiffKind = "add" | "delete" | "update";
+
+interface ChangedFileDiff {
+  readonly path: string;
+  readonly kind?: ChangedFileDiffKind;
+  readonly diff?: string;
+}
+
 interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -98,6 +109,7 @@ interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
+  changedFileDiffs?: ReadonlyArray<ChangedFileDiff>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
@@ -456,6 +468,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
+  const changedFileDiffs = extractChangedFileDiffs(payload);
+  if (changedFileDiffs.length > 0) {
+    entry.changedFileDiffs = changedFileDiffs;
+  }
   if (title) {
     entry.toolTitle = title;
   }
@@ -563,6 +579,7 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
+  const changedFileDiffs = mergeChangedFileDiffs(previous.changedFileDiffs, next.changedFileDiffs);
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
@@ -583,6 +600,7 @@ function mergeDerivedWorkLogEntries(
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(changedFileDiffs && changedFileDiffs.length > 0 ? { changedFileDiffs } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
@@ -602,6 +620,29 @@ function mergeChangedFiles(
     return [];
   }
   return [...new Set(merged)];
+}
+
+function mergeChangedFileDiffs(
+  previous: ReadonlyArray<ChangedFileDiff> | undefined,
+  next: ReadonlyArray<ChangedFileDiff> | undefined,
+): ChangedFileDiff[] {
+  if ((next?.length ?? 0) === 0) return [...(previous ?? [])];
+  if ((previous?.length ?? 0) === 0) return [...next!];
+  const byPath = new Map<string, ChangedFileDiff>();
+  for (const file of previous!) {
+    byPath.set(file.path, file);
+  }
+  for (const file of next!) {
+    const existing = byPath.get(file.path);
+    const kind = file.kind ?? existing?.kind;
+    const diff = file.diff ?? existing?.diff;
+    byPath.set(file.path, {
+      path: file.path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return [...byPath.values()];
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
@@ -728,12 +769,23 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
     entry.itemType === "mcp_tool_call" && entry.toolData !== undefined
       ? `MCP call\n${JSON.stringify(entry.toolData, null, 2)}`
       : null;
+  const diffs = entry.changedFileDiffs ?? [];
+  const diffText = formatChangedFileDiffText(diffs);
+  const leftoverPaths = leftoverChangedFilePaths(entry.changedFiles ?? [], diffs);
+  const output = isRedundantChangedFileOutput(entry.detail, entry.changedFiles ?? [])
+    ? null
+    : entry.detail;
   return serializeToolCallDisplaySections(
     buildToolCallDisplaySections({
       leadingText: mcpText,
       command: entry.rawCommand ?? entry.command,
-      output: entry.detail,
-      trailingText: (entry.changedFiles?.length ?? 0) > 0 ? entry.changedFiles!.join("\n") : null,
+      output,
+      diffText,
+      trailingText:
+        leftoverPaths ??
+        (diffText || (entry.changedFiles?.length ?? 0) === 0
+          ? null
+          : entry.changedFiles!.join("\n")),
     }),
   );
 }
@@ -743,7 +795,8 @@ function workEntryHasExpandedBody(entry: WorkLogEntry): boolean {
     (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) ||
     Boolean((entry.rawCommand ?? entry.command)?.trim()) ||
     Boolean(entry.detail?.trim()) ||
-    (entry.changedFiles?.some((path) => path.trim().length > 0) ?? false)
+    (entry.changedFiles?.some((path) => path.trim().length > 0) ?? false) ||
+    (entry.changedFileDiffs?.some((file) => file.diff?.trim()) ?? false)
   );
 }
 
@@ -780,8 +833,26 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
+function fileChangeKindHeading(
+  workEntry: Pick<WorkLogEntry, "toolTitle" | "label" | "changedFileDiffs" | "changedFiles">,
+): string | null {
+  const current = normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase();
+  if (current !== "file change" && current !== "changed files") {
+    return null;
+  }
+  const diffs = workEntry.changedFileDiffs ?? [];
+  const fileCount = Math.max(diffs.length, workEntry.changedFiles?.length ?? 0);
+  if (fileCount !== 1) return null;
+  const kind = diffs[0]?.kind;
+  if (kind === "add") return "File created";
+  if (kind === "delete") return "File deleted";
+  return null;
+}
+
 function workEntryHeading(workEntry: WorkLogEntry): string {
   if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
+  const kindHeading = fileChangeKindHeading(workEntry);
+  if (kindHeading) return kindHeading;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -1110,6 +1181,31 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   const seen = new Set<string>();
   collectChangedFiles(asRecord(payload?.data), changedFiles, seen, 0);
   return changedFiles;
+}
+
+function extractChangedFileDiffs(payload: Record<string, unknown> | null): ChangedFileDiff[] {
+  const files = asRecord(payload?.data)?.files;
+  if (!Array.isArray(files)) {
+    return [];
+  }
+  const diffs: ChangedFileDiff[] = [];
+  for (const file of files) {
+    const record = asRecord(file);
+    const path = asTrimmedString(record?.path);
+    if (!path) continue;
+    const kind =
+      record?.kind === "add" || record?.kind === "delete" || record?.kind === "update"
+        ? record.kind
+        : undefined;
+    const diff = asTrimmedString(record?.diff) ?? undefined;
+    if (!kind && !diff) continue;
+    diffs.push({
+      path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return diffs;
 }
 
 function compareActivityLifecycleRank(kind: string): number {

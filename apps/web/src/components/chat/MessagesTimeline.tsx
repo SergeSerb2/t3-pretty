@@ -36,6 +36,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
+  fileChangeKindHeading,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
@@ -2561,11 +2562,16 @@ function liveWorkEntryLabel(
 
 function workEntryDisplaySections(workEntry: TimelineWorkEntry, workspaceRoot: string | undefined) {
   const changedFiles = workEntry.changedFiles ?? [];
+  const changedFileDiffs = workEntry.changedFileDiffs?.map((file) => ({
+    ...file,
+    path: formatWorkspaceRelativePath(file.path, workspaceRoot),
+  }));
   return buildWorkEntryDisplaySections({
     itemType: workEntry.itemType,
     toolData: workEntry.toolData,
     command: resolveToolCallCommand(workEntry),
     output: workEntry.detail,
+    changedFileDiffs,
     changedFilesText:
       changedFiles.length > 0
         ? changedFiles
@@ -2630,6 +2636,8 @@ function capitalizePhrase(value: string): string {
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
+  const kindHeading = fileChangeKindHeading(workEntry);
+  if (kindHeading) return kindHeading;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }

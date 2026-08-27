@@ -53,12 +53,20 @@ function ToolCallSectionBlock(props: {
           />
         </div>
       ) : (
-        <div data-testid={props.section.kind === "json" ? "tool-call-json" : "tool-call-output"}>
-          {props.section.kind === "json" ? (
+        <div
+          data-testid={
+            props.section.kind === "json"
+              ? "tool-call-json"
+              : props.section.kind === "diff"
+                ? "tool-call-diff"
+                : "tool-call-output"
+          }
+        >
+          {props.section.kind === "json" || props.section.kind === "diff" ? (
             <HighlightedCode
               className={toolCallBlockClassName}
               code={props.section.text}
-              language="json"
+              language={props.section.kind}
             />
           ) : (
             <pre className={toolCallBlockClassName}>{props.section.text}</pre>
