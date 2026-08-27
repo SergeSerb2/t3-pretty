@@ -1135,9 +1135,15 @@ async function resolveConflict(path, token) {
     let effectiveTier = "unknown";
     let validationError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const requestPrompt =
+        validationError === undefined
+          ? prompt
+          : `${prompt}\n\nThe previous response failed validation: ${oneLine(
+              validationError instanceof Error ? validationError.message : String(validationError),
+            )}. Every old_text must match exactly one location near this batch's conflicts; include enough unchanged surrounding lines to make each span unique.`;
       const response = await requestConflictResolution({
         path,
-        prompt,
+        prompt: requestPrompt,
         conflictCount: conflicts.length,
         token,
       });
