@@ -20,6 +20,7 @@ import {
   resolveLatestProviderVersion,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "./providerMaintenance.ts";
+import { CodexProviderMaintenance } from "./Drivers/CodexDriver.ts";
 
 const driver = (value: string) => ProviderDriverKind.make(value);
 const makeTempDir = (name: string) =>
@@ -42,7 +43,6 @@ const nativePackageToolUpdate = makePackageManagedProviderMaintenanceResolver({
   npmPackageName: "@example/native-package-tool",
   homebrewFormula: "native-package-tool",
   nativeUpdate: {
-    executable: "native-package-tool",
     args: ["update"],
     lockKey: "native-package-tool-native",
     isCommandPath: isNativeTestCommandPath("/.local/bin/native-package-tool"),
@@ -53,7 +53,6 @@ const scopedPackageToolUpdate = makePackageManagedProviderMaintenanceResolver({
   npmPackageName: "@example/scoped-package-tool",
   homebrewFormula: "example/tap/scoped-package-tool",
   nativeUpdate: {
-    executable: "scoped-package-tool",
     args: ["upgrade"],
     lockKey: "scoped-package-tool-native",
     isCommandPath: isNativeTestCommandPath("/.scoped-package-tool/bin/scoped-package-tool"),
@@ -379,9 +378,9 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           provider: driver("nativePackageTool"),
           packageName: "@example/native-package-tool",
           update: {
-            command: "native-package-tool update",
+            command: `${nativePackageToolPath} update`,
 
-            executable: "native-package-tool",
+            executable: nativePackageToolPath,
 
             args: ["update"],
 
@@ -416,9 +415,9 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           provider: driver("scopedPackageTool"),
           packageName: "@example/scoped-package-tool",
           update: {
-            command: "scoped-package-tool upgrade",
+            command: `${scopedPackageToolPath} upgrade`,
 
-            executable: "scoped-package-tool",
+            executable: scopedPackageToolPath,
 
             args: ["upgrade"],
 
@@ -426,6 +425,40 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           },
         });
       }),
+  );
+
+  it.effect("uses Codex's native updater for standalone installs", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* makeTempDir("t3-codex-native-capabilities");
+      const nativeBinDir = NodePath.join(tempDir, ".codex", "packages", "standalone", "current");
+      const pathBinDir = NodePath.join(tempDir, ".local", "bin");
+      NodeFS.mkdirSync(nativeBinDir, { recursive: true });
+      NodeFS.mkdirSync(pathBinDir, { recursive: true });
+      const nativeCodexPath = NodePath.join(nativeBinDir, "codex");
+      const symlinkPath = NodePath.join(pathBinDir, "codex");
+      NodeFS.writeFileSync(nativeCodexPath, "#!/bin/sh\n");
+      NodeFS.chmodSync(nativeCodexPath, 0o755);
+      NodeFS.symlinkSync(nativeCodexPath, symlinkPath);
+
+      const capabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(
+        CodexProviderMaintenance,
+        {
+          binaryPath: "codex",
+          env: { PATH: pathBinDir },
+        },
+      ).pipe(Effect.provideService(HostProcessPlatform, "darwin"));
+
+      expect(capabilities).toEqual({
+        provider: driver("codex"),
+        packageName: "@openai/codex",
+        update: {
+          command: `${symlinkPath} update`,
+          executable: symlinkPath,
+          args: ["update"],
+          lockKey: "codex-native",
+        },
+      });
+    }),
   );
 
   it("switches native-package-tool to Homebrew updates when the binary resolves through Homebrew", () => {
@@ -576,7 +609,6 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       npmPackageName: "@anthropic-ai/claude-code",
       homebrewFormula: "claude-code",
       nativeUpdate: {
-        executable: "claude",
         args: ["update"],
         lockKey: "claude-native",
         isCommandPath: isNativeTestCommandPath("/.local/bin/claude"),
