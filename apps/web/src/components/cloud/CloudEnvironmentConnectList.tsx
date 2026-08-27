@@ -134,7 +134,6 @@ export function CloudEnvironmentConnectRows({
     const accountId = userId;
     activeConnectRef.current = operation;
     setConnectingEnvironmentId(environment.environmentId);
-    const result = await connectRelayEnvironment(environment);
     const isCurrent = () =>
       activeConnectRef.current === operation && activeAccountRef.current === accountId;
     const finishCurrent = () => {
@@ -143,18 +142,22 @@ export function CloudEnvironmentConnectRows({
       setConnectingEnvironmentId(null);
       return true;
     };
+    const meshReady =
+      !isElectron ||
+      cloudLinkController.managedTunnelActive ||
+      (await cloudLinkController.reconcileCloudState({
+        managedTunnel: true,
+        publish: cloudLinkController.storedPublishAgentActivity,
+      }));
+    if (!isCurrent()) return;
+    if (!meshReady) {
+      finishCurrent();
+      return;
+    }
+    const result = await connectRelayEnvironment(environment);
     if (!isCurrent()) return;
     if (result._tag === "Success") {
-      const meshReady =
-        !isElectron ||
-        cloudLinkController.managedTunnelActive ||
-        (await cloudLinkController.reconcileCloudState({
-          managedTunnel: true,
-          publish: cloudLinkController.storedPublishAgentActivity,
-        }));
-      if (!finishCurrent() || !meshReady) {
-        return;
-      }
+      finishCurrent();
       toastManager.add({
         type: "success",
         title: "Environment added",
