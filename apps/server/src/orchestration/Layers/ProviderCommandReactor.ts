@@ -42,6 +42,7 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
+import { NATIVE_RESUME_SLASH_COMMAND } from "../../provider/providerSnapshot.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -943,6 +944,22 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
+    if (options?.nativeSessionId !== undefined) {
+      const provider = (yield* providerRegistry.getProviders).find(
+        (snapshot) => snapshot.instanceId === desiredInstanceId,
+      );
+      if (
+        !provider?.slashCommands.some(
+          (command) => command.name === NATIVE_RESUME_SLASH_COMMAND.name,
+        )
+      ) {
+        return yield* new ProviderAdapterRequestError({
+          provider: providerErrorLabel(String(desiredDriverKind)),
+          method: "thread.turn.start",
+          detail: `Provider instance '${desiredInstanceId}' does not support native session resume.`,
+        });
+      }
+    }
     const sourceUnresolved = currentInfo === undefined;
     const requestedDifferentInstance =
       requestedModelSelection !== undefined &&

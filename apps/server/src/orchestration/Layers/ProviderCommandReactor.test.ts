@@ -62,6 +62,7 @@ import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
+import { NATIVE_RESUME_SLASH_COMMAND } from "../../provider/providerSnapshot.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -160,6 +161,7 @@ describe("ProviderCommandReactor", () => {
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
+    readonly supportsNativeResume?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly activeTurnSessionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
@@ -387,6 +389,7 @@ describe("ProviderCommandReactor", () => {
     const providerSnapshots = [
       {
         instanceId: modelSelection.instanceId,
+        slashCommands: input?.supportsNativeResume === false ? [] : [NATIVE_RESUME_SLASH_COMMAND],
         ...(input?.requiresNewThreadForModelChange === true
           ? { requiresNewThreadForModelChange: true }
           : {}),
@@ -719,6 +722,84 @@ describe("ProviderCommandReactor", () => {
       expect(
         thread?.activities.some((activity) => activity.kind === "provider.session.resumed"),
       ).toBe(true);
+    }),
+  );
+
+  effectIt.effect("locks a thread while its native provider session is resuming", () =>
+    Effect.gen(function* () {
+      const resumeSession = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) => Deferred.await(resumeSession).pipe(Effect.as(session)),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      const resume = (commandId: string, messageId: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(commandId),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(messageId),
+            role: "user" as const,
+            text: "/resume native-session-123",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required" as const,
+          createdAt: now,
+        });
+
+      yield* resume("cmd-native-resume-first", "user-message-native-resume-first");
+
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.session?.status).toBe("starting");
+      expect(
+        yield* Effect.exit(resume("cmd-native-resume-second", "user-message-native-resume-second")),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(harness.startSession).toHaveBeenCalledTimes(1);
+
+      yield* Deferred.succeed(resumeSession, undefined);
+      yield* Effect.promise(() => harness.drain());
+    }),
+  );
+
+  effectIt.effect("rejects native resume for a provider that does not advertise it", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness({ supportsNativeResume: false }));
+      const now = "2026-01-01T00:00:00.000Z";
+
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-native-resume-unsupported"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-native-resume-unsupported"),
+          role: "user",
+          text: "/resume native-session-123",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return thread?.session?.status === "error";
+        }),
+      );
+
+      expect(harness.startSession).not.toHaveBeenCalled();
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.session?.lastError).toContain("does not support native session resume");
     }),
   );
 
