@@ -1511,7 +1511,6 @@ const WorkGroupSection = memo(function WorkGroupSection({
             key={workEntry.id}
             workEntry={workEntry}
             workspaceRoot={workspaceRoot}
-            isExpandedToolGroupEntry={isExpandedToolGroupEntry}
           />
         ))}
       </div>
@@ -2734,28 +2733,20 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
-  isExpandedToolGroupEntry: boolean;
 }) {
-  const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
+  const { workEntry, workspaceRoot } = props;
   // Before any hooks: spawn CTA rows render their own component.
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }
-  return (
-    <PlainWorkEntryRow
-      workEntry={workEntry}
-      workspaceRoot={workspaceRoot}
-      isExpandedToolGroupEntry={isExpandedToolGroupEntry}
-    />
-  );
+  return <PlainWorkEntryRow workEntry={workEntry} workspaceRoot={workspaceRoot} />;
 });
 
 const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
-  isExpandedToolGroupEntry: boolean;
 }) {
-  const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
+  const { workEntry, workspaceRoot } = props;
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const generatedImagePath = generatedImageWorkEntryPath(workEntry);
@@ -2827,7 +2818,6 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   // (neutral, mid-turn) rows carry a marker so the exception stands out.
   const showNeutralIndicator =
     activity.activeTurnInProgress && workEntryIndicatesToolNeutralStatus(workEntry);
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
   const accessibleDisplayText = showFailedIndicator
     ? `${displayText}, tool call failed`
     : displayText;
@@ -2859,10 +2849,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         {...headerToggleProps}
       >
         <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+          className={iconWrapperClass}
           role={showFailedIndicator ? "img" : undefined}
           aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
         >
           <WorkEntryIconSvg
             name={entryIconName}
