@@ -41,18 +41,18 @@ export function isRelayEnvironmentPresent(
   );
 }
 
-export function hasObservedRelayMembership(key: string): boolean {
+export function hasObservedRelayMembership(environmentId: EnvironmentId): boolean {
   try {
-    return localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) === key;
+    return localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) === environmentId;
   } catch {
     return false;
   }
 }
 
-export function rememberRelayMembership(key: string): void {
+export function rememberRelayMembership(environmentId: EnvironmentId): void {
   try {
-    if (localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) !== key) {
-      localStorage.setItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY, key);
+    if (localStorage.getItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY) !== environmentId) {
+      localStorage.setItem(RELAY_MEMBERSHIP_OBSERVED_STORAGE_KEY, environmentId);
     }
   } catch {
     // If storage is unavailable, the bounded in-memory attempt still prevents a loop this launch.

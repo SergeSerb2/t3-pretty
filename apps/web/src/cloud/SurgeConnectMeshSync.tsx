@@ -69,7 +69,7 @@ export function SurgeConnectMeshSync() {
     ].join("\n");
     if (controller.linked && isRelayEnvironmentPresent(discovery, target.environmentId)) {
       if (linkRepairHandledRef.current !== migrationKey) {
-        rememberRelayMembership(migrationKey);
+        rememberRelayMembership(target.environmentId);
         linkRepairHandledRef.current = migrationKey;
       }
       return;
@@ -81,7 +81,7 @@ export function SurgeConnectMeshSync() {
       !shouldRepairStoredCloudLink({
         linked: controller.linked,
         relayMembershipMissing: controller.relayMembershipMissing,
-        relayMembershipObserved: hasObservedRelayMembership(migrationKey),
+        relayMembershipObserved: hasObservedRelayMembership(target.environmentId),
       })
     ) {
       if (controller.relayMembershipMissing) {

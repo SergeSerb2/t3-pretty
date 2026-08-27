@@ -143,6 +143,7 @@ describe("stored cloud link repair", () => {
   });
 
   it("remembers observed membership without depending on writable browser storage", () => {
+    const environmentId = EnvironmentId.make("environment-primary");
     const values = new Map<string, string>();
     const setItem = vi.fn((key: string, value: string) => void values.set(key, value));
     vi.stubGlobal("localStorage", {
@@ -150,10 +151,10 @@ describe("stored cloud link repair", () => {
       setItem,
     });
 
-    expect(hasObservedRelayMembership("local-link")).toBe(false);
-    rememberRelayMembership("local-link");
-    rememberRelayMembership("local-link");
-    expect(hasObservedRelayMembership("local-link")).toBe(true);
+    expect(hasObservedRelayMembership(environmentId)).toBe(false);
+    rememberRelayMembership(environmentId);
+    rememberRelayMembership(environmentId);
+    expect(hasObservedRelayMembership(environmentId)).toBe(true);
     expect(setItem).toHaveBeenCalledTimes(1);
 
     vi.stubGlobal("localStorage", {
@@ -164,7 +165,7 @@ describe("stored cloud link repair", () => {
         throw new Error("storage unavailable");
       },
     });
-    expect(hasObservedRelayMembership("local-link")).toBe(false);
-    expect(() => rememberRelayMembership("local-link")).not.toThrow();
+    expect(hasObservedRelayMembership(environmentId)).toBe(false);
+    expect(() => rememberRelayMembership(environmentId)).not.toThrow();
   });
 });
