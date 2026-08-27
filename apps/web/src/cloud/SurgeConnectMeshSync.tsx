@@ -68,10 +68,8 @@ export function SurgeConnectMeshSync() {
       controller.storedPublishAgentActivity,
     ].join("\n");
     if (controller.linked && isRelayEnvironmentPresent(discovery, target.environmentId)) {
-      if (linkRepairHandledRef.current !== migrationKey) {
-        rememberRelayMembership(target.environmentId);
-        linkRepairHandledRef.current = migrationKey;
-      }
+      rememberRelayMembership(target.environmentId);
+      linkRepairHandledRef.current = migrationKey;
       return;
     }
     if (linkRepairHandledRef.current === migrationKey) {
