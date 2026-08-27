@@ -59,6 +59,7 @@ export function hasObservedRelayMembership(environmentId: EnvironmentId): boolea
     return observed;
   } catch {
     // Without durable history, do not risk undoing an explicit account removal.
+    observedRelayMemberships.add(environmentId);
     return true;
   }
 }
@@ -82,7 +83,7 @@ export function shouldRepairStoredCloudLink(input: {
   readonly relayMembershipMissing: boolean;
   readonly relayMembershipObserved: boolean;
 }): boolean {
-  return !input.linked || (input.relayMembershipMissing && !input.relayMembershipObserved);
+  return input.relayMembershipMissing ? !input.relayMembershipObserved : !input.linked;
 }
 
 export function buildRelayMeshRegistrations(

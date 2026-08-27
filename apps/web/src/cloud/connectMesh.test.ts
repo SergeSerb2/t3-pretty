@@ -136,6 +136,13 @@ describe("stored cloud link repair", () => {
     ).toBe(true);
     expect(
       shouldRepairStoredCloudLink({
+        linked: false,
+        relayMembershipMissing: true,
+        relayMembershipObserved: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRepairStoredCloudLink({
         linked: true,
         relayMembershipMissing: true,
         relayMembershipObserved: true,
@@ -185,6 +192,7 @@ describe("stored cloud link repair", () => {
       getItem: () => null,
       setItem: vi.fn(),
     });
+    expect(hasObservedRelayMembership(unreadableEnvironmentId)).toBe(true);
     expect(hasObservedRelayMembership(rememberedEnvironmentId)).toBe(true);
   });
 });
