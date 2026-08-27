@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildToolCallDisplaySections,
   detectStructuredTextLanguage,
+  formatChangedFileDiffText,
   formatShellCommandForDisplay,
   serializeToolCallDisplaySections,
   toolCallDisplayAddsStructure,
@@ -145,5 +146,24 @@ describe("tool call display sections", () => {
     });
     expect(withJson.map((section) => section.kind)).toEqual(["command", "json"]);
     expect(withJson[1]).toEqual({ kind: "json", text: `{"title":"Blocked"}` });
+  });
+
+  it("renders a compact file diff section and labels multi-file patches", () => {
+    expect(formatChangedFileDiffText([{ path: "src/a.ts", diff: "-old\n+new" }])).toBe(
+      "-old\n+new",
+    );
+    expect(
+      formatChangedFileDiffText([
+        { path: "src/a.ts", diff: "-old\n+new" },
+        { path: "src/b.ts", diff: "+created" },
+      ]),
+    ).toBe("src/a.ts\n-old\n+new\n\nsrc/b.ts\n+created");
+
+    const sections = buildToolCallDisplaySections({
+      diffText: "-old\n+new",
+      trailingText: "src/a.ts",
+    });
+    expect(sections.map((section) => section.kind)).toEqual(["diff", "text"]);
+    expect(serializeToolCallDisplaySections(sections)).toBe("-old\n+new\n\nsrc/a.ts");
   });
 });

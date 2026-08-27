@@ -42,4 +42,14 @@ describe("tool call expanded body", () => {
     });
     expect(sections[1]).toEqual({ kind: "json", text: `{"ok":true}` });
   });
+
+  it("prefers a compact file diff over repeating the changed path", () => {
+    const sections = buildWorkEntryDisplaySections({
+      output: "src/a.ts",
+      changedFilesText: "src/a.ts",
+      changedFileDiffs: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
+    });
+    expect(sections).toEqual([{ kind: "diff", text: "-old\n+new" }]);
+    expect(workEntryDisplayBody(sections)).toBe("-old\n+new");
+  });
 });

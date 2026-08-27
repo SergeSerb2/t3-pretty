@@ -320,6 +320,14 @@ describe("projectActivityPayload", () => {
         });
         continue;
       }
+      if (activity === fixtures[1]) {
+        // File diffs are synthesized at projection time from patch bulk the
+        // wire no longer carries. Unprojected payloads still only expose paths.
+        const [entry] = deriveWorkLogEntries([projected]);
+        expect(entry?.changedFileDiffs?.some((file) => Boolean(file.diff))).toBe(true);
+        expect(deriveWorkLogEntries([activity])[0]?.changedFileDiffs).toBeUndefined();
+        continue;
+      }
       expect(deriveWorkLogEntries([projected])).toEqual(deriveWorkLogEntries([activity]));
       expect(comparableThreadFeed([projected])).toEqual(comparableThreadFeed([activity]));
     }

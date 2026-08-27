@@ -1,9 +1,12 @@
 import {
   buildToolCallDisplaySections,
+  formatChangedFileDiffText,
   serializeToolCallDisplaySections,
   toolCallDisplayAddsStructure,
   type ToolCallDisplaySection,
 } from "@t3tools/shared/shellCommandFormat";
+
+import type { ChangedFileDiff } from "../../session-logic";
 
 export function resolveToolCallCommand(workEntry: {
   readonly command?: string;
@@ -19,6 +22,7 @@ export function resolveToolCallCommand(workEntry: {
 
 export function buildWorkEntryDisplaySections(input: {
   readonly changedFilesText?: string | null | undefined;
+  readonly changedFileDiffs?: ReadonlyArray<ChangedFileDiff> | null | undefined;
   readonly command?: string | null | undefined;
   readonly itemType?: string | undefined;
   readonly output?: string | null | undefined;
@@ -28,11 +32,15 @@ export function buildWorkEntryDisplaySections(input: {
     input.itemType === "mcp_tool_call" && input.toolData !== undefined
       ? `MCP call\n${JSON.stringify(input.toolData, null, 2)}`
       : null;
+  const diffText = input.changedFileDiffs
+    ? formatChangedFileDiffText(input.changedFileDiffs)
+    : null;
   return buildToolCallDisplaySections({
     leadingText: mcpText,
     command: input.command ?? null,
-    output: input.output ?? null,
-    trailingText: input.changedFilesText ?? null,
+    output: diffText ? null : (input.output ?? null),
+    diffText,
+    trailingText: diffText ? null : (input.changedFilesText ?? null),
   });
 }
 

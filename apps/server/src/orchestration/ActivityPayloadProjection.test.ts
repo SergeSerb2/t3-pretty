@@ -422,6 +422,59 @@ describe("projectActivityPayload", () => {
     expect(data.files).toEqual([{ path: "apps/mobile/src/App.tsx" }]);
   });
 
+  it("keeps a bounded per-file diff for ACP, Codex, and Claude file changes", () => {
+    const acp = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          kind: "edit",
+          content: [
+            { type: "diff", path: "src/a.ts", oldText: "before", newText: "after" },
+            { type: "diff", path: "src/gone.ts", oldText: "deleted\nfile", newText: "" },
+          ],
+        },
+      }),
+    );
+    const acpFiles = ((acp.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    expect(acpFiles).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-before\n+after" },
+      { path: "src/gone.ts", kind: "delete", diff: "-deleted\n-file" },
+    ]);
+
+    const hugePatch = Array.from({ length: 80 }, (_, index) => `+line ${index}`).join("\n");
+    const codex = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          item: {
+            type: "fileChange",
+            changes: [{ path: "src/b.ts", kind: { type: "update" }, diff: hugePatch }],
+          },
+        },
+      }),
+    );
+    const [codexFile] = ((codex.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    expect(codexFile).toMatchObject({ path: "src/b.ts", kind: "update" });
+    expect(String(codexFile?.diff).split("\n").length).toBeLessThanOrEqual(33);
+    expect(String(codexFile?.diff).endsWith("…")).toBe(true);
+    expect(JSON.stringify(codex.payload).length).toBeLessThan(2_000);
+
+    const claudeWrite = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          toolName: "Write",
+          input: { file_path: "src/new.ts", content: "hello\nworld" },
+        },
+      }),
+    );
+    expect(
+      ((claudeWrite.payload as Record<string, unknown>).data as Record<string, unknown>).files,
+    ).toEqual([{ path: "src/new.ts", kind: "add", diff: "+hello\n+world" }]);
+  });
+
   it("passes task lifecycle payloads (no data field) through untouched", () => {
     const source = activity({
       taskId: "task-9",

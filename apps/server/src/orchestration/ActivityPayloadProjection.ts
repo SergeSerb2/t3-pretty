@@ -67,6 +67,7 @@ function collectChangedFiles(
   pushChangedFile(target, seen, record.savedPath);
   pushChangedFile(target, seen, record.path);
   pushChangedFile(target, seen, record.filePath);
+  pushChangedFile(target, seen, record.file_path);
   pushChangedFile(target, seen, record.relativePath);
   pushChangedFile(target, seen, record.filename);
   pushChangedFile(target, seen, record.newPath);
@@ -93,6 +94,239 @@ function collectChangedFiles(
       return;
     }
   }
+}
+
+type ProjectedFileChangeKind = "add" | "delete" | "update";
+
+type HarvestedFileDiff = {
+  kind?: ProjectedFileChangeKind;
+  diff?: string;
+};
+
+// ponytail: 4 files × 32 lines / 1.5KB; full turn diff lives in the Diff panel
+const FILE_DIFF_MAX_FILES = 4;
+const FILE_DIFF_MAX_LINES = 32;
+const FILE_DIFF_MAX_CHARS = 1_500;
+
+function boundDiffText(value: string): string {
+  const lines = value.split("\n");
+  let text = lines.slice(0, FILE_DIFF_MAX_LINES).join("\n");
+  if (text.length > FILE_DIFF_MAX_CHARS) {
+    const clipped = text.slice(0, FILE_DIFF_MAX_CHARS);
+    const lastNewline = clipped.lastIndexOf("\n");
+    text = lastNewline > 0 ? clipped.slice(0, lastNewline) : clipped;
+  }
+  if (lines.length > FILE_DIFF_MAX_LINES || value.length > FILE_DIFF_MAX_CHARS) {
+    return `${text}\n…`;
+  }
+  return text;
+}
+
+function prefixLines(value: string, sign: "+" | "-"): string {
+  if (value.length === 0) {
+    return sign;
+  }
+  return value
+    .split("\n")
+    .map((line) => `${sign}${line}`)
+    .join("\n");
+}
+
+function compactReplaceDiff(
+  oldText: string | null,
+  newText: string | null,
+): { kind: ProjectedFileChangeKind; diff: string } | null {
+  const oldValue = oldText ?? "";
+  const newValue = newText ?? "";
+  if (oldValue.length === 0 && newValue.length === 0) {
+    return null;
+  }
+  if (oldValue.length === 0) {
+    return { kind: "add", diff: boundDiffText(prefixLines(newValue, "+")) };
+  }
+  if (newValue.length === 0) {
+    return { kind: "delete", diff: boundDiffText(prefixLines(oldValue, "-")) };
+  }
+  return {
+    kind: "update",
+    diff: boundDiffText(`${prefixLines(oldValue, "-")}\n${prefixLines(newValue, "+")}`),
+  };
+}
+
+function kindFromUnknown(value: unknown): ProjectedFileChangeKind | undefined {
+  if (value === "add" || value === "delete" || value === "update") {
+    return value;
+  }
+  const record = asRecord(value);
+  const type = asTrimmedString(record?.type)?.toLowerCase();
+  if (type === "add" || type === "create" || type === "write") return "add";
+  if (type === "delete" || type === "remove") return "delete";
+  if (type === "update" || type === "edit" || type === "patch") return "update";
+  const name = asTrimmedString(value)?.toLowerCase();
+  if (!name) return undefined;
+  if (name.includes("write") || name.includes("create") || name === "add") return "add";
+  if (name.includes("delete") || name.includes("remove")) return "delete";
+  if (
+    name.includes("edit") ||
+    name.includes("replace") ||
+    name.includes("patch") ||
+    name.includes("update")
+  ) {
+    return "update";
+  }
+  return undefined;
+}
+
+function setHarvestedDiff(
+  target: Map<string, HarvestedFileDiff>,
+  path: string,
+  next: HarvestedFileDiff,
+): void {
+  const previous = target.get(path);
+  const kind = next.kind ?? previous?.kind;
+  const diff = next.diff ?? previous?.diff;
+  target.set(path, {
+    ...(kind ? { kind } : {}),
+    ...(diff ? { diff } : {}),
+  });
+}
+
+function harvestAcpDiffEntries(value: unknown, target: Map<string, HarvestedFileDiff>): void {
+  if (!Array.isArray(value)) return;
+  for (const entry of value) {
+    const record = asRecord(entry);
+    if (!record || record.type !== "diff") continue;
+    const path = asTrimmedString(record.path);
+    if (!path) continue;
+    const compact = compactReplaceDiff(
+      typeof record.oldText === "string" ? record.oldText : "",
+      typeof record.newText === "string" ? record.newText : "",
+    );
+    if (compact) {
+      setHarvestedDiff(target, path, compact);
+    }
+  }
+}
+
+function harvestNamedChangeEntries(value: unknown, target: Map<string, HarvestedFileDiff>): void {
+  if (!Array.isArray(value)) return;
+  for (const entry of value) {
+    const record = asRecord(entry);
+    if (!record) continue;
+    const kind = kindFromUnknown(record.kind) ?? kindFromUnknown(record.type);
+    const patch = asTrimmedString(record.diff) ?? asTrimmedString(record.patch);
+    if (!kind && !patch) continue;
+    const path =
+      asTrimmedString(record.path) ??
+      asTrimmedString(record.newPath) ??
+      asTrimmedString(record.filePath) ??
+      asTrimmedString(record.file_path);
+    if (!path) continue;
+    if (patch) {
+      setHarvestedDiff(target, path, { kind: kind ?? "update", diff: boundDiffText(patch) });
+    } else if (kind) {
+      setHarvestedDiff(target, path, { kind });
+    }
+  }
+}
+
+function harvestToolInputDiff(
+  input: Record<string, unknown> | null,
+  toolName: unknown,
+  target: Map<string, HarvestedFileDiff>,
+): void {
+  if (!input) return;
+  const path =
+    asTrimmedString(input.file_path) ??
+    asTrimmedString(input.path) ??
+    asTrimmedString(input.filePath);
+  if (!path) return;
+  const oldText =
+    typeof input.old_string === "string"
+      ? input.old_string
+      : typeof input.oldText === "string"
+        ? input.oldText
+        : null;
+  const newText =
+    typeof input.new_string === "string"
+      ? input.new_string
+      : typeof input.newText === "string"
+        ? input.newText
+        : typeof input.content === "string"
+          ? input.content
+          : null;
+  const kind = kindFromUnknown(toolName) ?? kindFromUnknown(input.kind);
+  if (oldText !== null || newText !== null) {
+    const compact = compactReplaceDiff(oldText, newText);
+    if (compact) {
+      setHarvestedDiff(target, path, { kind: kind ?? compact.kind, diff: compact.diff });
+      return;
+    }
+  }
+  if (kind) {
+    setHarvestedDiff(target, path, { kind });
+  }
+}
+
+function harvestFileDiffs(data: Record<string, unknown>): Map<string, HarvestedFileDiff> {
+  const target = new Map<string, HarvestedFileDiff>();
+  harvestAcpDiffEntries(data.content, target);
+  harvestNamedChangeEntries(asRecord(data.item)?.changes, target);
+  harvestNamedChangeEntries(data.changes, target);
+  harvestNamedChangeEntries(data.files, target);
+  harvestToolInputDiff(asRecord(data.input), data.toolName ?? data.kind, target);
+  harvestToolInputDiff(asRecord(data.rawInput), data.kind ?? data.toolName, target);
+  return target;
+}
+
+function toProjectedChangedFiles(
+  paths: ReadonlyArray<string>,
+  diffs: Map<string, HarvestedFileDiff>,
+): Array<{ path: string; kind?: ProjectedFileChangeKind; diff?: string }> {
+  let diffsAttached = 0;
+  return paths.map((path) => {
+    const extra = diffs.get(path);
+    if (!extra) {
+      return { path };
+    }
+    const canAttachDiff = extra.diff !== undefined && diffsAttached < FILE_DIFF_MAX_FILES;
+    if (canAttachDiff) {
+      diffsAttached += 1;
+    }
+    return {
+      path,
+      ...(extra.kind ? { kind: extra.kind } : {}),
+      ...(canAttachDiff ? { diff: extra.diff } : {}),
+    };
+  });
+}
+
+function projectChangedFiles(
+  data: Record<string, unknown>,
+  extraPaths?: ReadonlyArray<string>,
+): Array<{ path: string; kind?: ProjectedFileChangeKind; diff?: string }> | undefined {
+  const changedFiles: string[] = [];
+  const seenFiles = new Set<string>();
+  collectChangedFiles(data, changedFiles, seenFiles, 0, {
+    remaining: CHANGED_FILE_SCAN_MAX_NODES,
+  });
+  if (extraPaths) {
+    for (const path of extraPaths) {
+      if (seenFiles.has(path)) continue;
+      seenFiles.add(path);
+      changedFiles.push(path);
+    }
+  }
+  const diffs = harvestFileDiffs(data);
+  for (const path of diffs.keys()) {
+    if (seenFiles.has(path)) continue;
+    seenFiles.add(path);
+    changedFiles.push(path);
+  }
+  if (changedFiles.length === 0) {
+    return undefined;
+  }
+  return toProjectedChangedFiles(changedFiles, diffs);
 }
 
 function collectProjectedImageFiles(
@@ -387,12 +621,9 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
     projectedData.kind = data.kind;
   }
 
-  const changedFiles: string[] = [];
-  collectChangedFiles(data, changedFiles, new Set<string>(), 0, {
-    remaining: CHANGED_FILE_SCAN_MAX_NODES,
-  });
-  if (changedFiles.length > 0) {
-    projectedData.files = changedFiles.map((path) => ({ path }));
+  const files = projectChangedFiles(data);
+  if (files) {
+    projectedData.files = files;
   }
 
   return projectedData;
@@ -519,17 +750,14 @@ export function projectActivityPayload(
     projectedData.command = command;
   }
 
-  const changedFiles: string[] = [];
-  const seenFiles = new Set<string>();
-  collectChangedFiles(data, changedFiles, seenFiles, 0, {
-    remaining: CHANGED_FILE_SCAN_MAX_NODES,
-  });
+  const imageFiles: string[] = [];
   if (payload.itemType === "image_generation") {
-    collectProjectedImageFiles(data.rawOutput, changedFiles, seenFiles);
+    collectProjectedImageFiles(data.rawOutput, imageFiles, new Set<string>());
   }
-  if (changedFiles.length > 0) {
+  const files = projectChangedFiles(data, imageFiles);
+  if (files) {
     // Both clients discover file names by walking objects with path-like keys.
-    projectedData.files = changedFiles.map((path) => ({ path }));
+    projectedData.files = files;
   }
 
   if ("toolCallId" in data) {

@@ -70,6 +70,14 @@ export type WorkLogToolLifecycleStatus =
   | "declined"
   | "stopped";
 
+export type ChangedFileDiffKind = "add" | "delete" | "update";
+
+export interface ChangedFileDiff {
+  readonly path: string;
+  readonly kind?: ChangedFileDiffKind;
+  readonly diff?: string;
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -81,6 +89,7 @@ export interface WorkLogEntry {
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
+  changedFileDiffs?: ReadonlyArray<ChangedFileDiff>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
@@ -1020,6 +1029,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
+  const changedFileDiffs = extractChangedFileDiffs(payload);
+  if (changedFileDiffs.length > 0) {
+    entry.changedFileDiffs = changedFileDiffs;
+  }
   if (title) {
     entry.toolTitle = title;
   }
@@ -1254,6 +1267,7 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
+  const changedFileDiffs = next.changedFileDiffs ?? previous.changedFileDiffs;
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
@@ -1275,6 +1289,7 @@ function mergeDerivedWorkLogEntries(
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(changedFileDiffs && changedFileDiffs.length > 0 ? { changedFileDiffs } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
@@ -1326,6 +1341,23 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
 
 function normalizeCompactToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+}
+
+export function fileChangeKindHeading(
+  workEntry: Pick<WorkLogEntry, "toolTitle" | "label" | "changedFileDiffs">,
+): string | null {
+  const current = normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase();
+  if (current !== "file change" && current !== "changed files") {
+    return null;
+  }
+  const kinds = new Set<ChangedFileDiffKind>();
+  for (const file of workEntry.changedFileDiffs ?? []) {
+    if (file.kind) kinds.add(file.kind);
+  }
+  if (kinds.size !== 1) return null;
+  if (kinds.has("add")) return "File created";
+  if (kinds.has("delete")) return "File deleted";
+  return null;
 }
 
 function toLatestProposedPlanState(proposedPlan: ProposedPlan): LatestProposedPlanState {
@@ -1847,6 +1879,31 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   const seen = new Set<string>();
   collectChangedFiles(asRecord(payload?.data), changedFiles, seen, 0);
   return changedFiles;
+}
+
+function extractChangedFileDiffs(payload: Record<string, unknown> | null): ChangedFileDiff[] {
+  const files = asRecord(payload?.data)?.files;
+  if (!Array.isArray(files)) {
+    return [];
+  }
+  const diffs: ChangedFileDiff[] = [];
+  for (const file of files) {
+    const record = asRecord(file);
+    const path = asTrimmedString(record?.path);
+    if (!path) continue;
+    const kind =
+      record?.kind === "add" || record?.kind === "delete" || record?.kind === "update"
+        ? record.kind
+        : undefined;
+    const diff = asTrimmedString(record?.diff) ?? undefined;
+    if (!kind && !diff) continue;
+    diffs.push({
+      path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return diffs;
 }
 
 function compareActivitiesByOrder(
