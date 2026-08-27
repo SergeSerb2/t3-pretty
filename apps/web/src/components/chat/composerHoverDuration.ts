@@ -28,8 +28,8 @@ export function pointerSpeedPxPerMs(
 /**
  * Enter/leave speed from the last document sample to this event.
  * A stale gap still uses that crossing hypot/dt — only a missing prior
- * coordinate drops to 0. If capture pointermove already consumed this
- * timestamp, `lastSpeed` is the same step.
+ * coordinate drops to 0. Capture pointermove may already have written
+ * this point; a later enter/leave at the same coords keeps `lastSpeed`.
  */
 export function composerHoverPointerSpeed(
   lastX: number,
@@ -42,5 +42,6 @@ export function composerHoverPointerSpeed(
 ): number {
   if (lastT === 0) return 0;
   if (toT <= lastT) return lastSpeed;
+  if (toX === lastX && toY === lastY) return lastSpeed;
   return pointerSpeedPxPerMs(lastX, lastY, lastT, toX, toY, toT);
 }

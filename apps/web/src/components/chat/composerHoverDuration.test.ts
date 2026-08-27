@@ -46,6 +46,10 @@ describe("composerHoverPointerSpeed", () => {
     expect(composerHoverPointerSpeed(400, 0, 1150, 2.5, 400, 0, 1150)).toBe(2.5);
   });
 
+  it("reuses lastSpeed when enter/leave shares the sample point at a later time", () => {
+    expect(composerHoverPointerSpeed(400, 0, 1150, 2.5, 400, 0, 1152)).toBe(2.5);
+  });
+
   it("drops speed when there was no prior coordinate", () => {
     expect(composerHoverPointerSpeed(0, 0, 0, 3, 400, 0, 1150)).toBe(0);
   });
