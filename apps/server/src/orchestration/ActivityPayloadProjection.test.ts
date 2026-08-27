@@ -475,6 +475,25 @@ describe("projectActivityPayload", () => {
     ).toEqual([{ path: "src/new.ts", kind: "add", diff: "+hello\n+world" }]);
   });
 
+  it("keeps additions when the old side of an update exceeds the compact budget", () => {
+    const oldText = Array.from({ length: 80 }, (_, index) => `old ${index}`).join("\n");
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          kind: "edit",
+          content: [{ type: "diff", path: "src/a.ts", oldText, newText: "after" }],
+        },
+      }),
+    );
+    const [file] = ((projected.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    const diff = String(file?.diff);
+    expect(diff).toContain("-old 0");
+    expect(diff).toContain("…");
+    expect(diff).toContain("+after");
+  });
+
   it("passes task lifecycle payloads (no data field) through untouched", () => {
     const source = activity({
       taskId: "task-9",

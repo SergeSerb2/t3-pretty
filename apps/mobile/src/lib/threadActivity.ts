@@ -577,7 +577,7 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
-  const changedFileDiffs = next.changedFileDiffs ?? previous.changedFileDiffs;
+  const changedFileDiffs = mergeChangedFileDiffs(previous.changedFileDiffs, next.changedFileDiffs);
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
@@ -618,6 +618,29 @@ function mergeChangedFiles(
     return [];
   }
   return [...new Set(merged)];
+}
+
+function mergeChangedFileDiffs(
+  previous: ReadonlyArray<ChangedFileDiff> | undefined,
+  next: ReadonlyArray<ChangedFileDiff> | undefined,
+): ChangedFileDiff[] {
+  if ((next?.length ?? 0) === 0) return [...(previous ?? [])];
+  if ((previous?.length ?? 0) === 0) return [...next!];
+  const byPath = new Map<string, ChangedFileDiff>();
+  for (const file of previous!) {
+    byPath.set(file.path, file);
+  }
+  for (const file of next!) {
+    const existing = byPath.get(file.path);
+    const kind = file.kind ?? existing?.kind;
+    const diff = file.diff ?? existing?.diff;
+    byPath.set(file.path, {
+      path: file.path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return [...byPath.values()];
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {

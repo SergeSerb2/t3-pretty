@@ -1615,6 +1615,44 @@ describe("deriveWorkLogEntries", () => {
     expect(fileChangeKindHeading(entry!)).toBeNull();
   });
 
+  it("keeps earlier file diffs when a later lifecycle row omits them", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-diff-updated",
+        kind: "tool.updated",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
+          },
+        },
+      }),
+      makeActivity({
+        id: "file-diff-completed",
+        kind: "tool.completed",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts" }],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.changedFileDiffs).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
+    ]);
+  });
+
   it("drops duplicated tool detail when it only repeats the title", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

@@ -108,15 +108,19 @@ const FILE_DIFF_MAX_FILES = 4;
 const FILE_DIFF_MAX_LINES = 32;
 const FILE_DIFF_MAX_CHARS = 1_500;
 
-function boundDiffText(value: string): string {
+function boundDiffText(
+  value: string,
+  maxLines = FILE_DIFF_MAX_LINES,
+  maxChars = FILE_DIFF_MAX_CHARS,
+): string {
   const lines = value.split("\n");
-  let text = lines.slice(0, FILE_DIFF_MAX_LINES).join("\n");
-  if (text.length > FILE_DIFF_MAX_CHARS) {
-    const clipped = text.slice(0, FILE_DIFF_MAX_CHARS);
+  let text = lines.slice(0, maxLines).join("\n");
+  if (text.length > maxChars) {
+    const clipped = text.slice(0, maxChars);
     const lastNewline = clipped.lastIndexOf("\n");
     text = lastNewline > 0 ? clipped.slice(0, lastNewline) : clipped;
   }
-  if (lines.length > FILE_DIFF_MAX_LINES || value.length > FILE_DIFF_MAX_CHARS) {
+  if (lines.length > maxLines || value.length > maxChars) {
     return `${text}\n…`;
   }
   return text;
@@ -147,9 +151,11 @@ function compactReplaceDiff(
   if (newValue.length === 0) {
     return { kind: "delete", diff: boundDiffText(prefixLines(oldValue, "-")) };
   }
+  const sideLines = Math.max(1, Math.floor(FILE_DIFF_MAX_LINES / 2));
+  const sideChars = Math.max(1, Math.floor(FILE_DIFF_MAX_CHARS / 2));
   return {
     kind: "update",
-    diff: boundDiffText(`${prefixLines(oldValue, "-")}\n${prefixLines(newValue, "+")}`),
+    diff: `${boundDiffText(prefixLines(oldValue, "-"), sideLines, sideChars)}\n${boundDiffText(prefixLines(newValue, "+"), sideLines, sideChars)}`,
   };
 }
 
