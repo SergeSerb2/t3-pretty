@@ -129,14 +129,19 @@ export interface TranscriptReadResult {
  * Errors on individual entries are swallowed: session files rotate and get
  * removed while the walk is in flight, and a partial listing is far better than
  * failing the page.
+ *
+ * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
+ * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
+ * never carry usage, so the basename filter keeps a cold scan off those files.
  */
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
-  fileName?: string,
+  options?: { readonly fileName?: string } | string,
   limits: TranscriptListingLimits = {},
 ): Promise<TranscriptListing> {
   const found: TranscriptFile[] = [];
+  const fileName = typeof options === "string" ? options : options?.fileName;
   const boundedLimit = (value: number | undefined, fallback: number) =>
     value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, Math.trunc(value));
   const maxFiles = boundedLimit(limits.maxFiles, TRANSCRIPT_FILE_MAX);
@@ -180,6 +185,7 @@ export async function listTranscriptFiles(
       if (fileName !== undefined ? entry.name !== fileName : !entry.name.endsWith(".jsonl")) {
         continue;
       }
+
       try {
         const stats = await NodeFSP.stat(child);
         if (stats.mtimeMs >= sinceMs) {
@@ -270,6 +276,12 @@ export async function readTranscriptRecords(
         }
         const record = parseCodexLine(line, codexState);
         if (appendRecord(record)) break;
+        continue;
+      }
+
+      if (provider === "grok") {
+        if (!mightCarryUsage(line, provider)) continue;
+        for (const grokRecord of parseGrokLine(line)) records.push(grokRecord);
         continue;
       }
 
