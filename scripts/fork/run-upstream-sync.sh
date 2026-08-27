@@ -228,6 +228,7 @@ resolve_current_merge() {
   # The fork owns its release and security automation. Keep those files
   # pinned to fork main instead of allowing an upstream tag to rewrite
   # workflows or requiring a broadly scoped personal token.
+  git rm -r -f --ignore-unmatch -- .github/workflows
   git restore --source=origin/main --staged --worktree -- .github/workflows
 
   # Keep the resolved nightly marker and report when merging a newer
