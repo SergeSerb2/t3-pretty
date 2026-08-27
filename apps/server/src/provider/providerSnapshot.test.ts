@@ -10,10 +10,23 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  extractAuthBoolean,
   isCommandMissingCause,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
+
+describe("extractAuthBoolean", () => {
+  it("handles cyclic and deeply nested provider payloads within a finite work budget", () => {
+    const cyclic: { auth?: unknown; session?: unknown } = {};
+    cyclic.auth = cyclic;
+    expect(extractAuthBoolean(cyclic)).toBeUndefined();
+
+    let nested: unknown = { authenticated: true };
+    for (let index = 0; index < 5_000; index += 1) nested = { auth: nested };
+    expect(extractAuthBoolean(nested)).toBeUndefined();
+  });
+});
 
 const CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [

@@ -54,6 +54,7 @@ import {
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import {
@@ -87,6 +88,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -206,6 +208,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   GitBranchIcon,
+  Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -223,7 +226,11 @@ import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+} from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -232,6 +239,7 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { StatusPulseDot } from "../hooks/useStatusPulse";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
@@ -250,6 +258,7 @@ import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRo
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
+  composerDraftHasUserContent,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
@@ -335,9 +344,16 @@ import {
 import {
   resolveDisplayedThreadPr,
   threadChangeRequestSnapshotsAtom,
+  useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ComposerSpecular } from "./chat/ComposerSpecular";
+import {
+  hasAvailableClaudeCompactionProvider,
+  hasDismissedResumeCompaction,
+  shouldOfferResumeCompaction,
+} from "./chat/ContextWindowMeter.logic";
+import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -379,6 +395,7 @@ import {
   isBranchMismatchDismissedForSession,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -388,6 +405,7 @@ import {
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
+  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
@@ -398,11 +416,18 @@ import {
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
+  type QueuedComposerMessage,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
+import {
+  awaitAttachmentUploads,
+  getUploadedAttachments,
+  releaseAttachmentUploads,
+  startAttachmentUpload,
+} from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
@@ -431,6 +456,7 @@ import { useAssetUrls } from "../assets/assetUrls";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
+const ATTACHMENT_PREVIEW_LOAD_TIMEOUT_MS = 15_000;
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
@@ -531,7 +557,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
           translateY,
         });
         const animation = transitionGroup.animate(
-          draftHeroGlideKeyframes(translateX, translateY, pop),
+          [...draftHeroGlideKeyframes(translateX, translateY, pop)],
           {
             duration: sceneryDockMotion
               ? SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS
@@ -1469,6 +1495,7 @@ function ChatViewContent(props: ChatViewProps) {
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
+  const { settleThread } = useThreadActions();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
@@ -1576,6 +1603,9 @@ function ChatViewContent(props: ChatViewProps) {
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
+  const composerHasUnsentContent = useComposerDraftStore((store) =>
+    composerDraftHasUserContent(store.getComposerDraft(composerDraftTarget)),
+  );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
@@ -1615,6 +1645,10 @@ function ChatViewContent(props: ChatViewProps) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
+  const [queuedComposerMessages, setQueuedComposerMessages] = useState<
+    ReadonlyArray<QueuedComposerMessage>
+  >([]);
+  const previousComposerRouteIdentityRef = useRef({ draftId, routeKind, routeThreadKey });
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
@@ -1728,13 +1762,12 @@ function ChatViewContent(props: ChatViewProps) {
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
-  const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftThreadKeys = useMemo(
-    () =>
-      Object.values(draftThreadsByThreadKey).map((draftThread) =>
+  const draftThreadKeys = useComposerDraftStore(
+    useShallow((store) =>
+      Object.values(store.draftThreadsByThreadKey).map((draftThread) =>
         scopedThreadKey(scopeThreadRef(draftThread.environmentId, draftThread.threadId)),
       ),
-    [draftThreadsByThreadKey],
+    ),
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
   const mountedTerminalThreadRefs = useMemo(
@@ -2332,6 +2365,16 @@ function ChatViewContent(props: ChatViewProps) {
   const modelPickerLockedProvider = supportsProviderHandoff ? null : lockedProvider;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
+  const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
+  const supportsAttachmentUploads =
+    attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    attachmentEnvironmentConfig?.environment.capabilities.voiceDictation === true;
+  const supportsReadAloud =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    attachmentEnvironmentConfig?.environment.capabilities.readAloud === true;
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -2534,6 +2577,10 @@ function ChatViewContent(props: ChatViewProps) {
   });
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const activeContextWindow = useMemo(
+    () => deriveLatestContextWindowSnapshot(threadActivities),
+    [threadActivities],
+  );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
   const sessionRunningTurnId =
     activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null;
@@ -2770,6 +2817,15 @@ function ChatViewContent(props: ChatViewProps) {
       };
     });
   }, [serverAttachmentUrlById, serverMessages]);
+  const reconciledQueuedComposerMessages = useMemo(
+    () =>
+      reconcileQueuedComposerMessages({
+        queuedMessages: queuedComposerMessages,
+        serverMessages: displayServerMessages,
+        latestTurn: activeThread?.latestTurn ?? null,
+      }),
+    [activeThread?.latestTurn, displayServerMessages, queuedComposerMessages],
+  );
   useEffect(() => {
     if (typeof Image === "undefined" || displayServerMessages.length === 0) {
       return;
@@ -2808,17 +2864,44 @@ function ChatViewContent(props: ChatViewProps) {
       attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId] = true;
 
       let cancelled = false;
-      const imageInstances: HTMLImageElement[] = [];
+      const cancelImagePreloads = new Set<() => void>();
+      const cancelPendingImagePreloads = () => {
+        for (const cancelImagePreload of cancelImagePreloads) {
+          cancelImagePreload();
+        }
+        cancelImagePreloads.clear();
+      };
 
       const preloadServerPreviews = Promise.all(
         serverPreviewUrls.map(
           (previewUrl) =>
             new Promise<void>((resolve, reject) => {
               const image = new Image();
-              imageInstances.push(image);
-              const handleLoad = () => resolve();
+              let settled = false;
+              const finish = (error?: Error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                image.removeEventListener("load", handleLoad);
+                image.removeEventListener("error", handleError);
+                cancelImagePreloads.delete(cancel);
+                if (error) reject(error);
+                else resolve();
+              };
+              const handleLoad = () => finish();
               const handleError = () =>
-                reject(new Error(`Failed to load server preview for ${messageId}.`));
+                finish(new Error(`Failed to load server preview for ${messageId}.`));
+              const cancel = (
+                error = new Error(`Cancelled server preview preload for ${messageId}.`),
+              ) => {
+                finish(error);
+                image.src = "";
+              };
+              const timeoutId = window.setTimeout(
+                () => cancel(new Error(`Timed out loading server preview for ${messageId}.`)),
+                ATTACHMENT_PREVIEW_LOAD_TIMEOUT_MS,
+              );
+              cancelImagePreloads.add(cancel);
               image.addEventListener("load", handleLoad, { once: true });
               image.addEventListener("error", handleError, { once: true });
               image.src = previewUrl;
@@ -2834,6 +2917,7 @@ function ChatViewContent(props: ChatViewProps) {
           clearAttachmentPreviewHandoff(messageId as MessageId, handoffPreviewUrls);
         })
         .catch(() => {
+          cancelPendingImagePreloads();
           if (!cancelled) {
             delete attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId];
           }
@@ -2842,9 +2926,7 @@ function ChatViewContent(props: ChatViewProps) {
       cleanups.push(() => {
         cancelled = true;
         delete attachmentPreviewPromotionInFlightByMessageIdRef.current[messageId];
-        for (const image of imageInstances) {
-          image.src = "";
-        }
+        cancelPendingImagePreloads();
       });
     }
 
@@ -2855,7 +2937,8 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [attachmentPreviewHandoffByMessageId, clearAttachmentPreviewHandoff, displayServerMessages]);
   const timelineMessages = useMemo(() => {
-    const messages = displayServerMessages;
+    const queuedMessageIds = new Set(reconciledQueuedComposerMessages.map((message) => message.id));
+    const messages = displayServerMessages.filter((message) => !queuedMessageIds.has(message.id));
     const serverMessagesWithPreviewHandoff =
       Object.keys(attachmentPreviewHandoffByMessageId).length === 0
         ? messages
@@ -2897,7 +2980,7 @@ function ChatViewContent(props: ChatViewProps) {
           });
 
     const localMessages = [
-      ...optimisticUserMessages,
+      ...optimisticUserMessages.filter((message) => !queuedMessageIds.has(message.id)),
       ...feedbackSubmissions.flatMap((submission) =>
         submission.status === "interrupted"
           ? []
@@ -2918,6 +3001,7 @@ function ChatViewContent(props: ChatViewProps) {
     displayServerMessages,
     feedbackSubmissions,
     optimisticUserMessages,
+    reconciledQueuedComposerMessages,
   ]);
   const timelineEntries = useMemo(
     () =>
@@ -3049,6 +3133,29 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
+  const compactionProviderAvailable = useMemo(
+    () =>
+      hasAvailableClaudeCompactionProvider({
+        providers: applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses),
+          settings,
+        ),
+        instanceId: activeProviderInstanceId,
+        lockedInstanceId: lockedProvider
+          ? (activeThread?.session?.providerInstanceId ??
+            activeThread?.modelSelection.instanceId ??
+            null)
+          : null,
+      }),
+    [
+      activeProviderInstanceId,
+      activeThread?.modelSelection.instanceId,
+      activeThread?.session?.providerInstanceId,
+      lockedProvider,
+      providerStatuses,
+      settings,
+    ],
+  );
   const activeProviderStatus = useMemo(() => {
     if (activeProviderInstanceId) {
       return (
@@ -3058,6 +3165,25 @@ function ChatViewContent(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  const [resumeCompactionPermanentlyDismissed, setResumeCompactionPermanentlyDismissed] =
+    useLocalStorage(
+      `t3code:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
+      false,
+      Schema.Boolean,
+    );
+  const nativeResumeCompactionDismissed = useMemo(
+    () => hasDismissedResumeCompaction(threadActivities),
+    [threadActivities],
+  );
+  useEffect(() => {
+    if (nativeResumeCompactionDismissed && !resumeCompactionPermanentlyDismissed) {
+      setResumeCompactionPermanentlyDismissed(true);
+    }
+  }, [
+    nativeResumeCompactionDismissed,
+    resumeCompactionPermanentlyDismissed,
+    setResumeCompactionPermanentlyDismissed,
+  ]);
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -3704,24 +3830,48 @@ function ChatViewContent(props: ChatViewProps) {
   );
   // The thread's own change request, placed against the project it belongs to. Without a
   // project there is nothing to resolve it against, so the caller falls back to the browser.
-  const threadRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const linkedThreadPullRequest = activeThread?.linkedPullRequest ?? null;
+  const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
   const openThreadPullRequest = useCallback(
+    (number: number) => {
+      if (!supportsPullRequests || !activeThreadRef) {
+        return;
+      }
+      const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
+      const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
+      if (projectId === undefined || repository === null) return;
+      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+        projectId,
+        repository,
+        number,
+      });
+    },
+    [
+      activeProject,
+      activeProjectRepository,
+      activeThreadRef,
+      linkedThreadPullRequest,
+      supportsPullRequests,
+    ],
+  );
+  const openProjectPullRequest = useCallback(
     (number: number) => {
       if (
         !supportsPullRequests ||
         !activeThreadRef ||
         !activeProject ||
-        threadRepository === null
+        activeProjectRepository === null
       ) {
         return;
       }
       useRightPanelStore.getState().openPullRequest(activeThreadRef, {
         projectId: activeProject.id,
-        repository: threadRepository,
+        repository: activeProjectRepository,
         number,
       });
     },
-    [activeProject, activeThreadRef, supportsPullRequests, threadRepository],
+    [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
   );
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
@@ -3998,18 +4148,7 @@ function ChatViewContent(props: ChatViewProps) {
     useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
   }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
-        }),
-      );
-      return;
-    }
-
-    void navigator.clipboard.writeText(relativePath).then(
+    void writeTextToClipboard(relativePath, "path").then(
       () => {
         toastManager.add({
           type: "success",
@@ -4529,15 +4668,29 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread?.id, activeThread?.messages, handoffAttachmentPreviews, optimisticUserMessages]);
 
   useEffect(() => {
+    if (reconciledQueuedComposerMessages !== queuedComposerMessages) {
+      setQueuedComposerMessages(reconciledQueuedComposerMessages);
+    }
+  }, [queuedComposerMessages, reconciledQueuedComposerMessages]);
+
+  useEffect(() => {
+    const currentRouteIdentity = { draftId, routeKind, routeThreadKey };
+    const shouldReset = shouldResetComposerQueueForRouteChange(
+      previousComposerRouteIdentityRef.current,
+      currentRouteIdentity,
+    );
+    previousComposerRouteIdentityRef.current = currentRouteIdentity;
+    if (!shouldReset) return;
     setOptimisticUserMessages((existing) => {
       for (const message of existing) {
         revokeUserMessagePreviewUrls(message);
       }
       return [];
     });
+    setQueuedComposerMessages([]);
     resetLocalDispatch();
     setExpandedImage(null);
-  }, [draftId, resetLocalDispatch, threadId]);
+  }, [draftId, resetLocalDispatch, routeKind, routeThreadKey]);
 
   const closeExpandedImage = useCallback(() => {
     setExpandedImage(null);
@@ -4618,11 +4771,17 @@ function ChatViewContent(props: ChatViewProps) {
       ? activePlan.steps
       : null;
   const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
+  const linkedPullRequestStatus = useLinkedThreadPullRequest(
+    activeThreadRef?.environmentId ?? null,
+    linkedThreadPullRequest,
+  );
   const activeThreadPr = resolveDisplayedThreadPr({
     threadBranch: activeThread?.branch ?? null,
     gitStatus: gitStatusQuery.data ?? null,
     snapshot: activeThreadKey ? changeRequestSnapshotByKey.get(activeThreadKey) : undefined,
     retainTerminalOnBranchMismatch: activeThread?.worktreePath === null,
+    linkedPullRequest: linkedThreadPullRequest,
+    linkedPullRequestStatus,
   });
   // The right panel offers the thread's own change request, so it can only offer it once the
   // branch has one; until then the picker says so rather than opening an empty panel.
@@ -4793,19 +4952,7 @@ function ChatViewContent(props: ChatViewProps) {
   // Dismissal lives in a module-level set (survives remounts); this tick just
   // forces a re-render so the banner leaves immediately.
   const [, setBranchMismatchDismissTick] = useState(0);
-  const composerHasDraftContent = useComposerDraftStore((store) => {
-    const draft = store.getComposerDraft(composerDraftTarget);
-    return Boolean(
-      draft &&
-      (draft.prompt.trim().length > 0 ||
-        draft.images.length > 0 ||
-        draft.terminalContexts.length > 0 ||
-        draft.elementContexts.length > 0 ||
-        draft.previewAnnotations.length > 0 ||
-        draft.canvasSelections.length > 0 ||
-        draft.reviewComments.length > 0),
-    );
-  });
+
   const activeBranchMismatchKey = branchMismatchKey(
     activeThread?.id ?? null,
     localCheckoutBranchMismatch,
@@ -4813,7 +4960,7 @@ function ChatViewContent(props: ChatViewProps) {
   const showBranchMismatchBanner = shouldShowBranchMismatchBanner({
     hasMismatch: localCheckoutBranchMismatch !== null,
     isDismissed: isBranchMismatchDismissedForSession(activeBranchMismatchKey),
-    composerHasContent: composerHasDraftContent,
+    composerHasContent: composerHasUnsentContent,
     wasShownForCurrentMismatch:
       revealedBranchMismatchKey !== null && revealedBranchMismatchKey === activeBranchMismatchKey,
   });
@@ -5032,6 +5179,107 @@ function ChatViewContent(props: ChatViewProps) {
     isUnsnoozing,
     isUnsettling,
   ]);
+  // Session-scoped dismissals, one key per (thread, snapshot). A set rather
+  // than a single slot so dismissing the banner on one thread does not
+  // resurface it on another thread dismissed earlier.
+  const [dismissedResumeCompactionKeys, setDismissedResumeCompactionKeys] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const resumeCompactionKey =
+    activeThread && activeContextWindow
+      ? `${activeThread.id}:${activeContextWindow.updatedAt}`
+      : null;
+  const compactDisabled =
+    !activeThread ||
+    !activeProject ||
+    !isServerThread ||
+    selectedProvider !== "claudeAgent" ||
+    !compactionProviderAvailable ||
+    isWorking ||
+    threadDetailLoading ||
+    isPreparingWorktree ||
+    activeEnvironmentUnavailable ||
+    feedbackUploading ||
+    pendingApprovals.length > 0 ||
+    pendingUserInputs.length > 0 ||
+    showPlanFollowUpPrompt ||
+    composerHasUnsentContent;
+  const compactDisabledReason = compactDisabled
+    ? composerHasUnsentContent
+      ? "Send or clear your draft before compacting"
+      : !activeProject
+        ? "Choose a project before compacting"
+        : !compactionProviderAvailable
+          ? "Enable a Claude provider before compacting"
+          : "Compacting is unavailable right now"
+    : null;
+  const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (
+      !activeThread ||
+      !activeContextWindow ||
+      resumeCompactionKey === null ||
+      dismissedResumeCompactionKeys.has(resumeCompactionKey) ||
+      resumeCompactionPermanentlyDismissed ||
+      nativeResumeCompactionDismissed ||
+      pendingUserInputs.length > 0 ||
+      phase === "running" ||
+      !shouldOfferResumeCompaction({
+        provider: selectedProvider,
+        usedTokens: activeContextWindow.usedTokens,
+        updatedAt: activeContextWindow.updatedAt,
+        now: `${nowMinute}:00.000Z`,
+      })
+    ) {
+      return null;
+    }
+
+    const dismiss = () =>
+      setDismissedResumeCompactionKeys((keys) => new Set(keys).add(resumeCompactionKey));
+    const compactAction = (
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={compactDisabled}
+        onClick={() => {
+          if (compactDisabled) return;
+          composerRef.current?.compactContext();
+        }}
+      >
+        Compact
+      </Button>
+    );
+    return {
+      id: `resume-compaction:${resumeCompactionKey}`,
+      variant: "info",
+      icon: <Minimize2Icon />,
+      title: "Resume with less context",
+      description: `${formatContextWindowTokens(activeContextWindow.usedTokens)} tokens from an older session`,
+      actions: compactDisabledReason ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex">{compactAction}</span>} />
+          <TooltipPopup side="top">{compactDisabledReason}</TooltipPopup>
+        </Tooltip>
+      ) : (
+        compactAction
+      ),
+      dismissLabel: "Keep full history",
+      onDismiss: dismiss,
+    };
+  }, [
+    activeContextWindow,
+    activeThread,
+    compactDisabled,
+    compactDisabledReason,
+    composerRef,
+    dismissedResumeCompactionKeys,
+    nativeResumeCompactionDismissed,
+    nowMinute,
+    pendingUserInputs.length,
+    phase,
+    resumeCompactionKey,
+    resumeCompactionPermanentlyDismissed,
+    selectedProvider,
+  ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -5046,6 +5294,8 @@ function ChatViewContent(props: ChatViewProps) {
     const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    const resumeCompactionItems =
+      resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
@@ -5053,6 +5303,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...urgentSystemItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
+        ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
       ];
@@ -5061,6 +5312,7 @@ function ChatViewContent(props: ChatViewProps) {
       ...urgentSystemItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
+      ...resumeCompactionItems,
       ...wokeThreadItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -5110,6 +5362,7 @@ function ChatViewContent(props: ChatViewProps) {
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    resumeCompactionBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
     wokeThreadBannerItem,
@@ -5235,6 +5488,29 @@ function ChatViewContent(props: ChatViewProps) {
       });
       if (!command) return;
 
+      if (command === "thread.settle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!isServerThread || !activeThreadRef || !supportsSettlement) return;
+        if (activeThreadSettled) {
+          void handleUnsettleActiveThread();
+          return;
+        }
+
+        void settleThread(activeThreadRef).then((result) => {
+          if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to settle thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        });
+        return;
+      }
+
       if (command === "terminal.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -5338,6 +5614,8 @@ function ChatViewContent(props: ChatViewProps) {
     activeProject,
     activeRightPanelSurface,
     addTerminalSurface,
+    activeThreadRef,
+    activeThreadSettled,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
@@ -5349,7 +5627,11 @@ function ChatViewContent(props: ChatViewProps) {
     splitTerminal,
     splitPanelTerminal,
     keybindings,
+    handleUnsettleActiveThread,
+    isServerThread,
     onToggleDiff,
+    settleThread,
+    supportsSettlement,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -5759,12 +6041,37 @@ function ChatViewContent(props: ChatViewProps) {
       text: messageTextForSend,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+      // Path attachments are removed from the external store before we build
+      // the provider prompt. A local validation failure never enters the
+      // dispatch/retry path below, so put them back instead of silently
+      // dropping their chips when the composed prompt is too long.
+      if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        if (restore.droppedCount > 0) {
+          toastManager.add({
+            type: "warning",
+            title: "Some files could not be restored because the attachment limit was reached.",
+          });
+        }
+      }
       return;
+    }
+
+    sendInFlightRef.current = true;
+    if (supportsAttachmentUploads && composerImagesSnapshot.length > 0) {
+      for (const image of composerImagesSnapshot) {
+        startAttachmentUpload({ environmentId, image });
+      }
+      await awaitAttachmentUploads(composerImagesSnapshot.map((image) => image.id));
+      if (getUploadedAttachments({ environmentId, images: composerImagesSnapshot }) === null) {
+        sendInFlightRef.current = false;
+        setThreadError(threadIdForSend, "Retry or remove failed image uploads before sending.");
+        return;
+      }
     }
 
     const resolvedSubmissionIntent =
       submissionIntent === "background" && isLocalDraftThread ? "background" : "foreground";
-    sendInFlightRef.current = true;
     if (
       shouldDockDraftHeroForSubmission({
         isDraftHeroState,
@@ -5805,13 +6112,22 @@ function ChatViewContent(props: ChatViewProps) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const turnAttachmentsPromise = Promise.all(
-      composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        dataUrl: await readFileAsDataUrl(image.file),
-      })),
+      composerImagesSnapshot.map(async (image) => {
+        if (supportsAttachmentUploads) {
+          const uploaded = getUploadedAttachments({ environmentId, images: [image] })?.[0];
+          if (!uploaded) {
+            throw new Error(`Image '${image.name}' did not finish uploading.`);
+          }
+          return uploaded;
+        }
+        return {
+          type: "image" as const,
+          name: image.name,
+          mimeType: image.mimeType,
+          sizeBytes: image.sizeBytes,
+          dataUrl: await readFileAsDataUrl(image.file),
+        };
+      }),
     );
     const optimisticAttachments = composerImagesSnapshot.map((image) => ({
       type: "image" as const,
@@ -5839,6 +6155,16 @@ function ChatViewContent(props: ChatViewProps) {
       });
     } else {
       scrollToEnd();
+    }
+    if (options?.delivery === "queue") {
+      setQueuedComposerMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          text: trimmed,
+          attachmentCount: optimisticAttachments.length,
+        },
+      ]);
     }
     setOptimisticUserMessages((existing) => [
       ...existing,
@@ -6006,6 +6332,9 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (supportsAttachmentUploads) {
+          releaseAttachmentUploads(composerImagesSnapshot);
+        }
         acknowledgeActiveThreadWoke();
         // The turn went out with the remapped mode; sync a stored composer
         // pick (carried yolo) to what was actually sent so a later provider
@@ -6070,6 +6399,9 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      setQueuedComposerMessages((existing) =>
+        existing.filter((message) => message.id !== messageIdForSend),
+      );
       // The bubble must go even when the composer is busy: nothing else prunes
       // it, so leaving it would claim a message that never reached the server.
       setOptimisticUserMessages((existing) => {
@@ -6106,7 +6438,13 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftCanvasSelections(composerDraftTarget, composerCanvasSelectionsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-          restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          if (restore.droppedCount > 0) {
+            toastManager.add({
+              type: "warning",
+              title: "Some files could not be restored because the attachment limit was reached.",
+            });
+          }
         }
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
@@ -6473,6 +6811,18 @@ function ChatViewContent(props: ChatViewProps) {
         effort: ctxSelectedPromptEffort,
         text: textWithAttachedFiles,
       });
+      if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
+        if (activeThreadKey && attachedFilesSnapshot.length > 0) {
+          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+          if (restore.droppedCount > 0) {
+            toastManager.add({
+              type: "warning",
+              title: "Some files could not be restored because the attachment limit was reached.",
+            });
+          }
+        }
+        return;
+      }
 
       sendInFlightRef.current = true;
       beginLocalDispatch({ preparingWorktree: false });
@@ -6565,7 +6915,13 @@ function ChatViewContent(props: ChatViewProps) {
         existing.filter((message) => message.id !== messageIdForSend),
       );
       if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-        restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
+        if (restore.droppedCount > 0) {
+          toastManager.add({
+            type: "warning",
+            title: "Some files could not be restored because the attachment limit was reached.",
+          });
+        }
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
@@ -7059,7 +7415,7 @@ function ChatViewContent(props: ChatViewProps) {
         context={
           isThreadOwnPullRequest(
             {
-              projectId: activeProject?.id ?? null,
+              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
               repository: threadRepository,
               number: activeThreadPr?.number ?? null,
             },
@@ -7138,9 +7494,9 @@ function ChatViewContent(props: ChatViewProps) {
           )}
         >
           <ChatHeader
-            {...(!supportsPullRequests || threadRepository === null
+            {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
-              : { onOpenPullRequest: openThreadPullRequest })}
+              : { onOpenPullRequest: openProjectPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
@@ -7255,6 +7611,7 @@ function ChatViewContent(props: ChatViewProps) {
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
+                readAloudEnabled={supportsReadAloud}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
@@ -7350,6 +7707,9 @@ function ChatViewContent(props: ChatViewProps) {
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
+                            attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
+                            supportsAttachmentUploads={supportsAttachmentUploads}
+                            supportsVoiceDictation={supportsVoiceDictation}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}
@@ -7398,6 +7758,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeTasksProgress={activeComposerTasksProgress}
                             activeTaskSteps={activeComposerTaskSteps}
                             activeLatestTurnId={activeLatestTurn?.turnId ?? null}
+                            queuedMessages={reconciledQueuedComposerMessages}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
                             autoCreatePullRequest={autoCreatePullRequest}
@@ -7409,7 +7770,9 @@ function ChatViewContent(props: ChatViewProps) {
                               activeProject?.defaultModelSelection
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
-                            activeThreadActivities={activeThread?.activities}
+                            activeContextWindow={activeContextWindow}
+                            compactDisabled={compactDisabled}
+                            compactDisabledReason={compactDisabledReason}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}

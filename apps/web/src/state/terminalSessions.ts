@@ -2,15 +2,73 @@ import {
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
   EMPTY_TERMINAL_SESSION_STATE,
-  selectRunningSubprocessTerminalIds,
   type KnownTerminalSession,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
-import { ThreadId, type EnvironmentId, type TerminalAttachInput } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  ThreadId,
+  type EnvironmentId,
+  type TerminalAttachInput,
+  type TerminalSummary,
+} from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
+
+const TERMINAL_SELECTOR_IDLE_TTL_MS = 5 * 60_000;
+const EMPTY_RUNNING_TERMINAL_IDS: ReadonlyArray<string> = Object.freeze([]);
+const EMPTY_RUNNING_TERMINAL_IDS_ATOM = Atom.make(EMPTY_RUNNING_TERMINAL_IDS).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("web-terminal:running-ids:empty"),
+);
+
+export function indexRunningTerminalIdsByThread(
+  summaries: ReadonlyArray<TerminalSummary>,
+): ReadonlyMap<string, ReadonlyArray<string>> {
+  const idsByThread = new Map<string, string[]>();
+  for (const summary of summaries) {
+    if (!summary.hasRunningSubprocess) continue;
+    const ids = idsByThread.get(summary.threadId);
+    if (ids) ids.push(summary.terminalId);
+    else idsByThread.set(summary.threadId, [summary.terminalId]);
+  }
+  for (const ids of idsByThread.values()) {
+    ids.sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  }
+  return idsByThread;
+}
+
+const runningTerminalIdsByEnvironmentAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) => {
+    const result = get(terminalEnvironment.metadata({ environmentId, input: null }));
+    const summaries = Option.getOrElse(AsyncResult.value(result), () => []);
+    return indexRunningTerminalIdsByThread(summaries);
+  }).pipe(
+    Atom.setIdleTTL(TERMINAL_SELECTOR_IDLE_TTL_MS),
+    Atom.withLabel(`web-terminal:running-ids-by-thread:${environmentId}`),
+  ),
+);
+
+function sameTerminalIds(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+const runningTerminalIdsByThreadAtom = Atom.family((key: string) => {
+  const [environmentId, threadId] = JSON.parse(key) as [EnvironmentId, ThreadId];
+  return Atom.make(
+    (get): ReadonlyArray<string> =>
+      get(runningTerminalIdsByEnvironmentAtom(environmentId)).get(threadId) ??
+      EMPTY_RUNNING_TERMINAL_IDS,
+  ).pipe(
+    Atom.withEquality<ReadonlyArray<string>>(sameTerminalIds),
+    Atom.setIdleTTL(TERMINAL_SELECTOR_IDLE_TTL_MS),
+    Atom.withLabel(`web-terminal:running-ids:${key}`),
+  );
+});
 
 export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
@@ -86,5 +144,9 @@ export function useThreadRunningTerminalIds(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<string> {
-  return selectRunningSubprocessTerminalIds(useKnownTerminalSessions(input));
+  return useAtomValue(
+    input.environmentId === null || input.threadId === null
+      ? EMPTY_RUNNING_TERMINAL_IDS_ATOM
+      : runningTerminalIdsByThreadAtom(JSON.stringify([input.environmentId, input.threadId])),
+  );
 }

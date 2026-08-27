@@ -25,6 +25,7 @@ import {
   hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
@@ -40,6 +41,7 @@ import {
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
@@ -968,6 +970,119 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("reconcileQueuedComposerMessages", () => {
+  const queuedMessages = [
+    {
+      id: MessageId.make("message-queued-1"),
+      text: "First queued follow-up",
+      attachmentCount: 0,
+    },
+    {
+      id: MessageId.make("message-queued-2"),
+      text: "Second queued follow-up",
+      attachmentCount: 1,
+    },
+  ];
+
+  it("holds queued copy until the server identifies its turn", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: { ...completedTurn, turnId: TurnId.make("turn-other"), state: "running" },
+      }),
+    ).toBe(queuedMessages);
+  });
+
+  it("releases through the queued message identified by the server", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: {
+          ...completedTurn,
+          turnId: TurnId.make("turn-next"),
+          userMessageId: queuedMessages[1]!.id,
+          state: "running",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("releases a queued message after its turn finishes before reconciliation", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: { ...completedTurn, userMessageId: queuedMessages[0]!.id },
+      }),
+    ).toEqual([queuedMessages[1]]);
+  });
+
+  it("falls back to the matching server message for older snapshots", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[1]!.id,
+            role: "user",
+            text: queuedMessages[1]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: completedTurn,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not use the fallback when the server identifies another message", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[0]!.id,
+            role: "user",
+            text: queuedMessages[0]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: { ...completedTurn, userMessageId: MessageId.make("message-other-client") },
+      }),
+    ).toBe(queuedMessages);
+  });
+});
+
+describe("shouldResetComposerQueueForRouteChange", () => {
+  const draft = { routeKind: "draft" as const, routeThreadKey: "env:thread", draftId: "draft-1" };
+
+  it("preserves promotion but resets other route identity changes", () => {
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        routeKind: "server",
+        routeThreadKey: draft.routeThreadKey,
+        draftId: null,
+      }),
+    ).toBe(false);
+    expect(shouldResetComposerQueueForRouteChange(draft, { ...draft, draftId: "draft-2" })).toBe(
+      true,
+    );
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        ...draft,
+        routeThreadKey: "env:other-thread",
+      }),
+    ).toBe(true);
   });
 });
 

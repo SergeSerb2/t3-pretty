@@ -162,7 +162,7 @@ it.effect("reuses an available relay client executable without prompting", () =>
   }),
 );
 
-it.effect("keeps disconnect causes in structured logs and out of console warnings", () => {
+it.effect("keeps credential-bearing disconnect causes out of diagnostics", () => {
   const warnings: ReadonlyArray<unknown>[] = [];
   const logs: Readonly<Record<string, unknown>>[] = [];
   const testConsole = {
@@ -202,9 +202,7 @@ it.effect("keeps disconnect causes in structured logs and out of console warning
             { operation: "relay-environment-unlink", clearAuthorization: true },
           ],
         );
-        const loggedCauses = logs.map((log) => String(log.cause)).join("\n");
-        assert.include(loggedCauses, liveFailure);
-        assert.include(loggedCauses, relayFailure);
+        assert.isFalse(logs.some((log) => "cause" in log));
       }),
     ),
   );

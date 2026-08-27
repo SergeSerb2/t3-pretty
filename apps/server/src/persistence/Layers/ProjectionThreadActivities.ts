@@ -116,6 +116,55 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       `,
   });
 
+  const countPendingUserInputRows = SqlSchema.findOne({
+    Request: ListProjectionThreadActivitiesInput,
+    Result: Schema.Struct({ count: Schema.Number }),
+    execute: ({ threadId }) =>
+      sql`
+        WITH input_states AS (
+          SELECT
+            kind,
+            TRIM(json_extract(payload_json, '$.requestId')) AS request_id,
+            lower(COALESCE(json_extract(payload_json, '$.detail'), '')) AS detail,
+            created_at,
+            activity_id
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND json_type(payload_json, '$.requestId') = 'text'
+            AND TRIM(json_extract(payload_json, '$.requestId')) <> ''
+            AND kind IN (
+              'user-input.requested',
+              'user-input.resolved',
+              'provider.user-input.respond.failed'
+            )
+        ), relevant AS (
+          SELECT
+            kind,
+            ROW_NUMBER() OVER (
+              PARTITION BY request_id
+              ORDER BY created_at DESC, activity_id DESC
+            ) AS request_order
+          FROM input_states
+          WHERE (
+              kind IN ('user-input.requested', 'user-input.resolved')
+              OR (
+                kind = 'provider.user-input.respond.failed'
+                AND (
+                  detail LIKE '%stale pending user-input request%'
+                  OR detail LIKE '%unknown pending user-input request%'
+                  OR detail LIKE '%unknown pending user input request%'
+                  OR detail LIKE '%unknown pending codex user input request%'
+                )
+              )
+            )
+        )
+        SELECT COUNT(*) AS count
+        FROM relevant
+        WHERE request_order = 1
+          AND kind = 'user-input.requested'
+      `,
+  });
+
   const upsert: ProjectionThreadActivityRepositoryShape["upsert"] = (row) =>
     upsertProjectionThreadActivityRow(row).pipe(
       Effect.mapError(
@@ -149,6 +198,17 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       ),
     );
 
+  const countPendingUserInputByThreadId: ProjectionThreadActivityRepositoryShape["countPendingUserInputByThreadId"] =
+    (input) =>
+      countPendingUserInputRows(input).pipe(
+        Effect.map((row) => row.count),
+        Effect.mapError(
+          toPersistenceSqlError(
+            "ProjectionThreadActivityRepository.countPendingUserInputByThreadId:query",
+          ),
+        ),
+      );
+
   const deleteByThreadId: ProjectionThreadActivityRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProjectionThreadActivityRows(input).pipe(
       Effect.mapError(
@@ -159,6 +219,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
   return {
     upsert,
     listByThreadId,
+    countPendingUserInputByThreadId,
     deleteByThreadId,
   } satisfies ProjectionThreadActivityRepositoryShape;
 });

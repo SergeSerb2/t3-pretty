@@ -12,6 +12,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   baseSshArgs,
+  collectProcessOutput,
   getLastNonEmptyOutputLine,
   parseSshResolveOutput,
   resolveRemoteT3CliPackageSpec,
@@ -65,6 +66,17 @@ const makeNeverFinishingProcess = () => {
 };
 
 describe("ssh command", () => {
+  it.effect("keeps draining while retaining only the configured output tail", () =>
+    Effect.gen(function* () {
+      const output = yield* collectProcessOutput(
+        Stream.make(encoder.encode("abcdef"), encoder.encode("ghij")),
+        6,
+      );
+
+      assert.equal(output, "[earlier output truncated]\nefghij");
+    }),
+  );
+
   it.effect("parses resolved ssh config output into a target", () =>
     Effect.sync(() => {
       assert.deepEqual(
@@ -207,6 +219,37 @@ describe("ssh command", () => {
         assert.instanceOf(result.failure, SshCommandError);
         assert.equal(result.failure.message, '{"credential":"[redacted]"}');
         assert.equal(result.failure.stdout, '{"credential":"[redacted]"}\n');
+      }
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("redacts credentials from stderr in non-zero command failures", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeFailedProcess({ stdout: "", stderr: '{"bearerToken":"remote-secret"}\n' }),
+      ),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runSshCommand(
+          {
+            alias: "devbox",
+            hostname: "devbox.example.com",
+            username: "julius",
+            port: 2222,
+          },
+          { remoteCommandArgs: ["sh", "-s"] },
+        ),
+      );
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshCommandError);
+        assert.equal(result.failure.message, '{"bearerToken":"[redacted]"}');
+        assert.equal(result.failure.stderr, '{"bearerToken":"[redacted]"}\n');
       }
     }).pipe(Effect.provide(processLayer));
   });

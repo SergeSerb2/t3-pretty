@@ -98,7 +98,11 @@ export function SurgeConnectMeshSync() {
     }
     lastReconciliationRef.current = reconciliationKey;
     void reconcileRelayEnvironments(registrations).then((result) => {
-      if (result._tag === "Failure" && isAtomCommandInterrupted(result)) {
+      if (
+        result._tag === "Failure" &&
+        isAtomCommandInterrupted(result) &&
+        lastReconciliationRef.current === reconciliationKey
+      ) {
         lastReconciliationRef.current = null;
       }
     });

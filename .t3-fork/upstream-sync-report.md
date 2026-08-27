@@ -487,5 +487,100 @@
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Treat a thread with both pinnedAt and settled state as unpinned and place it on the settled shelf immediately.. Reason: This conflicts with T3 Pretty's pinned-settle landing contract: the pin wins until persistence clears pinnedAt, avoiding a premature shelf transition.
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move a pinned thread to the settled shelf when its pull request merges under the default list policy.. Reason: T3 Pretty explicitly stopped auto-settling threads on pull-request merge; retaining the pin and active card is authoritative fork behavior.
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move an inactive pinned thread to the settled shelf while its persisted pinnedAt remains set.. Reason: T3 Pretty gives persisted pins precedence and requires an actual unpin before a pinned thread departs for the settled shelf.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Check settlement before persisted pin state when partitioning mobile rows.. Reason: This would contradict the preserved pin-first tests and T3 Pretty's web behavior; a pin remains visible until persistence clears `pinnedAt`.
 - `apps/web/src/components/Sidebar.tsx` — THEIRS removes the pre-settlement pinned-thread branch, which would make settlement take precedence when a thread is simultaneously pinned and settled.. Reason: That precedence conflicts with T3 Pretty’s documented lifecycle safeguard: pins must remain visible and must not auto-settle out of sight. Simultaneous state is expected only from stale or raced writes, so retaining pin-before-settlement prevents a fork behavior regression while omitting only the incompatible precedence change.
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260824.1173`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1170`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved the `skillMentionToken` integration used by T3 Pretty's provider-skill mention behavior.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved provider-specific runtime-mode entries in the slash menu.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved T3 Pretty's `/skills`, conditional `/auto-pr`, `/new`, `/commands`, and `/settings` composer commands, including the state-aware auto-PR description.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved dependency tracking for conditional auto-PR command visibility.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's Bot icon for built-in slash commands, runtime-mode icons, provider-command SkillGlyph, and branded AppIcon rendering remain intact.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's grouped slash, skill, file, and app menu presentation remains supported through CommandGroupLabel.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's command-row baseline alignment and wider gap rhythm are preserved rather than replaced by the parent's tighter row styling.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Fork-added app mention presentation continues to use each app's name, color, and icon domain.
+- `apps/web/src/components/usage/UsagePage.tsx` — Preserved T3 Pretty’s expanded provider support, including Cursor, Grok, and Kimi, because the span remains provider-agnostic and derives from activeProviders.
+- `apps/web/src/components/usage/UsagePage.tsx` — Preserved the existing T3 Pretty usage-page styling and empty-state presentation.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Preserved the `data-pull-requests-header` attribute used by T3 Pretty's pull-request visual design and World Scenery styling hooks.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Kept the existing conditional native-control reservation based on the Pretty right-panel layout.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Imported and used the parent's `getProviderSkillsForSlashMenu` helper so provider skills in the slash menu respect `settings.showSkillsInSlashMenu`.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's `getProviderSlashCommandsForSlashMenu` path, replacing direct provider command enumeration while retaining the existing menu-item presentation.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Added `settings.showSkillsInSlashMenu` to the composer menu memo dependencies so setting changes update the menu immediately.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Retained the parent's slash-menu skill items and provider command/skill composition around T3 Pretty's additional built-in commands.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's Badge import required by skill-source badges.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's isSlashSkill naming, matching the declaration and avoiding the stale slashSkill reference.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's bounded, truncating command-label layout so long skill and command names do not crowd descriptions or source badges.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Accepted the parent's removal of the obsolete FolderGit2Icon import, consistent with the current FolderIcon source-kind mapping.
+- `apps/web/src/components/usage/UsagePage.tsx` — Integrated the parent fix that calculates the empty-state colSpan from activeProviders, keeping it synchronized with the dynamically rendered provider columns.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Render `titlebarControls` as a descendant of `WorkspacePageHeader`, allowing its no-drag interactive region to receive clicks inside Electron's draggable header.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Apply the upstream relative positioning and background classes needed for the controls strip's header-local positioning.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Integrated the updated explanation of how the controls move between the column header and route-level anchor when the right panel opens.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The parent changed the command-row content container from baseline alignment with gap-3 to centered alignment with gap-2.. Reason: That styling conflicts with T3 Pretty's established command-menu visual spacing. The functional overflow and skill-badge improvements were integrated independently, so only the smallest conflicting presentation change was omitted.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.35-nightly.20260826.1194`
+- Previously integrated parent nightly: `v0.0.35-nightly.20260826.1193`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/main.tsx` — Electron Clerk and passkey modules remain dynamically imported, so desktop installations without an opened cloud sign-in gate do not load the Clerk bundle.
+- `apps/web/src/main.tsx` — The persistent Clerk gate behavior remains authoritative, including mounting the provider only after the gate opens and using a null Suspense fallback to preserve the intended tree/remount behavior.
+- `apps/web/src/main.tsx` — ManagedRelayAuthProvider remains inside the Electron Clerk provider when cloud authentication is active.
+- `apps/web/src/main.tsx` — T3 Pretty's shared Clerk appearance and presentation remain applied to both Electron and hosted-web authentication.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/main.tsx` — Removed the obsolete pinned `__internal_clerkUIVersion` canary override from the Electron Clerk provider, matching the parent nightly's provider configuration while retaining the fork's lazy-loading architecture.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.35-nightly.20260826.1195`
+- Previously integrated parent nightly: `v0.0.35-nightly.20260826.1194`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/persistence/Migrations.ts` — The established T3 Pretty migration history and IDs 41–51 remain unchanged, preventing already-applied databases from interpreting different migrations under existing IDs.
+- `apps/server/src/persistence/Migrations.ts` — Orchestration event recorded-at data and projection thread branch-head support remain registered.
+- `apps/server/src/persistence/Migrations.ts` — World Scenery thread assignments and the fork's thread canvas schema remain registered.
+- `apps/server/src/persistence/Migrations.ts` — Thread activity compaction metadata and superseded tool-update cleanup remain registered.
+- `apps/server/src/persistence/Migrations.ts` — Enabled skills and global/per-thread subagent policy persistence remain registered.
+- `apps/server/src/persistence/Migrations.ts` — The fork's BM25-backed thread search index remains registered.
+- `apps/server/src/persistence/Migrations.ts` — Auth session client connection and linked pull-request migrations retain their established collision-free T3 Pretty registrations at IDs 50 and 51.
+- `apps/web/src/lib/threadSort.ts` — Preserved T3 Pretty's `compareIsoDateTimes` export used by its cross-surface thread sorting reliability behavior.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/persistence/Migrations.ts` — The parent ProjectionThreadsUnsettledAt migration is fully incorporated using its upstream migration module and appended as migration ID 52 to coexist with T3 Pretty's established schema history.
+- `apps/server/src/persistence/Migrations.ts` — The parent auth-session client connection and linked pull-request migrations remain included at the fork's previously assigned IDs 50 and 51.
+- `apps/web/src/lib/threadSort.ts` — Integrated the parent runtime's new `activeThreadAnchorTimestampMs` export.
+
+## Parent changes intentionally omitted
+
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

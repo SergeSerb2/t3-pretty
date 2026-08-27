@@ -393,6 +393,40 @@ function AgentBrowserAccessSetting() {
   );
 }
 
+function AgentComputerControlSetting() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("agent-computer-control")}
+      description="Let agents see and control the macOS host with screenshots, mouse, keyboard, and scrolling. Requires Screen Recording and Accessibility permission on the server Mac."
+      status={
+        settings.enableComputerUse
+          ? "Applies to sessions started from now on; running agents keep their current tools."
+          : undefined
+      }
+      resetAction={
+        settings.enableComputerUse !== DEFAULT_UNIFIED_SETTINGS.enableComputerUse ? (
+          <SettingResetButton
+            label="agent computer control"
+            onClick={() =>
+              updateSettings({ enableComputerUse: DEFAULT_UNIFIED_SETTINGS.enableComputerUse })
+            }
+          />
+        ) : null
+      }
+      control={
+        <Switch
+          checked={settings.enableComputerUse}
+          onCheckedChange={(checked) => updateSettings({ enableComputerUse: Boolean(checked) })}
+          aria-label="Allow agent computer control"
+        />
+      }
+    />
+  );
+}
+
 function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled: boolean }) {
   const autoShow = useClientSettings((settings) => settings.browserAutoShowFloatingPreview);
   const updateSettings = useUpdatePrimarySettings();
@@ -467,6 +501,9 @@ export function IntegrationsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <SettingsSection id="computer-control" title="Computer control">
+        <AgentComputerControlSetting />
+      </SettingsSection>
       <SettingsSection id="browser" title="Browser">
         {/* Server-authoritative, so it stays editable on every client and sits
             outside the block covering the desktop-only defaults. */}

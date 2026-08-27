@@ -18,6 +18,7 @@ import {
 import {
   ModelSelection,
   SkillId,
+  ThreadLinkedPullRequest,
   ThreadSceneryAssignment,
   ThreadSubagentPolicy,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ import {
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     scenery: Schema.NullOr(Schema.fromJsonString(ThreadSceneryAssignment)),
     enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
     subagentPolicy: Schema.NullOr(Schema.fromJsonString(ThreadSubagentPolicy)),
@@ -53,12 +55,14 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch_head_owner,
           branch_head_is_cross_repository,
           worktree_path,
+          linked_pull_request_json,
           latest_turn_id,
           created_at,
           updated_at,
           archived_at,
           settled_override,
           settled_at,
+          unsettled_at,
           snoozed_until,
           snoozed_at,
           pinned_at,
@@ -88,12 +92,14 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.branchHeadOwner ?? null},
           ${row.branchHeadIsCrossRepository ?? null},
           ${row.worktreePath},
+          ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
           ${row.latestTurnId},
           ${row.createdAt},
           ${row.updatedAt},
           ${row.archivedAt},
           ${row.settledOverride},
           ${row.settledAt},
+          ${row.unsettledAt},
           ${row.snoozedUntil},
           ${row.snoozedAt},
           ${row.pinnedAt},
@@ -139,12 +145,14 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
             ELSE excluded.branch_head_is_cross_repository
           END,
           worktree_path = excluded.worktree_path,
+          linked_pull_request_json = excluded.linked_pull_request_json,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           archived_at = excluded.archived_at,
           settled_override = excluded.settled_override,
           settled_at = excluded.settled_at,
+          unsettled_at = excluded.unsettled_at,
           snoozed_until = excluded.snoozed_until,
           snoozed_at = excluded.snoozed_at,
           pinned_at = excluded.pinned_at,
@@ -181,12 +189,14 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch_head_owner AS "branchHeadOwner",
           branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
+          linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
+          unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
@@ -225,12 +235,14 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch_head_owner AS "branchHeadOwner",
           branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
+          linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
           settled_override AS "settledOverride",
           settled_at AS "settledAt",
+          unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
@@ -247,6 +259,52 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}
+        ORDER BY created_at ASC, thread_id ASC
+      `,
+  });
+
+  const listAllProjectionThreadRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadDbRow,
+    execute: () =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          project_id AS "projectId",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
+          interaction_mode AS "interactionMode",
+          branch,
+          branch_event_id AS "branchEventId",
+          branch_head_ref AS "branchHeadRef",
+          branch_head_repository AS "branchHeadRepository",
+          branch_head_owner AS "branchHeadOwner",
+          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
+          worktree_path AS "worktreePath",
+          linked_pull_request_json AS "linkedPullRequest",
+          latest_turn_id AS "latestTurnId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          settled_override AS "settledOverride",
+          settled_at AS "settledAt",
+          unsettled_at AS "unsettledAt",
+          snoozed_until AS "snoozedUntil",
+          snoozed_at AS "snoozedAt",
+          pinned_at AS "pinnedAt",
+          pin_order_key AS "pinOrderKey",
+          scenery_json AS "scenery",
+          enabled_skill_ids AS "enabledSkillIds",
+          subagent_policy_json AS "subagentPolicy",
+          title_regeneration_request_id AS "titleRegenerationRequestId",
+          title_regeneration_started_at AS "titleRegenerationStartedAt",
+          latest_user_message_at AS "latestUserMessageAt",
+          pending_approval_count AS "pendingApprovalCount",
+          pending_user_input_count AS "pendingUserInputCount",
+          has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          deleted_at AS "deletedAt"
+        FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
       `,
   });
@@ -285,6 +343,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
     );
 
+  const listAll: ProjectionThreadRepositoryShape["listAll"] = () =>
+    listAllProjectionThreadRows().pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listAll:query")),
+    );
+
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
@@ -303,6 +366,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   return {
     upsert,
     getById,
+    listAll,
     listByProjectId,
     recordBranchHead,
     deleteById,

@@ -4,12 +4,36 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
 
 import {
   MANAGED_ENDPOINT_ZONE_OWNER_STAGE,
+  normalizeDnsName,
   relayOwnsManagedEndpointZone,
   relayPublicDomainForStage,
 } from "./deploymentConfig.ts";
+
+function validateDnsConfigValue(name: string, value: string) {
+  const normalized = normalizeDnsName(value);
+  return normalized === null
+    ? Effect.fail(
+        new Config.ConfigError(
+          new Schema.SchemaError(
+            new SchemaIssue.InvalidValue({
+              message: `${name} must be a valid DNS name.`,
+            }),
+          ),
+        ),
+      )
+    : Effect.succeed(normalized);
+}
+
+function dnsNameConfig(name: string) {
+  return Config.nonEmptyString(name).pipe(
+    Config.mapOrFail((value) => validateDnsConfigValue(name, value)),
+  );
+}
 
 function withLogicalId<Resource extends object>(resource: Resource, logicalId: string): Resource {
   return new Proxy(resource, {
@@ -21,8 +45,8 @@ function withLogicalId<Resource extends object>(resource: Resource, logicalId: s
 
 export const RelayDeploymentConfig = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;
-  const relayApiZoneName = yield* Config.nonEmptyString("RELAY_API_ZONE_NAME");
-  const managedEndpointZoneName = yield* Config.nonEmptyString("RELAY_TUNNEL_ZONE_NAME");
+  const relayApiZoneName = yield* dnsNameConfig("RELAY_API_ZONE_NAME");
+  const managedEndpointZoneName = yield* dnsNameConfig("RELAY_TUNNEL_ZONE_NAME");
   const relayPublicDomainOverride = yield* Config.string("RELAY_DOMAIN").pipe(
     Config.option,
     Config.map(
@@ -35,11 +59,15 @@ export const RelayDeploymentConfig = Effect.gen(function* () {
   const relayPublicDomain = Option.getOrElse(relayPublicDomainOverride, () =>
     relayPublicDomainForStage(stage, relayApiZoneName),
   );
+  const normalizedRelayPublicDomain = yield* validateDnsConfigValue(
+    "RELAY_DOMAIN",
+    relayPublicDomain,
+  );
 
   return {
     stage,
-    relayPublicDomain,
-    relayPublicOrigin: `https://${relayPublicDomain}`,
+    relayPublicDomain: normalizedRelayPublicDomain,
+    relayPublicOrigin: `https://${normalizedRelayPublicDomain}`,
     relayApiZoneName,
     managedEndpointZoneName,
   };

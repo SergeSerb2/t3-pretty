@@ -55,6 +55,7 @@ function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
     const renderers: CustomRenderers = {
       link: ({ href, children }) => (
         <NativeText
+          accessibilityRole="link"
           className="font-t3-medium"
           onPress={() => {
             if (href) {

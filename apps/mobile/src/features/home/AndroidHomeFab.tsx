@@ -11,8 +11,8 @@ export const ANDROID_HOME_FAB_SIZE = 56;
 export const ANDROID_HOME_FAB_EDGE_GAP = 16;
 
 /**
- * Android-only wrapper that overlays a bottom-right new-task FAB on the home
- * screen. Other platforms render children unchanged.
+ * Android-only wrapper that overlays a bottom-right new-task FAB on a thread
+ * list. Other platforms render children unchanged.
  */
 export function AndroidHomeFabLayout(props: {
   readonly onStartNewTask: () => void;

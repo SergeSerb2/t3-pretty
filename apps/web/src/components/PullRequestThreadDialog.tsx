@@ -25,6 +25,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
+import { toastManager } from "./ui/toast";
 
 interface PullRequestThreadDialogProps {
   open: boolean;
@@ -46,6 +47,8 @@ export function PullRequestThreadDialog({
   onPrepared,
 }: PullRequestThreadDialogProps) {
   const referenceInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
+  const preparingRef = useRef(false);
   const [reference, setReference] = useState(initialReference ?? "");
   const [referenceDirty, setReferenceDirty] = useState(false);
   const [preparingMode, setPreparingMode] = useState<"local" | "worktree" | null>(null);
@@ -68,6 +71,13 @@ export function PullRequestThreadDialog({
   );
   const terminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -131,6 +141,9 @@ export function PullRequestThreadDialog({
 
   const handleConfirm = useCallback(
     async (mode: "local" | "worktree") => {
+      if (preparingRef.current) {
+        return;
+      }
       if (!parsedReference) {
         setReferenceDirty(true);
         return;
@@ -138,24 +151,45 @@ export function PullRequestThreadDialog({
       if (!parsedReference || !resolvedPullRequest || !cwd) {
         return;
       }
+      preparingRef.current = true;
       setPreparingMode(mode);
-      const result = await preparePullRequestThreadAction.run({
-        reference: parsedReference,
-        mode,
-        ...(mode === "worktree" ? { threadId } : {}),
-      });
-      setPreparingMode(null);
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) {
-          preparePullRequestThreadAction.resetError();
+      try {
+        const result = await preparePullRequestThreadAction.run({
+          reference: parsedReference,
+          mode,
+          ...(mode === "worktree" ? { threadId } : {}),
+        });
+        if (!mountedRef.current) {
+          return;
         }
-        return;
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) {
+            preparePullRequestThreadAction.resetError();
+          }
+          return;
+        }
+        await onPrepared({
+          branch: result.value.branch,
+          worktreePath: result.value.worktreePath,
+        });
+        if (mountedRef.current) {
+          onOpenChange(false);
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          toastManager.add({
+            type: "error",
+            title: `Could not open the prepared ${terminology.singular}`,
+            description:
+              error instanceof Error ? error.message : "The prepared thread was not opened.",
+          });
+        }
+      } finally {
+        preparingRef.current = false;
+        if (mountedRef.current) {
+          setPreparingMode(null);
+        }
       }
-      await onPrepared({
-        branch: result.value.branch,
-        worktreePath: result.value.worktreePath,
-      });
-      onOpenChange(false);
     },
     [
       cwd,
@@ -164,6 +198,7 @@ export function PullRequestThreadDialog({
       parsedReference,
       preparePullRequestThreadAction,
       resolvedPullRequest,
+      terminology.singular,
       threadId,
     ],
   );
@@ -189,7 +224,7 @@ export function PullRequestThreadDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!preparePullRequestThreadAction.isPending) {
+        if (!preparingRef.current && !preparePullRequestThreadAction.isPending) {
           onOpenChange(nextOpen);
         }
       }}

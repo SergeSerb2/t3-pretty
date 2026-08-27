@@ -1,4 +1,14 @@
-import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import {
+  mergePreviewAutomationCallSummaries,
+  summarizePreviewAutomationCall,
+  type PreviewAutomationCallSummary,
+} from "@t3tools/client-runtime/preview-automation-calls";
+import {
+  ApprovalRequestId,
+  isToolLifecycleItemType,
+  ProviderApprovalOption,
+  ProviderRequestKind,
+} from "@t3tools/contracts";
 import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type {
   OrchestrationLatestTurn,
@@ -16,13 +26,21 @@ import {
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
+import * as Schema from "effect/Schema";
+
+import { compareTimestamps } from "./time";
 
 export interface PendingApproval {
   readonly requestId: ApprovalRequestId;
-  readonly requestKind: "command" | "file-read" | "file-change";
+  readonly requestKind: ProviderRequestKind;
   readonly createdAt: string;
   readonly detail?: string;
+  readonly appName?: string;
+  readonly options?: ReadonlyArray<ProviderApprovalOption>;
 }
+
+const isProviderRequestKind = Schema.is(ProviderRequestKind);
+const isProviderApprovalOption = Schema.is(ProviderApprovalOption);
 
 export interface PendingUserInput {
   readonly requestId: ApprovalRequestId;
@@ -56,6 +74,7 @@ export interface ThreadFeedActivity {
     | "image"
     | "message"
     | "package"
+    | "pointer"
     | "warning"
     | "wrench"
     | "zap";
@@ -85,6 +104,8 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  /** Present when this row is a browser-automation (preview_*) tool call. */
+  previewAutomation?: PreviewAutomationCallSummary;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -159,6 +180,8 @@ function requestKindFromRequestType(requestType: unknown): PendingApproval["requ
     case "file_change_approval":
     case "apply_patch_approval":
       return "file-change";
+    case "mcp_elicitation_approval":
+      return "mcp-elicitation";
     default:
       return null;
   }
@@ -442,6 +465,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.toolData = data.item;
     }
   }
+  if (itemType === "mcp_tool_call" || itemType === "dynamic_tool_call") {
+    const previewAutomation = summarizePreviewAutomationCall({
+      data: payload?.data,
+      title: title ?? activity.summary,
+    });
+    if (previewAutomation) {
+      entry.previewAutomation = previewAutomation;
+    }
+  }
   if (itemType === "image_generation") {
     const data = asRecord(payload?.data);
     if (data !== undefined) {
@@ -540,6 +572,10 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const previewAutomation = mergePreviewAutomationCallSummaries(
+    previous.previewAutomation,
+    next.previewAutomation,
+  );
   return {
     ...previous,
     ...next,
@@ -553,6 +589,7 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(previewAutomation ? { previewAutomation } : {}),
   };
 }
 
@@ -669,6 +706,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  if (entry.previewAutomation) return "pointer";
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -743,6 +781,7 @@ function capitalizePhrase(value: string): string {
 }
 
 function workEntryHeading(workEntry: WorkLogEntry): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -1088,7 +1127,7 @@ function compareActivityLifecycleRank(kind: string): number {
 
 const activityOrder = Order.combineAll<OrchestrationThreadActivity>([
   Order.mapInput(Order.Number, (activity) => activity.sequence ?? Number.MAX_SAFE_INTEGER),
-  Order.mapInput(Order.String, (activity) => activity.createdAt),
+  Order.make((left, right) => compareTimestamps(left.createdAt, right.createdAt)),
   Order.mapInput(Order.Number, (activity) => compareActivityLifecycleRank(activity.kind)),
   Order.mapInput(Order.String, (activity) => activity.id),
 ]);
@@ -1557,13 +1596,14 @@ export function derivePendingApprovals(
         ? (activity.payload as Record<string, unknown>)
         : null;
     const requestId = parseApprovalRequestId(payload?.requestId);
-    const requestKind =
-      payload?.requestKind === "command" ||
-      payload?.requestKind === "file-read" ||
-      payload?.requestKind === "file-change"
-        ? payload.requestKind
-        : requestKindFromRequestType(payload?.requestType);
+    const requestKind = isProviderRequestKind(payload?.requestKind)
+      ? payload.requestKind
+      : requestKindFromRequestType(payload?.requestType);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+    const appName = typeof payload?.appName === "string" ? payload.appName : undefined;
+    const options = Array.isArray(payload?.options)
+      ? payload.options.filter(isProviderApprovalOption)
+      : undefined;
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
       openByRequestId.set(requestId, {
@@ -1571,6 +1611,8 @@ export function derivePendingApprovals(
         requestKind,
         createdAt: activity.createdAt,
         ...(detail ? { detail } : {}),
+        ...(appName ? { appName } : {}),
+        ...(options && options.length > 0 ? { options } : {}),
       });
       continue;
     }
@@ -1831,7 +1873,9 @@ function updateMessageFeedEntryCache(
 
 function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
   const summary = workEntryHeading(entry);
-  const detail = workEntryPreview(entry);
+  // Browser-automation rows label themselves; raw provider JSON stays behind
+  // the disclosure instead of trailing the heading.
+  const detail = entry.previewAutomation ? null : workEntryPreview(entry);
   const generatedImagePath =
     entry.itemType === "image_generation"
       ? extractGeneratedImagePath({
@@ -2112,7 +2156,9 @@ function assembleThreadFeed(
   const visibleActivities =
     oldestLoadedMessageCreatedAt === null
       ? activities
-      : activities.filter((entry) => entry.createdAt >= oldestLoadedMessageCreatedAt);
+      : activities.filter(
+          (entry) => compareTimestamps(entry.createdAt, oldestLoadedMessageCreatedAt) >= 0,
+        );
   return groupAdjacentActivities(mergeThreadFeedEntries(messages, visibleActivities));
 }
 

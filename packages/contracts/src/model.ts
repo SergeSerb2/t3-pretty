@@ -4,29 +4,61 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderDriverKind } from "./providerInstance.ts";
 
+export const PROVIDER_OPTION_MAX_COUNT = 128;
+export const PROVIDER_OPTION_SELECTION_MAX_COUNT = PROVIDER_OPTION_MAX_COUNT;
+export const PROVIDER_OPTION_LEGACY_MAX_PROPERTIES = 1_024;
+export const PROVIDER_OPTION_LEGACY_KEY_MAX_LENGTH = 4_096;
+export const PROVIDER_OPTION_ID_MAX_LENGTH = 128;
+export const PROVIDER_OPTION_LABEL_MAX_LENGTH = 512;
+export const PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH = 4_096;
+export const PROVIDER_OPTION_VALUE_MAX_LENGTH = 2_048;
+export const PROVIDER_MODEL_ID_MAX_LENGTH = 2_048;
+export const PROVIDER_OPTION_AGGREGATE_MAX_CHOICES = 2_048;
+export const PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS = 1024 * 1024;
+
+export const ProviderModelId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_MODEL_ID_MAX_LENGTH),
+);
+export type ProviderModelId = typeof ProviderModelId.Type;
+
+const ProviderOptionId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_OPTION_ID_MAX_LENGTH),
+);
+const ProviderOptionLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_OPTION_LABEL_MAX_LENGTH),
+);
+const ProviderOptionDescription = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_OPTION_DESCRIPTION_MAX_LENGTH),
+);
+const ProviderOptionStringValue = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROVIDER_OPTION_VALUE_MAX_LENGTH),
+);
+
 export const ProviderOptionDescriptorType = Schema.Literals(["select", "boolean"]);
 export type ProviderOptionDescriptorType = typeof ProviderOptionDescriptorType.Type;
 
 export const ProviderOptionChoice = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
+  id: ProviderOptionId,
+  label: ProviderOptionLabel,
+  description: Schema.optional(ProviderOptionDescription),
   isDefault: Schema.optional(Schema.Boolean),
 });
 export type ProviderOptionChoice = typeof ProviderOptionChoice.Type;
 
 const ProviderOptionDescriptorBase = {
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
+  id: ProviderOptionId,
+  label: ProviderOptionLabel,
+  description: Schema.optional(ProviderOptionDescription),
 } as const;
 
 export const SelectProviderOptionDescriptor = Schema.Struct({
   ...ProviderOptionDescriptorBase,
   type: Schema.Literal("select"),
-  options: Schema.Array(ProviderOptionChoice),
-  currentValue: Schema.optional(TrimmedNonEmptyString),
-  promptInjectedValues: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  options: Schema.Array(ProviderOptionChoice).check(Schema.isMaxLength(PROVIDER_OPTION_MAX_COUNT)),
+  currentValue: Schema.optional(ProviderOptionStringValue),
+  promptInjectedValues: Schema.optional(
+    Schema.Array(ProviderOptionStringValue).check(Schema.isMaxLength(PROVIDER_OPTION_MAX_COUNT)),
+  ),
 });
 export type SelectProviderOptionDescriptor = typeof SelectProviderOptionDescriptor.Type;
 
@@ -43,14 +75,43 @@ export const ProviderOptionDescriptor = Schema.Union([
 ]);
 export type ProviderOptionDescriptor = typeof ProviderOptionDescriptor.Type;
 
-export const ProviderOptionSelectionValue = Schema.Union([TrimmedNonEmptyString, Schema.Boolean]);
+export const ProviderOptionSelectionValue = Schema.Union([
+  ProviderOptionStringValue,
+  Schema.Boolean,
+]);
 export type ProviderOptionSelectionValue = typeof ProviderOptionSelectionValue.Type;
 
 export const ProviderOptionSelection = Schema.Struct({
-  id: TrimmedNonEmptyString,
+  id: ProviderOptionId,
   value: ProviderOptionSelectionValue,
 });
 export type ProviderOptionSelection = typeof ProviderOptionSelection.Type;
+
+const ProviderOptionSelectionArray = Schema.Array(ProviderOptionSelection).check(
+  Schema.isMaxLength(PROVIDER_OPTION_SELECTION_MAX_COUNT),
+);
+const CanonicalProviderOptionSelectionArray = ProviderOptionSelectionArray.check(
+  Schema.makeFilter((selections) => {
+    const ids = new Set<string>();
+    for (const selection of selections) {
+      if (ids.has(selection.id)) {
+        return `Provider option selection id '${selection.id}' must be unique.`;
+      }
+      ids.add(selection.id);
+    }
+    return true;
+  }),
+);
+
+const ProviderOptionSelectionsFromArray = ProviderOptionSelectionArray.pipe(
+  Schema.decodeTo(
+    CanonicalProviderOptionSelectionArray,
+    SchemaTransformation.transformOrFail({
+      decode: (selections) => Effect.succeed(dedupeProviderOptionSelections(selections)),
+      encode: (selections) => Effect.succeed(selections),
+    }),
+  ),
+);
 
 /**
  * Legacy on-disk shape for provider option selections, kept readable by the
@@ -63,11 +124,14 @@ export type ProviderOptionSelection = typeof ProviderOptionSelection.Type;
  *   - SQLite databases that have not yet run migration 026,
  *   - any future regression that re-introduces the legacy shape.
  */
-const LegacyProviderOptionSelectionsObject = Schema.Record(Schema.String, Schema.Unknown);
+const LegacyProviderOptionSelectionsObject = Schema.Record(
+  Schema.String.check(Schema.isMaxLength(PROVIDER_OPTION_LEGACY_KEY_MAX_LENGTH)),
+  Schema.Unknown,
+).check(Schema.isMaxProperties(PROVIDER_OPTION_LEGACY_MAX_PROPERTIES));
 
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
   Schema.decodeTo(
-    Schema.Array(ProviderOptionSelection),
+    CanonicalProviderOptionSelectionArray,
     SchemaTransformation.transformOrFail({
       decode: (record) => Effect.succeed(coerceLegacyOptionsObjectToArray(record)),
       encode: (selections) => Effect.succeed(canonicalSelectionsToLegacyObject(selections)),
@@ -88,7 +152,7 @@ const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsO
  * containing record is written back.
  */
 export const ProviderOptionSelections = Schema.Union([
-  Schema.Array(ProviderOptionSelection),
+  ProviderOptionSelectionsFromArray,
   ProviderOptionSelectionsFromLegacyObject,
 ]);
 export type ProviderOptionSelections = typeof ProviderOptionSelections.Type;
@@ -99,17 +163,31 @@ function coerceLegacyOptionsObjectToArray(
   const entries: Array<ProviderOptionSelection> = [];
   for (const [rawKey, rawValue] of Object.entries(record)) {
     const id = typeof rawKey === "string" ? rawKey.trim() : "";
-    if (id.length === 0) continue;
+    if (id.length === 0 || id.length > PROVIDER_OPTION_ID_MAX_LENGTH) continue;
     if (typeof rawValue === "string") {
       const trimmed = rawValue.trim();
-      if (trimmed.length > 0) entries.push({ id, value: trimmed });
+      if (trimmed.length > 0 && trimmed.length <= PROVIDER_OPTION_VALUE_MAX_LENGTH) {
+        entries.push({ id, value: trimmed });
+      }
     } else if (typeof rawValue === "boolean") {
       entries.push({ id, value: rawValue });
     }
     // Drop anything else (numbers, null, nested objects/arrays) to match the
     // permissive normalization performed by migration 026.
+    if (entries.length >= PROVIDER_OPTION_SELECTION_MAX_COUNT) break;
   }
-  return entries;
+  return dedupeProviderOptionSelections(entries);
+}
+
+function dedupeProviderOptionSelections(
+  selections: ReadonlyArray<ProviderOptionSelection>,
+): ReadonlyArray<ProviderOptionSelection> {
+  const ids = new Set<string>();
+  return selections.filter((selection) => {
+    if (ids.has(selection.id)) return false;
+    ids.add(selection.id);
+    return true;
+  });
 }
 
 function canonicalSelectionsToLegacyObject(
@@ -122,9 +200,53 @@ function canonicalSelectionsToLegacyObject(
   return out;
 }
 
-export const ModelCapabilities = Schema.Struct({
-  optionDescriptors: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
+const ModelCapabilitiesFields = Schema.Struct({
+  optionDescriptors: Schema.optional(
+    Schema.Array(ProviderOptionDescriptor).check(Schema.isMaxLength(PROVIDER_OPTION_MAX_COUNT)),
+  ),
 });
+export const ModelCapabilities = ModelCapabilitiesFields.check(
+  Schema.makeFilter(({ optionDescriptors }) => {
+    let totalChoices = 0;
+    let totalTextChars = 0;
+    const descriptorIds = new Set<string>();
+
+    for (const descriptor of optionDescriptors ?? []) {
+      if (descriptorIds.has(descriptor.id)) {
+        return `Provider option descriptor id '${descriptor.id}' must be unique.`;
+      }
+      descriptorIds.add(descriptor.id);
+      totalTextChars +=
+        descriptor.id.length + descriptor.label.length + (descriptor.description?.length ?? 0);
+
+      if (descriptor.type === "select") {
+        totalChoices += descriptor.options.length;
+        if (totalChoices > PROVIDER_OPTION_AGGREGATE_MAX_CHOICES) {
+          return `Model capabilities must not exceed ${PROVIDER_OPTION_AGGREGATE_MAX_CHOICES} total choices.`;
+        }
+        const choiceIds = new Set<string>();
+        for (const option of descriptor.options) {
+          if (choiceIds.has(option.id)) {
+            return `Provider option choice id '${option.id}' must be unique within descriptor '${descriptor.id}'.`;
+          }
+          choiceIds.add(option.id);
+          totalTextChars +=
+            option.id.length + option.label.length + (option.description?.length ?? 0);
+        }
+        totalTextChars += descriptor.currentValue?.length ?? 0;
+        for (const value of descriptor.promptInjectedValues ?? []) {
+          totalTextChars += value.length;
+        }
+      }
+
+      if (totalTextChars > PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS) {
+        return `Model capabilities must not exceed ${PROVIDER_OPTION_AGGREGATE_MAX_TEXT_CHARS} text characters.`;
+      }
+    }
+
+    return true;
+  }),
+);
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");

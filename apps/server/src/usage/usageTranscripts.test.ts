@@ -69,6 +69,14 @@ describe("parseClaudeLine", () => {
     expect(parseClaudeLine(JSON.stringify({ type: "user", message: {} }))).toBeNull();
     expect(parseClaudeLine("not json")).toBeNull();
   });
+
+  it("rejects provider-controlled identifiers that exceed cache-safe bounds", () => {
+    expect(
+      parseClaudeLine(
+        claudeLine({ messageId: "msg_oversized", contentType: "text", model: "m".repeat(513) }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("parseCodexLine", () => {
@@ -332,6 +340,10 @@ describe("parseGrokLine", () => {
       ),
     ).toBeNull();
   });
+
+  it("rejects an oversized session identifier", () => {
+    expect(parseGrokLine(turnCompleted({ sessionId: "s".repeat(1_025) }))).toBeNull();
+  });
 });
 
 describe("parseKimiLine", () => {
@@ -388,6 +400,10 @@ describe("parseKimiLine", () => {
         "session_1",
       ),
     ).toBeNull();
+  });
+
+  it("rejects an oversized caller-provided session identifier", () => {
+    expect(parseKimiLine(usageRecord(), "s".repeat(1_025))).toBeNull();
   });
 });
 

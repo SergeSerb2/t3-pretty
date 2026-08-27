@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 
-import { resolveRelyingParty } from "./app.config.ts";
+import { resolveRelyingParty, resolveVoiceDictationPlugins } from "./app.config.ts";
 
 it("keeps relying-party fallbacks within the selected build flavor", () => {
   expect(resolveRelyingParty(undefined, "public")).toBe("clerk.t3.codes");
@@ -9,4 +9,10 @@ it("keeps relying-party fallbacks within the selected build flavor", () => {
   expect(resolveRelyingParty("pk_test_Y2xlcmsuZXhhbXBsZS50ZXN0JA==", "internal")).toBe(
     "clerk.example.test",
   );
+});
+
+it("links expo-audio only for internal mobile builds", () => {
+  expect(resolveVoiceDictationPlugins(false)).toEqual(["./plugins/withoutPublicExpoAudio.cjs"]);
+  const [internalPlugin] = resolveVoiceDictationPlugins(true);
+  expect(Array.isArray(internalPlugin) ? internalPlugin[0] : internalPlugin).toBe("expo-audio");
 });

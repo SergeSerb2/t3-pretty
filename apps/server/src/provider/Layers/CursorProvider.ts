@@ -30,6 +30,7 @@ import {
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
+import { readTextWithinLimit } from "../../boundedFileRead.ts";
 import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
@@ -46,6 +47,7 @@ import {
 } from "../providerMaintenance.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import { CursorListAvailableModelsResponse } from "../acp/CursorAcpExtension.ts";
+import { boundAcpSessionConfigOptions } from "../acp/AcpRuntimeModel.ts";
 
 const decodeCursorListAvailableModelsResponse = Schema.decodeUnknownEffect(
   CursorListAvailableModelsResponse,
@@ -529,7 +531,9 @@ function buildCursorDiscoveredModelsFromAvailableModelsResponse(
           slug,
           name,
           capabilities: enrichCursorAutoModelCapabilities(
-            buildCursorCapabilitiesFromConfigOptions(model.configOptions),
+            buildCursorCapabilitiesFromConfigOptions(
+              boundAcpSessionConfigOptions(model.configOptions),
+            ),
             slug,
             name,
           ),
@@ -920,7 +924,9 @@ const readCursorCliConfigChannel = Effect.fn("readCursorCliConfigChannel")(funct
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const configPath = path.join(NodeOS.homedir(), ".cursor", "cli-config.json");
-  const raw = yield* fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => ""));
+  const raw = yield* readTextWithinLimit(fileSystem, configPath, 256 * 1024).pipe(
+    Effect.orElseSucceed(() => ""),
+  );
   return parseCursorCliConfigChannel(raw);
 });
 

@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
-import { ProviderOptionSelections } from "./model.ts";
+import { ProviderModelId, ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
   ApprovalRequestId,
@@ -23,7 +23,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { SkillId } from "./skills.ts";
+import { EnabledSkillIds } from "./skills.ts";
 import { ThreadSubagentPolicy } from "./subagentPolicy.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
@@ -68,7 +68,7 @@ export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
  */
 const ModelSelectionWire = Schema.Struct({
   instanceId: ProviderInstanceId,
-  model: TrimmedNonEmptyString,
+  model: ProviderModelId,
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
@@ -182,23 +182,133 @@ export function effectiveRuntimeModeForProviderDriver(
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
-export const ProviderRequestKind = Schema.Literals(["command", "file-read", "file-change"]);
+export const ProviderRequestKind = Schema.Literals([
+  "command",
+  "file-read",
+  "file-change",
+  "mcp-elicitation",
+]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const AssistantDeliveryMode = Schema.Literals(["buffered", "streaming"]);
 export type AssistantDeliveryMode = typeof AssistantDeliveryMode.Type;
 export const ProviderApprovalDecision = Schema.Literals([
   "accept",
   "acceptForSession",
+  "acceptAlways",
   "decline",
   "cancel",
 ]);
 export type ProviderApprovalDecision = typeof ProviderApprovalDecision.Type;
-export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unknown);
+export const ProviderApprovalOption = Schema.Struct({
+  decision: ProviderApprovalDecision,
+  label: TrimmedNonEmptyString,
+});
+export type ProviderApprovalOption = typeof ProviderApprovalOption.Type;
+
+export const PROVIDER_USER_INPUT_MAX_ANSWERS = 128;
+export const PROVIDER_INTERACTION_MAX_KEY_LENGTH = 512;
+export const PROVIDER_INTERACTION_MAX_STRING_CHARS = 1024 * 1024;
+export const PROVIDER_INTERACTION_MAX_NODES = 4_096;
+export const PROVIDER_INTERACTION_MAX_DEPTH = 32;
+
+const providerInteractionPayloadLimits = Schema.makeFilter((value: unknown) => {
+  const pending: Array<{ readonly value: unknown; readonly depth: number }> = [{ value, depth: 0 }];
+  const seen = new WeakSet<object>();
+  let scheduledNodes = 1;
+  let stringChars = 0;
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) break;
+    if (current.depth > PROVIDER_INTERACTION_MAX_DEPTH) {
+      return `Provider interaction payload must not exceed depth ${PROVIDER_INTERACTION_MAX_DEPTH}.`;
+    }
+
+    const currentValue = current.value;
+    if (typeof currentValue === "string") {
+      stringChars += currentValue.length;
+      if (stringChars > PROVIDER_INTERACTION_MAX_STRING_CHARS) {
+        return `Provider interaction payload must not exceed ${PROVIDER_INTERACTION_MAX_STRING_CHARS} string characters.`;
+      }
+      continue;
+    }
+    if (typeof currentValue === "number") {
+      if (!Number.isFinite(currentValue)) {
+        return "Provider interaction payload numbers must be finite.";
+      }
+      continue;
+    }
+    if (currentValue === null || typeof currentValue === "boolean") continue;
+    if (typeof currentValue !== "object") {
+      return "Provider interaction payload must contain only JSON-compatible values.";
+    }
+    if (seen.has(currentValue)) {
+      return "Provider interaction payload must not contain cyclic references.";
+    }
+    seen.add(currentValue);
+
+    if (Array.isArray(currentValue)) {
+      scheduledNodes += currentValue.length;
+      if (scheduledNodes > PROVIDER_INTERACTION_MAX_NODES) {
+        return `Provider interaction payload must not exceed ${PROVIDER_INTERACTION_MAX_NODES} values.`;
+      }
+      for (let index = 0; index < currentValue.length; index += 1) {
+        pending.push({ value: currentValue[index], depth: current.depth + 1 });
+      }
+      continue;
+    }
+
+    for (const key in currentValue) {
+      if (!Object.prototype.hasOwnProperty.call(currentValue, key)) continue;
+      stringChars += key.length;
+      if (stringChars > PROVIDER_INTERACTION_MAX_STRING_CHARS) {
+        return `Provider interaction payload must not exceed ${PROVIDER_INTERACTION_MAX_STRING_CHARS} string characters.`;
+      }
+      scheduledNodes += 1;
+      if (scheduledNodes > PROVIDER_INTERACTION_MAX_NODES) {
+        return `Provider interaction payload must not exceed ${PROVIDER_INTERACTION_MAX_NODES} values.`;
+      }
+      pending.push({
+        value: (currentValue as Record<string, unknown>)[key],
+        depth: current.depth + 1,
+      });
+    }
+  }
+
+  return true;
+});
+
+export const ProviderInteractionOpaquePayload = Schema.Unknown.check(
+  providerInteractionPayloadLimits,
+);
+export type ProviderInteractionOpaquePayload = typeof ProviderInteractionOpaquePayload.Type;
+
+const ProviderUserInputAnswerKey = Schema.String.check(
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(PROVIDER_INTERACTION_MAX_KEY_LENGTH),
+);
+export const ProviderUserInputAnswers = Schema.Record(
+  ProviderUserInputAnswerKey,
+  Schema.Unknown,
+).check(Schema.isMaxProperties(PROVIDER_USER_INPUT_MAX_ANSWERS), providerInteractionPayloadLimits);
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const THREAD_TURN_START_TITLE_MAX_LENGTH = 8_192;
+export const THREAD_TURN_START_BRANCH_MAX_LENGTH = 4_096;
+export const THREAD_TURN_START_PATH_MAX_LENGTH = 32 * 1024;
+export const THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS = 2 * 1024 * 1024;
+const OrchestrationTitle = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(THREAD_TURN_START_TITLE_MAX_LENGTH),
+);
+const OrchestrationBranch = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(THREAD_TURN_START_BRANCH_MAX_LENGTH),
+);
+const OrchestrationPath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(THREAD_TURN_START_PATH_MAX_LENGTH),
+);
 export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
   "image/gif",
   "image/jpeg",
@@ -213,7 +323,8 @@ const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET = new Set<string>(
 export function isProviderSendTurnSupportedImageMimeType(mimeType: string): boolean {
   return PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET.has(mimeType.toLowerCase());
 }
-const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
+export const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
+const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_HEADER_CHARS = 256;
 const CHAT_ATTACHMENT_ID_MAX_CHARS = 128;
 // Correlation id is command id by design in this model.
 export const CorrelationId = CommandId;
@@ -234,15 +345,88 @@ export const ChatImageAttachment = Schema.Struct({
 });
 export type ChatImageAttachment = typeof ChatImageAttachment.Type;
 
+export interface BoundedImageDataUrlInfo {
+  readonly mimeType: string;
+  readonly decodedByteLength: number;
+}
+
+/**
+ * Inspect a provider-sized base64 data URL without allocating its decoded bytes.
+ * The canonical payload alphabet also keeps the encoded wire size predictable.
+ */
+export function inspectBoundedImageDataUrl(dataUrl: string): BoundedImageDataUrlInfo | null {
+  if (
+    dataUrl.length > PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS ||
+    dataUrl.slice(0, 5).toLowerCase() !== "data:"
+  ) {
+    return null;
+  }
+
+  const commaIndex = dataUrl.indexOf(",", 5);
+  if (commaIndex <= 5 || commaIndex - 5 > PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_HEADER_CHARS) {
+    return null;
+  }
+
+  const headerParts = dataUrl
+    .slice(5, commaIndex)
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (
+    headerParts.length < 2 ||
+    headerParts.at(-1)?.toLowerCase() !== "base64" ||
+    headerParts[0] === undefined
+  ) {
+    return null;
+  }
+  const mimeType = headerParts[0].toLowerCase();
+
+  const payloadStart = commaIndex + 1;
+  const payloadLength = dataUrl.length - payloadStart;
+  if (payloadLength === 0 || payloadLength % 4 !== 0) {
+    return null;
+  }
+
+  let paddingLength = 0;
+  for (let index = payloadStart; index < dataUrl.length; index += 1) {
+    const code = dataUrl.charCodeAt(index);
+    const isBase64Character =
+      (code >= 0x61 && code <= 0x7a) ||
+      (code >= 0x41 && code <= 0x5a) ||
+      (code >= 0x30 && code <= 0x39) ||
+      code === 0x2b ||
+      code === 0x2f;
+    if (isBase64Character && paddingLength === 0) {
+      continue;
+    }
+    if (code !== 0x3d || index < dataUrl.length - 2) {
+      return null;
+    }
+    paddingLength += 1;
+  }
+
+  const decodedByteLength = (payloadLength / 4) * 3 - paddingLength;
+  if (decodedByteLength <= 0 || decodedByteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+    return null;
+  }
+  return { mimeType, decodedByteLength };
+}
+
 const UploadChatImageAttachment = Schema.Struct({
   type: Schema.Literal("image"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^image\//i)),
   sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES)),
-  dataUrl: TrimmedNonEmptyString.check(
-    Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS),
-  ),
-});
+  dataUrl: Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS)),
+}).check(
+  Schema.makeFilter((input) => {
+    const info = inspectBoundedImageDataUrl(input.dataUrl);
+    return (
+      info?.mimeType === input.mimeType.toLowerCase() ||
+      "image data URL must contain bounded canonical base64 matching its mime type"
+    );
+  }),
+);
 export type UploadChatImageAttachment = typeof UploadChatImageAttachment.Type;
 
 export const ChatAttachment = Schema.Union([ChatImageAttachment]);
@@ -260,10 +444,16 @@ export const ProjectScriptIcon = Schema.Literals([
 ]);
 export type ProjectScriptIcon = typeof ProjectScriptIcon.Type;
 
+export const PROJECT_SCRIPT_MAX_COUNT = 256;
+export const PROJECT_SCRIPT_ID_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_NAME_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_COMMAND_MAX_LENGTH = 64 * 1024;
+export const PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH = 8_192;
+
 export const ProjectScript = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  name: TrimmedNonEmptyString,
-  command: TrimmedNonEmptyString,
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SCRIPT_ID_MAX_LENGTH)),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SCRIPT_NAME_MAX_LENGTH)),
+  command: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SCRIPT_COMMAND_MAX_LENGTH)),
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
   /**
@@ -271,7 +461,9 @@ export const ProjectScript = Schema.Struct({
    * when the user explicitly requests a preview). Optional; only honored on
    * the desktop build.
    */
-  previewUrl: Schema.optional(TrimmedNonEmptyString),
+  previewUrl: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH)),
+  ),
   /**
    * When true, automatically open the preview panel pointed at `previewUrl`
    * the moment this script starts. Ignored without `previewUrl` or on web.
@@ -288,8 +480,8 @@ export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
 
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
-  title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
+  workspaceRoot: OrchestrationPath,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Per-project override for where new threads start. Null/absent means
@@ -319,7 +511,10 @@ export const OrchestrationMessage = Schema.Struct({
 });
 export type OrchestrationMessage = typeof OrchestrationMessage.Type;
 
-export const OrchestrationProposedPlanId = TrimmedNonEmptyString;
+export const ORCHESTRATION_PROPOSED_PLAN_ID_MAX_LENGTH = 4_096;
+export const OrchestrationProposedPlanId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ORCHESTRATION_PROPOSED_PLAN_ID_MAX_LENGTH),
+);
 export type OrchestrationProposedPlanId = typeof OrchestrationProposedPlanId.Type;
 
 export const OrchestrationProposedPlan = Schema.Struct({
@@ -415,6 +610,7 @@ export type OrchestrationLatestTurnState = typeof OrchestrationLatestTurnState.T
 
 export const OrchestrationLatestTurn = Schema.Struct({
   turnId: TurnId,
+  userMessageId: Schema.optional(MessageId),
   state: OrchestrationLatestTurnState,
   requestedAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
@@ -436,17 +632,33 @@ export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
  * (fetched pools diverge per device). Field names mirror the web client's
  * SceneryPhoto; URLs are Unsplash CDN links.
  */
+export const THREAD_SCENERY_PHOTO_ID_MAX_LENGTH = 512;
+export const THREAD_SCENERY_NAME_MAX_LENGTH = 2_048;
+export const THREAD_SCENERY_COLOR_MAX_LENGTH = 64;
+export const THREAD_SCENERY_URL_MAX_LENGTH = 8_192;
+export const THREAD_SCENERY_PHOTOGRAPHER_NAME_MAX_LENGTH = 2_048;
+
 const threadSceneryPhotoFields = {
-  photoId: TrimmedNonEmptyString,
+  photoId: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_PHOTO_ID_MAX_LENGTH)),
   /** Curated "Location, Country" display name. */
-  name: TrimmedNonEmptyString,
-  averageColorHex: Schema.NullOr(TrimmedNonEmptyString),
-  heroURL: TrimmedNonEmptyString,
-  thumbURL: TrimmedNonEmptyString,
-  rawURL: Schema.NullOr(TrimmedNonEmptyString),
-  downloadLocationURL: Schema.NullOr(TrimmedNonEmptyString),
-  photographerName: TrimmedNonEmptyString,
-  photographerProfileURL: Schema.NullOr(TrimmedNonEmptyString),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_NAME_MAX_LENGTH)),
+  averageColorHex: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_COLOR_MAX_LENGTH)),
+  ),
+  heroURL: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  thumbURL: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  rawURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
+  downloadLocationURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
+  photographerName: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(THREAD_SCENERY_PHOTOGRAPHER_NAME_MAX_LENGTH),
+  ),
+  photographerProfileURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
 } as const;
 
 /** What a client sends with thread.scenery.assign; the server stamps assignedAt. */
@@ -459,20 +671,29 @@ export const ThreadSceneryAssignment = Schema.Struct({
 });
 export type ThreadSceneryAssignment = typeof ThreadSceneryAssignment.Type;
 
+export const ThreadLinkedPullRequest = Schema.Struct({
+  projectId: ProjectId,
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  url: TrimmedNonEmptyString,
+});
+export type ThreadLinkedPullRequest = typeof ThreadLinkedPullRequest.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
-  branch: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(OrchestrationBranch),
   // Server-owned token for the event that established the current branch.
   // Optional so snapshots from older servers remain decodable.
   branchEventId: Schema.optional(EventId),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(OrchestrationPath),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -481,6 +702,11 @@ export const OrchestrationThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   settledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  // When the thread last re-entered the active list (any thread.unsettled).
+  // Anchors the active-list sort so an unsettled thread surfaces at the top
+  // instead of sinking back to its creation-order slot. Cleared on settle.
+  // Optional so payloads from pre-stamp servers still decode.
+  unsettledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Snooze is an overlay on the active lifecycle, not a fourth destination:
   // a snoozed thread stays "active" in the model and is only suppressed from
   // the inbox until snoozedUntil passes (or the thread raises its hand).
@@ -505,7 +731,7 @@ export const OrchestrationThread = Schema.Struct({
   // Per-thread enabled skills; global settings-enabled skills union on top
   // when a turn materializes the workspace. Defaults to empty so payloads
   // from pre-skills servers still decode.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Per-thread inherit/off/on. Absent means inherit. Optional so payloads
   // from pre-policy servers still decode.
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
@@ -530,8 +756,8 @@ export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
 
 export const OrchestrationProjectShell = Schema.Struct({
   id: ProjectId,
-  title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
+  workspaceRoot: OrchestrationPath,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -546,14 +772,15 @@ export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(OrchestrationBranch),
+  worktreePath: Schema.NullOr(OrchestrationPath),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -562,6 +789,8 @@ export const OrchestrationThreadShell = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   settledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  // See OrchestrationThread.unsettledAt: last re-entry into the active list.
+  unsettledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
@@ -570,7 +799,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   // Same write-once World Scenery binding as OrchestrationThread.scenery.
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   // Same per-thread skill set as OrchestrationThread.enabledSkillIds.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Same per-thread policy as OrchestrationThread.subagentPolicy.
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   session: Schema.NullOr(OrchestrationSession),
@@ -717,9 +946,14 @@ export type OrchestrationSubscribeThreadInput = typeof OrchestrationSubscribeThr
  * strictly opt-in so older clients keep today's behavior on both HTTP and the
  * WebSocket fallback snapshot.
  */
+export const ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH = 4_096;
+export const OrchestrationThreadDetailCursor = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH),
+);
+
 export const OrchestrationThreadDetailWindow = Schema.Struct({
   turnLimit: Schema.optionalKey(PositiveInt),
-  beforeCursor: Schema.optionalKey(TrimmedNonEmptyString),
+  beforeCursor: Schema.optionalKey(OrchestrationThreadDetailCursor),
 });
 export type OrchestrationThreadDetailWindow = typeof OrchestrationThreadDetailWindow.Type;
 
@@ -731,7 +965,7 @@ export type OrchestrationThreadDetailWindow = typeof OrchestrationThreadDetailWi
  * can be sequence-checked against live state before merging.
  */
 export const OrchestrationThreadDetailPage = Schema.Struct({
-  beforeCursor: Schema.NullOr(TrimmedNonEmptyString),
+  beforeCursor: Schema.NullOr(OrchestrationThreadDetailCursor),
   hasMore: Schema.Boolean,
   snapshotSequence: NonNegativeInt,
   /**
@@ -760,8 +994,8 @@ export const ProjectCreateCommand = Schema.Struct({
   type: Schema.Literal("project.create"),
   commandId: CommandId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
+  workspaceRoot: OrchestrationPath,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   createdAt: IsoDateTime,
@@ -771,13 +1005,15 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("project.meta.update"),
   commandId: CommandId,
   projectId: ProjectId,
-  title: Schema.optional(TrimmedNonEmptyString),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  title: Schema.optional(OrchestrationTitle),
+  workspaceRoot: Schema.optional(OrchestrationPath),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
-  scripts: Schema.optional(Schema.Array(ProjectScript)),
+  scripts: Schema.optional(
+    Schema.Array(ProjectScript).check(Schema.isMaxLength(PROJECT_SCRIPT_MAX_COUNT)),
+  ),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -792,19 +1028,19 @@ const ThreadCreateCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(OrchestrationBranch),
+  worktreePath: Schema.NullOr(OrchestrationPath),
   // Per-thread skill picks at creation; decode defaults to none so older
   // clients stay valid. RPC encode requires the key — callers send `[]`
   // when there are no picks. Global settings-enabled skills union on top
   // at turn start.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
 });
@@ -837,7 +1073,7 @@ const ThreadSettleCommand = Schema.Struct({
   onlyIfAutoSettlementEligible: Schema.optional(Schema.Boolean),
   // The branch observed as merged. Automatic settlement must not land after
   // a concurrent metadata update associates the thread with another branch.
-  expectedBranch: Schema.optional(TrimmedNonEmptyString),
+  expectedBranch: Schema.optional(OrchestrationBranch),
   // A branch can change A -> B -> A while a forge lookup is in flight. The
   // event token distinguishes those same-named branch incarnations.
   expectedBranchEventId: Schema.optional(EventId),
@@ -916,7 +1152,7 @@ const ThreadSkillsSetCommand = Schema.Struct({
   threadId: ThreadId,
   // Full replacement of the per-thread enabled skill set. Global
   // settings-enabled skills union on top at materialization time.
-  enabledSkillIds: Schema.Array(SkillId),
+  enabledSkillIds: EnabledSkillIds,
   createdAt: IsoDateTime,
 });
 
@@ -933,12 +1169,13 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
   threadId: ThreadId,
-  title: Schema.optional(TrimmedNonEmptyString),
+  title: Schema.optional(OrchestrationTitle),
   regenerateTitle: Schema.optional(Schema.Literal(true)),
   modelSelection: Schema.optional(ModelSelection),
-  branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  branch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
+  expectedBranch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
+  worktreePath: Schema.optional(Schema.NullOr(OrchestrationPath)),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
 }).check(
   Schema.makeFilter(
     (input) =>
@@ -963,26 +1200,47 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadTurnStartText = Schema.String.check(
+  Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+);
+const ThreadTurnStartTitle = OrchestrationTitle;
+const ThreadTurnStartBranch = OrchestrationBranch;
+const ThreadTurnStartPath = OrchestrationPath;
+const ThreadTurnStartEnabledSkillIds = EnabledSkillIds.check(
+  Schema.makeFilter((skillIds) => {
+    let totalCharacters = 0;
+    for (const skillId of skillIds) {
+      totalCharacters += skillId.length;
+      if (totalCharacters > THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS) {
+        return `enabled skill ids must total at most ${THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS} characters`;
+      }
+    }
+    return true;
+  }),
+);
+
 const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
+  title: ThreadTurnStartTitle,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(ThreadTurnStartBranch),
+  worktreePath: Schema.NullOr(ThreadTurnStartPath),
   // Per-thread skill picks chosen in the draft composer. Decode defaults
   // to none so older clients stay valid. RPC encode requires the key —
   // callers send `[]` when there are no picks.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  enabledSkillIds: ThreadTurnStartEnabledSkillIds.pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
 });
 
 const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
-  projectCwd: TrimmedNonEmptyString,
-  baseBranch: TrimmedNonEmptyString,
-  branch: Schema.optional(TrimmedNonEmptyString),
+  projectCwd: ThreadTurnStartPath,
+  baseBranch: ThreadTurnStartBranch,
+  branch: Schema.optional(ThreadTurnStartBranch),
   startFromOrigin: Schema.optional(Schema.Boolean),
 });
 
@@ -1007,12 +1265,14 @@ export const ThreadTurnStartCommand = Schema.Struct({
   message: Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
-    text: Schema.String,
-    attachments: Schema.Array(ChatAttachment),
+    text: ThreadTurnStartText,
+    attachments: Schema.Array(ChatAttachment).check(
+      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    ),
   }),
   delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
-  titleSeed: Schema.optional(TrimmedNonEmptyString),
+  titleSeed: Schema.optional(ThreadTurnStartTitle),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
@@ -1029,12 +1289,14 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   message: Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
-    text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
+    text: ThreadTurnStartText,
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])).check(
+      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    ),
   }),
   delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
-  titleSeed: Schema.optional(TrimmedNonEmptyString),
+  titleSeed: Schema.optional(ThreadTurnStartTitle),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
@@ -1155,6 +1417,7 @@ const ThreadSessionSetCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   session: OrchestrationSession,
+  activeUserMessageId: Schema.optional(MessageId),
   createdAt: IsoDateTime,
 });
 
@@ -1220,7 +1483,7 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   requestId: CommandId,
-  title: Schema.optional(TrimmedNonEmptyString),
+  title: Schema.optional(OrchestrationTitle),
 });
 
 const InternalOrchestrationCommand = Schema.Union([
@@ -1283,8 +1546,8 @@ export const OrchestrationActorKind = Schema.Literals(["client", "server", "prov
 
 export const ProjectCreatedPayload = Schema.Struct({
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
+  workspaceRoot: OrchestrationPath,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Optional so persisted events from older servers still decode.
@@ -1296,8 +1559,8 @@ export const ProjectCreatedPayload = Schema.Struct({
 
 export const ProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
-  title: Schema.optional(TrimmedNonEmptyString),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  title: Schema.optional(OrchestrationTitle),
+  workspaceRoot: Schema.optional(OrchestrationPath),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -1314,16 +1577,16 @@ export const ProjectDeletedPayload = Schema.Struct({
 export const ThreadCreatedPayload = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
+  title: OrchestrationTitle,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(OrchestrationBranch),
+  worktreePath: Schema.NullOr(OrchestrationPath),
   // Optional so persisted events from pre-skills servers still decode.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1405,7 +1668,7 @@ export const ThreadSceneryAssignedPayload = Schema.Struct({
 export const ThreadSkillsSetPayload = Schema.Struct({
   threadId: ThreadId,
   // The new per-thread enabled skill set (full replacement).
-  enabledSkillIds: Schema.Array(SkillId),
+  enabledSkillIds: EnabledSkillIds,
   updatedAt: IsoDateTime,
 });
 
@@ -1417,17 +1680,18 @@ export const ThreadSubagentPolicySetPayload = Schema.Struct({
 
 export const ThreadMetaUpdatedPayload = Schema.Struct({
   threadId: ThreadId,
-  title: Schema.optional(TrimmedNonEmptyString),
+  title: Schema.optional(OrchestrationTitle),
   /** Intent marker consumed by the title-generation reactor. Keeping this on
       the existing event lets older clients safely ignore the new field. */
   regenerateTitle: Schema.optional(Schema.Literal(true)),
   /** Title at request time, used to avoid overwriting a later manual rename. */
-  previousTitle: Schema.optional(TrimmedNonEmptyString),
+  previousTitle: Schema.optional(OrchestrationTitle),
   /** Pending state shared with clients. Null clears a matching request. */
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   modelSelection: Schema.optional(ModelSelection),
-  branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  branch: Schema.optional(Schema.NullOr(OrchestrationBranch)),
+  worktreePath: Schema.optional(Schema.NullOr(OrchestrationPath)),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   updatedAt: IsoDateTime,
 });
 
@@ -1462,7 +1726,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   messageId: MessageId,
   delivery: Schema.optional(TurnDeliveryMode),
   modelSelection: Schema.optional(ModelSelection),
-  titleSeed: Schema.optional(TrimmedNonEmptyString),
+  titleSeed: Schema.optional(ThreadTurnStartTitle),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
@@ -1510,6 +1774,7 @@ export const ThreadSessionStopRequestedPayload = Schema.Struct({
 export const ThreadSessionSetPayload = Schema.Struct({
   threadId: ThreadId,
   session: OrchestrationSession,
+  activeUserMessageId: Schema.optional(MessageId),
 });
 
 export const ThreadProposedPlanUpsertedPayload = Schema.Struct({
@@ -1843,9 +2108,15 @@ export type OrchestrationThreadSearchSource = typeof OrchestrationThreadSearchSo
 
 // The server's SQLite client is synchronous and single-connection. Bound both
 // scan input and response size so a search cannot monopolize that connection.
+export const ORCHESTRATION_THREAD_SEARCH_MAX_RESULTS = 50;
+
 export const OrchestrationSearchThreadsInput = Schema.Struct({
   query: TrimmedString.check(Schema.isMinLength(2), Schema.isMaxLength(200)),
-  limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+  limit: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isBetween({ minimum: 1, maximum: ORCHESTRATION_THREAD_SEARCH_MAX_RESULTS }),
+    ),
+  ),
 });
 export type OrchestrationSearchThreadsInput = typeof OrchestrationSearchThreadsInput.Type;
 
@@ -1863,21 +2134,26 @@ export const OrchestrationThreadSearchMatch = Schema.Struct({
 export type OrchestrationThreadSearchMatch = typeof OrchestrationThreadSearchMatch.Type;
 
 export const OrchestrationSearchThreadsResult = Schema.Struct({
-  matches: Schema.Array(OrchestrationThreadSearchMatch),
+  matches: Schema.Array(OrchestrationThreadSearchMatch).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SEARCH_MAX_RESULTS),
+  ),
 });
 export type OrchestrationSearchThreadsResult = typeof OrchestrationSearchThreadsResult.Type;
+
+export const WORKFLOW_SCRIPT_PATH_MAX_LENGTH = 32 * 1024;
+export const WORKFLOW_SCRIPT_MAX_BYTES = 256 * 1024;
 
 export const OrchestrationGetWorkflowScriptInput = Schema.Struct({
   threadId: ThreadId,
   /** Absolute path from the workflow's runHandles.scriptPath. The server
    * re-derives containment; the client value is a hint, never trusted. */
-  scriptPath: TrimmedNonEmptyString,
+  scriptPath: TrimmedNonEmptyString.check(Schema.isMaxLength(WORKFLOW_SCRIPT_PATH_MAX_LENGTH)),
 });
 export type OrchestrationGetWorkflowScriptInput = typeof OrchestrationGetWorkflowScriptInput.Type;
 
 export const OrchestrationGetWorkflowScriptResult = Schema.Struct({
-  scriptPath: TrimmedNonEmptyString,
-  contents: Schema.String,
+  scriptPath: TrimmedNonEmptyString.check(Schema.isMaxLength(WORKFLOW_SCRIPT_PATH_MAX_LENGTH)),
+  contents: Schema.String.check(Schema.isMaxLength(WORKFLOW_SCRIPT_MAX_BYTES)),
   truncated: Schema.Boolean,
 });
 export type OrchestrationGetWorkflowScriptResult = typeof OrchestrationGetWorkflowScriptResult.Type;
@@ -1906,7 +2182,7 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedErrorClass
       "changed-during-read",
       "read-failed",
     ]),
-    scriptPath: Schema.String,
+    scriptPath: Schema.String.check(Schema.isMaxLength(WORKFLOW_SCRIPT_PATH_MAX_LENGTH)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {

@@ -18,6 +18,7 @@ import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shar
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import { TextGenerationError } from "@t3tools/contracts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
@@ -32,6 +33,9 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES,
+  TEXT_GENERATION_RESULT_MAX_BYTES,
+  limitTextGenerationErrorDetail,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
 import {
@@ -70,15 +74,28 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   const readStreamAsString = <E>(
     operation: string,
     stream: Stream.Stream<Uint8Array, E>,
+    input: {
+      readonly maxBytes: number;
+      readonly failWhenTruncated?: boolean;
+    },
   ): Effect.Effect<string, TextGenerationError> =>
-    stream.pipe(
-      Stream.decodeText(),
-      Stream.runFold(
-        () => "",
-        (acc, chunk) => acc + chunk,
-      ),
+    collectUint8StreamText({
+      stream,
+      maxBytes: input.maxBytes,
+      truncatedMarker: input.failWhenTruncated ? null : "\n[truncated]",
+    }).pipe(
       Effect.mapError((cause) =>
         normalizeCliError("claude", operation, cause, "Failed to collect process output"),
+      ),
+      Effect.flatMap((result) =>
+        result.truncated && input.failWhenTruncated
+          ? Effect.fail(
+              new TextGenerationError({
+                operation,
+                detail: "Claude returned structured output above the one MiB limit.",
+              }),
+            )
+          : Effect.succeed(result.text),
       ),
     );
 
@@ -196,8 +213,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
-          readStreamAsString(operation, child.stdout),
-          readStreamAsString(operation, child.stderr),
+          readStreamAsString(operation, child.stdout, {
+            maxBytes: TEXT_GENERATION_RESULT_MAX_BYTES,
+            failWhenTruncated: true,
+          }),
+          readStreamAsString(operation, child.stderr, {
+            maxBytes: TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES,
+          }),
           child.exitCode.pipe(
             Effect.mapError((cause) =>
               normalizeCliError("claude", operation, cause, "Failed to read Claude CLI exit code"),
@@ -210,7 +232,9 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       if (exitCode !== 0) {
         const stderrDetail = stderr.trim();
         const stdoutDetail = stdout.trim();
-        const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
+        const detail = limitTextGenerationErrorDetail(
+          stderrDetail.length > 0 ? stderrDetail : stdoutDetail,
+        );
         return yield* new TextGenerationError({
           operation,
           detail:
