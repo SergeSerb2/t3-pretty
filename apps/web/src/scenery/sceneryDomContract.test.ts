@@ -178,6 +178,21 @@ describe("glass contract with upstream chrome", () => {
     expect(drawerSpecular).toContain("display: none;");
   });
 
+  it("composites the faint composer glow after rendering full-range gradients", () => {
+    const specularLayers = indexCssSource.slice(
+      indexCssSource.indexOf(".chat-composer-specular::before"),
+      indexCssSource.indexOf(".chat-composer-glass-shell:hover .chat-composer-specular::after"),
+    );
+    expect(
+      specularLayers.match(
+        /background: radial-gradient\(circle closest-side, (?:var\(--foreground\)|white), transparent\);/g,
+      ),
+    ).toHaveLength(4);
+    for (const opacity of ["0.06", "0.05", "0.035", "0.025"]) {
+      expect(specularLayers).toContain(`opacity: ${opacity};`);
+    }
+  });
+
   it("header controls still paint from the --toolbar-control var", () => {
     expect(indexCssSource).toContain("[data-chat-header] [data-toolbar-control]");
     expect(indexCssSource).toContain("background-color: var(--toolbar-control)");
@@ -202,7 +217,10 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
     expect(pullRequestSummaryTabSource).toContain("bg-background");
     expect(sceneryCssSource).toMatch(
-      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--scenery-chrome-fill\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
     );
   });
 

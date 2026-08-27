@@ -5,6 +5,174 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* Animate UI's icon catalog uses Lucide glyphs, which the app already ships.
+   Keep that existing dependency and apply the catalog's interaction language
+   at shared control boundaries so static/status icons remain still. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(
+    [data-slot="button"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="menu-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="command-item"],
+    [data-slot="dialog-close"],
+    [data-slot="sheet-close"],
+    [data-slot="popover-close"],
+    [data-slot="select-trigger"],
+    [data-slot="autocomplete-trigger"],
+    [data-slot="autocomplete-clear"],
+    [data-slot="combobox-trigger"],
+    [data-slot="combobox-clear"],
+    [data-slot="combobox-chip-remove"],
+    [data-slot="number-field-decrement"],
+    [data-slot="number-field-increment"],
+    [data-slot="panel-tab-close-button"],
+    [data-animate-ui-icons]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    & svg.lucide,
+    & svg.lucide > * {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    & svg.lucide {
+      transition:
+        scale 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        translate 180ms cubic-bezier(0.25, 1, 0.5, 1),
+        rotate 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & svg.lucide > * {
+      transition:
+        transform 220ms cubic-bezier(0.25, 1, 0.5, 1),
+        opacity 180ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(2) {
+      transition-delay: 35ms;
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(3) {
+      transition-delay: 70ms;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        & :is(.lucide-plus, .lucide-x, .lucide-circle-x) {
+          rotate: 90deg;
+        }
+
+        & .lucide-settings {
+          rotate: 180deg;
+        }
+
+        & .lucide-refresh-cw {
+          rotate: 90deg;
+        }
+
+        & .lucide-rotate-ccw {
+          rotate: -90deg;
+        }
+
+        & :is(.lucide-chevron-down, .lucide-arrow-down) {
+          translate: 0 2px;
+        }
+
+        & :is(.lucide-chevron-up, .lucide-arrow-up) {
+          translate: 0 -2px;
+        }
+
+        & :is(.lucide-chevron-left, .lucide-arrow-left) {
+          translate: -2px 0;
+        }
+
+        & :is(.lucide-chevron-right, .lucide-arrow-right, .lucide-play) {
+          translate: 2px 0;
+        }
+
+        & .lucide-copy > :first-child {
+          transform: translate(2px, 2px);
+        }
+
+        & .lucide-copy > :last-child {
+          transform: translate(-2px, -2px);
+        }
+
+        & .lucide-download > :is(:first-child, :last-child) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-link > :first-child {
+          transform: translate(-1.5px, 1.5px);
+        }
+
+        & .lucide-link > :last-child {
+          transform: translate(1.5px, -1.5px);
+        }
+
+        & .lucide-external-link {
+          translate: 1.5px -1.5px;
+        }
+
+        & :is(.lucide-panel-left, .lucide-panel-left-close) > :nth-child(2) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-left-close > :nth-child(3) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-right > :nth-child(2) {
+          transform: translateX(2px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(1), :nth-child(2), :nth-child(3)) {
+          transform: translateY(1px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(4), :nth-child(5)) {
+          transform: translateY(-1px);
+        }
+
+        & :is(.lucide-message-square, .lucide-search) {
+          rotate: 8deg;
+        }
+
+        & :is(.lucide-check, .lucide-star) {
+          scale: 1.1;
+        }
+
+        & :is(.lucide-send, .lucide-paperclip, .lucide-hammer, .lucide-bot) {
+          translate: 1.5px -1.5px;
+          rotate: 6deg;
+        }
+
+        & .lucide-terminal > :first-child {
+          opacity: 0.25;
+        }
+
+        & .lucide-ellipsis > * {
+          transform: translateY(-2px);
+        }
+
+        & .lucide-chart-no-axes-column > * {
+          transform: scaleY(0.55);
+        }
+
+        & .lucide-sparkles > * {
+          transform: scale(1.12);
+        }
+      }
+    }
+
+    &:active svg.lucide {
+      scale: 0.86;
+    }
+  }
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
@@ -1499,7 +1667,11 @@ html[data-window-inactive]
      the pointer down into the strip instead of cutting off at the composer
      lip. A wider halo (::after) sits under the core and blooms from 72% to
      full size on hover; `scale` transitions independently of the per-frame
-     `translate` updates, so tracking stays instant while the bloom settles. */
+     `translate` updates, so tracking stays instant while the bloom settles.
+     Opacity and bloom keep their speed-scaled durations both ways so leave
+     matches enter.
+     Each gradient keeps a full-range alpha ramp and applies its faintness as
+     post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
       position: absolute;
@@ -1557,16 +1729,14 @@ html[data-window-inactive]
       width: 320px;
       height: 320px;
       margin: -160px 0 0 -160px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 6%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
       will-change: translate;
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.05;
       }
     }
 
@@ -1578,18 +1748,16 @@ html[data-window-inactive]
       width: 560px;
       height: 560px;
       margin: -280px 0 0 -280px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 3.5%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: 0.72;
       will-change: translate;
       transition: scale calc(520ms * var(--composer-hover-dur, 1)) cubic-bezier(0.22, 1, 0.36, 1);
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.025;
       }
     }
 
