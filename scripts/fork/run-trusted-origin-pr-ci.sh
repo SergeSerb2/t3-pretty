@@ -14,6 +14,8 @@ if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
 fi
 export GIT_TERMINAL_PROMPT=0
 
+origin update
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FILES=(
   review-origin-pr-ci.sh
