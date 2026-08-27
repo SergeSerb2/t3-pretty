@@ -1,12 +1,15 @@
 import { expect, it } from "vite-plus/test";
 
-import { resolveMobileAppIdentity, resolveProductionAndroidPackage } from "./app-identity.ts";
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./app-identity.ts";
 import config, { resolveRelyingParty, resolveVoiceDictationPlugins } from "./app.config.ts";
 
-it("keeps production Android packages valid and side-by-side", () => {
-  expect(config.android?.package).toBe("com.sergeserbinenko.t3pretty.app");
-  expect(resolveProductionAndroidPackage("internal")).toBe("com.sergeserbinenko.t3pretty");
-  expect(resolveProductionAndroidPackage("public")).toBe("com.sergeserbinenko.t3pretty.app");
+it("matches the default Expo config to its selected build identity", () => {
+  const identity = resolveMobileAppIdentity(
+    resolveMobileAppVariant(config.extra?.appVariant),
+    config.extra?.buildFlavor === "internal" ? "internal" : "public",
+  );
+  expect(config.scheme).toBe(identity.scheme);
+  expect(config.android?.package).toBe(identity.androidPackage);
 });
 
 it("resolves every mobile variant from the selected build identity", () => {

@@ -334,6 +334,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(androidRelease, 'export T3CODE_BUILD_FLAVOR="$flavor"');
     assert.include(androidRelease, 'export T3CODE_RELAY_URL="https://relay.t3.codes"');
     assert.include(androidRelease, 'eas env:pull production --path "$tmp/eas.env"');
+    assert.include(androidRelease, "Public EAS production identity does not match");
+    assert.include(androidRelease, "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    assert.include(androidRelease, "EXPO_PUBLIC_T3CODE_BUILD_FLAVOR");
+    assert.include(androidRelease, "VITE_T3CODE_RELAY_URL");
     assert.include(androidRelease, "Internal EAS production identity does not match");
     assert.include(androidRelease, "must target Google Play internal testing");
     assert.include(androidRelease, "--platform android");

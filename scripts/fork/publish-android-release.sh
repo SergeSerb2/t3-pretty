@@ -62,6 +62,20 @@ load_dotenv() {
   done < "$file"
 }
 
+pin_public_env() {
+  local expected="$1" name current
+  shift
+  for name in "$@"; do
+    current="${!name:-}"
+    if [[ -n "$current" && "$current" != "$expected" ]]; then
+      echo "Public EAS production identity does not match official T3 Connect ($name)." >&2
+      exit 1
+    fi
+    printf -v "$name" '%s' "$expected"
+    export "$name"
+  done
+}
+
 # Buildkite secrets stay on the release host or in its cluster store. Public
 # EAS identifiers are not secrets, but loading them here lets setup add them
 # without another source change.
@@ -181,18 +195,24 @@ trap cleanup EXIT
 load_dotenv "$tmp/eas.env"
 # The selected identity wins over values stored in an EAS environment shared
 # with an older flavor configuration.
-export T3CODE_BUILD_FLAVOR="$flavor"
 export APP_VARIANT=production
 export T3CODE_MOBILE_EAS_PROJECT_ID="$selected_eas_project_id"
 export T3CODE_MOBILE_EXPO_OWNER="$selected_expo_owner"
 export T3CODE_MOBILE_EXPO_SLUG="$selected_expo_slug"
 export T3CODE_MOBILE_UPDATE_URL="https://u.expo.dev/${selected_eas_project_id}"
 if [[ "$flavor" == "public" ]]; then
-  export T3CODE_CLERK_PUBLISHABLE_KEY="pk_live_Y2xlcmsudDMuY29kZXMk"
-  export T3CODE_CLERK_JWT_TEMPLATE="t3-relay"
-  export T3CODE_CLERK_CLI_OAUTH_CLIENT_ID="hzxSgY2cH10sDU2r"
-  export T3CODE_RELAY_URL="https://relay.t3.codes"
+  pin_public_env public \
+    T3CODE_BUILD_FLAVOR VITE_T3CODE_BUILD_FLAVOR EXPO_PUBLIC_T3CODE_BUILD_FLAVOR
+  pin_public_env pk_live_Y2xlcmsudDMuY29kZXMk \
+    T3CODE_CLERK_PUBLISHABLE_KEY VITE_CLERK_PUBLISHABLE_KEY \
+    EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
+  pin_public_env t3-relay \
+    T3CODE_CLERK_JWT_TEMPLATE VITE_CLERK_JWT_TEMPLATE EXPO_PUBLIC_CLERK_JWT_TEMPLATE
+  pin_public_env hzxSgY2cH10sDU2r \
+    T3CODE_CLERK_CLI_OAUTH_CLIENT_ID VITE_CLERK_CLI_OAUTH_CLIENT_ID
+  pin_public_env https://relay.t3.codes T3CODE_RELAY_URL VITE_T3CODE_RELAY_URL
 else
+  export T3CODE_BUILD_FLAVOR=internal
   internal_clerk_publishable_key="${T3CODE_CLERK_PUBLISHABLE_KEY:-${VITE_CLERK_PUBLISHABLE_KEY:-${EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:-}}}"
   internal_clerk_jwt_template="${T3CODE_CLERK_JWT_TEMPLATE:-${VITE_CLERK_JWT_TEMPLATE:-${EXPO_PUBLIC_CLERK_JWT_TEMPLATE:-}}}"
   internal_clerk_cli_oauth_client_id="${T3CODE_CLERK_CLI_OAUTH_CLIENT_ID:-${VITE_CLERK_CLI_OAUTH_CLIENT_ID:-}}"

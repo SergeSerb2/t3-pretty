@@ -48,10 +48,11 @@ it leaves a warning annotation instead of claiming a release. One-time setup:
 3. Create the Google service account required by Play and upload its JSON key
    to each EAS project as the Android submit credential. Do not store the JSON
    key in Buildkite or this repository.
-4. Keep `EXPO_TOKEN` on `macos-release`, and keep Internal's EAS production
-   environment pointed at the private Internal Clerk and relay values. The
-   runner fails closed if that identity drifts. After both Play records and the
-   Internal EAS submit credential exist, set
+4. Keep `EXPO_TOKEN` on `macos-release`, keep Internal's EAS production
+   environment pointed at the private Internal Clerk and relay values, and
+   leave the public project's Connect values unset or pointed at official T3
+   Connect. The runner fails closed if either identity drifts. After both Play
+   records and the Internal EAS submit credential exist, set
    `T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1` there.
 5. Trigger a public tester build only when desired by setting
    `T3CODE_PUBLIC_ANDROID_RELEASE=1` on a Buildkite UI build of `main`.
