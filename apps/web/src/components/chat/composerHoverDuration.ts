@@ -25,15 +25,16 @@ export function pointerSpeedPxPerMs(
 ): number {
   const dt = toT - fromT;
   if (dt <= 0) return 0;
-  return Math.hypot(toX - fromX, toY - fromY) / dt;
+  return Math.hypot(toX - fromX, toY - fromY) / Math.min(dt, COMPOSER_HOVER_SPEED_STALE_MS);
 }
 
 /**
  * Enter/leave speed from the last document sample to this event.
- * A stale gap still uses that crossing hypot/dt — only a missing prior
- * coordinate drops to 0. Capture pointermove may already have written
- * this point; a later boundary event at the same coords keeps `lastSpeed`
- * unless that sample is stale (dwell, then a same-point enter).
+ * A stale gap still uses the crossing displacement (dt capped so idle
+ * time does not dilute a flick). Only a missing prior coordinate drops
+ * to 0. Capture pointermove may already have written this point; a later
+ * boundary event at the same coords keeps `lastSpeed` unless that sample
+ * is stale (dwell, then a same-point enter).
  */
 export function composerHoverPointerSpeed(
   lastX: number,

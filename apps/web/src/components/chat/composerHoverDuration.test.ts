@@ -31,16 +31,17 @@ describe("composerHoverDurationScale", () => {
 });
 
 describe("pointerSpeedPxPerMs", () => {
-  it("uses hypot/dt for the last step, including a stale-gap crossing", () => {
+  it("uses hypot/dt for the last step, capping idle so a flick after pause still counts", () => {
     expect(pointerSpeedPxPerMs(0, 0, 1000, 9, 12, 1010)).toBeCloseTo(1.5);
     expect(pointerSpeedPxPerMs(0, 0, 1000, 400, 0, 1100)).toBeCloseTo(4);
+    expect(pointerSpeedPxPerMs(0, 0, 1000, 400, 0, 1150)).toBeCloseTo(4);
     expect(pointerSpeedPxPerMs(0, 0, 1000, 10, 0, 1000)).toBe(0);
   });
 });
 
 describe("composerHoverPointerSpeed", () => {
   it("uses the crossing step after idle instead of a zeroed lastSpeed", () => {
-    expect(composerHoverPointerSpeed(0, 0, 1000, 0, 400, 0, 1150)).toBeCloseTo(400 / 150);
+    expect(composerHoverPointerSpeed(0, 0, 1000, 0, 400, 0, 1150)).toBeCloseTo(4);
   });
 
   it("reuses lastSpeed when this event already updated the sample", () => {
