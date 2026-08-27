@@ -155,7 +155,9 @@ function compactReplaceDiff(
   const sideChars = Math.max(1, Math.floor(FILE_DIFF_MAX_CHARS / 2));
   return {
     kind: "update",
-    diff: `${boundDiffText(prefixLines(oldValue, "-"), sideLines, sideChars)}\n${boundDiffText(prefixLines(newValue, "+"), sideLines, sideChars)}`,
+    diff: boundDiffText(
+      `${boundDiffText(prefixLines(oldValue, "-"), sideLines, sideChars)}\n${boundDiffText(prefixLines(newValue, "+"), sideLines, sideChars)}`,
+    ),
   };
 }
 

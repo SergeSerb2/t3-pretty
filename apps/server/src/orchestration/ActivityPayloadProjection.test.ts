@@ -492,6 +492,8 @@ describe("projectActivityPayload", () => {
     expect(diff).toContain("-old 0");
     expect(diff).toContain("…");
     expect(diff).toContain("+after");
+    expect(diff.split("\n").length).toBeLessThanOrEqual(33);
+    expect(diff.length).toBeLessThanOrEqual(1_600);
   });
 
   it("passes task lifecycle payloads (no data field) through untouched", () => {
