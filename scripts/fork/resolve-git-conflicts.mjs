@@ -26,6 +26,7 @@ const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 // more conflicts piled onto the same unintegrated merge.
 const MAX_CONFLICTS_PER_REQUEST = 5;
 const MAX_BATCHES_PER_FILE = 32;
+export const MAX_VALIDATION_ATTEMPTS = 3;
 const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
@@ -1068,7 +1069,7 @@ export function buildValidationRetryPrompt(prompt, validationError) {
   if (validationError === undefined) return prompt;
   return `${prompt}\n\nThe previous response failed validation: ${oneLine(
     validationError instanceof Error ? validationError.message : String(validationError),
-  )}. Every old_text must match exactly one location near this batch's conflicts; include enough unchanged surrounding lines to make each span unique.`;
+  )}. Discard the previous edits and regenerate them only from the current conflict context above. Copy every old_text byte-for-byte from that context, and include enough unchanged surrounding lines for it to match exactly one location near this batch's conflicts.`;
 }
 
 async function resolveConflict(path, token) {
@@ -1135,13 +1136,13 @@ async function resolveConflict(path, token) {
       deleteConflict,
     });
     // An edit set that fails validation (non-unique old_text, overlaps, a
-    // missed conflict) is a sampling defect, not a hard failure: request one
-    // fresh resolution before giving up on the batch.
+    // missed conflict) is a sampling defect, not a hard failure: request two
+    // fresh resolutions before giving up on the batch.
     let resolution;
     let usedEffort = REASONING_EFFORT;
     let effectiveTier = "unknown";
     let validationError;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
       const response = await requestConflictResolution({
         path,
         prompt: buildValidationRetryPrompt(prompt, validationError),
@@ -1163,7 +1164,7 @@ async function resolveConflict(path, token) {
         break;
       } catch (error) {
         validationError = error;
-        if (attempt < 2) {
+        if (attempt < MAX_VALIDATION_ATTEMPTS) {
           process.stdout.write(
             `[fork-sync] batch ${batches} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
           );
