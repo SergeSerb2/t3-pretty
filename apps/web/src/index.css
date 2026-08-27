@@ -5,6 +5,174 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* Animate UI's icon catalog uses Lucide glyphs, which the app already ships.
+   Keep that existing dependency and apply the catalog's interaction language
+   at shared control boundaries so static/status icons remain still. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(
+    [data-slot="button"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="menu-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="command-item"],
+    [data-slot="dialog-close"],
+    [data-slot="sheet-close"],
+    [data-slot="popover-close"],
+    [data-slot="select-trigger"],
+    [data-slot="autocomplete-trigger"],
+    [data-slot="autocomplete-clear"],
+    [data-slot="combobox-trigger"],
+    [data-slot="combobox-clear"],
+    [data-slot="combobox-chip-remove"],
+    [data-slot="number-field-decrement"],
+    [data-slot="number-field-increment"],
+    [data-slot="panel-tab-close-button"],
+    [data-animate-ui-icons]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    & svg.lucide,
+    & svg.lucide > * {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    & svg.lucide {
+      transition:
+        scale 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        translate 180ms cubic-bezier(0.25, 1, 0.5, 1),
+        rotate 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & svg.lucide > * {
+      transition:
+        transform 220ms cubic-bezier(0.25, 1, 0.5, 1),
+        opacity 180ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(2) {
+      transition-delay: 35ms;
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(3) {
+      transition-delay: 70ms;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        & :is(.lucide-plus, .lucide-x, .lucide-circle-x) {
+          rotate: 90deg;
+        }
+
+        & .lucide-settings {
+          rotate: 180deg;
+        }
+
+        & .lucide-refresh-cw {
+          rotate: 90deg;
+        }
+
+        & .lucide-rotate-ccw {
+          rotate: -90deg;
+        }
+
+        & :is(.lucide-chevron-down, .lucide-arrow-down) {
+          translate: 0 2px;
+        }
+
+        & :is(.lucide-chevron-up, .lucide-arrow-up) {
+          translate: 0 -2px;
+        }
+
+        & :is(.lucide-chevron-left, .lucide-arrow-left) {
+          translate: -2px 0;
+        }
+
+        & :is(.lucide-chevron-right, .lucide-arrow-right, .lucide-play) {
+          translate: 2px 0;
+        }
+
+        & .lucide-copy > :first-child {
+          transform: translate(2px, 2px);
+        }
+
+        & .lucide-copy > :last-child {
+          transform: translate(-2px, -2px);
+        }
+
+        & .lucide-download > :is(:first-child, :last-child) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-link > :first-child {
+          transform: translate(-1.5px, 1.5px);
+        }
+
+        & .lucide-link > :last-child {
+          transform: translate(1.5px, -1.5px);
+        }
+
+        & .lucide-external-link {
+          translate: 1.5px -1.5px;
+        }
+
+        & :is(.lucide-panel-left, .lucide-panel-left-close) > :nth-child(2) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-left-close > :nth-child(3) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-right > :nth-child(2) {
+          transform: translateX(2px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(1), :nth-child(2), :nth-child(3)) {
+          transform: translateY(1px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(4), :nth-child(5)) {
+          transform: translateY(-1px);
+        }
+
+        & :is(.lucide-message-square, .lucide-search) {
+          rotate: 8deg;
+        }
+
+        & :is(.lucide-check, .lucide-star) {
+          scale: 1.1;
+        }
+
+        & :is(.lucide-send, .lucide-paperclip, .lucide-hammer, .lucide-bot) {
+          translate: 1.5px -1.5px;
+          rotate: 6deg;
+        }
+
+        & .lucide-terminal > :first-child {
+          opacity: 0.25;
+        }
+
+        & .lucide-ellipsis > * {
+          transform: translateY(-2px);
+        }
+
+        & .lucide-chart-no-axes-column > * {
+          transform: scaleY(0.55);
+        }
+
+        & .lucide-sparkles > * {
+          transform: scale(1.12);
+        }
+      }
+    }
+
+    &:active svg.lucide {
+      scale: 0.86;
+    }
+  }
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
