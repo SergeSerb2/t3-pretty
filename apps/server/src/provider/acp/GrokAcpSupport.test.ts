@@ -65,11 +65,11 @@ describe("buildGrokAcpSpawnInput", () => {
     });
   });
 
-
   it("puts Supervised on the Grok argv so config always-approve cannot win", () => {
     const spawn = buildGrokAcpSpawnInput(
       { binaryPath: "/usr/local/bin/grok" },
       "/tmp/project",
+      undefined,
       undefined,
       "approval-required",
     );
@@ -114,7 +114,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-mock-alt" }]);
-      expect(result).toBe("grok-mock-alt");
+      expect(result).toEqual({ modelId: "grok-mock-alt", reasoningEffort: undefined });
     }),
   );
 
@@ -130,7 +130,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
     }),
   );
 
@@ -146,7 +146,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "high" });
     }),
   );
 
@@ -175,23 +175,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
-    }),
-  );
-
-  it.effect("calls session/set_model when only effort changes", () =>
-    Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
-      const result = yield* applyGrokAcpModelSelection({
-        runtime,
-        currentModelId: "grok-4.6",
-        requestedModelId: "grok-4.6",
-        currentReasoningEffort: "high",
-        requestedReasoningEffort: "xhigh",
-        mapError: (cause) => cause.message,
-      });
-      expect(modelCalls).toEqual([{ modelId: "grok-4.6", effort: "xhigh" }]);
-      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
+      expect(result).toEqual({ modelId: "grok-build", reasoningEffort: undefined });
     }),
   );
 
