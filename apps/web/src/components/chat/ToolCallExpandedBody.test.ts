@@ -51,5 +51,14 @@ describe("tool call expanded body", () => {
     });
     expect(sections).toEqual([{ kind: "diff", text: "-old\n+new" }]);
     expect(workEntryDisplayBody(sections)).toBe("-old\n+new");
+
+    const withSiblings = buildWorkEntryDisplaySections({
+      changedFilesText: "src/a.ts\nsrc/b.ts",
+      changedFileDiffs: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
+    });
+    expect(withSiblings).toEqual([
+      { kind: "diff", text: "-old\n+new" },
+      { kind: "text", text: "src/b.ts" },
+    ]);
   });
 });

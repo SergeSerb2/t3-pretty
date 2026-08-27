@@ -4,6 +4,7 @@ import {
   buildToolCallDisplaySections,
   detectStructuredTextLanguage,
   formatChangedFileDiffText,
+  leftoverChangedFilePaths,
   formatShellCommandForDisplay,
   serializeToolCallDisplaySections,
   toolCallDisplayAddsStructure,
@@ -165,5 +166,11 @@ describe("tool call display sections", () => {
     });
     expect(sections.map((section) => section.kind)).toEqual(["diff", "text"]);
     expect(serializeToolCallDisplaySections(sections)).toBe("-old\n+new\n\nsrc/a.ts");
+    expect(
+      leftoverChangedFilePaths(
+        ["src/a.ts", "src/b.ts", "src/c.ts"],
+        [{ path: "src/a.ts", diff: "-old\n+new" }],
+      ),
+    ).toBe("src/b.ts\nsrc/c.ts");
   });
 });

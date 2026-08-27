@@ -22,6 +22,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
   buildToolCallDisplaySections,
   formatChangedFileDiffText,
+  leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
 
@@ -767,9 +768,9 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
     entry.itemType === "mcp_tool_call" && entry.toolData !== undefined
       ? `MCP call\n${JSON.stringify(entry.toolData, null, 2)}`
       : null;
-  const diffText = entry.changedFileDiffs
-    ? formatChangedFileDiffText(entry.changedFileDiffs)
-    : null;
+  const diffs = entry.changedFileDiffs ?? [];
+  const diffText = formatChangedFileDiffText(diffs);
+  const leftoverPaths = leftoverChangedFilePaths(entry.changedFiles ?? [], diffs);
   return serializeToolCallDisplaySections(
     buildToolCallDisplaySections({
       leadingText: mcpText,
@@ -777,7 +778,10 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
       output: diffText ? null : entry.detail,
       diffText,
       trailingText:
-        diffText || (entry.changedFiles?.length ?? 0) === 0 ? null : entry.changedFiles!.join("\n"),
+        leftoverPaths ??
+        (diffText || (entry.changedFiles?.length ?? 0) === 0
+          ? null
+          : entry.changedFiles!.join("\n")),
     }),
   );
 }

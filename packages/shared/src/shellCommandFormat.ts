@@ -34,6 +34,15 @@ export function formatChangedFileDiffText(
   return withDiffs.map((file) => `${file.path}\n${file.diff!.trim()}`).join("\n\n");
 }
 
+export function leftoverChangedFilePaths(
+  allPaths: ReadonlyArray<string>,
+  diffs: ReadonlyArray<{ readonly path: string; readonly diff?: string | null | undefined }>,
+): string | null {
+  const shown = new Set(diffs.filter((file) => file.diff?.trim()).map((file) => file.path));
+  const leftover = allPaths.filter((path) => path.trim().length > 0 && !shown.has(path));
+  return leftover.length > 0 ? leftover.join("\n") : null;
+}
+
 export function formatShellCommandForDisplay(command: string): string {
   const trimmed = command.trim();
   if (trimmed.length === 0 || /[\r\n]/u.test(trimmed)) {

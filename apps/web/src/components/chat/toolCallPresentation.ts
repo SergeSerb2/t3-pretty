@@ -1,6 +1,7 @@
 import {
   buildToolCallDisplaySections,
   formatChangedFileDiffText,
+  leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
   toolCallDisplayAddsStructure,
   type ToolCallDisplaySection,
@@ -32,15 +33,19 @@ export function buildWorkEntryDisplaySections(input: {
     input.itemType === "mcp_tool_call" && input.toolData !== undefined
       ? `MCP call\n${JSON.stringify(input.toolData, null, 2)}`
       : null;
-  const diffText = input.changedFileDiffs
-    ? formatChangedFileDiffText(input.changedFileDiffs)
-    : null;
+  const diffs = input.changedFileDiffs ?? [];
+  const diffText = formatChangedFileDiffText(diffs);
+  const changedPaths = (input.changedFilesText ?? "")
+    .split("\n")
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0);
+  const leftoverPaths = leftoverChangedFilePaths(changedPaths, diffs);
   return buildToolCallDisplaySections({
     leadingText: mcpText,
     command: input.command ?? null,
     output: diffText ? null : (input.output ?? null),
     diffText,
-    trailingText: diffText ? null : (input.changedFilesText ?? null),
+    trailingText: leftoverPaths ?? (diffText ? null : (input.changedFilesText ?? null)),
   });
 }
 
