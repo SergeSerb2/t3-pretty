@@ -217,7 +217,10 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
     expect(pullRequestSummaryTabSource).toContain("bg-background");
     expect(sceneryCssSource).toMatch(
-      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--scenery-chrome-fill\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
     );
   });
 
