@@ -29,6 +29,7 @@
     [data-slot="number-field-decrement"],
     [data-slot="number-field-increment"],
     [data-slot="panel-tab-close-button"],
+    [data-slot="toggle"],
     [data-animate-ui-icons]
   ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
     & svg.lucide,
@@ -126,6 +127,14 @@
 
         & .lucide-panel-right > :nth-child(2) {
           transform: translateX(2px);
+        }
+
+        & .lucide-panel-bottom > :nth-child(2) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-git-pull-request > :is(:nth-child(1), :nth-child(3)) {
+          transform: translate(1.5px, -1.5px);
         }
 
         & .lucide-trash-2 > :is(:nth-child(1), :nth-child(2), :nth-child(3)) {
