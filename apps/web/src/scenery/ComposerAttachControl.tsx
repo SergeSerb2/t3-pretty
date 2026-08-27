@@ -17,7 +17,7 @@
  * the mention-drop channel; other files fall through the images drop path so
  * the composer refuses them instead of claiming an unreadable basename.
  */
-import { FileIcon, XIcon } from "lucide-react";
+import { FileIcon, PaperclipIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -121,20 +121,6 @@ async function deliverFiles(
   dropFiles(slot, dropPath);
 }
 
-function PaperclipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden fill="none">
-      <path
-        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function AttachedFileChip(props: { file: AttachedFileRef; onRemove: (fileId: string) => void }) {
   const extension = props.file.name.includes(".")
     ? props.file.name.slice(props.file.name.lastIndexOf(".") + 1).toUpperCase()
@@ -151,6 +137,7 @@ function AttachedFileChip(props: { file: AttachedFileRef; onRemove: (fileId: str
         </div>
         <button
           type="button"
+          data-animate-ui-icons
           className="scenery-attach-file-chip__remove"
           aria-label={`Remove ${props.file.name}`}
           onClick={() => props.onRemove(props.file.id)}
@@ -290,13 +277,14 @@ export function ComposerAttachControl() {
                   render={
                     <button
                       type="button"
+                      data-animate-ui-icons
                       className="scenery-attach-button"
                       aria-label="Attach files or photos"
                       onClick={() => inputRefs.current.get(slot)?.click()}
                     />
                   }
                 >
-                  <PaperclipIcon />
+                  <PaperclipIcon className="size-4" aria-hidden />
                 </TooltipTrigger>
                 <TooltipPopup side="top">Attach files or photos</TooltipPopup>
               </Tooltip>

@@ -5,6 +5,248 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* Animate UI's icon catalog uses Lucide glyphs, which the app already ships.
+   Keep that existing dependency and apply the catalog's interaction language
+   at shared control boundaries so static/status icons remain still. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(
+    [data-slot="button"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="menu-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="command-item"],
+    [data-slot="dialog-close"],
+    [data-slot="sheet-close"],
+    [data-slot="popover-close"],
+    [data-slot="select-trigger"],
+    [data-slot="autocomplete-trigger"],
+    [data-slot="autocomplete-clear"],
+    [data-slot="combobox-trigger"],
+    [data-slot="combobox-clear"],
+    [data-slot="combobox-chip-remove"],
+    [data-slot="number-field-decrement"],
+    [data-slot="number-field-increment"],
+    [data-slot="panel-tab-close-button"],
+    [data-animate-ui-icons],
+    a[href]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    & svg.lucide,
+    & svg.lucide > * {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    & svg.lucide {
+      transition:
+        scale 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        translate 180ms cubic-bezier(0.25, 1, 0.5, 1),
+        rotate 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & svg.lucide > * {
+      transition: transform 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    &:active svg.lucide {
+      scale: 0.86;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        & :is(.lucide-plus, .lucide-x, .lucide-circle-x) {
+          rotate: 90deg;
+        }
+
+        & .lucide-settings {
+          rotate: 180deg;
+        }
+
+        & .lucide-refresh-cw {
+          rotate: 360deg;
+        }
+
+        & .lucide-rotate-ccw {
+          rotate: -360deg;
+        }
+
+        & :is(.lucide-chevron-down, .lucide-arrow-down) {
+          translate: 0 2px;
+        }
+
+        & :is(.lucide-chevron-up, .lucide-arrow-up) {
+          translate: 0 -2px;
+        }
+
+        & :is(.lucide-chevron-left, .lucide-arrow-left) {
+          translate: -2px 0;
+        }
+
+        & :is(.lucide-chevron-right, .lucide-arrow-right, .lucide-play) {
+          translate: 2px 0;
+        }
+
+        & .lucide-copy > :first-child {
+          transform: translate(2px, 2px);
+        }
+
+        & .lucide-copy > :last-child {
+          transform: translate(-2px, -2px);
+        }
+
+        & .lucide-download > :is(:first-child, :last-child) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-link > :first-child {
+          transform: translate(-1.5px, 1.5px);
+        }
+
+        & .lucide-link > :last-child {
+          transform: translate(1.5px, -1.5px);
+        }
+
+        & .lucide-external-link {
+          translate: 1.5px -1.5px;
+        }
+
+        & :is(.lucide-panel-left, .lucide-panel-left-close) > :nth-child(2) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-left-close > :nth-child(3) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-right > :nth-child(2) {
+          transform: translateX(2px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(1), :nth-child(2), :nth-child(3)) {
+          transform: translateY(1px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(4), :nth-child(5)) {
+          transform: translateY(-1px);
+        }
+
+        & :is(.lucide-message-square, .lucide-search) {
+          animation: animate-ui-icon-wiggle 260ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & :is(.lucide-check, .lucide-star) {
+          animation: animate-ui-icon-pop 240ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & :is(.lucide-send, .lucide-paperclip, .lucide-hammer, .lucide-bot) {
+          animation: animate-ui-icon-nudge 260ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-terminal > :first-child {
+          animation: animate-ui-icon-blink 260ms ease-out;
+        }
+
+        & .lucide-ellipsis > :nth-child(3) {
+          animation: animate-ui-icon-dot 240ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-ellipsis > :nth-child(1) {
+          animation: animate-ui-icon-dot 240ms 35ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-ellipsis > :nth-child(2) {
+          animation: animate-ui-icon-dot 240ms 70ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-chart-no-axes-column > :nth-child(1) {
+          animation: animate-ui-icon-bar 220ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-chart-no-axes-column > :nth-child(2) {
+          animation: animate-ui-icon-bar 220ms 35ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-chart-no-axes-column > :nth-child(3) {
+          animation: animate-ui-icon-bar 220ms 70ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        & .lucide-sparkles > * {
+          animation: animate-ui-icon-pop 240ms cubic-bezier(0.25, 1, 0.5, 1);
+        }
+      }
+    }
+  }
+}
+
+@keyframes animate-ui-icon-wiggle {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  35% {
+    rotate: 10deg;
+  }
+  70% {
+    rotate: -5deg;
+  }
+}
+
+@keyframes animate-ui-icon-pop {
+  0%,
+  100% {
+    scale: 1;
+  }
+  45% {
+    scale: 0.88;
+  }
+  72% {
+    scale: 1.14;
+  }
+}
+
+@keyframes animate-ui-icon-nudge {
+  0%,
+  100% {
+    translate: 0 0;
+    rotate: 0deg;
+  }
+  45% {
+    translate: 1.5px -1.5px;
+    rotate: 6deg;
+  }
+}
+
+@keyframes animate-ui-icon-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@keyframes animate-ui-icon-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes animate-ui-icon-bar {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.55);
+  }
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
