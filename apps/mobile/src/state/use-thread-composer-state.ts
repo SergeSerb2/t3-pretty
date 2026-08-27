@@ -24,7 +24,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
-import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
+import { isNativeResumeSessionReady, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
@@ -34,6 +34,7 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import {
+  isOptimisticStartingThreadPending,
   mergeOptimisticThreadMessages,
   resolveOptimisticSendStartedAt,
 } from "../lib/optimisticThreadSend";
@@ -186,8 +187,7 @@ export function useThreadComposerState() {
         (message) => message.id === optimisticStarting.message.messageId,
       ) ||
       (selectedThreadMessages.length === 0 &&
-        selectedThreadDetail?.session !== null &&
-        selectedThreadDetail?.session !== undefined &&
+        isNativeResumeSessionReady(selectedThreadDetail?.session?.status) &&
         parseNativeResumeCommand(optimisticStarting.message.text)?._tag === "Resume")
     ) {
       clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
@@ -274,7 +274,7 @@ export function useThreadComposerState() {
     !!selectedThread &&
     (selectedThread.session?.status === "running" ||
       selectedThread.session?.status === "starting" ||
-      optimisticStarting !== null ||
+      isOptimisticStartingThreadPending(optimisticStarting, selectedThread.session?.status) ||
       isDeliveringQueuedMessage);
 
   const onSendMessage = useCallback(

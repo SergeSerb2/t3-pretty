@@ -722,6 +722,73 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("retries a native resume after provider startup fails", () =>
+    Effect.gen(function* () {
+      let failStartup = true;
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) =>
+            failStartup
+              ? Effect.fail(
+                  new ProviderAdapterRequestError({
+                    provider: "codex",
+                    method: "thread.start",
+                    detail: "native session was not found",
+                  }),
+                )
+              : Effect.succeed(session),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      const resume = (suffix: string, nativeSessionId: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-native-resume-${suffix}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`user-message-native-resume-${suffix}`),
+            role: "user" as const,
+            text: `/resume ${nativeSessionId}`,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required" as const,
+          createdAt: now,
+        });
+
+      yield* resume("failed", "missing-session");
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          return thread?.session?.status === "error";
+        }),
+      );
+
+      failStartup = false;
+      yield* resume("retry", "native-session-123");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 2));
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.startSession.mock.calls.map((call) => call[1])).toMatchObject([
+        { nativeSessionId: "missing-session" },
+        { nativeSessionId: "native-session-123" },
+      ]);
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.messages).toEqual([]);
+      expect(thread?.session?.status).toBe("ready");
+      expect(
+        thread?.activities.some((activity) => activity.kind === "provider.session.resume.failed"),
+      ).toBe(true);
+      expect(
+        thread?.activities.some((activity) => activity.kind === "provider.session.resumed"),
+      ).toBe(true);
+    }),
+  );
+
   effectIt.effect("does not reactivate a turn that completed before sendTurn returns", () =>
     Effect.gen(function* () {
       const accepted = yield* Deferred.make<{

@@ -1,4 +1,4 @@
-import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
+import { ENTITY_ID_MAX_LENGTH, type OrchestrationSessionStatus } from "@t3tools/contracts";
 
 import { stripCreatePullRequestSuffix } from "./createPullRequestPrompt.ts";
 
@@ -7,6 +7,12 @@ export const NATIVE_RESUME_THREAD_TITLE = "Resumed native session";
 export type NativeResumeCommand =
   | { readonly _tag: "Resume"; readonly sessionId: string }
   | { readonly _tag: "Invalid" };
+
+export function isNativeResumeSessionReady(
+  status: OrchestrationSessionStatus | null | undefined,
+): boolean {
+  return status === "ready";
+}
 
 export function parseNativeResumeCommand(text: string): NativeResumeCommand | null {
   const visibleText = stripCreatePullRequestSuffix(text).trim();

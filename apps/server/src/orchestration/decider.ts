@@ -1056,7 +1056,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             detail: "Usage: /resume <native-session-id>.",
           });
         }
-        if (targetThread.messages.length > 0 || targetThread.session !== null) {
+        if (
+          targetThread.messages.length > 0 ||
+          (targetThread.session !== null && targetThread.session.status !== "error")
+        ) {
           return yield* new OrchestrationCommandInvariantError({
             commandType: command.type,
             detail: "Native /resume can only be used as the first command in a new thread.",

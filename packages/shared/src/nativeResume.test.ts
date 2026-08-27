@@ -4,7 +4,7 @@ import {
   buildCreatePullRequestMessageSuffix,
   CREATE_PULL_REQUEST_OPEN_MARKER,
 } from "./createPullRequestPrompt.ts";
-import { parseNativeResumeCommand } from "./nativeResume.ts";
+import { isNativeResumeSessionReady, parseNativeResumeCommand } from "./nativeResume.ts";
 
 describe("parseNativeResumeCommand", () => {
   it("parses a native session id", () => {
@@ -30,5 +30,14 @@ describe("parseNativeResumeCommand", () => {
     expect(
       parseNativeResumeCommand(`/resume session-123\n${CREATE_PULL_REQUEST_OPEN_MARKER}`),
     ).toEqual({ _tag: "Invalid" });
+  });
+});
+
+describe("isNativeResumeSessionReady", () => {
+  it("only settles the optimistic command after a successful resume", () => {
+    expect(isNativeResumeSessionReady("ready")).toBe(true);
+    expect(isNativeResumeSessionReady("starting")).toBe(false);
+    expect(isNativeResumeSessionReady("error")).toBe(false);
+    expect(isNativeResumeSessionReady(null)).toBe(false);
   });
 });

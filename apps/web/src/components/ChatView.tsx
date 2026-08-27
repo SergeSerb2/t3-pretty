@@ -56,7 +56,11 @@ import {
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
+import {
+  isNativeResumeSessionReady,
+  NATIVE_RESUME_THREAD_TITLE,
+  parseNativeResumeCommand,
+} from "@t3tools/shared/nativeResume";
 import { truncate } from "@t3tools/shared/String";
 import {
   getTerminalLabel,
@@ -4647,7 +4651,7 @@ function ChatViewContent(props: ChatViewProps) {
       (message) =>
         serverIds.has(message.id) ||
         (activeThread.messages.length === 0 &&
-          activeThread.session !== null &&
+          isNativeResumeSessionReady(activeThread.session?.status) &&
           parseNativeResumeCommand(message.text)?._tag === "Resume"),
     );
     if (removedMessages.length === 0) {
