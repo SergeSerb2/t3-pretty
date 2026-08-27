@@ -336,6 +336,7 @@ function SidebarUpdateControl() {
               type="button"
               aria-label={tooltip}
               aria-disabled={isInteractionDisabled || undefined}
+              data-animate-ui-icons
               className={cn(
                 "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
                 isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
