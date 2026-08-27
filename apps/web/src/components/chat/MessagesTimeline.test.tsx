@@ -395,6 +395,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("sticky top-2 z-10");
+    expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
     expect(markup).not.toContain("self-start");
     expect(markup).toContain("whitespace-nowrap");
     expect(markup).toContain("!size-[22px]");

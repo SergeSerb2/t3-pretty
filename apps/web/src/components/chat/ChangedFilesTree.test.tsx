@@ -21,6 +21,8 @@ describe("ChangedFilesCard", () => {
     );
 
     expect(markup).toContain('data-changed-files-state="expanded"');
+    expect(markup).toContain("sticky top-2 z-10 mb-2");
+    expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain("whitespace-nowrap");
     expect(markup).toContain('class="group flex min-w-0 flex-1 items-center rounded-xl');
