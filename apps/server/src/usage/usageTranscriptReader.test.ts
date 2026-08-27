@@ -104,4 +104,42 @@ describe("readTranscriptRecords", () => {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("reads every Grok model on a line up to the record budget", async () => {
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-usage-grok-records-"));
+    const transcript = NodePath.join(root, "updates.jsonl");
+    const line = JSON.stringify({
+      timestamp: 1_786_372_566,
+      params: {
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "prompt-1",
+          usage: {
+            inputTokens: 2,
+            outputTokens: 2,
+            modelUsage: {
+              "grok-4.5": { inputTokens: 1, outputTokens: 1 },
+              "grok-4.6": { inputTokens: 1, outputTokens: 1 },
+            },
+          },
+        },
+      },
+    });
+    try {
+      await NodeFSP.writeFile(transcript, `${line}\n`);
+
+      const full = await readTranscriptRecords(transcript, "grok", 2);
+      const bounded = await readTranscriptRecords(transcript, "grok", 1);
+
+      assert.deepEqual(
+        full?.records.map((record) => record.model),
+        ["grok-4.5", "grok-4.6"],
+      );
+      assert.lengthOf(bounded?.records ?? [], 1);
+      assert.isTrue(bounded?.recordLimitReached);
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
 });
