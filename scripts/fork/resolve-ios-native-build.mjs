@@ -119,6 +119,7 @@ for (let index = 2; index < NodeProcess.argv.length; index += 1) {
 }
 
 const fingerprint = readFingerprintInput(args);
+const platform = args.get("platform") === "android" ? "Android" : "iOS";
 const forceBuild = args.get("force") === "true" || args.get("force") === "1";
 // Local `eas build --local` binaries never appear in `eas build:list`. The
 // workflow therefore persists the last successfully submitted fingerprint
@@ -149,13 +150,13 @@ for (const line of lines) {
 }
 
 if (forceBuild) {
-  NodeProcess.stdout.write("Forcing a native iOS build (mode=build).\n");
+  NodeProcess.stdout.write(`Forcing a native ${platform} build (mode=build).\n`);
 } else if (shouldBuild) {
   NodeProcess.stdout.write(
-    `iOS runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`,
+    `${platform} runtime fingerprint changed (${submittedFingerprint || "none"} -> ${fingerprint}).\n`,
   );
 } else {
   NodeProcess.stdout.write(
-    `iOS runtime fingerprint ${fingerprint} already has a production binary; skipping Xcode.\n`,
+    `${platform} runtime fingerprint ${fingerprint} already has a production binary; skipping native build.\n`,
   );
 }

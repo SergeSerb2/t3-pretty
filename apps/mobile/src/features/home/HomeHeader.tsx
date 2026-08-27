@@ -1,17 +1,15 @@
 import type { EnvironmentId, SidebarThreadSortOrder } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
-import Constants from "expo-constants";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useCallback, useMemo, useRef } from "react";
-import { Platform, Pressable, Text as RNText, TextInput, View } from "react-native";
+import { Platform, Pressable, TextInput, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
-import { T3Wordmark } from "../../components/T3Wordmark";
+import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
-import { resolveMobileStageLabel } from "../../lib/mobileBranding";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
@@ -71,7 +69,6 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
   const insets = useSafeAreaInsets();
   const iconColor = useThemeColor("--color-icon");
   const mutedColor = useThemeColor("--color-foreground-muted");
-  const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
   // Thread List v2 lays the list out in fixed creation order, so the
   // sort/group filter controls would be silently ignored — hide them and
   // key the "customized" icon state off the environment filter alone.
@@ -217,20 +214,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
             <WorkspaceConnectionTitle
               grow
               onPress={props.onOpenEnvironments}
-              brand={
-                <View className="flex-row items-center gap-2">
-                  {/* Mirrors the desktop SidebarBrand: generated T3 mark + muted "Pretty". */}
-                  <T3Wordmark height={15} />
-                  <RNText className="-ml-0.5 text-[21px] font-t3-medium tracking-[-0.5px] text-foreground-muted">
-                    Pretty
-                  </RNText>
-                  <View className="rounded-full bg-subtle px-2 py-0.75">
-                    <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
-                      {stageLabel}
-                    </RNText>
-                  </View>
-                </View>
-              }
+              brand={<CompactBrandTitle />}
             />
 
             <ControlPillMenu
@@ -241,7 +225,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               <Pressable
                 accessibilityLabel="Filter and sort threads"
                 accessibilityRole="button"
-                className="size-11 items-center justify-center rounded-full bg-subtle"
+                className="size-12 items-center justify-center rounded-full bg-subtle"
               >
                 <SymbolView
                   name={
@@ -262,7 +246,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               accessibilityLabel="Open pull requests"
               accessibilityRole="button"
               onPress={props.onOpenPullRequests}
-              className="size-11 items-center justify-center rounded-full bg-subtle"
+              className="size-12 items-center justify-center rounded-full bg-subtle"
             >
               <SymbolView
                 name="arrow.triangle.pull"
@@ -275,7 +259,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               accessibilityLabel="Open settings"
               accessibilityRole="button"
               onPress={props.onOpenSettings}
-              className="size-11 items-center justify-center rounded-full bg-subtle"
+              className="size-12 items-center justify-center rounded-full bg-subtle"
             >
               <SymbolView name="gearshape" size={18} tintColor={iconColor} type="monochrome" />
             </Pressable>
@@ -295,7 +279,8 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
             {props.searchQuery.length > 0 ? (
               <Pressable
                 accessibilityLabel="Clear search"
-                hitSlop={10}
+                accessibilityRole="button"
+                className="-mr-3 size-12 items-center justify-center"
                 onPress={() => props.onSearchQueryChange("")}
               >
                 <SymbolView

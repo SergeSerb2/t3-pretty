@@ -57,7 +57,8 @@ export function CompactBrandTitle(
     >
       <T3Wordmark height={15} />
       <Text
-        allowFontScaling={props.allowFontScaling}
+        allowFontScaling={props.allowFontScaling ?? true}
+        maxFontSizeMultiplier={1.2}
         style={{
           color: mutedColor,
           fontFamily: "DMSans-Medium",
@@ -76,7 +77,8 @@ export function CompactBrandTitle(
         }}
       >
         <Text
-          allowFontScaling={props.allowFontScaling}
+          allowFontScaling={props.allowFontScaling ?? true}
+          maxFontSizeMultiplier={1.2}
           style={{
             color: mutedColor,
             fontFamily: "DMSans-Bold",
@@ -93,7 +95,7 @@ export function CompactBrandTitle(
 }
 
 export function renderCompactBrandTitle() {
-  return <CompactBrandTitle allowFontScaling={Platform.OS === "ios"} />;
+  return <CompactBrandTitle />;
 }
 
 export function renderCompactBrandHeaderItems(): NativeStackHeaderItem[] {

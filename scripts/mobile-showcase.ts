@@ -11,6 +11,8 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
+import mobileAppConfig from "../apps/mobile/app.config.ts";
+
 import showcaseConfig, {
   type ShowcaseAppearance,
   type ShowcaseAndroidDevice,
@@ -33,7 +35,11 @@ import {
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
-const ANDROID_PACKAGE = "com.t3tools.t3code";
+const ANDROID_PACKAGE = mobileAppConfig.android?.package;
+const IOS_BUNDLE_IDENTIFIER = mobileAppConfig.ios?.bundleIdentifier;
+if (!ANDROID_PACKAGE || !IOS_BUNDLE_IDENTIFIER) {
+  throw new Error("The mobile showcase requires configured Android and iOS application IDs.");
+}
 const APP_SCHEME = "t3code";
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
@@ -882,7 +888,13 @@ async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
 
 async function iosAppContainer(udid: string): Promise<string> {
   return (
-    await commandOutput("xcrun", ["simctl", "get_app_container", udid, ANDROID_PACKAGE, "data"])
+    await commandOutput("xcrun", [
+      "simctl",
+      "get_app_container",
+      udid,
+      IOS_BUNDLE_IDENTIFIER,
+      "data",
+    ])
   ).trim();
 }
 
@@ -929,7 +941,7 @@ async function captureIos(
   }
   await normalizeIosSimulator(capture.appearance, simulator.udid);
   if (appPath) {
-    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, ANDROID_PACKAGE]).catch(
+    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, IOS_BUNDLE_IDENTIFIER]).catch(
       () => undefined,
     );
     await runCommand("xcrun", ["simctl", "install", simulator.udid, appPath]);
@@ -946,7 +958,7 @@ async function captureIos(
       simulator.udid,
       "defaults",
       "write",
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       key,
       "-bool",
       value,
@@ -970,7 +982,7 @@ async function captureIos(
       "launch",
       ...(terminateRunningProcess ? ["--terminate-running-process"] : []),
       simulator.udid,
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       "--initialUrl",
       metroUrl,
       "--showcasePairingUrl",

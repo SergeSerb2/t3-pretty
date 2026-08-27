@@ -24,6 +24,10 @@ const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+// Universal exports already contain their own rounded-square plate. Android
+// masks adaptive layers itself, so every non-internal channel uses the bare
+// T3 Pretty mark and lets its channel background supply the identity.
+const androidAdaptiveForeground = "./assets/android-icon-mark.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -39,24 +43,24 @@ const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
+  androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#00639B",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#00639B",
 } as const;
 
-// The nightly*/production* PNG keys in BRAND_ASSET_PATHS all resolve to the
-// assets/pretty family (see scripts/lib/brand-assets.ts), so splash and
-// adaptive foregrounds track the same glass/sage art as iosIcon in every
-// channel — the sage plate below is not behind leftover candy art.
+// The nightly*/production* PNG keys in BRAND_ASSET_PATHS resolve to the
+// assets/pretty family (see scripts/lib/brand-assets.ts). Android supplies the
+// matching sage plate as the adaptive background instead of nesting it in the
+// foreground.
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
   // point ios.icon at the PNG or the upstream composer art would win on iOS.
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
+  androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -67,7 +71,7 @@ const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  androidAdaptiveForeground: "./assets/android-icon-mark.png",
+  androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -143,7 +147,7 @@ const VARIANT_CONFIG = {
       : "com.sergeserbinenko.t3pretty.public",
     androidPackage: isInternalBuild
       ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.public",
+      : "com.sergeserbinenko.t3pretty.app",
     relyingParty,
     assets: isInternalBuild ? INTERNAL_RELEASE_ASSETS : RELEASE_ASSETS,
   },

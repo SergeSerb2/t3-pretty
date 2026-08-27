@@ -1,8 +1,8 @@
 # T3 Pretty mobile release train
 
-The iOS app auto-updates through the same two mechanisms as the desktop apps:
-merge-driven releases from CI, and upstream ingestion every four hours with
-local build delivery.
+The mobile apps follow the same upstream ingestion as desktop. Internal iOS
+ships through OTA and TestFlight; Android ships two separate applications to
+Google Play internal testing.
 
 ## Upstream ingestion (shared with desktop)
 
@@ -14,6 +14,51 @@ an immediately merged pull request. Mobile code rides along — there is no sepa
 mobile sync. The imported `fork-upstream-sync.yml` wrapper is not scheduled.
 
 ## Merge-driven releases
+
+### Android Play internal testing
+
+Buildkite runs `scripts/fork/publish-android-release.sh` on `macos-release`.
+Both Android flavors build an AAB in EAS cloud and submit that exact build to
+Google Play's internal track:
+
+- `T3 Pretty Internal` — package `com.sergeserbinenko.t3pretty`, private
+  Internal relay, automatic on non-scheduled `main` builds after activation.
+- public `T3 Pretty` — package `com.sergeserbinenko.t3pretty.app`, official
+  `https://relay.t3.codes`, manual closed-test build only. Start a Buildkite UI
+  build of `main` with `T3CODE_PUBLIC_ANDROID_RELEASE=1`.
+
+The flavors share the Android signing concurrency group but use separate EAS
+projects, Play records, package IDs, and native fingerprint markers. Internal
+skips Android-irrelevant commits and unchanged native fingerprints; compatible
+JavaScript still arrives through the existing production Expo Updates channel.
+Public builds are always native builds so an explicit tester release cannot be
+silently replaced by an OTA-only update.
+
+The automatic Internal step is intentionally inactive until setup is complete;
+it leaves a warning annotation instead of claiming a release. One-time setup:
+
+1. In Play Console, create `T3 Pretty Internal` with package
+   `com.sergeserbinenko.t3pretty` and `T3 Pretty` with package
+   `com.sergeserbinenko.t3pretty.app`. Keep both on internal testing and add the
+   tester lists there.
+2. Create or select a distinct public EAS project. Put its
+   `T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID`, `T3CODE_PUBLIC_MOBILE_EXPO_OWNER`, and
+   `T3CODE_PUBLIC_MOBILE_EXPO_SLUG` values in the `macos-release` Buildkite
+   cluster secret store. Internal keeps the existing fork-owned EAS project.
+3. Create the Google service account required by Play and upload its JSON key
+   to each EAS project as the Android submit credential. Do not store the JSON
+   key in Buildkite or this repository.
+4. Keep `EXPO_TOKEN` on `macos-release`. After both Play records and the
+   Internal EAS submit credential exist, set
+   `T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1` there.
+5. Trigger a public tester build only when desired by setting
+   `T3CODE_PUBLIC_ANDROID_RELEASE=1` on a Buildkite UI build of `main`.
+
+The production submit profile in `apps/mobile/eas.json` fixes the destination
+to Play's `internal` track. Changing tester visibility or promoting a build is a
+Play Console decision, not an automatic consequence of this pipeline.
+
+### iOS OTA and TestFlight
 
 `.buildkite/pipeline.yml` runs `scripts/fork/publish-mobile-release.sh` on
 every push to Origin `main` that is not the four-hour schedule. The job lives

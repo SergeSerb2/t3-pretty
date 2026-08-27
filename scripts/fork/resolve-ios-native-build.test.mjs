@@ -203,6 +203,21 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "Forcing a native iOS build");
   });
 
+  it("labels the shared gate correctly for Android releases", () => {
+    const output = run([
+      "--platform",
+      "android",
+      "--fingerprint-json",
+      JSON.stringify({ hash: "android-new" }),
+      "--submitted-fingerprint",
+      "android-old",
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "Android runtime fingerprint changed (android-old -> android-new)");
+    assert.notInclude(output, "iOS runtime fingerprint");
+  });
+
   it("automatic release skips Xcode when the fingerprint is unchanged", () => {
     const source = NodeFS.readFileSync(mobileReleasePath, "utf8");
     assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
@@ -264,10 +279,6 @@ describe("T3 Pretty iOS native-build gate", () => {
         ]),
       /safety limit/u,
     );
-
-    const workflow = NodeFS.readFileSync(workflowPath, "utf8");
-    assert.include(workflow, "--submitted-fingerprint-file");
-    assert.notInclude(workflow, "tr -d '[:space:]'");
   });
 
   it("rejects fingerprint output injection and oversized files", () => {

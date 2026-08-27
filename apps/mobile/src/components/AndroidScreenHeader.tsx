@@ -32,7 +32,7 @@ export function AndroidHeaderIconButton(props: {
       hitSlop={8}
       onPress={props.onPress}
       className={cn(
-        "size-11 items-center justify-center rounded-full bg-subtle",
+        "size-12 items-center justify-center rounded-full bg-subtle",
         props.disabled && "opacity-55",
       )}
     >
@@ -65,14 +65,14 @@ export function AndroidScreenHeader(props: {
         paddingTop: props.embedded ? 8 : Math.max(insets.top, 12),
       }}
     >
-      <View className="min-h-12 flex-row items-center gap-2">
+      <View className="min-h-14 flex-row items-center gap-2">
         {props.onBack ? (
           <Pressable
             accessibilityLabel="Navigate up"
             accessibilityRole="button"
             hitSlop={8}
             onPress={props.onBack}
-            className="-mr-2 size-11 items-center justify-center"
+            className="-mr-2 size-12 items-center justify-center"
           >
             <SymbolView
               name="chevron.left"
