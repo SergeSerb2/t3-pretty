@@ -8,6 +8,7 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   applyResolutionEdits,
   buildConflictPrompt,
+  buildValidationRetryPrompt,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
@@ -657,6 +658,15 @@ ${">".repeat(7)} theirs
     // failure: one fresh request usually validates (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
+
+    const retryPrompt = buildValidationRetryPrompt(
+      "original prompt",
+      new Error("old_text matching 2 locations"),
+    );
+    assert.include(retryPrompt, "The previous response failed validation");
+    assert.include(retryPrompt, "old_text matching 2 locations");
+    assert.include(retryPrompt, "include enough unchanged surrounding lines");
+    assert.equal(buildValidationRetryPrompt("original prompt", undefined), "original prompt");
   });
 
   it("keeps every conflict context byte-exact against the working file", () => {

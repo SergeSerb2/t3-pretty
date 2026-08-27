@@ -1064,6 +1064,13 @@ export function applyResolutionEdits({ path, source, conflicts, resolution }) {
   return resolvedSource;
 }
 
+export function buildValidationRetryPrompt(prompt, validationError) {
+  if (validationError === undefined) return prompt;
+  return `${prompt}\n\nThe previous response failed validation: ${oneLine(
+    validationError instanceof Error ? validationError.message : String(validationError),
+  )}. Every old_text must match exactly one location near this batch's conflicts; include enough unchanged surrounding lines to make each span unique.`;
+}
+
 async function resolveConflict(path, token) {
   // Binary assets (icons, images) cannot be text-merged and are never model
   // input: the fork's branded copy is authoritative.
@@ -1137,7 +1144,7 @@ async function resolveConflict(path, token) {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const response = await requestConflictResolution({
         path,
-        prompt,
+        prompt: buildValidationRetryPrompt(prompt, validationError),
         conflictCount: conflicts.length,
         token,
       });
