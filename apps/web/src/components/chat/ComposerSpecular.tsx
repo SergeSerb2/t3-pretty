@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
 import {
-  COMPOSER_HOVER_SPEED_STALE_MS,
   composerHoverDurationScale,
+  composerHoverPointerSpeed,
   pointerSpeedPxPerMs,
 } from "./composerHoverDuration";
 
@@ -55,7 +55,15 @@ export function ComposerSpecular() {
 
     const applyHoverDuration = (event: PointerEvent) => {
       if (event.pointerType !== "mouse") return;
-      const speed = event.timeStamp - lastT >= COMPOSER_HOVER_SPEED_STALE_MS ? 0 : lastSpeed;
+      const speed = composerHoverPointerSpeed(
+        lastX,
+        lastY,
+        lastT,
+        lastSpeed,
+        event.clientX,
+        event.clientY,
+        event.timeStamp,
+      );
       host.style.setProperty("--composer-hover-dur", String(composerHoverDurationScale(speed)));
     };
 

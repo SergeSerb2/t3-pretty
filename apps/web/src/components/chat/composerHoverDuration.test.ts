@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  COMPOSER_HOVER_SPEED_STALE_MS,
   composerHoverDurationScale,
+  composerHoverPointerSpeed,
   pointerSpeedPxPerMs,
 } from "./composerHoverDuration";
 
@@ -30,9 +30,23 @@ describe("composerHoverDurationScale", () => {
 });
 
 describe("pointerSpeedPxPerMs", () => {
-  it("uses the last step, then forgets a parked pointer", () => {
+  it("uses hypot/dt for the last step, including a stale-gap crossing", () => {
     expect(pointerSpeedPxPerMs(0, 0, 1000, 9, 12, 1010)).toBeCloseTo(1.5);
-    expect(pointerSpeedPxPerMs(0, 0, 1000, 400, 0, 1000 + COMPOSER_HOVER_SPEED_STALE_MS)).toBe(0);
+    expect(pointerSpeedPxPerMs(0, 0, 1000, 400, 0, 1100)).toBeCloseTo(4);
     expect(pointerSpeedPxPerMs(0, 0, 1000, 10, 0, 1000)).toBe(0);
+  });
+});
+
+describe("composerHoverPointerSpeed", () => {
+  it("uses the crossing step after idle instead of a zeroed lastSpeed", () => {
+    expect(composerHoverPointerSpeed(0, 0, 1000, 0, 400, 0, 1150)).toBeCloseTo(400 / 150);
+  });
+
+  it("reuses lastSpeed when this event already updated the sample", () => {
+    expect(composerHoverPointerSpeed(400, 0, 1150, 2.5, 400, 0, 1150)).toBe(2.5);
+  });
+
+  it("drops speed when there was no prior coordinate", () => {
+    expect(composerHoverPointerSpeed(0, 0, 0, 3, 400, 0, 1150)).toBe(0);
   });
 });

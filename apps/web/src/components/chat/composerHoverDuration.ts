@@ -1,6 +1,3 @@
-/** Ignore a parked pointer; only the last moving sample should set hover time. */
-export const COMPOSER_HOVER_SPEED_STALE_MS = 100;
-
 const DUR_MIN = 0.25;
 const DUR_MAX = 1.7;
 /** px/ms that keeps the CSS base durations (scale = 1). */
@@ -24,6 +21,26 @@ export function pointerSpeedPxPerMs(
   toT: number,
 ): number {
   const dt = toT - fromT;
-  if (dt <= 0 || dt >= COMPOSER_HOVER_SPEED_STALE_MS) return 0;
+  if (dt <= 0) return 0;
   return Math.hypot(toX - fromX, toY - fromY) / dt;
+}
+
+/**
+ * Enter/leave speed from the last document sample to this event.
+ * A stale gap still uses that crossing hypot/dt — only a missing prior
+ * coordinate drops to 0. If capture pointermove already consumed this
+ * timestamp, `lastSpeed` is the same step.
+ */
+export function composerHoverPointerSpeed(
+  lastX: number,
+  lastY: number,
+  lastT: number,
+  lastSpeed: number,
+  toX: number,
+  toY: number,
+  toT: number,
+): number {
+  if (lastT === 0) return 0;
+  if (toT <= lastT) return lastSpeed;
+  return pointerSpeedPxPerMs(lastX, lastY, lastT, toX, toY, toT);
 }
