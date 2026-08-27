@@ -22,6 +22,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
   buildToolCallDisplaySections,
   formatChangedFileDiffText,
+  isRedundantChangedFileOutput,
   leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
@@ -771,11 +772,14 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
   const diffs = entry.changedFileDiffs ?? [];
   const diffText = formatChangedFileDiffText(diffs);
   const leftoverPaths = leftoverChangedFilePaths(entry.changedFiles ?? [], diffs);
+  const output = isRedundantChangedFileOutput(entry.detail, entry.changedFiles ?? [])
+    ? null
+    : entry.detail;
   return serializeToolCallDisplaySections(
     buildToolCallDisplaySections({
       leadingText: mcpText,
       command: entry.rawCommand ?? entry.command,
-      output: diffText ? null : entry.detail,
+      output,
       diffText,
       trailingText:
         leftoverPaths ??

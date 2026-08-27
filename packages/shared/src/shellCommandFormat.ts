@@ -28,10 +28,16 @@ export function formatChangedFileDiffText(
   if (withDiffs.length === 0) {
     return null;
   }
-  if (withDiffs.length === 1 && files.length === 1) {
-    return withDiffs[0]!.diff!.trim();
-  }
   return withDiffs.map((file) => `${file.path}\n${file.diff!.trim()}`).join("\n\n");
+}
+
+export function isRedundantChangedFileOutput(
+  output: string | null | undefined,
+  paths: ReadonlyArray<string>,
+): boolean {
+  const text = output?.trim();
+  if (!text || paths.length === 0) return false;
+  return paths.includes(text) || paths.join("\n") === text;
 }
 
 export function leftoverChangedFilePaths(

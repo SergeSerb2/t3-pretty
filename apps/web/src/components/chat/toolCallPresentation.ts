@@ -1,6 +1,7 @@
 import {
   buildToolCallDisplaySections,
   formatChangedFileDiffText,
+  isRedundantChangedFileOutput,
   leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
   toolCallDisplayAddsStructure,
@@ -40,10 +41,11 @@ export function buildWorkEntryDisplaySections(input: {
     .map((path) => path.trim())
     .filter((path) => path.length > 0);
   const leftoverPaths = leftoverChangedFilePaths(changedPaths, diffs);
+  const output = input.output ?? null;
   return buildToolCallDisplaySections({
     leadingText: mcpText,
     command: input.command ?? null,
-    output: diffText ? null : (input.output ?? null),
+    output: isRedundantChangedFileOutput(output, changedPaths) ? null : output,
     diffText,
     trailingText: leftoverPaths ?? (diffText ? null : (input.changedFilesText ?? null)),
   });

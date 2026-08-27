@@ -49,15 +49,17 @@ describe("tool call expanded body", () => {
       changedFilesText: "src/a.ts",
       changedFileDiffs: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
     });
-    expect(sections).toEqual([{ kind: "diff", text: "-old\n+new" }]);
-    expect(workEntryDisplayBody(sections)).toBe("-old\n+new");
+    expect(sections).toEqual([{ kind: "diff", text: "src/a.ts\n-old\n+new" }]);
+    expect(workEntryDisplayBody(sections)).toBe("src/a.ts\n-old\n+new");
 
     const withSiblings = buildWorkEntryDisplaySections({
+      output: "command output",
       changedFilesText: "src/a.ts\nsrc/b.ts",
       changedFileDiffs: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
     });
     expect(withSiblings).toEqual([
-      { kind: "diff", text: "-old\n+new" },
+      { kind: "text", text: "command output" },
+      { kind: "diff", text: "src/a.ts\n-old\n+new" },
       { kind: "text", text: "src/b.ts" },
     ]);
   });

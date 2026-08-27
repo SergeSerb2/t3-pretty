@@ -151,7 +151,7 @@ describe("tool call display sections", () => {
 
   it("renders a compact file diff section and labels multi-file patches", () => {
     expect(formatChangedFileDiffText([{ path: "src/a.ts", diff: "-old\n+new" }])).toBe(
-      "-old\n+new",
+      "src/a.ts\n-old\n+new",
     );
     expect(
       formatChangedFileDiffText([
