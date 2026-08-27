@@ -40,6 +40,19 @@ export function shouldContinueDesktopUpdateCheckAnimation({
   return isChecking && !prefersReducedMotion;
 }
 
+export function desktopUpdateCheckMotionAfterSpinIteration({
+  isChecking,
+  prefersReducedMotion,
+}: {
+  readonly isChecking: boolean;
+  readonly prefersReducedMotion: boolean;
+}): "idle" | "settle" | "spin" {
+  if (shouldContinueDesktopUpdateCheckAnimation({ isChecking, prefersReducedMotion })) {
+    return "spin";
+  }
+  return prefersReducedMotion ? "idle" : "settle";
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
@@ -103,11 +116,15 @@ function DesktopUpdateDownloadedIcon() {
 export function DesktopUpdateStatusIcon({
   downloadPercent,
   isCheckAnimating,
+  isCheckSettling,
+  onCheckAnimationEnd,
   onCheckAnimationIteration,
   status,
 }: {
   readonly downloadPercent?: number | null;
   readonly isCheckAnimating?: boolean;
+  readonly isCheckSettling?: boolean;
+  readonly onCheckAnimationEnd?: AnimationEventHandler<SVGSVGElement>;
   readonly onCheckAnimationIteration?: AnimationEventHandler<SVGSVGElement>;
   readonly status: DesktopUpdateStatusIconState;
 }) {
@@ -119,8 +136,15 @@ export function DesktopUpdateStatusIcon({
 
   return (
     <RefreshCwIcon
-      className={cn("size-4", status === "checking" && isCheckAnimating && "animate-spin")}
-      onAnimationIteration={onCheckAnimationIteration}
+      className={cn(
+        "size-4",
+        status === "checking" &&
+          isCheckSettling &&
+          "animate-desktop-update-check-settle motion-reduce:animate-none",
+        status === "checking" && isCheckAnimating && !isCheckSettling && "animate-spin",
+      )}
+      onAnimationEnd={isCheckSettling ? onCheckAnimationEnd : undefined}
+      onAnimationIteration={isCheckSettling ? undefined : onCheckAnimationIteration}
     />
   );
 }

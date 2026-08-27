@@ -166,6 +166,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-status-ping: status-ping 2s infinite;
   /* One-shot click ripple for the agent browser cursor; finite by design. */
   --animate-agent-ripple: agent-ripple 450ms ease-out forwards;
+  /* Desktop sidebar update-check: after the linear spin completes a turn,
+     keep a sliver of that velocity past rest and spring back. Finite. */
+  --animate-desktop-update-check-settle: desktop-update-check-settle 520ms linear forwards;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -274,6 +277,29 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     to {
       opacity: 0;
       scale: 2.2;
+    }
+  }
+  @keyframes desktop-update-check-settle {
+    /* First hop stays near animate-spin's 360deg/s so the stop is a
+       continuation, not a new wiggle after a hard halt. */
+    0% {
+      transform: rotate(0deg);
+      animation-timing-function: linear;
+    }
+    10% {
+      transform: rotate(18deg);
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    42% {
+      transform: rotate(-8deg);
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    68% {
+      transform: rotate(3.5deg);
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+    100% {
+      transform: rotate(0deg);
     }
   }
 }
