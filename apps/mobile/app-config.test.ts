@@ -1,9 +1,15 @@
 import { expect, it } from "vite-plus/test";
 
-import config, { resolveRelyingParty, resolveVoiceDictationPlugins } from "./app.config.ts";
+import config, {
+  resolveProductionAndroidPackage,
+  resolveRelyingParty,
+  resolveVoiceDictationPlugins,
+} from "./app.config.ts";
 
-it("uses a valid side-by-side package for the public Android app", () => {
+it("keeps production Android packages valid and side-by-side", () => {
   expect(config.android?.package).toBe("com.sergeserbinenko.t3pretty.app");
+  expect(resolveProductionAndroidPackage("internal")).toBe("com.sergeserbinenko.t3pretty");
+  expect(resolveProductionAndroidPackage("public")).toBe("com.sergeserbinenko.t3pretty.app");
 });
 
 it("keeps relying-party fallbacks within the selected build flavor", () => {

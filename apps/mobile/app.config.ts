@@ -112,6 +112,12 @@ export function resolveRelyingParty(
   }
 }
 
+export function resolveProductionAndroidPackage(buildFlavor: T3CodeBuildFlavor): string {
+  return buildFlavor === "internal"
+    ? "com.sergeserbinenko.t3pretty"
+    : "com.sergeserbinenko.t3pretty.app";
+}
+
 const relyingParty = resolveRelyingParty(
   repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
   isInternalBuild ? "internal" : "public",
@@ -145,9 +151,7 @@ const VARIANT_CONFIG = {
     iosBundleIdentifier: isInternalBuild
       ? "com.sergeserbinenko.t3pretty"
       : "com.sergeserbinenko.t3pretty.public",
-    androidPackage: isInternalBuild
-      ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.app",
+    androidPackage: resolveProductionAndroidPackage(isInternalBuild ? "internal" : "public"),
     relyingParty,
     assets: isInternalBuild ? INTERNAL_RELEASE_ASSETS : RELEASE_ASSETS,
   },

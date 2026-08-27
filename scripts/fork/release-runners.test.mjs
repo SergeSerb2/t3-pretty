@@ -343,6 +343,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(androidRelease, "A newer Origin main exists");
     assert.include(androidRelease, "Google Play internal testing");
     assert.include(androidRelease, "scripts/lib/brand-assets.ts");
+    assert.include(androidRelease, "scripts/lib/public-config.ts");
     assert.include(androidRelease, "origin-forge.mjs merge-pr");
     assert.notInclude(androidRelease, "serviceAccountKeyPath");
   });
