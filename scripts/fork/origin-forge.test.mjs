@@ -41,6 +41,7 @@ import {
   releaseUploaderEnvironment,
   releaseAssetObjectKeys,
   releaseAssetUploadPlan,
+  retryReleaseUpload,
   resolveCloudflareAccountId,
   resolveReleaseAssetObjectKey,
   resolveReleaseBucket,
@@ -102,6 +103,27 @@ describe("Origin forge constants", () => {
     assert.equal(ORIGIN_GIT_URL, "https://origin.cursor.com/serbinenko/t3-pretty.git");
     assert.equal(ORIGIN_WEB_URL, "https://cursor.com/codebase/serbinenko/t3-pretty");
     assert.equal(UPSTREAM_GIT_URL, "https://github.com/pingdotgg/t3code.git");
+  });
+});
+
+describe("release uploads", () => {
+  it("retries a failed object once", () => {
+    let attempts = 0;
+    let retries = 0;
+    const result = retryReleaseUpload(
+      () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("transient");
+        return "uploaded";
+      },
+      () => {
+        retries += 1;
+      },
+    );
+
+    assert.equal(result, "uploaded");
+    assert.equal(attempts, 2);
+    assert.equal(retries, 1);
   });
 });
 
