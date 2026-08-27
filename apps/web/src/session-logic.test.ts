@@ -1612,6 +1612,16 @@ describe("deriveWorkLogEntries", () => {
         changedFileDiffs: [{ path: "src/gone.ts", kind: "delete" }],
       }),
     ).toBe("File deleted");
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [
+          { path: "src/a.ts", kind: "add" },
+          { path: "src/b.ts", kind: "add" },
+        ],
+      }),
+    ).toBeNull();
     expect(fileChangeKindHeading(entry!)).toBeNull();
   });
 

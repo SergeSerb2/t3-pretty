@@ -826,19 +826,18 @@ function capitalizePhrase(value: string): string {
 }
 
 function fileChangeKindHeading(
-  workEntry: Pick<WorkLogEntry, "toolTitle" | "label" | "changedFileDiffs">,
+  workEntry: Pick<WorkLogEntry, "toolTitle" | "label" | "changedFileDiffs" | "changedFiles">,
 ): string | null {
   const current = normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase();
   if (current !== "file change" && current !== "changed files") {
     return null;
   }
-  const kinds = new Set<ChangedFileDiffKind>();
-  for (const file of workEntry.changedFileDiffs ?? []) {
-    if (file.kind) kinds.add(file.kind);
-  }
-  if (kinds.size !== 1) return null;
-  if (kinds.has("add")) return "File created";
-  if (kinds.has("delete")) return "File deleted";
+  const diffs = workEntry.changedFileDiffs ?? [];
+  const fileCount = Math.max(diffs.length, workEntry.changedFiles?.length ?? 0);
+  if (fileCount !== 1) return null;
+  const kind = diffs[0]?.kind;
+  if (kind === "add") return "File created";
+  if (kind === "delete") return "File deleted";
   return null;
 }
 
