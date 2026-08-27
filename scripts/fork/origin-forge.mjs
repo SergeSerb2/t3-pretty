@@ -198,6 +198,20 @@ export function runCommand(command, args, options = {}) {
   return (result.stdout ?? "").trim();
 }
 
+export function retryReleaseUpload(
+  upload,
+  onRetry = () => {
+    process.stderr.write("Release asset upload failed; retrying once.\n");
+  },
+) {
+  try {
+    return upload();
+  } catch {
+    onRetry();
+    return upload();
+  }
+}
+
 export function runOrigin(args, options = {}) {
   return runCommand(originBin(), args, {
     ...options,
@@ -1262,11 +1276,13 @@ export function uploadReleaseAsset(filePath, objectKey) {
       env.AWS_DEFAULT_REGION = region;
       args.push("--region", region);
     }
-    runCommand("aws", args, {
-      env,
-      inheritEnv: false,
-      redactValues: [rawBucket, rawEndpoint, bucket, endpoint].filter(Boolean),
-    });
+    retryReleaseUpload(() =>
+      runCommand("aws", args, {
+        env,
+        inheritEnv: false,
+        redactValues: [rawBucket, rawEndpoint, bucket, endpoint].filter(Boolean),
+      }),
+    );
     return;
   }
 
@@ -1318,15 +1334,17 @@ export function uploadReleaseAsset(filePath, objectKey) {
         "The Windows Node installation does not include npm/bin/npx-cli.js for the Wrangler upload.",
       );
     }
-    runCommand(process.execPath, [npxCli, "--yes", "wrangler", ...wranglerArgs], options);
+    retryReleaseUpload(() =>
+      runCommand(process.execPath, [npxCli, "--yes", "wrangler", ...wranglerArgs], options),
+    );
     return;
   }
   if (commandExists("wrangler", env)) {
-    runCommand("wrangler", wranglerArgs, options);
+    retryReleaseUpload(() => runCommand("wrangler", wranglerArgs, options));
     return;
   }
   if (commandExists("npx", env)) {
-    runCommand("npx", ["--yes", "wrangler", ...wranglerArgs], options);
+    retryReleaseUpload(() => runCommand("npx", ["--yes", "wrangler", ...wranglerArgs], options));
     return;
   }
   throw new Error(
