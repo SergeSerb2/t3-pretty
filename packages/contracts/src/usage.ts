@@ -26,6 +26,15 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  */
 export const USAGE_CONTRACT_VERSION = 5 as const;
 
+/**
+ * Oldest {@link UsageSummary} version a current client will still merge.
+ *
+ * Version 4 Claude/Codex buckets remain structurally valid under v5, so
+ * mixed-version environments keep those totals instead of treating every
+ * older server as stale.
+ */
+export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
+
 export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok", "kimi"] as const;
 
 export const USAGE_MODEL_MAX_LENGTH = 512;
