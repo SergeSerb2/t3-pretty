@@ -394,7 +394,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-secondary dark:bg-input/32");
+    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900");
     expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
     expect(markup).not.toContain("backdrop-blur-md");
     expect(markup).not.toContain("self-start");
