@@ -8,7 +8,13 @@ import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import { usePrimaryEnvironmentId, useRelayEnvironmentDiscovery } from "../state/environments";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
-import { buildRelayMeshRegistrations } from "./connectMesh";
+import {
+  buildRelayMeshRegistrations,
+  hasObservedRelayMembership,
+  isRelayEnvironmentPresent,
+  rememberRelayMembership,
+  shouldRepairStoredCloudLink,
+} from "./connectMesh";
 import { useCloudLinkController } from "./useCloudLinkController";
 
 /**
@@ -26,7 +32,7 @@ export function SurgeConnectMeshSync() {
   const reconcileRelayEnvironments = useAtomCommand(environmentCatalog.reconcileRelayEnvironments, {
     reportFailure: true,
   });
-  const migrationAttemptRef = useRef<string | null>(null);
+  const linkRepairHandledRef = useRef<string | null>(null);
   const lastReconciliationRef = useRef<string | null>(null);
   const meshActive =
     isElectron &&
@@ -49,7 +55,6 @@ export function SurgeConnectMeshSync() {
       controller.isSignedIn !== true ||
       controller.linkState.isPending ||
       !controller.storedLinked ||
-      controller.linked ||
       state === null ||
       target === null
     ) {
@@ -62,15 +67,34 @@ export function SurgeConnectMeshSync() {
       controller.storedManagedTunnelActive,
       controller.storedPublishAgentActivity,
     ].join("\n");
-    if (migrationAttemptRef.current === migrationKey) {
+    if (controller.linked && isRelayEnvironmentPresent(discovery, target.environmentId)) {
+      if (linkRepairHandledRef.current !== migrationKey) {
+        rememberRelayMembership(migrationKey);
+        linkRepairHandledRef.current = migrationKey;
+      }
       return;
     }
-    migrationAttemptRef.current = migrationKey;
+    if (linkRepairHandledRef.current === migrationKey) {
+      return;
+    }
+    if (
+      !shouldRepairStoredCloudLink({
+        linked: controller.linked,
+        relayMembershipMissing: controller.relayMembershipMissing,
+        relayMembershipObserved: hasObservedRelayMembership(migrationKey),
+      })
+    ) {
+      if (controller.relayMembershipMissing) {
+        linkRepairHandledRef.current = migrationKey;
+      }
+      return;
+    }
+    linkRepairHandledRef.current = migrationKey;
     void controller.reconcileCloudState({
       managedTunnel: controller.storedManagedTunnelActive,
       publish: controller.storedPublishAgentActivity,
     });
-  }, [controller]);
+  }, [controller, discovery]);
 
   const registrations = useMemo(
     () =>

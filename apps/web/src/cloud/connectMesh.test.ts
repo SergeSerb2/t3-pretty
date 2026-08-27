@@ -1,8 +1,15 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Option from "effect/Option";
 
-import { buildRelayMeshRegistrations, isRelayEnvironmentMissing } from "./connectMesh";
+import {
+  buildRelayMeshRegistrations,
+  hasObservedRelayMembership,
+  isRelayEnvironmentMissing,
+  isRelayEnvironmentPresent,
+  rememberRelayMembership,
+  shouldRepairStoredCloudLink,
+} from "./connectMesh";
 
 describe("buildRelayMeshRegistrations", () => {
   it("builds a deterministic catalog without the local environment", () => {
@@ -72,5 +79,92 @@ describe("isRelayEnvironmentMissing", () => {
         environmentId,
       ),
     ).toBe(false);
+  });
+
+  it("only reports presence after an authoritative account list", () => {
+    const environment = {
+      environmentId,
+      label: "Local Mac",
+      endpoint: {
+        httpBaseUrl: "https://local.example.test",
+        wsBaseUrl: "wss://local.example.test",
+        providerKind: "cloudflare_tunnel" as const,
+      },
+      linkedAt: "2026-08-27T00:00:00.000Z",
+    };
+    const base = {
+      environments: new Map([
+        [
+          environmentId,
+          {
+            environment,
+            availability: "online" as const,
+            status: Option.none(),
+            error: Option.none(),
+          },
+        ],
+      ]),
+      loaded: true,
+      refreshing: false,
+      offline: false,
+      error: Option.none(),
+    };
+
+    expect(isRelayEnvironmentPresent(base, environmentId)).toBe(true);
+    expect(isRelayEnvironmentPresent({ ...base, refreshing: true }, environmentId)).toBe(false);
+  });
+});
+
+describe("stored cloud link repair", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("repairs only foreign links or a never-observed missing membership", () => {
+    expect(
+      shouldRepairStoredCloudLink({
+        linked: false,
+        relayMembershipMissing: false,
+        relayMembershipObserved: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRepairStoredCloudLink({
+        linked: true,
+        relayMembershipMissing: true,
+        relayMembershipObserved: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRepairStoredCloudLink({
+        linked: true,
+        relayMembershipMissing: true,
+        relayMembershipObserved: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("remembers observed membership without depending on writable browser storage", () => {
+    const values = new Map<string, string>();
+    const setItem = vi.fn((key: string, value: string) => void values.set(key, value));
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem,
+    });
+
+    expect(hasObservedRelayMembership("local-link")).toBe(false);
+    rememberRelayMembership("local-link");
+    rememberRelayMembership("local-link");
+    expect(hasObservedRelayMembership("local-link")).toBe(true);
+    expect(setItem).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("storage unavailable");
+      },
+      setItem: () => {
+        throw new Error("storage unavailable");
+      },
+    });
+    expect(hasObservedRelayMembership("local-link")).toBe(false);
+    expect(() => rememberRelayMembership("local-link")).not.toThrow();
   });
 });

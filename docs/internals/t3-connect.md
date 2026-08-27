@@ -301,8 +301,10 @@ Clicking **Connect** on desktop first enables the local managed link if necessar
 requested remote target. A local-link failure therefore cannot leave a silently one-way desktop
 connection. An explicitly disabled local link is not re-enabled in the background.
 After authoritative discovery, a locally stored link whose primary environment is absent from the
-account catalog is presented as inactive. The next explicit enable or Connect action re-links it;
-failed, offline, and in-flight discovery never invalidate local link state.
+account catalog is presented as inactive. Desktop automatically repairs a never-observed stale
+membership once when the stored local setting is still enabled. After that membership has been
+observed, a later account deregistration remains respected until the user explicitly enables or
+connects the host again. Failed, offline, and in-flight discovery never invalidate local link state.
 
 Headless servers and browser-only clients do not run the desktop reconciler. A headless server can
 be discovered and added by desktops but has no client catalog to populate, which keeps that
