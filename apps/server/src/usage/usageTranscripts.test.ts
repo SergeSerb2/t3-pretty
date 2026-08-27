@@ -249,104 +249,6 @@ describe("parseCodexLine", () => {
   });
 });
 
-describe("parseGrokLine", () => {
-  const turnCompleted = (overrides?: {
-    sessionId?: string;
-    promptId?: string;
-    timestamp?: number;
-    agentTimestampMs?: number;
-    inputTokens?: number;
-    cachedReadTokens?: number;
-    cacheCreationTokens?: number;
-    outputTokens?: number;
-    reasoningTokens?: number;
-    costUsdTicks?: number;
-    model?: string;
-  }) =>
-    JSON.stringify({
-      timestamp: overrides?.timestamp ?? 1785022386,
-      method: "session/update",
-      params: {
-        sessionId: overrides?.sessionId ?? "session-g",
-        update: {
-          sessionUpdate: "turn_completed",
-          prompt_id: overrides?.promptId ?? "t3-xai-prompt-1",
-          stop_reason: "end_turn",
-          usage: {
-            inputTokens: overrides?.inputTokens ?? 20960,
-            outputTokens: overrides?.outputTokens ?? 673,
-            totalTokens: (overrides?.inputTokens ?? 20960) + (overrides?.outputTokens ?? 673),
-            cachedReadTokens: overrides?.cachedReadTokens ?? 11392,
-            cacheCreationTokens: overrides?.cacheCreationTokens ?? 0,
-            reasoningTokens: overrides?.reasoningTokens ?? 453,
-            costUsdTicks: overrides?.costUsdTicks ?? 265916000,
-            modelUsage: {
-              [overrides?.model ?? "grok-4.5-build"]: {
-                inputTokens: overrides?.inputTokens ?? 20960,
-                outputTokens: overrides?.outputTokens ?? 673,
-                totalTokens: (overrides?.inputTokens ?? 20960) + (overrides?.outputTokens ?? 673),
-              },
-            },
-          },
-        },
-        _meta: { agentTimestampMs: overrides?.agentTimestampMs ?? 1785022386429 },
-      },
-    });
-
-  it("extracts inclusive input, reasoning subset, and tick cost", () => {
-    const record = parseGrokLine(turnCompleted());
-
-    expect(record).not.toBeNull();
-    expect(record?.provider).toBe("grok");
-    expect(record?.model).toBe("grok-4.5-build");
-    expect(record?.sessionId).toBe("session-g");
-    expect(record?.timestampMs).toBe(1785022386429);
-    expect(record?.totals).toEqual({
-      uncachedInputTokens: 20960 - 11392,
-      cachedInputTokens: 11392,
-      cacheCreationTokens: 0,
-      outputTokens: 673,
-      reasoningTokens: 453,
-    });
-    expect(record?.reportedCostUsd).toBeCloseTo(0.265916, 6);
-  });
-
-  it("falls back to the unix-seconds timestamp when the millisecond field is missing", () => {
-    const line = JSON.stringify({
-      timestamp: 1785022386,
-      params: {
-        sessionId: "session-g",
-        update: {
-          sessionUpdate: "turn_completed",
-          prompt_id: "p1",
-          usage: {
-            inputTokens: 10,
-            outputTokens: 2,
-            cachedReadTokens: 0,
-            modelUsage: { "grok-4.6": { totalTokens: 12 } },
-          },
-        },
-      },
-    });
-
-    expect(parseGrokLine(line)?.timestampMs).toBe(1785022386000);
-  });
-
-  it("ignores stream updates that are not a completed turn", () => {
-    expect(
-      parseGrokLine(
-        JSON.stringify({
-          params: { update: { sessionUpdate: "agent_message_chunk", usage: { inputTokens: 1 } } },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it("rejects an oversized session identifier", () => {
-    expect(parseGrokLine(turnCompleted({ sessionId: "s".repeat(1_025) }))).toBeNull();
-  });
-});
-
 describe("parseKimiLine", () => {
   const usageRecord = (overrides?: {
     model?: string;
@@ -724,6 +626,20 @@ describe("parseGrokLine", () => {
               reasoningTokens: 0,
               costUsdTicks: 0,
             },
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects oversized transcript identifiers", () => {
+    expect(parseGrokLine(turnCompleted({ sessionId: "s".repeat(1_025) }))).toEqual([]);
+    expect(parseGrokLine(turnCompleted({ promptId: "p".repeat(1_025) }))).toEqual([]);
+    expect(
+      parseGrokLine(
+        turnCompleted({
+          modelUsage: {
+            ["m".repeat(513)]: { inputTokens: 1, outputTokens: 1 },
           },
         }),
       ),

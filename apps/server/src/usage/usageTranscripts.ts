@@ -117,7 +117,6 @@ export function grokCostTicksToUsd(ticks: unknown): number | null {
   if (typeof ticks !== "number" || !Number.isFinite(ticks) || ticks < 0) return null;
   return ticks / GROK_COST_USD_TICKS_PER_DOLLAR;
 }
-}
 
 /* -------------------------------------------------------------------------- */
 /* Claude Code                                                                */
@@ -439,22 +438,32 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
   if (typeof usage !== "object" || usage === null) return [];
   const usageRecord = usage as Record<string, unknown>;
 
-  const sessionId = typeof paramsRecord["sessionId"] === "string" ? paramsRecord["sessionId"] : "";
-  const promptId = typeof updateRecord["prompt_id"] === "string" ? updateRecord["prompt_id"] : null;
+  const sessionId =
+    paramsRecord["sessionId"] === undefined
+      ? ""
+      : boundedString(paramsRecord["sessionId"], USAGE_SESSION_ID_MAX_LENGTH);
+  const rawPromptId = updateRecord["prompt_id"];
+  const promptId =
+    rawPromptId === undefined ? null : boundedString(rawPromptId, USAGE_DEDUPE_PART_MAX_LENGTH);
+  if (sessionId === null || (rawPromptId !== undefined && promptId === null)) return [];
 
   // Prefer the high-resolution agent clock; fall back to the outer unix seconds.
   const meta = paramsRecord["_meta"];
   let timestampMs: number | null = null;
   if (typeof meta === "object" && meta !== null) {
     const agentTimestampMs = (meta as Record<string, unknown>)["agentTimestampMs"];
-    if (typeof agentTimestampMs === "number" && Number.isFinite(agentTimestampMs)) {
-      timestampMs = agentTimestampMs;
+    if (
+      typeof agentTimestampMs === "number" &&
+      Number.isFinite(agentTimestampMs) &&
+      agentTimestampMs > 0
+    ) {
+      timestampMs = Math.trunc(agentTimestampMs);
     }
   }
   if (timestampMs === null) {
     const timestamp = record["timestamp"];
-    if (typeof timestamp === "number" && Number.isFinite(timestamp)) {
-      timestampMs = timestamp > 1e12 ? timestamp : timestamp * 1000;
+    if (typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0) {
+      timestampMs = Math.trunc(timestamp > 1e12 ? timestamp : timestamp * 1000);
     }
   }
   if (timestampMs === null) return [];
@@ -464,9 +473,10 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
 
   const modelUsage = usageRecord["modelUsage"];
   const modelEntries: Array<{ model: string; totals: GrokUsageTotals }> = [];
-  if (typeof modelUsage === "object" && modelUsage !== null) {
+  const hasModelUsage = typeof modelUsage === "object" && modelUsage !== null;
+  if (hasModelUsage) {
     for (const [model, raw] of Object.entries(modelUsage as Record<string, unknown>)) {
-      if (model.length === 0) continue;
+      if (model.length === 0 || model.length > USAGE_MODEL_MAX_LENGTH) continue;
       const totals = readGrokUsageTotals(raw);
       if (totals === null) continue;
       modelEntries.push({ model, totals });
@@ -474,6 +484,7 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
   }
 
   if (modelEntries.length === 0) {
+    if (hasModelUsage) return [];
     if (totalTokens(grokTotalsToUsage(topLevel)) === 0) return [];
     return [
       {

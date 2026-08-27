@@ -133,12 +133,7 @@ export function buildGrokAcpSpawnInput(
   return {
     command: grokSettings?.binaryPath || "grok",
     args: spawnEffort
-      ? [
-          ...spawnArgs.slice(0, -1),
-          "--reasoning-effort",
-          spawnEffort,
-          ...spawnArgs.slice(-1),
-        ]
+      ? [...spawnArgs.slice(0, -1), "--reasoning-effort", spawnEffort, ...spawnArgs.slice(-1)]
       : [...spawnArgs],
     cwd,
     env: {
@@ -462,21 +457,26 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly requestedModelId: string | undefined;
   readonly requestedReasoningEffort?: string | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
-}): Effect.Effect<string | undefined, E> {
+}): Effect.Effect<GrokAcpSelection, E> {
   const modelChanged =
     input.requestedModelId !== undefined && input.requestedModelId !== input.currentModelId;
   const reasoningProvided = input.requestedReasoningEffort !== undefined;
-  const reasoningEffort = reasoningProvided
+  const requestedReasoningEffort = reasoningProvided
     ? normalizeGrokReasoningEffort(input.requestedReasoningEffort)
     : undefined;
+  const reasoningEffort = reasoningProvided
+    ? requestedReasoningEffort
+    : input.currentReasoningEffort;
   const reasoningEffortChanged =
     reasoningProvided && reasoningEffort !== input.currentReasoningEffort;
   const targetModelId = input.requestedModelId ?? input.currentModelId;
   if ((!modelChanged && !reasoningEffortChanged) || targetModelId === undefined) {
-    return Effect.succeed(input.currentModelId);
+    return Effect.succeed({ modelId: input.currentModelId, reasoningEffort });
   }
   const reasoningMeta =
-    reasoningProvided && reasoningEffort !== undefined ? { reasoningEffort } : undefined;
+    reasoningProvided && requestedReasoningEffort !== undefined
+      ? { reasoningEffort: requestedReasoningEffort }
+      : undefined;
   // When reasoning was explicitly provided but invalid (normalize => undefined), we deliberately
   // send no meta so the invalid value is dropped rather than forwarded. When reasoning was not
   // provided at all, we also send no meta, but we only reach this call when the model itself
@@ -484,5 +484,5 @@ export function applyGrokAcpModelSelection<E>(input: {
   // CLI-advertised default (e.g. Extra High) on same-model reselections.
   return input.runtime
     .setSessionModel(targetModelId, reasoningMeta)
-    .pipe(Effect.mapError(input.mapError), Effect.as(targetModelId));
+    .pipe(Effect.mapError(input.mapError), Effect.as({ modelId: targetModelId, reasoningEffort }));
 }

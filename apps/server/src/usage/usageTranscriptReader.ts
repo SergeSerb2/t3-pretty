@@ -288,11 +288,7 @@ export async function readTranscriptRecords(
       if (!mightCarryUsage(line, provider)) continue;
 
       const record =
-        provider === "grok"
-          ? parseGrokLine(line)
-          : provider === "kimi"
-            ? parseKimiLine(line, kimiSessionId)
-            : parseClaudeLine(line);
+        provider === "kimi" ? parseKimiLine(line, kimiSessionId) : parseClaudeLine(line);
       if (appendRecord(record)) break;
     }
   } catch {
