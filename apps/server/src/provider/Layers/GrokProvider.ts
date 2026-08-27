@@ -43,6 +43,7 @@ const GROK_PRESENTATION = {
   badgeLabel: "Early Access",
   showInteractionModeToggle: false,
   requiresNewThreadForModelChange: true,
+  supportsNativeResume: true,
 } as const;
 const FALLBACK_CAPABILITIES: ModelCapabilities = EMPTY_CAPABILITIES;
 

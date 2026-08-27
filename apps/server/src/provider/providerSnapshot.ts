@@ -78,6 +78,7 @@ export interface ServerProviderPresentation {
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
   readonly requiresNewThreadForModelChange?: boolean;
+  readonly supportsNativeResume?: boolean;
 }
 
 export type ServerProviderDraft = Omit<ServerProvider, "instanceId" | "driver">;
@@ -329,7 +330,9 @@ export function buildServerProvider(input: {
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
   const slashCommands =
-    input.probe.installed && input.probe.status !== "error"
+    input.presentation.supportsNativeResume &&
+    input.probe.installed &&
+    input.probe.status !== "error"
       ? [
           NATIVE_RESUME_SLASH_COMMAND,
           ...(input.slashCommands ?? []).filter(

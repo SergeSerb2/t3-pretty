@@ -37,6 +37,7 @@ const KIMI_PRESENTATION = {
   displayName: "Kimi",
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
+  supportsNativeResume: true,
 } as const;
 const KIMI_INSTALL_DOCS_URL =
   "https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html";
