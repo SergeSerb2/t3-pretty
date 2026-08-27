@@ -69,6 +69,14 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
   const insets = useSafeAreaInsets();
   const iconColor = useThemeColor("--color-icon");
   const mutedColor = useThemeColor("--color-foreground-muted");
+  const headerControlClassName =
+    Platform.OS === "android"
+      ? "size-12 items-center justify-center rounded-full bg-subtle"
+      : "size-11 items-center justify-center rounded-full bg-subtle";
+  const clearSearchClassName =
+    Platform.OS === "android"
+      ? "-mr-3 size-12 items-center justify-center"
+      : "size-11 items-center justify-center";
   // Thread List v2 lays the list out in fixed creation order, so the
   // sort/group filter controls would be silently ignored — hide them and
   // key the "customized" icon state off the environment filter alone.
@@ -225,7 +233,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               <Pressable
                 accessibilityLabel="Filter and sort threads"
                 accessibilityRole="button"
-                className="size-12 items-center justify-center rounded-full bg-subtle"
+                className={headerControlClassName}
               >
                 <SymbolView
                   name={
@@ -246,7 +254,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               accessibilityLabel="Open pull requests"
               accessibilityRole="button"
               onPress={props.onOpenPullRequests}
-              className="size-12 items-center justify-center rounded-full bg-subtle"
+              className={headerControlClassName}
             >
               <SymbolView
                 name="arrow.triangle.pull"
@@ -259,7 +267,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               accessibilityLabel="Open settings"
               accessibilityRole="button"
               onPress={props.onOpenSettings}
-              className="size-12 items-center justify-center rounded-full bg-subtle"
+              className={headerControlClassName}
             >
               <SymbolView name="gearshape" size={18} tintColor={iconColor} type="monochrome" />
             </Pressable>
@@ -280,7 +288,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               <Pressable
                 accessibilityLabel="Clear search"
                 accessibilityRole="button"
-                className="-mr-3 size-12 items-center justify-center"
+                className={clearSearchClassName}
                 onPress={() => props.onSearchQueryChange("")}
               >
                 <SymbolView
