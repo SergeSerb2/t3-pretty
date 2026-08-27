@@ -106,6 +106,7 @@ if [[ "$flavor" == "internal" && "${T3CODE_FORCE_ANDROID:-}" != "1" ]]; then
       packages \
       patches \
       pnpm-lock.yaml \
+      scripts/lib/brand-assets.ts \
       scripts/fork/publish-android-release.sh \
       scripts/fork/resolve-ios-native-build.mjs; then
       mkdir -p "$(dirname "$checked_head")"
