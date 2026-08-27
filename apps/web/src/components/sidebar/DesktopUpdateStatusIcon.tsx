@@ -61,6 +61,16 @@ export function isDesktopUpdateCheckSettleAnimationEnd(event: {
   return event.animationName === DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME;
 }
 
+export function shouldClearDesktopUpdateCheckSettle({
+  isChecking,
+  isSettling,
+}: {
+  readonly isChecking: boolean;
+  readonly isSettling: boolean;
+}): boolean {
+  return isSettling && !isChecking;
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">

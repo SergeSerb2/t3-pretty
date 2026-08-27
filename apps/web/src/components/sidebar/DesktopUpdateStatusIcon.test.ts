@@ -4,6 +4,7 @@ import {
   DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME,
   desktopUpdateCheckMotionAfterSpinIteration,
   isDesktopUpdateCheckSettleAnimationEnd,
+  shouldClearDesktopUpdateCheckSettle,
 } from "./DesktopUpdateStatusIcon";
 
 describe("desktopUpdateCheckMotionAfterSpinIteration", () => {
@@ -50,5 +51,18 @@ describe("isDesktopUpdateCheckSettleAnimationEnd", () => {
     ).toBe(true);
     expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "spin" })).toBe(false);
     expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "" })).toBe(false);
+  });
+});
+
+describe("shouldClearDesktopUpdateCheckSettle", () => {
+  it("clears only a live settle after the check has finished", () => {
+    expect(shouldClearDesktopUpdateCheckSettle({ isChecking: false, isSettling: true })).toBe(true);
+    expect(shouldClearDesktopUpdateCheckSettle({ isChecking: true, isSettling: true })).toBe(false);
+    expect(shouldClearDesktopUpdateCheckSettle({ isChecking: false, isSettling: false })).toBe(
+      false,
+    );
+    expect(shouldClearDesktopUpdateCheckSettle({ isChecking: true, isSettling: false })).toBe(
+      false,
+    );
   });
 });

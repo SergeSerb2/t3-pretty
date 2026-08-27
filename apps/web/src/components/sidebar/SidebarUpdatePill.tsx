@@ -1,5 +1,5 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
@@ -25,6 +25,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
   desktopUpdateCheckMotionAfterSpinIteration,
+  shouldClearDesktopUpdateCheckSettle,
   shouldShowDesktopUpdateCheckIcon,
 } from "./DesktopUpdateStatusIcon";
 
@@ -314,7 +315,14 @@ function SidebarUpdateControl() {
     setIsCheckSettling(false);
   }, [prefersReducedMotion, state?.status]);
 
+  const checkSettleEndRef = useRef({ isChecking: false, isSettling: false });
+  checkSettleEndRef.current = {
+    isChecking: state?.status === "checking",
+    isSettling: isCheckSettling,
+  };
+
   const handleCheckAnimationEnd = useCallback(() => {
+    if (!shouldClearDesktopUpdateCheckSettle(checkSettleEndRef.current)) return;
     setIsCheckAnimationLatched(false);
     setIsCheckSettling(false);
   }, []);
