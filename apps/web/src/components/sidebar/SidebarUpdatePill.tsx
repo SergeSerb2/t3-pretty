@@ -1,5 +1,5 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
@@ -24,7 +24,8 @@ import { SidebarMenuItem } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
-  shouldContinueDesktopUpdateCheckAnimation,
+  desktopUpdateCheckMotionAfterSpinIteration,
+  shouldClearDesktopUpdateCheckSettle,
   shouldShowDesktopUpdateCheckIcon,
 } from "./DesktopUpdateStatusIcon";
 
@@ -145,13 +146,16 @@ function SidebarUpdateControl() {
   const [isActionPending, setIsActionPending] = useState(false);
   const [checkAnimationKey, setCheckAnimationKey] = useState(0);
   const [isCheckAnimationLatched, setIsCheckAnimationLatched] = useState(false);
+  const [isCheckSettling, setIsCheckSettling] = useState(false);
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
   useEffect(() => {
     if (prefersReducedMotion) {
       setIsCheckAnimationLatched(false);
+      setIsCheckSettling(false);
     } else if (state?.status === "checking") {
       setIsCheckAnimationLatched(true);
+      setIsCheckSettling(false);
     }
   }, [prefersReducedMotion, state?.status]);
 
@@ -269,6 +273,7 @@ function SidebarUpdateControl() {
 
     if (!prefersReducedMotion) {
       setIsCheckAnimationLatched(true);
+      setIsCheckSettling(false);
       setCheckAnimationKey((key) => key + 1);
     }
     void bridge
@@ -297,13 +302,30 @@ function SidebarUpdateControl() {
   }, [action, isInteractionDisabled, prefersReducedMotion, state]);
 
   const handleCheckAnimationIteration = useCallback(() => {
-    setIsCheckAnimationLatched(
-      shouldContinueDesktopUpdateCheckAnimation({
-        isChecking: state?.status === "checking",
-        prefersReducedMotion,
-      }),
-    );
+    const nextMotion = desktopUpdateCheckMotionAfterSpinIteration({
+      isChecking: state?.status === "checking",
+      prefersReducedMotion,
+    });
+    if (nextMotion === "spin") return;
+    if (nextMotion === "settle") {
+      setIsCheckSettling(true);
+      return;
+    }
+    setIsCheckAnimationLatched(false);
+    setIsCheckSettling(false);
   }, [prefersReducedMotion, state?.status]);
+
+  const checkSettleEndRef = useRef({ isChecking: false, isSettling: false });
+  checkSettleEndRef.current = {
+    isChecking: state?.status === "checking",
+    isSettling: isCheckSettling,
+  };
+
+  const handleCheckAnimationEnd = useCallback(() => {
+    if (!shouldClearDesktopUpdateCheckSettle(checkSettleEndRef.current)) return;
+    setIsCheckAnimationLatched(false);
+    setIsCheckSettling(false);
+  }, []);
 
   return (
     <SidebarMenuItem className="ml-auto shrink-0">
@@ -335,6 +357,8 @@ function SidebarUpdateControl() {
                 key={showCheckIcon ? checkAnimationKey : iconStatus}
                 downloadPercent={state?.downloadPercent ?? null}
                 isCheckAnimating={showCheckIcon && !prefersReducedMotion}
+                isCheckSettling={isCheckSettling}
+                onCheckAnimationEnd={handleCheckAnimationEnd}
                 onCheckAnimationIteration={handleCheckAnimationIteration}
                 status={iconStatus}
               />
