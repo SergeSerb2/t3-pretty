@@ -4,9 +4,13 @@ import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./app-identit
 import config, { resolveRelyingParty, resolveVoiceDictationPlugins } from "./app.config.ts";
 
 it("matches the default Expo config to its selected build identity", () => {
+  const buildFlavor = config.extra?.buildFlavor;
+  if (buildFlavor !== "internal" && buildFlavor !== "public") {
+    throw new Error("Expo config must expose its selected build flavor.");
+  }
   const identity = resolveMobileAppIdentity(
     resolveMobileAppVariant(config.extra?.appVariant),
-    config.extra?.buildFlavor === "internal" ? "internal" : "public",
+    buildFlavor,
   );
   expect(config.scheme).toBe(identity.scheme);
   expect(config.android?.package).toBe(identity.androidPackage);
