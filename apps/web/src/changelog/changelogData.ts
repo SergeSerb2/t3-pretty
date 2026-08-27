@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.35-nightly.20260826.1195001069",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth composer hover glow",
+      },
+      {
+        kind: "fixed",
+        title: "restore native computer controls",
+      },
+      {
+        kind: "fixed",
+        title: "keep packaged SSH Node probe valid",
+      },
+      {
+        kind: "fixed",
+        title: "hide PR Fix buttons until review comments exist",
+      },
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+    ],
+  },
+  {
     version: "0.0.35-nightly.20260826.1195001065",
     date: "2026-08-27",
     items: [
