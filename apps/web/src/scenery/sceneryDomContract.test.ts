@@ -11,6 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
+import composerSpecularSource from "../components/chat/ComposerSpecular.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
@@ -154,6 +155,8 @@ describe("glass contract with upstream chrome", () => {
   it("the composer still wears the glass shell driven by the --glass vars", () => {
     expect(chatViewSource).toContain("chat-composer-glass-shell");
     expect(indexCssSource).toContain("var(--chat-composer-glass-surface) var(--glass-opacity)");
+    expect(indexCssSource).toContain("var(--composer-hover-dur, 1)");
+    expect(composerSpecularSource).toContain('"--composer-hover-dur"');
   });
 
   it("keeps hover chrome on an inset top drawer's joined outline", () => {
