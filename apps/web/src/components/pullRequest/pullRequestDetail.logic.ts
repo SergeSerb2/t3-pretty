@@ -800,13 +800,18 @@ export function canStartContinuousFix(input: {
   );
 }
 
-/** Unresolved review remarks — not failing checks or pending CI. */
+/** Unresolved review conversations — not leftover review summaries, checks, or pending CI. */
 export function countActionableComments(input: {
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
   readonly comments: ReadonlyArray<PullRequestComment>;
 }): number {
   const { threads, remarks } = collectFixableFindings({ ...input, checks: [] });
-  return threads.length + remarks.length;
+  return (
+    threads.length +
+    remarks.filter(
+      (comment) => comment.kind !== "review" || parseGrokReviewFinding(comment.body) !== null,
+    ).length
+  );
 }
 
 export function hasActionableComments(input: {
@@ -814,6 +819,27 @@ export function hasActionableComments(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
 }): boolean {
   return countActionableComments(input) > 0;
+}
+
+/** Header Fix actions: open pull request, and still has unresolved review comments. */
+export function shouldOfferFixActions(input: {
+  readonly state: PullRequestState;
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): boolean {
+  return input.state === "open" && hasActionableComments(input);
+}
+
+/** Keep in sync with `@[32rem]/pr-header` on the detail header. */
+export const PR_HEADER_FIX_ACTIONS_MIN_REM = 32;
+
+export function headerFitsFixActions(widthPx: number, remPx = 16): boolean {
+  return widthPx >= PR_HEADER_FIX_ACTIONS_MIN_REM * remPx;
+}
+
+/** Header when it fits; overflow menu only when it does not. Never both. */
+export function shouldShowFixActionsInMenu(offer: boolean, headerFits: boolean): boolean {
+  return offer && !headerFits;
 }
 
 /**
