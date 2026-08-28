@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.36-nightly.20260827.1207001181",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
     version: "0.0.36-nightly.20260827.1206001156",
     date: "2026-08-27",
     items: [
