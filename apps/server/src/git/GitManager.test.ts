@@ -4424,6 +4424,61 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("reuses a PR worktree beyond the first branch page", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/android-t3-pretty-buildkite"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "android.txt"), "android\n");
+      yield* runGit(repoDir, ["add", "android.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Android PR branch"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "t3code/android-t3-pretty-buildkite"]);
+      yield* runGit(repoDir, ["push", "origin", "HEAD:refs/pull/272/head"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "newer.txt"), "newer\n");
+      yield* runGit(repoDir, ["add", "newer.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Newer branch commit"]);
+      for (let index = 0; index < 100; index += 1) {
+        yield* runGit(repoDir, ["branch", `aaa/noise-${index.toString().padStart(3, "0")}`]);
+      }
+
+      const worktreePath = NodePath.join(repoDir, "..", `pr-paged-${NodePath.basename(repoDir)}`);
+      yield* runGit(repoDir, [
+        "worktree",
+        "add",
+        worktreePath,
+        "t3code/android-t3-pretty-buildkite",
+      ]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 272,
+            title: "Android T3 Pretty Buildkite",
+            url: "https://github.com/pingdotgg/codething-mvp/pull/272",
+            baseRefName: "main",
+            headRefName: "t3code/android-t3-pretty-buildkite",
+            state: "open",
+          },
+        },
+      });
+
+      const result = yield* preparePullRequestThread(manager, {
+        cwd: repoDir,
+        reference: "272",
+        mode: "worktree",
+      });
+
+      expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
+        NodeFS.realpathSync.native(worktreePath),
+      );
+      expect(result.isOnPullRequestHead).toBe(true);
+    }),
+  );
+
   it.effect("refreshes a reused PR worktree onto the updated pull request head", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
