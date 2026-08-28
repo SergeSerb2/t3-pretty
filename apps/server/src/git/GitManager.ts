@@ -2297,10 +2297,13 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd, refresh: true });
-        const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-        );
+        const result = yield* gitCore.listRefs({
+          cwd,
+          query: localPullRequestBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        const localBranch = result.refs.find((branch) => branch.name === localPullRequestBranch);
         if (localBranch) {
           return localBranch;
         }
@@ -2308,8 +2311,14 @@ export const make = Effect.gen(function* () {
           return null;
         }
 
-        for (const branch of result.refs) {
-          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
+        const headResult = yield* gitCore.listRefs({
+          cwd,
+          query: pullRequest.headBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        for (const branch of headResult.refs) {
+          if (branch.name !== pullRequest.headBranch || !branch.worktreePath) {
             continue;
           }
 
