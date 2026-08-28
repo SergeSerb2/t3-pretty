@@ -74,7 +74,7 @@ export type OriginPullRequestCliError =
   | OriginViewerUnavailableError;
 
 const LIST_JSON_FIELDS =
-  "number,title,description,headRef,baseRef,authorId,status,createdAt,updatedAt,mergedAt,closedAt,additions,deletions,changedFiles,url,repo,assignments,mergeability,ciState";
+  "number,title,description,headRef,baseRef,author,status,createdAt,updatedAt,mergedAt,closedAt,additions,deletions,changedFiles,url,repo,assignments,mergeability,ciState";
 const VIEW_JSON_FIELDS = `${LIST_JSON_FIELDS},comments,threads,commits,reviews,latestReviews`;
 const MAX_PAGE_SIZE = 100;
 
