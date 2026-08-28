@@ -38,6 +38,7 @@ import * as ConnectionDriver from "./driver.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
+const ENVIRONMENT_REGISTRY_CONCURRENCY = 8;
 
 export class EnvironmentNotRegisteredError extends Schema.TaggedErrorClass<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
@@ -160,7 +161,7 @@ export const make = Effect.gen(function* () {
           { target, profile } satisfies ConnectionCatalogEntry,
         ] as const;
       }),
-      { concurrency: "unbounded" },
+      { concurrency: ENVIRONMENT_REGISTRY_CONCURRENCY },
     ),
   );
   const entries =
@@ -368,7 +369,7 @@ export const make = Effect.gen(function* () {
           Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
         ),
       {
-        concurrency: "unbounded",
+        concurrency: ENVIRONMENT_REGISTRY_CONCURRENCY,
         discard: true,
       },
     );
@@ -629,7 +630,7 @@ export const make = Effect.gen(function* () {
             Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
           ),
         {
-          concurrency: "unbounded",
+          concurrency: ENVIRONMENT_REGISTRY_CONCURRENCY,
           discard: true,
         },
       );
@@ -704,7 +705,7 @@ export const make = Effect.gen(function* () {
     SubscriptionRef.get(serviceScopes).pipe(
       Effect.flatMap((current) =>
         Effect.forEach(current.values(), (lease) => Scope.close(lease.scope, Exit.void), {
-          concurrency: "unbounded",
+          concurrency: ENVIRONMENT_REGISTRY_CONCURRENCY,
           discard: true,
         }),
       ),

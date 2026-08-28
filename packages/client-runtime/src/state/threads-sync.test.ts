@@ -557,7 +557,7 @@ describe("EnvironmentThreads", () => {
         activities: [
           {
             id: EventId.make("call-1:progress"),
-            tone: "tool",
+            tone: "tool" as const,
             kind: "tool.updated",
             summary: "Run",
             payload,
@@ -576,10 +576,10 @@ describe("EnvironmentThreads", () => {
     expect(restored.thread.title).toBe("Live");
     expect(toolProgressDetail(restored.thread)).toBe("original");
     expect(Option.getOrThrow(restored.page).loadingOlder).toBe(false);
-    restored.thread.title = "Mutated restore";
+    (restored.thread as { title: string }).title = "Mutated restore";
     const restoredPayload = restored.thread.activities[0]?.payload as { detail: string };
     restoredPayload.detail = "mutated restore";
-    Option.getOrThrow(restored.page).loadingOlder = true;
+    (Option.getOrThrow(restored.page) as { loadingOlder: boolean }).loadingOlder = true;
     expect(warmStates.get(key)?.thread.title).toBe("Live");
     expect(toolProgressDetail(warmStates.get(key)!.thread)).toBe("original");
     expect(Option.getOrThrow(warmStates.get(key)!.page).loadingOlder).toBe(false);

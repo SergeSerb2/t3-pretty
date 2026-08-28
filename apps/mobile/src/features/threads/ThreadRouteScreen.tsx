@@ -481,10 +481,10 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
-          Files={FilesInspector}
-          Git={GitInspector}
+          files={<FilesInspector />}
+          git={<GitInspector />}
           mode={inspectorMode}
-          Route={props.renderInspector ? RouteInspector : undefined}
+          route={props.renderInspector ? <RouteInspector /> : undefined}
         />
       ),
     [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
@@ -560,7 +560,7 @@ function ThreadRouteContent(
     effectiveSettled(selectedThread, {
       now: threadLifecycleNow,
       autoSettleAfterDays: 3,
-      changeRequestState,
+      changeRequest: changeRequestState === null ? null : { state: changeRequestState },
     });
   const threadSnoozed =
     selectedThread !== null &&

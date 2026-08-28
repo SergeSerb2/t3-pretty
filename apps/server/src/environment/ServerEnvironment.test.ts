@@ -14,6 +14,7 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
+import { resolveDictationAvailability } from "../dictation/availability.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 
 const isServerEnvironmentIdPersistenceError = Schema.is(
@@ -90,8 +91,16 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(first.environmentId).toBe(second.environmentId);
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
+      expect(second.capabilities.attachmentUploads).toBe(true);
+      expect(second.capabilities.voiceDictation).toBe(
+        resolveDictationAvailability().available ? true : undefined,
+      );
+      expect(second.capabilities.readAloud).toBe(
+        resolveDictationAvailability().available ? true : undefined,
+      );
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
+      expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.providerHandoff).toBe(true);
       expect(second.capabilities.storageInventory).toBe(true);
       expect(second.capabilities.storageInventoryStream).toBe(true);
@@ -155,7 +164,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       const environmentIdPath = serverConfig.environmentIdPath;
       const methodByOperation = {
         check: "exists",
-        read: "readFileString",
+        read: "open",
         write: "writeFileString",
       } as const;
 
@@ -171,7 +180,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         const failingFileSystemLayer = FileSystem.layerNoop({
           exists: () =>
             operation === "check" ? Effect.fail(cause) : Effect.succeed(operation === "read"),
-          readFileString: () => Effect.fail(cause),
+          open: () => Effect.fail(cause),
           writeFileString: (path) => {
             writeAttempts.push(path);
             return Effect.fail(cause);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  linkedPullRequestKey,
   clampRestoredScrollTop,
   mergePullRequestPanelView,
   pullRequestPanelSessionKey,
@@ -93,5 +94,15 @@ describe("restored scroll clamping", () => {
         clientHeight: 400,
       }),
     ).toBe(0);
+  });
+});
+
+describe("linked pull request key", () => {
+  it("is stable across rebuilt selection objects and null without a selection", () => {
+    const first = { environmentId: "env-1", repository: "acme/app", number: 42, projectId: "p1" };
+    const rebuilt = { ...first, projectId: "p1" };
+    expect(linkedPullRequestKey(first)).toBe(linkedPullRequestKey(rebuilt));
+    expect(linkedPullRequestKey({ ...first, number: 43 })).not.toBe(linkedPullRequestKey(first));
+    expect(linkedPullRequestKey(null)).toBeNull();
   });
 });

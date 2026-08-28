@@ -27,6 +27,7 @@ import {
 import {
   HostSkillId,
   HostSkillsState,
+  SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES,
   SkillId,
   SkillMarketplaceListing,
   SkillMarketplaceSource,
@@ -48,7 +49,15 @@ import {
   FilesystemBrowseResult,
   FilesystemBrowseError,
 } from "./filesystem.ts";
-import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
+import {
+  AssetAccessError,
+  AssetCreateUrlInput,
+  AssetCreateUrlResult,
+  AttachmentCreateUploadUrlInput,
+  AttachmentCreateUploadUrlResult,
+  AttachmentDeleteInput,
+  AttachmentUploadSigningKeyError,
+} from "./assets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -272,6 +281,8 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+  attachmentsCreateUploadUrl: "attachments.createUploadUrl",
+  attachmentsDelete: "attachments.delete",
 
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
@@ -818,13 +829,17 @@ const SkillsMarketplaceQuery = Schema.Struct({
 
 export const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
 export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
@@ -861,6 +876,17 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
+});
+
+export const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCreateUploadUrl, {
+  payload: AttachmentCreateUploadUrlInput,
+  success: AttachmentCreateUploadUrlResult,
+  error: Schema.Union([AttachmentUploadSigningKeyError, EnvironmentAuthorizationError]),
+});
+
+export const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
+  payload: AttachmentDeleteInput,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
@@ -1282,6 +1308,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsAttachmentsCreateUploadUrlRpc,
+  WsAttachmentsDeleteRpc,
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,

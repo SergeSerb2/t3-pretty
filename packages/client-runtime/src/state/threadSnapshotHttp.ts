@@ -7,11 +7,11 @@ import * as Option from "effect/Option";
 import { HttpClient } from "effect/unstable/http";
 
 import type { PreparedConnection } from "../connection/model.ts";
-import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
   executeEnvironmentHttpRequest,
   makeEnvironmentHttpApiClient,
+  makeEnvironmentHttpApiUrlBuilder,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
@@ -45,10 +45,9 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
   readonly timeoutMs?: number;
   readonly window?: ThreadSnapshotWindow;
 }) {
-  const requestUrl = environmentEndpointUrl(
+  const requestUrl = makeEnvironmentHttpApiUrlBuilder(
     input.prepared.httpBaseUrl,
-    `/api/orchestration/threads/${input.threadId}`,
-  );
+  ).orchestration.threadSnapshot({ params: { threadId: input.threadId } });
   const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
   const headers = yield* buildEnvironmentAuthHeaders(
     input.prepared.httpAuthorization,
@@ -130,12 +129,14 @@ export const threadSnapshotLoaderLayer: Layer.Layer<
               ),
           }),
           Effect.catchCause((cause) =>
-            Effect.logWarning(
-              "Could not load the thread snapshot over HTTP; using the socket snapshot instead.",
-            ).pipe(
-              Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
-              Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
-            ),
+            Cause.hasInterrupts(cause)
+              ? Effect.interrupt
+              : Effect.logWarning(
+                  "Could not load the thread snapshot over HTTP; using the socket snapshot instead.",
+                ).pipe(
+                  Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
+                  Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
+                ),
           ),
         ),
     });

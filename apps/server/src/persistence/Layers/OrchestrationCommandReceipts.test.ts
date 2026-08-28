@@ -5,7 +5,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
-import { OrchestrationCommandReceiptRepositoryLive } from "./OrchestrationCommandReceipts.ts";
+import {
+  ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS,
+  OrchestrationCommandReceiptRepositoryLive,
+} from "./OrchestrationCommandReceipts.ts";
 import { OrchestrationCommandReceiptRepository } from "../Services/OrchestrationCommandReceipts.ts";
 
 const receiptsLayer = it.layer(
@@ -13,6 +16,28 @@ const receiptsLayer = it.layer(
 );
 
 receiptsLayer("OrchestrationCommandReceiptRepository", (it) => {
+  it.effect("bounds persisted rejection diagnostics", () =>
+    Effect.gen(function* () {
+      const receipts = yield* OrchestrationCommandReceiptRepository;
+      const commandId = CommandId.make("cmd-bounded-error");
+      yield* receipts.upsert({
+        commandId,
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        acceptedAt: "2026-01-01T00:00:00.000Z",
+        resultSequence: 1,
+        status: "rejected",
+        error: "x".repeat(ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS + 1_000),
+      });
+
+      const stored = yield* receipts.getByCommandId({ commandId });
+      assert.equal(stored._tag, "Some");
+      if (stored._tag === "Some") {
+        assert.equal(stored.value.error?.length, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS);
+      }
+    }),
+  );
+
   it.effect("prunes old receipts in bounded batches and keeps recent ones", () =>
     Effect.gen(function* () {
       const receipts = yield* OrchestrationCommandReceiptRepository;

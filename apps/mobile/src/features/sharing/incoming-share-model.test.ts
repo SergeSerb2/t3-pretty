@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from "@effect/vitest";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
 } from "@t3tools/contracts";
 import type { ResolvedSharePayload, SharePayload } from "expo-sharing";
 
 import { buildIncomingShareDraft, hasIncomingShareContent } from "./incoming-share-model";
+import { encodeIncomingShareDraftForPersistence } from "./incoming-share-storage";
+
+const writePreviewFile = async () => "file:///documents/t3-composer-previews/shared-image.png";
 
 describe("incoming native shares", () => {
   it("converts shared text, URLs, and images into a durable composer draft", async () => {
@@ -37,6 +41,7 @@ describe("incoming native shares", () => {
       resolvedPayloads: [resolvedImage],
       fileReader: {
         readBase64: async () => "YWJj",
+        writePreviewFile,
         removeOwnedFile,
       },
     });
@@ -54,13 +59,40 @@ describe("incoming native shares", () => {
           mimeType: "image/png",
           sizeBytes: 3,
           dataUrl: "data:image/png;base64,YWJj",
-          previewUri: "data:image/png;base64,YWJj",
+          previewUri: "file:///documents/t3-composer-previews/shared-image.png",
         },
       ],
       warnings: [],
     });
     expect(removeOwnedFile).toHaveBeenCalledWith(image.value);
     expect(hasIncomingShareContent(result)).toBe(true);
+    const persisted = encodeIncomingShareDraftForPersistence(result);
+    expect(persisted.attachments[0]?.dataUrl).toBe("");
+    expect(JSON.stringify(persisted)).not.toContain(";base64,");
+  });
+
+  it("caps shared text at the provider turn contract before persistence", async () => {
+    const result = await buildIncomingShareDraft({
+      id: "share-large-text",
+      createdAt: "2026-07-15T10:00:00.000Z",
+      payloads: [
+        {
+          shareType: "text",
+          value: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS + 1),
+        },
+      ],
+      resolvedPayloads: [],
+      fileReader: {
+        readBase64: async () => "unused",
+        writePreviewFile,
+        removeOwnedFile: vi.fn(),
+      },
+    });
+
+    expect(result.text).toHaveLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+    expect(result.warnings).toEqual([
+      "Shared text was truncated to the 120,000 character composer limit.",
+    ]);
   });
 
   it("skips oversized images and releases the temporary native file", async () => {
@@ -86,7 +118,7 @@ describe("incoming native shares", () => {
           originalName: "huge.png",
         },
       ],
-      fileReader: { readBase64, removeOwnedFile },
+      fileReader: { readBase64, writePreviewFile, removeOwnedFile },
     });
 
     expect(result.attachments).toEqual([]);
@@ -94,6 +126,35 @@ describe("incoming native shares", () => {
     expect(readBase64).not.toHaveBeenCalled();
     expect(removeOwnedFile).toHaveBeenCalledWith(image.value);
     expect(hasIncomingShareContent(result)).toBe(false);
+  });
+
+  it("honors the raw-file size preflight before retaining base64", async () => {
+    const image: SharePayload = {
+      shareType: "image",
+      value: "file:///shared/huge-without-metadata.png",
+      mimeType: "image/png",
+    };
+    const readBase64 = vi.fn(async () => null);
+    const writePreview = vi.fn(async () => "file:///unused.png");
+
+    const result = await buildIncomingShareDraft({
+      id: "share-size-preflight",
+      createdAt: "2026-07-15T10:00:00.000Z",
+      payloads: [image],
+      resolvedPayloads: [],
+      fileReader: {
+        readBase64,
+        writePreviewFile: writePreview,
+        removeOwnedFile: vi.fn(),
+      },
+    });
+
+    expect(readBase64).toHaveBeenCalledWith(image.value, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
+    expect(writePreview).not.toHaveBeenCalled();
+    expect(result.attachments).toEqual([]);
+    expect(result.warnings).toEqual([
+      "'huge-without-metadata.png' exceeds the 10 MB attachment limit.",
+    ]);
   });
 
   it("releases every temporary file when a share exceeds the attachment limit", async () => {
@@ -110,7 +171,7 @@ describe("incoming native shares", () => {
       createdAt: "2026-07-15T10:00:00.000Z",
       payloads,
       resolvedPayloads: [],
-      fileReader: { readBase64, removeOwnedFile },
+      fileReader: { readBase64, writePreviewFile, removeOwnedFile },
     });
 
     expect(result.attachments).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
@@ -155,7 +216,7 @@ describe("incoming native shares", () => {
       createdAt: "2026-07-16T08:00:00.000Z",
       payloads: [duplicate, duplicate],
       resolvedPayloads,
-      fileReader: { readBase64, removeOwnedFile },
+      fileReader: { readBase64, writePreviewFile, removeOwnedFile },
     });
 
     expect(readBase64.mock.calls.map(([uri]) => uri)).toEqual([
@@ -184,6 +245,7 @@ describe("incoming native shares", () => {
       resolvedPayloads: [],
       fileReader: {
         readBase64: async () => "YWJj",
+        writePreviewFile,
         removeOwnedFile: async () => {
           throw new Error("file is busy");
         },

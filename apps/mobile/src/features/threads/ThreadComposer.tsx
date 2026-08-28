@@ -1,5 +1,6 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { skillMentionToken } from "@t3tools/shared/skillTool";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import type {
   EnvironmentId,
   MessageId,
@@ -31,12 +32,14 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   StyleSheet,
   View,
   type ViewStyle,
 } from "react-native";
+import * as Option from "effect/Option";
 import ImageViewing from "react-native-image-viewing";
 import Animated, {
   FadeIn,
@@ -113,6 +116,8 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { usePreparedConnection } from "../../state/session";
+import { useNativeDictation } from "./useNativeDictation";
 
 /**
  * Height of the collapsed composer (pill + model caption below it + vertical
@@ -404,12 +409,37 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
+  const preparingImagesRef = useRef(false);
+  const previewFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendStartedAtRef = useRef(0);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
-  // Opening and presentation count as active so the composer stays expanded
-  // while focus moves between its native editor and the settings picker.
-  const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
+  const [composerSelection, setComposerSelection] = useState(() => ({
+    start: props.draftMessage.length,
+    end: props.draftMessage.length,
+  }));
+  const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
+    setComposerSelection(selection);
+  }, []);
+  const preparedConnection = usePreparedConnection(props.environmentId);
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    props.serverConfig?.environment.capabilities.voiceDictation === true;
+  const reportDictationError = useCallback((message: string) => {
+    Alert.alert("Voice dictation", message);
+  }, []);
+  const dictation = useNativeDictation({
+    enabled: supportsVoiceDictation && Option.isSome(preparedConnection) && !isDispatching,
+    prepared: Option.getOrNull(preparedConnection),
+    value: props.draftMessage,
+    cursor: composerSelection.end,
+    onChangeValue: props.onChangeDraftMessage,
+    onChangeCursor: (cursor) => setComposerSelection({ start: cursor, end: cursor }),
+    reportError: reportDictationError,
+  });
+  // Recording can make the native editor resign first responder; keep the
+  // toolbar visible so the Stop control remains reachable.
+  const isExpanded = isFocused || settingsSheetPresentation.isActive || dictation.active;
   const canSend = hasContent;
   const stripAttachments = useMemo((): ComposerAttachmentPreview[] => {
     const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
@@ -488,9 +518,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const closePreview = useCallback(() => {
     setPreviewImageUri(null);
     if (wasExpandedBeforePreviewRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+      previewFocusTimerRef.current = setTimeout(() => {
+        previewFocusTimerRef.current = null;
+        inputRef.current?.focus();
+      }, 100);
     }
   }, [inputRef]);
+
+  useEffect(
+    () => () => {
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const onEditorFocusChange = props.onEditorFocusChange;
   const handleFocus = useCallback(() => {
@@ -559,14 +604,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
 
   // ── Trigger detection ────────────────────────────────────
-  const [composerSelection, setComposerSelection] = useState(() => ({
-    start: props.draftMessage.length,
-    end: props.draftMessage.length,
-  }));
-
-  const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
-    setComposerSelection(selection);
-  }, []);
   useEffect(() => {
     const end = props.draftMessage.length;
     setComposerSelection((selection) => {
@@ -769,21 +806,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   const handlePickDraftImages = useCallback(async () => {
-    if (isDispatching) {
+    if (isDispatching || preparingImagesRef.current) {
       return;
     }
+    preparingImagesRef.current = true;
     try {
       await props.onPickDraftImages({ onPicked: beginPendingPreviews });
     } finally {
+      preparingImagesRef.current = false;
       setPendingPreviews([]);
     }
   }, [beginPendingPreviews, isDispatching, props.onPickDraftImages]);
 
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
-      if (uris.length === 0 || isDispatching) {
+      if (uris.length === 0 || isDispatching || preparingImagesRef.current) {
         return;
       }
+      preparingImagesRef.current = true;
       beginPendingPreviews(
         uris.map((uri, index) => ({
           id: `pending:${index}:${uri}`,
@@ -793,6 +833,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       try {
         await props.onNativePasteImages(uris);
       } finally {
+        preparingImagesRef.current = false;
         setPendingPreviews([]);
       }
     },
@@ -1155,6 +1196,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               onFocus={handleFocus}
               onBlur={handleBlur}
               onSubmit={handleSendPress}
+              editable={!dictation.active}
               scrollEnabled={isExpanded}
               // Android: collapsed single line centers natively (gravity) in
               // a pill-height box matching the send button; iOS keeps insets.
@@ -1204,7 +1246,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canSend && !isDispatching}
+                  disabled={dictation.active || (!canSend && !isDispatching)}
                   loading={isDispatching}
                   onPress={handleSendPress}
                 />
@@ -1241,6 +1283,27 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void handlePickDraftImages()}
                   showChevron={false}
                 />
+                {supportsVoiceDictation ? (
+                  <ComposerToolbarButton
+                    accessibilityLabel={
+                      dictation.phase === "recording"
+                        ? "Stop voice dictation"
+                        : dictation.phase === "processing"
+                          ? "Finishing voice dictation"
+                          : "Start voice dictation"
+                    }
+                    icon={dictation.phase === "recording" ? "stop.fill" : "mic.fill"}
+                    variant={dictation.phase === "recording" ? "danger" : "default"}
+                    disabled={
+                      dictation.phase === "processing" ||
+                      (dictation.phase === "idle" &&
+                        (isDispatching || Option.isNone(preparedConnection)))
+                    }
+                    loading={dictation.phase === "processing"}
+                    onPress={() => void dictation.toggle()}
+                    showChevron={false}
+                  />
+                ) : null}
                 <ThreadSettingsPickerPopover
                   accessibilityLabel="Model and reasoning settings"
                   model={settingsPicker}
@@ -1284,7 +1347,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canSend && !isDispatching}
+                  disabled={dictation.active || (!canSend && !isDispatching)}
                   loading={isDispatching}
                   onPress={handleSendPress}
                   showChevron={false}

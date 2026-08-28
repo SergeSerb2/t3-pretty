@@ -32,7 +32,10 @@ import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
+const DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY = 4;
 const DESKTOP_BACKEND_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::"] as const;
+export const DESKTOP_FATAL_STARTUP_MESSAGE_MAX_LENGTH = 4_096;
+export const DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH = 64 * 1_024;
 
 const makeDesktopRunId = Crypto.Crypto.pipe(
   Effect.flatMap((crypto) => crypto.randomUUIDv4),
@@ -59,6 +62,39 @@ export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedErr
   override get message(): string {
     return "T3CODE_PORT is required in desktop development.";
   }
+}
+
+const truncateStartupDiagnostic = (value: string, maximumLength: number): string =>
+  value.length <= maximumLength ? value : `${value.slice(0, maximumLength - 1)}…`;
+
+export function formatFatalStartupError(error: unknown): {
+  readonly message: string;
+  readonly detail: string;
+} {
+  let message = "Unknown startup error.";
+  try {
+    const candidate = error instanceof Error ? error.message : error;
+    message = typeof candidate === "string" ? candidate : String(candidate);
+  } catch {
+    // A hostile Error subclass or arbitrary defect can throw from coercion.
+  }
+
+  let detail = "";
+  if (error instanceof Error) {
+    try {
+      const stack = error.stack;
+      if (typeof stack === "string" && stack.length > 0) {
+        detail = truncateStartupDiagnostic(`\n${stack}`, DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH);
+      }
+    } catch {
+      // The native error box still gets the bounded primary message.
+    }
+  }
+
+  return {
+    message: truncateStartupDiagnostic(message, DESKTOP_FATAL_STARTUP_MESSAGE_MAX_LENGTH),
+    detail,
+  };
 }
 
 const { logInfo: logBootstrapInfo, logWarning: logBootstrapWarning } =
@@ -118,9 +154,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const state = yield* DesktopState.DesktopState;
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
-  const message = error instanceof Error ? error.message : String(error);
-  const detail =
-    error instanceof Error && typeof error.stack === "string" ? `\n${error.stack}` : "";
+  const { message, detail } = formatFatalStartupError(error);
   yield* logStartupError("fatal startup error", {
     stage,
     message,
@@ -335,7 +369,7 @@ const scopedProgram = Effect.scoped(
         // receiving SIGTERM + grace. Stops run concurrently.
         const instances = yield* pool.list;
         yield* Effect.forEach(instances, (instance) => instance.stop(), {
-          concurrency: "unbounded",
+          concurrency: DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY,
         });
       }).pipe(Effect.ensuring(shutdown.markComplete)),
     );

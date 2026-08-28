@@ -1,8 +1,9 @@
-import type {
-  DesktopHostTelemetrySnapshot,
-  ResourceMonitorProcessSample,
-  ResourceMonitorSnapshotEvent,
-  ResourceTelemetryHealth,
+import {
+  RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT,
+  type DesktopHostTelemetrySnapshot,
+  type ResourceMonitorProcessSample,
+  type ResourceMonitorSnapshotEvent,
+  type ResourceTelemetryHealth,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -353,5 +354,43 @@ describe("buildResourceTelemetryHistory", () => {
     expect(history.topProcesses.find((process) => process.identity.pid === 201)?.category).toBe(
       "electron-main",
     );
+  });
+
+  it("bounds process summaries and reports when lower-ranked identities are omitted", () => {
+    const processes = Array.from(
+      { length: RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT + 1 },
+      (_, index) =>
+        processSample({
+          pid: 10_000 + index,
+          ppid: 1,
+          startTimeMs: index + 1,
+        }),
+    );
+    const history = buildResourceTelemetryHistory({
+      readAt: DateTime.makeUnsafe(STARTED_AT_MS + 1_000),
+      windowMs: 10_000,
+      bucketMs: 10_000,
+      sampleIntervalMs: 1_000,
+      serverPid: SERVER_PID,
+      sidecarPid: Option.none(),
+      desktopSnapshot: Option.none(),
+      snapshots: [
+        {
+          version: 2,
+          type: "snapshot",
+          sequence: 1,
+          sampledAtUnixMs: STARTED_AT_MS,
+          collectionDurationMicros: 100,
+          scannedProcessCount: processes.length,
+          retainedProcessCount: processes.length,
+          inaccessibleProcessCount: 0,
+          processes,
+        },
+      ],
+      health,
+    });
+
+    expect(history.topProcesses).toHaveLength(RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT);
+    expect(history.topProcessesTruncated).toBe(true);
   });
 });

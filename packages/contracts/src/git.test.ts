@@ -2,11 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
+  GIT_LIST_BRANCHES_MAX_LIMIT,
   VcsCreateWorktreeInput,
   GitPreparePullRequestThreadInput,
   GitRunStackedActionResult,
   GitRunStackedActionInput,
   GitResolvePullRequestResult,
+  VcsListRefsResult,
   VcsStatusResult,
 } from "./git.ts";
 
@@ -17,6 +19,7 @@ const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const decodeVcsListRefsResult = Schema.decodeUnknownSync(VcsListRefsResult);
 const decodeVcsStatusResult = Schema.decodeUnknownSync(VcsStatusResult);
 
 function vcsStatusWithReview(automatedReview?: unknown) {
@@ -163,5 +166,26 @@ describe("GitRunStackedActionResult", () => {
     if (parsed.toast.cta.kind === "run_action") {
       expect(parsed.toast.cta.action.kind).toBe("create_pr");
     }
+  });
+});
+
+describe("VcsListRefsResult", () => {
+  it("rejects ref pages beyond the request limit", () => {
+    const ref = {
+      name: "main",
+      current: false,
+      isDefault: false,
+      worktreePath: null,
+    };
+
+    expect(() =>
+      decodeVcsListRefsResult({
+        refs: Array.from({ length: GIT_LIST_BRANCHES_MAX_LIMIT + 1 }, () => ref),
+        isRepo: true,
+        hasPrimaryRemote: true,
+        nextCursor: null,
+        totalCount: GIT_LIST_BRANCHES_MAX_LIMIT + 1,
+      }),
+    ).toThrow();
   });
 });

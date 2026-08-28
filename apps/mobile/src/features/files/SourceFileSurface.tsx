@@ -2,7 +2,14 @@ import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import type { ComponentType } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, ScrollView, Text as NativeText, useWindowDimensions, View } from "react-native";
+import {
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  Text as NativeText,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { LoadingStrip } from "../../components/LoadingStrip";
@@ -213,16 +220,69 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
   const { codeSurface, codeWordBreak } = useAppearanceCodeSurface();
   const { lines, status, targetIndex, tokens } = useSourceFileModel(props);
   const listRef = useRef<FlatList<string>>(null);
+  const retryFrameRef = useRef<number | null>(null);
+  const scrollRetryRef = useRef<{
+    readonly path: string;
+    readonly index: number;
+    retried: boolean;
+  } | null>(null);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const handlePullToRefresh = useCallback(async () => {
+    if (!props.onRefresh) return;
+    setIsPullRefreshing(true);
+    try {
+      await props.onRefresh();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [props.onRefresh]);
 
   useEffect(() => {
+    if (retryFrameRef.current !== null) {
+      cancelAnimationFrame(retryFrameRef.current);
+      retryFrameRef.current = null;
+    }
     if (targetIndex === null) {
+      scrollRetryRef.current = null;
       return;
     }
+    scrollRetryRef.current = { path: props.path, index: targetIndex, retried: false };
     const frame = requestAnimationFrame(() => {
       listRef.current?.scrollToIndex({ index: targetIndex, animated: false, viewPosition: 0.3 });
     });
-    return () => cancelAnimationFrame(frame);
-  }, [props.path, targetIndex]);
+    return () => {
+      cancelAnimationFrame(frame);
+      if (retryFrameRef.current !== null) {
+        cancelAnimationFrame(retryFrameRef.current);
+        retryFrameRef.current = null;
+      }
+    };
+  }, [codeWordBreak, props.path, targetIndex]);
+
+  const handleScrollToIndexFailed = useCallback(
+    (info: { readonly averageItemLength: number; readonly index: number }) => {
+      const retry = scrollRetryRef.current;
+      if (!retry || retry.path !== props.path || retry.index !== info.index || retry.retried) {
+        return;
+      }
+      retry.retried = true;
+      listRef.current?.scrollToOffset({
+        offset: Math.max(0, (info.averageItemLength || codeSurface.rowHeight) * info.index),
+        animated: false,
+      });
+      retryFrameRef.current = requestAnimationFrame(() => {
+        retryFrameRef.current = null;
+        const current = scrollRetryRef.current;
+        if (current?.path !== props.path || current.index !== info.index) return;
+        listRef.current?.scrollToIndex({
+          index: info.index,
+          animated: false,
+          viewPosition: 0.3,
+        });
+      });
+    },
+    [codeSurface.rowHeight, props.path],
+  );
 
   const renderLine = useCallback(
     ({ item, index }: { item: string; index: number }) => (
@@ -237,15 +297,29 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     ),
     [codeSurface, codeWordBreak, targetIndex, tokens],
   );
+  const rowState = useMemo(
+    () => ({ codeSurface, codeWordBreak, targetIndex, tokens }),
+    [codeSurface, codeWordBreak, targetIndex, tokens],
+  );
 
   const list = (
     <FlatList
       ref={listRef}
       data={lines}
+      extraData={rowState}
       keyExtractor={(_line, index) => String(index)}
       initialNumToRender={80}
       maxToRenderPerBatch={80}
       windowSize={12}
+      onScrollToIndexFailed={handleScrollToIndexFailed}
+      refreshControl={
+        props.onRefresh ? (
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={() => void handlePullToRefresh()}
+          />
+        ) : undefined
+      }
       {...(codeWordBreak
         ? {}
         : {

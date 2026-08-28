@@ -24,6 +24,11 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+import {
+  isNativeResumeSessionReady,
+  parseNativeResumeCommand,
+  restoreFailedNativeResumePrompt,
+} from "@t3tools/shared/nativeResume";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
@@ -33,6 +38,7 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import {
+  isOptimisticStartingThreadPending,
   mergeOptimisticThreadMessages,
   resolveOptimisticSendStartedAt,
 } from "../lib/optimisticThreadSend";
@@ -180,12 +186,34 @@ export function useThreadComposerState() {
     if (optimisticStarting === null || selectedThreadMessages === null) {
       return;
     }
+    const nativeResume = parseNativeResumeCommand(optimisticStarting.message.text);
+    const nativeResumeSettled =
+      selectedThreadMessages.length === 0 &&
+      nativeResume?._tag === "Resume" &&
+      (isNativeResumeSessionReady(selectedThreadDetail?.session?.status) ||
+        selectedThreadDetail?.session?.status === "error");
     if (
-      selectedThreadMessages.some((message) => message.id === optimisticStarting.message.messageId)
+      selectedThreadMessages.some(
+        (message) => message.id === optimisticStarting.message.messageId,
+      ) ||
+      nativeResumeSettled
     ) {
+      if (nativeResumeSettled && selectedThreadDetail?.session?.status === "error") {
+        const threadKey = scopedThreadKey(
+          optimisticStarting.environmentId,
+          optimisticStarting.threadId,
+        );
+        const retryPrompt = restoreFailedNativeResumePrompt(
+          getComposerDraftSnapshot(threadKey).text,
+          [optimisticStarting.message.text],
+        );
+        if (retryPrompt !== null) {
+          setComposerDraftText(threadKey, retryPrompt);
+        }
+      }
       clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
     }
-  }, [optimisticStarting, selectedThreadMessages]);
+  }, [optimisticStarting, selectedThreadDetail?.session, selectedThreadMessages]);
   useEffect(() => {
     if (!selectedThreadDetail || !selectedThreadShell) return;
     recordThreadFeedBuildPerformanceSpan(
@@ -267,7 +295,7 @@ export function useThreadComposerState() {
     !!selectedThread &&
     (selectedThread.session?.status === "running" ||
       selectedThread.session?.status === "starting" ||
-      optimisticStarting !== null ||
+      isOptimisticStartingThreadPending(optimisticStarting, selectedThread.session?.status) ||
       isDeliveringQueuedMessage);
 
   const onSendMessage = useCallback(
@@ -461,12 +489,15 @@ export function useThreadComposerState() {
 
       const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
         });
-        if (images.length > 0) {
-          appendComposerDraftAttachments(threadKey, images);
+        if (result.images.length > 0) {
+          appendComposerDraftAttachments(threadKey, result.images);
+        }
+        if (result.error) {
+          Alert.alert("Could not attach image", result.error);
         }
       } catch (error) {
         console.error("[native paste] error converting images", {

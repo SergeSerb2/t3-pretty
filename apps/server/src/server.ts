@@ -2,9 +2,10 @@ import { EnvironmentHttpApi } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
-import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -13,6 +14,7 @@ import * as ServerConfig from "./config.ts";
 import {
   otlpTracesProxyRouteLayer,
   assetRouteLayer,
+  attachmentUploadRouteLayer,
   serverEnvironmentHttpApiLayer,
   serverConfigHttpApiLayer,
   staticAndDevRouteLayer,
@@ -26,6 +28,8 @@ import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
+import { dictationHttpApiLayer } from "./dictation/http.ts";
+import { readAloudHttpApiLayer } from "./readAloud/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
@@ -36,6 +40,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
 import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
+import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
@@ -54,6 +59,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as AppsHttp from "./apps/AppsHttp.ts";
 import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as ComputerUseService from "./computerUse/ComputerUseService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -142,6 +148,15 @@ import { forkParked, ServerActivation } from "./serverActivation.ts";
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
+// One turn may carry eight compact 14M-character image data URLs plus a
+// 120k-character prompt. Keep a finite transport bound, but leave enough room
+// for the RPC envelope and JSON escaping around that contract-valid payload.
+export const WEBSOCKET_MAX_MESSAGE_BYTES = 128 * 1024 * 1024;
+// HTTP orchestration dispatch accepts the same command envelope as WebSocket.
+// Apply the ceiling while Effect is collecting the body, before HttpApi schema
+// decoding; this also bounds chunked requests without a Content-Length header.
+export const HTTP_MAX_REQUEST_BODY_BYTES = WEBSOCKET_MAX_MESSAGE_BYTES;
+const HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(HTTP_MAX_REQUEST_BODY_BYTES);
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
 const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
@@ -159,7 +174,10 @@ const PtyAdapterLive = Layer.unwrap(
   }),
 );
 
-const ServerSettingsLayerLive = ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer));
+const ServerSettingsLayerLive = ServerSettings.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(SqlitePersistenceLayerLive),
+);
 
 const NativeTelemetryLayerLive = NativeTelemetryClient.layer.pipe(
   Layer.provide(ResourceMonitorBinary.layer),
@@ -224,8 +242,12 @@ const HttpServerLive = Layer.unwrap(
       return BunHttpServer.layer({
         port: config.port,
         hostname: config.host ?? "127.0.0.1",
+        maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
         websocket: {
+          maxPayloadLength: WEBSOCKET_MAX_MESSAGE_BYTES,
+          backpressureLimit: WEBSOCKET_MAX_MESSAGE_BYTES,
+          closeOnBackpressureLimit: true,
           // Negotiate permessage-deflate with clients that offer it; clients
           // that don't still get uncompressed frames on their connection. A
           // dedicated compressor keeps a per-connection sliding window
@@ -284,7 +306,10 @@ const HttpServerLive = Layer.unwrap(
           // window is shared across frames — that also makes small frames cheap
           // to compress, so no size threshold is set (ws only honors
           // `threshold` when context takeover is disabled).
-          websocket: { perMessageDeflate: true },
+          websocket: {
+            maxPayload: WEBSOCKET_MAX_MESSAGE_BYTES,
+            perMessageDeflate: true,
+          },
         },
       );
     }
@@ -474,7 +499,10 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // `ProviderService` (canonical stream, written after event normalization).
   // Provided once at the runtime level so every consumer sees the same
   // logger instances.
-  Layer.provideMerge(ProviderEventLoggers.layer),
+  // `ModelManifest.layer` is the legacy-model classification data, refreshed
+  // from the repo's `model-manifest.json` on `main` and applied by the
+  // Codex/Claude drivers.
+  Layer.provideMerge(Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer)),
   // AgentInstructionFiles rides the workspace entry to stay inside pipe()'s
   // 20-argument ceiling; layer memoization dedupes the shared dependencies.
   Layer.provideMerge(
@@ -523,6 +551,14 @@ const commandReadinessLayer = HttpRouter.middleware(
   { global: true },
 );
 
+const requestBodyLimitLayer = HttpRouter.middleware(
+  (httpEffect) =>
+    httpEffect.pipe(
+      Effect.provideService(HttpServerRequest.MaxBodySize, HTTP_MAX_REQUEST_BODY_SIZE),
+    ),
+  { global: true },
+);
+
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   // One registry entry per supported host; the service only knows the registry.
   Layer.provide(PullRequestProviderRegistry.layer),
@@ -538,12 +574,15 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
+      Layer.provide(dictationHttpApiLayer),
+      Layer.provide(readAloudHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
       Layer.provide(serverConfigHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
+    attachmentUploadRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
@@ -559,8 +598,10 @@ export const makeRoutesLayer = Layer.mergeAll(
   // fanned out to every WebSocket subscriber (see ShellStream).
   Layer.provide(ShellStream.layer),
   Layer.provide(PreviewAutomationBroker.layer),
+  Layer.provide(ComputerUseService.layer),
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
+  Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),
   Layer.provide(httpCompressionLayer),
 );

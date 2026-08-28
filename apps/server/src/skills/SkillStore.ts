@@ -11,6 +11,8 @@
  * @module skills/SkillStore
  */
 import {
+  SKILL_FRONTMATTER_READ_MAX_BYTES,
+  SKILL_STATE_MAX_ITEMS,
   SkillsError,
   type InstalledSkill,
   type SkillId,
@@ -28,6 +30,7 @@ import * as Schema from "effect/Schema";
 
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as ServerConfig from "../config.ts";
+import { readTextPrefix } from "../boundedFileRead.ts";
 
 /** Install metadata kept inside each stored skill directory. */
 export const SKILL_METADATA_FILE = ".t3-skill.json";
@@ -42,6 +45,12 @@ const encodeSkillMetadata = Schema.encodeEffect(SkillMetadataPrettyJson);
 
 /** Skills sit at most this deep below the repo dir; deeper trees are ignored. */
 const STORE_SCAN_MAX_DEPTH = 8;
+const SKILL_METADATA_MAX_BYTES = 16 * 1024;
+
+/** Remaining entries before a skill-state snapshot reaches its wire ceiling. */
+export function remainingSkillStateCapacity(currentCount: number): number {
+  return Math.max(0, SKILL_STATE_MAX_ITEMS - currentCount);
+}
 
 export interface ParsedSkillId {
   readonly owner: string;
@@ -168,9 +177,11 @@ const make = Effect.gen(function* () {
     new SkillsError({ operation, message: `Invalid skill id: ${skillId}.` });
 
   const readInstalledAt = Effect.fn("SkillStore.readInstalledAt")(function* (skillDir: string) {
-    const metadata = yield* fileSystem
-      .readFileString(path.join(skillDir, SKILL_METADATA_FILE))
-      .pipe(Effect.orElseSucceed(() => undefined));
+    const metadata = yield* readTextPrefix(
+      fileSystem,
+      path.join(skillDir, SKILL_METADATA_FILE),
+      SKILL_METADATA_MAX_BYTES,
+    ).pipe(Effect.orElseSucceed(() => undefined));
     if (metadata !== undefined) {
       const decoded = yield* decodeSkillMetadata(metadata).pipe(
         Effect.orElseSucceed(() => undefined),
@@ -194,12 +205,19 @@ const make = Effect.gen(function* () {
   const collectSkillDirs = Effect.fn("SkillStore.collectSkillDirs")(function* (
     directory: string,
     segments: ReadonlyArray<string>,
+    maximumResults: number,
   ): Effect.fn.Return<Array<ReadonlyArray<string>>> {
+    if (maximumResults <= 0) {
+      return [];
+    }
     const entries = yield* fileSystem
       .readDirectory(directory)
       .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
     const found: Array<ReadonlyArray<string>> = [];
     for (const entry of [...entries].sort()) {
+      if (found.length >= maximumResults) {
+        break;
+      }
       if (entry.startsWith(".")) {
         continue;
       }
@@ -215,7 +233,9 @@ const make = Effect.gen(function* () {
       if (hasSkillFile) {
         found.push(childSegments);
       } else if (childSegments.length < STORE_SCAN_MAX_DEPTH) {
-        found.push(...(yield* collectSkillDirs(entryPath, childSegments)));
+        found.push(
+          ...(yield* collectSkillDirs(entryPath, childSegments, maximumResults - found.length)),
+        );
       }
     }
     return found;
@@ -230,6 +250,9 @@ const make = Effect.gen(function* () {
 
     const installedSkills: Array<InstalledSkill> = [];
     for (const repoDirName of [...repoDirNames].sort()) {
+      if (remainingSkillStateCapacity(installedSkills.length) === 0) {
+        break;
+      }
       const repoParts = parseSkillRepoDirName(repoDirName);
       if (!repoParts) {
         continue;
@@ -240,12 +263,18 @@ const make = Effect.gen(function* () {
         continue;
       }
       const sourceRepo = `${repoParts.owner}/${repoParts.repo}`;
-      for (const segments of yield* collectSkillDirs(repoDir, [])) {
+      for (const segments of yield* collectSkillDirs(
+        repoDir,
+        [],
+        remainingSkillStateCapacity(installedSkills.length),
+      )) {
         const sourcePath = segments.join("/");
         const skillDir = path.join(repoDir, ...segments);
-        const contents = yield* fileSystem
-          .readFileString(path.join(skillDir, "SKILL.md"))
-          .pipe(Effect.orElseSucceed(() => ""));
+        const contents = yield* readTextPrefix(
+          fileSystem,
+          path.join(skillDir, "SKILL.md"),
+          SKILL_FRONTMATTER_READ_MAX_BYTES,
+        ).pipe(Effect.orElseSucceed(() => ""));
         const frontmatter = parseSkillFrontmatter(contents);
         const directoryName = segments[segments.length - 1]!;
         installedSkills.push({

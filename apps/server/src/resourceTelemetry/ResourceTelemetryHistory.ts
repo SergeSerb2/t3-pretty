@@ -1,11 +1,12 @@
-import type {
-  DesktopHostTelemetrySnapshot,
-  ResourceMonitorSnapshotEvent,
-  ResourceTelemetryHealth,
-  ResourceTelemetryHistory,
-  ResourceTelemetryHistoryBucket,
-  ResourceTelemetryProcess,
-  ResourceTelemetryProcessSummary,
+import {
+  RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT,
+  type DesktopHostTelemetrySnapshot,
+  type ResourceMonitorSnapshotEvent,
+  type ResourceTelemetryHealth,
+  type ResourceTelemetryHistory,
+  type ResourceTelemetryHistoryBucket,
+  type ResourceTelemetryProcess,
+  type ResourceTelemetryProcessSummary,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -48,6 +49,18 @@ interface ProcessSample {
   readonly ioWriteBytes: number;
 }
 
+interface ProcessSummaryAccumulator {
+  readonly first: ProcessSample;
+  readonly latest: ProcessSample;
+  readonly cpuPercentTotal: number;
+  readonly maxCpuPercent: number;
+  readonly cpuTimeMs: number;
+  readonly peakRssBytes: number;
+  readonly ioReadBytes: number;
+  readonly ioWriteBytes: number;
+  readonly sampleCount: number;
+}
+
 export interface BuildResourceTelemetryHistoryInput {
   readonly readAt: DateTime.Utc;
   readonly windowMs: number;
@@ -64,26 +77,51 @@ export type ResourceTelemetryHistoryWithLegacyBuckets = ResourceTelemetryHistory
   readonly legacyBackendBuckets?: ReadonlyArray<ResourceTelemetryHistoryBucket>;
 };
 
-function summarizeProcesses(
-  samples: ReadonlyArray<ProcessSample>,
-): ReadonlyArray<ResourceTelemetryProcessSummary> {
-  const groups = new Map<string, ProcessSample[]>();
+function summarizeProcesses(samples: ReadonlyArray<ProcessSample>): {
+  readonly processes: ReadonlyArray<ResourceTelemetryProcessSummary>;
+  readonly truncated: boolean;
+} {
+  const groups = new Map<string, ProcessSummaryAccumulator>();
   for (const sample of samples) {
     const identityKey = processIdentityKey(
       sample.process.identity.pid,
       sample.process.identity.startTimeMs,
     );
-    const current = groups.get(identityKey) ?? [];
-    current.push(sample);
-    groups.set(identityKey, current);
+    const current = groups.get(identityKey);
+    groups.set(
+      identityKey,
+      current === undefined
+        ? {
+            first: sample,
+            latest: sample,
+            cpuPercentTotal: sample.process.cpuPercent,
+            maxCpuPercent: sample.process.cpuPercent,
+            cpuTimeMs: sample.cpuTimeMs,
+            peakRssBytes: sample.process.residentBytes,
+            ioReadBytes: sample.ioReadBytes,
+            ioWriteBytes: sample.ioWriteBytes,
+            sampleCount: 1,
+          }
+        : {
+            ...current,
+            latest: sample,
+            cpuPercentTotal: saturatingFiniteAdd(
+              current.cpuPercentTotal,
+              sample.process.cpuPercent,
+            ),
+            maxCpuPercent: Math.max(current.maxCpuPercent, sample.process.cpuPercent),
+            cpuTimeMs: saturatingIntegerAdd(current.cpuTimeMs, sample.cpuTimeMs),
+            peakRssBytes: Math.max(current.peakRssBytes, sample.process.residentBytes),
+            ioReadBytes: saturatingIntegerAdd(current.ioReadBytes, sample.ioReadBytes),
+            ioWriteBytes: saturatingIntegerAdd(current.ioWriteBytes, sample.ioWriteBytes),
+            sampleCount: saturatingIntegerAdd(current.sampleCount, 1),
+          },
+    );
   }
 
-  return [...groups.values()]
-    .map((processSamples): ResourceTelemetryProcessSummary => {
-      const sorted = processSamples.toSorted((left, right) => left.sampledAtMs - right.sampledAtMs);
-      const first = sorted[0]!;
-      const latest = sorted[sorted.length - 1]!;
-      const cpuTotal = sorted.reduce((total, sample) => total + sample.process.cpuPercent, 0);
+  const ranked = [...groups.values()]
+    .map((summary): ResourceTelemetryProcessSummary => {
+      const { first, latest } = summary;
       return {
         identity: latest.process.identity,
         ppid: latest.process.ppid,
@@ -94,20 +132,32 @@ function summarizeProcesses(
         firstSeenAt: first.process.firstSeenAt,
         lastSeenAt: latest.process.lastSeenAt,
         currentCpuPercent: latest.process.cpuPercent,
-        avgCpuPercent: cpuTotal / sorted.length,
-        maxCpuPercent: Math.max(...sorted.map((sample) => sample.process.cpuPercent)),
-        cpuTimeMs: sorted.reduce((total, sample) => total + sample.cpuTimeMs, 0),
+        avgCpuPercent: summary.cpuPercentTotal / summary.sampleCount,
+        maxCpuPercent: summary.maxCpuPercent,
+        cpuTimeMs: summary.cpuTimeMs,
         currentRssBytes: latest.process.residentBytes,
-        peakRssBytes: Math.max(...sorted.map((sample) => sample.process.residentBytes)),
-        ioReadBytes: sorted.reduce((total, sample) => total + sample.ioReadBytes, 0),
-        ioWriteBytes: sorted.reduce((total, sample) => total + sample.ioWriteBytes, 0),
+        peakRssBytes: summary.peakRssBytes,
+        ioReadBytes: summary.ioReadBytes,
+        ioWriteBytes: summary.ioWriteBytes,
         ioSemantics: latest.process.ioSemantics,
-        sampleCount: sorted.length,
+        sampleCount: summary.sampleCount,
       };
     })
     .toSorted(
       (left, right) => right.cpuTimeMs - left.cpuTimeMs || right.peakRssBytes - left.peakRssBytes,
     );
+  return {
+    processes: ranked.slice(0, RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT),
+    truncated: ranked.length > RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT,
+  };
+}
+
+function saturatingIntegerAdd(left: number, right: number): number {
+  return Math.min(Number.MAX_SAFE_INTEGER, left + right);
+}
+
+function saturatingFiniteAdd(left: number, right: number): number {
+  return Math.min(Number.MAX_VALUE, left + right);
 }
 
 function buildBuckets(input: {
@@ -118,27 +168,46 @@ function buildBuckets(input: {
 }): ReadonlyArray<ResourceTelemetryHistoryBucket> {
   const windowStartMs = input.nowMs - input.windowMs;
   const buckets: ResourceTelemetryHistoryBucket[] = [];
+  let sampleIndex = 0;
   for (let startedAtMs = windowStartMs; startedAtMs < input.nowMs; startedAtMs += input.bucketMs) {
     const endedAtMs = Math.min(input.nowMs, startedAtMs + input.bucketMs);
-    const samples = input.samples.filter(
-      (sample) =>
-        sample.sampledAtMs >= startedAtMs &&
-        (endedAtMs === input.nowMs
-          ? sample.sampledAtMs <= endedAtMs
-          : sample.sampledAtMs < endedAtMs),
-    );
-    const cpuTotal = samples.reduce((total, sample) => total + sample.cpuPercent, 0);
+    const isFinalBucket = endedAtMs === input.nowMs;
+    while (
+      sampleIndex < input.samples.length &&
+      input.samples[sampleIndex]!.sampledAtMs < startedAtMs
+    ) {
+      sampleIndex += 1;
+    }
+    let sampleCount = 0;
+    let cpuTotal = 0;
+    let maxCpuPercent = 0;
+    let maxRssBytes = 0;
+    let ioReadBytes = 0;
+    let ioWriteBytes = 0;
+    let maxProcessCount = 0;
+    while (sampleIndex < input.samples.length) {
+      const sample = input.samples[sampleIndex]!;
+      if (sample.sampledAtMs > endedAtMs || (!isFinalBucket && sample.sampledAtMs === endedAtMs)) {
+        break;
+      }
+      sampleCount += 1;
+      cpuTotal = saturatingFiniteAdd(cpuTotal, sample.cpuPercent);
+      maxCpuPercent = Math.max(maxCpuPercent, sample.cpuPercent);
+      maxRssBytes = Math.max(maxRssBytes, sample.rssBytes);
+      ioReadBytes = saturatingIntegerAdd(ioReadBytes, sample.ioReadBytes);
+      ioWriteBytes = saturatingIntegerAdd(ioWriteBytes, sample.ioWriteBytes);
+      maxProcessCount = Math.max(maxProcessCount, sample.processCount);
+      sampleIndex += 1;
+    }
     buckets.push({
       startedAt: DateTime.makeUnsafe(startedAtMs),
       endedAt: DateTime.makeUnsafe(endedAtMs),
-      avgCpuPercent: samples.length === 0 ? 0 : cpuTotal / samples.length,
-      maxCpuPercent:
-        samples.length === 0 ? 0 : Math.max(...samples.map((sample) => sample.cpuPercent)),
-      maxRssBytes: samples.length === 0 ? 0 : Math.max(...samples.map((sample) => sample.rssBytes)),
-      ioReadBytes: samples.reduce((total, sample) => total + sample.ioReadBytes, 0),
-      ioWriteBytes: samples.reduce((total, sample) => total + sample.ioWriteBytes, 0),
-      maxProcessCount:
-        samples.length === 0 ? 0 : Math.max(...samples.map((sample) => sample.processCount)),
+      avgCpuPercent: sampleCount === 0 ? 0 : cpuTotal / sampleCount,
+      maxCpuPercent,
+      maxRssBytes,
+      ioReadBytes,
+      ioWriteBytes,
+      maxProcessCount,
     });
   }
   return buckets;
@@ -239,8 +308,14 @@ export function buildResourceTelemetryHistory(
       cpuPercent: merged.groups.allT3.currentCpuPercent,
       rssBytes: merged.groups.allT3.currentRssBytes,
       processCount: merged.groups.allT3.processCount,
-      ioReadBytes: deltas.reduce((total, process) => total + process.ioReadBytes, 0),
-      ioWriteBytes: deltas.reduce((total, process) => total + process.ioWriteBytes, 0),
+      ioReadBytes: deltas.reduce(
+        (total, process) => saturatingIntegerAdd(total, process.ioReadBytes),
+        0,
+      ),
+      ioWriteBytes: deltas.reduce(
+        (total, process) => saturatingIntegerAdd(total, process.ioWriteBytes),
+        0,
+      ),
     });
     const backendDeltas = deltas.filter(
       (processDelta) =>
@@ -254,8 +329,14 @@ export function buildResourceTelemetryHistory(
       cpuPercent: merged.groups.backend.currentCpuPercent,
       rssBytes: merged.groups.backend.currentRssBytes,
       processCount: merged.groups.backend.processCount,
-      ioReadBytes: backendDeltas.reduce((total, process) => total + process.ioReadBytes, 0),
-      ioWriteBytes: backendDeltas.reduce((total, process) => total + process.ioWriteBytes, 0),
+      ioReadBytes: backendDeltas.reduce(
+        (total, process) => saturatingIntegerAdd(total, process.ioReadBytes),
+        0,
+      ),
+      ioWriteBytes: backendDeltas.reduce(
+        (total, process) => saturatingIntegerAdd(total, process.ioWriteBytes),
+        0,
+      ),
     });
     for (const process of merged.processes) {
       const processDelta = deltasByIdentity.get(
@@ -271,12 +352,16 @@ export function buildResourceTelemetryHistory(
     }
   }
 
+  const summarizedProcesses = summarizeProcesses(processSamples);
+  const sourceTruncated = snapshots.some(
+    (snapshot) => snapshot.retainedProcessCount > snapshot.processes.length,
+  );
   return {
     readAt: input.readAt,
     windowMs,
     bucketMs,
     sampleIntervalMs: input.sampleIntervalMs,
-    retainedSampleCount: aggregateSamples.length + processSamples.length,
+    retainedSampleCount: saturatingIntegerAdd(aggregateSamples.length, processSamples.length),
     buckets: buildBuckets({ samples: aggregateSamples, nowMs: readAtMs, windowMs, bucketMs }),
     legacyBackendBuckets: buildBuckets({
       samples: legacyBackendAggregateSamples,
@@ -284,7 +369,8 @@ export function buildResourceTelemetryHistory(
       windowMs,
       bucketMs,
     }),
-    topProcesses: summarizeProcesses(processSamples),
+    topProcesses: summarizedProcesses.processes,
+    ...(summarizedProcesses.truncated || sourceTruncated ? { topProcessesTruncated: true } : {}),
     health: input.health,
   };
 }

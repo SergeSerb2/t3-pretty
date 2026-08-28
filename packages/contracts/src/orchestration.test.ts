@@ -5,13 +5,17 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  ClientOrchestrationCommand,
   ModelSelection,
   OrchestrationCommand,
   OrchestrationDispatchCommandError,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
+  OrchestrationGetWorkflowScriptInput,
+  OrchestrationGetWorkflowScriptResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationSearchThreadsResult,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -28,23 +32,37 @@ import {
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
-  ClientOrchestrationCommand,
   OrchestrationThreadSearchMatch,
   isProviderSendTurnSupportedImageMimeType,
+  PROJECT_SCRIPT_MAX_COUNT,
+  ORCHESTRATION_THREAD_SEARCH_MAX_RESULTS,
+  PROVIDER_USER_INPUT_MAX_ANSWERS,
+  PROVIDER_INTERACTION_MAX_KEY_LENGTH,
+  PROVIDER_INTERACTION_MAX_NODES,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderUserInputAnswers,
+  THREAD_SCENERY_URL_MAX_LENGTH,
+  ThreadSceneryPhoto,
+  WORKFLOW_SCRIPT_MAX_BYTES,
+  WORKFLOW_SCRIPT_PATH_MAX_LENGTH,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
+const decodeWorkflowScriptInput = Schema.decodeUnknownEffect(OrchestrationGetWorkflowScriptInput);
+const decodeWorkflowScriptResult = Schema.decodeUnknownEffect(OrchestrationGetWorkflowScriptResult);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
 const decodeProjectMetaUpdatedPayload = Schema.decodeUnknownEffect(ProjectMetaUpdatedPayload);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
+const decodeSearchThreadsResult = Schema.decodeUnknownEffect(OrchestrationSearchThreadsResult);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
@@ -247,6 +265,86 @@ it.effect("decodes thread.turn.start defaults for provider and runtime mode", ()
   }),
 );
 
+it.effect("accepts eight client turn attachments and rejects a ninth", () =>
+  Effect.gen(function* () {
+    const commandWithAttachmentCount = (attachmentCount: number) => ({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-attachments",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-turn-attachments",
+        role: "user",
+        text: "hello",
+        attachments: Array.from({ length: attachmentCount }, (_, index) => ({
+          type: "image",
+          name: `image-${index}.png`,
+          mimeType: "image/png",
+          sizeBytes: 1,
+          dataUrl: "data:image/png;base64,AA==",
+        })),
+      },
+      runtimeMode: DEFAULT_RUNTIME_MODE,
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const accepted = yield* decodeClientOrchestrationCommand(
+      commandWithAttachmentCount(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    );
+    assert.strictEqual(
+      accepted.type === "thread.turn.start" ? accepted.message.attachments.length : undefined,
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+    );
+
+    const rejected = yield* Effect.exit(
+      decodeClientOrchestrationCommand(
+        commandWithAttachmentCount(PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1),
+      ),
+    );
+    assert.strictEqual(rejected._tag, "Failure");
+  }),
+);
+
+it.effect("accepts both inline and uploaded image attachments from clients", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeClientOrchestrationCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-attachments",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-attachments",
+        role: "user",
+        text: "hello",
+        attachments: [
+          {
+            type: "image",
+            name: "legacy.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+            dataUrl: "data:image/png;base64,YWJj",
+          },
+          {
+            type: "image",
+            id: "pending-00000000-0000-4000-8000-000000000001",
+            name: "uploaded.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    if (command.type !== "thread.turn.start") {
+      assert.fail(`Expected thread.turn.start, received ${command.type}.`);
+    }
+    assert.strictEqual(command.message.attachments.length, 2);
+    assert.strictEqual("dataUrl" in command.message.attachments[0]!, true);
+    assert.strictEqual("id" in command.message.attachments[1]!, true);
+  }),
+);
 it.effect("preserves explicit provider and runtime mode in thread.turn.start", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadTurnStartCommand({
@@ -717,6 +815,28 @@ it.effect("accepts a title regeneration intent in thread.meta.update", () =>
     assert.strictEqual(parsed.type, "thread.meta.update");
     if (parsed.type === "thread.meta.update") {
       assert.strictEqual(parsed.regenerateTitle, true);
+    }
+  }),
+);
+
+it.effect("accepts a linked pull request in thread.meta.update", () =>
+  Effect.gen(function* () {
+    const linkedPullRequest = {
+      projectId: "project-1",
+      repository: "pingdotgg/t3code",
+      number: 42,
+      url: "https://github.com/pingdotgg/t3code/pull/42",
+    };
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "thread.meta.update",
+      commandId: "cmd-link-pull-request",
+      threadId: "thread-1",
+      linkedPullRequest,
+    });
+
+    assert.strictEqual(parsed.type, "thread.meta.update");
+    if (parsed.type === "thread.meta.update") {
+      assert.deepStrictEqual(parsed.linkedPullRequest, linkedPullRequest);
     }
   }),
 );

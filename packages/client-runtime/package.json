@@ -19,6 +19,10 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
+    "./preview-automation-calls": {
+      "types": "./src/previewAutomationCalls.ts",
+      "default": "./src/previewAutomationCalls.ts"
+    },
     "./errors": {
       "types": "./src/errors/index.ts",
       "default": "./src/errors/index.ts"
@@ -62,6 +66,14 @@
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"
+    },
+    "./state/dictation": {
+      "types": "./src/state/dictation.ts",
+      "default": "./src/state/dictation.ts"
+    },
+    "./state/read-aloud": {
+      "types": "./src/state/readAloud.ts",
+      "default": "./src/state/readAloud.ts"
     },
     "./state/entities": {
       "types": "./src/state/entities.ts",

@@ -4,6 +4,7 @@ import {
   ServerSettingsError,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -49,7 +50,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   const serverSettings = yield* ServerSettingsService;
   const refreshSemaphore = yield* Semaphore.make(1);
   const changesPubSub = yield* Effect.acquireRelease(
-    PubSub.unbounded<ServerProvider>(),
+    PubSub.sliding<ServerProvider>(1),
     PubSub.shutdown,
   );
   const initialSettings = yield* input.getSettings;
@@ -184,7 +185,13 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   }
 
   yield* Stream.runForEach(input.streamSettings, (nextSettings) =>
-    Effect.asVoid(applySnapshot(nextSettings)),
+    Effect.asVoid(applySnapshot(nextSettings)).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("Failed to refresh provider after settings changed.", { cause }),
+      ),
+    ),
   ).pipe(Effect.forkScoped);
 
   yield* Effect.forever(
@@ -209,7 +216,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
           ),
         ),
       ),
-      Effect.ignoreCause({ log: true }),
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("Periodic provider refresh failed.", { cause }),
+      ),
     ),
   ).pipe(Effect.forkScoped);
 

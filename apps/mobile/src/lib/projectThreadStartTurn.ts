@@ -10,10 +10,14 @@ import {
 } from "@t3tools/contracts";
 
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
 
 export function deriveThreadTitleFromPrompt(value: string): string {
+  if (parseNativeResumeCommand(value)?._tag === "Resume") {
+    return NATIVE_RESUME_THREAD_TITLE;
+  }
   // The auto-PR instruction block is agent-facing; a title derived from the
   // prompt should reflect only what the user typed.
   const trimmed = stripCreatePullRequestSuffix(value).trim();

@@ -61,6 +61,8 @@ export function SettingsRow(props: {
       <Pressable
         accessibilityLabel={props.label}
         accessibilityRole="button"
+        accessibilityState={{ disabled: props.disabled === true }}
+        accessibilityValue={props.value ? { text: props.value } : undefined}
         disabled={props.disabled}
         onPress={() =>
           navigation.navigate("SettingsSheet", {
@@ -80,6 +82,8 @@ export function SettingsRow(props: {
       <Pressable
         accessibilityLabel={props.label}
         accessibilityRole="button"
+        accessibilityState={{ disabled: props.disabled === true }}
+        accessibilityValue={props.value ? { text: props.value } : undefined}
         disabled={props.disabled}
         onPress={() => navigation.navigate(fullScreenTarget)}
       >
@@ -89,7 +93,14 @@ export function SettingsRow(props: {
   }
 
   return (
-    <Pressable accessibilityRole="button" disabled={props.disabled} onPress={props.onPress}>
+    <Pressable
+      accessibilityLabel={props.label}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true }}
+      accessibilityValue={props.value ? { text: props.value } : undefined}
+      disabled={props.disabled}
+      onPress={props.onPress}
+    >
       {content}
     </Pressable>
   );
