@@ -16,6 +16,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import serverPackageJson from "../../../server/package.json" with { type: "json" };
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -96,6 +97,7 @@ const WSL_FORWARDED_ENV_NAMES = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const PACKAGED_SERVER_TRACE_MIN_LEVEL = "Warn" satisfies LogLevel;
+const SERVER_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
 const backendChildEnvPatch = (): Record<string, string | undefined> =>
   Object.fromEntries(DESKTOP_BACKEND_ENV_NAMES.map((name) => [name, undefined]));
@@ -140,10 +142,7 @@ const mergeWslEnv = (
   return parts.length > 0 ? parts.join(":") : undefined;
 };
 
-const logBackendObservabilitySettingsReadFailure = (
-  settingsPath: string,
-  cause: PlatformError.PlatformError,
-) => {
+const logBackendObservabilitySettingsReadFailure = (settingsPath: string, cause: unknown) => {
   const error = new DesktopBackendObservabilitySettingsReadError({ settingsPath, cause });
   return Effect.logWarning(error).pipe(
     Effect.annotateLogs({
@@ -194,7 +193,11 @@ const resolveResourceMonitorPath = Effect.fn(
 const readPersistedBackendObservabilitySettings = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const raw = yield* fileSystem.readFileString(environment.serverSettingsPath).pipe(
+  const raw = yield* readFileStringWithinLimit(
+    fileSystem,
+    environment.serverSettingsPath,
+    SERVER_SETTINGS_FILE_MAX_BYTES,
+  ).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -203,6 +206,10 @@ const readPersistedBackendObservabilitySettings = Effect.gen(function* () {
           : logBackendObservabilitySettingsReadFailure(environment.serverSettingsPath, cause).pipe(
               Effect.as(Option.none()),
             ),
+      DesktopFileSizeLimitExceededError: (cause) =>
+        logBackendObservabilitySettingsReadFailure(environment.serverSettingsPath, cause).pipe(
+          Effect.as(Option.none()),
+        ),
     }),
   );
   if (Option.isNone(raw)) {

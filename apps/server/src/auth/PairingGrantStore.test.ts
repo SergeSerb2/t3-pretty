@@ -1,9 +1,16 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  AUTH_ACCESS_PAIRING_LINK_MAX_COUNT,
+  AUTH_CLIENT_LABEL_MAX_LENGTH,
+  AUTH_CREDENTIAL_MAX_LENGTH,
+} from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
@@ -66,6 +73,77 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
     }).pipe(Effect.provide(makePairingGrantStoreLayer())),
   );
 
+  it.effect("buffers pairing changes acquired before their stream starts", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+        const changes = yield* bootstrapCredentials.subscribeChanges;
+        const issued = yield* bootstrapCredentials.issueOneTimeToken();
+
+        const change = yield* Stream.runHead(changes);
+
+        expect(Option.getOrUndefined(change)).toMatchObject({
+          type: "pairingLinkUpserted",
+          pairingLink: { id: issued.id },
+        });
+      }),
+    ).pipe(Effect.provide(makePairingGrantStoreLayer())),
+  );
+
+  it.effect("rejects oversized bootstrap credentials before repository lookup", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const error = yield* Effect.flip(
+        bootstrapCredentials.consume("x".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
+      );
+
+      expect(error._tag).toBe("UnknownBootstrapCredentialError");
+    }).pipe(Effect.provide(makePairingGrantStoreTestLayer({}))),
+  );
+
+  it.effect("rejects oversized pairing metadata before persistence", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const error = yield* Effect.flip(
+        bootstrapCredentials.issueOneTimeToken({
+          label: "x".repeat(AUTH_CLIENT_LABEL_MAX_LENGTH + 1),
+        }),
+      );
+
+      expect(error._tag).toBe("PairingCredentialInputValidationError");
+    }).pipe(Effect.provide(makePairingGrantStoreTestLayer({}))),
+  );
+
+  it.effect("fails explicitly instead of returning a truncated active-link list", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const error = yield* Effect.flip(bootstrapCredentials.listActive());
+
+      expect(error._tag).toBe("ActivePairingLinksLimitExceededError");
+    }).pipe(
+      Effect.provide(
+        makePairingGrantStoreTestLayer({
+          listActive: () =>
+            Effect.succeed(
+              Array.from({ length: AUTH_ACCESS_PAIRING_LINK_MAX_COUNT + 1 }, (_, index) => ({
+                id: `pairing-link-${index}`,
+                credential: "PAIRINGTOKEN",
+                method: "one-time-token" as const,
+                scopes: ["orchestration:read"] as const,
+                subject: "one-time-token",
+                label: null,
+                proofKeyThumbprint: null,
+                createdAt: DateTime.makeUnsafe(index),
+                expiresAt: DateTime.makeUnsafe(index + 60_000),
+                consumedAt: null,
+                revokedAt: null,
+              })),
+            ),
+        }),
+      ),
+    ),
+  );
+
   it.effect("issues one-time bootstrap tokens that can only be consumed once", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -111,6 +189,29 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
         expect(failure.failure._tag).toBe("UnknownBootstrapCredentialError");
         expect(failure.failure.message).toContain("Unknown bootstrap credential");
       }
+    }).pipe(Effect.provide(makePairingGrantStoreLayer())),
+  );
+
+  it.effect("does not consume a one-time token when requested scopes exceed the grant", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const token = yield* bootstrapCredentials.issueOneTimeToken({
+        scopes: ["orchestration:read"],
+      });
+
+      const rejected = yield* bootstrapCredentials
+        .consume(token.credential, { requestedScopes: ["access:write"] })
+        .pipe(Effect.flip);
+      const activeAfterReject = yield* bootstrapCredentials.listActive();
+      const consumed = yield* bootstrapCredentials.consume(token.credential, {
+        requestedScopes: ["orchestration:read"],
+      });
+      const afterConsumed = yield* bootstrapCredentials.consume(token.credential).pipe(Effect.flip);
+
+      expect(rejected._tag).toBe("BootstrapCredentialScopeNotGrantedError");
+      expect(activeAfterReject.map((grant) => grant.id)).toContain(token.id);
+      expect(consumed.scopes).toEqual(["orchestration:read"]);
+      expect(afterConsumed._tag).toBe("UnknownBootstrapCredentialError");
     }).pipe(Effect.provide(makePairingGrantStoreLayer())),
   );
 

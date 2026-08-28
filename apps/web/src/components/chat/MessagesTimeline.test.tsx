@@ -347,7 +347,7 @@ describe("MessagesTimeline", () => {
     expect(fadedMarkup).toContain("topbar-scroll-fade");
   });
 
-  it("keeps assistant changed-files headers sticky below the thread header", () => {
+  it("keeps assistant changed-files headers sticky on the card glass", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");
     const markup = renderToStaticMarkup(
@@ -394,7 +394,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("sticky top-2 z-10");
+    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900");
+    expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
+    expect(markup).not.toContain("backdrop-blur-md");
     expect(markup).not.toContain("self-start");
     expect(markup).toContain("whitespace-nowrap");
     expect(markup).toContain("!size-[22px]");
@@ -748,6 +750,9 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('href="https://example.com"');
     expect(markup).toContain('src="https://example.com/image.png"');
+    expect(markup).toContain('loading="lazy"');
+    expect(markup).toContain('decoding="async"');
+    expect(markup).toContain('referrerPolicy="no-referrer"');
     expect(markup).not.toContain('title="link tip"');
     expect(markup).not.toContain('title="image tip"');
   });
@@ -1320,5 +1325,25 @@ describe("MessagesTimeline", () => {
         command: `echo "===== ISSUE 198 =====" && gh issue view 198 --repo SergeSerb2/t3-pretty`,
       }),
     ).toContain('aria-expanded="false"');
+  });
+
+  it("offers read aloud on a settled final assistant response", () => {
+    const turnId = TurnId.make("turn-read-aloud");
+    const entry = buildAssistantTimelineEntry("The complete response.");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        readAloudEnabled
+        latestTurn={{
+          turnId,
+          state: "completed",
+          startedAt: MESSAGE_CREATED_AT,
+          completedAt: MESSAGE_CREATED_AT,
+        }}
+        timelineEntries={[{ ...entry, message: { ...entry.message, turnId } }]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Read response aloud"');
   });
 });

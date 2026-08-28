@@ -11,6 +11,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
   type ModelSelection,
   type ProviderOptionSelection,
@@ -255,6 +256,72 @@ describe("composerDraftStore addImages", () => {
     expect(draft?.images.map((image) => image.id)).toEqual(["img-shared"]);
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared");
   });
+
+  it("caps images at the provider attachment limit and revokes rejected previews", () => {
+    const images = Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 2 }, (_, index) =>
+      makeImage({
+        id: `img-${index}`,
+        previewUrl: `blob:${index}`,
+        name: `image-${index}.png`,
+      }),
+    );
+
+    const acceptedCount = useComposerDraftStore.getState().addImages(threadRef, images);
+
+    expect(acceptedCount).toBe(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images).toHaveLength(
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+    );
+    expect(revokeSpy).toHaveBeenCalledWith(`blob:${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}`);
+    expect(revokeSpy).toHaveBeenCalledWith(`blob:${PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1}`);
+  });
+
+  it("rejects images for a missing draft session and revokes each object URL once", () => {
+    const missingDraftId = DraftId.make("draft-missing");
+    const first = makeImage({ id: "img-missing-a", previewUrl: "blob:missing" });
+    const second = makeImage({
+      id: "img-missing-b",
+      name: "other.png",
+      previewUrl: "blob:missing",
+    });
+
+    const acceptedCount = useComposerDraftStore
+      .getState()
+      .addImages(missingDraftId, [first, second]);
+
+    expect(acceptedCount).toBe(0);
+    expect(draftByKey(missingDraftId)).toBeUndefined();
+    expect(revokeSpy).toHaveBeenCalledOnce();
+    expect(revokeSpy).toHaveBeenCalledWith("blob:missing");
+  });
+
+  it("does not revoke a rejected preview URL retained by a later image in the batch", () => {
+    const existing = makeImage({
+      id: "img-existing",
+      name: "duplicate.png",
+      previewUrl: "blob:existing",
+    });
+    useComposerDraftStore.getState().addImage(threadRef, existing);
+
+    const rejected = makeImage({
+      id: "img-rejected",
+      name: "duplicate.png",
+      previewUrl: "blob:shared-incoming",
+    });
+    const accepted = makeImage({
+      id: "img-accepted",
+      name: "accepted.png",
+      previewUrl: "blob:shared-incoming",
+    });
+
+    useComposerDraftStore.getState().addImages(threadRef, [rejected, accepted]);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images.map((image) => image.id)).toEqual([
+      "img-existing",
+      "img-accepted",
+    ]);
+    expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared-incoming");
+  });
 });
 
 describe("composerDraftStore clearComposerContent", () => {
@@ -414,6 +481,38 @@ describe("composerDraftStore syncPersistedAttachments", () => {
 
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([image.id]);
+  });
+
+  it("ignores stale attachment verification after a newer attachment write", async () => {
+    const first = makeImage({ id: "img-first", previewUrl: "blob:first" });
+    const latest = makeImage({ id: "img-latest", previewUrl: "blob:latest" });
+    const store = useComposerDraftStore.getState();
+    store.addImages(threadRef, [first, latest]);
+
+    store.syncPersistedAttachments(threadRef, [
+      {
+        id: first.id,
+        name: first.name,
+        mimeType: first.mimeType,
+        sizeBytes: first.sizeBytes,
+        dataUrl: first.previewUrl,
+      },
+    ]);
+    store.syncPersistedAttachments(threadRef, [
+      {
+        id: latest.id,
+        name: latest.name,
+        mimeType: latest.mimeType,
+        sizeBytes: latest.sizeBytes,
+        dataUrl: latest.previewUrl,
+      },
+    ]);
+    await Promise.resolve();
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([
+      expect.objectContaining({ id: latest.id }),
+    ]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([first.id]);
   });
 });
 
@@ -2029,5 +2128,25 @@ describe("createDebouncedStorage", () => {
     vi.advanceTimersByTime(300);
     expect(base.setItem).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledWith("key", "v2");
+  });
+
+  it("contains quota and browser-policy failures from delayed storage work", () => {
+    const base = {
+      getItem: vi.fn(() => {
+        throw new Error("blocked");
+      }),
+      setItem: vi.fn(() => {
+        throw new Error("quota exceeded");
+      }),
+      removeItem: vi.fn(() => {
+        throw new Error("blocked");
+      }),
+    };
+    const storage = createDebouncedStorage(base);
+
+    expect(storage.getItem("key")).toBeNull();
+    storage.setItem("key", "value");
+    expect(() => vi.advanceTimersByTime(300)).not.toThrow();
+    expect(() => storage.removeItem("key")).not.toThrow();
   });
 });

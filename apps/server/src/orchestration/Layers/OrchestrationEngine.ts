@@ -61,6 +61,10 @@ const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdCo
 const RECEIPT_RETENTION = Duration.hours(72);
 const RECEIPT_PRUNE_INTERVAL = Duration.hours(1);
 const RECEIPT_PRUNE_BATCH = 2_000;
+export const ORCHESTRATION_COMMAND_QUEUE_CAPACITY = 64;
+
+export const makeOrchestrationCommandQueue = <A>(): Effect.Effect<Queue.Queue<A>> =>
+  Queue.bounded<A>(ORCHESTRATION_COMMAND_QUEUE_CAPACITY);
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -100,7 +104,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   let commandReadModel = createEmptyReadModel(yield* nowIso);
 
-  const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
+  // Commands are lossless and already await this serial worker's receipt, so
+  // a bounded queue gives callers natural backpressure without changing
+  // ordering or dropping mutations during a burst.
+  const commandQueue = yield* makeOrchestrationCommandQueue<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
 
   const projectEventsOntoReadModel = (

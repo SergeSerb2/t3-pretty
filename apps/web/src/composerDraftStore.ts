@@ -9,6 +9,7 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   ProviderOptionSelection,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PreviewAnnotationPayloadSchema,
   type PreviewAnnotationPayload,
   RuntimeMode,
@@ -52,7 +53,7 @@ import {
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
+import { createDebouncedStorage, resolveLocalStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
@@ -72,14 +73,23 @@ export type DraftId = typeof DraftId.Type;
 const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 
 const composerDebouncedStorage = createDebouncedStorage(
-  typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
+  resolveLocalStorage(),
   COMPOSER_PERSIST_DEBOUNCE_MS,
 );
+const flushComposerDrafts = () => {
+  composerDebouncedStorage.flush();
+};
 
-// Flush pending composer draft writes before page unload to prevent data loss.
+// Flush pending composer draft writes when the page is hidden or unloaded.
+// `pagehide` covers mobile tab disposal and bfcache navigation, where
+// `beforeunload` is not guaranteed to fire.
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("beforeunload", () => {
-    composerDebouncedStorage.flush();
+  window.addEventListener("pagehide", flushComposerDrafts);
+  window.addEventListener("beforeunload", flushComposerDrafts);
+  import.meta.hot?.dispose(() => {
+    flushComposerDrafts();
+    window.removeEventListener("pagehide", flushComposerDrafts);
+    window.removeEventListener("beforeunload", flushComposerDrafts);
   });
 }
 
@@ -531,8 +541,8 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     policy: ThreadSubagentPolicy | null | undefined,
   ) => void;
-  addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
-  addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
+  addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => boolean;
+  addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => number;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
   insertTerminalContext: (
     threadRef: ComposerThreadTarget,
@@ -1184,6 +1194,13 @@ function revokeDraftThreadPreviewUrls(draft: ComposerThreadDraftState | undefine
   }
   for (const image of draft.images) {
     revokeObjectPreviewUrl(image.previewUrl);
+  }
+}
+
+function revokeImagePreviewUrls(images: ReadonlyArray<ComposerImageAttachment>): void {
+  const previewUrls = new Set(images.map((image) => image.previewUrl));
+  for (const previewUrl of previewUrls) {
+    revokeObjectPreviewUrl(previewUrl);
   }
 }
 
@@ -2277,6 +2294,12 @@ function verifyPersistedAttachments(
   });
 }
 
+// Verification flushes the shared debounced store before reading it back. If
+// one thread stages attachments twice in the same task, an older verification
+// must not flush/read the newer write and then reconcile state using its stale
+// attachment list. Tokens live only until the latest queued verification runs.
+const pendingAttachmentVerificationByThreadKey = new Map<string, symbol>();
+
 function hydratePersistedComposerImageAttachment(
   attachment: PersistedComposerImageAttachment,
 ): File | null {
@@ -3206,36 +3229,42 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
-        addImage: (threadRef, image) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef);
-          const threadId = resolveComposerThreadId(get(), threadRef);
-          if (!threadKey || !threadId) {
-            return;
-          }
-          get().addImages(typeof threadRef === "string" ? DraftId.make(threadKey) : threadRef, [
-            image,
-          ]);
-        },
+        addImage: (threadRef, image) => get().addImages(threadRef, [image]) > 0,
         addImages: (threadRef, images) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0 || images.length === 0) {
-            return;
+          if (images.length === 0) {
+            return 0;
           }
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          const threadId = resolveComposerThreadId(get(), threadRef);
+          if (threadKey.length === 0 || threadId === null) {
+            revokeImagePreviewUrls(images);
+            return 0;
+          }
+          let acceptedCount = 0;
+          const acceptedPreviewUrls = new Set<string>();
+          const rejectedPreviewUrls = new Set<string>();
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const existingIds = new Set(existing.images.map((image) => image.id));
             const existingDedupKeys = new Set(
               existing.images.map((image) => composerImageDedupKey(image)),
             );
-            const acceptedPreviewUrls = new Set(existing.images.map((image) => image.previewUrl));
+            for (const image of existing.images) {
+              acceptedPreviewUrls.add(image.previewUrl);
+            }
             const dedupedIncoming: ComposerImageAttachment[] = [];
+            const availableSlots = Math.max(
+              0,
+              PROVIDER_SEND_TURN_MAX_ATTACHMENTS - existing.images.length,
+            );
             for (const image of images) {
               const dedupKey = composerImageDedupKey(image);
               if (existingIds.has(image.id) || existingDedupKeys.has(dedupKey)) {
-                // Avoid revoking a blob URL that's still referenced by an accepted image.
-                if (!acceptedPreviewUrls.has(image.previewUrl)) {
-                  revokeObjectPreviewUrl(image.previewUrl);
-                }
+                rejectedPreviewUrls.add(image.previewUrl);
+                continue;
+              }
+              if (dedupedIncoming.length >= availableSlots) {
+                rejectedPreviewUrls.add(image.previewUrl);
                 continue;
               }
               dedupedIncoming.push(image);
@@ -3246,6 +3275,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             if (dedupedIncoming.length === 0) {
               return state;
             }
+            acceptedCount = dedupedIncoming.length;
             return {
               draftsByThreadKey: {
                 ...state.draftsByThreadKey,
@@ -3256,6 +3286,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               },
             };
           });
+          for (const previewUrl of rejectedPreviewUrls) {
+            // A later attachment in the batch may retain the same object URL.
+            if (!acceptedPreviewUrls.has(previewUrl)) {
+              revokeObjectPreviewUrl(previewUrl);
+            }
+          }
+          return acceptedCount;
         },
         removeImage: (threadRef, imageId) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
@@ -3733,8 +3770,19 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             }
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
+          const verificationToken = Symbol(threadKey);
+          pendingAttachmentVerificationByThreadKey.set(threadKey, verificationToken);
           Promise.resolve().then(() => {
-            verifyPersistedAttachments(threadKey, attachments, set);
+            if (pendingAttachmentVerificationByThreadKey.get(threadKey) !== verificationToken) {
+              return;
+            }
+            try {
+              verifyPersistedAttachments(threadKey, attachments, set);
+            } finally {
+              if (pendingAttachmentVerificationByThreadKey.get(threadKey) === verificationToken) {
+                pendingAttachmentVerificationByThreadKey.delete(threadKey);
+              }
+            }
           });
         },
         clearComposerContent: (threadRef) => {

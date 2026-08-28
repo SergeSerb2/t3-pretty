@@ -62,6 +62,8 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   const activeQuestion = progress.activeQuestion;
   const autoAdvanceTimerRef = useRef<number | null>(null);
   const onAdvanceRef = useRef(onAdvance);
+  const activeQuestionIdRef = useRef(activeQuestion?.id);
+  activeQuestionIdRef.current = activeQuestion?.id;
   const [optimisticSingleSelect, setOptimisticSingleSelect] = useState<{
     questionId: string;
     optionLabel: string;
@@ -75,9 +77,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
   const isCollapsed = collapsedQuestionId !== null && collapsedQuestionId === activeQuestion?.id;
 
-  useEffect(() => {
-    onAdvanceRef.current = onAdvance;
-  }, [onAdvance]);
+  onAdvanceRef.current = onAdvance;
 
   useEffect(() => {
     if (!activeQuestion || activeQuestion.multiSelect || !optimisticSingleSelect) {
@@ -100,14 +100,17 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     progress.selectedOptionLabels,
   ]);
 
-  // Clear auto-advance timer on unmount
+  // A remote answer or another control can advance the prompt before the
+  // click's delay expires. Cancel that old question's timer so it cannot skip
+  // the newly active question.
   useEffect(() => {
     return () => {
       if (autoAdvanceTimerRef.current !== null) {
         window.clearTimeout(autoAdvanceTimerRef.current);
+        autoAdvanceTimerRef.current = null;
       }
     };
-  }, []);
+  }, [activeQuestion?.id]);
 
   const handleOptionSelection = useCallback(
     (questionId: string, optionLabel: string) => {
@@ -122,6 +125,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       }
       autoAdvanceTimerRef.current = window.setTimeout(() => {
         autoAdvanceTimerRef.current = null;
+        if (activeQuestionIdRef.current !== questionId) return;
         onAdvanceRef.current();
       }, 200);
     },

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 import { removeLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -82,6 +83,27 @@ describe("partitionStashAttachments", () => {
     const { kept, droppedNames } = partitionStashAttachments([exact]);
     expect(kept).toHaveLength(1);
     expect(droppedNames).toEqual([]);
+  });
+
+  it("bounds the attachment count even when every image fits the byte budget", () => {
+    const attachments = Array.from(
+      { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 2 },
+      (_, index) => ({
+        id: `image-${index}`,
+        name: `image-${index}.png`,
+        mimeType: "image/png",
+        sizeBytes: 1,
+        dataUrl: "x",
+      }),
+    );
+
+    const { kept, droppedNames } = partitionStashAttachments(attachments);
+
+    expect(kept).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(droppedNames).toEqual([
+      `image-${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.png`,
+      `image-${PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1}.png`,
+    ]);
   });
 });
 
@@ -192,6 +214,25 @@ describe("promptStashStore", () => {
     const entry = usePromptStashStore.getState().entries[0];
     expect(entry?.pendingImageCount).toBe(0);
     expect(entry?.unreadableImageNames).toHaveLength(2);
+  });
+
+  it("bounds corrupt persisted entry and pending-image counts during hydration", () => {
+    writePromptStashStorageForTest(
+      JSON.stringify({
+        version: 2,
+        state: {
+          entries: Array.from({ length: MAX_STASH_ENTRIES + 3 }, (_, index) => ({
+            ...makeEntry({ id: `persisted-${index}` }),
+            pendingImageCount: Number.MAX_SAFE_INTEGER,
+          })),
+        },
+      }),
+    );
+
+    const entries = usePromptStashStore.getState().entries;
+    expect(entries).toHaveLength(MAX_STASH_ENTRIES);
+    expect(entries[0]?.pendingImageCount).toBe(0);
+    expect(entries[0]?.unreadableImageNames).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
   });
 
   it("ignores an unreadable v1 payload seeded under the current key", () => {

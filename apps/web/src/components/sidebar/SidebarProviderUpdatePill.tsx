@@ -5,6 +5,7 @@ import { CircleCheckIcon, DownloadIcon, LoaderIcon, TriangleAlertIcon, XIcon } f
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 
 import { primaryServerProvidersAtom } from "../../state/server";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 import {
   getProviderUpdateSidebarPillView,
   type ProviderUpdateSidebarPillView,
@@ -34,7 +35,9 @@ function latestProviderCheckedAt(
 ): string | undefined {
   return providers.reduce<string | undefined>(
     (latest, provider) =>
-      latest === undefined || provider.checkedAt > latest ? provider.checkedAt : latest,
+      latest === undefined || compareIsoDateTimes(provider.checkedAt, latest) > 0
+        ? provider.checkedAt
+        : latest,
     undefined,
   );
 }

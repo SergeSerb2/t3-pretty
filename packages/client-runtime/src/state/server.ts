@@ -29,6 +29,7 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
   createRuntimeCommand,
+  environmentRpcKey,
   scheduleAtomCommandEffect,
 } from "./runtime.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
@@ -871,7 +872,7 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.storageRemoveOrphan,
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) => `${environmentId}:${input.path}`,
+        key: environmentRpcKey,
       },
     }),
   };

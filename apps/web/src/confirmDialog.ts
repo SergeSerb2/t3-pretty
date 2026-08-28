@@ -25,6 +25,7 @@ let activeConfirmation: PendingConfirmation | null = null;
 let queuedConfirmations: PendingConfirmation[] = [];
 let registeredHostCount = 0;
 const listeners = new Set<() => void>();
+export const MAX_QUEUED_CONFIRMATIONS = 32;
 
 function publish(next: ConfirmDialogState): void {
   state = next;
@@ -90,6 +91,10 @@ export function requestConfirmDialog(
       resolve,
     } satisfies PendingConfirmation;
     if (activeConfirmation || state.status === "closing") {
+      if (queuedConfirmations.length >= MAX_QUEUED_CONFIRMATIONS) {
+        resolve(false);
+        return;
+      }
       queuedConfirmations.push(pending);
       return;
     }

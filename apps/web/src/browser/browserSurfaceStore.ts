@@ -40,6 +40,7 @@ interface BrowserSurfaceStoreState {
   ) => void;
   readonly presentContent: (tabId: string, content: BrowserSurfaceContentPresentation) => void;
   readonly release: (tabId: string, owner: symbol) => void;
+  readonly remove: (tabId: string) => void;
 }
 
 export interface BrowserSurfaceLease {
@@ -168,6 +169,12 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
           },
         },
       };
+    }),
+  remove: (tabId) =>
+    set((state) => {
+      if (!(tabId in state.byTabId)) return state;
+      const { [tabId]: _removed, ...byTabId } = state.byTabId;
+      return { byTabId };
     }),
 }));
 

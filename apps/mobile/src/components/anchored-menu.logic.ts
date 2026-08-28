@@ -1,7 +1,7 @@
 import type { MenuAction } from "@react-native-menu/menu";
 
 export type MenuRow =
-  | { readonly type: "header"; readonly title: string }
+  | { readonly type: "header"; readonly key: string; readonly title: string }
   | { readonly type: "action"; readonly action: MenuAction };
 
 /**
@@ -9,17 +9,18 @@ export type MenuRow =
  * `displayInline` submenus flatten into a section header plus their children
  * (matching UIMenu's inline groups) instead of becoming a drill-in page.
  */
-export function flattenMenuActions(actions: readonly MenuAction[]): MenuRow[] {
+export function flattenMenuActions(actions: readonly MenuAction[], path = "root"): MenuRow[] {
   const rows: MenuRow[] = [];
   for (const action of actions) {
     if (action.attributes?.hidden === true) {
       continue;
     }
     if (action.displayInline === true && (action.subactions?.length ?? 0) > 0) {
+      const actionPath = `${path}:${action.id ?? action.title}`;
       if (action.title.length > 0) {
-        rows.push({ type: "header", title: action.title });
+        rows.push({ type: "header", key: `header:${actionPath}`, title: action.title });
       }
-      rows.push(...flattenMenuActions(action.subactions ?? []));
+      rows.push(...flattenMenuActions(action.subactions ?? [], actionPath));
       continue;
     }
     rows.push({ type: "action", action });

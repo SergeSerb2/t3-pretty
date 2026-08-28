@@ -244,6 +244,28 @@ describe("previewStateStore (single-tab)", () => {
     expect(state.snapshot?.tabId).toBe(first.tabId);
   });
 
+  it("chooses the newest remaining tab across mixed timestamp precision", () => {
+    const older = makeSnapshot({
+      tabId: "tab_a",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    const newer = makeSnapshot({
+      tabId: "tab_b",
+      updatedAt: "2026-01-01T00:00:00.900Z",
+    });
+    const closing = makeSnapshot({
+      tabId: "tab_c",
+      updatedAt: "2026-01-01T00:00:01Z",
+    });
+    applyPreviewServerSnapshot(ref, older);
+    applyPreviewServerSnapshot(ref, newer);
+    applyPreviewServerSnapshot(ref, closing);
+
+    beginPreviewSessionClose(ref, closing.tabId);
+
+    expect(readThreadPreviewState(ref).snapshot?.tabId).toBe(newer.tabId);
+  });
+
   it("treats a late server close event after optimistic removal as a no-op", () => {
     const snapshot = makeSnapshot();
     applyPreviewServerSnapshot(ref, snapshot);

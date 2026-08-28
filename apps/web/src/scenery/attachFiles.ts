@@ -1,5 +1,3 @@
-import { randomUUID } from "../lib/utils";
-
 /**
  * Classification and send-time payload for the fork's composer attach button.
  *
@@ -12,11 +10,16 @@ import { randomUUID } from "../lib/utils";
  * path so the composer can refuse them instead of inventing an unreadable basename.
  */
 
+import { FILESYSTEM_ENTRY_NAME_MAX_LENGTH, FILESYSTEM_PATH_MAX_LENGTH } from "@t3tools/contracts";
+
+import { randomUUID } from "../lib/utils";
+
 export const ATTACHED_FILE_PATHS_TAG = "attached_file_paths";
 export const ATTACHED_FILE_PATHS_OPEN_MARKER = `<${ATTACHED_FILE_PATHS_TAG} source="t3-composer-attach">`;
 export const ATTACHED_FILE_PATHS_CLOSE_MARKER = `</${ATTACHED_FILE_PATHS_TAG}>`;
 
 export const TEXT_ATTACHMENT_MAX_BYTES = 128 * 1024;
+const ATTACHED_FILE_MIME_TYPE_MAX_LENGTH = 256;
 
 const TEXT_MIME_PREFIXES = ["text/"];
 const TEXT_MIME_TYPES = new Set([
@@ -121,9 +124,31 @@ export function looksBinary(content: string): boolean {
  * fences survive; the trailing space matches the mention-insert convention.
  */
 export function textAttachmentPayload(name: string, content: string): string {
-  const language = fileExtension(name);
+  const extension = fileExtension(name);
+  const language = /^[a-z0-9][a-z0-9_+-]{0,31}$/.test(extension) ? extension : "";
   const body = content.endsWith("\n") ? content : `${content}\n`;
-  return `Attached file \`${name}\`:\n\`\`\`\`${language}\n${body}\`\`\`\`\n`;
+  const fence = "`".repeat(Math.max(4, longestBacktickRun(content) + 1));
+  return `Attached file ${inlineCodeOrJson(name)}:\n${fence}${language}\n${body}${fence}\n`;
+}
+
+function longestBacktickRun(value: string): number {
+  let longest = 0;
+  let current = 0;
+  for (const character of value) {
+    if (character === "`") {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  }
+  return longest;
+}
+
+function inlineCodeOrJson(value: string): string {
+  return value.includes("`") || value.includes("\n") || value.includes("\r")
+    ? JSON.stringify(value)
+    : `\`${value}\``;
 }
 
 function isAbsoluteFilePath(path: string): boolean {
@@ -139,12 +164,17 @@ function isAbsoluteFilePath(path: string): boolean {
 export function resolvePickedFilePath(file: File): string | null {
   const getPathForFile =
     typeof window === "undefined" ? undefined : window.desktopBridge?.getPathForFile;
-  const bridgePath = getPathForFile?.(file);
-  if (typeof bridgePath === "string") {
-    const trimmed = bridgePath.trim();
-    if (trimmed.length > 0 && isAbsoluteFilePath(trimmed)) {
-      return trimmed;
+  try {
+    const bridgePath = getPathForFile?.(file);
+    if (
+      typeof bridgePath === "string" &&
+      bridgePath.length <= FILESYSTEM_PATH_MAX_LENGTH &&
+      isAbsoluteFilePath(bridgePath)
+    ) {
+      return bridgePath;
     }
+  } catch {
+    // A failed desktop bridge lookup should fall back to browser delivery.
   }
   return null;
 }
@@ -154,31 +184,32 @@ export function createAttachedFileRef(
   id: string = randomUUID(),
 ): AttachedFileRef | null {
   const path = resolvePickedFilePath(file);
-  if (!path) {
+  const name = file.name || "file";
+  if (!path || name.length > FILESYSTEM_ENTRY_NAME_MAX_LENGTH) {
     return null;
   }
+  const mimeType =
+    file.type.length <= ATTACHED_FILE_MIME_TYPE_MAX_LENGTH
+      ? file.type || "application/octet-stream"
+      : "application/octet-stream";
   return {
     id,
-    name: file.name || "file",
+    name,
     path,
-    mimeType: file.type || "application/octet-stream",
+    mimeType,
     sizeBytes: file.size,
   };
 }
 
-function escapeBackticks(value: string): string {
-  return value.replaceAll("`", "'");
-}
-
 export function buildAttachedFilePathsSuffix(files: ReadonlyArray<AttachedFileRef>): string {
-  const labels = files.map((file) => `\`${escapeBackticks(file.name)}\``).join(", ");
-  const paths = files.map((file) => `- \`${escapeBackticks(file.path)}\``).join("\n");
+  const labels = files.map((file) => inlineCodeOrJson(file.name)).join(", ");
+  const paths = files.map((file) => `- ${JSON.stringify(file.path)}`).join("\n");
   return `
 
 Attached ${labels}.
 
 ${ATTACHED_FILE_PATHS_OPEN_MARKER}
-The user attached the following files. Read them from these paths:
+The user attached the following files. Decode these JSON strings exactly, then read those paths:
 ${paths}
 ${ATTACHED_FILE_PATHS_CLOSE_MARKER}`;
 }

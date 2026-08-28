@@ -30,6 +30,8 @@ const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
 const VCS_STATUS_REFRESH_FAILURE_MAX_DELAY = Duration.minutes(15);
 const MAX_FAILURE_DIAGNOSTIC_VALUES = 8;
 const MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH = 128;
+const VCS_STATUS_BACKGROUND_DEMAND_CONCURRENCY = 8;
+export const VCS_STATUS_CACHE_MAX_ENTRIES = 512;
 
 function boundedDiagnosticValue(value: string): string {
   return value.slice(0, MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH);
@@ -129,6 +131,24 @@ interface CachedVcsStatus {
   readonly remote: CachedValue<VcsStatusRemoteResult | null> | null;
 }
 
+export function upsertBoundedVcsStatusCache<T>(
+  cache: ReadonlyMap<string, T>,
+  cwd: string,
+  status: T,
+): Map<string, T> {
+  const nextCache = new Map(cache);
+  nextCache.delete(cwd);
+  nextCache.set(cwd, status);
+
+  while (nextCache.size > VCS_STATUS_CACHE_MAX_ENTRIES) {
+    const oldestCwd = nextCache.keys().next().value;
+    if (oldestCwd === undefined) break;
+    nextCache.delete(oldestCwd);
+  }
+
+  return nextCache;
+}
+
 interface ActiveRemotePoller {
   readonly fiber: Fiber.Fiber<void, never>;
   readonly subscriberCount: number;
@@ -210,8 +230,7 @@ export const make = Effect.gen(function* () {
       } satisfies CachedValue<VcsStatusLocalResult>;
       const shouldPublish = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
-        const nextCache = new Map(cache);
-        nextCache.set(cwd, {
+        const nextCache = upsertBoundedVcsStatusCache(cache, cwd, {
           ...previous,
           local: nextLocal,
         });
@@ -240,8 +259,7 @@ export const make = Effect.gen(function* () {
       } satisfies CachedValue<VcsStatusRemoteResult | null>;
       const shouldPublish = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
-        const nextCache = new Map(cache);
-        nextCache.set(cwd, {
+        const nextCache = upsertBoundedVcsStatusCache(cache, cwd, {
           ...previous,
           remote: nextRemote,
         });
@@ -278,8 +296,7 @@ export const make = Effect.gen(function* () {
     } satisfies CachedValue<VcsStatusRemoteResult | null>;
     const shouldPublish = yield* Ref.modify(cacheRef, (cache) => {
       const previous = cache.get(cwd) ?? { local: null, remote: null };
-      const nextCache = new Map(cache);
-      nextCache.set(cwd, {
+      const nextCache = upsertBoundedVcsStatusCache(cache, cwd, {
         local: nextLocal,
         remote: nextRemote,
       });
@@ -419,7 +436,7 @@ export const make = Effect.gen(function* () {
                 cwd: demandCwd,
               }),
             ),
-            { concurrency: "unbounded" },
+            { concurrency: VCS_STATUS_BACKGROUND_DEMAND_CONCURRENCY },
           )).some(Boolean);
         if (!shouldRun) {
           return activeInterval;

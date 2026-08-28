@@ -1,7 +1,7 @@
 import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { writeFileAtomically } from "../lib/atomic-file";
+import { removeStaleAtomicWriteTempFiles, writeFileAtomically } from "../lib/atomic-file";
 import {
   decodeQueuedThreadMessage,
   encodeQueuedThreadMessage,
@@ -31,7 +31,14 @@ export async function flushThreadOutboxWrites(): Promise<void> {
 export class ThreadOutboxStorageError extends Schema.TaggedErrorClass<ThreadOutboxStorageError>()(
   "ThreadOutboxStorageError",
   {
-    operation: Schema.Literals(["load", "read-message", "write", "remove"]),
+    operation: Schema.Literals([
+      "load",
+      "read-message",
+      "decode-message",
+      "quarantine-message",
+      "write",
+      "remove",
+    ]),
     environmentId: Schema.NullOr(EnvironmentId),
     threadId: Schema.NullOr(ThreadId),
     messageId: Schema.NullOr(MessageId),
@@ -72,16 +79,18 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
     try {
       const { File } = await import("expo-file-system");
       const directory = await getOutboxDirectory();
+      await removeStaleAtomicWriteTempFiles(directory);
 
       for (const entry of directory.list()) {
         if (!(entry instanceof File) || !entry.name.endsWith(".json")) {
           continue;
         }
+        let raw: string;
         try {
-          messages.push(decodeQueuedThreadMessage(JSON.parse(await entry.text()) as unknown));
+          raw = await entry.text();
         } catch (cause) {
           console.warn(
-            "[thread-outbox] ignored invalid persisted message",
+            "[thread-outbox] could not read persisted message",
             new ThreadOutboxStorageError({
               operation: "read-message",
               environmentId: null,
@@ -91,6 +100,41 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
               cause,
             }),
           );
+          continue;
+        }
+        try {
+          messages.push(decodeQueuedThreadMessage(JSON.parse(raw) as unknown));
+        } catch (cause) {
+          console.warn(
+            "[thread-outbox] quarantined invalid persisted message",
+            new ThreadOutboxStorageError({
+              operation: "decode-message",
+              environmentId: null,
+              threadId: null,
+              messageId: null,
+              fileName: entry.name,
+              cause,
+            }),
+          );
+          try {
+            // Preserve the exact bytes for manual recovery while moving the
+            // invalid record out of the active `.json` scan. Never quarantine
+            // transient read failures: only content that was read completely
+            // and failed JSON/schema validation reaches this branch.
+            await entry.move(new File(directory, `${entry.name}.${Date.now()}.invalid`));
+          } catch (quarantineCause) {
+            console.warn(
+              "[thread-outbox] could not quarantine invalid persisted message",
+              new ThreadOutboxStorageError({
+                operation: "quarantine-message",
+                environmentId: null,
+                threadId: null,
+                messageId: null,
+                fileName: entry.name,
+                cause: quarantineCause,
+              }),
+            );
+          }
         }
       }
     } catch (cause) {

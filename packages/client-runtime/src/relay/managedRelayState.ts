@@ -2,7 +2,7 @@ import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { AUTH_CREDENTIAL_MAX_LENGTH, type EnvironmentId } from "@t3tools/contracts";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -178,15 +178,23 @@ function readSessionClerkToken(
   session: ManagedRelaySession,
 ): Effect.Effect<string, ManagedRelaySessionError> {
   return session.readClerkToken().pipe(
-    Effect.flatMap((token) =>
-      token
-        ? Effect.succeed(token)
-        : Effect.fail(
-            new ManagedRelaySessionError({
-              message: `The ${SURGE_CONNECT_NAME} session token is unavailable.`,
-            }),
-          ),
-    ),
+    Effect.flatMap((token) => {
+      if (!token) {
+        return Effect.fail(
+          new ManagedRelaySessionError({
+            message: `The ${SURGE_CONNECT_NAME} session token is unavailable.`,
+          }),
+        );
+      }
+      if (token.length > AUTH_CREDENTIAL_MAX_LENGTH) {
+        return Effect.fail(
+          new ManagedRelaySessionError({
+            message: `The ${SURGE_CONNECT_NAME} session token is invalid.`,
+          }),
+        );
+      }
+      return Effect.succeed(token);
+    }),
   );
 }
 
@@ -234,6 +242,11 @@ export const deregisterManagedRelayEnvironment = Effect.fn(
     });
   }
   const clerkToken = yield* readSessionClerkToken(session);
+  if (registry.get(managedRelaySessionAtom) !== session) {
+    return yield* new ManagedRelaySessionError({
+      message: "The signed-in account changed before the environment could be deregistered.",
+    });
+  }
   const relay = yield* ManagedRelay.ManagedRelayClient;
   yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
 });

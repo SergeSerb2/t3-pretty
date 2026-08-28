@@ -2,7 +2,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Option from "effect/Option";
 
-import { buildRelayMeshRegistrations } from "./connectMesh";
+import { buildRelayMeshRegistrations, isRelayEnvironmentMissing } from "./connectMesh";
 
 describe("buildRelayMeshRegistrations", () => {
   it("builds a deterministic catalog without the local environment", () => {
@@ -33,5 +33,44 @@ describe("buildRelayMeshRegistrations", () => {
       ["environment-a", "A machine"],
       ["environment-z", "Z machine"],
     ]);
+  });
+});
+
+describe("isRelayEnvironmentMissing", () => {
+  const environmentId = EnvironmentId.make("environment-primary");
+
+  it("detects a locally linked environment missing from an authoritative account list", () => {
+    expect(
+      isRelayEnvironmentMissing(
+        {
+          environments: new Map(),
+          loaded: true,
+          refreshing: false,
+          offline: false,
+          error: Option.none(),
+        },
+        environmentId,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat incomplete or failed discovery as an account removal", () => {
+    const base = {
+      environments: new Map(),
+      loaded: true,
+      refreshing: false,
+      offline: false,
+      error: Option.none(),
+    };
+
+    expect(isRelayEnvironmentMissing({ ...base, loaded: false }, environmentId)).toBe(false);
+    expect(isRelayEnvironmentMissing({ ...base, refreshing: true }, environmentId)).toBe(false);
+    expect(isRelayEnvironmentMissing({ ...base, offline: true }, environmentId)).toBe(false);
+    expect(
+      isRelayEnvironmentMissing(
+        { ...base, error: Option.some(new Error("relay unavailable") as never) },
+        environmentId,
+      ),
+    ).toBe(false);
   });
 });

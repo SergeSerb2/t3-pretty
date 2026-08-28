@@ -58,6 +58,11 @@ export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
  * under the UI's 64ms streaming-text cadence.
  */
 const THREAD_STREAM_COALESCE_WINDOW = "50 millis" as const;
+// Stream items are lossless and cursor-ordered, so dropping them is not safe.
+// Bound the local buffer and let the subscription fiber backpressure during an
+// extreme burst; the cursor resume path recovers anything interrupted by scope
+// closure. Queue.clear below can now materialize at most this many items.
+const THREAD_STREAM_BUFFER_CAPACITY = 4_096;
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -680,7 +685,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // that arrived within each window into one publication. Quiet periods cost
   // nothing (the fiber parks on Queue.take), and a scope close drops the
   // buffer, which the cursor resume replays on the next subscription.
-  const streamItems = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
+  const streamItems = yield* Queue.bounded<OrchestrationThreadStreamItem>(
+    THREAD_STREAM_BUFFER_CAPACITY,
+  );
   yield* Effect.forkScoped(
     Effect.gen(function* () {
       for (;;) {

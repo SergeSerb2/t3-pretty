@@ -26,7 +26,23 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  */
 export const USAGE_CONTRACT_VERSION = 5 as const;
 
+/**
+ * Oldest {@link UsageSummary} version a current client will still merge.
+ *
+ * Version 4 Claude/Codex buckets remain structurally valid under v5, so
+ * mixed-version environments keep those totals instead of treating every
+ * older server as stale.
+ */
+export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
+
 export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok", "kimi"] as const;
+
+export const USAGE_MODEL_MAX_LENGTH = 512;
+export const USAGE_TIME_ZONE_MAX_LENGTH = 128;
+export const USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER = 4_096;
+export const USAGE_SUMMARY_MAX_BUCKETS =
+  USAGE_PROVIDER_KINDS.length * USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER;
+export const USAGE_SUMMARY_MAX_SOURCES = USAGE_PROVIDER_KINDS.length;
 
 export const UsageProviderKind = Schema.Literals(USAGE_PROVIDER_KINDS);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
@@ -68,6 +84,13 @@ export type UsageResolution = typeof UsageResolution.Type;
 export const UsageCostSource = Schema.Literals(["providerReported", "modelPriced", "unpriced"]);
 export type UsageCostSource = typeof UsageCostSource.Type;
 
+const UsageModel = TrimmedNonEmptyString.check(Schema.isMaxLength(USAGE_MODEL_MAX_LENGTH));
+const UsageTimestamp = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+const UsageFiniteNonNegativeNumber = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isGreaterThanOrEqualTo(0),
+);
+
 /**
  * Token counts for a bucket.
  *
@@ -94,19 +117,19 @@ export type UsageTokenTotals = typeof UsageTokenTotals.Type;
  * whose tokens are included in the token totals but which contributed nothing
  * to `costUsd`.
  */
-export const UsageBucket = Schema.Struct({
+const UsageBucketFields = Schema.Struct({
   day: UsageDay,
-  hourStart: Schema.optional(TrimmedNonEmptyString),
+  hourStart: Schema.optional(UsageTimestamp),
   provider: UsageProviderKind,
-  model: TrimmedNonEmptyString,
+  model: UsageModel,
   totals: UsageTokenTotals,
-  costUsd: Schema.Number,
+  costUsd: UsageFiniteNonNegativeNumber,
   /**
    * What the cached input would have cost at full input rates minus what it
    * actually cost. Requires the rate table, so it is computed alongside cost
    * rather than derived on the client.
    */
-  cacheSavingsUsd: Schema.Number,
+  cacheSavingsUsd: UsageFiniteNonNegativeNumber,
   costSource: UsageCostSource,
   /** Distinct assistant responses, after de-duplication. */
   records: NonNegativeInt,
@@ -114,6 +137,20 @@ export const UsageBucket = Schema.Struct({
   /** Distinct transcript sessions that contributed to this cell. */
   sessions: NonNegativeInt,
 });
+export const UsageBucket = UsageBucketFields.check(
+  Schema.makeFilter((bucket) => {
+    if (bucket.totals.reasoningTokens > bucket.totals.outputTokens) {
+      return "Usage reasoning tokens must be a subset of output tokens.";
+    }
+    if (bucket.unpricedRecords > bucket.records) {
+      return "Usage unpriced records must not exceed total records.";
+    }
+    if (bucket.sessions > bucket.records) {
+      return "Usage sessions must not exceed contributing records.";
+    }
+    return true;
+  }),
+);
 export type UsageBucket = typeof UsageBucket.Type;
 
 /**
@@ -124,9 +161,9 @@ export type UsageBucket = typeof UsageBucket.Type;
  * duplicate fingerprints before merging.
  */
 export const UsageSourceFingerprint = Schema.Struct({
-  hostId: TrimmedNonEmptyString,
+  hostId: TrimmedNonEmptyString.check(Schema.isMaxLength(253)),
   provider: UsageProviderKind,
-  resolvedHomePath: TrimmedNonEmptyString,
+  resolvedHomePath: TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
   /**
    * Filesystem identity of the transcript directory, as `device:inode`.
    *
@@ -136,7 +173,7 @@ export const UsageSourceFingerprint = Schema.Struct({
    * device/inode pair is stable for two servers reading the same directory and
    * effectively never collides across machines. Empty when it cannot be read.
    */
-  volumeId: Schema.String,
+  volumeId: Schema.String.check(Schema.isMaxLength(256)),
 });
 export type UsageSourceFingerprint = typeof UsageSourceFingerprint.Type;
 
@@ -156,9 +193,23 @@ export const UsageSource = Schema.Struct({
    * those overcounts; this is the figure clients should total.
    */
   distinctSessions: NonNegativeInt,
-  message: Schema.NullOr(TrimmedNonEmptyString),
+  message: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
 });
 export type UsageSource = typeof UsageSource.Type;
+
+const UsageSources = Schema.Array(UsageSource).check(
+  Schema.isMaxLength(USAGE_SUMMARY_MAX_SOURCES),
+  Schema.makeFilter((sources) => {
+    const providers = new Set<UsageProviderKind>();
+    for (const source of sources) {
+      if (providers.has(source.fingerprint.provider)) {
+        return `Usage summary source provider '${source.fingerprint.provider}' must be unique.`;
+      }
+      providers.add(source.fingerprint.provider);
+    }
+    return true;
+  }),
+);
 
 export const UsagePricingStatus = Schema.Literals(["fresh", "cached", "unavailable"]);
 export type UsagePricingStatus = typeof UsagePricingStatus.Type;
@@ -169,8 +220,8 @@ export type UsagePricingStatus = typeof UsagePricingStatus.Type;
  */
 export const UsagePricing = Schema.Struct({
   status: UsagePricingStatus,
-  source: TrimmedNonEmptyString,
-  fetchedAt: Schema.NullOr(Schema.String),
+  source: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+  fetchedAt: Schema.NullOr(Schema.String.check(Schema.isMaxLength(64))),
   knownModels: NonNegativeInt,
 });
 export type UsagePricing = typeof UsagePricing.Type;
@@ -184,24 +235,24 @@ export const UsageSummaryInput = Schema.Struct({
    * IANA zone the client wants days bucketed in. An offset would be wrong for
    * any window that crosses a DST boundary.
    */
-  timeZone: TrimmedNonEmptyString,
+  timeZone: TrimmedNonEmptyString.check(Schema.isMaxLength(USAGE_TIME_ZONE_MAX_LENGTH)),
   /** Defaults to daily for older clients. */
   resolution: Schema.optional(UsageResolution),
   /** Inclusive UTC instant for an hourly rolling window. */
-  sinceTime: Schema.optional(TrimmedNonEmptyString),
+  sinceTime: Schema.optional(UsageTimestamp),
   /** Exclusive UTC instant for an hourly rolling window. */
-  untilTime: Schema.optional(TrimmedNonEmptyString),
+  untilTime: Schema.optional(UsageTimestamp),
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
 
 export const UsageSummary = Schema.Struct({
   contractVersion: Schema.Number,
-  readAt: Schema.String,
-  timeZone: TrimmedNonEmptyString,
+  readAt: Schema.String.check(Schema.isMaxLength(64)),
+  timeZone: TrimmedNonEmptyString.check(Schema.isMaxLength(USAGE_TIME_ZONE_MAX_LENGTH)),
   sinceDay: UsageDay,
   untilDay: UsageDay,
-  buckets: Schema.Array(UsageBucket),
-  sources: Schema.Array(UsageSource),
+  buckets: Schema.Array(UsageBucket).check(Schema.isMaxLength(USAGE_SUMMARY_MAX_BUCKETS)),
+  sources: UsageSources,
   pricing: UsagePricing,
   /** Wall-clock cost of the scan, surfaced in diagnostics. */
   scanDurationMs: NonNegativeInt,

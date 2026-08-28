@@ -24,6 +24,8 @@ internal data class TerminalFrame(
     private const val VERSION = 1
     private const val HEADER_BYTES = 32
     private const val CELL_HEADER_BYTES = 12
+    private const val MAX_COLS = 400
+    private const val MAX_ROWS = 200
 
     @Suppress("ReturnCount")
     fun decode(bytes: ByteArray): TerminalFrame? {
@@ -42,7 +44,9 @@ internal data class TerminalFrame(
       val foreground = buffer.int
       val background = buffer.int
       val cursorColor = buffer.int
+      if (cols !in 1..MAX_COLS || rows !in 1..MAX_ROWS) return null
       val cellCount = cols * rows
+      if (buffer.remaining() < cellCount * CELL_HEADER_BYTES) return null
       val foregrounds = IntArray(cellCount)
       val backgrounds = IntArray(cellCount)
       val flags = IntArray(cellCount)

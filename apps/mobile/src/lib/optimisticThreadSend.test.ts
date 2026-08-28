@@ -13,6 +13,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 
 import type { QueuedThreadMessage } from "../state/thread-outbox-model";
 import {
+  isOptimisticStartingThreadPending,
   mergeOptimisticThreadMessages,
   mergePresentedThreadShells,
   optimisticStartingThreadToShell,
@@ -114,6 +115,19 @@ describe("optimisticStartingThreadToShell", () => {
       session: { status: "starting", activeTurnId: null },
       latestUserMessageAt: "2026-04-01T00:00:00.000Z",
     });
+  });
+});
+
+describe("isOptimisticStartingThreadPending", () => {
+  it("settles only failed native resume starts", () => {
+    const resume = startingThread({
+      message: { ...startingThread().message, text: "/resume native-session" },
+    });
+
+    expect(isOptimisticStartingThreadPending(resume, "starting")).toBe(true);
+    expect(isOptimisticStartingThreadPending(resume, "error")).toBe(false);
+    expect(isOptimisticStartingThreadPending(startingThread(), "error")).toBe(true);
+    expect(isOptimisticStartingThreadPending(null, "error")).toBe(false);
   });
 });
 
