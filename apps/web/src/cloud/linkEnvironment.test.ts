@@ -27,6 +27,7 @@ import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/deskt
 
 import {
   collectCloudLinkTargets,
+  findEnvironmentCloudApiError,
   isCloudLinkOnConfiguredRelay,
   isCloudLinkOnConfiguredRelayForAccount,
   linkPrimaryEnvironmentToCloud,
@@ -156,6 +157,13 @@ afterEach(() => {
 });
 
 describe("web cloud link environment client", () => {
+  it("stops environment API error traversal at cyclic causes", () => {
+    const cyclic: { cause?: unknown } = {};
+    cyclic.cause = cyclic;
+
+    expect(findEnvironmentCloudApiError(cyclic)).toBeNull();
+  });
+
   it("normalizes relay URLs and de-duplicates cloud link targets", () => {
     expect(normalizeRelayBaseUrl(" https://relay.example.test/// ")).toBe(
       "https://relay.example.test",

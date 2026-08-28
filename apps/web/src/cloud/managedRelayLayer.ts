@@ -50,25 +50,15 @@ export const relayDpopSignerLayer = Layer.effect(
       ),
       createProof: Effect.fn("web.managedRelayDpopSigner.createProof")(function* (input) {
         const proofKey = yield* loadOrCreateBrowserDpopKey.pipe(
-          Effect.mapError(
-            (error) =>
-              new ManagedRelay.ManagedRelayDpopProofCreationError({
-                method: input.method,
-                url: input.url,
-                cause: error,
-              }),
+          Effect.mapError((error) =>
+            ManagedRelay.makeManagedRelayDpopProofCreationError(input, error),
           ),
         );
         return yield* createBrowserDpopProof({ ...input, proofKey }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.map((proof) => proof.proof),
-          Effect.mapError(
-            (error) =>
-              new ManagedRelay.ManagedRelayDpopProofCreationError({
-                method: input.method,
-                url: input.url,
-                cause: error,
-              }),
+          Effect.mapError((error) =>
+            ManagedRelay.makeManagedRelayDpopProofCreationError(input, error),
           ),
         );
       }),

@@ -61,9 +61,39 @@ describe("StorageInventory", () => {
       orphanWorktreeBytes: 0,
       totalBytes: 0,
       managedWorktreesRoot: "/tmp/worktrees",
-      scan: { status: "scanning", measuredCount: 2, totalCount: 8 },
+      scan: {
+        status: "scanning",
+        measuredCount: 2,
+        totalCount: 8,
+        truncated: true,
+        unreadableDirectories: 1,
+      },
     });
 
-    expect(inventory.scan).toEqual({ status: "scanning", measuredCount: 2, totalCount: 8 });
+    expect(inventory.scan).toEqual({
+      status: "scanning",
+      measuredCount: 2,
+      totalCount: 8,
+      truncated: true,
+      unreadableDirectories: 1,
+    });
+  });
+
+  it("rejects impossible scan progress", () => {
+    expect(() =>
+      decodeInventory({
+        activeWorktrees: [],
+        archivedWorktrees: [],
+        activeThreadsWithoutWorktree: 0,
+        archivedThreadsWithoutWorktree: 0,
+        orphanWorktrees: [],
+        activeWorktreeBytes: 0,
+        archivedWorktreeBytes: 0,
+        orphanWorktreeBytes: 0,
+        totalBytes: 0,
+        managedWorktreesRoot: "/tmp/worktrees",
+        scan: { status: "complete", measuredCount: 2, totalCount: 1 },
+      }),
+    ).toThrow();
   });
 });

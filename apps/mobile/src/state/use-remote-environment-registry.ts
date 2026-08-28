@@ -153,6 +153,7 @@ export function useRemoteConnectionStatus() {
 
 export function useRemoteConnections() {
   const controller = useConnectionController();
+  const cancelPairingConnection = controller.cancelPairingConnection;
   const connectionPairingUrl = useAtomValue(connectionPairingUrlAtom);
   const pendingConnectionError = useAtomValue(pendingConnectionErrorAtom);
   const { connectedEnvironments, connectionError, connectionState } = useRemoteConnectionStatus();
@@ -167,6 +168,9 @@ export function useRemoteConnections() {
       setPendingConnectionError(null);
       const result = await controller.connectPairingUrl(nextPairingUrl);
       if (AsyncResult.isFailure(result)) {
+        if (Cause.hasInterruptsOnly(result.cause)) {
+          return result;
+        }
         const error = Cause.squash(result.cause);
         const message =
           error instanceof Error ? error.message : "Failed to pair with the environment.";
@@ -178,6 +182,7 @@ export function useRemoteConnections() {
     },
     [connectionPairingUrl, controller],
   );
+  const onCancelConnectPress = cancelPairingConnection;
 
   const onReconnectEnvironment = useCallback(
     (environmentId: EnvironmentId) => controller.retryEnvironment(environmentId),
@@ -226,6 +231,7 @@ export function useRemoteConnections() {
     connectedEnvironmentCount: connectedEnvironments.length,
     onChangeConnectionPairingUrl,
     onConnectPress,
+    onCancelConnectPress,
     onReconnectEnvironment,
     onUpdateEnvironment,
     onRemoveEnvironmentPress,

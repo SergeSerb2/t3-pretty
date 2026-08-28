@@ -15,6 +15,7 @@ import {
   serializeUpdateManifest,
   type UpdateManifest,
 } from "./lib/update-manifest.ts";
+import { readBoundedUpdateManifestFile } from "./lib/verify-update-manifest-assets.ts";
 
 const UpdateManifestPlatform = Schema.Literals(["mac", "win"]);
 export type UpdateManifestPlatform = typeof UpdateManifestPlatform.Type;
@@ -63,12 +64,12 @@ export const mergeUpdateManifestFiles = Effect.fn("mergeUpdateManifestFiles")(fu
 
   const primaryManifest = parsePlatformUpdateManifest(
     platform,
-    yield* fs.readFileString(primaryPath),
+    readBoundedUpdateManifestFile(primaryPath).toString("utf8"),
     primaryPath,
   );
   const secondaryManifest = parsePlatformUpdateManifest(
     platform,
-    yield* fs.readFileString(secondaryPath),
+    readBoundedUpdateManifestFile(secondaryPath).toString("utf8"),
     secondaryPath,
   );
   const merged = mergePlatformUpdateManifests(platform, primaryManifest, secondaryManifest);

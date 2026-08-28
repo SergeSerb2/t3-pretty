@@ -1,8 +1,33 @@
-import { AuthSessionId } from "@t3tools/contracts";
+import { AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Layer from "effect/Layer";
+import { Atom } from "effect/unstable/reactivity";
 
-import { applyAuthAccessStreamEvent, EMPTY_AUTH_ACCESS_SNAPSHOT } from "./auth.ts";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
+import {
+  applyAuthAccessStreamEvent,
+  AUTH_ACCESS_IDLE_TTL_MS,
+  createAuthEnvironmentAtoms,
+  EMPTY_AUTH_ACCESS_SNAPSHOT,
+} from "./auth.ts";
+
+describe("auth environment atoms", () => {
+  it("releases the access-management stream after its settings reader leaves", () => {
+    const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry,
+      never
+    >;
+    const atoms = createAuthEnvironmentAtoms(runtime);
+
+    expect(
+      atoms.accessChanges({
+        environmentId: EnvironmentId.make("environment-1"),
+        input: null,
+      }).idleTTL,
+    ).toBe(AUTH_ACCESS_IDLE_TTL_MS);
+  });
+});
 
 describe("applyAuthAccessStreamEvent", () => {
   it("accumulates rapid pairing-link and client updates into one snapshot", () => {

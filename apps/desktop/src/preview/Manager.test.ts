@@ -1,4 +1,5 @@
 import { it as effectIt } from "@effect/vitest";
+import { PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES } from "@t3tools/contracts";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
@@ -70,6 +71,39 @@ describe("isPreviewRefreshShortcut", () => {
     );
     expect(PreviewManager.isPreviewRefreshShortcut(input({ shift: true }))).toBe(false);
     expect(PreviewManager.isPreviewRefreshShortcut(input({ type: "keyUp" }))).toBe(false);
+  });
+});
+
+describe("boundAccessibilityTree", () => {
+  it("retains a bounded node prefix and reports omitted nodes", () => {
+    const nodes = Array.from(
+      { length: PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES + 2 },
+      (_, index) => ({ nodeId: index }),
+    );
+
+    const normalized = PreviewManager.boundAccessibilityTree({ nodes });
+
+    expect(normalized.nodes).toEqual(
+      nodes.slice(0, PREVIEW_AUTOMATION_ACCESSIBILITY_TREE_MAX_NODES),
+    );
+    expect(normalized.t3TruncatedNodeCount).toBe(2);
+  });
+
+  it("skips oversized nodes and stops at the aggregate byte budget", () => {
+    const oversized = { nodeId: "oversized", name: "x".repeat(64_001) };
+    const bounded = Array.from({ length: 20 }, (_, index) => ({
+      nodeId: index,
+      name: "x".repeat(60_000),
+    }));
+
+    const normalized = PreviewManager.boundAccessibilityTree({ nodes: [oversized, ...bounded] });
+
+    expect(normalized.nodes).toEqual(bounded.slice(0, 16));
+    expect(normalized.t3TruncatedNodeCount).toBe(5);
+  });
+
+  it("fails soft for malformed protocol responses", () => {
+    expect(PreviewManager.boundAccessibilityTree({})).toEqual({ nodes: [] });
   });
 });
 
@@ -2500,7 +2534,7 @@ describe("PreviewManager", () => {
                 },
               }
             : method === "Accessibility.getFullAXTree"
-              ? { nodes: [] }
+              ? { nodes: Array.from({ length: 2_100 }, (_, index) => ({ nodeId: index })) }
               : undefined,
         );
         fromId.mockReturnValue(
@@ -2559,6 +2593,9 @@ describe("PreviewManager", () => {
           "Accessibility.getFullAXTree",
           "Accessibility.disable",
         ]);
+        expect(sendCommand).toHaveBeenCalledWith("Accessibility.getFullAXTree", { depth: 12 });
+        expect(snapshot.accessibilityTree.nodes).toHaveLength(2_048);
+        expect(snapshot.accessibilityTree.t3TruncatedNodeCount).toBe(52);
       }),
     ),
   );
@@ -3205,7 +3242,7 @@ describe("PreviewManager", () => {
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(400);
         yield* Fiber.join(click);
 
         expect(activity).toEqual(["move", "click", "mousePressed"]);
@@ -3232,6 +3269,7 @@ describe("PreviewManager", () => {
       Effect.gen(function* () {
         let failKeyDown = false;
         let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const pointerPhases: string[] = [];
         const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
           if (
             failKeyDown &&
@@ -3253,7 +3291,17 @@ describe("PreviewManager", () => {
               },
             );
           }
-          return method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined;
+          if (method === "Runtime.evaluate") {
+            const expression = typeof params?.expression === "string" ? params.expression : "";
+            if (
+              expression.includes("document.documentElement") ||
+              expression.includes("getBoundingClientRect")
+            ) {
+              return { result: { value: { ok: true, x: 40, y: 60 } } };
+            }
+            return { result: { value: { ok: true } } };
+          }
+          return undefined;
         });
         const restoreFocus = vi.fn();
         const focus = vi.fn();
@@ -3296,14 +3344,27 @@ describe("PreviewManager", () => {
           },
         } as never);
 
+        yield* manager.subscribePointerEvents((event) =>
+          Effect.sync(() => {
+            pointerPhases.push(event.phase);
+          }),
+        );
         yield* manager.createTab("tab_input");
         yield* manager.registerWebview("tab_input", 42);
         yield* manager.automationType("tab_input", { text: "hello", clear: true });
         yield* manager.automationType("tab_input", { text: "", clear: true });
+        yield* manager.automationType("tab_input", { text: "world" });
+        expect(pointerPhases).toEqual(["type", "type", "type"]);
+        expect(focus).not.toHaveBeenCalled();
+        expect(sendCommand.mock.calls.map(([method]) => method)).not.toContain("Page.bringToFront");
+
+        const commandCountBeforePress = sendCommand.mock.calls.length;
         yield* manager.automationPress("tab_input", { key: "x" });
+        expect(pointerPhases).toEqual(["type", "type", "type", "press"]);
 
         const calls = sendCommand.mock.calls;
         const methods = calls.map(([method]) => method);
+        const pressMethods = methods.slice(commandCountBeforePress);
         const enableIndex = methods.indexOf("Input.setIgnoreInputEvents");
         const focusOnIndex = calls.findIndex(
           ([method, params]) =>
@@ -3342,6 +3403,7 @@ describe("PreviewManager", () => {
         );
         expect(clearOnlyEvaluation).toBeDefined();
         expect(methods).not.toContain("Input.insertText");
+        expect(pressMethods).not.toContain("Runtime.enable");
         expect(enableIndex).toBeGreaterThanOrEqual(0);
         expect(focus).toHaveBeenCalledOnce();
         expect(restoreFocus).toHaveBeenCalledOnce();
@@ -3458,7 +3520,7 @@ describe("PreviewManager", () => {
         const click = yield* manager
           .automationClick("tab_1", { x: 120, y: 80 })
           .pipe(Effect.forkChild({ startImmediately: true }));
-        yield* TestClock.adjust(200);
+        yield* TestClock.adjust(400);
         const exit = yield* Fiber.await(click);
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isSuccess(exit)) return;

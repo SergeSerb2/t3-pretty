@@ -20,6 +20,7 @@ import {
   ThreadSkillsSetPayload as ContractsThreadSkillsSetPayloadSchema,
   ThreadSubagentPolicySetPayload as ContractsThreadSubagentPolicySetPayloadSchema,
   ThreadMessageSentPayload as ContractsThreadMessageSentPayloadSchema,
+  ThreadNativeResumeRequestedPayload as ContractsThreadNativeResumeRequestedPayloadSchema,
   ThreadProposedPlanUpsertedPayload as ContractsThreadProposedPlanUpsertedPayloadSchema,
   ThreadSessionSetPayload as ContractsThreadSessionSetPayloadSchema,
   ThreadTurnDiffCompletedPayload as ContractsThreadTurnDiffCompletedPayloadSchema,
@@ -56,6 +57,7 @@ export const ThreadSkillsSetPayload = ContractsThreadSkillsSetPayloadSchema;
 export const ThreadSubagentPolicySetPayload = ContractsThreadSubagentPolicySetPayloadSchema;
 
 export const MessageSentPayloadSchema = ContractsThreadMessageSentPayloadSchema;
+export const ThreadNativeResumeRequestedPayload = ContractsThreadNativeResumeRequestedPayloadSchema;
 export const ThreadProposedPlanUpsertedPayload = ContractsThreadProposedPlanUpsertedPayloadSchema;
 export const ThreadSessionSetPayload = ContractsThreadSessionSetPayloadSchema;
 export const ThreadTurnDiffCompletedPayload = ContractsThreadTurnDiffCompletedPayloadSchema;

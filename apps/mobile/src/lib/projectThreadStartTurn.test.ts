@@ -2,13 +2,22 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { ProjectId, ProviderInstanceId, SkillId } from "@t3tools/contracts";
 
-import { buildProjectThreadStartTurnInput } from "./projectThreadStartTurn";
+import {
+  buildProjectThreadStartTurnInput,
+  deriveThreadTitleFromPrompt,
+} from "./projectThreadStartTurn";
 
 vi.mock("expo-crypto", () => ({
   randomUUID: () => crypto.randomUUID(),
 }));
 
 describe("buildProjectThreadStartTurnInput", () => {
+  it("does not expose a native session id in the thread title", () => {
+    expect(deriveThreadTitleFromPrompt("/resume sensitive-session-id")).toBe(
+      "Resumed native session",
+    );
+  });
+
   it("carries per-thread skill picks into the create-thread bootstrap", () => {
     const input = buildProjectThreadStartTurnInput({
       projectId: ProjectId.make("project-1"),

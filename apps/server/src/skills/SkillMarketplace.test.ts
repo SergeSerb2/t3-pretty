@@ -260,6 +260,31 @@ it.effect("omits a failed source when others succeed, and fails when all fail", 
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("releases a rejected marketplace response body", () => {
+  let cancelled = 0;
+  const { layer } = makeLayer({
+    response: () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.enqueue(new Uint8Array([1]));
+          },
+          cancel() {
+            cancelled++;
+          },
+        }),
+        { status: 502 },
+      ),
+  });
+  return Effect.gen(function* () {
+    const marketplace = yield* SkillMarketplace.SkillMarketplace;
+
+    yield* Effect.flip(marketplace.refresh({}));
+
+    assert.strictEqual(cancelled, 1);
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("reports a failed explicit refresh while list keeps serving the stale cache", () => {
   let fail = false;
   const { layer } = makeLayer({

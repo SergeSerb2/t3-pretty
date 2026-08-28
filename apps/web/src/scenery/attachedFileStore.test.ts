@@ -3,6 +3,8 @@ import { describe, expect, it, beforeEach } from "vite-plus/test";
 import type { AttachedFileRef } from "./attachFiles";
 import {
   addAttachedFiles,
+  ATTACHED_FILE_PATH_MAX_COUNT,
+  clearAttachedFilesForThread,
   getAttachedFilesForThread,
   removeAttachedFile,
   resetAttachedFilesStore,
@@ -47,5 +49,37 @@ describe("attachedFileStore", () => {
     expect(getAttachedFilesForThread("env:thread-a")).toEqual([]);
     restoreAttachedFiles("env:thread-a", taken);
     expect(getAttachedFilesForThread("env:thread-a").map((file) => file.id)).toEqual(["a"]);
+  });
+
+  it("merges a failed send with files added while it was in flight", () => {
+    addAttachedFiles("env:thread-a", [fileRef("a")]);
+    const taken = takeAttachedFilesForThread("env:thread-a");
+    addAttachedFiles("env:thread-a", [fileRef("b")]);
+    restoreAttachedFiles("env:thread-a", taken);
+    expect(getAttachedFilesForThread("env:thread-a").map((file) => file.id)).toEqual(["b", "a"]);
+  });
+
+  it("caps pending path chips per thread and reports overflow", () => {
+    const update = addAttachedFiles(
+      "env:thread-a",
+      Array.from({ length: ATTACHED_FILE_PATH_MAX_COUNT + 2 }, (_, index) =>
+        fileRef(String(index)),
+      ),
+    );
+    expect(update).toEqual({
+      addedCount: ATTACHED_FILE_PATH_MAX_COUNT,
+      droppedCount: 2,
+    });
+    expect(getAttachedFilesForThread("env:thread-a")).toHaveLength(ATTACHED_FILE_PATH_MAX_COUNT);
+  });
+
+  it("clears pending files when their thread is deleted", () => {
+    addAttachedFiles("env:thread-a", [fileRef("a")]);
+    addAttachedFiles("env:thread-b", [fileRef("b")]);
+
+    clearAttachedFilesForThread("env:thread-a");
+
+    expect(getAttachedFilesForThread("env:thread-a")).toEqual([]);
+    expect(getAttachedFilesForThread("env:thread-b").map((file) => file.id)).toEqual(["b"]);
   });
 });

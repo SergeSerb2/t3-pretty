@@ -41,6 +41,7 @@ export const SCENERY_ARRIVAL_ATTR = "sceneryArrival";
 export const SCENERY_COMPOSER_ATTR = "sceneryComposer";
 
 const playedArrivalKeys = new Set<string>();
+const MAX_PLAYED_ARRIVAL_KEYS = 256;
 const arrivalRequestListeners = new Set<() => void>();
 let pendingArrivalThreadKey: string | null = null;
 
@@ -55,7 +56,12 @@ export function hasPlayedSceneryArrival(threadKey: string): boolean {
 }
 
 export function markSceneryArrivalPlayed(threadKey: string): void {
+  playedArrivalKeys.delete(threadKey);
   playedArrivalKeys.add(threadKey);
+  if (playedArrivalKeys.size > MAX_PLAYED_ARRIVAL_KEYS) {
+    const oldest = playedArrivalKeys.values().next().value;
+    if (oldest !== undefined) playedArrivalKeys.delete(oldest);
+  }
 }
 
 /** Test hook. Production code never clears a played key. */

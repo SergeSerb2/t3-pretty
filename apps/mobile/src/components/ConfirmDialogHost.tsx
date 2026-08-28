@@ -38,9 +38,12 @@ export function ConfirmDialogHost() {
   const pressedOverlay = useThemeColor("--color-subtle");
 
   useEffect(() => {
-    presentRequest = setRequest;
+    const present = setRequest;
+    presentRequest = present;
     return () => {
-      presentRequest = null;
+      if (presentRequest === present) {
+        presentRequest = null;
+      }
     };
   }, []);
 

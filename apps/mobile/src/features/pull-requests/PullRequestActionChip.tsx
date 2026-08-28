@@ -44,7 +44,7 @@ export function PullRequestActionChip(props: {
       disabled={disabled}
       hitSlop={4}
       onPress={() => {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
         props.onPress();
       }}
       style={({ pressed }) => ({

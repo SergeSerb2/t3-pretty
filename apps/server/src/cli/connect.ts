@@ -23,12 +23,7 @@ import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Terminal from "effect/Terminal";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -48,6 +43,8 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveCliCommand } from "./invocation.ts";
 import {
@@ -214,6 +211,11 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
 }
 
 const CLOUD_CLI_LIVE_SERVER_TIMEOUT = Duration.seconds(5);
+const CLOUD_CLI_RELAY_REQUEST_TIMEOUT = Duration.seconds(15);
+const CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
+const decodeRelayOkResponseJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(RelayOkResponse),
+);
 
 const confirmRelayClientInstall = (version: string) =>
   Prompt.run(
@@ -318,16 +320,22 @@ type RelayUnlinkResult =
 
 type CloudDisconnectOperation = "live-server-unlink" | "relay-environment-unlink";
 
+class CloudRelayUnlinkError extends Schema.TaggedErrorClass<CloudRelayUnlinkError>()(
+  "CloudRelayUnlinkError",
+  {
+    reason: Schema.Literals(["request-failed", "response-too-large"]),
+  },
+) {}
+const isCloudRelayUnlinkError = Schema.is(CloudRelayUnlinkError);
+
 const logCloudDisconnectFailure = (
   operation: CloudDisconnectOperation,
   clearAuthorization: boolean,
-  cause: Cause.Cause<unknown>,
 ) =>
   Effect.logWarning(`${SURGE_CONNECT_NAME} disconnect operation failed.`).pipe(
     Effect.annotateLogs({
       operation,
       clearAuthorization,
-      cause: Cause.pretty(cause),
     }),
   );
 
@@ -342,14 +350,37 @@ const unlinkRelayEnvironment = Effect.fn("cloud.cli.unlink_relay_environment")(f
   const environmentId = yield* environment.getEnvironmentId;
   const relayUrl = yield* relayUrlConfig;
   const httpClient = yield* HttpClient.HttpClient;
-  const response = yield* HttpClientRequest.delete(
-    `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
-  ).pipe(
-    HttpClientRequest.bearerToken(token.value.accessToken),
-    httpClient.execute,
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(RelayOkResponse)),
+  const response = yield* Effect.gen(function* () {
+    const httpResponse = yield* HttpClientRequest.delete(
+      `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
+    ).pipe(HttpClientRequest.bearerToken(token.value.accessToken), httpClient.execute);
+    if (httpResponse.status < 200 || httpResponse.status >= 300) {
+      yield* releaseHttpClientResponseBody(httpResponse);
+      return yield* new CloudRelayUnlinkError({ reason: "request-failed" });
+    }
+    const declaredLength = Number(httpResponse.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES) {
+      yield* releaseHttpClientResponseBody(httpResponse);
+      return yield* new CloudRelayUnlinkError({ reason: "response-too-large" });
+    }
+    const collected = yield* collectUint8StreamText({
+      stream: httpResponse.stream,
+      maxBytes: CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES,
+      drainAfterTruncation: false,
+    });
+    if (collected.truncated) {
+      return yield* new CloudRelayUnlinkError({ reason: "response-too-large" });
+    }
+    return yield* decodeRelayOkResponseJson(collected.text);
+  }).pipe(
+    Effect.timeout(CLOUD_CLI_RELAY_REQUEST_TIMEOUT),
     withRelayClientTracing,
+    // The HTTP error retains the bearer token-bearing request and schema errors retain bodies.
+    Effect.mapError((cause) =>
+      isCloudRelayUnlinkError(cause)
+        ? cause
+        : new CloudRelayUnlinkError({ reason: "request-failed" }),
+    ),
   );
   return response.ok
     ? ({ status: "revoked" } satisfies RelayUnlinkResult)
@@ -363,11 +394,7 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
     readonly relayResult: Exit.Exit<RelayUnlinkResult, unknown>;
   }) {
     if (input.liveResult.status === "failed") {
-      yield* logCloudDisconnectFailure(
-        "live-server-unlink",
-        input.clearAuthorization,
-        input.liveResult.cause,
-      );
+      yield* logCloudDisconnectFailure("live-server-unlink", input.clearAuthorization);
       yield* Console.warn(
         `${SURGE_CONNECT_NAME} is disabled, but the running server could not stop its tunnel.\nRestart that server to stop the connector.`,
       );
@@ -376,11 +403,7 @@ export const reportCloudDisconnectResults = Effect.fn("cloud.cli.report_disconne
     }
 
     if (Exit.isFailure(input.relayResult)) {
-      yield* logCloudDisconnectFailure(
-        "relay-environment-unlink",
-        input.clearAuthorization,
-        input.relayResult.cause,
-      );
+      yield* logCloudDisconnectFailure("relay-environment-unlink", input.clearAuthorization);
       yield* Console.warn(
         input.clearAuthorization
           ? "Could not revoke the relay-side environment record before signing out.\nThe stored CLI authorization was still removed locally."

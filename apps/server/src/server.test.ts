@@ -19,6 +19,10 @@ import {
   MessageId,
   ExternalLauncherCommandNotFoundError,
   OrchestrationThreadDetailSnapshot,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS,
   type OrchestrationThreadStreamItem,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
@@ -80,6 +84,9 @@ const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 const decodeTransferThreadSnapshot = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationThreadDetailSnapshot),
 );
+const decodeEnvironmentServerConfigSnapshot = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(EnvironmentServerConfigSnapshot),
+);
 
 const collectQueueUntil = Effect.fn("TransferBudget.collectQueueUntil")(function* <A>(
   queue: Queue.Queue<A>,
@@ -103,8 +110,16 @@ const collectQueueUntil = Effect.fn("TransferBudget.collectQueueUntil")(function
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
-import { makeRoutesLayer } from "./server.ts";
-import { isThreadDetailEvent, resolveAvailableEditorsForConfig } from "./ws.ts";
+import {
+  HTTP_MAX_REQUEST_BODY_BYTES,
+  makeRoutesLayer,
+  WEBSOCKET_MAX_MESSAGE_BYTES,
+} from "./server.ts";
+import {
+  isThreadDetailEvent,
+  resolveAvailableEditorsForConfig,
+  resolveFileManagerRevealKindForConfig,
+} from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -203,6 +218,23 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+
+it("keeps transport ceilings compatible with a maximum compact image turn", () => {
+  const worstCaseEscapedPromptBytes = PROVIDER_SEND_TURN_MAX_INPUT_CHARS * 6;
+  const worstCaseEscapedSkillIdBytes = THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS * 6;
+  const compactAttachmentBytes =
+    PROVIDER_SEND_TURN_MAX_ATTACHMENTS * PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS;
+  const rpcEnvelopeAndOtherMetadataReserveBytes = 4 * 1024 * 1024;
+
+  const maximumValidEncodedTurnBytes =
+    compactAttachmentBytes +
+    worstCaseEscapedPromptBytes +
+    worstCaseEscapedSkillIdBytes +
+    rpcEnvelopeAndOtherMetadataReserveBytes;
+
+  assert.isAtLeast(WEBSOCKET_MAX_MESSAGE_BYTES, maximumValidEncodedTurnBytes);
+  assert.isAtLeast(HTTP_MAX_REQUEST_BODY_BYTES, maximumValidEncodedTurnBytes);
+});
 const testEnvironmentDescriptor = {
   environmentId: EnvironmentId.make("environment-test"),
   label: "Test environment",
@@ -693,6 +725,7 @@ const buildAppUnderTest = (options?: {
           }),
           Layer.mock(ExternalLauncher.ExternalLauncher)({
             resolveAvailableEditors: () => Effect.succeed([]),
+            resolveFileManagerRevealKind: () => Effect.sync((): undefined => undefined),
             ...options?.layers?.externalLauncher,
           }),
           Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({
@@ -1050,15 +1083,22 @@ const parseSessionCookieFromWsUrl = (
   };
 };
 
-const wsRpcProtocolLayer = (wsUrl: string) => {
+const wsRpcProtocolLayer = (
+  wsUrl: string,
+  options?: { readonly headers?: Readonly<Record<string, string>> },
+) => {
   const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
+  const headers = {
+    ...options?.headers,
+    ...(cookie ? { cookie } : {}),
+  };
   const webSocketConstructorLayer = Layer.succeed(
     Socket.WebSocketConstructor,
     (socketUrl, protocols) =>
       new NodeSocket.NodeWS.WebSocket(
         socketUrl,
         protocols,
-        cookie ? { headers: { cookie } } : undefined,
+        Object.keys(headers).length > 0 ? { headers } : undefined,
       ) as unknown as globalThis.WebSocket,
   );
 
@@ -1075,7 +1115,8 @@ type WsRpcClient =
 const withWsRpcClient = <A, E, R>(
   wsUrl: string,
   f: (client: WsRpcClient) => Effect.Effect<A, E, R>,
-) => makeWsRpcClient.pipe(Effect.flatMap(f), Effect.provide(wsRpcProtocolLayer(wsUrl)));
+  options?: { readonly headers?: Readonly<Record<string, string>> },
+) => makeWsRpcClient.pipe(Effect.flatMap(f), Effect.provide(wsRpcProtocolLayer(wsUrl, options)));
 
 const appendSessionCookieToWsUrl = (url: string, sessionCookieHeader: string) => {
   const isAbsoluteUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url);
@@ -1526,6 +1567,76 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const response = yield* HttpClient.get("/");
       assert.equal(response.status, 200);
       assert.include(yield* response.text, "router-static-ok");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("preserves SPA fallback metadata and bodyless HEAD responses", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-spa-" });
+      const indexContent = "<html>router-spa-fallback</html>";
+      yield* fileSystem.writeFileString(path.join(staticDir, "index.html"), indexContent);
+
+      yield* buildAppUnderTest({ config: { staticDir } });
+
+      const getResponse = yield* HttpClient.get("/nested/client-route", {
+        headers: { "accept-encoding": "identity" },
+      });
+      assert.equal(getResponse.status, 200);
+      assert.equal(getResponse.headers["cache-control"], "no-cache");
+      assert.equal(getResponse.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(getResponse.headers["content-length"], String(Buffer.byteLength(indexContent)));
+      assert.equal(yield* getResponse.text, indexContent);
+
+      const headResponse = yield* HttpClient.head("/nested/client-route", {
+        headers: { "accept-encoding": "identity" },
+      });
+      assert.equal(headResponse.status, 200);
+      assert.equal(headResponse.headers["cache-control"], "no-cache");
+      assert.equal(headResponse.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(headResponse.headers["content-length"], String(Buffer.byteLength(indexContent)));
+      assert.equal((yield* headResponse.arrayBuffer).byteLength, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("preserves static asset and Brotli response metadata", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-assets-" });
+      const assetsDir = path.join(staticDir, "assets");
+      const assetName = "note-AbCd1234.txt";
+      const assetContent = "streamed-static-asset";
+      const brotliContent = "precompressed-static-asset";
+      yield* fileSystem.makeDirectory(assetsDir, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(assetsDir, assetName), assetContent);
+      yield* fileSystem.writeFileString(path.join(assetsDir, `${assetName}.br`), brotliContent);
+
+      yield* buildAppUnderTest({ config: { staticDir } });
+
+      const getResponse = yield* HttpClient.get(`/assets/${assetName}`, {
+        headers: { "accept-encoding": "identity" },
+      });
+      assert.equal(getResponse.status, 200);
+      assert.equal(getResponse.headers["cache-control"], "public, max-age=31536000, immutable");
+      assert.equal(getResponse.headers["content-type"], "text/plain");
+      assert.equal(getResponse.headers["content-length"], String(Buffer.byteLength(assetContent)));
+      assert.equal(yield* getResponse.text, assetContent);
+
+      const headResponse = yield* HttpClient.head(`/assets/${assetName}`, {
+        headers: { "accept-encoding": "br" },
+      });
+      assert.equal(headResponse.status, 200);
+      assert.equal(headResponse.headers["cache-control"], "public, max-age=31536000, immutable");
+      assert.equal(headResponse.headers["content-encoding"], "br");
+      assert.equal(headResponse.headers["content-type"], "text/plain");
+      assert.equal(
+        headResponse.headers["content-length"],
+        String(Buffer.byteLength(brotliContent)),
+      );
+      assert.equal(headResponse.headers.vary, "Accept-Encoding");
+      assert.equal((yield* headResponse.arrayBuffer).byteLength, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2007,6 +2118,53 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(replayBootstrap.body.code, "auth_invalid");
       assert.equal(replayBootstrap.body.reason, "invalid_credential");
       assert.equal(typeof replayBootstrap.body.traceId, "string");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("retains a DPoP proof when bootstrap exchange fails", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
+      const credentialResponse = yield* HttpClient.post("/api/auth/pairing-token", {
+        headers: { cookie: ownerCookie },
+        body: yield* HttpBody.json({}),
+      });
+      const credential = (yield* credentialResponse.json) as { readonly credential: string };
+      const tokenUrl = yield* getHttpServerUrl("/oauth/token");
+      const now = yield* DateTime.now;
+      const dpop = makeDpopProof({
+        method: "POST",
+        url: tokenUrl,
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        jti: "failed-bootstrap-proof",
+      });
+
+      const failedBootstrap = yield* exchangeAccessToken("invalid-bootstrap-credential", {
+        headers: { dpop: dpop.proof },
+        scope: "orchestration:read",
+      });
+      const replayBootstrap = yield* exchangeAccessToken(credential.credential, {
+        headers: { dpop: dpop.proof },
+        scope: "orchestration:read",
+      });
+      const freshDpop = makeDpopProof({
+        method: "POST",
+        url: tokenUrl,
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        jti: "fresh-bootstrap-proof",
+      });
+      const validBootstrap = yield* exchangeAccessToken(credential.credential, {
+        headers: { dpop: freshDpop.proof },
+        scope: "orchestration:read",
+      });
+
+      assert.equal(failedBootstrap.response.status, 401);
+      assert.equal(failedBootstrap.body.reason, "invalid_credential");
+      assert.equal(replayBootstrap.response.status, 401);
+      assert.equal(replayBootstrap.body.reason, "invalid_credential");
+      assert.equal(validBootstrap.response.status, 200);
+      assert.equal(validBootstrap.body.token_type, "DPoP");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -4196,7 +4354,79 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
       assert.equal(response.auth.policy, "desktop-managed-local");
       assert.equal(response.shellResumeCompletionMarker, true);
+      assert.isUndefined(response.shellRevealInFileManager);
+      assert.isUndefined(response.shellRevealInFileManagerKind);
       assert.equal(response.threadResumeCompletionMarker, true);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("accepts same-origin websocket cookie authentication from a browser", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const { cookie } = yield* bootstrapBrowserSession();
+      assert.isDefined(cookie);
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        cookie?.split(";")[0] ?? "",
+      );
+      const url = new URL(wsUrl);
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({}), {
+          headers: { origin: `http://${url.host}` },
+        }),
+      );
+
+      assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects cross-origin websocket cookie authentication from a browser", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const { cookie } = yield* bootstrapBrowserSession();
+      assert.isDefined(cookie);
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        cookie?.split(";")[0] ?? "",
+      );
+      const error = yield* Effect.flip(
+        Effect.scoped(
+          withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({}), {
+            headers: { origin: "https://attacker.example" },
+          }),
+        ),
+      );
+
+      assert.equal(error._tag, "RpcClientError");
+      assertInclude(String(error), "SocketOpenError");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("advertises the usable file manager and its reveal label", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          externalLauncher: {
+            resolveAvailableEditors: () => Effect.succeed(["file-manager"]),
+            resolveFileManagerRevealKind: () => Effect.succeed("file-explorer"),
+          },
+        },
+      });
+
+      const { cookie } = yield* bootstrapBrowserSession();
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        cookie?.split(";")[0] ?? "",
+      );
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
+      );
+
+      assert.deepEqual(response.availableEditors, ["file-manager"]);
+      assert.equal(response.shellRevealInFileManager, true);
+      assert.equal(response.shellRevealInFileManagerKind, "file-explorer");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -4214,6 +4444,23 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const availableEditors = yield* Fiber.join(responseFiber);
       yield* Deferred.await(discoveryInterrupted);
       assert.deepEqual(availableEditors, []);
+    }),
+  );
+
+  it.effect("does not block server config when file manager reveal discovery never resolves", () =>
+    Effect.gen(function* () {
+      const discoveryInterrupted = yield* Deferred.make<void>();
+      const responseFiber = yield* resolveFileManagerRevealKindForConfig(
+        Effect.never.pipe(
+          Effect.onInterrupt(() => Deferred.succeed(discoveryInterrupted, undefined)),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* TestClock.adjust(Duration.seconds(5));
+
+      const revealKind = yield* Fiber.join(responseFiber);
+      yield* Deferred.await(discoveryInterrupted);
+      assert.isUndefined(revealKind);
     }),
   );
 
@@ -4257,12 +4504,85 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(wsTicketBody.ticket)}`;
 
         const response = yield* Effect.scoped(
-          withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
+          withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({}), {
+            headers: { origin: "https://remote-client.example" },
+          }),
         );
 
         assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
         assert.equal(response.auth.policy, "desktop-managed-local");
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps explicit websocket bearer authentication remote-ready", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const bearerToken = yield* getAuthenticatedBearerSessionToken();
+      const ambientCookie = yield* getAuthenticatedSessionCookieHeader();
+      const cookieName = ambientCookie.split("=", 1)[0];
+      assert.isDefined(cookieName);
+      const wsUrl = yield* getWsServerUrl("/ws", { authenticated: false });
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({}), {
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+            cookie: `${cookieName}=invalid-cookie-token`,
+            origin: "https://remote-client.example",
+          },
+        }),
+      );
+
+      assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps explicit websocket DPoP authentication remote-ready", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const tokenUrl = yield* getHttpServerUrl("/oauth/token");
+      const now = yield* DateTime.now;
+      const tokenProof = makeDpopProof({
+        method: "POST",
+        url: tokenUrl,
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        jti: "websocket-token-exchange",
+      });
+      const token = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        headers: { dpop: tokenProof.proof },
+        scope: "orchestration:read",
+      });
+      assert.equal(token.response.status, 200);
+      assert.equal(token.body.token_type, "DPoP");
+      assert.isDefined(token.body.access_token);
+
+      const wsHttpUrl = yield* getHttpServerUrl("/ws");
+      const socketProof = makeDpopProof({
+        method: "GET",
+        url: wsHttpUrl,
+        iat: Math.floor(now.epochMilliseconds / 1_000),
+        accessToken: token.body.access_token,
+        jti: "websocket-upgrade",
+        privateKey: tokenProof.privateKey,
+        publicJwk: tokenProof.publicJwk,
+      });
+      const response = yield* Effect.scoped(
+        withWsRpcClient(
+          wsHttpUrl.replace(/^http:/, "ws:"),
+          (client) => client[WS_METHODS.serverGetConfig]({}),
+          {
+            headers: {
+              authorization: `DPoP ${token.body.access_token ?? ""}`,
+              dpop: socketProof.proof,
+              origin: "https://remote-client.example",
+            },
+          },
+        ),
+      );
+
+      assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("proxies browser OTLP trace exports through the server", () =>
@@ -4651,6 +4971,55 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("uploads image bytes through a signed URL issued by websocket rpc", () =>
+    Effect.gen(function* () {
+      const config = yield* buildAppUnderTest();
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const wsUrl = yield* getWsServerUrl("/ws");
+
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const issued = yield* client[WS_METHODS.attachmentsCreateUploadUrl]({
+              name: "screenshot.png",
+              mimeType: "image/png",
+              sizeBytes: 6,
+            });
+            const rejected = yield* HttpClient.post(issued.relativeUrl, {
+              body: HttpBody.uint8Array(new Uint8Array([1, 2, 3]), "image/png"),
+            });
+            assert.equal(rejected.status, 400);
+
+            const response = yield* HttpClient.post(issued.relativeUrl, {
+              headers: { origin: crossOriginClientOrigin },
+              body: HttpBody.uint8Array(new Uint8Array([1, 2, 3, 4, 5, 6]), "image/png"),
+            });
+            assert.equal(response.status, 204);
+            assertBrowserApiCorsResponseHeaders(response.headers);
+
+            const attachmentPath = path.join(config.attachmentsDir, `${issued.attachmentId}.png`);
+            assert.isTrue(yield* fileSystem.exists(attachmentPath));
+
+            yield* client[WS_METHODS.attachmentsDelete]({ attachmentId: issued.attachmentId });
+            assert.isFalse(yield* fileSystem.exists(attachmentPath));
+
+            const streamed = yield* client[WS_METHODS.attachmentsCreateUploadUrl]({
+              name: "streamed.png",
+              mimeType: "image/png",
+              sizeBytes: 6,
+            });
+            const streamedResponse = yield* HttpClient.post(streamed.relativeUrl, {
+              body: HttpBody.stream(Stream.make(new Uint8Array([1, 2, 3, 4, 5, 6])), "image/png"),
+            });
+            assert.equal(streamedResponse.status, 204);
+            yield* client[WS_METHODS.attachmentsDelete]({ attachmentId: streamed.attachmentId });
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("keeps feedback errors structured across websocket rpc", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-feedback-failure");
@@ -4762,6 +5131,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("routes websocket rpc subscribeServerConfig streams snapshot then update", () =>
     Effect.gen(function* () {
+      const path = yield* Path.Path;
       const providers = [
         {
           instanceId: ProviderInstanceId.make("codex"),
@@ -4815,7 +5185,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.deepEqual(first.config.keybindings, []);
         assert.deepEqual(first.config.issues, []);
         assert.deepEqual(first.config.providers, providers);
-        assert.equal(first.config.observability.logsDirectoryPath.endsWith("/logs"), true);
+        assert.equal(path.basename(first.config.observability.logsDirectoryPath), "logs");
         assert.equal(first.config.observability.localTracingEnabled, true);
         assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
         assert.equal(first.config.observability.otlpTracesEnabled, true);
@@ -4840,9 +5210,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         url: `${baseUrl}/api/server/config`,
         headers: { cookie },
       });
-      const snapshot = yield* Schema.decodeUnknownEffect(
-        Schema.fromJsonString(EnvironmentServerConfigSnapshot),
-      )(Buffer.from(transfer.decodedBody).toString("utf8"));
+      const snapshot = yield* decodeEnvironmentServerConfigSnapshot(
+        Buffer.from(transfer.decodedBody).toString("utf8"),
+      );
 
       assert.equal(transfer.status, 200);
       assert.equal(transfer.contentEncoding, "gzip");
@@ -5370,12 +5740,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           modelSelection: defaultModelSelection,
           runtimeMode: "full-access",
           interactionMode: "default",
+          enabledSkillIds: [],
           branch: null,
           worktreePath: null,
           createdAt: "2026-01-01T00:00:00.000Z",
         }) as const;
 
-      const wsUrl = yield* getWsServerUrl("/ws?clientSurface=mobile&clientAppVersion=1.2.3");
+      const wsUrl = yield* getWsServerUrl(
+        "/ws?clientSurface=mobile&clientAppVersion=1.2.3&clientOs=iOS&clientOsMajorVersion=18&clientDeviceModel=iPhone+15+Pro",
+      );
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           Effect.gen(function* () {
@@ -5408,7 +5781,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "analytics:client.thread.started",
       ]);
       assert.deepEqual(analyticsProperties, [
-        { surface: "mobile", appVersion: "1.2.3" },
+        {
+          surface: "mobile",
+          appVersion: "1.2.3",
+          os: "iOS",
+          osMajorVersion: 18,
+          deviceModel: "iPhone 15 Pro",
+        },
         { surface: "mobile", appVersion: "1.2.3" },
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
@@ -8251,12 +8630,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("cleans up created bootstrap threads when worktree creation defects", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const createWorktree = vi.fn(
         (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
           Effect.die(new Error("worktree exploded")),
       );
 
-      yield* buildAppUnderTest({
+      const config = yield* buildAppUnderTest({
         layers: {
           gitVcsDriver: {
             createWorktree,
@@ -8274,41 +8655,63 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const createdAt = "2026-01-01T00:00:00.000Z";
       const wsUrl = yield* getWsServerUrl("/ws");
+      let pendingAttachmentId: string | undefined;
       const result = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
-          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
-            type: "thread.turn.start",
-            commandId: CommandId.make("cmd-bootstrap-turn-start-defect"),
-            threadId: ThreadId.make("thread-bootstrap-defect"),
-            message: {
-              messageId: MessageId.make("msg-bootstrap-defect"),
-              role: "user",
-              text: "hello",
-              attachments: [],
-            },
-            modelSelection: defaultModelSelection,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            bootstrap: {
-              createThread: {
-                projectId: defaultProjectId,
-                title: "Bootstrap Thread",
-                modelSelection: defaultModelSelection,
-                runtimeMode: "full-access",
-                interactionMode: "default",
-                branch: "main",
-                worktreePath: null,
-                enabledSkillIds: [],
-                createdAt,
+          Effect.gen(function* () {
+            const upload = yield* client[WS_METHODS.attachmentsCreateUploadUrl]({
+              name: "screenshot.png",
+              mimeType: "image/png",
+              sizeBytes: 6,
+            });
+            pendingAttachmentId = upload.attachmentId;
+            const uploadResponse = yield* HttpClient.post(upload.relativeUrl, {
+              body: HttpBody.uint8Array(new Uint8Array([1, 2, 3, 4, 5, 6]), "image/png"),
+            });
+            assert.equal(uploadResponse.status, 204);
+
+            return yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "thread.turn.start",
+              commandId: CommandId.make("cmd-bootstrap-turn-start-defect"),
+              threadId: ThreadId.make("thread-bootstrap-defect"),
+              message: {
+                messageId: MessageId.make("msg-bootstrap-defect"),
+                role: "user",
+                text: "hello",
+                attachments: [
+                  {
+                    type: "image",
+                    id: upload.attachmentId,
+                    name: "screenshot.png",
+                    mimeType: "image/png",
+                    sizeBytes: 6,
+                  },
+                ],
               },
-              prepareWorktree: {
-                projectCwd: "/tmp/project",
-                baseBranch: "main",
-                branch: "t3code/bootstrap-refName",
+              modelSelection: defaultModelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              bootstrap: {
+                createThread: {
+                  projectId: defaultProjectId,
+                  title: "Bootstrap Thread",
+                  modelSelection: defaultModelSelection,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  branch: "main",
+                  worktreePath: null,
+                  enabledSkillIds: [],
+                  createdAt,
+                },
+                prepareWorktree: {
+                  projectCwd: "/tmp/project",
+                  baseBranch: "main",
+                  branch: "t3code/bootstrap-refName",
+                },
+                runSetupScript: false,
               },
-              runSetupScript: false,
-            },
-            createdAt,
+              createdAt,
+            });
           }),
         ).pipe(Effect.result),
       );
@@ -8321,6 +8724,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         dispatchedCommands.map((command) => command.type),
         ["thread.create", "thread.delete"],
       );
+      assert.isDefined(pendingAttachmentId);
+      assert.isTrue(
+        yield* fileSystem.exists(path.join(config.attachmentsDir, `${pendingAttachmentId}.png`)),
+      );
+      assert.deepEqual(yield* fileSystem.readDirectory(config.attachmentsDir), [
+        `${pendingAttachmentId}.png`,
+      ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

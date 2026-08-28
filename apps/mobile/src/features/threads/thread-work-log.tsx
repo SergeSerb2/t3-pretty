@@ -36,7 +36,7 @@ const WORK_LOG_LAYOUT_ANIMATION = {
 
 function triggerDisclosureFeedback() {
   LayoutAnimation.configureNext(WORK_LOG_LAYOUT_ANIMATION);
-  void Haptics.selectionAsync();
+  void Haptics.selectionAsync().catch(() => undefined);
 }
 
 function stripShellWrapper(value: string): string {
@@ -78,6 +78,8 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): AppSymbolName {
       return { ios: "bubble.left", android: "chat_bubble" };
     case "package":
       return { ios: "shippingbox", android: "inventory_2" };
+    case "pointer":
+      return { ios: "cursorarrow.click", android: "touch_app" };
     case "warning":
       return { ios: "xmark", android: "close" };
     case "wrench":
@@ -360,7 +362,7 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                                 : { ios: "minus", android: "remove" }
                           }
                           size={11}
-                          tintColor={row.status === "failure" ? "#e11d48" : props.iconSubtleColor}
+                          tintColor={props.iconSubtleColor}
                           type="monochrome"
                         />
                       ) : null}
@@ -438,7 +440,7 @@ export function ThreadWorkGroupToggle(props: {
         accessibilityLabel={props.expanded ? expandedLabel : collapsedLabel}
         hitSlop={4}
         onPress={() => {
-          void Haptics.selectionAsync();
+          void Haptics.selectionAsync().catch(() => undefined);
           props.onToggle();
         }}
         style={({ pressed }) => ({

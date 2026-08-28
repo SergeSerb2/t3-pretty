@@ -59,6 +59,7 @@ fi
 
 if ! command -v buildkite-agent >/dev/null; then
   export HOMEBREW_NO_AUTO_UPDATE=1
+  export HOMEBREW_NO_ASK=1
   brew tap buildkite/buildkite >/dev/null
   brew trust buildkite/buildkite >/dev/null || true
   brew install buildkite/buildkite/buildkite-agent
@@ -143,6 +144,10 @@ ${program_args}
     <string>$HOME/.config/t3-pretty/gitconfig</string>
     <key>FORCE_COLOR</key>
     <string>0</string>
+    <key>HOMEBREW_NO_ASK</key>
+    <string>1</string>
+    <key>HOMEBREW_NO_AUTO_UPDATE</key>
+    <string>1</string>
     <key>T3_PRETTY_REVIEW_ONLY</key>
     <string>${REVIEW_ONLY}</string>
   </dict>
@@ -214,6 +219,10 @@ if [[ "$COMPANION_NAME" != "$AGENT_NAME" ]]; then
     <string>$HOME/.config/t3-pretty/gitconfig</string>
     <key>FORCE_COLOR</key>
     <string>0</string>
+    <key>HOMEBREW_NO_ASK</key>
+    <string>1</string>
+    <key>HOMEBREW_NO_AUTO_UPDATE</key>
+    <string>1</string>
     <key>T3_PRETTY_REVIEW_ONLY</key>
     <string>${REVIEW_ONLY}</string>
   </dict>
