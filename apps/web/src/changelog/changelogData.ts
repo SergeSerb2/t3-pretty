@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.36-nightly.20260828.1209001193",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+    ],
+  },
+  {
     version: "0.0.36-nightly.20260828.1209001190",
     date: "2026-08-28",
     items: [
