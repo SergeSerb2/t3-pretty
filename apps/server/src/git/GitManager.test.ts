@@ -4085,6 +4085,48 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("materializes a PR from its remote branch when the pull ref is unavailable", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/refine-refresh-spin-origin"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "refresh.txt"), "refresh\n");
+      yield* runGit(repoDir, ["add", "refresh.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Refine refresh spin"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "t3code/refine-refresh-spin-origin"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", "t3code/refine-refresh-spin-origin"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 273,
+            title: "Refine refresh spin",
+            url: "https://github.com/pingdotgg/codething-mvp/pull/273",
+            baseRefName: "main",
+            headRefName: "t3code/refine-refresh-spin-origin",
+            state: "open",
+          },
+        },
+      });
+
+      const result = yield* preparePullRequestThread(manager, {
+        cwd: repoDir,
+        reference: "273",
+        mode: "worktree",
+      });
+
+      expect(result.branch).toBe("t3code/refine-refresh-spin-origin");
+      expect(result.worktreePath).not.toBeNull();
+      expect(NodeFS.existsSync(NodePath.join(result.worktreePath as string, "refresh.txt"))).toBe(
+        true,
+      );
+    }),
+  );
+
   it.effect("preserves both branch materialization failures when the fallback also fails", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
