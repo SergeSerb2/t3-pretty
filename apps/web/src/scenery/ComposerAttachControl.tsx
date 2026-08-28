@@ -17,11 +17,13 @@
  * the mention-drop channel; other files fall through the images drop path so
  * the composer refuses them instead of claiming an unreadable basename.
  */
-import { FileIcon, XIcon } from "lucide-react";
+import { FileIcon, PaperclipIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { COMPOSER_MENTION_DRAG_TYPE } from "../components/chat/composerMentionDrag";
+import { toastManager } from "../components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import {
   classifyAttachment,
   createAttachedFileRef,
@@ -29,7 +31,12 @@ import {
   textAttachmentPayload,
   type AttachedFileRef,
 } from "./attachFiles";
-import { addAttachedFiles, removeAttachedFile, useAttachedFiles } from "./attachedFileStore";
+import {
+  addAttachedFiles,
+  ATTACHED_FILE_PATH_MAX_COUNT,
+  removeAttachedFile,
+  useAttachedFiles,
+} from "./attachedFileStore";
 import { mutationsRequireComposerAttachSync } from "./composerAttachMutations";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import "./composerAttach.css";
@@ -101,25 +108,17 @@ async function deliverFiles(
     dropPath.push(file);
   }
   if (threadKey && pathFiles.length > 0) {
-    addAttachedFiles(threadKey, pathFiles);
+    const update = addAttachedFiles(threadKey, pathFiles);
+    if (update.droppedCount > 0) {
+      toastManager.add({
+        type: "warning",
+        title: `You can attach up to ${ATTACHED_FILE_PATH_MAX_COUNT} files per message.`,
+      });
+    }
   }
   // One drop for the image/binary batch: the composer validates them together,
   // so the attachment-count limit sees the whole pick at once.
   dropFiles(slot, dropPath);
-}
-
-function PaperclipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden fill="none">
-      <path
-        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
 }
 
 function AttachedFileChip(props: { file: AttachedFileRef; onRemove: (fileId: string) => void }) {
@@ -127,23 +126,29 @@ function AttachedFileChip(props: { file: AttachedFileRef; onRemove: (fileId: str
     ? props.file.name.slice(props.file.name.lastIndexOf(".") + 1).toUpperCase()
     : "FILE";
   return (
-    <div className="scenery-attach-file-chip" title={props.file.path}>
-      <div className="scenery-attach-file-chip__icon" aria-hidden>
-        <FileIcon className="size-5" />
-        <span className="scenery-attach-file-chip__ext">{extension.slice(0, 4)}</span>
-      </div>
-      <div className="scenery-attach-file-chip__meta">
-        <span className="scenery-attach-file-chip__name">{props.file.name}</span>
-      </div>
-      <button
-        type="button"
-        className="scenery-attach-file-chip__remove"
-        aria-label={`Remove ${props.file.name}`}
-        onClick={() => props.onRemove(props.file.id)}
-      >
-        <XIcon className="size-3.5" />
-      </button>
-    </div>
+    <Tooltip>
+      <TooltipTrigger render={<div className="scenery-attach-file-chip" />}>
+        <div className="scenery-attach-file-chip__icon" aria-hidden>
+          <FileIcon className="size-5" />
+          <span className="scenery-attach-file-chip__ext">{extension.slice(0, 4)}</span>
+        </div>
+        <div className="scenery-attach-file-chip__meta">
+          <span className="scenery-attach-file-chip__name">{props.file.name}</span>
+        </div>
+        <button
+          type="button"
+          data-animate-ui-icons
+          className="scenery-attach-file-chip__remove"
+          aria-label={`Remove ${props.file.name}`}
+          onClick={() => props.onRemove(props.file.id)}
+        >
+          <XIcon className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipPopup side="top" className="max-w-sm break-all font-mono">
+        {props.file.path}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -174,10 +179,12 @@ export function ComposerAttachControl() {
     const managedButtons = new Map<Element, HTMLElement>();
     const managedStrips = new Map<Element, HTMLElement>();
     let queued = false;
+    let syncFrame: number | null = null;
     let nextSlotId = 0;
 
     const sync = () => {
       queued = false;
+      syncFrame = null;
       const buttonHosts = [...document.querySelectorAll(HOST_SELECTOR)];
       const stripHosts = [...document.querySelectorAll(STRIP_HOST_SELECTOR)];
       let buttonsChanged = false;
@@ -237,19 +244,23 @@ export function ComposerAttachControl() {
       }
       if (!queued) {
         queued = true;
-        requestAnimationFrame(sync);
+        syncFrame = requestAnimationFrame(sync);
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
     sync();
     return () => {
       observer.disconnect();
+      if (syncFrame !== null) {
+        cancelAnimationFrame(syncFrame);
+      }
       for (const slot of managedButtons.values()) {
         slot.remove();
       }
       for (const slot of managedStrips.values()) {
         slot.remove();
       }
+      inputRefs.current.clear();
       setButtonSlots([]);
       setStripSlots([]);
     };
@@ -261,18 +272,29 @@ export function ComposerAttachControl() {
         <span key={slot.dataset.scenerySlotId}>
           {createPortal(
             <>
-              <button
-                type="button"
-                className="scenery-attach-button"
-                aria-label="Attach files or photos"
-                title="Attach files or photos"
-                onClick={() => inputRefs.current.get(slot)?.click()}
-              >
-                <PaperclipIcon />
-              </button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-animate-ui-icons
+                      className="scenery-attach-button"
+                      aria-label="Attach files or photos"
+                      onClick={() => inputRefs.current.get(slot)?.click()}
+                    />
+                  }
+                >
+                  <PaperclipIcon className="size-4" aria-hidden />
+                </TooltipTrigger>
+                <TooltipPopup side="top">Attach files or photos</TooltipPopup>
+              </Tooltip>
               <input
                 ref={(element) => {
-                  inputRefs.current.set(slot, element);
+                  if (element === null) {
+                    inputRefs.current.delete(slot);
+                  } else {
+                    inputRefs.current.set(slot, element);
+                  }
                 }}
                 type="file"
                 multiple

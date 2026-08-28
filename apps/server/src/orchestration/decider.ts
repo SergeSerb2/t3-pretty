@@ -4,6 +4,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
+import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -962,6 +963,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.linkedPullRequest !== undefined
+            ? { linkedPullRequest: command.linkedPullRequest }
+            : {}),
           updatedAt: occurredAt,
         },
       };
@@ -1044,6 +1048,44 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const nativeResume = parseNativeResumeCommand(command.message.text);
+      if (nativeResume !== null) {
+        if (nativeResume._tag === "Invalid") {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Usage: /resume <native-session-id>.",
+          });
+        }
+        if (
+          targetThread.messages.length > 0 ||
+          (targetThread.session !== null && targetThread.session.status !== "error")
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Native /resume can only be used as the first command in a new thread.",
+          });
+        }
+        if (command.message.attachments.length > 0 || command.sourceProposedPlan !== undefined) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Resume the native session first, then send content in a new message.",
+          });
+        }
+        return {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.native-resume-requested",
+          payload: {
+            threadId: command.threadId,
+            nativeSessionId: nativeResume.sessionId,
+            createdAt: command.createdAt,
+          },
+        };
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -1308,6 +1350,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           session: command.session,
+          ...(command.activeUserMessageId !== undefined
+            ? { activeUserMessageId: command.activeUserMessageId }
+            : {}),
         },
       };
       // Only a session coming alive is activity worth waking a settled thread

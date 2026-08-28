@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { overlayIdsForTarget, sameIdMembers } from "./useOptimisticIdList";
+import {
+  overlayIdsForTarget,
+  resetOptimisticOverlayForFailedIds,
+  sameIdMembers,
+} from "./useOptimisticIdList";
 
 describe("sameIdMembers", () => {
   it("treats the same ids as equal regardless of order", () => {
@@ -25,6 +29,17 @@ describe("overlayIdsForTarget", () => {
     ).toEqual(["skill-a", "skill-b"]);
     expect(
       overlayIdsForTarget({ targetKey: "thread-a", ids: ["skill-a"] }, "thread-a", ["skill-a"]),
+    ).toBeNull();
+  });
+});
+
+describe("resetOptimisticOverlayForFailedIds", () => {
+  it("does not let an older failure clear a newer optimistic list", () => {
+    const latest = { targetKey: "thread-a", ids: ["skill-a", "skill-b"] };
+
+    expect(resetOptimisticOverlayForFailedIds(latest, "thread-a", ["skill-a"])).toBe(latest);
+    expect(
+      resetOptimisticOverlayForFailedIds(latest, "thread-a", ["skill-b", "skill-a"]),
     ).toBeNull();
   });
 });

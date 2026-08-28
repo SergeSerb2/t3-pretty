@@ -6,6 +6,7 @@
  */
 
 const MAX_READY = 8;
+const WALLPAPER_DECODE_TIMEOUT_MS = 15_000;
 
 const ready = new Set<string>();
 const inflight = new Map<string, Promise<boolean>>();
@@ -15,6 +16,9 @@ export function isWallpaperReady(url: string): boolean {
 }
 
 export function preloadWallpaper(url: string): Promise<boolean> {
+  if (!url) {
+    return Promise.resolve(false);
+  }
   if (ready.has(url)) {
     return Promise.resolve(true);
   }
@@ -58,10 +62,22 @@ function decodeWallpaper(url: string): Promise<boolean> {
   const image = new Image();
   image.decoding = "async";
   return new Promise((resolve) => {
+    let settled = false;
+    const onError = () => finish(false);
+    const onLoad = () => finish(true);
+    const timeoutId = setTimeout(() => {
+      finish(false);
+      image.src = "";
+    }, WALLPAPER_DECODE_TIMEOUT_MS);
     const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      image.removeEventListener("error", onError);
+      image.removeEventListener("load", onLoad);
       resolve(ok);
     };
-    image.addEventListener("error", () => finish(false), { once: true });
+    image.addEventListener("error", onError, { once: true });
     if (typeof image.decode === "function") {
       image.src = url;
       void image.decode().then(
@@ -70,7 +86,7 @@ function decodeWallpaper(url: string): Promise<boolean> {
       );
       return;
     }
-    image.addEventListener("load", () => finish(true), { once: true });
+    image.addEventListener("load", onLoad, { once: true });
     image.src = url;
   });
 }

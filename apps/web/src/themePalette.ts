@@ -73,6 +73,7 @@ const RESERVED_THEME_IDS = new Set([
 ]);
 
 const customThemeListeners = new Set<() => void>();
+let customThemeStorageListenerAttached = false;
 type CustomThemeLibrarySnapshot =
   | Readonly<{
       status: "ready";
@@ -190,11 +191,12 @@ function parseStoredTheme(value: unknown): ThemeDefinition | null {
 
 function parseStoredThemes(storedThemes: ReadonlyArray<unknown>): ReadonlyArray<ThemeDefinition> {
   const themes: ThemeDefinition[] = [];
+  const seenThemeIds = new Set<string>();
   for (const value of storedThemes) {
     const theme = parseStoredTheme(value);
-    if (theme && !themes.some((existing) => existing.id === theme.id)) {
-      themes.push(theme);
-    }
+    if (!theme || seenThemeIds.has(theme.id)) continue;
+    seenThemeIds.add(theme.id);
+    themes.push(theme);
   }
   return themes;
 }
@@ -252,21 +254,34 @@ export function getStoredCustomThemeCollection(
   );
 }
 
+function handleCustomThemeStorage(event: StorageEvent): void {
+  if (event.key === CUSTOM_THEMES_STORAGE_KEY || event.key === null) {
+    invalidateCustomThemes();
+  }
+}
+
 export function subscribeToCustomThemes(listener: () => void): () => void {
   customThemeListeners.add(listener);
-  if (typeof window === "undefined") {
-    return () => customThemeListeners.delete(listener);
+  if (
+    !customThemeStorageListenerAttached &&
+    typeof window !== "undefined" &&
+    typeof window.addEventListener === "function"
+  ) {
+    window.addEventListener("storage", handleCustomThemeStorage);
+    customThemeStorageListenerAttached = true;
   }
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === CUSTOM_THEMES_STORAGE_KEY || event.key === null) {
-      invalidateCustomThemes();
-    }
-  };
-  window.addEventListener("storage", handleStorage);
 
   return () => {
     customThemeListeners.delete(listener);
-    window.removeEventListener("storage", handleStorage);
+    if (
+      customThemeListeners.size === 0 &&
+      customThemeStorageListenerAttached &&
+      typeof window !== "undefined" &&
+      typeof window.removeEventListener === "function"
+    ) {
+      window.removeEventListener("storage", handleCustomThemeStorage);
+      customThemeStorageListenerAttached = false;
+    }
   };
 }
 

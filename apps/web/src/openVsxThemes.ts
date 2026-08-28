@@ -11,11 +11,13 @@ import {
 } from "./vscodeThemeImport";
 
 const OPEN_VSX_SEARCH_URL = "https://open-vsx.org/api/-/search";
+export const OPEN_VSX_SEARCH_QUERY_MAX_LENGTH = 256;
 const MAX_VSIX_BYTES = 20 * 1024 * 1024;
 const MAX_SEARCH_BYTES = 512 * 1024;
 const MAX_DETAIL_BYTES = 256 * 1024;
 const MAX_MANIFEST_BYTES = 256 * 1024;
 const SEARCH_REQUEST_TIMEOUT_MS = 10_000;
+const IMPORT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_THEME_BYTES = 256 * 1024;
 const MAX_ZIP_ENTRIES = 5_000;
 const MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
@@ -215,16 +217,30 @@ async function withSearchTimeout<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   parentSignal?: AbortSignal,
 ): Promise<T> {
+  return withRequestTimeout(
+    operation,
+    SEARCH_REQUEST_TIMEOUT_MS,
+    "Open VSX took too long to respond.",
+    parentSignal,
+  );
+}
+
+async function withRequestTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  parentSignal?: AbortSignal,
+): Promise<T> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (parentSignal?.aborted) abort();
   else parentSignal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(abort, SEARCH_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(abort, timeoutMs);
   try {
     return await operation(controller.signal);
   } catch (cause) {
     if (controller.signal.aborted && !parentSignal?.aborted) {
-      throw new Error("Open VSX took too long to respond.", { cause });
+      throw new Error(timeoutMessage, { cause });
     }
     throw cause;
   } finally {
@@ -239,6 +255,9 @@ export async function searchOpenVsxThemes(
 ): Promise<OpenVsxThemeExtension[]> {
   const searchText = query.trim();
   if (!searchText) return [];
+  if (searchText.length > OPEN_VSX_SEARCH_QUERY_MAX_LENGTH) {
+    throw new Error("Open VSX search terms must be 256 characters or fewer.");
+  }
   const url = new URL(OPEN_VSX_SEARCH_URL);
   url.searchParams.set("query", searchText);
   url.searchParams.set("category", "Themes");
@@ -625,12 +644,21 @@ export async function importOpenVsxThemeExtension(
   extension: OpenVsxThemeExtension,
   signal?: AbortSignal,
 ): Promise<ReadonlyArray<ThemeDefinition>> {
-  const manifestResponse = await fetch(extension.manifestUrl, signal ? { signal } : {});
-  if (!manifestResponse.ok) throw new Error("That Open VSX extension has no readable manifest.");
-  const manifestBytes = await readCappedResponse(
-    manifestResponse,
-    MAX_MANIFEST_BYTES,
-    "That Open VSX extension manifest is too large.",
+  const manifestBytes = await withRequestTimeout(
+    async (requestSignal) => {
+      const manifestResponse = await fetch(extension.manifestUrl, { signal: requestSignal });
+      if (!manifestResponse.ok) {
+        throw new Error("That Open VSX extension has no readable manifest.");
+      }
+      return readCappedResponse(
+        manifestResponse,
+        MAX_MANIFEST_BYTES,
+        "That Open VSX extension manifest is too large.",
+      );
+    },
+    IMPORT_REQUEST_TIMEOUT_MS,
+    "That Open VSX extension manifest took too long to download.",
+    signal,
   );
   const manifest = parseJsoncObject(new TextDecoder().decode(manifestBytes), "Extension manifest");
   const advertisedContributions = themeContributions(manifest);
@@ -641,20 +669,34 @@ export async function importOpenVsxThemeExtension(
     throw new Error("That extension contains too many color themes to import safely.");
   }
 
-  const packageBytes = await fetchPackage(extension.vsixUrl, signal);
+  const packageBytes = await withRequestTimeout(
+    (requestSignal) => fetchPackage(extension.vsixUrl, requestSignal),
+    IMPORT_REQUEST_TIMEOUT_MS,
+    "That Open VSX theme package took too long to download.",
+    signal,
+  );
   signal?.throwIfAborted();
-  const checksumResponse = await fetch(extension.sha256Url, signal ? { signal } : {});
-  if (!checksumResponse.ok) throw new Error("That Open VSX theme has no readable checksum.");
-  const expectedChecksum = new TextDecoder()
-    .decode(
-      await readCappedResponse(
-        checksumResponse,
-        256,
-        "That Open VSX checksum response is invalid.",
-      ),
-    )
-    .trim()
-    .split(/\s+/)[0];
+  const expectedChecksum = await withRequestTimeout(
+    async (requestSignal) => {
+      const checksumResponse = await fetch(extension.sha256Url, { signal: requestSignal });
+      if (!checksumResponse.ok) {
+        throw new Error("That Open VSX theme has no readable checksum.");
+      }
+      return new TextDecoder()
+        .decode(
+          await readCappedResponse(
+            checksumResponse,
+            256,
+            "That Open VSX checksum response is invalid.",
+          ),
+        )
+        .trim()
+        .split(/\s+/)[0];
+    },
+    IMPORT_REQUEST_TIMEOUT_MS,
+    "That Open VSX theme checksum took too long to download.",
+    signal,
+  );
   if (!expectedChecksum || !/^[a-f\d]{64}$/i.test(expectedChecksum)) {
     throw new Error("That Open VSX theme has an invalid checksum.");
   }

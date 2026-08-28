@@ -222,12 +222,13 @@ load_resolution_cache() {
 # parent change intentionally omitted to protect T3 Pretty.
 resolve_current_merge() {
   local merge_status="$1"
-  local resolver_paths=()
+  local lockfile_conflicted=false
   local path
 
   # The fork owns its release and security automation. Keep those files
   # pinned to fork main instead of allowing an upstream tag to rewrite
   # workflows or requiring a broadly scoped personal token.
+  git rm -r -f --ignore-unmatch -- .github/workflows
   git restore --source=origin/main --staged --worktree -- .github/workflows
 
   # Keep the resolved nightly marker and report when merging a newer
@@ -240,11 +241,15 @@ resolve_current_merge() {
     fi
   done
 
-  # bash 3.2 (/bin/bash on macos-release) has no `mapfile`.
+  # Remember whether the generated lockfile conflicted before the resolver
+  # stages its completed resolution.
   while IFS= read -r -d '' path; do
-    resolver_paths+=("$path")
+    if [[ "$path" == "pnpm-lock.yaml" ]]; then
+      lockfile_conflicted=true
+    fi
   done < <(git diff --name-only --diff-filter=U -z)
-  if (( ${#resolver_paths[@]} == 0 )) && (( merge_status != 0 )) &&
+  if [[ "$lockfile_conflicted" == "false" ]] && (( merge_status != 0 )) &&
+    [[ -z "$(git diff --name-only --diff-filter=U)" ]] &&
     ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
     SYNC_FAIL_REASON="Merge failed without producing resolvable conflicts (exit ${merge_status})."
     echo "$SYNC_FAIL_REASON" >&2
@@ -257,9 +262,20 @@ resolve_current_merge() {
   # AI-splicing it. Reconcile that copy with the merged package
   # manifests so the committed lockfile actually installs (the runner
   # sets CI=true, which would force a frozen lockfile, so opt out).
-  if printf '%s\n' "${resolver_paths[@]}" | grep -qx "pnpm-lock.yaml"; then
-    corepack enable
-    corepack pnpm install --lockfile-only --no-frozen-lockfile
+  if [[ "$lockfile_conflicted" == "true" ]]; then
+    # Homebrew's node no longer ships corepack, and a bare `corepack enable`
+    # exited 127 on every scheduled sync. Prefer the pinned pnpm that vite-plus
+    # already manages on macos-release, then corepack, then a one-off pnpm.
+    pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+    managed_pnpm="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin"
+    if [[ -x "${managed_pnpm}/pnpm" ]]; then
+      PATH="${managed_pnpm}:${PATH}" pnpm install --lockfile-only --no-frozen-lockfile
+    elif command -v corepack >/dev/null; then
+      corepack enable
+      corepack pnpm install --lockfile-only --no-frozen-lockfile
+    else
+      npx --yes "pnpm@${pnpm_version}" install --lockfile-only --no-frozen-lockfile
+    fi
     git add pnpm-lock.yaml
   fi
 
@@ -401,12 +417,13 @@ push_sync_branch
 
 node scripts/fork/origin-forge.mjs setup-ci
 pr_body_path="${CACHE_ROOT}/t3-pretty-upstream-sync.md"
-{
+write_sync_pr_body() {
   printf '%s\n\n' \
     'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
     'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
-  cat .t3-fork/upstream-sync-report.md
-} > "$pr_body_path"
+  printf 'The complete conflict-resolution audit for `%s` is committed in `.t3-fork/upstream-sync-report.md`.\n' "$UPSTREAM_TAG"
+}
+write_sync_pr_body > "$pr_body_path"
 node scripts/fork/origin-forge.mjs ensure-pr \
   --base main \
   --head "$SYNC_BRANCH" \
@@ -438,7 +455,7 @@ if ! land_sync_pr; then
   # without REUSED_SYNC_RESOLUTION the resolver formats a fresh report
   # from the retry merge alone, so a clean (or marker-only) origin/main
   # merge would replace the upstream integration record with "no text
-  # conflicts" and the landed PR body would misdescribe the tree.
+  # conflicts" and the durable report would misdescribe the tree.
   export REUSED_SYNC_RESOLUTION=true
   merge_ref origin/main "chore(sync): merge origin/main before landing $UPSTREAM_TAG" origin main
   printf '%s\n' "$UPSTREAM_TAG" > .t3-fork/upstream-nightly
@@ -447,12 +464,7 @@ if ! land_sync_pr; then
     git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
   fi
   push_sync_branch
-  {
-    printf '%s\n\n' \
-      'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
-      'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
-    cat .t3-fork/upstream-sync-report.md
-  } > "$pr_body_path"
+  write_sync_pr_body > "$pr_body_path"
   node scripts/fork/origin-forge.mjs ensure-pr \
     --base main \
     --head "$SYNC_BRANCH" \

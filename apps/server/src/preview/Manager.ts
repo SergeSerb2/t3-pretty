@@ -22,6 +22,9 @@ import {
   type PreviewReportStatusInput,
   type PreviewResizeInput,
   FILL_PREVIEW_VIEWPORT,
+  PREVIEW_SESSIONS_MAX_PER_THREAD,
+  PREVIEW_SESSIONS_MAX_TOTAL,
+  PreviewSessionLimitError,
   PreviewSessionLookupError,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
@@ -67,7 +70,7 @@ interface PreviewSessionState {
 }
 
 interface ManagerState {
-  /** All sessions across every thread, keyed by `${threadId}\u0000${tabId}`. */
+  /** All sessions across every thread, keyed by a serialized identifier tuple. */
   readonly sessions: ReadonlyMap<string, PreviewSessionState>;
   /** Global monotonic revision establishing list/event ordering. */
   readonly revision: number;
@@ -81,7 +84,7 @@ type PreviewEventDraft = PreviewEvent extends infer Event
     : never
   : never;
 
-const compositeKey = (threadId: string, tabId: string): string => `${threadId}\u0000${tabId}`;
+const compositeKey = (threadId: string, tabId: string): string => JSON.stringify([threadId, tabId]);
 
 const sessionsForThread = (
   state: ManagerState,
@@ -92,6 +95,14 @@ const sessionsForThread = (
     if (session.threadId === threadId) out.push(session);
   }
   return out;
+};
+
+const sessionCountForThread = (state: ManagerState, threadId: string): number => {
+  let count = 0;
+  for (const session of state.sessions.values()) {
+    if (session.threadId === threadId) count += 1;
+  }
+  return count;
 };
 
 const normalizeUrl = (rawUrl: string): Effect.Effect<string, PreviewInvalidUrlError> =>
@@ -234,6 +245,18 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         : buildIdleSnapshot({ threadId: input.threadId, tabId, viewport, updatedAt });
       yield* SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
+          if (state.sessions.size >= PREVIEW_SESSIONS_MAX_TOTAL) {
+            return yield* new PreviewSessionLimitError({
+              scope: "server",
+              limit: PREVIEW_SESSIONS_MAX_TOTAL,
+            });
+          }
+          if (sessionCountForThread(state, input.threadId) >= PREVIEW_SESSIONS_MAX_PER_THREAD) {
+            return yield* new PreviewSessionLimitError({
+              scope: "thread",
+              limit: PREVIEW_SESSIONS_MAX_PER_THREAD,
+            });
+          }
           const revision = state.revision + 1;
           const sessions = new Map(state.sessions);
           sessions.set(compositeKey(input.threadId, tabId), {

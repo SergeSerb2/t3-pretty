@@ -78,6 +78,10 @@ The desktop app repairs links left on an older relay or signed in to a different
 synchronizes the mesh. Managed SSH backends launched by the desktop app inherit that build's public
 T3 Connect configuration instead of silently joining another relay deployment.
 
+If a host was deregistered from **Manage account** while its local T3 Connect setting remained on,
+the desktop shows that setting as off after the account list refreshes. Turn it on once to register
+the host again. Older desktop builds require turning T3 Connect off and back on manually.
+
 Use **Manage account** on the T3 account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
 does not need the T3 Connect tunnel to be on. The iOS Live Activity lists your threads by name —

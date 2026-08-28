@@ -115,6 +115,7 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
           archivedAt: null,
           settledOverride: "settled",
           settledAt: "2026-03-24T00:00:00.000Z",
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: null,
@@ -191,6 +192,7 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
           archivedAt: null,
           settledOverride: "settled",
           settledAt: "2026-03-24T00:00:00.000Z",
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: null,
@@ -219,6 +221,7 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
           archivedAt: null,
           settledOverride: "settled",
           settledAt: "2026-03-24T00:00:00.000Z",
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: null,
@@ -272,6 +275,25 @@ it.layer(TestLayer, { excludeTestServices: true })("StorageInventoryService", (i
         const removed = yield* storage.removeOrphan({ path: orphanPath });
         expect(removed).toEqual({ removed: true });
         expect(yield* fileSystem.exists(orphanPath)).toBe(false);
+      }),
+    );
+
+    it.effect("refuses a descendant reached through a symlinked directory", () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const storage = yield* StorageInventoryService.StorageInventoryService;
+        const outsidePath = path.join(config.baseDir, "outside", "stale");
+        const linkedParent = path.join(config.worktreesDir, "linked-outside");
+        yield* writeCheckout(outsidePath, "must-survive\n");
+        yield* fileSystem.makeDirectory(config.worktreesDir, { recursive: true });
+        yield* fileSystem.symlink(path.dirname(outsidePath), linkedParent);
+
+        const requested = path.join(linkedParent, "stale");
+        const error = yield* storage.removeOrphan({ path: requested }).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(StoragePathNotManagedError);
+        expect(yield* fileSystem.exists(outsidePath)).toBe(true);
       }),
     );
   });

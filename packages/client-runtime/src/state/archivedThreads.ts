@@ -3,6 +3,7 @@ import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
+import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 export interface ArchivedSnapshotEntry {
@@ -16,25 +17,24 @@ export interface ArchivedThreadSnapshotsState {
   readonly isLoading: boolean;
 }
 
-const ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR = "\u001f";
 const environmentIdOrder = Order.String as Order.Order<EnvironmentId>;
+const ArchivedThreadsEnvironmentKey = Schema.fromJsonString(Schema.Array(EnvironmentId));
+const decodeArchivedThreadsEnvironmentKey = Schema.decodeUnknownOption(
+  ArchivedThreadsEnvironmentKey,
+);
 
 export function makeArchivedThreadsEnvironmentKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
 ): string {
-  return pipe(environmentIds, Arr.sort(environmentIdOrder), (sortedEnvironmentIds) =>
-    sortedEnvironmentIds.join(ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR),
+  return pipe(
+    Array.from(new Set(environmentIds)),
+    Arr.sort(environmentIdOrder),
+    (sortedEnvironmentIds) => JSON.stringify(sortedEnvironmentIds),
   );
 }
 
 export function parseArchivedThreadsEnvironmentKey(key: string): ReadonlyArray<EnvironmentId> {
-  if (key.length === 0) {
-    return [];
-  }
-  return pipe(
-    key.split(ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR),
-    Arr.map((environmentId) => EnvironmentId.make(environmentId)),
-  );
+  return Option.getOrElse(decodeArchivedThreadsEnvironmentKey(key), () => []);
 }
 
 export function createArchivedThreadSnapshotsAtomFamily<E>(options: {

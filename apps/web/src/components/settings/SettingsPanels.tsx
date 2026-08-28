@@ -18,6 +18,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
+  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
   DEFAULT_UNIFIED_SETTINGS,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
@@ -60,6 +61,7 @@ import {
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
+import { compareIsoDateTimes } from "../../lib/threadSort";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -539,10 +541,17 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
         : []),
+      ...(settings.sidebarAutoArchiveSettledAfterDays !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays
+        ? ["Auto-archive settled threads"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
+        : []),
+      ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
+        ? ["Show skills in slash menu"]
         : []),
       ...(settings.enableLegacyTokenStreaming !==
       DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming
@@ -580,6 +589,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
         ? ["Agent browser access"]
         : []),
+      ...(settings.enableComputerUse !== DEFAULT_UNIFIED_SETTINGS.enableComputerUse
+        ? ["Agent computer control"]
+        : []),
     ],
     [
       isTextGenerationModelDirty,
@@ -590,6 +602,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.enableAgentBrowserAccess,
+      settings.enableComputerUse,
       settings.autoGenerateProjectIcons,
       settings.generateActivityHeadlines,
       settings.confirmQuit,
@@ -612,8 +625,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
       settings.sidebarAutoSettleAfterDays,
+      settings.sidebarAutoArchiveSettledAfterDays,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
+      settings.showSkillsInSlashMenu,
       settings.timestampFormat,
       settings.wordWrap,
       followSystem,
@@ -689,11 +704,14 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+      showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+      sidebarAutoArchiveSettledAfterDays:
+        DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -724,6 +742,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       // name, so a user restoring defaults is told the agent regains access
       // rather than discovering it later.
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      enableComputerUse: DEFAULT_UNIFIED_SETTINGS.enableComputerUse,
       autoGenerateProjectIcons: DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons,
     });
     onRestored?.();
@@ -1722,9 +1741,11 @@ const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfter
 function AutoSettleDaysInput({
   value,
   onCommit,
+  ariaLabel = "Days of inactivity before auto-settle",
 }: {
   value: number;
   onCommit: (days: number) => void;
+  ariaLabel?: string;
 }) {
   // Local draft so the field can be emptied mid-edit; the setting only moves
   // on valid input and snaps back to the persisted value on blur.
@@ -1755,7 +1776,7 @@ function AutoSettleDaysInput({
         }
       }}
       onBlur={() => setDraft(String(value))}
-      aria-label="Days of inactivity before auto-settle"
+      aria-label={ariaLabel}
     />
   );
 }
@@ -2047,6 +2068,51 @@ export function GeneralSettingsPanel() {
         ) : null}
 
         <SettingsRow
+          {...searchableSetting("auto-archive-settled-threads")}
+          description="Threads settled longer than this are archived automatically, so the settled list doesn't grow forever."
+          resetAction={
+            settings.sidebarAutoArchiveSettledAfterDays !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays ? (
+              <SettingResetButton
+                label="auto-archive"
+                onClick={() =>
+                  updateSettings({
+                    sidebarAutoArchiveSettledAfterDays:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarAutoArchiveSettledAfterDays !== null}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  sidebarAutoArchiveSettledAfterDays: checked
+                    ? DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS
+                    : null,
+                })
+              }
+              aria-label="Auto-archive settled threads"
+            />
+          }
+        />
+        {settings.sidebarAutoArchiveSettledAfterDays !== null ? (
+          <SettingsRow
+            title="Days settled before auto-archive"
+            description="Archived threads stay available in each project's archived list."
+            control={
+              <AutoSettleDaysInput
+                value={settings.sidebarAutoArchiveSettledAfterDays}
+                onCommit={(days) => updateSettings({ sidebarAutoArchiveSettledAfterDays: days })}
+                ariaLabel="Days settled before auto-archive"
+              />
+            }
+          />
+        ) : null}
+
+        <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
           resetAction={
@@ -2110,6 +2176,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
               }
               aria-label="Hide whitespace changes by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("skills-in-slash-menu")}
+          description="Also include skills in the / command menu. Skills always appear when you type $."
+          resetAction={
+            settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+              <SettingResetButton
+                label="skills in slash menu"
+                onClick={() =>
+                  updateSettings({
+                    showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showSkillsInSlashMenu}
+              onCheckedChange={(checked) =>
+                updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
+              }
+              aria-label="Show skills in slash menu"
             />
           }
         />
@@ -2597,7 +2689,7 @@ export function ArchivedThreadsPanel() {
           threads: projectThreads.toSorted((left, right) => {
             const leftKey = left.archivedAt ?? left.createdAt;
             const rightKey = right.archivedAt ?? right.createdAt;
-            return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
+            return compareIsoDateTimes(rightKey, leftKey) || right.id.localeCompare(left.id);
           }),
         });
       }

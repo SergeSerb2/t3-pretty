@@ -17,11 +17,16 @@ Object.assign(process.env, repoEnv);
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const internalMicrophonePermission =
+  "Allow T3 Pretty Internal to use your microphone for voice dictation.";
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+// Universal exports already contain their own rounded-square silhouette. Using one as an adaptive
+// foreground makes Android draw an icon shape inside the launcher's mask.
+const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -37,7 +42,7 @@ const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
+  androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#00639B",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -54,7 +59,7 @@ const PREVIEW_ASSETS = {
   // point ios.icon at the PNG or the upstream composer art would win on iOS.
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
+  androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -156,6 +161,22 @@ function resolveAppVariant(value: string | undefined): AppVariant {
     default:
       return "production";
   }
+}
+
+export function resolveVoiceDictationPlugins(
+  internalBuild: boolean,
+): NonNullable<ExpoConfig["plugins"]> {
+  return internalBuild
+    ? [
+        [
+          "expo-audio",
+          {
+            microphonePermission: internalMicrophonePermission,
+            enableBackgroundPlayback: false,
+          },
+        ],
+      ]
+    : ["./plugins/withoutPublicExpoAudio.cjs"];
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
@@ -277,15 +298,14 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing via T3CODE_IOS_APPLE_TEAM_ID so non-interactive
+    // Pin code signing via T3CODE_APPLE_TEAM_ID so non-interactive
     // `expo run:ios` does not fall back to a personal team (which cannot sign
-    // app groups, Sign in with Apple, or push notification entitlements).
+    // app groups, Associated Domains, Sign in with Apple, or push entitlements).
     // Unset, Xcode selects whichever team the local account provides.
     ...(appleTeamId ? { appleTeamId } : {}),
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    associatedDomains: isIosPersonalTeamBuild
+      ? []
+      : [`applinks:${variant.relyingParty}`, `webcredentials:${variant.relyingParty}`],
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
@@ -354,6 +374,7 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    ...resolveVoiceDictationPlugins(isInternalBuild),
     ...(shareExtensionEnabled
       ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
       : [sharingPlugin]),
@@ -388,10 +409,16 @@ const config: ExpoConfig = {
         cameraPermission: "Allow T3 Pretty to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
-        recordAudioAndroid: false,
+        recordAudioAndroid: isInternalBuild,
       },
     ],
-    ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: false,
+        microphonePermission: isInternalBuild ? internalMicrophonePermission : false,
+      },
+    ],
     [
       "expo-splash-screen",
       {

@@ -24,6 +24,14 @@ permissions:
   contents: read
   id-token: none
 
+# Every release updates shared publication targets: npm dist-tags, channel
+# aliases, GitHub release assets, and (for stable releases) main. Keep those
+# mutations ordered so a nightly and stable run cannot publish over each other.
+# Let the active release finish before a pending tag or manual release starts.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   check_changes:
     name: Check for changes since last nightly
@@ -44,7 +52,12 @@ jobs:
       - id: check
         name: Compare HEAD to last nightly tag
         run: |
-          last_nightly_tag=$(git tag --list 'v*-nightly.*' 'nightly-v*' --sort=-creatordate | head -n 1)
+          last_nightly_tag=$(git for-each-ref \
+            --sort=-creatordate \
+            --count=1 \
+            --format='%(refname:short)' \
+            'refs/tags/v*-nightly.*' \
+            'refs/tags/nightly-v*')
           if [[ -z "$last_nightly_tag" ]]; then
             echo "No previous nightly tag found. Proceeding with release."
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
@@ -112,6 +125,18 @@ jobs:
           NIGHTLY_SHA: ${{ github.sha }}
           NIGHTLY_RUN_NUMBER: ${{ github.run_number }}
         run: |
+          node --input-type=module <<'NODE'
+          const version = process.env.DISPATCH_VERSION ?? "";
+          if (
+            Buffer.byteLength(version, "utf8") > 128 ||
+            [...version].some((character) => {
+              const codePoint = character.codePointAt(0);
+              return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+            })
+          ) {
+            throw new Error("Release version input exceeds its safety limit or has controls.");
+          }
+          NODE
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" || ( "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_CHANNEL:-stable}" == "nightly" ) ]]; then
             nightly_date="$(date -u -d "$NIGHTLY_DATE" +%Y%m%d)"
 
@@ -186,14 +211,6 @@ jobs:
       clerk_jwt_template: ${{ steps.public_config.outputs.clerk_jwt_template }}
       clerk_cli_oauth_client_id: ${{ steps.public_config.outputs.clerk_cli_oauth_client_id }}
       relay_url: ${{ steps.public_config.outputs.relay_url }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      RELAY_DOMAIN: ${{ vars.RELAY_DOMAIN }}
-      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
-      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
-      CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -216,6 +233,9 @@ jobs:
       - id: relay_state
         name: Read production relay tracing config
         shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           vp run --filter t3code-relay deploy \
             --stage prod \
@@ -234,6 +254,12 @@ jobs:
       - id: public_config
         name: Resolve production relay public config
         shell: bash
+        env:
+          RELAY_DOMAIN: ${{ vars.RELAY_DOMAIN }}
+          RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          CLERK_JWT_TEMPLATE: ${{ vars.CLERK_JWT_TEMPLATE }}
+          CLERK_CLI_OAUTH_CLIENT_ID: ${{ vars.CLERK_CLI_OAUTH_CLIENT_ID }}
         run: |
           set -euo pipefail
 
@@ -248,20 +274,70 @@ jobs:
             CLERK_CLI_OAUTH_CLIENT_ID
           )
           missing=()
+          invalid=()
           for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
+            value="${!name:-}"
+            if [[ -z "$value" ]]; then
               missing+=("$name")
+            elif [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              invalid+=("$name")
             fi
           done
           if (( ${#missing[@]} > 0 )); then
             printf 'Missing required relay deployment configuration: %s\n' "${missing[*]}" >&2
             exit 1
           fi
+          if (( ${#invalid[@]} > 0 )); then
+            printf 'Relay deployment configuration must be single-line: %s\n' "${invalid[*]}" >&2
+            exit 1
+          fi
+
+          relay_url="$(RELAY_DOMAIN_VALUE="$relay_domain" node --input-type=module <<'NODE'
+          const values = {
+            relayDomain: process.env.RELAY_DOMAIN_VALUE ?? "",
+            clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY ?? "",
+            clerkJwtTemplate: process.env.CLERK_JWT_TEMPLATE ?? "",
+            clerkCliOAuthClientId: process.env.CLERK_CLI_OAUTH_CLIENT_ID ?? "",
+          };
+          const limits = {
+            relayDomain: 253,
+            clerkPublishableKey: 4096,
+            clerkJwtTemplate: 512,
+            clerkCliOAuthClientId: 1024,
+          };
+          for (const [name, value] of Object.entries(values)) {
+            if (
+              !value ||
+              Buffer.byteLength(value, "utf8") > limits[name] ||
+              [...value].some((character) => {
+                const code = character.codePointAt(0);
+                return code !== undefined && (code <= 0x1f || code === 0x7f);
+              })
+            ) {
+              throw new Error(`Invalid or oversized release public config: ${name}`);
+            }
+          }
+          const domain = values.relayDomain.replace(/\.$/u, "").toLowerCase();
+          const labels = domain.split(".");
+          if (
+            labels.length < 2 ||
+            labels.some(
+              (label) =>
+                label.length < 1 ||
+                label.length > 63 ||
+                !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label),
+            )
+          ) {
+            throw new Error("Relay domain must be a valid DNS hostname.");
+          }
+          process.stdout.write(`https://${domain}`);
+          NODE
+          )"
 
           echo "clerk_publishable_key=$CLERK_PUBLISHABLE_KEY" >> "$GITHUB_OUTPUT"
           echo "clerk_jwt_template=$CLERK_JWT_TEMPLATE" >> "$GITHUB_OUTPUT"
           echo "clerk_cli_oauth_client_id=$CLERK_CLI_OAUTH_CLIENT_ID" >> "$GITHUB_OUTPUT"
-          echo "relay_url=https://$relay_domain" >> "$GITHUB_OUTPUT"
+          echo "relay_url=$relay_url" >> "$GITHUB_OUTPUT"
 
   # node-pty publishes no Linux prebuilt and the WSL backend runs under the
   # distro's own (Linux) Node, which can't load the Windows/Electron binary. We
@@ -314,6 +390,7 @@ jobs:
           name: wsl-node-pty-x64
           path: wsl-prebuild/pty.node
           if-no-files-found: error
+          retention-days: 1
 
   build:
     name: Build ${{ matrix.label }}
@@ -406,9 +483,7 @@ jobs:
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
-          echo "::add-mask::$tracing_token"
-          cat "$config_path" >> "$GITHUB_ENV"
+          node scripts/load-release-tracing-env.mjs "$config_path" "$GITHUB_ENV"
 
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -517,21 +592,21 @@ jobs:
       - name: Build desktop artifact
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY: ${{ matrix.platform == 'mac' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_KEY_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ matrix.platform == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && vars.APPLE_TEAM_ID || '' }}
+          MACOS_PROVISIONING_PROFILE: ${{ matrix.platform == 'mac' && secrets.MACOS_PROVISIONING_PROFILE || '' }}
           T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
-          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+          AZURE_TENANT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT || '' }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME || '' }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME || '' }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME || '' }}
         run: |
           args=(
             --platform "${{ matrix.platform }}"
@@ -550,19 +625,35 @@ jobs:
             return 0
           }
 
+          sensitive_signing_files=()
+          cleanup_signing_files() {
+            if (( ${#sensitive_signing_files[@]} > 0 )); then
+              rm -f -- "${sensitive_signing_files[@]}"
+            fi
+          }
+          trap cleanup_signing_files EXIT
+
           if [[ "${{ matrix.platform }}" == "mac" ]]; then
             if has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
               if ! has_all "$APPLE_TEAM_ID" "$MACOS_PROVISIONING_PROFILE"; then
                 echo "macOS signing is configured, but APPLE_TEAM_ID or MACOS_PROVISIONING_PROFILE is missing." >&2
                 exit 1
               fi
+              if [[ ! "$APPLE_API_KEY_ID" =~ ^[A-Za-z0-9_-]{1,64}$ ]]; then
+                echo "APPLE_API_KEY_ID must be a filename-safe identifier." >&2
+                exit 1
+              fi
 
               key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+              sensitive_signing_files+=("$key_path")
               printf '%s' "$APPLE_API_KEY" > "$key_path"
+              chmod 600 "$key_path"
               export APPLE_API_KEY="$key_path"
 
               profile_path="$RUNNER_TEMP/t3code.provisionprofile"
+              sensitive_signing_files+=("$profile_path")
               printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
+              chmod 600 "$profile_path"
               security cms -D -i "$profile_path" >/dev/null
               export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
               export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
@@ -570,7 +661,12 @@ jobs:
               echo "macOS signing enabled."
               args+=(--signed)
             else
-              echo "macOS signing disabled (missing one or more Apple signing secrets)."
+              # This workflow publishes only from the official repository. An
+              # unsigned fallback would still reach the public release and
+              # updater feed, so missing signing/notarization credentials must
+              # stop the release instead of silently changing its trust model.
+              echo "Refusing to build an unsigned macOS release artifact." >&2
+              exit 1
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
             # Bundle the Linux node-pty binary built by the build_wsl_node_pty job
@@ -611,6 +707,9 @@ jobs:
             "release/*.blockmap" \
             "release/*.yml"; do
             for file in $pattern; do
+              if [[ "$(basename "$file")" == builder-debug*.yml ]]; then
+                continue
+              fi
               cp "$file" release-publish/
             done
           done
@@ -653,6 +752,7 @@ jobs:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-publish/*
           if-no-files-found: error
+          retention-days: 1
 
       - name: Upload resource monitor
         uses: actions/upload-artifact@v7
@@ -660,6 +760,7 @@ jobs:
           name: resource-monitor-${{ matrix.resource_key }}
           path: resource-monitor-publish/${{ matrix.resource_key }}/*
           if-no-files-found: error
+          retention-days: 1
 
   publish_cli:
     name: Publish CLI to npm
@@ -706,9 +807,7 @@ jobs:
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
-          echo "::add-mask::$tracing_token"
-          cat "$config_path" >> "$GITHUB_ENV"
+          node scripts/load-release-tracing-env.mjs "$config_path" "$GITHUB_ENV"
 
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -774,16 +873,67 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      - name: Merge macOS updater manifests
+      - name: Merge and verify updater manifests
+        shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ needs.preflight.outputs.release_channel }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
+          set -euo pipefail
           shopt -s nullglob
-          for x64_manifest in release-assets/*-mac-x64.yml; do
-            arm64_manifest="${x64_manifest%-x64.yml}.yml"
-            if [[ -f "$arm64_manifest" ]]; then
-              node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
-              rm -f "$x64_manifest"
-            fi
-          done
+          arm64_manifests=(release-assets/*-mac.yml)
+          x64_manifests=(release-assets/*-mac-x64.yml)
+          if (( ${#arm64_manifests[@]} != 1 || ${#x64_manifests[@]} != 1 )); then
+            echo "Expected one arm64 and one x64 macOS updater manifest." >&2
+            exit 1
+          fi
+          arm64_manifest="${arm64_manifests[0]}"
+          x64_manifest="${x64_manifests[0]}"
+          if [[ "$x64_manifest" != "${arm64_manifest%.yml}-x64.yml" ]]; then
+            echo "macOS updater manifest channels do not match." >&2
+            exit 1
+          fi
+          node scripts/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
+          rm -f "$x64_manifest"
+
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { verifyUpdateManifestAssets } from "./scripts/lib/verify-update-manifest-assets.ts";
+
+          const assetRoot = path.resolve("release-assets");
+          const channel = process.env.RELEASE_CHANNEL === "nightly" ? "nightly" : "latest";
+          const expected = new Map([
+            [`${channel}-mac.yml`, ["-arm64.zip", "-x64.zip", "-arm64.dmg", "-x64.dmg"]],
+            [`${channel}.yml`, ["-x64.exe", "-x64.exe.blockmap"]],
+            [`${channel}-linux.yml`, ["-x64.AppImage"]],
+          ]);
+          const actual = fs
+            .readdirSync(assetRoot)
+            .filter((name) => name.endsWith(".yml"))
+            .toSorted();
+          const expectedNames = [...expected.keys()].toSorted();
+          if (
+            actual.length !== expectedNames.length ||
+            actual.some((name, index) => name !== expectedNames[index])
+          ) {
+            throw new Error("Release updater manifest set is incomplete or contains unexpected files.");
+          }
+
+          for (const [manifestName, requiredAssetSuffixes] of expected) {
+            verifyUpdateManifestAssets({
+              assetRoot,
+              expectedVersion: process.env.RELEASE_VERSION ?? "",
+              manifestPath: path.join(assetRoot, manifestName),
+              platformLabel: manifestName.includes("-mac")
+                ? "macOS"
+                : manifestName.includes("-linux")
+                  ? "Linux"
+                  : "Windows",
+              requiredAssetSuffixes,
+            });
+          }
+          NODE
 
       # - name: Merge Windows updater manifests
       #   run: |
@@ -861,18 +1011,6 @@ jobs:
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.release.result == 'success' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
-    env:
-      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
-      T3CODE_RELAY_URL: ${{ needs.relay_public_config.outputs.relay_url }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      T3CODE_WEB_ROUTER_URL: ${{ vars.T3CODE_WEB_ROUTER_URL }}
-      T3CODE_WEB_LATEST_DOMAIN: ${{ vars.T3CODE_WEB_LATEST_DOMAIN }}
-      T3CODE_WEB_NIGHTLY_DOMAIN: ${{ vars.T3CODE_WEB_NIGHTLY_DOMAIN }}
-      VERCEL_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -903,9 +1041,7 @@ jobs:
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
-          echo "::add-mask::$tracing_token"
-          cat "$config_path" >> "$GITHUB_ENV"
+          node scripts/load-release-tracing-env.mjs "$config_path" "$GITHUB_ENV"
 
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
@@ -915,6 +1051,18 @@ jobs:
 
       - name: Deploy and alias channel
         shell: bash
+        env:
+          T3CODE_CLERK_PUBLISHABLE_KEY: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
+          T3CODE_CLERK_JWT_TEMPLATE: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
+          T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
+          T3CODE_RELAY_URL: ${{ needs.relay_public_config.outputs.relay_url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          T3CODE_WEB_ROUTER_URL: ${{ vars.T3CODE_WEB_ROUTER_URL }}
+          T3CODE_WEB_LATEST_DOMAIN: ${{ vars.T3CODE_WEB_LATEST_DOMAIN }}
+          T3CODE_WEB_NIGHTLY_DOMAIN: ${{ vars.T3CODE_WEB_NIGHTLY_DOMAIN }}
+          VERCEL_TEAM_SLUG: ${{ vars.VERCEL_TEAM_SLUG }}
         run: |
           set -euo pipefail
 
@@ -923,12 +1071,95 @@ jobs:
             exit 1
           fi
 
-          router_url="${T3CODE_WEB_ROUTER_URL:-https://app.t3.codes}"
-          latest_domain="${T3CODE_WEB_LATEST_DOMAIN:-latest.app.t3.codes}"
-          nightly_domain="${T3CODE_WEB_NIGHTLY_DOMAIN:-nightly.app.t3.codes}"
-          router_domain="${router_url#http://}"
-          router_domain="${router_domain#https://}"
-          router_domain="${router_domain%%/*}"
+          mapfile -t web_hosts < <(
+            ROUTER_URL_VALUE="${T3CODE_WEB_ROUTER_URL:-https://app.t3.codes}" \
+            LATEST_DOMAIN_VALUE="${T3CODE_WEB_LATEST_DOMAIN:-latest.app.t3.codes}" \
+            NIGHTLY_DOMAIN_VALUE="${T3CODE_WEB_NIGHTLY_DOMAIN:-nightly.app.t3.codes}" \
+              node --input-type=module <<'NODE'
+          const containsControl = (value) =>
+            [...value].some((character) => {
+              const codePoint = character.codePointAt(0);
+              return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+            });
+          const requireBounded = (name, maxBytes, pattern) => {
+            const value = process.env[name] ?? "";
+            if (
+              !value ||
+              Buffer.byteLength(value, "utf8") > maxBytes ||
+              containsControl(value) ||
+              (pattern && !pattern.test(value))
+            ) {
+              throw new Error(`${name} is missing or outside its safety boundary.`);
+            }
+          };
+          requireBounded("VERCEL_TOKEN", 8192);
+          requireBounded("VERCEL_ORG_ID", 1024, /^[A-Za-z0-9][A-Za-z0-9_-]*$/u);
+          requireBounded("VERCEL_PROJECT_ID", 1024, /^[A-Za-z0-9][A-Za-z0-9_-]*$/u);
+          if (process.env.VERCEL_TEAM_SLUG) {
+            requireBounded("VERCEL_TEAM_SLUG", 256, /^[A-Za-z0-9][A-Za-z0-9_-]*$/u);
+          }
+          const resolveDomain = (raw, name) => {
+            const domain = raw.trim().replace(/\.$/u, "").toLowerCase();
+            if (
+              Buffer.byteLength(raw, "utf8") > 253 ||
+              containsControl(raw) ||
+              domain.length > 253 ||
+              !domain.includes(".") ||
+              domain.split(".").some(
+                (label) =>
+                  !label ||
+                  label.length > 63 ||
+                  !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label),
+              )
+            ) {
+              throw new Error(`${name} must be a bounded public DNS name.`);
+            }
+            return domain;
+          };
+
+          const rawRouter = process.env.ROUTER_URL_VALUE ?? "";
+          if (Buffer.byteLength(rawRouter, "utf8") > 4096 || containsControl(rawRouter)) {
+            throw new Error("T3CODE_WEB_ROUTER_URL exceeds its safety limit or has controls.");
+          }
+          let router;
+          try {
+            router = new URL(rawRouter.trim());
+          } catch {
+            throw new Error("T3CODE_WEB_ROUTER_URL must be a credential-free HTTPS origin.");
+          }
+          if (
+            router.protocol !== "https:" ||
+            router.username ||
+            router.password ||
+            router.port ||
+            router.pathname !== "/" ||
+            router.search ||
+            router.hash
+          ) {
+            throw new Error("T3CODE_WEB_ROUTER_URL must be a credential-free HTTPS origin.");
+          }
+          const routerDomain = resolveDomain(router.hostname, "T3CODE_WEB_ROUTER_URL");
+          const latestDomain = resolveDomain(
+            process.env.LATEST_DOMAIN_VALUE ?? "",
+            "T3CODE_WEB_LATEST_DOMAIN",
+          );
+          const nightlyDomain = resolveDomain(
+            process.env.NIGHTLY_DOMAIN_VALUE ?? "",
+            "T3CODE_WEB_NIGHTLY_DOMAIN",
+          );
+          process.stdout.write(
+            `${router.origin.toLowerCase()}\n${routerDomain}\n${latestDomain}\n${nightlyDomain}\n`,
+          );
+          NODE
+          )
+          if (( ${#web_hosts[@]} != 4 )); then
+            echo "Hosted web configuration did not resolve to four bounded values." >&2
+            exit 1
+          fi
+          router_url="${web_hosts[0]}"
+          router_domain="${web_hosts[1]}"
+          latest_domain="${web_hosts[2]}"
+          nightly_domain="${web_hosts[3]}"
 
           if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" ]]; then
             channel_domain="$latest_domain"
@@ -1007,7 +1238,15 @@ jobs:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           APP_SLUG: ${{ steps.app_token.outputs.app-slug }}
         run: |
+          if (( ${#APP_SLUG} > 100 )) || [[ ! "$APP_SLUG" =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
+            echo "Release app slug is invalid." >&2
+            exit 1
+          fi
           user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          if [[ ! "$user_id" =~ ^[0-9]{1,20}$ ]]; then
+            echo "Release app bot id is invalid." >&2
+            exit 1
+          fi
           echo "name=${APP_SLUG}[bot]" >> "$GITHUB_OUTPUT"
           echo "email=${user_id}+${APP_SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
 

@@ -1,4 +1,9 @@
-import type { HostPowerSnapshot } from "@t3tools/contracts";
+import type { HostPowerSnapshot, ResourceMonitorSnapshotEvent } from "@t3tools/contracts";
+import {
+  RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
+  RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS,
+  RESOURCE_MONITOR_PROTOCOL_VERSION,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -11,6 +16,7 @@ import * as Semaphore from "effect/Semaphore";
 import {
   NativeTelemetryRequestTimedOut,
   NativeTelemetryStreamClosed,
+  appendBoundedNativeTelemetryHistory,
   canCommandNativeTelemetrySidecar,
   canRequestNativeTelemetryRetry,
   commitCollectionControlUpdate,
@@ -19,6 +25,18 @@ import {
   resolveNativeSampleIntervalMs,
   synchronizeCollectionControlOnStart,
 } from "./NativeTelemetryClient.ts";
+
+const emptyNativeSnapshot: ResourceMonitorSnapshotEvent = {
+  version: RESOURCE_MONITOR_PROTOCOL_VERSION,
+  type: "snapshot",
+  sequence: 1,
+  sampledAtUnixMs: 1,
+  collectionDurationMicros: 1,
+  scannedProcessCount: 0,
+  retainedProcessCount: 0,
+  inaccessibleProcessCount: 0,
+  processes: [],
+};
 
 const basePower: HostPowerSnapshot = {
   source: "electron-main",
@@ -102,6 +120,43 @@ describe("NativeTelemetryRequestTimedOut", () => {
     );
     expect("cause" in historyTimeout).toBe(false);
     expect("cause" in sampleTimeout).toBe(false);
+  });
+});
+
+describe("appendBoundedNativeTelemetryHistory", () => {
+  it("rejects history streams that exceed the snapshot cap", () => {
+    const result = appendBoundedNativeTelemetryHistory(
+      {
+        snapshots: Array.from(
+          { length: RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS },
+          () => emptyNativeSnapshot,
+        ),
+        retainedEntryCount: 0,
+      },
+      [emptyNativeSnapshot],
+    );
+
+    expect(result).toEqual({
+      _tag: "rejected",
+      resource: "history snapshots",
+      maxItems: RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS,
+    });
+  });
+
+  it("rejects history streams that exceed the retained-entry cap", () => {
+    const result = appendBoundedNativeTelemetryHistory(
+      {
+        snapshots: [],
+        retainedEntryCount: RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
+      },
+      [{ ...emptyNativeSnapshot, externalProcesses: [{ pid: 1 }] }],
+    );
+
+    expect(result).toEqual({
+      _tag: "rejected",
+      resource: "history entries",
+      maxItems: RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
+    });
   });
 });
 

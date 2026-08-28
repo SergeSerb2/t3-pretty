@@ -297,9 +297,12 @@ returns to the foreground. The desktop's bounded live-refresh cadence only refre
 membership: mesh reconciliation does not need to probe every environment endpoint once per minute.
 The previous list is retained during an in-flight refresh; only an authoritative successful list
 mutates the catalog.
-Clicking **Connect** on desktop first saves the requested remote target and then enables the local
-managed link if necessary, making the relationship reciprocal. An explicitly disabled local link
-is not re-enabled in the background.
+Clicking **Connect** on desktop first enables the local managed link if necessary, then saves the
+requested remote target. A local-link failure therefore cannot leave a silently one-way desktop
+connection. An explicitly disabled local link is not re-enabled in the background.
+After authoritative discovery, a locally stored link whose primary environment is absent from the
+account catalog is presented as inactive. The next explicit enable or Connect action re-links it;
+failed, offline, and in-flight discovery never invalidate local link state.
 
 Headless servers and browser-only clients do not run the desktop reconciler. A headless server can
 be discovered and added by desktops but has no client catalog to populate, which keeps that

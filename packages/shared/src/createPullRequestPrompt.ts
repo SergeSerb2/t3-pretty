@@ -141,9 +141,18 @@ export function hasCreatePullRequestSuffix(text: string): boolean {
  * alone — only the generated trailing block is agent-only.
  */
 export function stripCreatePullRequestSuffix(text: string): string {
-  let result = text;
-  for (let start = trailingSuffixStart(result); start !== -1; start = trailingSuffixStart(result)) {
-    result = result.slice(0, start).trimEnd();
+  let end = text.length;
+  let changed = false;
+  while (end > 0) {
+    const lastOpen = text.lastIndexOf(OPEN_TAG, end - 1);
+    if (lastOpen === -1 || !SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN.test(text.slice(lastOpen, end))) {
+      break;
+    }
+    changed = true;
+    end = lastOpen;
+    while (end > 0 && /\s/u.test(text[end - 1]!)) {
+      end -= 1;
+    }
   }
-  return result;
+  return changed ? text.slice(0, end) : text;
 }

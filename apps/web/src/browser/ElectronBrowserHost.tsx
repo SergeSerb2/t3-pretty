@@ -60,14 +60,19 @@ export function ElectronBrowserHost() {
   );
   const automatingThreadKeys = useAutomatingPreviewThreads();
   const lastPinnedAt = useRef(new Map<string, number>()).current;
+  const previousRuntimeTabIdsRef = useRef(new Set<string>());
 
   const { resident, pinnedKeys } = useMemo(() => {
     const visible = new Set(visibleRuntimeTabIds);
     const miniPlayers = new Set(miniPlayerThreadKeys);
     const threadKeys: string[] = [];
+    const knownThreadKeys = new Set<string>();
     const pinned = new Set<string>();
     for (const session of sessions) {
-      if (!threadKeys.includes(session.threadKey)) threadKeys.push(session.threadKey);
+      if (!knownThreadKeys.has(session.threadKey)) {
+        knownThreadKeys.add(session.threadKey);
+        threadKeys.push(session.threadKey);
+      }
       if (
         visible.has(session.runtimeTabId) ||
         session.pictureInPicture ||
@@ -91,8 +96,22 @@ export function ElectronBrowserHost() {
 
   useEffect(() => {
     const now = Date.now();
+    const activeThreadKeys = new Set(sessions.map((session) => session.threadKey));
+    for (const threadKey of lastPinnedAt.keys()) {
+      if (!activeThreadKeys.has(threadKey)) lastPinnedAt.delete(threadKey);
+    }
     for (const threadKey of pinnedKeys) lastPinnedAt.set(threadKey, now);
-  }, [lastPinnedAt, pinnedKeys]);
+  }, [lastPinnedAt, pinnedKeys, sessions]);
+
+  useEffect(() => {
+    const currentRuntimeTabIds = new Set(sessions.map((session) => session.runtimeTabId));
+    for (const runtimeTabId of previousRuntimeTabIdsRef.current) {
+      if (currentRuntimeTabIds.has(runtimeTabId)) continue;
+      useBrowserSurfaceStore.getState().remove(runtimeTabId);
+      useBrowserPointerStore.getState().clear(runtimeTabId);
+    }
+    previousRuntimeTabIdsRef.current = currentRuntimeTabIds;
+  }, [sessions]);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;

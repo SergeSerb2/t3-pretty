@@ -2,7 +2,6 @@ import {
   IconAdjustmentsHorizontal,
   IconAlertCircle,
   IconAlertTriangle,
-  IconApps,
   IconArchive,
   IconArrowBackUp,
   IconArrowDownCircle,
@@ -19,6 +18,7 @@ import {
   IconChartBar,
   IconCheck,
   IconChevronDown,
+  IconClick,
   IconCode,
   IconChevronLeft,
   IconChevronRight,
@@ -153,7 +153,6 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   "sidebar.right": IconLayoutSidebarRight,
   "slider.horizontal.3": IconAdjustmentsHorizontal,
   "square.and.pencil": IconEdit,
-  "square.grid.2x2": IconApps,
   "square.split.2x1": IconLayoutColumns,
   "sun.max": IconSun,
   "stop.fill": IconPlayerStopFilled,
@@ -194,6 +193,7 @@ const ANDROID_ICON_BY_MATERIAL_NAME: Record<string, Icon> = {
   public: IconWorld,
   remove: IconMinus,
   terminal: IconTerminal2,
+  touch_app: IconClick,
   visibility: IconEye,
 };
 
