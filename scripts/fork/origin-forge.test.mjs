@@ -755,12 +755,13 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(pipeline, "depends_on: origin-workflows");
     assert.notInclude(pipeline, "\n    secrets:");
     const nsis = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
-    assert.include(nsis, "C:\\buildkite-agent\\vite-plus");
-    assert.include(nsis, "$env:VP_HOME");
-    assert.include(nsis, "Test-OfficialVp");
+    assert.include(nsis, "corepack pnpm");
+    assert.include(nsis, "Invoke-Pnpm install");
     assert.include(nsis, "${LASTEXITCODE}");
-    assert.include(nsis, "rustup default stable");
+    assert.include(nsis, "$env:RUSTUP_TOOLCHAIN");
     assert.include(nsis, "upload-assets");
+    assert.notInclude(nsis, "$env:VP_HOME");
+    assert.notInclude(nsis, "Test-OfficialVp");
     assert.notInclude(nsis, "VITE_PLUS_BIN_DIR");
     assert.notInclude(nsis, "AppData\\Roaming\\npm");
   });

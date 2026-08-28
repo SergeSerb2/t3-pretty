@@ -32,7 +32,9 @@ it("uses a guarded, one-way public mirror", () => {
     /--force-with-lease="refs\/heads\/\$archive_branch:\$github_tip"/,
   );
   assert.match(script, /refs\/heads\/main/);
-  assert.match(script, /push --no-thin github "refs\/tags/);
+  assert.match(script, /tag_refs\+=\("refs\/tags/);
+  assert.match(script, /push --no-thin github "\$\{tag_refs\[@\]\}"/);
+  assert.equal((script.match(/push --no-thin github "\$\{tag_refs\[@\]\}"/gu) || []).length, 1);
   assert.match(script, /release_tag_pattern/);
   assert.match(script, /GITHUB_MIRROR_REPO.*SergeSerb2\/t3-pretty/);
   assert.match(script, /git remote set-url github/);
