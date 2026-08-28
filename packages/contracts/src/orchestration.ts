@@ -10,6 +10,7 @@ import {
   CheckpointRef,
   ClientSurface,
   CommandId,
+  EnvironmentId,
   EventId,
   IsoDateTime,
   MessageId,
@@ -1526,6 +1527,18 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   title: Schema.optional(OrchestrationTitle),
 });
 
+const ProjectTransferImportCommand = Schema.Struct({
+  type: Schema.Literal("project.transfer.import"),
+  commandId: CommandId,
+  project: OrchestrationProject,
+  thread: OrchestrationThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceThreadId: ThreadId,
+  includesGitMetadata: Schema.Boolean,
+  skippedAttachmentCount: NonNegativeInt,
+  importedAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -1535,6 +1548,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  ProjectTransferImportCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1549,6 +1563,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.transferred",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1591,6 +1606,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   workspaceRoot: OrchestrationPath,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
+  defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Optional so persisted events from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   scripts: Schema.Array(ProjectScript),
@@ -1631,6 +1647,14 @@ export const ThreadCreatedPayload = Schema.Struct({
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadTransferredPayload = Schema.Struct({
+  thread: OrchestrationThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceThreadId: ThreadId,
+  includesGitMetadata: Schema.Boolean,
+  skippedAttachmentCount: NonNegativeInt,
 });
 
 export const ThreadDeletedPayload = Schema.Struct({
@@ -1899,6 +1923,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.transferred"),
+    payload: ThreadTransferredPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

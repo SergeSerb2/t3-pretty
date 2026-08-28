@@ -172,6 +172,7 @@ export const make = Effect.gen(function* () {
       storageInventory: true,
       storageInventoryStream: true,
       threadPullRequestLinking: true,
+      projectTransfer: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },

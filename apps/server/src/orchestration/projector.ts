@@ -17,6 +17,7 @@ import {
   ThreadActivityAppendedPayload,
   ThreadArchivedPayload,
   ThreadCreatedPayload,
+  ThreadTransferredPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
   ThreadMetaUpdatedPayload,
@@ -218,7 +219,7 @@ export function projectEvent(
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
-            defaultThreadEnvMode: null,
+            defaultThreadEnvMode: payload.defaultThreadEnvMode ?? null,
             faviconPath: payload.faviconPath ?? null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
@@ -332,6 +333,20 @@ export function projectEvent(
             : [...nextBase.threads, thread],
         };
       });
+
+    case "thread.transferred":
+      return decodeForEvent(ThreadTransferredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const thread = { ...payload.thread, branchEventId: event.eventId };
+          const existing = nextBase.threads.find((entry) => entry.id === thread.id);
+          return {
+            ...nextBase,
+            threads: existing
+              ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
+              : [...nextBase.threads, thread],
+          };
+        }),
+      );
 
     case "thread.deleted":
       return decodeForEvent(ThreadDeletedPayload, event.payload, event.type, "payload").pipe(

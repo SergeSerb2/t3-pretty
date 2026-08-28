@@ -91,6 +91,25 @@ waiting — with threads that need you first. Tap it to open the thread that nee
 first working thread. If the account row says **Unavailable**, that build does not include T3 Connect
 configuration.
 
+### Move a Thread to Another Environment
+
+When two updated environments are connected to the same T3 Connect or Surge Connect account, open a
+thread's menu and choose **Move to connection…**. On mobile, open the thread settings sheet first.
+Choose the destination, then select **Move and open**.
+
+T3 Code copies the project workspace and conversation directly between the two environments into
+the destination's T3-managed projects folder, then opens a new thread there. The original project
+and thread stay unchanged. Regular Git metadata is included for a normal repository.
+
+Dependency folders, generated build caches, message attachments, and worktree-only Git metadata are
+skipped. Reinstall dependencies on the destination before running the project. Compressed transfers
+larger than 96 MB are rejected.
+
+The source thread must be idle, both environments must be online, and both servers must advertise
+transfer support. The first new turn on the destination receives a bounded copy of the transferred
+conversation so the local provider can continue with context even though provider sessions do not
+move between machines.
+
 ## Enabling Network Access
 
 There are three ways to reach your server from another device: expose the desktop app's backend,

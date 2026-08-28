@@ -85,6 +85,13 @@ function commandToAggregateRef(command: OrchestrationCommand): {
         aggregateKind: "project",
         aggregateId: command.projectId,
       };
+    case "project.transfer.import":
+      // The thread event is committed last, so command receipts use the
+      // transferred thread as the idempotency aggregate too.
+      return {
+        aggregateKind: "thread",
+        aggregateId: command.thread.id,
+      };
     default:
       return {
         aggregateKind: "thread",

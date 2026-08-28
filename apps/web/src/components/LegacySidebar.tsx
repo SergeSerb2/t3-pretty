@@ -81,11 +81,13 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform } from "../lib/utils";
 import {
   readThreadShell,
+  readEnvironmentSupportsProjectTransfer,
   useProject,
   useProjects,
   useThreadShells,
   useThreadShellsForProjectRefs,
 } from "../state/entities";
+import { openProjectTransferDialog } from "../projectTransferStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
@@ -2159,6 +2161,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
+          ...(readEnvironmentSupportsProjectTransfer(thread.environmentId)
+            ? [
+                {
+                  id: "transfer",
+                  label: "Move to connection…",
+                  disabled:
+                    thread.latestTurn?.state === "running" ||
+                    thread.session?.status === "starting" ||
+                    thread.session?.status === "running",
+                },
+              ]
+            : []),
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
         position,
@@ -2213,6 +2227,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       }
       if (clicked === "copy-thread-id") {
         copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+        return;
+      }
+      if (clicked === "transfer") {
+        openProjectTransferDialog(threadRef);
         return;
       }
       if (clicked !== "delete") return;

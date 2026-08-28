@@ -27,6 +27,7 @@ export * from "./orchestration.ts";
 export * from "./t3ProjectFile.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
+export * from "./projectTransfer.ts";
 export * from "./filesystem.ts";
 export * from "./agentInstructions.ts";
 export * from "./skills.ts";
