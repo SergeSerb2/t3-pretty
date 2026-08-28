@@ -370,6 +370,7 @@ function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkL
   if (activity.kind === "tool.progress") return null;
   if (activity.kind === "context-window.updated") return null;
   if (activity.summary === "Checkpoint captured") return null;
+  if (isNoContentRuntimeWarning(activity)) return null;
   if (isPlanBoundaryToolActivity(activity)) return null;
   if (isAgentInternalActivity(activity)) return null;
   return toDerivedWorkLogEntry(activity);
@@ -387,6 +388,17 @@ function deriveWorkLogEntries(
     }
   }
   return collapseDerivedWorkLogEntries(entries);
+}
+
+/** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
+ *  commands_changed, ...) as runtime warnings. The suffix comes from
+ *  describeUnknownSdkMessage in the Claude adapter; a row with no displayable
+ *  text carries nothing a user can act on, so it does not render. */
+function isNoContentRuntimeWarning(activity: OrchestrationThreadActivity): boolean {
+  return (
+    activity.kind === "runtime.warning" &&
+    activity.summary.endsWith("(no displayable text content)")
+  );
 }
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {
