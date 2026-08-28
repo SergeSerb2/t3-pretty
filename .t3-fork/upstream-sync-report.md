@@ -769,3 +769,41 @@
 - `apps/mobile/app.config.ts` — Use the parent's shared ./assets/android-icon-foreground.png asset for Preview and Release.. Reason: That parent asset selection would replace the fork's authoritative Pretty foreground presentation. The parent's adaptive-icon masking intent is preserved with the fork's existing Android mark instead.
 - `apps/mobile/app.config.ts` — Restore the parent Preview background #111533 and Release background #000000.. Reason: Those dark parent colors conflict with T3 Pretty's intentional pastel sage adaptive-icon plate, #DFEFE3.
 - `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Animating the update progress spinner when the user has requested reduced motion.. Reason: T3 Pretty’s reduced-motion presentation is authoritative. The spinner still animates normally and only becomes static under the reduced-motion media preference.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260828.1209`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260828.1208`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Preserved T3 Pretty's native mobile pull-request manager by retaining useOpenNativePullRequest; tapping a completed action with a PR URL continues to open the native PR experience rather than leaving the app for an external URL.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's centralized deriveWorkLogEntry filtering architecture, which keeps work-log derivation consistent for incremental and full-feed processing.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's mobile work-log behavior that excludes generated turn headlines, transient tool/task activity, checkpoints, plan-boundary tools, and agent-internal activity while retaining terminal Codex child-task updates.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The compact T3 Pretty work-group toggle typography, spacing, hover treatment, custom easing, and reduced-motion fallback remain intact.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Collapsed groups containing failures continue to show Pretty's visible destructive X indicator with an accessible failure description.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's neutral in-progress tool-status handling remains imported for the existing empty/neutral marker UX.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Plain tool rows retain Pretty's compact size-4 icon wrapper, muted treatment for ordinary tool failures, and destructive runtime-warning presentation.
+- `apps/web/src/session-logic.test.ts` — Preserved T3 Pretty's regression coverage ensuring generated turn headlines remain excluded from the work log while ordinary completed tool entries remain visible.
+- `apps/web/src/session-logic.ts` — Preserved T3 Pretty's generated live-status headline lookup for the active turn, including stable last-match behavior and its exported API.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Integrated the parent mobileTheme themeColorWithAlpha utility used to derive adaptive glass tint and border colors in OverlayContent.
+- `apps/mobile/src/lib/threadActivity.ts` — Suppress runtime.warning activities whose summaries end with “(no displayable text content)”, using the parent's isNoContentRuntimeWarning helper within the fork's centralized derivation function.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Imported `workEntrySignalsSevereFailure`, allowing the surrounding parent severe-failure classification to distinguish severe failures from ordinary tool failures.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent's contextual `aria-label` announcing when a collapsed work group includes a failure.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Applied the parent's `row.hasFailure && !row.expanded` criterion through `showHiddenFailure`, so failure messaging and the Pretty indicator appear only while affected entries are hidden.
+- `apps/web/src/session-logic.test.ts` — Integrated the parent regression test that drops runtime warnings lacking displayable content while retaining warnings with a meaningful preview.
+- `apps/web/src/session-logic.ts` — Integrated the parent helper that recognizes wire-only SDK runtime warnings with no displayable content, allowing deriveWorkLogEntries to suppress those non-actionable rows.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Parent import and implied use of tryOpenExternalUrl for PR links.. Reason: T3 Pretty already routes PR URLs through its fork-specific native pull-request manager. Retaining the external opener would be unused in the resolved implementation and switching to it would regress authoritative native mobile PR behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's roomier `min-h-6`, `text-sm`, reduced-gap work-group toggle styling and generic 200ms disclosure animation.. Reason: These directly replace T3 Pretty's authoritative compact row design, hover behavior, custom animation curve, and explicit reduced-motion handling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's always-chevron work-group presentation, which removes the visible collapsed-failure X indicator.. Reason: T3 Pretty intentionally keeps hidden failures visually discoverable instead of exposing them only through an accessible label.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's size-6 plain-row icon wrapper and `text-warning` color for runtime-warning icons.. Reason: T3 Pretty's compact icon geometry and destructive X treatment for runtime warnings are fork-specific visual behavior; the compatible parent severe-failure classifier is retained separately.
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

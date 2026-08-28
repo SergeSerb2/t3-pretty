@@ -39,6 +39,7 @@ import {
   fileChangeKindHeading,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
+  workEntrySignalsSevereFailure,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -1582,7 +1583,7 @@ function LiveActivityContent({
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            failed ? "text-destructive" : highlighted ? "text-foreground" : "text-icon-muted",
+            highlighted ? "text-foreground" : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
@@ -1662,16 +1663,9 @@ function WorkGroupToggleTimelineRow({
         aria-expanded={row.expanded}
         onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
       >
-        <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center",
-            row.hasFailure ? "text-destructive" : "text-icon-muted",
-          )}
-          role={row.hasFailure ? "img" : undefined}
-          aria-label={row.hasFailure ? "Tool call failed" : undefined}
-        >
+        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
           <WorkEntryIconSvg
-            name={row.hasFailure ? "x" : toolGroupSummaryIconName(row.summaryKind)}
+            name={toolGroupSummaryIconName(row.summaryKind)}
             className="size-4 shrink-0 stroke-[1.8] opacity-70"
           />
         </span>
@@ -1687,11 +1681,15 @@ function WorkGroupToggleTimelineRow({
       ? "log entry"
       : "log entries";
   const showHiddenFailure = row.hasFailure && !row.expanded;
-
   return (
     <button
       type="button"
       className="group/toggle flex h-6 w-full cursor-pointer items-center gap-2 rounded-md px-1 text-left text-[12px] leading-5 text-secondary-label transition-colors duration-150 ease-out hover:bg-accent/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      aria-label={
+        showHiddenFailure
+          ? `+${row.hiddenCount} previous ${labelNoun}, includes a failure`
+          : undefined
+      }
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
@@ -2808,7 +2806,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
-    (workEntry.sourceActivityKind === "runtime.error" || !workLogEntryIsToolLike(workEntry));
+    (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
+  // Ordinary tool failures stay muted; runtime warnings and severe failures
+  // retain the fork's destructive treatment.
   const iconWrapperClass = cn(
     "flex size-4 shrink-0 items-center justify-center",
     showWarningIndicator || showDestructiveRowStyle
