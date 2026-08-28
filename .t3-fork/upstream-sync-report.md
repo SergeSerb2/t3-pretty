@@ -740,3 +740,32 @@
 - `packages/shared/src/themePreview.test.ts` — Parent deletion of packages/shared/src/themePreview.test.ts as a low-signal test file.. Reason: The surviving T3 Pretty version has since gained a material malformed-OKLCH fallback regression test from the fork's cross-surface reliability hardening, and the parent provides no replacement test or relocated coverage. Deleting the file would silently remove fork-specific compatibility protection.
 - `packages/shared/src/usageMerge.ts` — Upstream's loop over every environment without applying the fork's environment-count bound.. Reason: This portion conflicts with T3 Pretty's cross-surface reliability safeguard. Only environments within USAGE_MERGE_MAX_ENVIRONMENTS are processed, while the remainder are explicitly counted as omitted.
 - `.github/workflows/desktop-macos-preview.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260827.1207`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260827.1206`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Preserved the T3 Pretty public Preview and Release adaptive-icon background color, #DFEFE3.
+- `apps/mobile/app.config.ts` — Preserved the fork-branded Android icon mark for public builds, including the existing Release presentation.
+- `apps/mobile/app.config.ts` — Kept Android public-build icon presentation within the T3 Pretty sage branding rather than restoring parent dark/candy artwork.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Preserved T3 Pretty’s reduced-motion behavior by disabling the newly introduced spinner animation when reduced motion is requested; normal update-progress animation remains intact.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Avoided reintroducing the old continuously bouncing advisory icon, retaining the fork’s hardened approach to nonessential animation.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Integrated the parent's fix for rounded-square universal exports being unsuitable as Android adaptive foregrounds: Preview now uses the silhouette-free Android mark rather than nightlyLinuxIconPng.
+- `apps/mobile/app.config.ts` — Kept adaptive foregrounds represented by a dedicated transparent mark for both Preview and Release, adapting the parent's implementation to the fork's branded asset.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s versionAdvisory.detail text in the update popover.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s optional one-click update button, including onRunUpdate handling, disabled state during updates, loading/download icons, and Updating/Update now labels.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/app.config.ts` — Use the parent's shared ./assets/android-icon-foreground.png asset for Preview and Release.. Reason: That parent asset selection would replace the fork's authoritative Pretty foreground presentation. The parent's adaptive-icon masking intent is preserved with the fork's existing Android mark instead.
+- `apps/mobile/app.config.ts` — Restore the parent Preview background #111533 and Release background #000000.. Reason: Those dark parent colors conflict with T3 Pretty's intentional pastel sage adaptive-icon plate, #DFEFE3.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Animating the update progress spinner when the user has requested reduced motion.. Reason: T3 Pretty’s reduced-motion presentation is authoritative. The spinner still animates normally and only becomes static under the reduced-motion media preference.
