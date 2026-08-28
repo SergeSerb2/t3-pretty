@@ -4,6 +4,7 @@ import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 import {
   AuthSessionId,
   ClientSurface,
+  ClientWebDeployment,
   NonNegativeInt,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -232,6 +233,8 @@ export const AuthClientPresentationMetadata = Schema.Struct({
   osMajorVersion: Schema.optionalKey(Schema.Int),
   deviceModel: Schema.optionalKey(TrimmedNonEmptyString),
   surface: Schema.optionalKey(ClientSurface),
+  webDeployment: Schema.optionalKey(ClientWebDeployment),
+  browser: Schema.optionalKey(TrimmedNonEmptyString),
   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetadata.Type;
