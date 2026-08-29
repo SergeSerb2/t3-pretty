@@ -60,7 +60,7 @@ $env:Path = "$rustWrapperBin;$env:Path"
 
 function Test-RustTool($name) {
   try {
-    & $bootstrapRustup run $rustToolchain $name --version
+    & $name --version
     return $LASTEXITCODE -eq 0
   } catch {
     return $false

@@ -427,7 +427,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.match(windows, /function Test-RustTool[\s\S]*?catch \{\s*return \$false/u);
     assert.include(windows, 'Test-RustTool "cargo"');
     assert.include(windows, 'Test-RustTool "rustc"');
-    assert.include(windows, "& $bootstrapRustup run $rustToolchain $name --version");
+    assert.match(windows, /function Test-RustTool[\s\S]*?& \$name --version/u);
     assert.include(windows, "& $bootstrapRustup toolchain uninstall");
     assert.match(windows, /try \{\s*& \$bootstrapRustup toolchain uninstall[\s\S]*?catch \{/u);
     assert.include(windows, "& $bootstrapRustup toolchain install");
