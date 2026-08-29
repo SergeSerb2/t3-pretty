@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.36-nightly.20260828.1210001235",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
     version: "0.0.36-nightly.20260828.1210001229",
     date: "2026-08-29",
     items: [
