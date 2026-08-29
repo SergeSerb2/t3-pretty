@@ -225,6 +225,71 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   Crypto.Crypto
 > {
   switch (command.type) {
+    case "project.transfer.import": {
+      if (command.thread.projectId !== command.project.id) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Transferred thread must belong to the transferred project.",
+        });
+      }
+      yield* requireProjectAbsent({
+        readModel,
+        command,
+        projectId: command.project.id,
+      });
+      yield* requireActiveProjectWorkspaceRootAbsent({
+        readModel,
+        command,
+        workspaceRoot: command.project.workspaceRoot,
+        exceptProjectId: command.project.id,
+      });
+      yield* requireThreadAbsent({
+        readModel,
+        command,
+        threadId: command.thread.id,
+      });
+
+      return [
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "project",
+            aggregateId: command.project.id,
+            occurredAt: command.importedAt,
+            commandId: command.commandId,
+          })),
+          type: "project.created" as const,
+          payload: {
+            projectId: command.project.id,
+            title: command.project.title,
+            workspaceRoot: command.project.workspaceRoot,
+            repositoryIdentity: command.project.repositoryIdentity ?? null,
+            defaultModelSelection: command.project.defaultModelSelection,
+            defaultThreadEnvMode: command.project.defaultThreadEnvMode ?? null,
+            faviconPath: null,
+            scripts: command.project.scripts,
+            createdAt: command.project.createdAt,
+            updatedAt: command.importedAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.thread.id,
+            occurredAt: command.importedAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.transferred" as const,
+          payload: {
+            thread: command.thread,
+            sourceEnvironmentId: command.sourceEnvironmentId,
+            sourceThreadId: command.sourceThreadId,
+            includesGitMetadata: command.includesGitMetadata,
+            skippedAttachmentCount: command.skippedAttachmentCount,
+          },
+        },
+      ];
+    }
+
     case "project.create": {
       yield* requireProjectAbsent({
         readModel,

@@ -10,6 +10,7 @@ import {
   CheckpointRef,
   ClientSurface,
   CommandId,
+  EnvironmentId,
   EventId,
   IsoDateTime,
   MessageId,
@@ -297,6 +298,7 @@ export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const PROVIDER_SEND_TURN_MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const THREAD_TURN_START_TITLE_MAX_LENGTH = 8_192;
 export const THREAD_TURN_START_BRANCH_MAX_LENGTH = 4_096;
 export const THREAD_TURN_START_PATH_MAX_LENGTH = 32 * 1024;
@@ -413,6 +415,40 @@ export function inspectBoundedImageDataUrl(dataUrl: string): BoundedImageDataUrl
   return { mimeType, decodedByteLength };
 }
 
+export const ChatFileAttachment = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
+  ),
+});
+export type ChatFileAttachment = typeof ChatFileAttachment.Type;
+
+/**
+ * Catch-all for attachment types this build does not know. Attachments ride on
+ * persisted events and thread streams, so a newer server or client must be able
+ * to introduce a type without making older readers fail to decode the whole
+ * message. Decoders keep the shared base fields; consumers skip these or render
+ * them as unsupported. Mirrors how `OrchestrationThreadActivity` keeps `kind`
+ * open. The known discriminators are excluded so a malformed image or file
+ * attachment fails its own schema instead of sliding through here with its
+ * size and mime constraints unchecked.
+ */
+export const ChatUnknownAttachment = Schema.Struct({
+  type: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(50),
+    Schema.isPattern(/^(?!(?:image|file)$)/),
+  ),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt,
+});
+export type ChatUnknownAttachment = typeof ChatUnknownAttachment.Type;
+
 const UploadChatImageAttachment = Schema.Struct({
   type: Schema.Literal("image"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
@@ -430,7 +466,11 @@ const UploadChatImageAttachment = Schema.Struct({
 );
 export type UploadChatImageAttachment = typeof UploadChatImageAttachment.Type;
 
-export const ChatAttachment = Schema.Union([ChatImageAttachment]);
+export const ChatAttachment = Schema.Union([
+  ChatImageAttachment,
+  ChatFileAttachment,
+  ChatUnknownAttachment,
+]);
 export type ChatAttachment = typeof ChatAttachment.Type;
 const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);
 export type UploadChatAttachment = typeof UploadChatAttachment.Type;
@@ -1487,6 +1527,18 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   title: Schema.optional(OrchestrationTitle),
 });
 
+const ProjectTransferImportCommand = Schema.Struct({
+  type: Schema.Literal("project.transfer.import"),
+  commandId: CommandId,
+  project: OrchestrationProject,
+  thread: OrchestrationThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceThreadId: ThreadId,
+  includesGitMetadata: Schema.Boolean,
+  skippedAttachmentCount: NonNegativeInt,
+  importedAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -1496,6 +1548,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  ProjectTransferImportCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1510,6 +1563,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.transferred",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1552,6 +1606,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   workspaceRoot: OrchestrationPath,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
+  defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Optional so persisted events from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
   scripts: Schema.Array(ProjectScript),
@@ -1592,6 +1647,14 @@ export const ThreadCreatedPayload = Schema.Struct({
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadTransferredPayload = Schema.Struct({
+  thread: OrchestrationThread,
+  sourceEnvironmentId: EnvironmentId,
+  sourceThreadId: ThreadId,
+  includesGitMetadata: Schema.Boolean,
+  skippedAttachmentCount: NonNegativeInt,
 });
 
 export const ThreadDeletedPayload = Schema.Struct({
@@ -1860,6 +1923,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.transferred"),
+    payload: ThreadTransferredPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

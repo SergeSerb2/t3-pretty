@@ -3,6 +3,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  PROJECT_TRANSFER_MAX_ARCHIVE_BYTES,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
@@ -42,6 +43,11 @@ import {
   storeAttachmentUpload,
   validateAttachmentUploadToken,
 } from "./assets/AttachmentUpload.ts";
+import {
+  PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX,
+  receiveProjectTransfer,
+  validateProjectTransferUploadToken,
+} from "./project/ProjectTransfer.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -65,10 +71,45 @@ const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 
+// Types a browser may render as a document if a proxy strips the disposition
+// header. Downloads of these fall back to octet-stream.
+const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
+const isSafeDownloadMimeType = (mimeType: string): boolean =>
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
+  !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
+
+/** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
+export function downloadContentDisposition(fileName?: string): string {
+  if (fileName === undefined) {
+    return "attachment";
+  }
+  // toWellFormed: encodeURIComponent throws URIError on unpaired surrogates.
+  // eslint-disable-next-line no-control-regex -- Header filenames must strip ASCII controls.
+  const sanitized = fileName.toWellFormed().replace(/[\u0000-\u001f"\\]/g, "_");
+  const asciiFallback = sanitized.replace(/[^\u0020-\u007e]/g, "_");
+  const needsExtended = asciiFallback !== sanitized;
+  const extendedName = encodeURIComponent(sanitized).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${asciiFallback}"${
+    needsExtended ? `; filename*=UTF-8''${extendedName}` : ""
+  }`;
+}
+
+type AssetResponseHeadersOptions = {
+  readonly source?: ResolvedAssetSource;
+  readonly download?: boolean;
+  readonly fileName?: string;
+  readonly mimeType?: string;
+};
+
 export function assetResponseHeaders(
   filePath: string,
-  source?: ResolvedAssetSource,
+  sourceOrOptions?: ResolvedAssetSource | AssetResponseHeadersOptions,
 ): Record<string, string> {
+  const options = typeof sourceOrOptions === "string" ? undefined : sourceOrOptions;
+  const source = typeof sourceOrOptions === "string" ? sourceOrOptions : sourceOrOptions?.source;
   const lowerPath = filePath.toLowerCase();
   return {
     // Attachment bytes never change for a given attachment id, so they can be
@@ -82,10 +123,19 @@ export function assetResponseHeaders(
     ...(source === "attachment" || source === "workspace-file" || source === "generated-image"
       ? { "Access-Control-Allow-Origin": "*" }
       : {}),
-    ...(lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
-      ? { "Content-Type": "text/html; charset=utf-8" }
-      : {}),
-    ...(lowerPath.endsWith(".svg")
+    ...(options?.download
+      ? {
+          "Content-Disposition": downloadContentDisposition(options.fileName),
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Content-Type":
+            options.mimeType !== undefined && isSafeDownloadMimeType(options.mimeType)
+              ? options.mimeType
+              : "application/octet-stream",
+        }
+      : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+        ? { "Content-Type": "text/html; charset=utf-8" }
+        : {}),
+    ...(!options?.download && lowerPath.endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
   };
@@ -400,7 +450,16 @@ export const assetRouteLayer = HttpRouter.add(
           : asset.path;
       return yield* HttpServerResponse.file(requestedPath, {
         status: 200,
-        headers: assetResponseHeaders(requestedPath, asset.source),
+        headers: assetResponseHeaders(requestedPath, {
+          source: asset.source,
+          ...(asset.download
+            ? {
+                download: true,
+                ...(asset.fileName !== undefined ? { fileName: asset.fileName } : {}),
+                ...(asset.mimeType !== undefined ? { mimeType: asset.mimeType } : {}),
+              }
+            : {}),
+        }),
       }).pipe(
         Effect.orElseSucceed(() =>
           HttpServerResponse.text("Internal Server Error", { status: 500 }),
@@ -440,18 +499,45 @@ export const attachmentUploadRouteLayer = HttpRouter.add(
       });
     }
 
-    const body = yield* request.arrayBuffer.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, FileSystem.Size(claims.sizeBytes)),
-      Effect.orElseSucceed(() => null),
-    );
-    if (body === null) {
-      return HttpServerResponse.text("Failed to read the upload body.", { status: 400 });
-    }
-
-    const stored = yield* storeAttachmentUpload(claims, new Uint8Array(body));
+    // Keep the request stream in the route scope until the response is sent.
+    const bodyPull = yield* Stream.toPull(request.stream);
+    const stored = yield* storeAttachmentUpload(claims, Stream.fromPull(Effect.succeed(bodyPull)));
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
+  }),
+);
+
+export const projectTransferUploadRouteLayer = HttpRouter.add(
+  "POST",
+  `${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const token = url.value.pathname.slice(`${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/`.length);
+    const claims = token ? yield* validateProjectTransferUploadToken(token) : null;
+    if (!claims) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    const contentLength = Number(request.headers["content-length"]);
+    if (
+      Number.isFinite(contentLength) &&
+      (contentLength <= 0 || contentLength > PROJECT_TRANSFER_MAX_ARCHIVE_BYTES)
+    ) {
+      return HttpServerResponse.text("Transfer archive is empty or too large.", { status: 413 });
+    }
+
+    const bodyPull = yield* Stream.toPull(request.stream);
+    const received = yield* receiveProjectTransfer(
+      claims,
+      Stream.fromPull(Effect.succeed(bodyPull)),
+    );
+    return received.ok
+      ? HttpServerResponse.jsonUnsafe(received.result)
+      : HttpServerResponse.text(received.detail, { status: received.status });
   }),
 );
 

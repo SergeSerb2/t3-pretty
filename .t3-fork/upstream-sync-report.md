@@ -740,3 +740,157 @@
 - `packages/shared/src/themePreview.test.ts` — Parent deletion of packages/shared/src/themePreview.test.ts as a low-signal test file.. Reason: The surviving T3 Pretty version has since gained a material malformed-OKLCH fallback regression test from the fork's cross-surface reliability hardening, and the parent provides no replacement test or relocated coverage. Deleting the file would silently remove fork-specific compatibility protection.
 - `packages/shared/src/usageMerge.ts` — Upstream's loop over every environment without applying the fork's environment-count bound.. Reason: This portion conflicts with T3 Pretty's cross-surface reliability safeguard. Only environments within USAGE_MERGE_MAX_ENVIRONMENTS are processed, while the remainder are explicitly counted as omitted.
 - `.github/workflows/desktop-macos-preview.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260827.1207`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260827.1206`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Preserved the T3 Pretty public Preview and Release adaptive-icon background color, #DFEFE3.
+- `apps/mobile/app.config.ts` — Preserved the fork-branded Android icon mark for public builds, including the existing Release presentation.
+- `apps/mobile/app.config.ts` — Kept Android public-build icon presentation within the T3 Pretty sage branding rather than restoring parent dark/candy artwork.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Preserved T3 Pretty’s reduced-motion behavior by disabling the newly introduced spinner animation when reduced motion is requested; normal update-progress animation remains intact.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Avoided reintroducing the old continuously bouncing advisory icon, retaining the fork’s hardened approach to nonessential animation.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Integrated the parent's fix for rounded-square universal exports being unsuitable as Android adaptive foregrounds: Preview now uses the silhouette-free Android mark rather than nightlyLinuxIconPng.
+- `apps/mobile/app.config.ts` — Kept adaptive foregrounds represented by a dedicated transparent mark for both Preview and Release, adapting the parent's implementation to the fork's branded asset.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s versionAdvisory.detail text in the update popover.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s optional one-click update button, including onRunUpdate handling, disabled state during updates, loading/download icons, and Updating/Update now labels.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/app.config.ts` — Use the parent's shared ./assets/android-icon-foreground.png asset for Preview and Release.. Reason: That parent asset selection would replace the fork's authoritative Pretty foreground presentation. The parent's adaptive-icon masking intent is preserved with the fork's existing Android mark instead.
+- `apps/mobile/app.config.ts` — Restore the parent Preview background #111533 and Release background #000000.. Reason: Those dark parent colors conflict with T3 Pretty's intentional pastel sage adaptive-icon plate, #DFEFE3.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Animating the update progress spinner when the user has requested reduced motion.. Reason: T3 Pretty’s reduced-motion presentation is authoritative. The spinner still animates normally and only becomes static under the reduced-motion media preference.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260828.1209`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260828.1208`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Preserved T3 Pretty's native mobile pull-request manager by retaining useOpenNativePullRequest; tapping a completed action with a PR URL continues to open the native PR experience rather than leaving the app for an external URL.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's centralized deriveWorkLogEntry filtering architecture, which keeps work-log derivation consistent for incremental and full-feed processing.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's mobile work-log behavior that excludes generated turn headlines, transient tool/task activity, checkpoints, plan-boundary tools, and agent-internal activity while retaining terminal Codex child-task updates.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The compact T3 Pretty work-group toggle typography, spacing, hover treatment, custom easing, and reduced-motion fallback remain intact.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Collapsed groups containing failures continue to show Pretty's visible destructive X indicator with an accessible failure description.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's neutral in-progress tool-status handling remains imported for the existing empty/neutral marker UX.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Plain tool rows retain Pretty's compact size-4 icon wrapper, muted treatment for ordinary tool failures, and destructive runtime-warning presentation.
+- `apps/web/src/session-logic.test.ts` — Preserved T3 Pretty's regression coverage ensuring generated turn headlines remain excluded from the work log while ordinary completed tool entries remain visible.
+- `apps/web/src/session-logic.ts` — Preserved T3 Pretty's generated live-status headline lookup for the active turn, including stable last-match behavior and its exported API.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Integrated the parent mobileTheme themeColorWithAlpha utility used to derive adaptive glass tint and border colors in OverlayContent.
+- `apps/mobile/src/lib/threadActivity.ts` — Suppress runtime.warning activities whose summaries end with “(no displayable text content)”, using the parent's isNoContentRuntimeWarning helper within the fork's centralized derivation function.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Imported `workEntrySignalsSevereFailure`, allowing the surrounding parent severe-failure classification to distinguish severe failures from ordinary tool failures.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent's contextual `aria-label` announcing when a collapsed work group includes a failure.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Applied the parent's `row.hasFailure && !row.expanded` criterion through `showHiddenFailure`, so failure messaging and the Pretty indicator appear only while affected entries are hidden.
+- `apps/web/src/session-logic.test.ts` — Integrated the parent regression test that drops runtime warnings lacking displayable content while retaining warnings with a meaningful preview.
+- `apps/web/src/session-logic.ts` — Integrated the parent helper that recognizes wire-only SDK runtime warnings with no displayable content, allowing deriveWorkLogEntries to suppress those non-actionable rows.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Parent import and implied use of tryOpenExternalUrl for PR links.. Reason: T3 Pretty already routes PR URLs through its fork-specific native pull-request manager. Retaining the external opener would be unused in the resolved implementation and switching to it would regress authoritative native mobile PR behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's roomier `min-h-6`, `text-sm`, reduced-gap work-group toggle styling and generic 200ms disclosure animation.. Reason: These directly replace T3 Pretty's authoritative compact row design, hover behavior, custom animation curve, and explicit reduced-motion handling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's always-chevron work-group presentation, which removes the visible collapsed-failure X indicator.. Reason: T3 Pretty intentionally keeps hidden failures visually discoverable instead of exposing them only through an accessible label.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's size-6 plain-row icon wrapper and `text-warning` color for runtime-warning icons.. Reason: T3 Pretty's compact icon geometry and destructive X treatment for runtime warnings are fork-specific visual behavior; the compatible parent severe-failure classifier is retained separately.
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260828.1210`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260828.1209`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/provider/opencodeRuntime.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/desktop/src/preload.ts` — Preserved T3 Pretty's preload listener and cached window-active state so renderer subscribers can recover state emitted before React effects attach.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — T3 Pretty's user-image source resolution, including local preview URI backfill keyed by message ID.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — T3 Pretty's user-only review-comment and wide-markdown bubble sizing logic, including avoiding unnecessary full-text scans for assistant rows.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Existing mobile image rendering and image-tap behavior remain fed by the normalized user image sources.
+- `apps/mobile/src/lib/authClientMetadata.ts` — The authentication client remains branded as "T3 Pretty Mobile" rather than being renamed to "T3 Code Mobile".
+- `apps/server/src/assets/AssetAccess.ts` — Preserved the mandatory resolved-asset source classification used to drive response caching and CORS behavior.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved attachment IDs on resolved attachment assets for T3 Pretty's attachment-aware behavior.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved Grok generated-image asset resolution, including basename validation, canonical allowed-root enforcement, and the generated-image source classification.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved source classifications for workspace files and project favicons through the composed ResolvedAsset type.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — The environment descriptor continues to advertise voice dictation only when host dictation is available.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — The environment descriptor continues to advertise read-aloud support only when host voice support is available.
+- `apps/server/src/http.test.ts` — Bounded JSON request-body tests continue to protect exact-limit acceptance and immediate rejection once streamed bytes exceed the configured limit.
+- `apps/server/src/http.test.ts` — Fork-specific asset-source policies remain covered: immutable attachment caching, cross-origin access for attachments, workspace files, and generated images, and restricted project favicons.
+- `apps/server/src/http.test.ts` — Static client asset tests continue to protect immutable caching for hashed Vite assets, no-cache handling for HTML/unhashed files, and Brotli Accept-Encoding detection.
+- `apps/server/src/http.test.ts` — Desktop and networking safeguards remain covered by disabling permessage-deflate for the t3code desktop origin and loopback peers while retaining it for LAN/tunneled clients and stripping only the relevant extension offer.
+- `apps/server/src/http.ts` — T3 Pretty's OTLP request-body JSON decoder retains its required effect/Schema import.
+- `apps/server/src/http.ts` — Asset cache policy remains source-aware, including immutable caching for attachment bytes.
+- `apps/server/src/http.ts` — Signed attachment, workspace-file, and generated-image capability URLs retain wildcard cross-origin access for desktop, remote, and generated-image surfaces.
+- `apps/server/src/http.ts` — Attachment feed-preview variant requests continue resolving through resolveAttachmentFeedPreview before serving the file.
+- `apps/server/src/http.ts` — Existing callers that pass a ResolvedAssetSource directly to assetResponseHeaders remain supported.
+- `apps/server/src/http.ts` — Inline HTML content typing and the existing sandboxed SVG content-security policy remain active for non-download assets.
+- `apps/server/src/http.ts` — The asset route remains wrapped with HttpMiddleware.withLoggerDisabled.
+- `apps/web/src/connection/platform.ts` — T3 Pretty remains the client presentation identity for both desktop and web labels.
+- `apps/web/src/connection/platform.ts` — Any additional label context produced by the parent helper is retained; only the `T3 Code` brand token is changed.
+- `packages/contracts/src/auth.ts` — Preserved T3 Pretty's NonNegativeInt schema import used by its hardened cross-surface authentication contracts.
+- `packages/contracts/src/orchestration.test.ts` — Provider-driver runtime-mode contract coverage remains available, including T3 Pretty's default, display, effective, and resolution helpers used to protect provider-specific behavior such as Kimi Yolo/full-access handling.
+- `packages/contracts/src/orchestration.test.ts` — The client turn attachment-count safeguard remains tested at the configured maximum and immediately above it.
+- `packages/contracts/src/orchestration.test.ts` — T3 Pretty's contract-test coverage dependencies for project/workflow script limits, ranked thread-search limits, provider interaction and user-input limits, and attachment-count limits are retained.
+- `packages/contracts/src/orchestration.test.ts` — World Scenery contract coverage remains intact through the thread scenery photo type and scenery URL length limit imports.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's explicit maximum lengths and trimmed non-empty schemas for orchestration titles, branches, and paths.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's large enabled-skill-ID character budget used by thread-start and skills behavior.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's allocation-free image data-URL inspection, including canonical base64 validation, bounded headers and decoded size, and MIME matching support.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/preload.ts` — Integrated the parent preload's `clientPlatform` initialization from Electron's sandbox-exposed `process.platform`, including its targeted oxlint suppression, so `getClientPlatform` remains functional.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Parent attachment handling now filters message attachments to image entries before image rendering and empty-assistant-message checks.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — The Android fixed-width handling for review comments and intrinsically wide markdown remains active through the existing user-row-scoped implementation.
+- `apps/mobile/src/lib/authClientMetadata.ts` — Use Expo device information to report tablets as "tablet", phones as "mobile", and unrecognized device types as "unknown" instead of reporting every device as mobile.
+- `apps/server/src/assets/AssetAccess.ts` — Added optional download disposition metadata to resolved attachment assets.
+- `apps/server/src/assets/AssetAccess.ts` — Added caller-supplied attachment filename metadata to resolved attachment assets.
+- `apps/server/src/assets/AssetAccess.ts` — Added caller-supplied attachment MIME type metadata to resolved attachment assets.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — Added coverage that the environment descriptor exposes the structured fileAttachments capability with a 50 MiB upload limit.
+- `apps/server/src/http.test.ts` — Added the parent's downloadContentDisposition helper import and its filename-sanitization tests.
+- `apps/server/src/http.test.ts` — Integrated secure download-header coverage for uploaded documents, including Content-Disposition, sandboxing, and octet-stream handling for executable/renderable content.
+- `apps/server/src/http.test.ts` — Integrated support tests for claimed filenames and MIME types, including preservation of official Office Open XML MIME types.
+- `apps/server/src/http.test.ts` — Integrated RFC 5987 non-ASCII filename encoding, quote/control-character sanitization, and safe handling of unpaired Unicode surrogates.
+- `apps/server/src/http.ts` — Added the parent's RFC 6266 download Content-Disposition generation with sanitized ASCII fallback and UTF-8 filename* support.
+- `apps/server/src/http.ts` — Added the parent's safe download MIME validation, with HTML/XML and invalid MIME values falling back to application/octet-stream.
+- `apps/server/src/http.ts` — Added the parent's restrictive download Content-Security-Policy and ensured download handling takes precedence over inline HTML/SVG handling.
+- `apps/server/src/http.ts` — Integrated download, fileName, and mimeType metadata from resolved assets into asset responses.
+- `apps/server/src/http.ts` — Retained the parent's Stream import alongside the fork-required Schema import.
+- `apps/web/src/connection/platform.ts` — Adopted the centralized `clientPresentationMetadata` implementation.
+- `apps/web/src/connection/platform.ts` — Passed hosted-static-app state, browser user agent, platform, touch-point count, desktop bridge, and app version into the parent metadata derivation, preserving its richer device and surface classification behavior.
+- `packages/contracts/src/auth.ts` — Integrated the parent's ClientWebDeployment schema import for the newest authentication deployment contract.
+- `packages/contracts/src/orchestration.test.ts` — Added OrchestrationMessage and ThreadMessageSentPayload schema dependencies for upstream's persisted-message compatibility coverage, including tolerance of future attachment types.
+- `packages/contracts/src/orchestration.test.ts` — Added PROVIDER_SEND_TURN_MAX_FILE_BYTES for upstream validation coverage of malformed or oversized known file attachments.
+- `packages/contracts/src/orchestration.test.ts` — Expanded the client attachment test to verify inline images, uploaded images, and uploaded non-image files together while retaining the fork's attachment-count test.
+- `packages/contracts/src/orchestration.ts` — Added the upstream 50 MiB provider turn file-size limit.
+- `packages/contracts/src/orchestration.ts` — Added the upstream persisted file attachment contract, including non-empty files and enforcement of the 50 MiB cap.
+- `packages/contracts/src/orchestration.ts` — Added the upstream forward-compatible unknown attachment contract while excluding known image and file discriminators so malformed known attachments cannot bypass their constraints.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/provider/opencodeRuntime.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/web/src/connection/platform.ts` — The raw `T3 Code` branding in labels returned by the parent presentation helper.. Reason: T3 Pretty branding is authoritative for the fork; only the brand token is replaced, with all other parent-generated metadata and label context preserved.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

@@ -107,6 +107,10 @@
       "types": "./src/state/projects.ts",
       "default": "./src/state/projects.ts"
     },
+    "./state/project-transfer": {
+      "types": "./src/state/projectTransfer.ts",
+      "default": "./src/state/projectTransfer.ts"
+    },
     "./state/pull-requests": {
       "types": "./src/state/pullRequests.ts",
       "default": "./src/state/pullRequests.ts"

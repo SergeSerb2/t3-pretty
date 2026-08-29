@@ -977,6 +977,11 @@ const make = Effect.gen(function* () {
     const isProviderHandoff =
       pendingUncommittedHandoff ||
       (requestedDifferentInstance && (sourceUnresolved || incompatibleContinuation));
+    const shouldReplayContext =
+      isProviderHandoff ||
+      (thread.session === null &&
+        thread.messages.length > 0 &&
+        thread.activities.some((activity) => activity.kind === "thread.transferred"));
     if (options?.pendingTurnStart === true && thread.session?.status !== "running") {
       yield* setThreadSession({
         threadId,
@@ -1172,7 +1177,7 @@ const make = Effect.gen(function* () {
         }
         return {
           threadId: existingSessionThreadId,
-          handedOff: isProviderHandoff,
+          handedOff: shouldReplayContext,
           finalizeHandoff,
           skills,
         };
@@ -1219,7 +1224,7 @@ const make = Effect.gen(function* () {
       }
       return {
         threadId: restartedSession.threadId,
-        handedOff: isProviderHandoff,
+        handedOff: shouldReplayContext,
         finalizeHandoff,
         skills,
       };
@@ -1236,7 +1241,7 @@ const make = Effect.gen(function* () {
     }
     return {
       threadId: startedSession.threadId,
-      handedOff: isProviderHandoff,
+      handedOff: shouldReplayContext,
       finalizeHandoff,
       skills,
     };

@@ -114,6 +114,17 @@ import {
   OrchestrationGetWorkflowScriptError,
 } from "./orchestration.ts";
 import {
+  ProjectTransferCancelInput,
+  ProjectTransferCancelResult,
+  ProjectTransferError,
+  ProjectTransferInspectInput,
+  ProjectTransferInspectResult,
+  ProjectTransferPrepareInput,
+  ProjectTransferPrepareResult,
+  ProjectTransferResult,
+  ProjectTransferSendInput,
+} from "./projectTransfer.ts";
+import {
   ProviderUploadFeedbackError,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
@@ -259,6 +270,10 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsImportFavicon: "projects.importFavicon",
+  projectTransfersInspect: "projectTransfers.inspect",
+  projectTransfersPrepare: "projectTransfers.prepare",
+  projectTransfersSend: "projectTransfers.send",
+  projectTransfersCancel: "projectTransfers.cancel",
 
   // Agent instruction file methods
   agentInstructionsList: "agentInstructions.list",
@@ -889,6 +904,30 @@ export const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
   error: EnvironmentAuthorizationError,
 });
 
+export const WsProjectTransfersInspectRpc = Rpc.make(WS_METHODS.projectTransfersInspect, {
+  payload: ProjectTransferInspectInput,
+  success: ProjectTransferInspectResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersPrepareRpc = Rpc.make(WS_METHODS.projectTransfersPrepare, {
+  payload: ProjectTransferPrepareInput,
+  success: ProjectTransferPrepareResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersSendRpc = Rpc.make(WS_METHODS.projectTransfersSend, {
+  payload: ProjectTransferSendInput,
+  success: ProjectTransferResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersCancelRpc = Rpc.make(WS_METHODS.projectTransfersCancel, {
+  payload: ProjectTransferCancelInput,
+  success: ProjectTransferCancelResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
 export const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
   payload: ProviderUploadFeedbackInput,
   success: ProviderUploadFeedbackResult,
@@ -1310,6 +1349,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsAssetsCreateUrlRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
+  WsProjectTransfersInspectRpc,
+  WsProjectTransfersPrepareRpc,
+  WsProjectTransfersSendRpc,
+  WsProjectTransfersCancelRpc,
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,

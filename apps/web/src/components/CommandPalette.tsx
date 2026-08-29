@@ -36,6 +36,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  ArrowRightLeftIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -65,6 +66,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 
 import { openWhatsNewDialog } from "../changelog/whatsNewStore";
+import { openProjectTransferDialog } from "../projectTransferStore";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1579,6 +1581,35 @@ function OpenCommandPaletteDialog(props: {
       openWhatsNewDialog();
     },
   });
+
+  if (
+    activeThread &&
+    environments.find((environment) => environment.environmentId === activeThread.environmentId)
+      ?.serverConfig?.environment.capabilities.projectTransfer === true &&
+    environments.some(
+      (environment) =>
+        environment.relayManaged &&
+        environment.environmentId !== activeThread.environmentId &&
+        environment.connection.phase === "connected" &&
+        environment.serverConfig?.environment.capabilities.projectTransfer === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:transfer-thread",
+      searchTerms: ["move thread", "transfer project", "connection", "t3 connect", "surge connect"],
+      title: "Move current thread to connection…",
+      description: activeThread.title,
+      icon: <ArrowRightLeftIcon className={ITEM_ICON_CLASS} />,
+      disabled:
+        activeThread.latestTurn?.state === "running" ||
+        activeThread.session?.status === "starting" ||
+        activeThread.session?.status === "running",
+      run: async () => {
+        openProjectTransferDialog(scopeThreadRef(activeThread.environmentId, activeThread.id));
+      },
+    });
+  }
 
   actionItems.push({
     kind: "action",
