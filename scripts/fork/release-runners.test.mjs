@@ -424,8 +424,8 @@ describe("T3 Pretty release runner placement", () => {
       windows,
       '$rustToolchainBin = Join-Path $env:RUSTUP_HOME "toolchains\\$rustToolchain\\bin"',
     );
-    assert.include(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
-    assert.include(windows, '$env:Path = "$rustToolchainBin;$cargoBin;$env:Path"');
+    assert.notInclude(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
+    assert.include(windows, '$env:Path = "$rustToolchainBin;$env:Path"');
     assert.notInclude(windows, "rust-wrappers");
     assert.notInclude(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
     assert.notInclude(windows, "Set-Content -Path (Join-Path $rustWrapperBin");

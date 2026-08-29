@@ -45,7 +45,6 @@ $env:RUSTUP_HOME = "C:\buildkite-agent\rustup"
 $rustToolchain = "stable-x86_64-pc-windows-msvc"
 $env:RUSTUP_TOOLCHAIN = $rustToolchain
 $rustToolchainBin = Join-Path $env:RUSTUP_HOME "toolchains\$rustToolchain\bin"
-$cargoBin = Join-Path $env:CARGO_HOME "bin"
 $bootstrapRustup = "C:\Users\serge\.cargo\bin\rustup.exe"
 if (-not (Test-Path $bootstrapRustup)) {
   throw "rustup is required on the windows-release agent."
@@ -53,7 +52,7 @@ if (-not (Test-Path $bootstrapRustup)) {
 New-Item -ItemType Directory -Force -Path $env:CARGO_HOME | Out-Null
 if (Test-Path $gitBash) { $env:Path = "$gitBash;$env:Path" }
 if (Test-Path $pwshDir) { $env:Path = "$pwshDir;$env:Path" }
-$env:Path = "$rustToolchainBin;$cargoBin;$env:Path"
+$env:Path = "$rustToolchainBin;$env:Path"
 
 function Test-RustTool($name) {
   try {
