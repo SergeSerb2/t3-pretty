@@ -23,10 +23,9 @@ const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
-// Universal exports already contain their own rounded-square plate. Android
-// masks adaptive layers itself, so every non-internal channel uses the bare
-// T3 Pretty mark and lets its channel background supply the identity.
-const androidAdaptiveForeground = "./assets/android-icon-mark.png";
+// Universal exports already contain their own rounded-square silhouette. Using one as an adaptive
+// foreground makes Android draw an icon shape inside the launcher's mask.
+const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -59,7 +58,7 @@ const PREVIEW_ASSETS = {
   // point ios.icon at the PNG or the upstream composer art would win on iOS.
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground,
+  androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -70,7 +69,7 @@ const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  androidAdaptiveForeground,
+  androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",

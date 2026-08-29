@@ -1228,7 +1228,9 @@ function renderFeedEntry(
     const isUser = message.role === "user";
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
-    const attachments = message.attachments ?? [];
+    const attachments = (message.attachments ?? []).filter(
+      (attachment) => attachment.type === "image",
+    );
     const userImages = isUser
       ? resolveUserMessageImageSources({
           attachments,

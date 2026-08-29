@@ -98,6 +98,9 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       expect(second.capabilities.readAloud).toBe(
         resolveDictationAvailability().available ? true : undefined,
       );
+      expect(second.capabilities.fileAttachments).toEqual({
+        maxUploadBytes: 50 * 1024 * 1024,
+      });
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);

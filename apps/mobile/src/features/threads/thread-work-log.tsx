@@ -362,7 +362,7 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
                                 : { ios: "minus", android: "remove" }
                           }
                           size={11}
-                          tintColor={row.status === "failure" ? "#e11d48" : props.iconSubtleColor}
+                          tintColor={props.iconSubtleColor}
                           type="monochrome"
                         />
                       ) : null}

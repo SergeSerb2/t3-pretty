@@ -12,6 +12,7 @@ import {
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
+  isRetiredOpenCodeDeletion,
   MAX_VALIDATION_ATTEMPTS,
   prepareConflictPrompt,
   pruneResolutionCache,
@@ -270,6 +271,33 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     assert.include(resolver, 'git(["rm", "-q", "--", path])');
     assert.include(resolver, 'git(["ls-files", "-u", "--", path])');
     assert.include(resolver, "parentDeletionEvidence");
+  });
+
+  it("keeps the intentionally retired OpenCode provider deleted without a model request", () => {
+    const forkDeleted = new Set([1, 3]);
+    const retiredPaths = [
+      "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
+      "apps/server/src/provider/opencodeRuntime.cliParsers.test.ts",
+      "apps/server/src/provider/opencodeRuntime.ts",
+      "apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts",
+      "apps/server/src/textGeneration/OpenCodeTextGeneration.ts",
+    ];
+    const paths = [...retiredPaths, "apps/server/src/provider/Layers/CodexAdapter.ts"];
+
+    assert.deepEqual(
+      paths.filter((path) => isRetiredOpenCodeDeletion(path, forkDeleted)),
+      retiredPaths,
+    );
+    assert.isFalse(isRetiredOpenCodeDeletion("packages/foo/opencode.config.ts", forkDeleted));
+    assert.isFalse(
+      isRetiredOpenCodeDeletion(
+        "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
+        new Set([1, 2, 3]),
+      ),
+    );
+
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, "paths.filter((path) => isRetiredOpenCodeDeletion(path))");
   });
 
   it("resolves every resolvable file before reporting the ones that failed", () => {

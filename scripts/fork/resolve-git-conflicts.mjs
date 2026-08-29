@@ -40,6 +40,20 @@ const MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
+const RETIRED_OPENCODE_PATHS = new Set([
+  "apps/marketing/public/harnesses/opencode-dark.svg",
+  "apps/server/src/provider/Drivers/OpenCodeDriver.ts",
+  "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts",
+  "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
+  "apps/server/src/provider/Layers/OpenCodeProvider.test.ts",
+  "apps/server/src/provider/Layers/OpenCodeProvider.ts",
+  "apps/server/src/provider/Services/OpenCodeAdapter.ts",
+  "apps/server/src/provider/opencodeRuntime.cliParsers.test.ts",
+  "apps/server/src/provider/opencodeRuntime.environment.test.ts",
+  "apps/server/src/provider/opencodeRuntime.ts",
+  "apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts",
+  "apps/server/src/textGeneration/OpenCodeTextGeneration.ts",
+]);
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
 // Completed per-file resolutions are checkpointed here (one JSON per file,
 // keyed by a hash of the conflicted input) and pushed to the
@@ -745,6 +759,29 @@ function unmergedStages(path) {
   );
 }
 
+export function isRetiredOpenCodeDeletion(path, stages = unmergedStages(path)) {
+  return RETIRED_OPENCODE_PATHS.has(path) && !stages.has(2) && stages.has(3);
+}
+
+function resolveRetiredOpenCodeDeletion(path) {
+  git(["rm", "-q", "--", path]);
+  process.stdout.write(
+    `[fork-sync] kept T3 Pretty's retired OpenCode deletion for ${path} deterministically\n`,
+  );
+  return {
+    path,
+    deterministic: true,
+    forkChangesPreserved: ["kept T3 Pretty's intentional removal of the OpenCode provider"],
+    upstreamChangesIntegrated: [],
+    upstreamChangesOmitted: [
+      {
+        change: "the parent nightly's changes to this retired OpenCode file",
+        reason: "resurrecting it would restore the provider T3 Pretty intentionally removed",
+      },
+    ],
+  };
+}
+
 // Binary conflicts are never model input: there is no text to compose, and
 // the fork's branded assets (icons, images) are authoritative. A nightly that
 // deletes or rewrites them upstream must not strip T3 Pretty branding, so the
@@ -1258,7 +1295,10 @@ async function main() {
   const paths = git(["diff", "--name-only", "--diff-filter=U", "-z"]).split("\0").filter(Boolean);
 
   const lockfilePaths = paths.filter(isGeneratedLockfile);
-  const modelPaths = paths.filter((path) => !isGeneratedLockfile(path));
+  const retiredOpenCodePaths = paths.filter((path) => isRetiredOpenCodeDeletion(path));
+  const modelPaths = paths.filter(
+    (path) => !isGeneratedLockfile(path) && !isRetiredOpenCodeDeletion(path),
+  );
 
   const rawToken = process.env.CLI_PROXY_API_KEY ?? "";
   const token = resolveCliProxyToken(rawToken);
@@ -1274,6 +1314,9 @@ async function main() {
   const resolutions = [];
   for (const path of lockfilePaths) {
     resolutions.push(resolveGeneratedLockfile(path));
+  }
+  for (const path of retiredOpenCodePaths) {
+    resolutions.push(resolveRetiredOpenCodeDeletion(path));
   }
   const failures = [];
   for (const path of modelPaths) {
