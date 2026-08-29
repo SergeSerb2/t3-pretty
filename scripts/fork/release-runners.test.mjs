@@ -443,6 +443,13 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(windows, "corepack pnpm");
     assert.include(windows, "Invoke-Pnpm install");
     assert.include(windows, "Invoke-Pnpm run dist:desktop:artifact");
+    assert.include(
+      windows,
+      '$buildkiteAgent = "C:\\buildkite-agent\\service\\buildkite-agent.exe"',
+    );
+    assert.include(windows, "& $buildkiteAgent artifact upload");
+    assert.include(windows, "& $buildkiteAgent secret get CLOUDFLARE_API_TOKEN");
+    assert.notInclude(windows, "Get-Command buildkite-agent");
     assert.notInclude(windows, "Test-OfficialVp");
     assert.notInclude(windows, "https://vite.plus/ps1");
     assert.include(windowsAgent, '"3.137.2"');

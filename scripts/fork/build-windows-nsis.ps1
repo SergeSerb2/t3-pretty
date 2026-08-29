@@ -163,11 +163,15 @@ Get-ChildItem (Join-Path $root "release") -File | Where-Object {
   $_.Extension -in ".exe", ".blockmap", ".yml"
 } | Copy-Item -Destination $publish -Force
 
-if (Get-Command buildkite-agent -ErrorAction SilentlyContinue) {
+$buildkiteAgent = "C:\buildkite-agent\service\buildkite-agent.exe"
+if (Test-Path $buildkiteAgent) {
   Push-Location $publish
-  try { buildkite-agent artifact upload "*" } finally { Pop-Location }
+  try {
+    & $buildkiteAgent artifact upload "*"
+    if ($LASTEXITCODE -ne 0) { throw "Buildkite artifact upload exited $LASTEXITCODE" }
+  } finally { Pop-Location }
   if (-not $env:CLOUDFLARE_API_TOKEN) {
-    $fetched = buildkite-agent secret get CLOUDFLARE_API_TOKEN 2>$null
+    $fetched = & $buildkiteAgent secret get CLOUDFLARE_API_TOKEN 2>$null
     if ($LASTEXITCODE -eq 0 -and $fetched) {
       $env:CLOUDFLARE_API_TOKEN = "$fetched".Trim()
     }
