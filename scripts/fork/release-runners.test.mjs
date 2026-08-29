@@ -417,12 +417,15 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(windows, '$env:GIT_TERMINAL_PROMPT = "0"');
     assert.include(windows, '$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"');
     assert.include(windows, "$env:RUSTUP_TOOLCHAIN = $rustToolchain");
-    assert.include(windows, '$rustWrapperBin = "C:\\buildkite-agent\\rust-wrappers"');
+    assert.include(
+      windows,
+      '$rustToolchainBin = Join-Path $env:RUSTUP_HOME "toolchains\\$rustToolchain\\bin"',
+    );
     assert.include(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
-    assert.include(windows, '$env:Path = "$rustWrapperBin;$cargoBin;$env:Path"');
-    assert.include(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
-    assert.include(windows, '"@`"$bootstrapRustup`" run $rustToolchain $tool %*"');
-    assert.include(windows, "Set-Content");
+    assert.include(windows, '$env:Path = "$rustToolchainBin;$cargoBin;$env:Path"');
+    assert.notInclude(windows, "rust-wrappers");
+    assert.notInclude(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
+    assert.notInclude(windows, "Set-Content -Path (Join-Path $rustWrapperBin");
     assert.notInclude(windows, "Copy-Item $bootstrapRustup");
     assert.notInclude(windows, '"rustc.exe"');
     assert.include(windows, "function Test-RustTool");
