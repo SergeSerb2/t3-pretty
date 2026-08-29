@@ -380,7 +380,7 @@ function SidebarUpdateControl() {
               onClick={handleAction}
             >
               <DesktopUpdateStatusIcon
-                key={showCheckIcon ? checkAnimationKey : iconStatus}
+                key={checkAnimationKey}
                 downloadPercent={state?.downloadPercent ?? null}
                 isCheckAnimating={showCheckIcon && !prefersReducedMotion}
                 isCheckSettling={isCheckSettling}
