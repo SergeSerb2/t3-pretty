@@ -28,6 +28,13 @@ const spinTiltRule = iconMotion.slice(
   iconMotion.indexOf("svg.lucide-refresh-cw.animate-spin"),
   iconMotion.indexOf("}", iconMotion.indexOf("svg.lucide-refresh-cw.animate-spin")) + 1,
 );
+const settleRestRule = iconMotion.slice(
+  iconMotion.indexOf("svg.lucide-refresh-cw.animate-desktop-update-check-settle"),
+  iconMotion.indexOf(
+    "}",
+    iconMotion.indexOf("svg.lucide-refresh-cw.animate-desktop-update-check-settle"),
+  ) + 1,
+);
 
 describe("animated icon boundaries", () => {
   it("keeps motion reversible, reduced-motion safe, and scoped to controls", () => {
@@ -48,8 +55,11 @@ describe("animated icon boundaries", () => {
     expect(spinTiltRule).not.toContain("animate-desktop-update-check-settle");
     expect(iconMotion).toContain("[data-animate-ui-icons]:hover");
     expect(iconMotion).toContain("--refresh-cw-rest: var(--refresh-cw-tilt, 90deg)");
+    expect(settleRestRule).toContain("rotate: var(--refresh-cw-rest, 0deg)");
     expect(settleKeyframes).toContain("rotate: var(--refresh-cw-tilt, 90deg)");
     expect(settleKeyframes).toContain("rotate: var(--refresh-cw-rest, 0deg)");
+    expect(settleKeyframes).toContain("var(--refresh-cw-tilt, 90deg) * 0.35");
+    expect(settleKeyframes).toContain("var(--refresh-cw-rest, 0deg) * 0.65");
     expect(settleKeyframes).not.toContain("transform:");
   });
 

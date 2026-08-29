@@ -202,6 +202,10 @@
   svg.lucide-refresh-cw.animate-spin {
     rotate: var(--refresh-cw-tilt, 90deg);
   }
+
+  svg.lucide-refresh-cw.animate-desktop-update-check-settle {
+    rotate: var(--refresh-cw-rest, 0deg);
+  }
 }
 
 /* On mobile, morph the expanded hero composer into the compact docked
@@ -490,11 +494,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     42% {
-      rotate: calc(var(--refresh-cw-rest, 0deg) - 8deg);
+      rotate: calc(
+        var(--refresh-cw-tilt, 90deg) * 0.35 + var(--refresh-cw-rest, 0deg) * 0.65 - 8deg
+      );
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     68% {
-      rotate: calc(var(--refresh-cw-rest, 0deg) + 3.5deg);
+      rotate: calc(
+        var(--refresh-cw-tilt, 90deg) * 0.1 + var(--refresh-cw-rest, 0deg) * 0.9 + 3.5deg
+      );
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     100% {
