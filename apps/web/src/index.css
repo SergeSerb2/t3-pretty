@@ -70,7 +70,7 @@
         }
 
         & .lucide-refresh-cw {
-          rotate: 90deg;
+          rotate: var(--refresh-cw-tilt, 90deg);
         }
 
         & .lucide-rotate-ccw {
@@ -179,6 +179,18 @@
     &:active svg.lucide {
       scale: 0.86;
     }
+  }
+
+  svg.lucide-refresh-cw {
+    --refresh-cw-tilt: 90deg;
+  }
+
+  /* --refresh-cw-from is snapshotted on the control at click (90deg if the
+     pointer was hovering, else 0deg) so spin/settle do not retarget live. */
+  svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle) {
+    transform-box: fill-box;
+    transform-origin: center;
+    rotate: var(--refresh-cw-from, 0deg);
   }
 }
 
@@ -457,26 +469,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
   @keyframes desktop-update-check-settle {
-    /* First hop stays near animate-spin's 360deg/s so the stop is a
-       continuation, not a new wiggle after a hard halt. */
+    /* Springs around the snapshotted click pose (--refresh-cw-from). */
     0% {
-      transform: rotate(0deg);
+      rotate: var(--refresh-cw-from, 0deg);
       animation-timing-function: linear;
     }
     10% {
-      transform: rotate(18deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) + 18deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     42% {
-      transform: rotate(-8deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) - 8deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     68% {
-      transform: rotate(3.5deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) + 3.5deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     100% {
-      transform: rotate(0deg);
+      rotate: var(--refresh-cw-from, 0deg);
     }
   }
 }

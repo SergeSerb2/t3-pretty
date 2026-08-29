@@ -17,6 +17,24 @@ const iconMotion = indexCss.slice(
   indexCss.indexOf("/* Animate UI's icon catalog"),
   indexCss.indexOf("/* On mobile, morph the expanded hero composer"),
 );
+const settleKeyframes = indexCss.slice(
+  indexCss.indexOf("@keyframes desktop-update-check-settle"),
+  indexCss.indexOf(
+    "}",
+    indexCss.indexOf("100%", indexCss.indexOf("@keyframes desktop-update-check-settle")),
+  ) + 1,
+);
+const spinSettleRotateRule = iconMotion.slice(
+  iconMotion.indexOf(
+    "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
+  ),
+  iconMotion.indexOf(
+    "}",
+    iconMotion.indexOf(
+      "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
+    ),
+  ) + 1,
+);
 
 describe("animated icon boundaries", () => {
   it("keeps motion reversible, reduced-motion safe, and scoped to controls", () => {
@@ -32,9 +50,20 @@ describe("animated icon boundaries", () => {
     expect(iconMotion).not.toContain("360deg");
   });
 
+  it("spins and settles from a snapshotted click pose, not a live 90deg tilt", () => {
+    expect(spinSettleRotateRule).toContain("rotate: var(--refresh-cw-from, 0deg)");
+    expect(iconMotion).not.toContain("--refresh-cw-rest");
+    expect(settleKeyframes).toContain("rotate: var(--refresh-cw-from, 0deg)");
+    expect(settleKeyframes).toContain("calc(var(--refresh-cw-from, 0deg) + 18deg)");
+    expect(settleKeyframes).not.toContain("--refresh-cw-tilt");
+    expect(settleKeyframes).not.toContain("transform:");
+  });
+
   it("opts tooltip-wrapped sidebar chrome into icon motion", () => {
     expect(sidebarTrigger).toContain("data-animate-ui-icons");
     expect(sidebarChrome).toContain("data-animate-ui-icons");
     expect(updatePill).toContain("data-animate-ui-icons");
+    expect(updatePill).toContain("desktopUpdateCheckSpinFrom");
+    expect(updatePill).toContain("--refresh-cw-from");
   });
 });

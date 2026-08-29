@@ -71,6 +71,16 @@ export function shouldClearDesktopUpdateCheckSettle({
   return isSettling && !isChecking;
 }
 
+export function desktopUpdateCheckSpinFrom({
+  fineHover,
+  hovered,
+}: {
+  readonly fineHover: boolean;
+  readonly hovered: boolean;
+}): "0deg" | "90deg" {
+  return fineHover && hovered ? "90deg" : "0deg";
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
