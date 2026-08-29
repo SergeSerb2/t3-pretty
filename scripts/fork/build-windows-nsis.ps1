@@ -40,7 +40,7 @@ if ($changelogSubject.StartsWith($changelogPrefix)) {
 
 $gitBash = Join-Path $env:ProgramFiles "Git\bin"
 $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
-$env:CARGO_HOME = "C:\buildkite-agent\cargo"
+$env:CARGO_HOME = Join-Path $root ".cache\t3-pretty-release\cargo"
 $env:RUSTUP_HOME = "C:\buildkite-agent\rustup"
 $rustToolchain = "stable-x86_64-pc-windows-msvc"
 $env:RUSTUP_TOOLCHAIN = $rustToolchain
@@ -50,6 +50,7 @@ $bootstrapRustup = "C:\Users\serge\.cargo\bin\rustup.exe"
 if (-not (Test-Path $bootstrapRustup)) {
   throw "rustup is required on the windows-release agent."
 }
+New-Item -ItemType Directory -Force -Path $env:CARGO_HOME | Out-Null
 if (Test-Path $gitBash) { $env:Path = "$gitBash;$env:Path" }
 if (Test-Path $pwshDir) { $env:Path = "$pwshDir;$env:Path" }
 $env:Path = "$rustToolchainBin;$cargoBin;$env:Path"
