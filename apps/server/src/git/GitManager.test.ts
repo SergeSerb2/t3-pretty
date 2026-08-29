@@ -4085,6 +4085,193 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("materializes a PR from its remote branch when the pull ref is unavailable", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/refine-refresh-spin-origin"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "refresh.txt"), "refresh\n");
+      yield* runGit(repoDir, ["add", "refresh.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Refine refresh spin"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "t3code/refine-refresh-spin-origin"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", "t3code/refine-refresh-spin-origin"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 273,
+            title: "Refine refresh spin",
+            url: "https://github.com/pingdotgg/codething-mvp/pull/273",
+            baseRefName: "main",
+            headRefName: "t3code/refine-refresh-spin-origin",
+            state: "open",
+          },
+        },
+      });
+
+      const result = yield* preparePullRequestThread(manager, {
+        cwd: repoDir,
+        reference: "273",
+        mode: "worktree",
+      });
+
+      expect(result.branch).toBe("t3code/refine-refresh-spin-origin");
+      expect(result.worktreePath).not.toBeNull();
+      expect(NodeFS.existsSync(NodePath.join(result.worktreePath as string, "refresh.txt"))).toBe(
+        true,
+      );
+    }),
+  );
+
+  it.effect(
+    "materializes a same-repo PR from the primary remote when head repository metadata is present",
+    () =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        yield* initRepo(repoDir);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+        yield* runGit(repoDir, ["checkout", "-b", "t3code/same-repo-head-metadata"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "same-repo.txt"), "same-repo\n");
+        yield* runGit(repoDir, ["add", "same-repo.txt"]);
+        yield* runGit(repoDir, ["commit", "-m", "Same-repo head metadata"]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "t3code/same-repo-head-metadata"]);
+        yield* runGit(repoDir, ["checkout", "main"]);
+        yield* runGit(repoDir, ["branch", "-D", "t3code/same-repo-head-metadata"]);
+
+        const { manager } = yield* makeManager({
+          ghScenario: {
+            pullRequest: {
+              number: 274,
+              title: "Same-repo head metadata",
+              url: "https://github.com/pingdotgg/codething-mvp/pull/274",
+              baseRefName: "main",
+              headRefName: "t3code/same-repo-head-metadata",
+              state: "open",
+              isCrossRepository: false,
+              headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
+              headRepositoryOwnerLogin: "pingdotgg",
+            },
+          },
+        });
+
+        const result = yield* preparePullRequestThread(manager, {
+          cwd: repoDir,
+          reference: "274",
+          mode: "worktree",
+        });
+
+        expect(result.branch).toBe("t3code/same-repo-head-metadata");
+        expect(result.worktreePath).not.toBeNull();
+        expect(
+          NodeFS.existsSync(NodePath.join(result.worktreePath as string, "same-repo.txt")),
+        ).toBe(true);
+      }),
+  );
+
+  it.effect("falls back to the pull ref when the same-repo source branch is gone", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/deleted-source-branch"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "deleted-source.txt"), "deleted-source\n");
+      yield* runGit(repoDir, ["add", "deleted-source.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Deleted source branch"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/deleted-source-branch"]);
+      yield* runGit(repoDir, ["push", "origin", "HEAD:refs/pull/94/head"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", "feature/deleted-source-branch"]);
+      yield* runGit(repoDir, ["push", "origin", ":feature/deleted-source-branch"]);
+      yield* runGit(repoDir, [
+        "update-ref",
+        "-d",
+        "refs/remotes/origin/feature/deleted-source-branch",
+      ]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 94,
+            title: "Deleted source branch",
+            url: "https://github.com/pingdotgg/codething-mvp/pull/94",
+            baseRefName: "main",
+            headRefName: "feature/deleted-source-branch",
+            state: "open",
+          },
+        },
+      });
+
+      const result = yield* preparePullRequestThread(manager, {
+        cwd: repoDir,
+        reference: "94",
+        mode: "worktree",
+      });
+
+      expect(result.branch).toBe("feature/deleted-source-branch");
+      expect(result.worktreePath).not.toBeNull();
+      expect(
+        NodeFS.existsSync(NodePath.join(result.worktreePath as string, "deleted-source.txt")),
+      ).toBe(true);
+    }),
+  );
+
+  it.effect("preserves both same-repo materialization failures when the fallback also fails", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          pullRequest: {
+            number: 95,
+            title: "Missing same-repo branch",
+            url: "https://github.com/pingdotgg/codething-mvp/pull/95",
+            baseRefName: "main",
+            headRefName: "feature/missing-same-repo-branch",
+            state: "open",
+          },
+        },
+      });
+
+      const error = yield* preparePullRequestThread(manager, {
+        cwd: repoDir,
+        reference: "95",
+        mode: "worktree",
+      }).pipe(Effect.flip);
+
+      if (error._tag !== "GitPullRequestMaterializationError") {
+        return yield* Effect.die(error);
+      }
+      expect(error).toMatchObject({
+        cwd: repoDir,
+        pullRequestNumber: 95,
+        headRepository: null,
+        headBranch: "feature/missing-same-repo-branch",
+        localBranch: "feature/missing-same-repo-branch",
+      });
+      if (!(error.cause instanceof AggregateError)) {
+        return yield* Effect.die(error.cause);
+      }
+      expect(error.cause.errors).toHaveLength(2);
+      expect(error.cause.errors).toEqual([
+        expect.objectContaining({ _tag: "GitCommandError" }),
+        expect.objectContaining({ _tag: "GitCommandError" }),
+      ]);
+      expect(error.cause.cause).toBe(error.cause.errors[0]);
+    }),
+  );
+
   it.effect("preserves both branch materialization failures when the fallback also fails", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

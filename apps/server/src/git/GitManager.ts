@@ -794,11 +794,15 @@ export const make = Effect.gen(function* () {
     ) {
       const repositoryNameWithOwner = resolveHeadRepositoryNameWithOwner(pullRequest) ?? "";
 
-      if (repositoryNameWithOwner.length === 0) {
-        yield* gitCore.fetchPullRequestBranch({
+      // Same-repo and Origin CRs (no isCrossRepository) fetch the primary remote
+      // head first. The wrapper still falls back to refs/pull/<n>/head.
+      if (repositoryNameWithOwner.length === 0 || pullRequest.isCrossRepository !== true) {
+        const remoteName = yield* gitCore.resolvePrimaryRemoteName(cwd);
+        yield* gitCore.fetchRemoteBranch({
           cwd,
-          prNumber: pullRequest.number,
-          branch: localBranch,
+          remoteName,
+          remoteBranch: pullRequest.headBranch,
+          localBranch,
         });
         return;
       }
