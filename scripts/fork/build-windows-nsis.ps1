@@ -44,21 +44,22 @@ $env:CARGO_HOME = "C:\buildkite-agent\cargo"
 $env:RUSTUP_HOME = "C:\buildkite-agent\rustup"
 $rustToolchain = "stable-x86_64-pc-windows-msvc"
 $env:RUSTUP_TOOLCHAIN = $rustToolchain
-$rustupBin = Join-Path $env:CARGO_HOME "bin"
+$rustWrapperBin = "C:\buildkite-agent\rust-wrappers"
+$cargoBin = Join-Path $env:CARGO_HOME "bin"
 $bootstrapRustup = "C:\Users\serge\.cargo\bin\rustup.exe"
-New-Item -ItemType Directory -Force -Path $rustupBin | Out-Null
 if (-not (Test-Path $bootstrapRustup)) {
   throw "rustup is required on the windows-release agent."
 }
-foreach ($proxy in @("rustup.exe", "cargo.exe", "rustc.exe")) {
-  $proxyPath = Join-Path $rustupBin $proxy
-  Copy-Item $bootstrapRustup $proxyPath -Force
+New-Item -ItemType Directory -Force -Path $rustWrapperBin | Out-Null
+foreach ($tool in @("cargo", "rustc")) {
+  "@`"$bootstrapRustup`" run $rustToolchain $tool %*" |
+    Set-Content -Path (Join-Path $rustWrapperBin "$tool.cmd") -Encoding ASCII
 }
 if (Test-Path $gitBash) { $env:Path = "$gitBash;$env:Path" }
 if (Test-Path $pwshDir) { $env:Path = "$pwshDir;$env:Path" }
-$env:Path = "$rustupBin;$env:Path"
+$env:Path = "$rustWrapperBin;$cargoBin;$env:Path"
 
-function Test-RustProxy($name) {
+function Test-RustTool($name) {
   try {
     & $name --version
     return $LASTEXITCODE -eq 0
@@ -67,21 +68,21 @@ function Test-RustProxy($name) {
   }
 }
 
-if (-not (Test-RustProxy "cargo") -or -not (Test-RustProxy "rustc")) {
+if (-not (Test-RustTool "cargo") -or -not (Test-RustTool "rustc")) {
   Write-Host "Repairing missing or unusable Rust toolchain $rustToolchain."
   try {
-    & rustup toolchain uninstall $rustToolchain 2>$null
+    & $bootstrapRustup toolchain uninstall $rustToolchain 2>$null
   } catch {
     Write-Host "warning: could not remove $rustToolchain; continuing with rustup install"
   }
-  & rustup toolchain install $rustToolchain --profile minimal --no-self-update
+  & $bootstrapRustup toolchain install $rustToolchain --profile minimal --no-self-update
   if ($LASTEXITCODE -ne 0) {
     throw "rustup toolchain install failed with exit ${LASTEXITCODE}"
   }
-  if (-not (Test-RustProxy "cargo")) {
+  if (-not (Test-RustTool "cargo")) {
     throw "cargo is unusable after repairing $rustToolchain"
   }
-  if (-not (Test-RustProxy "rustc")) {
+  if (-not (Test-RustTool "rustc")) {
     throw "rustc is unusable after repairing $rustToolchain"
   }
 }
