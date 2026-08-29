@@ -70,7 +70,7 @@
         }
 
         & .lucide-refresh-cw {
-          rotate: 90deg;
+          rotate: var(--refresh-cw-tilt, 90deg);
         }
 
         & .lucide-rotate-ccw {
@@ -181,12 +181,26 @@
     }
   }
 
-  /* Click applies aria-disabled, which drops the hover tilt. Keep it under
-     spin/settle so the turn continues from 90deg instead of rewinding to 0. */
+  svg.lucide-refresh-cw {
+    --refresh-cw-tilt: 90deg;
+  }
+
+  /* Hover rest stays available while aria-disabled so settle can land on it. */
+  @media (hover: hover) and (pointer: fine) {
+    [data-animate-ui-icons]:hover {
+      --refresh-cw-rest: var(--refresh-cw-tilt, 90deg);
+    }
+  }
+
+  /* Click applies aria-disabled, which drops the catalog hover tilt. Keep
+     that pose under spin only; settle animates rotate to rest. */
   svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle) {
     transform-box: fill-box;
     transform-origin: center;
-    rotate: 90deg;
+  }
+
+  svg.lucide-refresh-cw.animate-spin {
+    rotate: var(--refresh-cw-tilt, 90deg);
   }
 }
 
@@ -465,26 +479,26 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
   @keyframes desktop-update-check-settle {
-    /* First hop stays near animate-spin's 360deg/s so the stop is a
-       continuation, not a new wiggle after a hard halt. */
+    /* Continues from the spin tilt (90deg). Lands on --refresh-cw-rest
+       (90deg while the control is still hovered, else 0deg). */
     0% {
-      transform: rotate(0deg);
+      rotate: var(--refresh-cw-tilt, 90deg);
       animation-timing-function: linear;
     }
     10% {
-      transform: rotate(18deg);
+      rotate: calc(var(--refresh-cw-tilt, 90deg) + 18deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     42% {
-      transform: rotate(-8deg);
+      rotate: calc(var(--refresh-cw-rest, 0deg) - 8deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     68% {
-      transform: rotate(3.5deg);
+      rotate: calc(var(--refresh-cw-rest, 0deg) + 3.5deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     100% {
-      transform: rotate(0deg);
+      rotate: var(--refresh-cw-rest, 0deg);
     }
   }
 }
