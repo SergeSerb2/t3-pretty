@@ -167,7 +167,7 @@ steps:
     timeout_in_minutes: 90
     agents:
       queue: windows-release
-    command: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
+    command: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/fork/build-windows-nsis.ps1
 
   - label: ":linux: Linux x64 AppImage"
     key: linux-appimage

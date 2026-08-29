@@ -5,6 +5,9 @@
 # and is skipped until those secrets exist on the cluster.
 
 $ErrorActionPreference = "Stop"
+$env:CI = "true"
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $root
 
@@ -37,21 +40,50 @@ if ($changelogSubject.StartsWith($changelogPrefix)) {
 
 $gitBash = Join-Path $env:ProgramFiles "Git\bin"
 $pwshDir = Join-Path $env:ProgramFiles "PowerShell\7"
-$cargoBin = "C:\Users\serge\.cargo\bin"
+$env:CARGO_HOME = "C:\buildkite-agent\cargo"
+$env:RUSTUP_HOME = "C:\buildkite-agent\rustup"
+$rustToolchain = "stable-x86_64-pc-windows-msvc"
+$env:RUSTUP_TOOLCHAIN = $rustToolchain
+$rustupBin = Join-Path $env:CARGO_HOME "bin"
+$bootstrapRustup = "C:\Users\serge\.cargo\bin\rustup.exe"
+New-Item -ItemType Directory -Force -Path $rustupBin | Out-Null
+if (-not (Test-Path $bootstrapRustup)) {
+  throw "rustup is required on the windows-release agent."
+}
+foreach ($proxy in @("rustup.exe", "cargo.exe", "rustc.exe")) {
+  $proxyPath = Join-Path $rustupBin $proxy
+  Copy-Item $bootstrapRustup $proxyPath -Force
+}
 if (Test-Path $gitBash) { $env:Path = "$gitBash;$env:Path" }
 if (Test-Path $pwshDir) { $env:Path = "$pwshDir;$env:Path" }
-if (Test-Path $cargoBin) { $env:Path = "$cargoBin;$env:Path" }
-if (Get-Command rustup -ErrorAction SilentlyContinue) {
-  rustup default stable
-  if ($LASTEXITCODE -ne 0) {
-    rustup toolchain install stable --profile minimal --no-self-update
-    rustup default stable
+$env:Path = "$rustupBin;$env:Path"
+
+function Test-RustProxy($name) {
+  try {
+    & $name --version
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
   }
-  if ($LASTEXITCODE -ne 0) {
-    throw "rustup default stable failed with exit ${LASTEXITCODE}"
+}
+
+if (-not (Test-RustProxy "cargo") -or -not (Test-RustProxy "rustc")) {
+  Write-Host "Repairing missing or unusable Rust toolchain $rustToolchain."
+  try {
+    & rustup toolchain uninstall $rustToolchain 2>$null
+  } catch {
+    Write-Host "warning: could not remove $rustToolchain; continuing with rustup install"
   }
-} else {
-  throw "rustup is required on the windows-release agent."
+  & rustup toolchain install $rustToolchain --profile minimal --no-self-update
+  if ($LASTEXITCODE -ne 0) {
+    throw "rustup toolchain install failed with exit ${LASTEXITCODE}"
+  }
+  if (-not (Test-RustProxy "cargo")) {
+    throw "cargo is unusable after repairing $rustToolchain"
+  }
+  if (-not (Test-RustProxy "rustc")) {
+    throw "rustc is unusable after repairing $rustToolchain"
+  }
 }
 
 if (-not $reusedVersion -and -not $env:GITHUB_RUN_NUMBER) {
@@ -114,55 +146,20 @@ if (-not $reusedVersion) {
   Write-Host "Changelog commit already has notes; skipping changelog generation."
 }
 
-# Official Vite+ is vp.exe under VP_HOME. npm's global `vp` / `npx vp`
-# is a stub that prints install instructions and exits 0.
-$vpHome = "C:\buildkite-agent\vite-plus"
-$env:VP_HOME = $vpHome
-$vpBin = Join-Path $vpHome "bin"
-$vpExe = Join-Path $vpBin "vp.exe"
-
-function Test-OfficialVp($path) {
-  if (-not $path -or -not (Test-Path $path)) { return $false }
-  if ([IO.Path]::GetFileName($path) -ne "vp.exe") { return $false }
-  $out = & $path --version 2>&1 | Out-String
-  if ($out -match "npx vp") { return $false }
-  return $LASTEXITCODE -eq 0
-}
-
-if (-not (Test-OfficialVp $vpExe)) {
-  Write-Host "Installing official Vite+ into $vpHome"
-  $installer = Join-Path $env:TEMP "vite-plus-install.ps1"
-  Invoke-RestMethod https://vite.plus/ps1 | Set-Content -Path $installer -Encoding UTF8
-  $env:CI = "true"
-  $install = Start-Process -FilePath "powershell.exe" -ArgumentList @(
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installer
-  ) -Wait -PassThru -NoNewWindow
-  if ($null -eq $install -or $install.ExitCode -ne 0) {
-    $code = if ($null -ne $install) { $install.ExitCode } else { 1 }
-    throw "Official Vite+ installer failed with exit $code"
-  }
-}
-
-if (-not (Test-OfficialVp $vpExe)) {
-  throw "vp.exe is not official Vite+ after install at $vpExe"
-}
-
-$env:Path = "$vpBin;$env:Path"
-
-function Invoke-Vp {
-  param([Parameter(ValueFromRemainingArguments = $true)]$VpArgs)
-  & $vpExe @VpArgs
+function Invoke-Pnpm {
+  param([Parameter(ValueFromRemainingArguments = $true)]$PnpmArgs)
+  & corepack pnpm @PnpmArgs
   if ($LASTEXITCODE -ne 0) {
-    throw "vp exited ${LASTEXITCODE}: $($VpArgs -join ' ')"
+    throw "pnpm exited ${LASTEXITCODE}: $($PnpmArgs -join ' ')"
   }
 }
 
-Invoke-Vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+Invoke-Pnpm install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
 node "$root\scripts\update-release-package-versions.ts" $version
 if ($LASTEXITCODE -ne 0) {
   throw "update-release-package-versions exited $LASTEXITCODE"
 }
-Invoke-Vp run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
+Invoke-Pnpm run dist:desktop:artifact -- --platform win --target nsis --arch x64 --build-version $version --verbose
 
 $publish = Join-Path $root "release-publish"
 New-Item -ItemType Directory -Force -Path $publish | Out-Null

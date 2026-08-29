@@ -49,6 +49,10 @@ if [[ -n "$github_tip" ]]; then
 else
   git push --no-thin github "$local_tip:refs/heads/main"
 fi
+tag_refs=()
 while IFS= read -r tag; do
-  [[ "$tag" =~ $release_tag_pattern ]] && git push --no-thin github "refs/tags/$tag:refs/tags/$tag"
+  [[ "$tag" =~ $release_tag_pattern ]] && tag_refs+=("refs/tags/$tag:refs/tags/$tag")
 done < <(git for-each-ref --format='%(refname:strip=2)' refs/tags)
+if (( ${#tag_refs[@]} )); then
+  git push --no-thin github "${tag_refs[@]}"
+fi

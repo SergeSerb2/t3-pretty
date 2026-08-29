@@ -401,6 +401,54 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
+  it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {
+    const windows = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
+    const windowsAgent = NodeFS.readFileSync(
+      NodePath.resolve(here, "setup-buildkite-windows-agent.ps1"),
+      "utf8",
+    );
+    const windowsGit = NodeFS.readFileSync(
+      NodePath.resolve(here, "windows-origin-git.ps1"),
+      "utf8",
+    );
+
+    assert.match(pipeline, /Windows NSIS[\s\S]*powershell -NoProfile -NonInteractive/u);
+    assert.include(windows, '$env:CI = "true"');
+    assert.include(windows, '$env:GIT_TERMINAL_PROMPT = "0"');
+    assert.include(windows, '$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"');
+    assert.include(windows, "$env:RUSTUP_TOOLCHAIN = $rustToolchain");
+    assert.isBelow(windows.indexOf("$env:CARGO_HOME ="), windows.indexOf("$rustupBin ="));
+    assert.include(windows, 'Join-Path $env:CARGO_HOME "bin"');
+    assert.include(windows, "Copy-Item $bootstrapRustup $proxyPath");
+    assert.notInclude(windows, "if (-not (Test-Path $proxyPath))");
+    assert.include(windows, '"rustc.exe"');
+    assert.include(windows, "function Test-RustProxy");
+    assert.match(windows, /function Test-RustProxy[\s\S]*?catch \{\s*return \$false/u);
+    assert.include(windows, 'Test-RustProxy "cargo"');
+    assert.include(windows, 'Test-RustProxy "rustc"');
+    assert.include(windows, "rustup toolchain uninstall");
+    assert.match(windows, /try \{\s*& rustup toolchain uninstall[\s\S]*?catch \{/u);
+    assert.include(windows, "rustup toolchain install");
+    assert.notInclude(windows, "rustup default stable");
+    assert.include(windows, "corepack pnpm");
+    assert.include(windows, "Invoke-Pnpm install");
+    assert.include(windows, "Invoke-Pnpm run dist:desktop:artifact");
+    assert.notInclude(windows, "Test-OfficialVp");
+    assert.notInclude(windows, "https://vite.plus/ps1");
+    assert.include(windowsAgent, '"3.137.2"');
+    assert.include(windowsAgent, "buildkite/agent/v$agentVersion/install.ps1");
+    assert.include(windowsAgent, '"C:\\buildkite-agent\\service"');
+    assert.include(windowsAgent, "$serviceAgentVersion.Contains($agentVersion)");
+    assert.include(windowsAgent, 'AppParameters "start --config `"$cfg`""');
+    assert.include(windowsAgent, "AppExit Default Restart");
+    assert.include(windowsAgent, "sc.exe failure $serviceName");
+    assert.include(windowsAgent, '$service.WaitForStatus("Running"');
+    assert.include(windowsAgent, "Check $agentLog");
+    assert.notInclude(windowsAgent, "Get-Process -Name buildkite-agent");
+    assert.include(windowsAgent, "core.longpaths true");
+    assert.notInclude(windowsGit, "core.longpaths true");
+  });
+
   it("deploys the relay on macos-release with baked public IDs", () => {
     const relay = jobBlock(relayWorkflow, "deploy_relay");
     assert.include(relay, "runs-on: macos-latest");
