@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME,
   desktopUpdateCheckMotionAfterSpinIteration,
+  desktopUpdateCheckSpinFrom,
   isDesktopUpdateCheckSettleAnimationEnd,
   shouldClearDesktopUpdateCheckSettle,
 } from "./DesktopUpdateStatusIcon";
@@ -51,6 +52,15 @@ describe("isDesktopUpdateCheckSettleAnimationEnd", () => {
     ).toBe(true);
     expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "spin" })).toBe(false);
     expect(isDesktopUpdateCheckSettleAnimationEnd({ animationName: "" })).toBe(false);
+  });
+});
+
+describe("desktopUpdateCheckSpinFrom", () => {
+  it("keeps the hover tilt only for a fine-pointer hover click", () => {
+    expect(desktopUpdateCheckSpinFrom({ fineHover: true, hovered: true })).toBe("90deg");
+    expect(desktopUpdateCheckSpinFrom({ fineHover: true, hovered: false })).toBe("0deg");
+    expect(desktopUpdateCheckSpinFrom({ fineHover: false, hovered: true })).toBe("0deg");
+    expect(desktopUpdateCheckSpinFrom({ fineHover: false, hovered: false })).toBe("0deg");
   });
 });
 

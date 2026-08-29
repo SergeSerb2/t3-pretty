@@ -185,26 +185,12 @@
     --refresh-cw-tilt: 90deg;
   }
 
-  /* Hover rest stays available while aria-disabled so settle can land on it. */
-  @media (hover: hover) and (pointer: fine) {
-    [data-animate-ui-icons]:hover {
-      --refresh-cw-rest: var(--refresh-cw-tilt, 90deg);
-    }
-  }
-
-  /* Click applies aria-disabled, which drops the catalog hover tilt. Keep
-     that pose under spin only; settle animates rotate to rest. */
+  /* --refresh-cw-from is snapshotted on the control at click (90deg if the
+     pointer was hovering, else 0deg) so spin/settle do not retarget live. */
   svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle) {
     transform-box: fill-box;
     transform-origin: center;
-  }
-
-  svg.lucide-refresh-cw.animate-spin {
-    rotate: var(--refresh-cw-tilt, 90deg);
-  }
-
-  svg.lucide-refresh-cw.animate-desktop-update-check-settle {
-    rotate: var(--refresh-cw-rest, 0deg);
+    rotate: var(--refresh-cw-from, 0deg);
   }
 }
 
@@ -483,30 +469,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
   @keyframes desktop-update-check-settle {
-    /* Continues from the spin tilt (90deg). Lands on --refresh-cw-rest
-       (90deg while the control is still hovered, else 0deg). */
+    /* Springs around the snapshotted click pose (--refresh-cw-from). */
     0% {
-      rotate: var(--refresh-cw-tilt, 90deg);
+      rotate: var(--refresh-cw-from, 0deg);
       animation-timing-function: linear;
     }
     10% {
-      rotate: calc(var(--refresh-cw-tilt, 90deg) + 18deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) + 18deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     42% {
-      rotate: calc(
-        var(--refresh-cw-tilt, 90deg) * 0.35 + var(--refresh-cw-rest, 0deg) * 0.65 - 8deg
-      );
+      rotate: calc(var(--refresh-cw-from, 0deg) - 8deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     68% {
-      rotate: calc(
-        var(--refresh-cw-tilt, 90deg) * 0.1 + var(--refresh-cw-rest, 0deg) * 0.9 + 3.5deg
-      );
+      rotate: calc(var(--refresh-cw-from, 0deg) + 3.5deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     100% {
-      rotate: var(--refresh-cw-rest, 0deg);
+      rotate: var(--refresh-cw-from, 0deg);
     }
   }
 }

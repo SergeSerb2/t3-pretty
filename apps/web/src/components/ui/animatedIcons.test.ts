@@ -24,15 +24,15 @@ const settleKeyframes = indexCss.slice(
     indexCss.indexOf("100%", indexCss.indexOf("@keyframes desktop-update-check-settle")),
   ) + 1,
 );
-const spinTiltRule = iconMotion.slice(
-  iconMotion.indexOf("svg.lucide-refresh-cw.animate-spin"),
-  iconMotion.indexOf("}", iconMotion.indexOf("svg.lucide-refresh-cw.animate-spin")) + 1,
-);
-const settleRestRule = iconMotion.slice(
-  iconMotion.indexOf("svg.lucide-refresh-cw.animate-desktop-update-check-settle"),
+const spinSettleRotateRule = iconMotion.slice(
+  iconMotion.indexOf(
+    "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
+  ),
   iconMotion.indexOf(
     "}",
-    iconMotion.indexOf("svg.lucide-refresh-cw.animate-desktop-update-check-settle"),
+    iconMotion.indexOf(
+      "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
+    ),
   ) + 1,
 );
 
@@ -50,16 +50,12 @@ describe("animated icon boundaries", () => {
     expect(iconMotion).not.toContain("360deg");
   });
 
-  it("pins refresh-cw tilt only while spinning, then settles rotate to hover-aware rest", () => {
-    expect(spinTiltRule).toContain("rotate: var(--refresh-cw-tilt, 90deg)");
-    expect(spinTiltRule).not.toContain("animate-desktop-update-check-settle");
-    expect(iconMotion).toContain("[data-animate-ui-icons]:hover");
-    expect(iconMotion).toContain("--refresh-cw-rest: var(--refresh-cw-tilt, 90deg)");
-    expect(settleRestRule).toContain("rotate: var(--refresh-cw-rest, 0deg)");
-    expect(settleKeyframes).toContain("rotate: var(--refresh-cw-tilt, 90deg)");
-    expect(settleKeyframes).toContain("rotate: var(--refresh-cw-rest, 0deg)");
-    expect(settleKeyframes).toContain("var(--refresh-cw-tilt, 90deg) * 0.35");
-    expect(settleKeyframes).toContain("var(--refresh-cw-rest, 0deg) * 0.65");
+  it("spins and settles from a snapshotted click pose, not a live 90deg tilt", () => {
+    expect(spinSettleRotateRule).toContain("rotate: var(--refresh-cw-from, 0deg)");
+    expect(iconMotion).not.toContain("--refresh-cw-rest");
+    expect(settleKeyframes).toContain("rotate: var(--refresh-cw-from, 0deg)");
+    expect(settleKeyframes).toContain("calc(var(--refresh-cw-from, 0deg) + 18deg)");
+    expect(settleKeyframes).not.toContain("--refresh-cw-tilt");
     expect(settleKeyframes).not.toContain("transform:");
   });
 
@@ -67,5 +63,7 @@ describe("animated icon boundaries", () => {
     expect(sidebarTrigger).toContain("data-animate-ui-icons");
     expect(sidebarChrome).toContain("data-animate-ui-icons");
     expect(updatePill).toContain("data-animate-ui-icons");
+    expect(updatePill).toContain("desktopUpdateCheckSpinFrom");
+    expect(updatePill).toContain("--refresh-cw-from");
   });
 });
