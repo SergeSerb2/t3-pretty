@@ -6,15 +6,14 @@ import {
   readReleaseTrainVersion,
   type T3CodeBuildFlavor,
 } from "../../scripts/lib/public-config.ts";
-
-type AppVariant = "development" | "preview" | "production";
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./app-identity.ts";
 
 const repoEnv = loadRepoEnv();
 // loadRepoEnv projects the selected flavor to EXPO_PUBLIC_T3CODE_BUILD_FLAVOR,
 // which Metro inlines for shared client branding.
 Object.assign(process.env, repoEnv);
 
-const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const APP_VARIANT = resolveMobileAppVariant(repoEnv.APP_VARIANT);
 const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const internalMicrophonePermission =
@@ -49,10 +48,10 @@ const DEVELOPMENT_ASSETS = {
   androidNotificationColor: "#00639B",
 } as const;
 
-// The nightly*/production* PNG keys in BRAND_ASSET_PATHS all resolve to the
-// assets/pretty family (see scripts/lib/brand-assets.ts), so splash and
-// adaptive foregrounds track the same glass/sage art as iosIcon in every
-// channel — the sage plate below is not behind leftover candy art.
+// The nightly*/production* PNG keys in BRAND_ASSET_PATHS resolve to the
+// assets/pretty family (see scripts/lib/brand-assets.ts). Android supplies the
+// matching sage plate as the adaptive background instead of nesting it in the
+// foreground.
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
@@ -122,46 +121,20 @@ const relyingParty = resolveRelyingParty(
 const VARIANT_CONFIG = {
   development: {
     appName: "T3 Pretty Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.dev",
-    androidPackage: "com.sergeserbinenko.t3pretty.dev",
     relyingParty,
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
     appName: "T3 Pretty Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.preview",
-    androidPackage: "com.sergeserbinenko.t3pretty.preview",
     relyingParty,
     assets: PREVIEW_ASSETS,
   },
   production: {
     appName: isInternalBuild ? "T3 Pretty Internal" : "T3 Pretty",
-    // Both Clerk deployments allow the upstream-compatible production scheme.
-    // Distinct bundle/package IDs keep the applications installable together.
-    scheme: "t3code",
-    iosBundleIdentifier: isInternalBuild
-      ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.public",
-    androidPackage: isInternalBuild
-      ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.public",
     relyingParty,
     assets: isInternalBuild ? INTERNAL_RELEASE_ASSETS : RELEASE_ASSETS,
   },
 } as const;
-
-function resolveAppVariant(value: string | undefined): AppVariant {
-  switch (value) {
-    case "development":
-    case "preview":
-    case "production":
-      return value;
-    default:
-      return "production";
-  }
-}
 
 export function resolveVoiceDictationPlugins(
   internalBuild: boolean,
@@ -179,7 +152,10 @@ export function resolveVoiceDictationPlugins(
     : ["./plugins/withoutPublicExpoAudio.cjs"];
 }
 
-const variant = VARIANT_CONFIG[APP_VARIANT];
+const variant = {
+  ...VARIANT_CONFIG[APP_VARIANT],
+  ...resolveMobileAppIdentity(APP_VARIANT, isInternalBuild ? "internal" : "public"),
+};
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;

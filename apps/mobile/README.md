@@ -1,8 +1,9 @@
 # T3 Pretty Mobile
 
-T3 Pretty Mobile supports iOS and Android. This fork's automated production
-binary pipeline currently builds and submits iOS releases; Android store
-binaries are not wired into that workflow yet.
+T3 Pretty Mobile supports iOS and Android. Buildkite submits Internal Android
+releases automatically once the Play app is enabled, and submits the separate
+public app only from an explicit closed-testing build. iOS continues through
+the fork's OTA and TestFlight train.
 
 ## Quickstart
 
@@ -101,6 +102,19 @@ configured by `T3CODE_ACCEPTED_XCODE_BETA_BUILD`. Older beta builds fall back
 to EAS cloud. The resulting IPA is uploaded as a TestFlight build; neither path
 submits the app for App Store review.
 
+Android production binaries use Google Play's internal testing track:
+
+- `T3 Pretty Internal` uses package `com.sergeserbinenko.t3pretty` and the
+  private Internal relay. Its Buildkite step runs on each non-scheduled `main`
+  build after `T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1` is configured.
+- public `T3 Pretty` uses package `com.sergeserbinenko.t3pretty.app` and official
+  T3 Connect at `https://relay.t3.codes`. It runs only from a Buildkite UI build
+  with `T3CODE_PUBLIC_ANDROID_RELEASE=1`.
+
+Both stay on Play internal testing until the release policy is deliberately
+changed. See `docs/operations/fork-mobile-release.md` for the one-time Play and
+EAS credential setup.
+
 Use `vp run ios:release` only when you want a self-contained local Release
 app that does not need Metro.
 `vp run eas:ios:*` still starts a **cloud** build and counts against the Expo
@@ -130,7 +144,7 @@ Create a persistent preview build:
 vp run eas:ios:preview
 ```
 
-Android equivalents (still cloud):
+Android development equivalents (still cloud):
 
 ```bash
 vp run eas:android:dev

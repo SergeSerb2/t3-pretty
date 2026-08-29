@@ -870,7 +870,7 @@
 - `apps/server/src/http.test.ts` — Integrated secure download-header coverage for uploaded documents, including Content-Disposition, sandboxing, and octet-stream handling for executable/renderable content.
 - `apps/server/src/http.test.ts` — Integrated support tests for claimed filenames and MIME types, including preservation of official Office Open XML MIME types.
 - `apps/server/src/http.test.ts` — Integrated RFC 5987 non-ASCII filename encoding, quote/control-character sanitization, and safe handling of unpaired Unicode surrogates.
-- `apps/server/src/http.ts` — Added the parent's RFC 6266 download Content-Disposition generation with sanitized ASCII fallback and UTF-8 filename* support.
+- `apps/server/src/http.ts` — Added the parent's RFC 6266 download Content-Disposition generation with sanitized ASCII fallback and UTF-8 filename\* support.
 - `apps/server/src/http.ts` — Added the parent's safe download MIME validation, with HTML/XML and invalid MIME values falling back to application/octet-stream.
 - `apps/server/src/http.ts` — Added the parent's restrictive download Content-Security-Policy and ensured download handling takes precedence over inline HTML/SVG handling.
 - `apps/server/src/http.ts` — Integrated download, fileName, and mimeType metadata from resolved assets into asset responses.

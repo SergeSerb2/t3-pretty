@@ -1314,7 +1314,10 @@ function ThreadNavigationSidebarPane(
           backgroundColor,
         }}
       >
-        <View className="h-[50px] flex-row items-end gap-0.5 pr-2 pl-5">
+        <View
+          className="flex-row items-end gap-0.5 pr-2 pl-5"
+          style={Platform.OS === "android" ? { minHeight: 50 } : { height: 50 }}
+        >
           {/* Title slot doubles as the connection status surface: while an
               environment reconnects, the brand fades to a status label in
               place (no layout shift in the list below). */}
@@ -1323,8 +1326,14 @@ function ThreadNavigationSidebarPane(
             onPress={props.onOpenEnvironmentSettings}
             size="pageTitle"
             brand={
-              <View className="h-11 flex-1 justify-center">
-                <CompactBrandTitle allowFontScaling={false} />
+              <View
+                className={
+                  Platform.OS === "android"
+                    ? "min-h-12 flex-1 justify-center"
+                    : "h-11 flex-1 justify-center"
+                }
+              >
+                <CompactBrandTitle allowFontScaling={Platform.OS === "android"} />
               </View>
             }
           />

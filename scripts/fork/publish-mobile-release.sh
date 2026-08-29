@@ -432,9 +432,11 @@ fingerprint=""
 )
 
 if [[ ! -f "$gate_file" ]]; then
-  submitted_fingerprint=""
+  submitted_fingerprint_file="$tmp/ios-submitted-fingerprint"
   if [[ -f .t3-fork/ios-production-fingerprint ]]; then
-    submitted_fingerprint="$(tr -d '[:space:]' < .t3-fork/ios-production-fingerprint)"
+    cp .t3-fork/ios-production-fingerprint "$submitted_fingerprint_file"
+  else
+    : > "$submitted_fingerprint_file"
   fi
   # Trust the recorded fingerprint, including one left by the old GitHub
   # Actions importer. Installed TestFlight binaries pick up JS via OTA.
@@ -448,7 +450,7 @@ if [[ ! -f "$gate_file" ]]; then
   node scripts/fork/resolve-ios-native-build.mjs \
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
-    --submitted-fingerprint "$submitted_fingerprint" \
+    --submitted-fingerprint-file "$submitted_fingerprint_file" \
     --force "$force_flag"
 fi
 if ! grep -q '^should_build=' "$gate_file"; then

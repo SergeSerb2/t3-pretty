@@ -30,7 +30,7 @@ const MENU_WIDTH = 268;
 const MENU_RADIUS = 16;
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 8;
-const EDGE_BUTTON_SIZE = 44;
+const EDGE_BUTTON_SIZE = Platform.OS === "android" ? 48 : 44;
 const EDGE_INSET = 16;
 const BOTTOM_TOOLBAR_CLEARANCE = 56;
 
@@ -301,7 +301,8 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
             android_ripple={Platform.OS === "android" ? { color: rippleColor } : undefined}
             disabled={disabled}
             className={cn(
-              "min-h-11 flex-row items-center gap-2.5 px-3.5 py-2.5",
+              "flex-row items-center gap-2.5 px-3.5 py-2.5",
+              Platform.OS === "android" ? "min-h-12" : "min-h-11",
               disabled && "opacity-45",
             )}
             style={({ pressed }) =>

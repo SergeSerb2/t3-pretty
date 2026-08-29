@@ -14,6 +14,10 @@ const mobileRelease = NodeFS.readFileSync(
   NodePath.resolve(here, "publish-mobile-release.sh"),
   "utf8",
 );
+const androidRelease = NodeFS.readFileSync(
+  NodePath.resolve(here, "publish-android-release.sh"),
+  "utf8",
+);
 const pipeline = NodeFS.readFileSync(
   NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
   "utf8",
@@ -160,10 +164,10 @@ describe("T3 Pretty release runner placement", () => {
 
   it("pins macos-release packaging steps to os=macos agents", () => {
     // m1-linux-t3code-fork shares the macos-release queue as a review-only
-    // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
-    // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
-    // queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 5);
+    // agent; DMG/mobile/relay/sync must never be assigned to a Linux box.
+    // upstream-sync, macos-dmg, three mobile jobs, deploy-relay — reviews
+    // stay queue-wide.
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 7);
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
@@ -298,6 +302,56 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(dmg, "process.stdin.on");
     assert.include(dmg, "git fetch --force --tags origin");
     assert.include(dmg, "resolve-fork-release.mjs --print version");
+  });
+
+  it("automates Internal Android and keeps public closed testing explicit", () => {
+    assert.include(pipeline, "key: android-mobile");
+    assert.include(pipeline, "key: public-android-mobile");
+    assert.equal(
+      (pipeline.match(/concurrency_group: "t3-pretty\/android-signing"/g) || []).length,
+      2,
+    );
+    assert.match(
+      pipeline,
+      /key: android-mobile[\s\S]*?build\.branch == "main" && build\.source != "schedule"/u,
+    );
+    assert.match(
+      pipeline,
+      /key: public-android-mobile[\s\S]*?build\.env\("T3CODE_PUBLIC_ANDROID_RELEASE"\) == "1"/u,
+    );
+    assert.match(
+      pipeline,
+      /key: public-android-mobile[\s\S]*?T3CODE_BUILD_FLAVOR: public[\s\S]*?T3CODE_RELAY_URL: https:\/\/relay\.t3\.codes/u,
+    );
+    assert.equal(
+      (pipeline.match(/command: bash scripts\/fork\/publish-android-release\.sh/g) || []).length,
+      2,
+    );
+
+    assert.include(androidRelease, "T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED");
+    assert.include(androidRelease, "delivery is wired but inactive");
+    assert.include(androidRelease, 'flavor="${T3CODE_ANDROID_RELEASE_FLAVOR:-internal}"');
+    assert.include(androidRelease, 'export T3CODE_BUILD_FLAVOR="$flavor"');
+    assert.include(androidRelease, 'export T3CODE_RELAY_URL="https://relay.t3.codes"');
+    assert.include(androidRelease, 'eas env:pull production --path "$tmp/eas.env"');
+    assert.include(androidRelease, "Public EAS production identity does not match");
+    assert.include(androidRelease, "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    assert.include(androidRelease, "EXPO_PUBLIC_T3CODE_BUILD_FLAVOR");
+    assert.include(androidRelease, "VITE_T3CODE_RELAY_URL");
+    assert.include(androidRelease, "Internal EAS production identity does not match");
+    assert.include(androidRelease, "must target Google Play internal testing");
+    assert.include(androidRelease, "--platform android");
+    assert.include(androidRelease, "--profile production");
+    assert.include(androidRelease, "--wait");
+    assert.include(androidRelease, '--id "$build_id"');
+    assert.notInclude(androidRelease, "--latest");
+    assert.include(androidRelease, ".t3-fork/android-${flavor}-production-fingerprint");
+    assert.include(androidRelease, "A newer Origin main exists");
+    assert.include(androidRelease, "Google Play internal testing");
+    assert.include(androidRelease, "scripts/lib/brand-assets.ts");
+    assert.include(androidRelease, "scripts/lib/public-config.ts");
+    assert.include(androidRelease, "origin-forge.mjs merge-pr");
+    assert.notInclude(androidRelease, "serviceAccountKeyPath");
   });
 
   it("packages a Linux x64 AppImage on linux-small without fetching Origin", () => {
