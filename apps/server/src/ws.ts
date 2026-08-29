@@ -120,6 +120,12 @@ import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { grokSessionIdFromResumeCursor } from "./assets/GrokSessionImages.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import {
+  cancelProjectTransfer,
+  inspectProjectTransfer,
+  prepareProjectTransfer,
+  sendProjectTransfer,
+} from "./project/ProjectTransfer.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -2160,6 +2166,22 @@ const makeWsRpcLayer = (
             deletePendingAttachment(input.attachmentId),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.projectTransfersInspect]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersInspect, inspectProjectTransfer(input), {
+            "rpc.aggregate": "thread",
+          }),
+        [WS_METHODS.projectTransfersPrepare]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersPrepare, prepareProjectTransfer(input), {
+            "rpc.aggregate": "project",
+          }),
+        [WS_METHODS.projectTransfersSend]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersSend, sendProjectTransfer(input), {
+            "rpc.aggregate": "thread",
+          }),
+        [WS_METHODS.projectTransfersCancel]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersCancel, cancelProjectTransfer(input), {
+            "rpc.aggregate": "project",
+          }),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,

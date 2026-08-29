@@ -131,6 +131,9 @@ export function applyThreadDetailEvent(
         },
       };
 
+    case "thread.transferred":
+      return { kind: "updated", thread: event.payload.thread };
+
     case "thread.deleted":
       return { kind: "deleted" };
 

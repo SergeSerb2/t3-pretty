@@ -310,6 +310,23 @@ Headless servers and browser-only clients do not run the desktop reconciler. A h
 be discovered and added by desktops but has no client catalog to populate, which keeps that
 connection one-way by construction.
 
+## Project and Thread Transfer
+
+Project transfer is a client-coordinated, server-to-server copy between two managed relay
+environments. The client asks the source for an immutable manifest, asks the destination for a
+one-hour signed upload URL, then tells the source server to stream a compressed workspace archive
+to that URL. Project bytes never pass through the browser or mobile process.
+
+The destination reserves a unique directory below its projects root, extracts into staging, and
+commits `project.created` plus `thread.transferred` in one database transaction after extraction
+succeeds. The imported thread gets new project, thread, message, activity, plan, and turn IDs.
+Provider sessions and checkpoints are not portable; the first destination turn uses the bounded
+provider-handoff transcript instead. The source remains authoritative for its original copy.
+
+Archives omit dependencies, build outputs, T3 state, attachments, and file-form `.git` worktree
+pointers. A real `.git` directory is retained. The compressed body is capped at 96 MB, upload URLs
+expire after one hour and are single-use, and failed imports remove staging and destination data.
+
 ## Restricting Sign-ups: Known-User Allowlist
 
 For a closed deployment where all permitted users are known in advance, restrict sign-up to

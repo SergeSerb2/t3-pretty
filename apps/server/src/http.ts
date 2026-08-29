@@ -3,6 +3,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  PROJECT_TRANSFER_MAX_ARCHIVE_BYTES,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
@@ -42,6 +43,11 @@ import {
   storeAttachmentUpload,
   validateAttachmentUploadToken,
 } from "./assets/AttachmentUpload.ts";
+import {
+  PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX,
+  receiveProjectTransfer,
+  validateProjectTransferUploadToken,
+} from "./project/ProjectTransfer.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -103,8 +109,7 @@ export function assetResponseHeaders(
   sourceOrOptions?: ResolvedAssetSource | AssetResponseHeadersOptions,
 ): Record<string, string> {
   const options = typeof sourceOrOptions === "string" ? undefined : sourceOrOptions;
-  const source =
-    typeof sourceOrOptions === "string" ? sourceOrOptions : sourceOrOptions?.source;
+  const source = typeof sourceOrOptions === "string" ? sourceOrOptions : sourceOrOptions?.source;
   const lowerPath = filePath.toLowerCase();
   return {
     // Attachment bytes never change for a given attachment id, so they can be
@@ -500,6 +505,39 @@ export const attachmentUploadRouteLayer = HttpRouter.add(
     return stored.ok
       ? HttpServerResponse.empty({ status: 204 })
       : HttpServerResponse.text(stored.detail, { status: stored.status });
+  }),
+);
+
+export const projectTransferUploadRouteLayer = HttpRouter.add(
+  "POST",
+  `${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/*`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+    const token = url.value.pathname.slice(`${PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX}/`.length);
+    const claims = token ? yield* validateProjectTransferUploadToken(token) : null;
+    if (!claims) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    const contentLength = Number(request.headers["content-length"]);
+    if (
+      Number.isFinite(contentLength) &&
+      (contentLength <= 0 || contentLength > PROJECT_TRANSFER_MAX_ARCHIVE_BYTES)
+    ) {
+      return HttpServerResponse.text("Transfer archive is empty or too large.", { status: 413 });
+    }
+
+    const bodyPull = yield* Stream.toPull(request.stream);
+    const received = yield* receiveProjectTransfer(
+      claims,
+      Stream.fromPull(Effect.succeed(bodyPull)),
+    );
+    return received.ok
+      ? HttpServerResponse.jsonUnsafe(received.result)
+      : HttpServerResponse.text(received.detail, { status: received.status });
   }),
 );
 
