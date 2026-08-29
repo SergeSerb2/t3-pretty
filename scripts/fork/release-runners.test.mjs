@@ -416,13 +416,16 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(windows, '$env:CI = "true"');
     assert.include(windows, '$env:GIT_TERMINAL_PROMPT = "0"');
     assert.include(windows, '$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"');
+    assert.include(windows, '$env:CARGO_HOME = Join-Path $root ".cache\\t3-pretty-release\\cargo"');
+    assert.notInclude(windows, '$env:CARGO_HOME = "C:\\buildkite-agent\\cargo"');
+    assert.include(windows, "New-Item -ItemType Directory -Force -Path $env:CARGO_HOME");
     assert.include(windows, "$env:RUSTUP_TOOLCHAIN = $rustToolchain");
     assert.include(
       windows,
       '$rustToolchainBin = Join-Path $env:RUSTUP_HOME "toolchains\\$rustToolchain\\bin"',
     );
-    assert.include(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
-    assert.include(windows, '$env:Path = "$rustToolchainBin;$cargoBin;$env:Path"');
+    assert.notInclude(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
+    assert.include(windows, '$env:Path = "$rustToolchainBin;$env:Path"');
     assert.notInclude(windows, "rust-wrappers");
     assert.notInclude(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
     assert.notInclude(windows, "Set-Content -Path (Join-Path $rustWrapperBin");
