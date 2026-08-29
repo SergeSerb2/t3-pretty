@@ -418,6 +418,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(windows, '$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"');
     assert.include(windows, "$env:RUSTUP_TOOLCHAIN = $rustToolchain");
     assert.include(windows, '$rustWrapperBin = "C:\\buildkite-agent\\rust-wrappers"');
+    assert.include(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
+    assert.include(windows, '$env:Path = "$rustWrapperBin;$cargoBin;$env:Path"');
     assert.include(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
     assert.include(windows, '"@`"$bootstrapRustup`" run $rustToolchain $tool %*"');
     assert.include(windows, "Set-Content");
