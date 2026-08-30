@@ -469,7 +469,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
   }
   @keyframes desktop-update-check-settle {
-    /* Springs around the snapshotted click pose (--refresh-cw-from). */
+    /* Carries the snapshotted click pose back to the icon's 0deg rest pose. */
     0% {
       rotate: var(--refresh-cw-from, 0deg);
       animation-timing-function: linear;
@@ -479,15 +479,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     42% {
-      rotate: calc(var(--refresh-cw-from, 0deg) - 8deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) * 0.35 - 8deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     68% {
-      rotate: calc(var(--refresh-cw-from, 0deg) + 3.5deg);
+      rotate: calc(var(--refresh-cw-from, 0deg) * 0.1 + 3.5deg);
       animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
     }
     100% {
-      rotate: var(--refresh-cw-from, 0deg);
+      rotate: 0deg;
     }
   }
 }

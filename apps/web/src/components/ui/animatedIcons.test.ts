@@ -24,6 +24,7 @@ const settleKeyframes = indexCss.slice(
     indexCss.indexOf("100%", indexCss.indexOf("@keyframes desktop-update-check-settle")),
   ) + 1,
 );
+const settleEnd = settleKeyframes.slice(settleKeyframes.indexOf("100%"));
 const spinSettleRotateRule = iconMotion.slice(
   iconMotion.indexOf(
     "svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle)",
@@ -50,11 +51,13 @@ describe("animated icon boundaries", () => {
     expect(iconMotion).not.toContain("360deg");
   });
 
-  it("spins and settles from a snapshotted click pose, not a live 90deg tilt", () => {
+  it("spins from a snapshotted click pose and settles at rest", () => {
     expect(spinSettleRotateRule).toContain("rotate: var(--refresh-cw-from, 0deg)");
     expect(iconMotion).not.toContain("--refresh-cw-rest");
     expect(settleKeyframes).toContain("rotate: var(--refresh-cw-from, 0deg)");
     expect(settleKeyframes).toContain("calc(var(--refresh-cw-from, 0deg) + 18deg)");
+    expect(settleEnd).toContain("rotate: 0deg");
+    expect(settleEnd).not.toContain("--refresh-cw-from");
     expect(settleKeyframes).not.toContain("--refresh-cw-tilt");
     expect(settleKeyframes).not.toContain("transform:");
   });
