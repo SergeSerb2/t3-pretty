@@ -33,6 +33,23 @@ Start Metro for the dev client:
 vp run dev:client
 ```
 
+Metro keeps its transform cache between ordinary starts. If the cache itself is causing stale or
+invalid output, clear it for one development-client start:
+
+```bash
+vp run dev:client:reset
+```
+
+Run that reset once after installing or changing the Uniwind dependency patch. Cached transforms
+can otherwise reference its previous pnpm package path. Ordinary Metro starts still keep the cache.
+
+Component edits use Fast Refresh. Connection-runtime edits replace the active Effect layer through
+a stable atom runtime, preserving navigation and existing atom subscribers. Replaced registries
+and managed runtimes dispose their resources; the app does not force a JavaScript reload. The Uniwind patch
+skips global style invalidation when generated styles and themes are unchanged, while real style
+changes still refresh. See [mobile development lifecycle](../../docs/internals/mobile-development.md)
+for the lifetime boundaries.
+
 Build and run the local iOS dev client:
 
 ```bash
@@ -114,6 +131,10 @@ Android production binaries use Google Play's internal testing track:
 Both stay on Play internal testing until the release policy is deliberately
 changed. See `docs/operations/fork-mobile-release.md` for the one-time Play and
 EAS credential setup.
+
+Preview and production variants use Expo fingerprinting so OTA updates only reach binaries with matching native dependencies, config plugins, and patches. CI uses the `preview:dev` profile to reuse a compatible native build when possible.
+
+The development variant uses `appVersion` to avoid recalculating the native fingerprint for each Metro launch manifest. `MOBILE_VERSION_POLICY` can override either default. If you distribute a custom Release build with the development identity and publish OTA updates to it, set `MOBILE_VERSION_POLICY=fingerprint` for both its build and updates. Changing the runtime policy requires a native rebuild for OTA matching; an existing dev client can still load local Metro bundles.
 
 Use `vp run ios:release` only when you want a self-contained local Release
 app that does not need Metro.

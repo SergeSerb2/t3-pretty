@@ -1531,3 +1531,53 @@
 - `packages/contracts/src/relay.ts` — Use TrimmedNonEmptyString directly for RelayAuthInvalidError.traceId.. Reason: That would weaken T3 Pretty's hardened RelayTraceId length bound; the parent's DPoP addition is compatible with the stricter fork schema and was integrated independently.
 - `packages/effect-codex-app-server/src/protocol.ts` — The parent's local `Array&lt;string&gt;` remainder declaration and `Stream.decodeText()` fragment-scanning implementation.. Reason: Copying this hunk would replace T3 Pretty's byte-bounded wire framer and bypass its `maximumWireLineBytes` overflow protection. Its incremental-processing intent is already fulfilled by the fork framer.
 - `packages/effect-codex-app-server/src/protocol.ts` — The parent's EOF `remainder.join("")` and direct `handleLine` flush.. Reason: That flush cannot report framing overflow and duplicates buffering owned by the fork framer. `wireLineFramer.finish()` preserves the trailing-line behavior while retaining the hardened typed-error path.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.37-nightly.20260830.1226`
+- Previously integrated parent nightly: `v0.0.37-nightly.20260829.1224`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/README.md` — T3 Pretty's public and internal Android variants remain on Google Play internal testing until the fork deliberately changes its release policy.
+- `apps/mobile/README.md` — The fork-specific Play and EAS credential setup remains documented through `docs/operations/fork-mobile-release.md`.
+- `apps/mobile/app.config.ts` — T3 Pretty Internal retains its branded microphone permission text for voice dictation.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserved T3 Pretty’s IconClick fallback used by its additional mobile symbol mappings.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserved T3 Pretty’s IconKey fallback for key-related mobile UI.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserved T3 Pretty’s IconLayoutGrid choice for the square-grid symbol instead of reverting to the older IconApps visual.
+- `apps/mobile/src/components/AppSymbol.tsx` — Preserved T3 Pretty’s IconUsers fallback for multi-person mobile UI.
+- `apps/mobile/src/components/ControlPill.tsx` — T3 Pretty's token-driven ControlPill icon tinting remains connected through useThemeColor.
+- `apps/mobile/src/components/ControlPill.tsx` — Disabled ControlPill menus still bypass both AnchoredMenu and MenuView hosts, preventing locked project selectors or other disabled controls from opening menus.
+- `apps/mobile/src/components/ControlPill.tsx` — T3 Pretty's World Scenery menu architecture remains intact: tap menus continue through the token-styled AnchoredMenu path, while only iOS long-press context menus use MenuView.
+- `apps/mobile/src/components/ControlPill.tsx` — The fork's no-tap-through intent for iOS context menus remains protected, now through the parent's native menu lifecycle coordination rather than the fork's 350 ms Pressability workaround.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Preserved T3 Pretty's `markThreadOpenStarted` call before opening a thread, retaining its immediate thread-loading/performance behavior.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Preserved the settled-thread behavior documented at this call site: opening a settled thread does not itself unsettle it.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The thread-list clock does not continue ticking while the Home screen is covered or blurred, avoiding background timer work despite freezeOnBlur.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The clock immediately re-synchronizes when the screen returns to focus, preserving correct inactivity auto-settle classification.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — No interval is created while Thread List V2 is disabled.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/README.md` — Preview and production variants use Expo fingerprinting to constrain OTA delivery to binaries with matching native dependencies, config plugins, and patches.
+- `apps/mobile/README.md` — CI uses the `preview:dev` profile to reuse compatible native builds when possible.
+- `apps/mobile/README.md` — The development variant defaults to `appVersion` to avoid recalculating fingerprints for Metro launch manifests.
+- `apps/mobile/README.md` — `MOBILE_VERSION_POLICY` can override the default runtime-version policy.
+- `apps/mobile/README.md` — Custom Release builds using the development identity must use fingerprint policy consistently for both builds and OTA updates.
+- `apps/mobile/README.md` — Runtime-policy changes require native rebuilds for OTA matching, while existing development clients can continue loading local Metro bundles.
+- `apps/mobile/app.config.ts` — Added the parent runtime-version policy override through MOBILE_VERSION_POLICY, with appVersion for development variants and fingerprint for other variants by default.
+- `apps/mobile/src/components/AppSymbol.tsx` — Replaced the Tabler package-root import with individual icon-module imports so Metro does not eagerly register the entire Tabler icon set.
+- `apps/mobile/src/components/AppSymbol.tsx` — Adopted the parent’s type-only imports for the Tabler Icon type and expo-symbols types, avoiding unnecessary runtime imports at this boundary.
+- `apps/mobile/src/components/ControlPill.tsx` — Integrated the parent's typed PressableProps support for injected onTouchStart and onPress handlers.
+- `apps/mobile/src/components/ControlPill.tsx` — Integrated the parent's menu preparation/open-state refs and pending-press storage.
+- `apps/mobile/src/components/ControlPill.tsx` — Adopted the parent's first-party replacement for iOS context-menu tap-through handling, including physical-touch suppression, accessibility-click handling, preparation/display race handling, and correct release behavior when a native menu is cancelled or closed.
+- `apps/mobile/src/features/home/HomeRouteScreen.tsx` — Integrated the parent's `handleSelectThread` callback so upstream thread-selection and navigation behavior remains centralized rather than duplicating the older direct navigation logic.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Replaced manual useEffect/isFocused timer management with the parent's useFocusEffect lifecycle, which starts or refreshes the clock on focus and cleans the interval up on blur.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Adopted the parent's immediate refresh semantics for both feature enablement and screen focus.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/components/AppSymbol.tsx` — The parent side’s retained IconApps import.. Reason: The merged T3 Pretty symbol map uses IconLayoutGrid for the square-grid fallback and no longer references IconApps; retaining it would create an unused import without preserving any runtime behavior.
+- `apps/mobile/src/components/ControlPill.tsx` — Retain View in the react-native import list.. Reason: The composed T3 Pretty implementation does not use View because non-native menu presentation remains delegated to AnchoredMenu. Keeping the unused import would add no behavior and could fail unused-import linting.
