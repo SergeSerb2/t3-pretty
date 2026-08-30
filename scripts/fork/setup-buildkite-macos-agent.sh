@@ -86,6 +86,9 @@ replacements = {
     "token=": f"token=\"{token}\"",
     "name=": f"name=\"{name}\"",
     "tags=": f"tags=\"{tags}\"",
+    # The upstream sync checkpoints resolutions from its EXIT trap on
+    # cancellation; the 10s default grace period kills it mid-push.
+    "cancel-grace-period=": "cancel-grace-period=60",
 }
 lines = []
 seen = set()

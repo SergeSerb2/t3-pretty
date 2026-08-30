@@ -49,6 +49,10 @@ SYNC_FAIL_REASON=""
 CACHE_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 CACHE_ROOT="${CACHE_ROOT%/}"
 export SYNC_RESOLUTION_CACHE_DIR="${SYNC_RESOLUTION_CACHE_DIR:-${CACHE_ROOT}/sync-resolution-cache}"
+# Stop issuing model requests 150 minutes in: the Buildkite timeout is 180,
+# a timed-out job files no blocked report, and the remaining files land
+# through the fork-side fallback instead.
+export SYNC_MODEL_DEADLINE_EPOCH_MS="$(( ($(date +%s) + 150 * 60) * 1000 ))"
 mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
 
 origin_git() {
@@ -153,7 +157,9 @@ checkpoint_resolutions() {
   fi
   local commit
   commit="$(git commit-tree "$tree" ${parent_args[@]+"${parent_args[@]}"} -m "chore(sync): checkpoint conflict resolutions")"
-  retry origin_git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
+  # No retry here: this also runs from the EXIT trap inside Buildkite's
+  # short cancel grace period, and retry's backoff sleeps would eat it.
+  origin_git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
   echo "Checkpointed ${#entries[@]} resolution(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
@@ -179,6 +185,9 @@ sync_landed=0
 on_exit() {
   local status=$?
   trap - EXIT
+  # On cancellation the log tee dies first; without this, the first echo in
+  # checkpoint_resolutions takes SIGPIPE and kills the trap before the push.
+  trap '' PIPE
   if [[ "$has_update" == 1 ]]; then
     checkpoint_resolutions || true
   fi
@@ -352,6 +361,14 @@ merge_ref() {
   local refresh_remote="${3:-}"
   local refresh_refspec="${4:-}"
   local merge_status
+  # Tell the resolver which side carries fork intent: merging origin/main
+  # into a reused sync branch puts the fork on THEIRS, and the resolver's
+  # fork-preference rules invert without this.
+  if [[ "$ref" == "origin/main" ]]; then
+    export SYNC_FORK_SIDE=theirs
+  else
+    export SYNC_FORK_SIDE=ours
+  fi
   if git merge-base --is-ancestor "$ref^{commit}" HEAD 2>/dev/null ||
     git merge-base --is-ancestor "$ref" HEAD 2>/dev/null; then
     echo "HEAD already contains $ref."
@@ -462,13 +479,18 @@ push_sync_branch() {
   remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
   if [[ "$(git rev-parse HEAD)" == "$remote_head" ]]; then
     echo "$SYNC_BRANCH is already current."
-  else
+  elif [[ -n "$remote_head" ]]; then
     # An explicit lease: a bare --force-with-lease needs the remote-tracking
     # ref and is rejected with "stale info" whenever the fetch above flaked
-    # or a fresh workspace never had the ref. An empty expectation means
-    # "the branch must not exist yet", which is exactly what we observed.
+    # or a fresh workspace never had the ref.
     retry origin_git push "--force-with-lease=refs/heads/$SYNC_BRANCH:$remote_head" \
       origin "HEAD:refs/heads/$SYNC_BRANCH"
+  else
+    # No readable remote head — a lease against a ref we could not read is
+    # meaningless (an empty expectation is rejected as "stale info" too when
+    # the branch exists). A plain push creates the branch, and git still
+    # rejects a non-fast-forward if the branch exists after a flaked fetch.
+    retry origin_git push origin "HEAD:refs/heads/$SYNC_BRANCH"
   fi
 }
 
@@ -559,6 +581,23 @@ else
   fi
 fi
 
+# A landed sync that used fork-side fallbacks omitted parent changes.
+# Landing anyway is the contract, but the omission must never be silent —
+# especially when the cause is a config failure like a missing
+# CLI_PROXY_API_KEY, where every conflicted file quietly kept the fork
+# side. Annotate the build and file a per-tag notice PR at the report.
+if grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md 2>/dev/null; then
+  fallback_note="The sync for $UPSTREAM_TAG landed, but some conflicted files took the deterministic fork-side fallback because no model resolution was available. Review .t3-fork/upstream-sync-report.md on main for every omitted parent change, and check CLI_PROXY_API_KEY if every file fell back."
+  if command -v buildkite-agent >/dev/null; then
+    buildkite-agent annotate --style warning --context upstream-sync-fallback "$fallback_note" || true
+  fi
+  node scripts/fork/origin-forge.mjs report-blocked \
+    --upstream-tag "$UPSTREAM_TAG" \
+    --title "Upstream sync landed with fork-side fallbacks: $UPSTREAM_TAG" \
+    --body "$fallback_note" ||
+    echo "warning: could not file the fork-side fallback notice on Origin."
+fi
+
 # The sync's success contract ends when the merge lands on main. Everything
 # below is follow-up delivery with its own recovery path (the merge push
 # triggers desktop and mobile jobs, and the OTA coverage mark re-releases
@@ -578,8 +617,13 @@ if [[ "$mobile_release_needed" == "true" ]]; then
   echo "Upstream integration changed mobile-relevant paths; publishing OTA/TestFlight from this Mac."
   T3CODE_MOBILE_SKIP_PATH_FILTER=1 \
     T3CODE_MOBILE_UPDATE_MESSAGE="Upstream sync $UPSTREAM_TAG" \
-    bash scripts/fork/publish-mobile-release.sh ||
+    bash scripts/fork/publish-mobile-release.sh || {
     echo "warning: the inline mobile publish failed; the merge push's mobile jobs and the OTA coverage mark re-release it."
+    if command -v buildkite-agent >/dev/null; then
+      buildkite-agent annotate --style warning --context upstream-sync-mobile \
+        "The inline mobile publish for $UPSTREAM_TAG failed after the merge landed; check the merge push's mobile jobs." || true
+    fi
+  }
 else
   echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
 fi

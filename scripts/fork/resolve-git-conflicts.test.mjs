@@ -291,6 +291,10 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     // Stage-3-only is "added by them" (file/directory or rename conflict on a
     // path the fork never had), never a fork deletion.
     assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([3])));
+    // Merging origin/main into a reused sync branch puts the fork on THEIRS;
+    // the rule must follow the fork side or it inverts on that merge.
+    assert.isTrue(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2]), "theirs"));
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 3]), "theirs"));
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "isForkDeletionConflict(path)");

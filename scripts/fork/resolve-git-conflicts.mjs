@@ -43,6 +43,13 @@ const MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 // real integration instead of dropping to the fork-side fallback.
 const DEFAULT_CONTEXT_LINES = 100;
 const WIDE_CONTEXT_LINES = 400;
+// Wall-clock guard: worst-case model time for one batch (validation retries
+// x transient retries x the 10-minute request timeout, doubled by the wide
+// retry) exceeds the Buildkite job timeout, and a timed-out job is killed
+// with no blocked report. Past the deadline every remaining request throws
+// immediately and the affected files take the fork-side fallback, so the
+// run still lands. run-upstream-sync.sh sets this to job start + 150min.
+const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS ?? "") || undefined;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
@@ -761,8 +768,18 @@ function unmergedStages(path) {
   );
 }
 
+// The resolver runs for two different merges: the upstream tag merge, where
+// OURS is the fork, and the origin/main merge on a reused sync branch, where
+// THEIRS is the fork. The fork-preference rules below must know which side
+// carries fork intent or they invert on the second merge — a fork-deleted
+// file would be resurrected and a fork modification deleted, each reported
+// as the opposite. run-upstream-sync.sh sets SYNC_FORK_SIDE per merge_ref.
+const FORK_SIDE = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours";
+const forkStageOf = (forkSide) => (forkSide === "theirs" ? 3 : 2);
+const parentStageOf = (forkSide) => (forkSide === "theirs" ? 2 : 3);
+
 // A modify/delete conflict where the fork deleted the file is established
-// fork intent: the deletion is committed origin/main history (the retired
+// fork intent: the deletion is committed fork history (the retired
 // OpenCode provider, pruned tests). The model cannot see the replacement
 // surface from the surviving file alone, so it refused these run after run
 // (opencodeRuntime.*.test.ts blocked five consecutive syncs on 2026-08-29)
@@ -770,10 +787,10 @@ function unmergedStages(path) {
 // noticed. Keep every fork deletion deterministically; the report records
 // the parent changes this omits, and a wrongly kept deletion resurfaces the
 // moment a maintainer restores the file on main. Stage 1 must exist: a
-// stage-3-only entry is "added by them" (a file/directory or rename
+// parent-stage-only entry is "added by them" (a file/directory or rename
 // conflict on a path the fork never had), not a fork deletion.
-export function isForkDeletionConflict(path, stages = unmergedStages(path)) {
-  return stages.has(1) && !stages.has(2) && stages.has(3);
+export function isForkDeletionConflict(path, stages = unmergedStages(path), forkSide = FORK_SIDE) {
+  return stages.has(1) && !stages.has(forkStageOf(forkSide)) && stages.has(parentStageOf(forkSide));
 }
 
 function resolveForkDeletion(path) {
@@ -803,11 +820,17 @@ function resolveForkDeletion(path) {
 // parent change the fallback omitted so the omission is never silent.
 function fallbackResolution(path, reason) {
   const stages = unmergedStages(path);
-  if (stages.has(2)) {
-    git(["checkout", "--ours", "--", path]);
+  const forkStage = forkStageOf(FORK_SIDE);
+  if (stages.has(forkStage)) {
+    git(["checkout", FORK_SIDE === "theirs" ? "--theirs" : "--ours", "--", path]);
     git(["add", "--", path]);
-  } else {
+  } else if (stages.has(parentStageOf(FORK_SIDE))) {
     git(["rm", "-q", "--", path]);
+  } else {
+    // No fork stage and no parent stage: the path is not a recognizable
+    // conflict any more (or ls-files failed). Deleting on that evidence
+    // would be a guess, not a fallback.
+    throw new Error(`${path} has no fork or parent stage to fall back to`);
   }
   process.stdout.write(`[fork-sync] fork-side fallback for ${oneLine(path)}: ${oneLine(reason)}\n`);
   return {
@@ -815,7 +838,7 @@ function fallbackResolution(path, reason) {
     deterministic: true,
     fallback: true,
     forkChangesPreserved: [
-      stages.has(2)
+      stages.has(forkStage)
         ? "kept the fork side wholesale as a fork-side fallback resolution"
         : "kept the fork's deletion of this file as a fork-side fallback resolution",
     ],
@@ -957,6 +980,11 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   let apiResponse;
   let usedEffort = REASONING_EFFORT;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (MODEL_DEADLINE_EPOCH_MS !== undefined && Date.now() > MODEL_DEADLINE_EPOCH_MS) {
+      throw new Error(
+        "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
+      );
+    }
     const effort = attempt < maxAttempts ? REASONING_EFFORT : "high";
     let response;
     let raw = "";
