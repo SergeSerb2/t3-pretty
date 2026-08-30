@@ -201,6 +201,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "auto-archive-settled-threads",
+    title: "Auto-archive settled threads",
+    to: "/settings/general",
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
@@ -208,6 +213,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
+    to: "/settings/general",
+  },
+  {
+    id: "skills-in-slash-menu",
+    title: "Show skills in slash menu",
     to: "/settings/general",
   },
   {
@@ -229,6 +239,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "add-project-starts-in",
     title: "Add project starts in",
+    to: "/settings/general",
+  },
+  {
+    id: "unpin-confirmation",
+    title: "Unpin confirmation",
     to: "/settings/general",
   },
   {
@@ -347,6 +362,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Agent browser access",
     to: "/settings/integrations",
     targetId: "browser",
+  },
+  {
+    id: "agent-computer-control",
+    title: "Agent computer control",
+    to: "/settings/integrations",
+    targetId: "computer-control",
   },
   {
     id: "browser-default-viewport",

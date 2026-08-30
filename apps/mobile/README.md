@@ -1,7 +1,9 @@
 # T3 Pretty Mobile
 
-> [!WARNING]
-> T3 Pretty Mobile is currently in development and is not distributed yet. If you want to try it out, you can build it from source.
+T3 Pretty Mobile supports iOS and Android. Buildkite submits Internal Android
+releases automatically once the Play app is enabled, and submits the separate
+public app only from an explicit closed-testing build. iOS continues through
+the fork's OTA and TestFlight train.
 
 ## Quickstart
 
@@ -38,8 +40,9 @@ vp run ios:dev
 ```
 
 If your Xcode account only has a Personal Team, use a bundle identifier you control and opt into the
-reduced-capability local build. Personal Team builds omit the widget and share extensions, push
-entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.
+reduced-capability local build. Personal Team builds omit the widget and share extensions, push,
+Associated Domains, and native Sign in with Apple entitlements; builds without this opt-in are
+unchanged.
 
 ```bash
 T3CODE_IOS_PERSONAL_TEAM=1 \
@@ -93,12 +96,24 @@ The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin.
 ## Production builds
 
 CI publishes production OTA through the fork-owned EAS project. Installed
-TestFlight binaries pick that up. A new IPA is compiled with
-`eas build --local` from `Xcode.app` or `Xcode-beta.app` and uploaded as a
-TestFlight build when the native fingerprint changed. macos-release is on
-the macOS developer beta, so `Xcode-beta.app` is the expected compiler.
-EAS cloud is only the fallback when that Mac has no full Xcode. Neither
-path submits the app for App Store review.
+TestFlight binaries pick that up. When the native fingerprint changes, a new
+IPA is compiled locally with stable `Xcode.app` or the Apple-listed beta build
+configured by `T3CODE_ACCEPTED_XCODE_BETA_BUILD`. Older beta builds fall back
+to EAS cloud. The resulting IPA is uploaded as a TestFlight build; neither path
+submits the app for App Store review.
+
+Android production binaries use Google Play's internal testing track:
+
+- `T3 Pretty Internal` uses package `com.sergeserbinenko.t3pretty` and the
+  private Internal relay. Its Buildkite step runs on each non-scheduled `main`
+  build after `T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1` is configured.
+- public `T3 Pretty` uses package `com.sergeserbinenko.t3pretty.app` and official
+  T3 Connect at `https://relay.t3.codes`. It runs only from a Buildkite UI build
+  with `T3CODE_PUBLIC_ANDROID_RELEASE=1`.
+
+Both stay on Play internal testing until the release policy is deliberately
+changed. See `docs/operations/fork-mobile-release.md` for the one-time Play and
+EAS credential setup.
 
 Use `vp run ios:release` only when you want a self-contained local Release
 app that does not need Metro.
@@ -129,7 +144,7 @@ Create a persistent preview build:
 vp run eas:ios:preview
 ```
 
-Android equivalents (still cloud):
+Android development equivalents (still cloud):
 
 ```bash
 vp run eas:android:dev

@@ -60,6 +60,19 @@ export class ServerRuntimeStartupError extends Schema.TaggedErrorClass<ServerRun
   }
 }
 
+export const SERVER_STARTUP_COMMAND_QUEUE_CAPACITY = 256;
+
+export class ServerRuntimeCommandQueueFullError extends Schema.TaggedErrorClass<ServerRuntimeCommandQueueFullError>()(
+  "ServerRuntimeCommandQueueFullError",
+  {
+    capacity: Schema.Int.check(Schema.isGreaterThan(0)),
+  },
+) {
+  override get message(): string {
+    return `Server startup command queue reached its ${this.capacity}-command limit.`;
+  }
+}
+
 export class ServerRuntimeStartup extends Context.Service<
   ServerRuntimeStartup,
   {
@@ -67,7 +80,7 @@ export class ServerRuntimeStartup extends Context.Service<
     readonly markHttpListening: Effect.Effect<void>;
     readonly enqueueCommand: <A, E>(
       effect: Effect.Effect<A, E>,
-    ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
+    ) => Effect.Effect<A, E | ServerRuntimeStartupError | ServerRuntimeCommandQueueFullError>;
   }
 >()("t3/serverRuntimeStartup") {}
 
@@ -83,7 +96,7 @@ interface CommandGate {
   readonly failCommandReady: (error: ServerRuntimeStartupError) => Effect.Effect<void>;
   readonly enqueueCommand: <A, E>(
     effect: Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
+  ) => Effect.Effect<A, E | ServerRuntimeStartupError | ServerRuntimeCommandQueueFullError>;
 }
 
 const settleQueuedCommand = <A, E>(deferred: Deferred.Deferred<A, E>, exit: Exit.Exit<A, E>) =>
@@ -93,7 +106,7 @@ const settleQueuedCommand = <A, E>(deferred: Deferred.Deferred<A, E>, exit: Exit
 
 export const makeCommandGate = Effect.gen(function* () {
   const commandReady = yield* Deferred.make<void, ServerRuntimeStartupError>();
-  const commandQueue = yield* Queue.unbounded<QueuedCommand>();
+  const commandQueue = yield* Queue.dropping<QueuedCommand>(SERVER_STARTUP_COMMAND_QUEUE_CAPACITY);
   const commandReadinessState = yield* Ref.make<CommandReadinessState>("pending");
 
   const commandWorker = Effect.forever(
@@ -123,13 +136,18 @@ export const makeCommandGate = Effect.gen(function* () {
         }
 
         const result = yield* Deferred.make<A, E | ServerRuntimeStartupError>();
-        yield* Queue.offer(commandQueue, {
+        const offered = yield* Queue.offer(commandQueue, {
           run: Deferred.await(commandReady).pipe(
             Effect.flatMap(() => effect),
             Effect.exit,
             Effect.flatMap((exit) => settleQueuedCommand(result, exit)),
           ),
         });
+        if (!offered) {
+          return yield* new ServerRuntimeCommandQueueFullError({
+            capacity: SERVER_STARTUP_COMMAND_QUEUE_CAPACITY,
+          });
+        }
         return yield* Deferred.await(result);
       }),
   } satisfies CommandGate;

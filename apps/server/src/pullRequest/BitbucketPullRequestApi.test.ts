@@ -708,6 +708,27 @@ layer("BitbucketPullRequestApi.layer", (it) => {
     }),
   );
 
+  it.effect("fails an endless detail-page walk at its request bound", () =>
+    Effect.gen(function* () {
+      mockedRequest.mockReturnValue(
+        Effect.succeed(
+          response(
+            valuePage(
+              [{ name: "Build", state: "SUCCESSFUL" }],
+              "https://api.bitbucket.org/2.0/statuses?page=next",
+            ),
+          ),
+        ),
+      );
+      const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+
+      const error = yield* api.listChecks({ repository: "acme/web", number: 7 }).pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "BitbucketPullRequestReadError");
+      assert.strictEqual(mockedRequest.mock.calls.length, 20);
+    }),
+  );
+
   it.effect("reassembles a thread from the flat comment list, replies included", () =>
     Effect.gen(function* () {
       mockedRequest.mockReturnValueOnce(

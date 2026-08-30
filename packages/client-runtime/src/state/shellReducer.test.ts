@@ -156,6 +156,30 @@ describe("applyShellStreamEvent", () => {
       expect(next.threads).toHaveLength(1);
       expect(next.threads[0]?.title).toBe("Updated Thread");
     });
+
+    it("reads each retained thread id only once while replacing a late entry", () => {
+      let idReads = 0;
+      const threads = Array.from({ length: 200 }, (_, index) => ({
+        ...stubThread,
+        get id() {
+          idReads += 1;
+          return ThreadId.make(`thread-${index}`);
+        },
+      }));
+      const replacement = {
+        ...stubThread,
+        id: ThreadId.make("thread-199"),
+        title: "Replacement",
+      };
+
+      const next = applyShellStreamEvent(
+        { ...baseSnapshot, threads },
+        { kind: "thread-upserted", sequence: 6, thread: replacement },
+      );
+
+      expect(idReads).toBe(threads.length);
+      expect(next.threads.at(-1)).toBe(replacement);
+    });
   });
 
   describe("thread-removed", () => {

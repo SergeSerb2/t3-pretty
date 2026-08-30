@@ -6,6 +6,7 @@ import {
   type ComponentProps,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useRef,
 } from "react";
 import { Platform, Pressable } from "react-native";
@@ -35,16 +36,31 @@ export function ControlPill(props: {
   const isLoading = props.loading === true;
   const showDisabledChrome = props.disabled === true && !isLoading;
   const activatedOnPressInRef = useRef(false);
+  const pressResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pressResetTimerRef.current) {
+        clearTimeout(pressResetTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const handlePressIn = () => {
+    if (pressResetTimerRef.current) {
+      clearTimeout(pressResetTimerRef.current);
+      pressResetTimerRef.current = null;
+    }
     activatedOnPressInRef.current = true;
     props.onPress?.();
   };
   const handlePressOut = () => {
     // Pressability invokes onPressOut immediately before onPress on release.
     // Defer the reset so onPress can identify the same physical gesture.
-    setTimeout(() => {
+    pressResetTimerRef.current = setTimeout(() => {
       activatedOnPressInRef.current = false;
+      pressResetTimerRef.current = null;
     }, 0);
   };
   const handlePress = () => {
@@ -54,18 +70,15 @@ export function ControlPill(props: {
     props.onPress?.();
   };
 
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const primaryFg = useThemeColor("--color-primary-foreground");
-  const dangerFg = useThemeColor("--color-danger-foreground");
-  const iconTintColor =
+  const iconTintClassName =
     variant === "primary"
       ? showDisabledChrome
-        ? iconSubtle
-        : primaryFg
+        ? "accent-icon-subtle"
+        : "accent-primary-foreground"
       : variant === "danger"
-        ? dangerFg
-        : iconColor;
+        ? "accent-danger-foreground"
+        : "accent-icon";
+  const iconTintColor = useThemeColor(iconTintClassName);
 
   const isCircle =
     variant === "circle" || variant === "danger" || (variant === "primary" && !props.label);
@@ -109,7 +122,12 @@ export function ControlPill(props: {
           {props.iconNode ? (
             props.iconNode
           ) : props.icon ? (
-            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+            <SymbolView
+              name={props.icon}
+              size={16}
+              tintColorClassName={iconTintClassName}
+              type="monochrome"
+            />
           ) : null}
         </ComposerSendIconSlot>
       ) : null}

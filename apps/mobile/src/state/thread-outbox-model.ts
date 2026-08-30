@@ -8,6 +8,8 @@ import {
   ModelSelection,
   ProjectId,
   ProviderInteractionMode,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   RuntimeMode,
   SkillId,
   ThreadId,
@@ -23,6 +25,7 @@ import * as Schema from "effect/Schema";
 import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
+import { compareTimestamps } from "../lib/time";
 
 const THREAD_OUTBOX_SCHEMA_VERSION = 3;
 const THREAD_OUTBOX_MAX_RETRY_DELAY_MS = 16_000;
@@ -46,8 +49,10 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   commandId: CommandId,
-  text: Schema.String,
-  attachments: Schema.Array(DraftComposerImageAttachmentSchema),
+  text: Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  attachments: Schema.Array(DraftComposerImageAttachmentSchema).check(
+    Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
@@ -141,7 +146,7 @@ export function groupQueuedThreadMessages(
     (grouped[threadKey] ??= []).push(message);
   }
   for (const queue of Object.values(grouped)) {
-    queue.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    queue.sort((left, right) => compareTimestamps(left.createdAt, right.createdAt));
   }
   return grouped;
 }

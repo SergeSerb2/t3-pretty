@@ -1,14 +1,19 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   buildCollapsedProposedPlanPreviewMarkdown,
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
   buildProposedPlanMarkdownFilename,
+  downloadPlanAsTextFile,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
   stripDisplayedPlanMarkdown,
 } from "./proposedPlan";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("proposedPlanTitle", () => {
   it("reads the first markdown heading as the plan title", () => {
@@ -110,5 +115,36 @@ describe("buildProposedPlanMarkdownFilename", () => {
 
   it("falls back to a generic filename when the plan has no heading", () => {
     expect(buildProposedPlanMarkdownFilename("- step 1")).toBe("plan.md");
+  });
+});
+
+describe("downloadPlanAsTextFile", () => {
+  it("still schedules object URL cleanup when invoking the download throws", () => {
+    const cause = new Error("download unavailable");
+    const createObjectURL = vi.fn(() => "blob:plan");
+    const revokeObjectURL = vi.fn();
+    let cleanup: (() => void) | undefined;
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        href: "",
+        download: "",
+        click: () => {
+          throw cause;
+        },
+      }),
+    });
+    vi.stubGlobal("window", {
+      setTimeout: (callback: () => void) => {
+        cleanup = callback;
+        return 1;
+      },
+    });
+
+    expect(() => downloadPlanAsTextFile("plan.md", "# Plan")).toThrow(cause);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    cleanup?.();
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:plan");
   });
 });

@@ -371,7 +371,7 @@ describe("runAppUpdateCheck", () => {
     reportError.mockRestore();
   });
 
-  it("still restarts a user-requested install when the flush fails", async () => {
+  it("does not restart a user-requested install when the flush fails", async () => {
     const reportError = vi.spyOn(console, "error").mockImplementation(() => {});
     const client = makeAvailableUpdateClient();
     const { environment } = makeUpdateEnvironment({
@@ -387,7 +387,7 @@ describe("runAppUpdateCheck", () => {
       environment,
     });
 
-    expect(client.reloadAsync).toHaveBeenCalledOnce();
+    expect(client.reloadAsync).not.toHaveBeenCalled();
     reportError.mockRestore();
   });
 

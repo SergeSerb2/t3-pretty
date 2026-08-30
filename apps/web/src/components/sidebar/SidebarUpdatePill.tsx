@@ -1,5 +1,12 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
@@ -24,7 +31,9 @@ import { SidebarMenuItem } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
-  shouldContinueDesktopUpdateCheckAnimation,
+  desktopUpdateCheckMotionAfterSpinIteration,
+  desktopUpdateCheckSpinFrom,
+  shouldClearDesktopUpdateCheckSettle,
   shouldShowDesktopUpdateCheckIcon,
 } from "./DesktopUpdateStatusIcon";
 
@@ -145,13 +154,17 @@ function SidebarUpdateControl() {
   const [isActionPending, setIsActionPending] = useState(false);
   const [checkAnimationKey, setCheckAnimationKey] = useState(0);
   const [isCheckAnimationLatched, setIsCheckAnimationLatched] = useState(false);
+  const [isCheckSettling, setIsCheckSettling] = useState(false);
+  const [checkSpinFrom, setCheckSpinFrom] = useState<"0deg" | "90deg">("0deg");
   const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
   useEffect(() => {
     if (prefersReducedMotion) {
       setIsCheckAnimationLatched(false);
+      setIsCheckSettling(false);
     } else if (state?.status === "checking") {
       setIsCheckAnimationLatched(true);
+      setIsCheckSettling(false);
     }
   }, [prefersReducedMotion, state?.status]);
 
@@ -179,29 +192,118 @@ function SidebarUpdateControl() {
     : showUpdateDetails
       ? isDesktopUpdateButtonDisabled(state)
       : !canCheckForUpdate(state);
+  const isInteractionDisabled = disabled || isActionPending;
 
-  const handleAction = useCallback(async () => {
-    const bridge = window.desktopBridge;
-    if (!bridge || !state) return;
-    if (disabled || isActionPending) return;
+  const handleAction = useCallback(
+    async (event: MouseEvent<HTMLButtonElement>) => {
+      const bridge = window.desktopBridge;
+      if (!bridge || !state) return;
+      if (isInteractionDisabled) return;
 
-    setIsActionPending(true);
+      setIsActionPending(true);
 
-    if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          if (result.completed) {
-            showDesktopUpdateDownloadedToast(bridge, result.state);
-          }
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
+      if (action === "download") {
+        void bridge
+          .downloadUpdate()
+          .then((result) => {
+            if (result.completed) {
+              showDesktopUpdateDownloadedToast(bridge, result.state);
+            }
+            if (!shouldToastDesktopUpdateActionResult(result)) return;
+            const actionError = getDesktopUpdateActionError(result);
+            if (!actionError) return;
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not download update",
+                description: actionError,
+              }),
+            );
+          })
+          .catch((error) => {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not start update download",
+                description:
+                  error instanceof Error ? error.message : "An unexpected error occurred.",
+              }),
+            );
+          })
+          .finally(() => setIsActionPending(false));
+        return;
+      }
+
+      if (action === "install") {
+        let confirmed = false;
+        try {
+          confirmed = await ensureLocalApi().dialogs.confirm(
+            getDesktopUpdateInstallConfirmationMessage(state),
+          );
+        } catch (error) {
+          setIsActionPending(false);
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not download update",
-              description: actionError,
+              title: "Could not confirm update",
+              description: error instanceof Error ? error.message : "Update confirmation failed.",
+            }),
+          );
+          return;
+        }
+        if (!confirmed) {
+          setIsActionPending(false);
+          return;
+        }
+        void bridge
+          .installUpdate()
+          .then((result) => {
+            if (!shouldToastDesktopUpdateActionResult(result)) return;
+            const actionError = getDesktopUpdateActionError(result);
+            if (!actionError) return;
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not install update",
+                description: actionError,
+              }),
+            );
+          })
+          .catch((error) => {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not install update",
+                description:
+                  error instanceof Error ? error.message : "An unexpected error occurred.",
+              }),
+            );
+          })
+          .finally(() => setIsActionPending(false));
+        return;
+      }
+
+      if (!prefersReducedMotion) {
+        setCheckSpinFrom(
+          desktopUpdateCheckSpinFrom({
+            fineHover: window.matchMedia("(hover: hover) and (pointer: fine)").matches,
+            hovered: event.currentTarget.matches(":hover"),
+          }),
+        );
+        setIsCheckAnimationLatched(true);
+        setIsCheckSettling(false);
+        setCheckAnimationKey((key) => key + 1);
+      }
+      void bridge
+        .checkForUpdate()
+        .then((result) => {
+          if (result.checked) return;
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not check for updates",
+              description:
+                result.state.message ?? "Automatic updates are not available in this build.",
             }),
           );
         })
@@ -209,100 +311,41 @@ function SidebarUpdateControl() {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not start update download",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
+              title: "Could not check for updates",
+              description: error instanceof Error ? error.message : "Update check failed.",
             }),
           );
         })
         .finally(() => setIsActionPending(false));
-      return;
-    }
-
-    if (action === "install") {
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(state),
-        );
-      } catch (error) {
-        setIsActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsActionPending(false);
-        return;
-      }
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: actionError,
-            }),
-          );
-        })
-        .catch((error) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        })
-        .finally(() => setIsActionPending(false));
-      return;
-    }
-
-    if (!prefersReducedMotion) {
-      setIsCheckAnimationLatched(true);
-      setCheckAnimationKey((key) => key + 1);
-    }
-    void bridge
-      .checkForUpdate()
-      .then((result) => {
-        if (result.checked) return;
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not check for updates",
-            description:
-              result.state.message ?? "Automatic updates are not available in this build.",
-          }),
-        );
-      })
-      .catch((error) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not check for updates",
-            description: error instanceof Error ? error.message : "Update check failed.",
-          }),
-        );
-      })
-      .finally(() => setIsActionPending(false));
-  }, [action, disabled, isActionPending, prefersReducedMotion, state]);
+    },
+    [action, isInteractionDisabled, prefersReducedMotion, state],
+  );
 
   const handleCheckAnimationIteration = useCallback(() => {
-    setIsCheckAnimationLatched(
-      shouldContinueDesktopUpdateCheckAnimation({
-        isChecking: state?.status === "checking",
-        prefersReducedMotion,
-      }),
-    );
+    const nextMotion = desktopUpdateCheckMotionAfterSpinIteration({
+      isChecking: state?.status === "checking",
+      prefersReducedMotion,
+    });
+    if (nextMotion === "spin") return;
+    if (nextMotion === "settle") {
+      setIsCheckSettling(true);
+      return;
+    }
+    setIsCheckAnimationLatched(false);
+    setIsCheckSettling(false);
   }, [prefersReducedMotion, state?.status]);
+
+  const checkSettleEndRef = useRef({ isChecking: false, isSettling: false });
+  checkSettleEndRef.current = {
+    isChecking: state?.status === "checking",
+    isSettling: isCheckSettling,
+  };
+
+  const handleCheckAnimationEnd = useCallback(() => {
+    if (!shouldClearDesktopUpdateCheckSettle(checkSettleEndRef.current)) return;
+    setIsCheckAnimationLatched(false);
+    setIsCheckSettling(false);
+  }, []);
 
   return (
     <SidebarMenuItem className="ml-auto shrink-0">
@@ -312,13 +355,26 @@ function SidebarUpdateControl() {
             <button
               type="button"
               aria-label={tooltip}
-              aria-disabled={disabled || isActionPending || undefined}
-              disabled={disabled || isActionPending}
+              aria-disabled={isInteractionDisabled || undefined}
+              data-animate-ui-icons
+              style={
+                showCheckIcon
+                  ? ({ "--refresh-cw-from": checkSpinFrom } as CSSProperties)
+                  : undefined
+              }
               className={cn(
-                "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors enabled:cursor-pointer focus-visible:ring-2 disabled:cursor-not-allowed",
+                "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
+                isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
                 showUpdateIconState
-                  ? "bg-update-surface text-update-foreground enabled:hover:bg-update/12"
-                  : "text-[var(--sidebar-icon-color)] enabled:hover:bg-sidebar-row-hover enabled:hover:text-sidebar-foreground",
+                  ? cn(
+                      "bg-update-surface text-update-foreground",
+                      !isInteractionDisabled && "hover:bg-update/12",
+                    )
+                  : cn(
+                      "text-[var(--sidebar-icon-color)]",
+                      !isInteractionDisabled &&
+                        "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                    ),
                 disabled && !showUpdateIconState && "opacity-60",
               )}
               onClick={handleAction}
@@ -327,6 +383,8 @@ function SidebarUpdateControl() {
                 key={showCheckIcon ? checkAnimationKey : iconStatus}
                 downloadPercent={state?.downloadPercent ?? null}
                 isCheckAnimating={showCheckIcon && !prefersReducedMotion}
+                isCheckSettling={isCheckSettling}
+                onCheckAnimationEnd={handleCheckAnimationEnd}
                 onCheckAnimationIteration={handleCheckAnimationIteration}
                 status={iconStatus}
               />

@@ -36,12 +36,14 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  ArrowRightLeftIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
   LayoutGridIcon,
   LinkIcon,
+  KeyboardIcon,
   MessageSquareIcon,
   ServerIcon,
   SettingsIcon,
@@ -64,6 +66,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 
 import { openWhatsNewDialog } from "../changelog/whatsNewStore";
+import { openProjectTransferDialog } from "../projectTransferStore";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -656,6 +659,13 @@ function OpenCommandPaletteDialog(props: {
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
+  const [isAddingProject, setIsAddingProject] = useState(false);
+  const addingProjectRef = useRef(false);
+  const remoteProjectLookupGenerationRef = useRef(0);
+  const invalidateRemoteProjectLookup = useCallback(() => {
+    remoteProjectLookupGenerationRef.current += 1;
+    setIsRemoteProjectLookingUp(false);
+  }, []);
   const projectGroupingSettings = useMemo(
     () => selectProjectGroupingSettings(clientSettings),
     [clientSettings],
@@ -969,6 +979,7 @@ function OpenCommandPaletteDialog(props: {
   useEffect(
     () => () => {
       browseNavigation.invalidate();
+      remoteProjectLookupGenerationRef.current += 1;
     },
     [browseNavigation],
   );
@@ -1168,6 +1179,7 @@ function OpenCommandPaletteDialog(props: {
   const pushPaletteView = useCallback(
     (view: CommandPaletteView): void => {
       browseNavigation.invalidate();
+      invalidateRemoteProjectLookup();
       setViewStack((previousViews) => [
         ...previousViews,
         {
@@ -1179,7 +1191,7 @@ function OpenCommandPaletteDialog(props: {
       setHighlightedItemValue(null);
       setQuery(view.initialQuery ?? "");
     },
-    [browseNavigation],
+    [browseNavigation, invalidateRemoteProjectLookup],
   );
 
   function pushView(item: CommandPaletteSubmenuItem): void {
@@ -1192,6 +1204,7 @@ function OpenCommandPaletteDialog(props: {
 
   function popView(): void {
     browseNavigation.invalidate();
+    invalidateRemoteProjectLookup();
     setAddProjectCloneFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
@@ -1203,6 +1216,7 @@ function OpenCommandPaletteDialog(props: {
 
   function handleQueryChange(nextQuery: string): void {
     browseNavigation.invalidate();
+    invalidateRemoteProjectLookup();
     setHighlightedItemValue(null);
     setQuery(nextQuery);
     if (nextQuery === "" && currentView?.initialQuery) {
@@ -1568,6 +1582,35 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  if (
+    activeThread &&
+    environments.find((environment) => environment.environmentId === activeThread.environmentId)
+      ?.serverConfig?.environment.capabilities.projectTransfer === true &&
+    environments.some(
+      (environment) =>
+        environment.relayManaged &&
+        environment.environmentId !== activeThread.environmentId &&
+        environment.connection.phase === "connected" &&
+        environment.serverConfig?.environment.capabilities.projectTransfer === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:transfer-thread",
+      searchTerms: ["move thread", "transfer project", "connection", "t3 connect", "surge connect"],
+      title: "Move current thread to connection…",
+      description: activeThread.title,
+      icon: <ArrowRightLeftIcon className={ITEM_ICON_CLASS} />,
+      disabled:
+        activeThread.latestTurn?.state === "running" ||
+        activeThread.session?.status === "starting" ||
+        activeThread.session?.status === "running",
+      run: async () => {
+        openProjectTransferDialog(scopeThreadRef(activeThread.environmentId, activeThread.id));
+      },
+    });
+  }
+
   actionItems.push({
     kind: "action",
     value: "action:search-project-contents",
@@ -1630,7 +1673,7 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:settings",
-    searchTerms: ["settings", "preferences", "configuration", "keybindings"],
+    searchTerms: ["settings", "preferences", "configuration"],
     title: "Open settings",
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
@@ -1646,6 +1689,17 @@ function OpenCommandPaletteDialog(props: {
     icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({ to: "/settings/apps" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:settings:keybindings",
+    searchTerms: ["keybindings", "keyboard shortcuts", "hotkeys", "bindings"],
+    title: "Open keybindings",
+    icon: <KeyboardIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/settings/keybindings" });
     },
   });
 
@@ -1743,65 +1797,85 @@ function OpenCommandPaletteDialog(props: {
 
       const cwd = resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
       if (cwd.length === 0) return;
+      if (addingProjectRef.current) return;
 
-      const existing = findProjectByPath(
-        projects.filter((project) => project.environmentId === input.environmentId),
-        cwd,
-      );
-      if (existing) {
-        const latestThread = getLatestThreadForProject(
-          threads.filter((thread) => thread.environmentId === existing.environmentId),
-          existing.id,
-          clientSettings.sidebarThreadSortOrder,
+      addingProjectRef.current = true;
+      setIsAddingProject(true);
+      try {
+        const existing = findProjectByPath(
+          projects.filter((project) => project.environmentId === input.environmentId),
+          cwd,
         );
-        if (latestThread) {
-          await navigate({
-            to: "/$environmentId/$threadId",
-            params: buildThreadRouteParams(
-              scopeThreadRef(latestThread.environmentId, latestThread.id),
-            ),
-          });
-        } else {
-          const navigationResult = await settlePromise(() =>
-            handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
+        if (existing) {
+          const latestThread = getLatestThreadForProject(
+            threads.filter((thread) => thread.environmentId === existing.environmentId),
+            existing.id,
+            clientSettings.sidebarThreadSortOrder,
           );
-          if (navigationResult._tag === "Failure") {
-            const error = squashAtomCommandFailure(navigationResult);
+          if (latestThread) {
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(
+                scopeThreadRef(latestThread.environmentId, latestThread.id),
+              ),
+            });
+          } else {
+            const navigationResult = await settlePromise(() =>
+              handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
+            );
+            if (navigationResult._tag === "Failure") {
+              const error = squashAtomCommandFailure(navigationResult);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Failed to open project",
+                  description: error instanceof Error ? error.message : "An error occurred.",
+                }),
+              );
+              return;
+            }
+          }
+          setOpen(false);
+          return;
+        }
+
+        const projectId = newProjectId();
+        const targetEnvironmentProviders =
+          environments.find((environment) => environment.environmentId === input.environmentId)
+            ?.serverConfig?.providers ??
+          (input.environmentId === primaryEnvironmentId ? providers : []);
+        const createResult = await createProject({
+          environmentId: input.environmentId,
+          input: {
+            projectId,
+            title: inferProjectTitleFromPath(cwd),
+            workspaceRoot: cwd,
+            createWorkspaceRootIfMissing: true,
+            defaultModelSelection: resolveDefaultProviderModelSelection(
+              targetEnvironmentProviders,
+              null,
+            ),
+          },
+        });
+        if (createResult._tag === "Failure") {
+          if (!isAtomCommandInterrupted(createResult)) {
+            const error = squashAtomCommandFailure(createResult);
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Failed to open project",
+                title: "Failed to add project",
                 description: error instanceof Error ? error.message : "An error occurred.",
               }),
             );
-            return;
           }
+          return;
         }
-        setOpen(false);
-        return;
-      }
 
-      const projectId = newProjectId();
-      const targetEnvironmentProviders =
-        environments.find((environment) => environment.environmentId === input.environmentId)
-          ?.serverConfig?.providers ??
-        (input.environmentId === primaryEnvironmentId ? providers : []);
-      const createResult = await createProject({
-        environmentId: input.environmentId,
-        input: {
-          projectId,
-          title: inferProjectTitleFromPath(cwd),
-          workspaceRoot: cwd,
-          createWorkspaceRootIfMissing: true,
-          defaultModelSelection: resolveDefaultProviderModelSelection(
-            targetEnvironmentProviders,
-            null,
-          ),
-        },
-      });
-      if (createResult._tag === "Failure") {
-        if (!isAtomCommandInterrupted(createResult)) {
-          const error = squashAtomCommandFailure(createResult);
+        const navigationResult = await settlePromise(() =>
+          handleNewThread(scopeProjectRef(input.environmentId, projectId)),
+        );
+        if (navigationResult._tag === "Failure") {
+          const error = squashAtomCommandFailure(navigationResult);
           toastManager.add(
             stackedThreadToast({
               type: "error",
@@ -1809,25 +1883,13 @@ function OpenCommandPaletteDialog(props: {
               description: error instanceof Error ? error.message : "An error occurred.",
             }),
           );
+          return;
         }
-        return;
+        setOpen(false);
+      } finally {
+        addingProjectRef.current = false;
+        setIsAddingProject(false);
       }
-
-      const navigationResult = await settlePromise(() =>
-        handleNewThread(scopeProjectRef(input.environmentId, projectId)),
-      );
-      if (navigationResult._tag === "Failure") {
-        const error = squashAtomCommandFailure(navigationResult);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-        return;
-      }
-      setOpen(false);
     },
     [
       handleNewThread,
@@ -1906,6 +1968,7 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      const lookupGeneration = ++remoteProjectLookupGenerationRef.current;
       setIsRemoteProjectLookingUp(true);
       const lookupResult = await lookupRepository({
         environmentId: addProjectCloneFlow.environmentId,
@@ -1914,6 +1977,9 @@ function OpenCommandPaletteDialog(props: {
           repository: rawRepository,
         },
       });
+      if (lookupGeneration !== remoteProjectLookupGenerationRef.current) {
+        return;
+      }
       setIsRemoteProjectLookingUp(false);
       if (lookupResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(lookupResult)) {
@@ -2283,9 +2349,15 @@ function OpenCommandPaletteDialog(props: {
       pickedPath = await api.dialogs.pickFolder(
         Object.keys(pickerOptions).length > 0 ? pickerOptions : undefined,
       );
-    } catch {
-      // Ignore picker failures and leave the palette open.
+    } catch (error) {
       setIsPickingProjectFolder(false);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Could not open ${fileManagerName}`,
+          description: error instanceof Error ? error.message : "The folder picker did not open.",
+        }),
+      );
       return;
     }
     setIsPickingProjectFolder(false);
@@ -2352,6 +2424,7 @@ function OpenCommandPaletteDialog(props: {
     canOpenProjectFromFileManager,
     desktopLocalBootstraps,
     environments,
+    fileManagerName,
     fileManagerInitialPath,
     handleAddProject,
     handleAddProjectForEnvironment,
@@ -2403,6 +2476,7 @@ function OpenCommandPaletteDialog(props: {
               disabled={
                 !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
                 relativePathNeedsActiveProject ||
+                isAddingProject ||
                 (isCloneDestinationStep && isRemoteProjectPending)
               }
               onMouseDown={(event) => {
@@ -2443,7 +2517,7 @@ function OpenCommandPaletteDialog(props: {
 
   const footerTrailing = canOpenProjectFromFileManager ? (
     <CommandFooterAction
-      disabled={isPickingProjectFolder}
+      disabled={isPickingProjectFolder || isAddingProject}
       onClick={() => {
         void handleOpenProjectFromFileManager();
       }}

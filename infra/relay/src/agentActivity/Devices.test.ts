@@ -1,4 +1,7 @@
-import type { RelayDeviceRegistrationRequest } from "@t3tools/contracts/relay";
+import {
+  RELAY_DEVICE_MAX_COUNT,
+  type RelayDeviceRegistrationRequest,
+} from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -170,6 +173,7 @@ describe("Devices", () => {
   it.effect("lists safe notification state without exposing APNs tokens", () => {
     const dialect = new PgDialect();
     let condition: SQL | null = null;
+    let selectedLimit: number | null = null;
     const fakeDb = {
       select: () => ({
         from: (table: unknown) => {
@@ -177,17 +181,24 @@ describe("Devices", () => {
           return {
             where: (nextCondition: SQL) => {
               condition = nextCondition;
-              return Effect.succeed([
-                {
-                  deviceId: "device-1",
-                  label: "Julius's iPhone",
-                  platform: "ios" as const,
-                  iosMajorVersion: 18,
-                  appVersion: "1.0.0",
-                  preferences: registration.preferences,
-                  updatedAt: "2026-06-01T00:00:00.000Z",
-                },
-              ]);
+              return {
+                orderBy: () => ({
+                  limit: (limit: number) => {
+                    selectedLimit = limit;
+                    return Effect.succeed([
+                      {
+                        deviceId: "device-1",
+                        label: "Julius's iPhone",
+                        platform: "ios" as const,
+                        iosMajorVersion: 18,
+                        appVersion: "1.0.0",
+                        preferences: registration.preferences,
+                        updatedAt: "2026-06-01T00:00:00.000Z",
+                      },
+                    ]);
+                  },
+                }),
+              };
             },
           };
         },
@@ -203,6 +214,7 @@ describe("Devices", () => {
         sql: '"relay_mobile_devices"."user_id" = $1',
         params: ["user-2"],
       });
+      expect(selectedLimit).toBe(RELAY_DEVICE_MAX_COUNT);
       expect(listed).toEqual([
         {
           deviceId: "device-1",
@@ -289,7 +301,9 @@ describe("Devices", () => {
     const fakeDb = {
       select: () => ({
         from: () => ({
-          where: () => Effect.fail(cause),
+          where: () => ({
+            orderBy: () => ({ limit: () => Effect.fail(cause) }),
+          }),
         }),
       }),
     } as unknown as RelayDb.RelayDb["Service"];

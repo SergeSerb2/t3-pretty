@@ -1,7 +1,7 @@
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useAuth } from "@clerk/expo";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -52,16 +52,32 @@ function ConfiguredConnectOnboardingRouteScreen() {
     connectedEnvironments,
     cloudEnvironments: null,
   });
+  const mountedRef = useRef(true);
+  const pullRefreshPendingRef = useRef(false);
+  const optOutPendingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Pull-to-refresh tracks its own spinner instead of discovery's refreshing
   // flag, so background refreshes (e.g. the sign-in one) don't yank the
   // content down.
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullRefresh = useCallback(() => {
+    if (pullRefreshPendingRef.current) return;
+    pullRefreshPendingRef.current = true;
+    setIsPullRefreshing(true);
     void (async () => {
-      setIsPullRefreshing(true);
-      await refreshRelayEnvironments();
-      setIsPullRefreshing(false);
+      try {
+        await refreshRelayEnvironments();
+      } finally {
+        pullRefreshPendingRef.current = false;
+        if (mountedRef.current) setIsPullRefreshing(false);
+      }
     })();
   }, [refreshRelayEnvironments]);
 
@@ -72,12 +88,18 @@ function ConfiguredConnectOnboardingRouteScreen() {
   // Persist before dismissing so a quick sign-out/sign-in cannot race ahead
   // of the preference write; the write is a local secure-store update.
   const handleDontShowAgain = useCallback(() => {
+    if (optOutPendingRef.current) return;
+    optOutPendingRef.current = true;
     void (async () => {
-      if (userId) {
-        const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
-        reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
+      try {
+        if (userId) {
+          const result = await settlePromise(() => optOutOfConnectOnboarding(userId));
+          reportAtomCommandResult(result, { label: "connect onboarding opt-out" });
+        }
+        if (mountedRef.current && navigation.isFocused()) navigation.goBack();
+      } finally {
+        optOutPendingRef.current = false;
       }
-      navigation.goBack();
     })();
   }, [navigation, userId]);
 
@@ -90,7 +112,12 @@ function ConfiguredConnectOnboardingRouteScreen() {
         />
       ) : (
         <NativeHeaderToolbar placement="right">
-          <NativeHeaderToolbar.Button icon="xmark" onPress={handleClose} separateBackground />
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="Close Connect setup"
+            icon="xmark"
+            onPress={handleClose}
+            separateBackground
+          />
         </NativeHeaderToolbar>
       )}
       <ScrollView

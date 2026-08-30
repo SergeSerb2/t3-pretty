@@ -1,6 +1,14 @@
 import {
+  AUTH_ACCESS_PAIRING_LINK_MAX_COUNT,
+  AUTH_CREDENTIAL_MAX_LENGTH,
+  AUTH_ENVIRONMENT_SCOPE_MAX_COUNT,
+  AUTH_PROOF_KEY_THUMBPRINT_MAX_LENGTH,
   AuthAdministrativeScopes,
+  AuthClientLabel,
+  AuthEnvironmentScopes,
+  AuthProofKeyThumbprint,
   AuthStandardClientScopes,
+  AuthSubject,
   type AuthEnvironmentScope,
   type AuthPairingLink,
   type ServerAuthBootstrapMethod,
@@ -15,6 +23,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
@@ -65,11 +74,21 @@ export class UnavailableBootstrapCredentialError extends Schema.TaggedErrorClass
   }
 }
 
+export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedErrorClass<BootstrapCredentialScopeNotGrantedError>()(
+  "BootstrapCredentialScopeNotGrantedError",
+  {},
+) {
+  override get message(): string {
+    return "Bootstrap credential does not grant the requested scopes.";
+  }
+}
+
 export const BootstrapCredentialInvalidError = Schema.Union([
   UnknownBootstrapCredentialError,
   ExpiredBootstrapCredentialError,
   BootstrapCredentialProofKeyMismatchError,
   UnavailableBootstrapCredentialError,
+  BootstrapCredentialScopeNotGrantedError,
 ]);
 export type BootstrapCredentialInvalidError = typeof BootstrapCredentialInvalidError.Type;
 export const isBootstrapCredentialInvalidError = Schema.is(BootstrapCredentialInvalidError);
@@ -82,6 +101,26 @@ export class ActivePairingLinksLoadError extends Schema.TaggedErrorClass<ActiveP
 ) {
   override get message(): string {
     return "Failed to load active pairing links.";
+  }
+}
+
+export class ActivePairingLinksLimitExceededError extends Schema.TaggedErrorClass<ActivePairingLinksLimitExceededError>()(
+  "ActivePairingLinksLimitExceededError",
+  {},
+) {
+  override get message(): string {
+    return "The active pairing-link list exceeds the supported limit.";
+  }
+}
+
+export class PairingCredentialInputValidationError extends Schema.TaggedErrorClass<PairingCredentialInputValidationError>()(
+  "PairingCredentialInputValidationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Pairing credential metadata is invalid.";
   }
 }
 
@@ -158,6 +197,8 @@ export class BootstrapCredentialLookupError extends Schema.TaggedErrorClass<Boot
 
 export const BootstrapCredentialInternalError = Schema.Union([
   ActivePairingLinksLoadError,
+  ActivePairingLinksLimitExceededError,
+  PairingCredentialInputValidationError,
   PairingLinkRevokeError,
   PairingCredentialIssueError,
   PairingCredentialRandomGenerationError,
@@ -213,11 +254,17 @@ export class PairingGrantStore extends Context.Service<
       BootstrapCredentialInternalError
     >;
     readonly streamChanges: Stream.Stream<BootstrapCredentialChange>;
+    readonly subscribeChanges: Effect.Effect<
+      Stream.Stream<BootstrapCredentialChange>,
+      never,
+      Scope.Scope
+    >;
     readonly revoke: (id: string) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
     readonly consume: (
       credential: string,
       input?: {
         readonly proofKeyThumbprint?: string;
+        readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
       },
     ) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
   }
@@ -230,7 +277,7 @@ interface StoredBootstrapGrant extends BootstrapGrant {
 type ConsumeResult =
   | {
       readonly _tag: "error";
-      readonly reason: "not-found" | "expired";
+      readonly reason: "not-found" | "expired" | "scope-not-granted";
       readonly error: BootstrapCredentialError;
     }
   | {
@@ -261,6 +308,14 @@ const PAIRING_TOKEN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PAIRING_TOKEN_LENGTH = 12;
 const PAIRING_TOKEN_REJECTION_LIMIT =
   Math.floor(256 / PAIRING_TOKEN_ALPHABET.length) * PAIRING_TOKEN_ALPHABET.length;
+
+const PairingCredentialMetadata = Schema.Struct({
+  scopes: AuthEnvironmentScopes,
+  subject: AuthSubject,
+  label: Schema.optionalKey(AuthClientLabel),
+  proofKeyThumbprint: Schema.optionalKey(AuthProofKeyThumbprint),
+});
+const decodePairingCredentialMetadata = Schema.decodeUnknownEffect(PairingCredentialMetadata);
 
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
@@ -335,6 +390,9 @@ export const make = Effect.gen(function* () {
     function* () {
       const now = yield* DateTime.now;
       const rows = yield* pairingLinks.listActive({ now });
+      if (rows.length > AUTH_ACCESS_PAIRING_LINK_MAX_COUNT) {
+        return yield* new ActivePairingLinksLimitExceededError({});
+      }
 
       return rows.map((row) =>
         row.label
@@ -357,7 +415,11 @@ export const make = Effect.gen(function* () {
             } satisfies AuthPairingLink),
       );
     },
-    Effect.mapError((cause) => new ActivePairingLinksLoadError({ cause })),
+    Effect.mapError((cause) =>
+      cause._tag === "ActivePairingLinksLimitExceededError"
+        ? cause
+        : new ActivePairingLinksLoadError({ cause }),
+    ),
   );
 
   const revoke: PairingGrantStore["Service"]["revoke"] = Effect.fn("PairingGrantStore.revoke")(
@@ -379,6 +441,12 @@ export const make = Effect.gen(function* () {
   const issueOneTimeToken: PairingGrantStore["Service"]["issueOneTimeToken"] = Effect.fn(
     "PairingGrantStore.issueOneTimeToken",
   )(function* (input) {
+    const metadata = yield* decodePairingCredentialMetadata({
+      scopes: input?.scopes ?? AuthStandardClientScopes,
+      subject: input?.subject ?? "one-time-token",
+      ...(input?.label ? { label: input.label } : {}),
+      ...(input?.proofKeyThumbprint ? { proofKeyThumbprint: input.proofKeyThumbprint } : {}),
+    }).pipe(Effect.mapError((cause) => new PairingCredentialInputValidationError({ cause })));
     const id = yield* crypto.randomUUIDv4.pipe(
       Effect.mapError(
         (cause) => new PairingCredentialRandomGenerationError({ operation: "generate-id", cause }),
@@ -394,20 +462,20 @@ export const make = Effect.gen(function* () {
     const issued: IssuedBootstrapCredential = {
       id,
       credential,
-      ...(input?.label ? { label: input.label } : {}),
-      ...(input?.proofKeyThumbprint ? { proofKeyThumbprint: input.proofKeyThumbprint } : {}),
+      ...(metadata.label ? { label: metadata.label } : {}),
+      ...(metadata.proofKeyThumbprint ? { proofKeyThumbprint: metadata.proofKeyThumbprint } : {}),
       expiresAt,
     };
-    const subject = input?.subject ?? "one-time-token";
+    const subject = metadata.subject;
     yield* pairingLinks
       .create({
         id,
         credential,
         method: "one-time-token",
-        scopes: input?.scopes ?? AuthStandardClientScopes,
+        scopes: metadata.scopes,
         subject,
-        label: input?.label ?? null,
-        proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
+        label: metadata.label ?? null,
+        proofKeyThumbprint: metadata.proofKeyThumbprint ?? null,
         createdAt: now,
         expiresAt: expiresAt,
       })
@@ -417,7 +485,7 @@ export const make = Effect.gen(function* () {
             new PairingCredentialIssueError({
               pairingLinkId: id,
               subject,
-              ...(input?.label ? { label: input.label } : {}),
+              ...(metadata.label ? { label: metadata.label } : {}),
               cause,
             }),
         ),
@@ -425,9 +493,9 @@ export const make = Effect.gen(function* () {
     yield* emitUpsert({
       id,
       credential,
-      scopes: input?.scopes ?? AuthStandardClientScopes,
-      subject: input?.subject ?? "one-time-token",
-      ...(input?.label ? { label: input.label } : {}),
+      scopes: metadata.scopes,
+      subject,
+      ...(metadata.label ? { label: metadata.label } : {}),
       createdAt: now,
       expiresAt,
     });
@@ -436,6 +504,18 @@ export const make = Effect.gen(function* () {
 
   const consume: PairingGrantStore["Service"]["consume"] = Effect.fn("PairingGrantStore.consume")(
     function* (credential, input) {
+      if (credential.length > AUTH_CREDENTIAL_MAX_LENGTH) {
+        return yield* new UnknownBootstrapCredentialError({});
+      }
+      if (
+        input?.proofKeyThumbprint !== undefined &&
+        input.proofKeyThumbprint.length > AUTH_PROOF_KEY_THUMBPRINT_MAX_LENGTH
+      ) {
+        return yield* new BootstrapCredentialProofKeyMismatchError({});
+      }
+      if ((input?.requestedScopes?.length ?? 0) > AUTH_ENVIRONMENT_SCOPE_MAX_COUNT) {
+        return yield* new BootstrapCredentialScopeNotGrantedError({});
+      }
       const now = yield* DateTime.now;
       const seededResult: ConsumeResult = yield* Ref.modify(
         seededGrantsRef,
@@ -471,6 +551,17 @@ export const make = Effect.gen(function* () {
                 _tag: "error",
                 reason: "not-found",
                 error: new BootstrapCredentialProofKeyMismatchError({}),
+              },
+              next,
+            ];
+          }
+
+          if (!(input?.requestedScopes ?? []).every((scope) => grant.scopes.includes(scope))) {
+            return [
+              {
+                _tag: "error",
+                reason: "scope-not-granted",
+                error: new BootstrapCredentialScopeNotGrantedError({}),
               },
               next,
             ];
@@ -518,6 +609,7 @@ export const make = Effect.gen(function* () {
         .consumeAvailable({
           credential,
           proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
+          requestedScopes: input?.requestedScopes ?? [],
           consumedAt: now,
           now,
         })
@@ -563,6 +655,10 @@ export const make = Effect.gen(function* () {
         return yield* new BootstrapCredentialProofKeyMismatchError({});
       }
 
+      if (!(input?.requestedScopes ?? []).every((scope) => matching.value.scopes.includes(scope))) {
+        return yield* new BootstrapCredentialScopeNotGrantedError({});
+      }
+
       return yield* new UnavailableBootstrapCredentialError({});
     },
   );
@@ -572,6 +668,9 @@ export const make = Effect.gen(function* () {
     listActive,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
+    },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub).pipe(Effect.map(Stream.fromSubscription));
     },
     revoke,
     consume,

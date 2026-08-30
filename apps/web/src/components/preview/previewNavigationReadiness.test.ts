@@ -1,8 +1,10 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
+  evaluate: vi.fn(),
   readThreadPreviewState: vi.fn(),
+  status: vi.fn(),
 }));
 
 vi.mock("~/previewStateStore", () => ({
@@ -15,18 +17,26 @@ vi.mock("~/previewStateStore", () => ({
 vi.mock("./previewBridge", () => ({
   previewBridge: {
     automation: {
-      evaluate: vi.fn(),
-      status: vi.fn(),
+      evaluate: mocks.evaluate,
+      status: mocks.status,
     },
   },
 }));
 
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 
-import { PreviewAutomationTargetUnavailableError } from "./previewAutomationErrors";
+import {
+  PreviewAutomationNavigationTimeoutError,
+  PreviewAutomationTargetUnavailableError,
+} from "./previewAutomationErrors";
 import { waitForNavigationReadiness } from "./previewNavigationReadiness";
 
 describe("waitForNavigationReadiness", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetAllMocks();
+  });
+
   it("rejects a replaced runtime target even when readiness polling is disabled", async () => {
     const threadRef = {
       environmentId: EnvironmentId.make("environment-2"),
@@ -52,5 +62,33 @@ describe("waitForNavigationReadiness", () => {
         100,
       ),
     ).rejects.toBeInstanceOf(PreviewAutomationTargetUnavailableError);
+  });
+
+  it("times out when a bridge readiness call never settles", async () => {
+    vi.useFakeTimers();
+    const threadRef = {
+      environmentId: EnvironmentId.make("environment-2"),
+      threadId: ThreadId.make("thread-1"),
+    };
+    const tabId = "tab_1";
+    const runtimeTabId = previewRuntimeTabId(threadRef, "epoch-1", tabId);
+    mocks.readThreadPreviewState.mockReturnValue({
+      serverEpoch: "epoch-1",
+      sessions: { [tabId]: { tabId } },
+    });
+    mocks.status.mockReturnValue(new Promise(() => undefined));
+
+    const readiness = waitForNavigationReadiness(
+      threadRef,
+      "request-1",
+      tabId,
+      runtimeTabId,
+      "navigate",
+      "load",
+      100,
+    );
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(readiness).rejects.toBeInstanceOf(PreviewAutomationNavigationTimeoutError);
   });
 });

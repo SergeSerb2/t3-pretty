@@ -5,6 +5,8 @@ export const SERVICE_LAUNCHER_PROTOCOL = 2 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
 export const SERVICE_LAUNCHER_FILE = "service-launcher.mjs";
 export const SERVICE_STATE_FILE = "service-state.json";
+export const SERVICE_STATE_MAX_BYTES = 64 * 1024;
+export const SERVICE_RUNTIME_SENTINEL_MAX_BYTES = 1024;
 /** Written by the launcher just before an explicit stop kills its child, so
     the child can tell "the service is going away" from "the launcher is about
     to start my replacement" while a pending update is recorded. */

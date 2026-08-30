@@ -7,14 +7,14 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
 // Packaged Windows builds ship the server tree inside resources/server.asar
 // (see scripts/build-desktop-artifact.ts). The Windows primary reads it in
 // place through the asar-aware ELECTRON_RUN_AS_NODE runtime, but the WSL
-// backend launches plain `wsl.exe -- node`, which cannot read an asar
-// archive. This service materializes the archive into a real, version-keyed
-// directory the first time the WSL backend starts, and reuses it afterwards —
-// so only users who enable WSL ever pay for a loose copy of the server tree.
+// backend launches plain `wsl.exe -- node`, which cannot read an asar archive.
+// This fallback service materializes the archive into a real, version-keyed
+// directory only when the distro-local runtime cannot be prepared.
 //
 // Reading through Electron's patched fs also transparently returns the
 // contents of files that electron-builder/asar left in the server.asar.unpacked
@@ -27,6 +27,8 @@ export type WslServerTreeResult =
 
 const MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
 const COPY_CONCURRENCY = 8;
+const COPY_CHUNK_BYTES = 64 * 1024;
+const MARKER_FILE_MAX_BYTES = 64 * 1024;
 
 const Marker = Schema.Struct({ version: Schema.String });
 const decodeMarker = Schema.decodeUnknownEffect(Schema.fromJsonString(Marker));
@@ -52,6 +54,10 @@ export class DesktopWslServerTree extends Context.Service<
     // the checkout already is that directory; packaged Windows builds extract
     // server.asar on first use.
     readonly ensure: Effect.Effect<WslServerTreeResult>;
+    // Removes the Windows-side extraction cache after a distro-local runtime
+    // has proven healthy. Serialized with ensure so cleanup cannot race an
+    // extraction that the mounted fallback is preparing.
+    readonly cleanupLegacy: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/wsl/DesktopWslServerTree") {}
 
@@ -81,6 +87,25 @@ interface CopyTreeEntry {
   readonly targetPath: string;
 }
 
+const copyFileInChunks = Effect.fnUntraced(function* (
+  fs: FileSystem.FileSystem,
+  sourcePath: string,
+  targetPath: string,
+) {
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const source = yield* fs.open(sourcePath, { flag: "r" });
+      const target = yield* fs.open(targetPath, { flag: "w" });
+      const buffer = new Uint8Array(COPY_CHUNK_BYTES);
+      while (true) {
+        const bytesRead = Number(yield* source.read(buffer));
+        if (bytesRead === 0) break;
+        yield* target.writeAll(buffer.subarray(0, bytesRead));
+      }
+    }),
+  );
+});
+
 // Copy using only operations supported by Electron's asar-patched fs. Symlinks
 // are not expected because the sidecar is installed with a hoisted, physical
 // layout; anything that is neither a file nor a directory is skipped.
@@ -104,10 +129,7 @@ const copyTree = (
           }));
         }
         if (info.type === "File") {
-          // Read and write stay in the same bounded task, so at most eight file
-          // buffers can be retained while their writes complete.
-          const bytes = yield* fs.readFile(sourcePath);
-          yield* fs.writeFile(targetPath, bytes);
+          yield* copyFileInChunks(fs, sourcePath, targetPath);
         }
         return [];
       }),
@@ -136,7 +158,11 @@ export const make = Effect.gen(function* () {
   });
 
   const markerMatches = Effect.gen(function* () {
-    const raw = yield* fs.readFileString(join(versionDir, MARKER_FILE_NAME));
+    const raw = yield* readFileStringWithinLimit(
+      fs,
+      join(versionDir, MARKER_FILE_NAME),
+      MARKER_FILE_MAX_BYTES,
+    );
     const marker = yield* decodeMarker(raw);
     return marker.version === version;
   }).pipe(Effect.orElseSucceed(() => false));
@@ -173,6 +199,28 @@ export const make = Effect.gen(function* () {
   // first caller extracts, later callers see the marker and reuse the tree.
   const gate = yield* Semaphore.make(1);
 
+  const cleanupLegacy = gate
+    .withPermits(1)(
+      needsExtraction
+        ? Effect.gen(function* () {
+            // Invalidate completeness before recursive deletion. Windows can
+            // remove part of a tree and then fail on a locked file; without
+            // this ordering, a surviving marker makes ensure reuse that
+            // half-deleted fallback instead of extracting it again.
+            yield* fs.remove(join(versionDir, MARKER_FILE_NAME), { force: true });
+            yield* fs.remove(treeRoot, { recursive: true, force: true });
+          }).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("[wsl-server-tree] Could not remove the legacy extraction cache.", {
+                treeRoot,
+                cause,
+              }),
+            ),
+          )
+        : Effect.void,
+    )
+    .pipe(Effect.withSpan("desktop.wslServerTree.cleanupLegacy"));
+
   const ensure: Effect.Effect<WslServerTreeResult> = gate
     .withPermits(1)(
       Effect.gen(function* () {
@@ -205,13 +253,14 @@ export const make = Effect.gen(function* () {
     )
     .pipe(Effect.withSpan("desktop.wslServerTree.ensure"));
 
-  return DesktopWslServerTree.of({ ensure });
+  return DesktopWslServerTree.of({ ensure, cleanupLegacy });
 });
 
 export const layer = Layer.effect(DesktopWslServerTree, make);
 
 export interface DesktopWslServerTreeTestStub {
   readonly result?: WslServerTreeResult;
+  readonly cleanupLegacy?: Effect.Effect<void>;
 }
 
 export const layerTest = (stub: DesktopWslServerTreeTestStub = {}) =>
@@ -221,6 +270,7 @@ export const layerTest = (stub: DesktopWslServerTreeTestStub = {}) =>
       const environment = yield* DesktopEnvironment.DesktopEnvironment;
       return DesktopWslServerTree.of({
         ensure: Effect.succeed(stub.result ?? { ok: true, root: environment.appRoot }),
+        cleanupLegacy: stub.cleanupLegacy ?? Effect.void,
       });
     }),
   );

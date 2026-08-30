@@ -6,6 +6,7 @@ import {
   ProjectId,
   type MessageId,
   type ModelSelection,
+  type ProviderInteractionMode,
   type ProviderDriverKind,
   type RuntimeMode,
   type ServerProvider,
@@ -15,7 +16,13 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
-import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
+import {
+  type ChatMessage,
+  isImageAttachment,
+  type SessionPhase,
+  type Thread,
+  type ThreadShell,
+} from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -34,7 +41,74 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export interface QueuedComposerMessage {
+  readonly id: MessageId;
+  readonly text: string;
+  readonly attachmentCount: number;
+}
+
+/** Identify the queued message whose server turn has started. */
+export function startedQueuedComposerMessageId(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): MessageId | null {
+  if (input.queuedMessages.length === 0 || input.latestTurn === null) return null;
+  const queuedIds = new Set(input.queuedMessages.map((message) => message.id));
+  if (input.latestTurn.userMessageId !== undefined) {
+    return queuedIds.has(input.latestTurn.userMessageId) ? input.latestTurn.userMessageId : null;
+  }
+  return (
+    input.serverMessages.find(
+      (message) => queuedIds.has(message.id) && message.createdAt === input.latestTurn?.requestedAt,
+    )?.id ?? null
+  );
+}
+
+/** Keep queued copy at the composer until the server starts its turn. */
+export function reconcileQueuedComposerMessages(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): ReadonlyArray<QueuedComposerMessage> {
+  const startedMessageId = startedQueuedComposerMessageId(input);
+  const startedIndex = input.queuedMessages.findIndex((message) => message.id === startedMessageId);
+  return startedIndex < 0 ? input.queuedMessages : input.queuedMessages.slice(startedIndex + 1);
+}
+
+export interface ChatViewRouteIdentity {
+  readonly routeKind: "draft" | "server";
+  readonly routeThreadKey: string;
+  readonly draftId: string | null;
+}
+
+export function shouldResetComposerQueueForRouteChange(
+  previous: ChatViewRouteIdentity,
+  current: ChatViewRouteIdentity,
+): boolean {
+  const unchanged =
+    previous.routeKind === current.routeKind &&
+    previous.routeThreadKey === current.routeThreadKey &&
+    previous.draftId === current.draftId;
+  const promoted =
+    previous.routeKind === "draft" &&
+    current.routeKind === "server" &&
+    previous.routeThreadKey === current.routeThreadKey;
+  return !unchanged && !promoted;
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+
+export function shoulderTabReserve(overlay: HTMLElement): number {
+  if (overlay.querySelector(".chat-composer-tasks-tab")) return 0;
+  const tab = overlay.querySelector<HTMLElement>(".chat-composer-shoulder-tab");
+  const surface = overlay.querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]');
+  if (!tab || !surface) return 0;
+  return Math.max(
+    0,
+    Math.round(surface.getBoundingClientRect().top - tab.getBoundingClientRect().top),
+  );
+}
 
 export function shouldDockDraftHeroForSubmission(input: {
   isDraftHeroState: boolean;
@@ -351,7 +425,7 @@ export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
     return;
   }
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") {
+    if (!isImageAttachment(attachment)) {
       continue;
     }
     revokeBlobPreviewUrl(attachment.previewUrl);
@@ -364,7 +438,7 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   }
   const previewUrls: string[] = [];
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") continue;
+    if (!isImageAttachment(attachment)) continue;
     if (!attachment.previewUrl || !attachment.previewUrl.startsWith("blob:")) continue;
     previewUrls.push(attachment.previewUrl);
   }
@@ -521,12 +595,34 @@ export function shouldShowBranchMismatchBanner(input: {
   return input.composerHasContent || input.wasShownForCurrentMismatch;
 }
 
+export function shouldShowPlanFollowUpPrompt(input: {
+  pendingUserInputCount: number;
+  interactionMode: ProviderInteractionMode;
+  latestTurnSettled: boolean;
+  hasActionableProposedPlan: boolean;
+  hasComposerAttachments: boolean;
+}): boolean {
+  return (
+    input.pendingUserInputCount === 0 &&
+    input.interactionMode === "plan" &&
+    input.latestTurnSettled &&
+    input.hasActionableProposedPlan &&
+    !input.hasComposerAttachments
+  );
+}
+
 // Session-scoped (module-level so it survives ChatView remounts, e.g. route
 // changes). Durable cross-device dismissal is planned as a server-side ack.
 const sessionDismissedBranchMismatchKeys = new Set<string>();
+const MAX_SESSION_DISMISSED_BRANCH_MISMATCHES = 256;
 
 export function dismissBranchMismatchForSession(key: string): void {
+  sessionDismissedBranchMismatchKeys.delete(key);
   sessionDismissedBranchMismatchKeys.add(key);
+  if (sessionDismissedBranchMismatchKeys.size > MAX_SESSION_DISMISSED_BRANCH_MISMATCHES) {
+    const oldest = sessionDismissedBranchMismatchKeys.values().next().value;
+    if (oldest !== undefined) sessionDismissedBranchMismatchKeys.delete(oldest);
+  }
 }
 
 export function isBranchMismatchDismissedForSession(key: string | null): boolean {

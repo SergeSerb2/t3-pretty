@@ -21,7 +21,11 @@ import {
   getMobileTerminalTheme,
   type TerminalTheme,
 } from "./terminalTheme";
-import { terminalDebugLog } from "./terminalDebugLog";
+import {
+  isTerminalDebugEnabled,
+  terminalDebugLog,
+  terminalInputDebugDetails,
+} from "./terminalDebugLog";
 
 interface TerminalInputEvent {
   readonly data: string;
@@ -193,9 +197,9 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
       if (!props.isRunning) {
         return;
       }
-      terminalDebugLog("native:onInput", {
-        codes: Array.from(event.nativeEvent.data, (char) => char.codePointAt(0)),
-      });
+      if (isTerminalDebugEnabled()) {
+        terminalDebugLog("native:onInput", terminalInputDebugDetails(event.nativeEvent.data));
+      }
       onInput(event.nativeEvent.data);
     },
     [onInput, props.isRunning],
