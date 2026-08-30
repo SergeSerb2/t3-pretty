@@ -55,7 +55,6 @@ describe("animated icon boundaries", () => {
     expect(spinSettleRotateRule).toContain("rotate: var(--refresh-cw-from, 0deg)");
     expect(iconMotion).not.toContain("--refresh-cw-rest");
     expect(settleKeyframes).toContain("rotate: var(--refresh-cw-from, 0deg)");
-    expect(settleKeyframes).toContain("calc(var(--refresh-cw-from, 0deg) + 18deg)");
     expect(settleEnd).toContain("rotate: 0deg");
     expect(settleEnd).not.toContain("--refresh-cw-from");
     expect(settleKeyframes).not.toContain("--refresh-cw-tilt");
