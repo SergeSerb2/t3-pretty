@@ -278,6 +278,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
     );
     const pending = yield* Ref.make(new Map<string, CodexAppServerPendingRequest>());
     const nextRequestId = yield* Ref.make(1);
+
     const terminationHandled = yield* Ref.make(false);
     const terminationReason = yield* Deferred.make<CodexError.CodexAppServerError>();
     const wireLineFramer = makeCodexAppServerWireLineFramer(options.maximumWireLineBytes);

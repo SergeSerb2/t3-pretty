@@ -75,6 +75,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   } as const;
+  const activity = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pull-requests:activity",
+    tag: WS_METHODS.pullRequestsActivity,
+    staleTimeMs: 20_000,
+    idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
+  });
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list",
@@ -97,12 +103,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsDetail,
       staleTimeMs: 20_000,
     }),
-    activity: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:activity",
-      tag: WS_METHODS.pullRequestsActivity,
-      staleTimeMs: 20_000,
-      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
-    }),
+    activity,
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
       tag: WS_METHODS.pullRequestsThreadComments,
@@ -172,6 +173,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsUpdateComment,
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
+      onSuccess: ({ environmentId, input: { projectId, repository, number } }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(activity({ environmentId, input: { projectId, repository, number } })),
+        ),
     }),
     submitReview: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:submit-review",

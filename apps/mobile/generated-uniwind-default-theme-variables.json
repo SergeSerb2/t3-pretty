@@ -1,12 +1,5 @@
-import type { MobileThemeVariables } from "./mobileTheme";
-
-/**
- * World Scenery is T3 Pretty's default mobile palette. Hues stay in step with
- * apps/web/src/scenery/worldSceneryTheme.ts; user-bubble tokens are the
- * desktop message surface (pastel sage), not iOS system blue.
- */
-export const DEFAULT_MOBILE_THEME_VARIABLES = {
-  light: {
+{
+  "light": {
     "--color-screen": "#f4f6f4",
     "--color-sheet": "rgba(244, 246, 244, 0.98)",
     "--color-sheet-solid": "#f4f6f4",
@@ -73,9 +66,9 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-drawer-shadow": "rgba(10, 20, 13, 0.12)",
     "--color-dot-separator": "rgba(22, 38, 26, 0.2)",
     "--color-wordmark": "#232823",
-    "--color-chevron": "rgba(22, 38, 26, 0.22)",
+    "--color-chevron": "rgba(22, 38, 26, 0.22)"
   },
-  dark: {
+  "dark": {
     "--color-screen": "#0e1110",
     "--color-sheet": "rgba(14, 17, 16, 0.98)",
     "--color-sheet-solid": "#0e1110",
@@ -142,6 +135,6 @@ export const DEFAULT_MOBILE_THEME_VARIABLES = {
     "--color-drawer-shadow": "rgba(0, 0, 0, 0.32)",
     "--color-dot-separator": "rgba(234, 247, 238, 0.22)",
     "--color-wordmark": "#eef2ef",
-    "--color-chevron": "rgba(234, 247, 238, 0.22)",
-  },
-} as const satisfies Readonly<Record<"light" | "dark", MobileThemeVariables>>;
+    "--color-chevron": "rgba(234, 247, 238, 0.22)"
+  }
+}

@@ -19,7 +19,6 @@ import { AppText as Text } from "../../components/AppText";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
-import { useThemeColor } from "../../lib/useThemeColor";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { availableCloudEnvironmentPresentation } from "../cloud/cloudEnvironmentPresentation";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
@@ -79,7 +78,6 @@ function CloudEnvironmentRowsContent(
   props: CloudEnvironmentRowsProps & { readonly discoveryAvailable?: boolean },
 ) {
   const controller = useConnectionController();
-  const iconColor = useThemeColor("--color-icon");
   const discoveryAvailable = props.discoveryAvailable ?? true;
   const availableCloudEnvironments = discoveryAvailable
     ? (props.showcaseAvailableEnvironments ?? controller.availableRelayEnvironments)
@@ -163,12 +161,12 @@ function CloudEnvironmentRowsContent(
               className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
             >
               {controller.relayDiscovery.isRefreshing ? (
-                <ActivityIndicator color={iconColor} size="small" />
+                <ActivityIndicator colorClassName={"accent-icon"} size="small" />
               ) : (
                 <SymbolView
                   name="arrow.clockwise"
                   size={14}
-                  tintColor={iconColor}
+                  tintColorClassName={"accent-icon"}
                   type="monochrome"
                 />
               )}
@@ -203,7 +201,7 @@ function CloudEnvironmentRowsContent(
         </View>
       ) : controller.relayDiscovery.isRefreshing ? (
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-card p-6">
-          <ActivityIndicator color={iconColor} />
+          <ActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>
@@ -318,7 +316,6 @@ function CloudEnvironmentRowShell(props: {
   readonly statusText?: string;
   readonly value: boolean;
 }) {
-  const chevron = useThemeColor("--color-chevron");
   const isRetrying =
     props.connectionState === "connecting" || props.connectionState === "reconnecting";
   const shouldPulse = isRetrying;
@@ -330,7 +327,7 @@ function CloudEnvironmentRowShell(props: {
       traceId: props.connectionErrorTraceId,
     });
   const statusClassName = props.connectionError
-    ? "text-rose-500 dark:text-rose-400"
+    ? "text-adaptive-rose-500-400"
     : "text-foreground-muted";
   const [errorMeasurement, setErrorMeasurement] = useState<{
     readonly text: string;
@@ -420,7 +417,7 @@ function CloudEnvironmentRowShell(props: {
             <SymbolView
               name="chevron.down"
               size={10}
-              tintColor={chevron}
+              tintColorClassName={"accent-chevron"}
               type="monochrome"
               style={{
                 marginTop: 3,
@@ -440,8 +437,6 @@ function CloudEnvironmentRowShell(props: {
 }
 
 function CopyTraceIdButton(props: { readonly traceId: string }) {
-  const iconColor = useThemeColor("--color-icon");
-
   return (
     <Pressable
       accessibilityRole="button"
@@ -450,7 +445,12 @@ function CopyTraceIdButton(props: { readonly traceId: string }) {
       }}
       className="self-start flex-row items-center gap-1.5 rounded-full bg-subtle px-3 py-2 active:opacity-70"
     >
-      <SymbolView name="doc.on.doc" size={12} tintColor={iconColor} type="monochrome" />
+      <SymbolView
+        name="doc.on.doc"
+        size={12}
+        tintColorClassName={"accent-icon"}
+        type="monochrome"
+      />
       <Text className="text-xs font-t3-bold text-foreground">Copy trace ID</Text>
     </Pressable>
   );

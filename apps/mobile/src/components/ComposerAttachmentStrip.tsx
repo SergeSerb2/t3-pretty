@@ -1,7 +1,6 @@
 import { SymbolView } from "../components/AppSymbol";
 import { Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
-import { useThemeColor } from "../lib/useThemeColor";
 
 import { AppText as Text } from "./AppText";
 
@@ -37,7 +36,6 @@ const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
  * buttons.  Used by both the thread composer and the new-task draft screen.
  */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
-  const subtleBg = useThemeColor("--color-subtle");
   const size = props.imageSize ?? 72;
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
@@ -71,7 +69,6 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                 previewUri={image.previewUri}
                 size={size}
                 borderRadius={radius}
-                backgroundColor={typeof subtleBg === "string" ? subtleBg : "#e5e5ea"}
                 preparing={preparing}
                 onPress={
                   props.onPressImage && !preparing
@@ -112,7 +109,6 @@ export function ComposerAttachmentThumb(props: {
   readonly previewUri: string;
   readonly size: number;
   readonly borderRadius: number;
-  readonly backgroundColor: string;
   readonly preparing?: boolean;
   readonly onPress?: () => void;
 }) {
@@ -131,11 +127,11 @@ export function ComposerAttachmentThumb(props: {
       <Image
         accessible={false}
         source={{ uri: props.previewUri }}
+        className="bg-subtle"
         style={{
           width: props.size,
           height: props.size,
           borderRadius: props.borderRadius,
-          backgroundColor: props.backgroundColor,
         }}
         resizeMode="cover"
       />

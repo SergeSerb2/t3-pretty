@@ -15,7 +15,7 @@ import {
   REMOTE_PAIRING_TOKEN_MAX_LENGTH,
   REMOTE_PAIRING_URL_MAX_LENGTH,
 } from "@t3tools/shared/remote";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
@@ -68,7 +68,7 @@ export function ConnectionsNewRouteScreen({
   const connectAttemptGenerationRef = useRef(0);
   const activeConnectPairingUrlRef = useRef<string | null>(null);
 
-  const headerIconColor = useThemeColor("--color-icon");
+  const headerIconColor = useUniwindTheme()["--color-icon"];
 
   const connectDisabled = isSubmitting || hostInput.trim().length === 0;
 

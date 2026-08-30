@@ -148,9 +148,6 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboardHeight = useKeyboardState((state) => state.height);
   const rippleColor = useThemeColor("--color-subtle");
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const dangerColor = useThemeColor("--color-danger-foreground");
   const chromeFill = useThemeColor("--color-chrome-glass");
   const chromeBorder = useThemeColor("--color-chrome-glass-border");
 
@@ -326,16 +323,23 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               <SymbolView
                 name="chevron.right"
                 size={13}
-                tintColor={iconSubtleColor}
+                tintColorClassName={"accent-icon-subtle"}
                 type="monochrome"
               />
             ) : action.state === "on" ? (
-              <SymbolView name="checkmark" size={15} tintColor={iconColor} type="monochrome" />
+              <SymbolView
+                name="checkmark"
+                size={15}
+                tintColorClassName={"accent-icon"}
+                type="monochrome"
+              />
             ) : action.image ? (
               <SymbolView
                 name={action.image as AppSymbolName}
                 size={15}
-                tintColor={destructive ? dangerColor : iconColor}
+                tintColorClassName={
+                  destructive ? "accent-danger-foreground" : "accent-icon"
+                }
                 type="monochrome"
               />
             ) : null}

@@ -157,10 +157,11 @@ export function ElectronBrowserHost() {
   if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
-      {sessions.map(({ threadKey, threadRef, snapshot, runtimeTabId, zoomFactor }) => {
-        // Dormant threads keep their server-side session; the guest is rebuilt
-        // from the tab's last URL when the thread is used again.
-        if (!resident.has(threadKey)) return null;
+      {sessions.map(
+        ({ threadKey, threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {
+          // Dormant threads keep their server-side session; the guest is rebuilt
+          // from the tab's last URL when the thread is used again.
+          if (!resident.has(threadKey)) return null;
         const url = snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;
         return (
           <HostedBrowserWebview
@@ -170,6 +171,7 @@ export function ElectronBrowserHost() {
             runtimeTabId={runtimeTabId}
             initialUrl={url}
             viewport={snapshot.viewport ?? FILL_PREVIEW_VIEWPORT}
+            pictureInPicture={pictureInPicture}
             zoomFactor={zoomFactor}
           />
         );

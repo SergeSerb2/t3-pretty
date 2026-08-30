@@ -70,18 +70,15 @@ export function ControlPill(props: {
     props.onPress?.();
   };
 
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const primaryFg = useThemeColor("--color-primary-foreground");
-  const dangerFg = useThemeColor("--color-danger-foreground");
-  const iconTintColor =
+  const iconTintClassName =
     variant === "primary"
       ? showDisabledChrome
-        ? iconSubtle
-        : primaryFg
+        ? "accent-icon-subtle"
+        : "accent-primary-foreground"
       : variant === "danger"
-        ? dangerFg
-        : iconColor;
+        ? "accent-danger-foreground"
+        : "accent-icon";
+  const iconTintColor = useThemeColor(iconTintClassName);
 
   const isCircle =
     variant === "circle" || variant === "danger" || (variant === "primary" && !props.label);
@@ -125,7 +122,12 @@ export function ControlPill(props: {
           {props.iconNode ? (
             props.iconNode
           ) : props.icon ? (
-            <SymbolView name={props.icon} size={16} tintColor={iconTintColor} type="monochrome" />
+            <SymbolView
+              name={props.icon}
+              size={16}
+              tintColorClassName={iconTintClassName}
+              type="monochrome"
+            />
           ) : null}
         </ComposerSendIconSlot>
       ) : null}
