@@ -9,7 +9,6 @@ import { useDiffPanelStore } from "../diffPanelStore";
 import { usePreviewMiniPlayerStore } from "../previewMiniPlayerStore";
 import { removePreviewThread } from "../previewStateStore";
 import { useRightPanelStore } from "../rightPanelStore";
-import { clearAttachedFilesForThread } from "../scenery/attachedFileStore";
 import { useSceneryStore } from "../scenery/sceneryStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
@@ -28,7 +27,6 @@ export function removeDeletedThreadUiState(ref: ScopedThreadRef): void {
   useDiffPanelStore.getState().removeThread(ref);
   usePreviewMiniPlayerStore.getState().removeThread(ref);
   removePreviewThread(ref);
-  clearAttachedFilesForThread(threadKey);
   useSceneryStore.getState().removeThread(threadKey);
   useUiStateStore.getState().removeThread(threadKey);
 }

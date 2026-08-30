@@ -23,7 +23,6 @@ import {
   displayRuntimeModeForProviderDriver,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
@@ -329,7 +328,6 @@ import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
-import { useAttachedFiles } from "../../scenery/attachedFileStore";
 
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-composer-drawer-layer="true"]',
@@ -826,10 +824,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerCanvasSelections = composerDraft.canvasSelections;
   const composerReviewComments = composerDraft.reviewComments;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
-  const attachedFileThreadKey = activeThreadId
-    ? scopedThreadKey(scopeThreadRef(environmentId, activeThreadId))
-    : null;
-  const attachedFiles = useAttachedFiles(attachedFileThreadKey);
 
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
@@ -1284,11 +1278,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         composerPreviewAnnotations.length +
         composerCanvasSelections.length +
         composerReviewComments.length,
-      fileAttachmentCount: attachedFiles.length,
     });
     return state;
   }, [
-    attachedFiles.length,
     composerElementContexts.length,
     composerFiles.length,
     composerImages.length,
