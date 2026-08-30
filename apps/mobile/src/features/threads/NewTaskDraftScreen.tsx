@@ -10,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  useColorScheme,
   View,
 } from "react-native";
 import * as Linking from "expo-linking";
@@ -21,8 +22,7 @@ import {
 } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
 import { MessageId, resolveRuntimeModeForProviderDriver, ThreadId } from "@t3tools/contracts";
@@ -58,6 +58,8 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerSurface } from "./ThreadComposer";
+import { ComposerCommandPopover } from "./ComposerCommandPopover";
+import { useComposerCommandMenu } from "./use-composer-command-menu";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
@@ -71,7 +73,6 @@ import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   clearComposerDraftContent,
   getComposerDraftSnapshot,
@@ -115,17 +116,32 @@ function NewTaskWorkspaceIcon(props: {
   readonly workspaceMode: "local" | "worktree";
   readonly worktreePath: string | null;
 }) {
-  const iconColor = useThemeColor("--color-icon-muted");
-
   if (props.workspaceMode === "local" && props.worktreePath === null) {
-    return <SymbolView name="folder" size={16} tintColor={iconColor} type="monochrome" />;
+    return (
+      <SymbolView
+        name="folder"
+        size={16}
+        tintColorClassName={"accent-icon-muted"}
+        type="monochrome"
+      />
+    );
   }
 
   return (
     <View className="size-4">
-      <SymbolView name="folder" size={16} tintColor={iconColor} type="monochrome" />
+      <SymbolView
+        name="folder"
+        size={16}
+        tintColorClassName={"accent-icon-muted"}
+        type="monochrome"
+      />
       <View className="absolute -right-1 -bottom-1">
-        <SymbolView name="arrow.triangle.branch" size={9} tintColor={iconColor} type="monochrome" />
+        <SymbolView
+          name="arrow.triangle.branch"
+          size={9}
+          tintColorClassName={"accent-icon-muted"}
+          type="monochrome"
+        />
       </View>
     </View>
   );
@@ -240,7 +256,6 @@ export function NewTaskDraftScreen(props: {
     reserveShare,
   } = useIncomingShare();
   const insets = useSafeAreaInsets();
-  const { themeAppearance: colorScheme } = useAppearancePreferences();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const controlsBottomPadding = Math.max(insets.bottom, 10);
   const keyboardOpenedOffset = Math.max(0, controlsBottomPadding - 8);
@@ -355,6 +370,19 @@ export function NewTaskDraftScreen(props: {
   );
   const isDispatching = flow.submitting || pendingPreviews.length > 0;
   const composerSelectorsLocked = isIncomingShareTransferPending || isDispatching;
+  const composerMenu = useComposerCommandMenu({
+    draftMessage: flow.prompt,
+    environmentId: selectedProject?.environmentId ?? null,
+    projectCwd:
+      (flow.workspaceMode === "worktree"
+        ? selectedProject?.workspaceRoot
+        : (flow.selectedWorktreePath ?? selectedProject?.workspaceRoot)) || null,
+    selectedProviderStatus: flow.selectedProviderStatus,
+    hasThread: false,
+    enabled: isComposerFocused && !isIncomingShareTransferPending,
+    onChangeDraftMessage: flow.setPrompt,
+    onUpdateInteractionMode: flow.planModeEnabled ? flow.setInteractionMode : undefined,
+  });
   usePreventRemove(
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) || isCancellingShareImport,
     () => undefined,
@@ -442,14 +470,16 @@ export function NewTaskDraftScreen(props: {
     };
   }, [props.pendingTaskId, cancelEditingPendingTask]);
 
-  const foregroundColor = useThemeColor("--color-foreground");
-  const projectUnderlineColor = useThemeColor("--color-foreground-muted");
+  const sceneryColorScheme = useColorScheme();
+  const uniwindTheme = useUniwindTheme();
+  const foregroundColor = uniwindTheme["--color-foreground"];
+  const projectUnderlineColor = uniwindTheme["--color-foreground-muted"];
   const regularFontFamily = useFontFamily("regular");
   const bodyText = useScaledTextRole("body");
   const sceneryChrome = useSceneryChromeActive();
   const dailyPhoto = useDailySceneryPhoto();
   // Fade into the composer card, not the sheet: the toolbar lives inside the glass surface.
-  const toolbarSurface = String(useThemeColor("--color-card"));
+  const toolbarSurface = String(uniwindTheme["--color-card"]);
   const toolbarFadeOpaque = themeColorWithAlpha(toolbarSurface, 0.95);
   const toolbarFadeTransparent = themeColorWithAlpha(toolbarSurface, 0);
 
@@ -911,10 +941,12 @@ export function NewTaskDraftScreen(props: {
       if (editingPendingTask) {
         flow.finishEditingPendingTask();
       } else {
-        // Drop the workspace selection with the content: the next task should
-        // re-resolve mode/branch/origin from the server's configured defaults
-        // instead of resurrecting this task's picks.
-        clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+        // Drop draft-local model/workspace selections with the content. The
+        // next task re-resolves project defaults before sticky app defaults.
+        clearComposerDraftContent(draftKey, {
+          clearModelSelection: true,
+          clearWorkspaceSelection: true,
+        });
       }
       navigation.getParent()?.goBack();
       return;
@@ -1028,7 +1060,10 @@ export function NewTaskDraftScreen(props: {
       }
       flow.finishEditingPendingTask();
     } else {
-      clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+      clearComposerDraftContent(draftKey, {
+        clearModelSelection: true,
+        clearWorkspaceSelection: true,
+      });
     }
 
     markThreadOpenStarted(String(selectedProject.environmentId), String(threadId));
@@ -1125,7 +1160,7 @@ export function NewTaskDraftScreen(props: {
   }
 
   const isAndroid = Platform.OS === "android";
-  const isDarkMode = colorScheme === "dark";
+  const isDarkMode = sceneryColorScheme === "dark";
   const attachedUris = new Set(flow.attachments.map((image) => image.previewUri));
   const stripAttachments = [
     ...flow.attachments,
@@ -1159,16 +1194,20 @@ export function NewTaskDraftScreen(props: {
     value: flow.prompt,
     cursor: promptSelection.end,
     onChangeValue: flow.setPrompt,
-    onChangeCursor: (cursor) => setPromptSelection({ start: cursor, end: cursor }),
+    onChangeCursor: (cursor) => {
+      const selection = { start: cursor, end: cursor };
+      setPromptSelection(selection);
+      composerMenu.onSelectionChange(selection);
+    },
     reportError: reportDictationError,
   });
   useEffect(() => {
     const end = flow.prompt.length;
-    setPromptSelection((selection) => ({
-      start: Math.min(selection.start, end),
-      end: Math.min(selection.end, end),
-    }));
-  }, [flow.prompt.length]);
+    setPromptSelection({
+      start: Math.min(composerMenu.selection.start, end),
+      end: Math.min(composerMenu.selection.end, end),
+    });
+  }, [composerMenu.selection.end, composerMenu.selection.start, flow.prompt.length]);
   const canStart =
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
@@ -1194,9 +1233,14 @@ export function NewTaskDraftScreen(props: {
       scrollEnabled
       value={flow.prompt}
       selection={promptSelection}
-      skills={flow.selectedProviderSkills}
+      skills={flow.selectedProviderStatus?.skills ?? []}
       onChangeText={flow.setPrompt}
-      onSelectionChange={setPromptSelection}
+      onSelectionChange={(selection) => {
+        setPromptSelection(selection);
+        composerMenu.onSelectionChange(selection);
+      }}
+      onFocus={() => setIsComposerFocused(true)}
+      onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
       placeholder="Ask anything…"
       singleLineCentered={false}
@@ -1253,11 +1297,7 @@ export function NewTaskDraftScreen(props: {
             accessibilityRole="button"
             disabled={composerSelectorsLocked}
             onPress={chooseProject}
-            className="min-w-0 max-w-[250px] active:opacity-65"
-            style={{
-              borderBottomColor: projectUnderlineColor,
-              borderBottomWidth: 1,
-            }}
+            className="min-w-0 max-w-[250px] border-b border-foreground-muted active:opacity-65"
           >
             <Text
               className="text-2xl font-t3-medium tracking-tight text-foreground"
@@ -1359,13 +1399,22 @@ export function NewTaskDraftScreen(props: {
       className={sceneryChrome ? "px-4 pt-1" : "bg-sheet px-4 pt-1"}
       style={{ paddingBottom: controlsBottomPadding }}
     >
+      {composerMenu.trigger && composerMenu.items.length > 0 ? (
+        <View className="mb-2">
+          <ComposerCommandPopover
+            items={composerMenu.items}
+            triggerKind={composerMenu.trigger.kind}
+            isLoading={composerMenu.isLoading}
+            onSelect={composerMenu.onSelect}
+          />
+        </View>
+      ) : null}
       <View className="pb-1">
         <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
       </View>
 
       <ComposerSurface
         animateLayout={false}
-        isDarkMode={isDarkMode}
         style={{
           borderRadius: 26,
           minHeight: 140,
@@ -1394,9 +1443,10 @@ export function NewTaskDraftScreen(props: {
 
         <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={4}>
           <ComposerToolbarScroller
-            fadeOpaque={toolbarFadeOpaque}
-            fadeTransparent={toolbarFadeTransparent}
             contentPaddingRight={8}
+            {...(sceneryChrome
+              ? { fadeOpaque: toolbarFadeOpaque, fadeTransparent: toolbarFadeTransparent }
+              : { fadeSurface: "sheet" as const })}
           >
             <ComposerToolbarButton
               accessibilityLabel="Add attachment"

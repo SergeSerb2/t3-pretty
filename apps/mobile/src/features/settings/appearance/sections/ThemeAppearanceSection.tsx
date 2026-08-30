@@ -1,15 +1,16 @@
 import { Pressable, View } from "react-native";
+import { ScopedTheme } from "uniwind";
 
 import { AppText as Text } from "../../../../components/AppText";
 import {
   BORING_MOBILE_THEME_ID,
   DEFAULT_MOBILE_THEME_ID,
-  getMobileThemeVariables,
   isBoringMobileTheme,
   type MobileThemeIds,
   type MobileThemeMode,
-  type MobileThemeVariables,
 } from "../../../../lib/mobileTheme";
+import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
+import { cn } from "../../../../lib/cn";
 import { useThemeColor } from "../../../../lib/useThemeColor";
 import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
 import { useScenery } from "../../../scenery/SceneryProvider";
@@ -24,25 +25,15 @@ const APPEARANCE_MODES: ReadonlyArray<{
   { id: "dark", label: "Dark" },
 ];
 
-function PreviewPane(props: { readonly colors: MobileThemeVariables; readonly compact?: boolean }) {
+function PreviewPane(props: { readonly compact?: boolean }) {
   return (
-    <View
-      className="flex-1 overflow-hidden"
-      style={{ backgroundColor: props.colors["--color-screen"] }}
-    >
+    <View className="flex-1 overflow-hidden bg-screen">
       <View
-        className={props.compact ? "h-[18px] gap-0.5 px-1" : "h-[18px] gap-1 px-1.5"}
-        style={{ backgroundColor: props.colors["--color-card"] }}
+        className={cn("bg-card", props.compact ? "h-[18px] gap-0.5 px-1" : "h-[18px] gap-1 px-1.5")}
       >
         <View className="mt-2 flex-row items-center gap-1">
-          <View
-            className="size-1.5 rounded-full"
-            style={{ backgroundColor: props.colors["--color-primary"] }}
-          />
-          <View
-            className="h-1 flex-1 rounded-full"
-            style={{ backgroundColor: props.colors["--color-foreground-muted"] }}
-          />
+          <View className="size-1.5 rounded-full bg-primary" />
+          <View className="h-1 flex-1 rounded-full bg-foreground-muted" />
         </View>
       </View>
       <View
@@ -51,24 +42,12 @@ function PreviewPane(props: { readonly colors: MobileThemeVariables; readonly co
         }
       >
         <View className="gap-1">
-          <View
-            className="h-1.5 w-[72%] rounded-full"
-            style={{ backgroundColor: props.colors["--color-subtle-strong"] }}
-          />
-          <View
-            className="h-1.5 w-[46%] rounded-full"
-            style={{ backgroundColor: props.colors["--color-subtle-strong"] }}
-          />
+          <View className="h-1.5 w-[72%] rounded-full bg-subtle-strong" />
+          <View className="h-1.5 w-[46%] rounded-full bg-subtle-strong" />
         </View>
         <View className="items-end gap-1 pb-2">
-          <View
-            className="h-3 w-[78%] rounded-full"
-            style={{ backgroundColor: props.colors["--color-user-bubble"] }}
-          />
-          <View
-            className="h-1 w-[38%] rounded-full"
-            style={{ backgroundColor: props.colors["--color-foreground-muted"] }}
-          />
+          <View className="h-3 w-[78%] rounded-full bg-user-bubble" />
+          <View className="h-1 w-[38%] rounded-full bg-foreground-muted" />
         </View>
       </View>
     </View>
@@ -76,50 +55,31 @@ function PreviewPane(props: { readonly colors: MobileThemeVariables; readonly co
 }
 
 function ModePreview(props: { readonly mode: MobileThemeMode; readonly themeIds: MobileThemeIds }) {
-  const light = getMobileThemeVariables(props.themeIds.light, "light");
-  const dark = getMobileThemeVariables(props.themeIds.dark, "dark");
-  const currentBorder = useThemeColor("--color-border");
-  const currentFrame = useThemeColor("--color-drawer");
-  const currentIndicator = useThemeColor("--color-foreground-muted");
-  const frameColor =
-    props.mode === "light"
-      ? light["--color-border"]
-      : props.mode === "dark"
-        ? dark["--color-border"]
-        : currentBorder;
-  const frameBackground =
-    props.mode === "light"
-      ? light["--color-drawer"]
-      : props.mode === "dark"
-        ? dark["--color-drawer"]
-        : currentFrame;
-  const indicatorColor =
-    props.mode === "light"
-      ? light["--color-foreground-muted"]
-      : props.mode === "dark"
-        ? dark["--color-foreground-muted"]
-        : currentIndicator;
+  if (props.mode === "system") {
+    return (
+      <View className="h-24 w-14 self-center rounded-[16px] border-[1.5px] border-border bg-drawer p-[3px]">
+        <View className="flex-1 flex-row overflow-hidden rounded-[11px]">
+          <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds.light, "light")}>
+            <PreviewPane compact />
+          </ScopedTheme>
+          <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds.dark, "dark")}>
+            <PreviewPane compact />
+          </ScopedTheme>
+        </View>
+        <View className="absolute bottom-[6px] left-1/2 h-1 w-4 -translate-x-1/2 rounded-full bg-foreground-muted" />
+      </View>
+    );
+  }
 
   return (
-    <View
-      className="h-24 w-14 self-center rounded-[16px] p-[3px]"
-      style={{ backgroundColor: frameBackground, borderColor: frameColor, borderWidth: 1.5 }}
-    >
-      <View className="flex-1 flex-row overflow-hidden rounded-[11px]">
-        {props.mode === "system" ? (
-          <>
-            <PreviewPane colors={light} compact />
-            <PreviewPane colors={dark} compact />
-          </>
-        ) : (
-          <PreviewPane colors={props.mode === "light" ? light : dark} />
-        )}
+    <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds[props.mode], props.mode)}>
+      <View className="h-24 w-14 self-center rounded-[16px] border-[1.5px] border-border bg-drawer p-[3px]">
+        <View className="flex-1 flex-row overflow-hidden rounded-[11px]">
+          <PreviewPane />
+        </View>
+        <View className="absolute bottom-[6px] left-1/2 h-1 w-4 -translate-x-1/2 rounded-full bg-foreground-muted" />
       </View>
-      <View
-        className="absolute bottom-[6px] left-1/2 h-1 w-4 -translate-x-1/2 rounded-full"
-        style={{ backgroundColor: indicatorColor }}
-      />
-    </View>
+    </ScopedTheme>
   );
 }
 
@@ -136,11 +96,10 @@ function ModeCard(props: {
       accessibilityLabel={`${props.label} appearance`}
       accessibilityRole="radio"
       accessibilityState={{ checked: props.selected, disabled: props.disabled }}
-      className={
-        props.selected
-          ? "min-w-0 flex-1 gap-2 rounded-[24px] border-2 border-primary bg-subtle p-2"
-          : "min-w-0 flex-1 gap-2 rounded-[24px] border border-border bg-card p-2"
-      }
+      className={cn(
+        "min-w-0 flex-1 gap-2 rounded-[24px] p-2 active:scale-[0.97]",
+        props.selected ? "border-2 border-primary bg-subtle" : "border border-border bg-card",
+      )}
       disabled={props.disabled}
       onPress={props.onPress}
     >

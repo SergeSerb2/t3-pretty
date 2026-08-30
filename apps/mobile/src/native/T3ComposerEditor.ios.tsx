@@ -14,7 +14,7 @@ import { Image, StyleSheet } from "react-native";
 
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
 import { resolveMarkdownFileIcon } from "@t3tools/mobile-markdown-text/links";
-import { useThemeColor } from "../lib/useThemeColor";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { useFontFamily } from "../lib/useFontFamily";
 import { useScaledTextRole } from "../features/settings/appearance/useScaledTextRole";
 import {
@@ -112,16 +112,7 @@ export function ComposerEditor({
   const nativeEventSnapshotsRef = useRef<ComposerNativeEventSnapshot[]>([]);
   const confirmedTokensRef = useRef(collectNativeComposerInlineTokens(props.value));
   const bodyText = useScaledTextRole("body");
-  const textColor = useThemeColor("--color-foreground");
-  const placeholderColor = useThemeColor("--color-placeholder");
-  const chipBackground = useThemeColor("--color-subtle");
-  const chipBorder = useThemeColor("--color-border");
-  const chipText = useThemeColor("--color-foreground");
-  const skillBackground = useThemeColor("--color-inline-skill-background");
-  const skillBorder = useThemeColor("--color-inline-skill-border");
-  const skillText = useThemeColor("--color-inline-skill-foreground");
-  const fileTint = useThemeColor("--color-icon-muted");
-  const caret = useThemeColor("--color-primary");
+  const theme = useUniwindTheme();
   const fontFamily = useFontFamily("regular");
 
   useImperativeHandle(
@@ -240,16 +231,16 @@ export function ComposerEditor({
     [],
   );
   const themeJson = JSON.stringify({
-    text: String(textColor),
-    placeholder: String(placeholderColor),
-    chipBackground: String(chipBackground),
-    chipBorder: String(chipBorder),
-    chipText: String(chipText),
-    skillBackground: String(skillBackground),
-    skillBorder: String(skillBorder),
-    skillText: String(skillText),
-    fileTint: String(fileTint),
-    caret: String(caret),
+    text: theme["--color-foreground"],
+    placeholder: theme["--color-placeholder"],
+    chipBackground: theme["--color-subtle"],
+    chipBorder: theme["--color-border"],
+    chipText: theme["--color-foreground"],
+    skillBackground: theme["--color-inline-skill-background"],
+    skillBorder: theme["--color-inline-skill-border"],
+    skillText: theme["--color-inline-skill-foreground"],
+    fileTint: theme["--color-icon-muted"],
+    caret: theme["--color-primary"],
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   return (

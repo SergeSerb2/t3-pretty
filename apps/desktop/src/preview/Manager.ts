@@ -465,6 +465,7 @@ interface FrameCaptureSession {
   readonly sourceState: SynchronizedRef.SynchronizedRef<FrameCaptureSourceState>;
   /** Clock millis of the last `Page.screencastFrame`; shared across session copies. */
   readonly screencast: { lastFrameAt: number; lastDeliveredAt: number };
+  readonly lastPictureInPictureFrame: DesktopPreviewRecordingFrame["data"] | null;
 }
 
 interface FrameCaptureSource {
@@ -528,6 +529,61 @@ const APP_FORWARDED_SHORTCUTS: ReadonlyArray<{
   // mod+W → close tab/panel
   { key: "w", meta: true, shift: false, control: false },
 ]);
+
+/**
+ * Protocols a preview page may open in a real popup window.
+ *
+ * `about:blank` stays out: Chromium skips browser-side navigation for it, so the
+ * child copies the guest's `contextIsolation: false` preferences and Electron
+ * gives no way to override them. Those popups keep loading in the preview tab.
+ *
+ * Deliberately not `ElectronShell.parseSafeExternalUrl`: that also admits
+ * `vscode://vscode-remote/...` deep links, which belong in `shell.openExternal`
+ * and not in a window spawned by a third-party page in the preview.
+ */
+const POPUP_PROTOCOLS = new Set(["http:", "https:"]);
+
+const isPopupUrl = (rawUrl: string): boolean => {
+  try {
+    return POPUP_PROTOCOLS.has(new URL(rawUrl).protocol);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Preferences for a popup a preview page opens.
+ *
+ * A popup is not a webview attach, so the `will-attach-webview` hardening in
+ * `DesktopWindow` never sees it, and an unoverridden child would inherit the
+ * guest's relaxed posture: the picker preload needs `contextIsolation: false`
+ * to share `globalThis` with the previewed page, and no OAuth provider should
+ * get that. The window keeps the opener and the guest session either way.
+ */
+const POPUP_WINDOW_OPTIONS = {
+  webPreferences: {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+  },
+} satisfies Electron.BrowserWindowConstructorOptions;
+
+/**
+ * Decides what a preview page's `window.open` should do.
+ *
+ * `"popup"` opens a real window, which scripted popups need: denying them makes
+ * `window.open()` return `null` (OAuth SDKs report that as a blocked popup), and
+ * navigating the preview tab instead destroys the opener the popup has to
+ * `postMessage` its result back to.
+ *
+ * `target="_blank"` links arrive as a tab disposition and keep loading in the
+ * preview tab, which is what people expect from a link inside a preview.
+ */
+export const previewWindowOpenAction = (details: {
+  readonly url: string;
+  readonly disposition: Electron.HandlerDetails["disposition"];
+}): "popup" | "navigate" =>
+  details.disposition === "new-window" && isPopupUrl(details.url) ? "popup" : "navigate";
 
 export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
   input.type === "keyDown" &&
@@ -756,7 +812,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return [
             undefined,
             replaceMap(sessions, (copy) => {
-              copy.set(tabId, { ...current, consumers });
+              copy.set(tabId, {
+                ...current,
+                consumers,
+                lastPictureInPictureFrame:
+                  consumer === "picture-in-picture" ? null : current.lastPictureInPictureFrame,
+              });
             }),
           ] as const;
         }
@@ -1777,6 +1838,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ],
       });
     });
+    // A popup opens with Electron's default handler, so the page inside it could
+    // otherwise spawn native windows without limit. Nothing in an OAuth flow
+    // opens a second popup, so the chain stops at the first one.
+    const windowCreated = (window: Electron.BrowserWindow): void => {
+      window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
       if (isPreviewRefreshShortcut(input)) {
         event.preventDefault();
@@ -1802,6 +1869,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("did-stop-loading", sync);
         wc.off("did-fail-load", failed as never);
         wc.off("audio-state-changed", audioStateChanged);
+        wc.off("did-create-window", windowCreated);
         wc.off("before-input-event", beforeInput);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
@@ -1820,14 +1888,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("audio-state-changed", audioStateChanged);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
-        wc.setWindowOpenHandler(({ url }) => {
+        wc.setWindowOpenHandler((details) => {
+          if (previewWindowOpenAction(details) === "popup") {
+            return { action: "allow", overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
+          }
           runFork(
             attemptPromise({ operation: "openPreviewWindow", tabId, webContentsId: wc.id }, () =>
-              wc.loadURL(url),
+              wc.loadURL(details.url),
             ).pipe(Effect.ignore),
           );
           return { action: "deny" };
         });
+        wc.on("did-create-window", windowCreated);
         wc.on("before-input-event", beforeInput);
       });
       yield* Ref.update(attachedRef, (attached) =>
@@ -2637,11 +2709,30 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     session: FrameCaptureSession,
     frame: DesktopPreviewRecordingFrame,
   ) {
+    const [captureSessions, tabs] = yield* Effect.all(
+      [SynchronizedRef.get(frameCaptureSessionsRef), SynchronizedRef.get(tabsRef)],
+      { concurrency: 2 },
+    );
+    const frameSession = captureSessions.get(tabId);
+    if (
+      !frameSession ||
+      frameSession.scope !== session.scope ||
+      tabs.get(tabId)?.webContentsId !== wc.id ||
+      wc.isDestroyed()
+    ) {
+      return;
+    }
+    const recording = frameSession.consumers.has("recording");
+    const encoded = frame.data;
+    const pictureInPicture =
+      frameSession.consumers.has("picture-in-picture") &&
+      frameSession.lastPictureInPictureFrame !== encoded;
+    if (!recording && !pictureInPicture) return;
     const deliveries: Array<Effect.Effect<void>> = [];
     // Recording frames go to the window hosting the guest, which is where the
     // renderer-side recorder lives; the PiP window gets its own copy below.
     const host = wc.hostWebContents;
-    if (session.consumers.has("recording") && host && !host.isDestroyed()) {
+    if (recording && host && !host.isDestroyed()) {
       const listeners = yield* Ref.get(recordingFrameListenersRef);
       deliveries.push(
         Effect.forEach(
@@ -2651,7 +2742,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ),
       );
     }
-    if (session.consumers.has("picture-in-picture")) {
+    if (pictureInPicture) {
       const pictureInPictureWindow = (yield* SynchronizedRef.get(pictureInPictureSessionsRef)).get(
         tabId,
       )?.window;
@@ -2701,6 +2792,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 );
               },
             );
+            yield* SynchronizedRef.update(frameCaptureSessionsRef, (sessions) => {
+              if (sessions.get(tabId) !== frameSession) return sessions;
+              return replaceMap(sessions, (copy) => {
+                copy.set(tabId, {
+                  ...frameSession,
+                  lastPictureInPictureFrame: encoded,
+                });
+              });
+            });
           }).pipe(
             Effect.catch((error) =>
               Effect.logWarning("Picture-in-picture frame delivery failed.", {
@@ -2938,6 +3038,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 lastFrameAt: Number.NEGATIVE_INFINITY,
                 lastDeliveredAt: Number.NEGATIVE_INFINITY,
               },
+              lastPictureInPictureFrame: null,
             });
           }),
         ] as const;
@@ -3092,6 +3193,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             ),
           );
         };
+        const onDidFinishLoad = () => {
+          runFork(
+            SynchronizedRef.update(frameCaptureSessionsRef, (sessions) => {
+              const current = sessions.get(tabId);
+              if (!current?.consumers.has("picture-in-picture")) return sessions;
+              return replaceMap(sessions, (copy) => {
+                copy.set(tabId, { ...current, lastPictureInPictureFrame: null });
+              });
+            }),
+          );
+        };
+        const pipWebContents = pictureInPictureWindow.webContents;
         yield* attempt(
           {
             operation: "pictureInPicture.configure",
@@ -3112,6 +3225,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                 skipTransformProcessType: true,
               });
             }
+            pipWebContents.on("did-finish-load", onDidFinishLoad);
           },
         ).pipe(
           Effect.onError(() =>
@@ -3125,6 +3239,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               { discard: true },
             ),
           ),
+        );
+        yield* Scope.addFinalizer(
+          initializationScope,
+          Effect.sync(() => {
+            pipWebContents.off("did-finish-load", onDidFinishLoad);
+          }).pipe(Effect.ignore),
         );
         yield* SynchronizedRef.update(pictureInPictureSessionsRef, (sessions) =>
           replaceMap(sessions, (copy) => {

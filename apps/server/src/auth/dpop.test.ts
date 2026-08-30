@@ -8,6 +8,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import {
   DPOP_REPLAY_RETENTION,
+  mapDpopFailureReason,
   mapDpopReplayStoreError,
   scheduleDpopReplayStateRemoval,
 } from "./dpop.ts";
@@ -43,6 +44,7 @@ describe("mapDpopReplayStoreError", () => {
     expect(error._tag).toBe("ServerAuthInvalidCredentialError");
     if (error._tag === "ServerAuthInvalidCredentialError") {
       expect(error.cause).toBe(cause);
+      expect(error.dpopFailureReason).toBe("replay");
     }
   });
 
@@ -74,4 +76,24 @@ describe("DPoP replay retention", () => {
       expect(removed).toEqual(["dpop-proof-safe-key"]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
+});
+
+describe("mapDpopFailureReason", () => {
+  it("maps verifier failures to safe client-facing categories", () => {
+    const mappings = [
+      ["time_window", "time_window"],
+      ["key_mismatch", "key_mismatch"],
+      ["method_mismatch", "request_mismatch"],
+      ["url_mismatch", "request_mismatch"],
+      ["access_token_hash_mismatch", "token_mismatch"],
+      ["missing_proof", "invalid_proof"],
+      ["malformed_proof", "invalid_proof"],
+      ["invalid_signature", "invalid_proof"],
+      ["invalid_proof", "invalid_proof"],
+    ] as const;
+
+    for (const [code, expected] of mappings) {
+      expect(mapDpopFailureReason(code)).toBe(expected);
+    }
+  });
 });

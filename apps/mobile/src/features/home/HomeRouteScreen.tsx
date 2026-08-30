@@ -2,7 +2,7 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, useWindowDimensions, View } from "react-native";
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
@@ -28,6 +28,7 @@ import { markThreadOpenStarted } from "../observability/threadPerformance";
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
 export function HomeRouteScreen() {
+  const { width: windowWidth } = useWindowDimensions();
   const { layout } = useAdaptiveWorkspaceLayout();
   const projects = useProjects();
   const threads = usePresentedThreadShells();
@@ -167,8 +168,10 @@ export function HomeRouteScreen() {
             shallow-merged. The brand slot also doubles as the connection
             status surface while an environment reconnects. */}
         <NativeStackScreenOptions
+          optionsVersion={windowWidth}
           options={{
             ...getConnectionAwareBrandHeaderOptions({
+              headerWidth: windowWidth,
               onOpenEnvironments: () =>
                 navigation.navigate("SettingsSheet", {
                   screen: "SettingsContent",

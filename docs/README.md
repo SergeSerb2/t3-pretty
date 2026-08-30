@@ -14,6 +14,7 @@
 - [Storage](./user/storage.md)
 - [Customize a project icon](./user/project-settings.md)
 - [Mobile appearance](./user/mobile-appearance.md)
+- [Environment themes](./user/environment-theme.md)
 - [Remote access](./user/remote-access.md)
 - [T3 Connect mesh](./user/remote-access.md#t3-connect)
 - [Move a thread between environments](./user/remote-access.md#move-a-thread-to-another-environment)
@@ -21,7 +22,7 @@
 - [Source control integrations](./user/source-control.md)
 - [Automatic pull requests](./user/auto-pull-requests.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 

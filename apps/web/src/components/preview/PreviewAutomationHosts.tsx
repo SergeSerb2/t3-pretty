@@ -39,7 +39,10 @@ import {
   stopBrowserRecording,
 } from "~/browser/browserRecording";
 import { resolveBrowserRecordingStopTarget } from "~/browser/browserRecordingScope";
-import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
+import {
+  acquireBrowserSurfaceActivity,
+  useBrowserSurfaceStore,
+} from "~/browser/browserSurfaceStore";
 import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { acquirePreviewGuestThread } from "~/browser/previewGuestResidency";
@@ -138,7 +141,11 @@ const waitForDesktopOverlay = async (
       requestId,
     });
     const bridge = previewBridge;
-    if (state.desktopByTabId[tabId] && bridge) {
+    if (
+      state.desktopByTabId[tabId] &&
+      bridge &&
+      isPreviewWebviewRendering(runtimeTabId)
+    ) {
       const ready = await settlePreviewAutomationBeforeDeadline(
         previewAutomationDesktopStatusReady(() => bridge.automation.status(runtimeTabId)),
         deadline - Date.now(),
@@ -166,6 +173,11 @@ const findPreviewWebview = (tabId: string): ExecutablePreviewWebview | null =>
   Array.from(document.querySelectorAll<ExecutablePreviewWebview>("webview[data-preview-tab]")).find(
     (candidate) => candidate.getAttribute("data-preview-tab") === tabId,
   ) ?? null;
+
+const isPreviewWebviewRendering = (runtimeTabId: string): boolean => {
+  const wrapper = findPreviewWebview(runtimeTabId)?.closest<HTMLElement>("[data-preview-viewport]");
+  return wrapper?.getAttribute("data-preview-rendering") === "active";
+};
 
 const readWebviewViewport = async (
   webview: ExecutablePreviewWebview,
@@ -267,8 +279,12 @@ const currentStatus = async (
   const visible = runtimeTabId
     ? (useBrowserSurfaceStore.getState().byTabId[runtimeTabId]?.visible ?? false)
     : false;
+  const renderingActive = runtimeTabId ? isPreviewWebviewRendering(runtimeTabId) : false;
   const viewportSetting = snapshot ? (snapshot.viewport ?? FILL_PREVIEW_VIEWPORT) : undefined;
-  const viewport = runtimeTabId ? await readRenderedViewport(runtimeTabId).catch(() => null) : null;
+  const viewport =
+    runtimeTabId && renderingActive
+      ? await readRenderedViewport(runtimeTabId).catch(() => null)
+      : null;
   const viewportStatus = {
     ...(viewportSetting === undefined ? {} : { viewportSetting }),
     ...(viewport === null ? {} : { viewport }),
@@ -365,6 +381,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
       // Wake this thread's guests for the whole request and keep them resident
       // while it runs, so a dormant tab is a delay and not a failure.
       const releasePreviewGuests = acquirePreviewGuestThread(scopedThreadKey(threadRef));
+      const browserActivity = { release: null as (() => void) | null };
       try {
         const execute = async (): Promise<unknown> => {
           let state = readThreadPreviewState(threadRef);
@@ -399,6 +416,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             }
             const readyState = readThreadPreviewState(threadRef);
             const runtimeTabId = previewRuntimeTabId(threadRef, readyState.serverEpoch, readyTabId);
+            browserActivity.release ??= acquireBrowserSurfaceActivity(runtimeTabId);
             await waitForDesktopOverlay(
               threadRef,
               request.requestId,
@@ -504,6 +522,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
                 miniPlayers.open(threadRef, activeTabId);
               }
               if (activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)) {
+                browserActivity.release ??= acquireBrowserSurfaceActivity(activeRuntimeTabId);
                 await waitForDesktopOverlay(
                   threadRef,
                   request.requestId,
@@ -761,6 +780,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           cause,
         });
       } finally {
+        browserActivity.release?.();
         releasePreviewGuests();
       }
     },

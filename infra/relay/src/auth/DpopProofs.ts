@@ -8,7 +8,7 @@ import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
 import { sha256 } from "@noble/hashes/sha2";
 import { lt } from "drizzle-orm";
 
-import { verifyDpopProof } from "@t3tools/shared/dpop";
+import { DpopVerificationFailureCode, verifyDpopProof } from "@t3tools/shared/dpop";
 import * as RelayDb from "../db.ts";
 import { relayDpopProofs } from "../persistence/schema.ts";
 
@@ -36,6 +36,23 @@ export class DpopProofReplayPersistenceError extends Schema.TaggedErrorClass<Dpo
   }
 }
 
+export const DpopProofFailureCode = Schema.Union([
+  DpopVerificationFailureCode,
+  Schema.Literal("replayed"),
+]);
+export type DpopProofFailureCode = typeof DpopProofFailureCode.Type;
+
+export class DpopProofRejected extends Schema.TaggedErrorClass<DpopProofRejected>()(
+  "DpopProofRejected",
+  {
+    code: DpopProofFailureCode,
+  },
+) {
+  override get message(): string {
+    return `DPoP proof rejected: ${this.code}`;
+  }
+}
+
 export class DpopProofReplay extends Context.Service<
   DpopProofReplay,
   {
@@ -55,7 +72,7 @@ export class DpopProofReplay extends Context.Service<
       readonly expectedThumbprint?: string;
       readonly expectedAccessToken?: string;
       readonly now: DateTime.DateTime;
-    }) => Effect.Effect<string, HttpApiError.Unauthorized | DpopProofReplayPersistenceError>;
+    }) => Effect.Effect<string, DpopProofRejected | DpopProofReplayPersistenceError>;
     readonly consume: (input: {
       readonly thumbprint: string;
       readonly jti: string;
@@ -119,13 +136,16 @@ const make = Effect.gen(function* () {
     });
     if (!result.ok) {
       yield* Effect.logWarning("relay dpop proof rejected", {
+        code: result.code,
         reason: result.reason,
         method: input.method,
         url: input.url,
         expectedThumbprintPresent: input.expectedThumbprint !== undefined,
         expectedAccessTokenPresent: input.expectedAccessToken !== undefined,
       });
-      return yield* new HttpApiError.Unauthorized({});
+      return yield* new DpopProofRejected({
+        code: result.code,
+      });
     }
     yield* Effect.annotateCurrentSpan({
       "relay.dpop.thumbprint": result.thumbprint,
@@ -153,7 +173,9 @@ const make = Effect.gen(function* () {
         jti: verified.jti,
         iat: verified.iat,
       });
-      return yield* new HttpApiError.Unauthorized({});
+      return yield* new DpopProofRejected({
+        code: "replayed",
+      });
     }
     return verified.thumbprint;
   });
