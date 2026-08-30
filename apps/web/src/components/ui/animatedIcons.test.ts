@@ -66,4 +66,8 @@ describe("animated icon boundaries", () => {
     expect(updatePill).toContain("desktopUpdateCheckSpinFrom");
     expect(updatePill).toContain("--refresh-cw-from");
   });
+
+  it("keeps the refresh icon mounted through its settle-to-rest transition", () => {
+    expect(updatePill).toContain("key={checkAnimationKey}");
+  });
 });
