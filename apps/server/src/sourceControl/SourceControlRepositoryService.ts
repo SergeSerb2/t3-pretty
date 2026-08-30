@@ -1,4 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
+import * as NodeFSP from "node:fs/promises";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -87,6 +89,15 @@ function expandHomePath(input: string, path: Path.Path): string {
   return input;
 }
 
+async function directoryHasEntries(directoryPath: string): Promise<boolean> {
+  const directory = await NodeFSP.opendir(directoryPath);
+  try {
+    return (await directory.read()) !== null;
+  } finally {
+    await directory.close();
+  }
+}
+
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -145,20 +156,17 @@ export const make = Effect.gen(function* () {
     function* (destinationPath: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
       if (yield* fileSystem.exists(normalizedDestination)) {
-        const entries = yield* fileSystem
-          .readDirectory(normalizedDestination, { recursive: false })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new SourceControlRepositoryError({
-                  operation: "cloneRepository",
-                  provider: "unknown",
-                  detail: "Destination path already exists and is not a directory.",
-                  cause,
-                }),
-            ),
-          );
-        if (entries.length > 0) {
+        const hasEntries = yield* Effect.tryPromise({
+          try: () => directoryHasEntries(normalizedDestination),
+          catch: (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider: "unknown",
+              detail: "Destination path already exists and is not a directory.",
+              cause,
+            }),
+        });
+        if (hasEntries) {
           return yield* new SourceControlRepositoryError({
             operation: "cloneRepository",
             provider: "unknown",

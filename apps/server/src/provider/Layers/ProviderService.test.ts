@@ -14,7 +14,6 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
-  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -22,10 +21,12 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, describe, vi } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -60,6 +61,7 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
@@ -1145,6 +1147,33 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const imageOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
       assert.equal(imageOnlyInput.input?.startsWith('[Attached image "screenshot.png"'), true);
 
+      const fileAttachment = {
+        type: "file" as const,
+        id: "thread-attach-12345678-1234-1234-1234-123456789abc-pdf",
+        name: "report.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 456,
+      };
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "summarize the report",
+        attachments: [attachment, fileAttachment],
+      });
+      const mixedInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(mixedInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.include(mixedInput.input ?? "", `${fileAttachment.id}.pdf]`);
+      // Every attachment reaches the adapter; each adapter decides what its
+      // provider ingests natively.
+      assert.deepEqual(mixedInput.attachments, [attachment, fileAttachment]);
+
+      routing.codex.sendTurn.mockClear();
+      yield* provider.sendTurn({ threadId: session.threadId, attachments: [fileAttachment] });
+      const fileOnlyInput = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.include(fileOnlyInput.input ?? "", '[Attached file "report.pdf" is saved at: ');
+      assert.deepEqual(fileOnlyInput.attachments, [fileAttachment]);
+
       yield* provider.stopSession({ threadId: session.threadId });
     }),
   );
@@ -2121,8 +2150,14 @@ validation.layer("ProviderServiceLive validation", (it) => {
 
 describe("agent browser access", () => {
   const revokedThreads: Array<ThreadId> = [];
+  const issuedCapabilities = new Map<ThreadId, ReadonlySet<McpInvocationContext.McpCapability>>();
 
-  const startSessionWith = (enableAgentBrowserAccess: boolean, threadId: ThreadId) =>
+  const startSessionWith = (
+    enableAgentBrowserAccess: boolean,
+    threadId: ThreadId,
+    enableComputerUse = false,
+    platform: NodeJS.Platform = "darwin",
+  ) =>
     Effect.gen(function* () {
       const issued: Array<ThreadId> = [];
       const codex = makeFakeCodexAdapter();
@@ -2140,15 +2175,22 @@ describe("agent browser access", () => {
         issueMcpCredential: (request) =>
           Effect.sync(() => {
             issued.push(request.threadId);
+            issuedCapabilities.set(request.threadId, request.capabilities ?? new Set());
             return undefined;
           }),
         revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess })),
+        Layer.provide(
+          ServerSettings.ServerSettingsService.layerTest({
+            enableAgentBrowserAccess,
+            enableComputerUse,
+          }),
+        ),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(Layer.succeed(HostProcessPlatform, platform)),
         Layer.provide(
           Layer.succeed(
             ProviderEventLoggers.ProviderEventLoggers,
@@ -2202,6 +2244,111 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["preview"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("requests a computer-use-only credential when computer control is on", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-computer-use-on");
+
+      const issued = yield* startSessionWith(false, threadId, true);
+
+      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["computer-use"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds computer control on unsupported hosts", () =>
+    Effect.gen(function* () {
+      const issued = yield* startSessionWith(
+        false,
+        asThreadId("thread-computer-use-linux"),
+        true,
+        "linux",
+      );
+
+      assert.deepEqual(issued, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("serializes same-thread starts across credential issuance and adapter startup", () =>
+    Effect.gen(function* () {
+      const threadId = asThreadId("thread-browser-concurrent-start");
+      const firstAdapterStartEntered = yield* Deferred.make<void>();
+      const releaseFirstAdapterStart = yield* Deferred.make<void>();
+      const secondCallStarted = yield* Deferred.make<void>();
+      const issued: Array<ThreadId> = [];
+      const codex = makeFakeCodexAdapter();
+      let adapterStartCount = 0;
+      const serializedAdapter: ProviderAdapterShape<ProviderAdapterError> = {
+        ...codex.adapter,
+        startSession: (input) =>
+          Effect.gen(function* () {
+            adapterStartCount += 1;
+            if (adapterStartCount === 1) {
+              yield* Deferred.succeed(firstAdapterStartEntered, undefined);
+              yield* Deferred.await(releaseFirstAdapterStart);
+            }
+            return yield* codex.adapter.startSession(input);
+          }),
+      };
+      const providerAdapterLayer = Layer.succeed(
+        ProviderAdapterRegistry.ProviderAdapterRegistry,
+        makeAdapterRegistryMock({ [CODEX_DRIVER]: serializedAdapter }),
+      );
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const directoryLayer = ProviderSessionDirectoryLive.pipe(
+        Layer.provide(runtimeRepositoryLayer),
+      );
+      const providerLayer = makeProviderServiceLive({
+        issueMcpCredential: (request) =>
+          Effect.sync(() => {
+            issued.push(request.threadId);
+            return undefined;
+          }),
+      }).pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(
+          ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess: true }),
+        ),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const startInput = {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access" as const,
+        };
+        const first = yield* provider.startSession(threadId, startInput).pipe(Effect.forkChild);
+        yield* Deferred.await(firstAdapterStartEntered);
+        const second = yield* Effect.gen(function* () {
+          yield* Deferred.succeed(secondCallStarted, undefined);
+          return yield* provider.startSession(threadId, startInput);
+        }).pipe(Effect.forkChild);
+        yield* Deferred.await(secondCallStarted);
+        yield* Effect.yieldNow;
+
+        assert.deepEqual(issued, [threadId]);
+
+        yield* Deferred.succeed(releaseFirstAdapterStart, undefined);
+        yield* Fiber.join(first);
+        yield* Fiber.join(second);
+        assert.deepEqual(issued, [threadId, threadId]);
+      }).pipe(Effect.provide(providerLayer));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

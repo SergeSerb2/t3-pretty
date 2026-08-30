@@ -17,6 +17,7 @@ import {
   deriveLiveTurnHeadline,
   deriveTimelineEntries,
   deriveWorkLogEntries,
+  fileChangeKindHeading,
   findLatestProposedPlan,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -127,6 +128,39 @@ describe("derivePendingApprovals", () => {
         requestKind: "command",
         createdAt: "2026-02-23T00:00:01.000Z",
         detail: "pwd",
+      },
+    ]);
+  });
+
+  it("keeps app access approvals and persistence choices from remote activities", () => {
+    const options = [
+      { decision: "decline", label: "Decline" },
+      { decision: "acceptAlways", label: "Always allow Safari" },
+      { decision: "accept", label: "Approve" },
+    ];
+    const activities = [
+      makeActivity({
+        kind: "approval.requested",
+        summary: "App access approval requested",
+        tone: "approval",
+        payload: {
+          requestId: "req-safari",
+          requestType: "mcp_elicitation_approval",
+          detail: "Allow ChatGPT to use Safari?",
+          appName: "Safari",
+          options,
+        },
+      }),
+    ];
+
+    expect(derivePendingApprovals(activities)).toEqual([
+      {
+        requestId: "req-safari",
+        requestKind: "mcp-elicitation",
+        createdAt: "2026-02-23T00:00:00.000Z",
+        detail: "Allow ChatGPT to use Safari?",
+        appName: "Safari",
+        options,
       },
     ]);
   });
@@ -925,6 +959,28 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
+  it("drops runtime warnings with no displayable content, keeps ones with a preview", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "warning-noise",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "runtime.warning",
+        summary: "Claude system message 'background_tasks_changed' (no displayable text content)",
+        tone: "info",
+      }),
+      makeActivity({
+        id: "warning-signal",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "runtime.warning",
+        summary: "Reconnecting... 2/5",
+        tone: "info",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities);
+    expect(entries.map((entry) => entry.id)).toEqual(["warning-signal"]);
+  });
+
   it("omits task.started but shows task.progress and task.completed", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1210,6 +1266,84 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.toolCallId).toBe("call-1");
   });
 
+  it("keeps the labeled browser action when a later lifecycle row omits arguments", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "click-progress",
+        kind: "tool.updated",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+          data: {
+            item: {
+              type: "mcpToolCall",
+              server: "t3-code",
+              tool: "preview_click",
+              arguments: { locator: "role=button[name='Send']" },
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "click-complete",
+        kind: "tool.completed",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.previewAutomation).toEqual({
+      operation: "click",
+      label: "Clicked “Send”",
+    });
+  });
+
+  it("upgrades a title-only browser label when arguments arrive later", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "click-title",
+        kind: "tool.updated",
+        summary: "preview_click",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolCallId: "call-click",
+          title: "preview_click",
+        },
+      }),
+      makeActivity({
+        id: "click-args",
+        kind: "tool.updated",
+        summary: "t3-code · preview_click",
+        payload: {
+          itemType: "mcp_tool_call",
+          toolCallId: "call-click",
+          title: "t3-code · preview_click",
+          data: {
+            item: {
+              type: "mcpToolCall",
+              server: "t3-code",
+              tool: "preview_click",
+              arguments: { locator: "role=button[name='Send']" },
+            },
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.previewAutomation).toEqual({
+      operation: "click",
+      label: "Clicked “Send”",
+    });
+  });
+
   it("collapses interleaved lifecycle updates by tool call id", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1459,6 +1593,95 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.changedFiles).toEqual([
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",
+    ]);
+  });
+
+  it("extracts compact file diffs from projected file-change payloads", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-diff-tool",
+        kind: "tool.completed",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          data: {
+            files: [
+              { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
+              { path: "src/new.ts", kind: "add", diff: "+hello" },
+            ],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.changedFileDiffs).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
+      { path: "src/new.ts", kind: "add", diff: "+hello" },
+    ]);
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [{ path: "src/new.ts", kind: "add" }],
+      }),
+    ).toBe("File created");
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [{ path: "src/gone.ts", kind: "delete" }],
+      }),
+    ).toBe("File deleted");
+    expect(
+      fileChangeKindHeading({
+        toolTitle: "File change",
+        label: "File change",
+        changedFileDiffs: [
+          { path: "src/a.ts", kind: "add" },
+          { path: "src/b.ts", kind: "add" },
+        ],
+      }),
+    ).toBeNull();
+    expect(fileChangeKindHeading(entry!)).toBeNull();
+  });
+
+  it("keeps earlier file diffs when a later lifecycle row omits them", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "file-diff-updated",
+        kind: "tool.updated",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts", kind: "update", diff: "-old\n+new" }],
+          },
+        },
+      }),
+      makeActivity({
+        id: "file-diff-completed",
+        kind: "tool.completed",
+        summary: "File change",
+        payload: {
+          itemType: "file_change",
+          title: "File change",
+          toolCallId: "call-diff",
+          data: {
+            toolCallId: "call-diff",
+            files: [{ path: "src/a.ts" }],
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities);
+    expect(entry?.changedFileDiffs).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-old\n+new" },
     ]);
   });
 
@@ -1881,6 +2104,28 @@ describe("deriveTimelineEntries", () => {
         implementationThreadId: null,
       },
     });
+  });
+
+  it("orders mixed-precision timestamps by instant rather than raw string", () => {
+    const makeMessage = (id: string, createdAt: string) => ({
+      id: MessageId.make(id),
+      role: "assistant" as const,
+      text: id,
+      createdAt,
+      turnId: null,
+      updatedAt: createdAt,
+      streaming: false,
+    });
+    const entries = deriveTimelineEntries(
+      [
+        makeMessage("media-micro", "2026-07-28T17:55:08.546238Z"),
+        makeMessage("text-milli", "2026-07-28T17:55:08.546Z"),
+      ],
+      [],
+      [],
+    );
+
+    expect(entries.map((entry) => entry.id)).toEqual(["text-milli", "media-micro"]);
   });
 });
 
@@ -2314,5 +2559,66 @@ describe("rerun workflows", () => {
     const spawnRows = entries.filter((entry) => entry.agentSpawn !== undefined);
     expect(spawnRows.map((row) => row.agentSpawn!.workflowId)).toEqual(["wf-run1", "wf-run2"]);
     expect(spawnRows.map((row) => row.turnId)).toEqual(["turn-1", "turn-2"]);
+  });
+});
+
+describe("session activity performance", () => {
+  it("reuses entries for unchanged activities", () => {
+    const activities = ["status", "diff", "log"].map((command, index) =>
+      makeActivity({
+        id: `stable-tool-${index}`,
+        kind: "tool.completed",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          data: { toolCallId: `stable-tool-${index}`, item: { command: ["git", command] } },
+        },
+      }),
+    );
+
+    const initialEntries = deriveWorkLogEntries(activities.slice(0, 2));
+    const appendedEntries = deriveWorkLogEntries(activities);
+    expect(appendedEntries[0]).toBe(initialEntries[0]);
+    expect(appendedEntries[1]).toBe(initialEntries[1]);
+  });
+
+  it("updates 20,000 ordered tool activities within 100 ms", () => {
+    const activities = Array.from({ length: 20_000 }, (_, index) =>
+      makeActivity({
+        id: `benchmark-tool-${index}`,
+        createdAt: new Date(1_700_000_000_000 + index).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: {
+            toolCallId: `benchmark-tool-${index}`,
+            item: { command: ["git", "status"] },
+          },
+        },
+      }),
+    );
+    deriveWorkLogEntries(activities);
+    const updatedActivities = [
+      ...activities,
+      makeActivity({
+        id: "benchmark-tool-appended",
+        createdAt: new Date(1_700_000_000_000 + activities.length).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: activities.length,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: { toolCallId: "benchmark-tool-appended", item: { command: ["git", "diff"] } },
+        },
+      }),
+    ];
+
+    const startedAt = performance.now();
+    expect(deriveWorkLogEntries(updatedActivities)).toHaveLength(20_001);
+    expect(performance.now() - startedAt).toBeLessThan(100);
   });
 });

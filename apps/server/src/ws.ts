@@ -3,6 +3,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -11,6 +12,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
@@ -18,10 +20,16 @@ import {
   type AuthAccessStreamEvent,
   type AuthEnvironmentScope,
   AuthSessionId,
+  ClientConnectionMethod,
+  ClientDeviceType,
+  ClientOs,
   ClientSurface,
+  ClientWebDeployment,
   CommandId,
   type DiscoveredLocalServerList,
   EventId,
+  type EditorId,
+  type FileManagerRevealKind,
   type OrchestrationClientOrigin,
   type OrchestrationCommand,
   type GitActionProgressEvent,
@@ -66,6 +74,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -83,7 +92,10 @@ import {
   shouldSkipBootstrapWorktreePrepare,
 } from "./orchestration/bootstrapCreateThread.ts";
 import { isThreadAlreadyExistsInvariant } from "./orchestration/Errors.ts";
-import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import {
+  cleanupFailedUploadedAttachments,
+  normalizeDispatchCommand,
+} from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ToolProgressService } from "./orchestration/ToolProgress.ts";
@@ -98,7 +110,7 @@ import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import { loadServerConfig, resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
+import { loadServerConfig as loadServerConfigBase } from "./serverConfigSnapshot.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AppsService from "./apps/AppsService.ts";
@@ -107,6 +119,13 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { grokSessionIdFromResumeCursor } from "./assets/GrokSessionImages.ts";
+import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import {
+  cancelProjectTransfer,
+  inspectProjectTransfer,
+  prepareProjectTransfer,
+  sendProjectTransfer,
+} from "./project/ProjectTransfer.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -127,8 +146,6 @@ import {
   releaseReplacedManagedProjectFavicon,
   removeManagedProjectFaviconFile,
 } from "./project/ProjectFaviconStore.ts";
-import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
@@ -160,6 +177,21 @@ const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchComma
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 export { resolveAvailableEditorsForConfig } from "./serverConfigSnapshot.ts";
+
+const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
+
+const resolveDiscoveryForConfig = <A, E, R>(
+  discovery: Effect.Effect<A, E, R>,
+  onTimeout: () => A,
+) =>
+  discovery.pipe(
+    Effect.timeoutOption(CONFIG_DISCOVERY_TIMEOUT),
+    Effect.map(Option.getOrElse(onTimeout)),
+  );
+
+export const resolveFileManagerRevealKindForConfig = <E, R>(
+  discovery: Effect.Effect<FileManagerRevealKind | undefined, E, R>,
+) => resolveDiscoveryForConfig(discovery, () => undefined);
 
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
@@ -277,6 +309,8 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspaceFileTooLargeError":
+      return { failure: "too_large", resolvedPath: error.resolvedPath };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -374,7 +408,13 @@ function toAuthAccessStreamEvent(
 }
 
 const isClientSurface = Schema.is(ClientSurface);
+const isClientConnectionMethod = Schema.is(ClientConnectionMethod);
+const isClientDeviceType = Schema.is(ClientDeviceType);
+const isClientOs = Schema.is(ClientOs);
+const isClientWebDeployment = Schema.is(ClientWebDeployment);
 const MAX_CLIENT_APP_VERSION_LENGTH = 64;
+const MAX_CLIENT_BROWSER_LENGTH = 64;
+const MAX_CLIENT_DEVICE_MODEL_LENGTH = 80;
 
 // Optional client identity announced on the /ws upgrade URL next to wsTicket.
 // Lenient by design: absent or malformed values degrade to {} so a connection
@@ -396,14 +436,56 @@ function readClientConnectionOrigin(
   };
 }
 
-const clientOriginAnalyticsProps = (origin: OrchestrationClientOrigin) => ({
-  ...(origin.surface !== undefined ? { surface: origin.surface } : {}),
-  ...(origin.appVersion !== undefined ? { appVersion: origin.appVersion } : {}),
-});
+// Client telemetry stays in this socket's RPC layer. It must not become a
+// server-global "current client" because several client types can connect at once.
+function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) {
+  const url = HttpServerRequest.toURL(request);
+  if (Option.isNone(url)) {
+    return {};
+  }
+
+  const surface = url.value.searchParams.get("clientSurface");
+  const appVersion = url.value.searchParams.get("clientAppVersion")?.trim() ?? "";
+  const deviceType = url.value.searchParams.get("clientDeviceType");
+  const os = url.value.searchParams.get("clientOs");
+  const webDeployment = url.value.searchParams.get("clientWebDeployment");
+  const browser = url.value.searchParams.get("clientBrowser")?.trim() ?? "";
+  const connectionMethod = url.value.searchParams.get("connectionMethod");
+  const rawOsMajorVersion = url.value.searchParams.get("clientOsMajorVersion") ?? "";
+  const osMajorVersion = Number(rawOsMajorVersion);
+  const deviceModel = url.value.searchParams.get("clientDeviceModel")?.trim() ?? "";
+  const isMobile = surface === "mobile";
+  const hasOsMajorVersion =
+    isMobile && rawOsMajorVersion !== "" && Number.isInteger(osMajorVersion) && osMajorVersion > 0;
+  const hasDeviceModel =
+    isMobile && deviceModel !== "" && deviceModel.length <= MAX_CLIENT_DEVICE_MODEL_LENGTH;
+
+  return {
+    ...(isClientSurface(surface) ? { surface } : {}),
+    ...(appVersion !== "" && appVersion.length <= MAX_CLIENT_APP_VERSION_LENGTH
+      ? { appVersion, clientAppVersion: appVersion }
+      : {}),
+    ...(isClientOs(os)
+      ? {
+          clientOs: os,
+          ...(isMobile && (os === "iOS" || os === "Android") ? { os } : {}),
+        }
+      : {}),
+    ...(isClientDeviceType(deviceType) ? { clientDeviceType: deviceType } : {}),
+    ...(surface === "web" && isClientWebDeployment(webDeployment) ? { webDeployment } : {}),
+    ...(surface === "web" && browser !== "" && browser.length <= MAX_CLIENT_BROWSER_LENGTH
+      ? { clientBrowser: browser }
+      : {}),
+    ...(hasOsMajorVersion ? { osMajorVersion, clientOsMajorVersion: osMajorVersion } : {}),
+    ...(hasDeviceModel ? { deviceModel, clientDeviceModel: deviceModel } : {}),
+    ...(isClientConnectionMethod(connectionMethod) ? { connectionMethod } : {}),
+  };
+}
 
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
+  clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
 ) =>
   WsRpcGroup.toLayer(
@@ -427,18 +509,17 @@ const makeWsRpcLayer = (
           command,
           hasClientOrigin ? { origin: clientOrigin } : undefined,
         );
-      const originProps = clientOriginAnalyticsProps(clientOrigin);
       const recordClientCommandAnalytics = (command: OrchestrationCommand) => {
         switch (command.type) {
           case "thread.create":
-            return analytics.record("client.thread.started", originProps);
+            return analytics.record("client.thread.started", clientAnalyticsProps);
           case "thread.turn.start":
             return command.bootstrap?.createThread
               ? Effect.andThen(
-                  analytics.record("client.thread.started", originProps),
-                  analytics.record("client.turn.requested", originProps),
+                  analytics.record("client.thread.started", clientAnalyticsProps),
+                  analytics.record("client.turn.requested", clientAnalyticsProps),
                 )
-              : analytics.record("client.turn.requested", originProps);
+              : analytics.record("client.turn.requested", clientAnalyticsProps);
           default:
             return Effect.void;
         }
@@ -446,7 +527,6 @@ const makeWsRpcLayer = (
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
-      const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -473,9 +553,11 @@ const makeWsRpcLayer = (
       const hostSkills = yield* HostSkills.HostSkills;
       const appsService = yield* AppsService.AppsService;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-      const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
+      const connectionBackgroundScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+        Scope.close(scope, Exit.void),
+      );
       yield* Effect.addFinalizer(() =>
         Ref.get(rpcClientIds).pipe(
           Effect.flatMap((clientIds) =>
@@ -825,7 +907,10 @@ const makeWsRpcLayer = (
                   commandId: yield* serverCommandId("bootstrap-thread-create"),
                   threadId: command.threadId,
                   projectId: createThread.projectId,
-                  title: createThread.title,
+                  title:
+                    parseNativeResumeCommand(command.message.text)?._tag === "Resume"
+                      ? NATIVE_RESUME_THREAD_TITLE
+                      : createThread.title,
                   modelSelection: createThread.modelSelection,
                   runtimeMode: createThread.runtimeMode,
                   interactionMode: createThread.interactionMode,
@@ -1003,10 +1088,41 @@ const makeWsRpcLayer = (
           );
       };
 
+      const loadServerConfig = loadServerConfigBase.pipe(
+        Effect.flatMap((serverConfig) => {
+          const availableEditors: ReadonlyArray<EditorId> = serverConfig.availableEditors;
+          if (!availableEditors.includes("file-manager")) {
+            return Effect.succeed(serverConfig);
+          }
+
+          return resolveFileManagerRevealKindForConfig(
+            externalLauncher.resolveFileManagerRevealKind(),
+          ).pipe(
+            Effect.map((fileManagerRevealKind) =>
+              fileManagerRevealKind === undefined
+                ? serverConfig
+                : {
+                    ...serverConfig,
+                    shellRevealInFileManager: true,
+                    shellRevealInFileManagerKind: fileManagerRevealKind,
+                  },
+            ),
+          );
+        }),
+      );
+
       const refreshGitStatus = (cwd: string) =>
-        vcsStatusBroadcaster
-          .refreshStatus(cwd)
-          .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+        vcsStatusBroadcaster.refreshStatus(cwd).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning("background VCS status refresh failed", {
+                  cause: Cause.pretty(cause),
+                }),
+          ),
+          Effect.forkIn(connectionBackgroundScope),
+          Effect.asVoid,
+        );
 
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
@@ -1046,7 +1162,9 @@ const makeWsRpcLayer = (
                     ),
                   )
                 : false;
-              const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              const result = yield* dispatchNormalizedCommand(normalizedCommand).pipe(
+                Effect.tapError(() => cleanupFailedUploadedAttachments(command, normalizedCommand)),
+              );
               yield* recordClientCommandAnalytics(normalizedCommand);
               if (parkingCommand) {
                 const parkingKind = parkingCommand.type === "thread.archive" ? "archive" : "settle";
@@ -2038,6 +2156,32 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.attachmentsCreateUploadUrl]: (input) =>
+          observeRpcEffect(WS_METHODS.attachmentsCreateUploadUrl, issueAttachmentUploadUrl(input), {
+            "rpc.aggregate": "workspace",
+          }),
+        [WS_METHODS.attachmentsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.attachmentsDelete,
+            deletePendingAttachment(input.attachmentId),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectTransfersInspect]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersInspect, inspectProjectTransfer(input), {
+            "rpc.aggregate": "thread",
+          }),
+        [WS_METHODS.projectTransfersPrepare]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersPrepare, prepareProjectTransfer(input), {
+            "rpc.aggregate": "project",
+          }),
+        [WS_METHODS.projectTransfersSend]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersSend, sendProjectTransfer(input), {
+            "rpc.aggregate": "thread",
+          }),
+        [WS_METHODS.projectTransfersCancel]: (input) =>
+          observeRpcEffect(WS_METHODS.projectTransfersCancel, cancelProjectTransfer(input), {
+            "rpc.aggregate": "project",
+          }),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
@@ -2389,7 +2533,12 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerConfig,
             Effect.gen(function* () {
-              const keybindingsUpdates = keybindings.streamChanges.pipe(
+              const [keybindingChanges, providerChanges, settingsChanges] = yield* Effect.all([
+                keybindings.subscribeChanges,
+                providerRegistry.subscribeChanges,
+                serverSettings.subscribeChanges,
+              ]);
+              const keybindingsUpdates = keybindingChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
                   type: "keybindingsUpdated" as const,
@@ -2399,7 +2548,7 @@ const makeWsRpcLayer = (
                   },
                 })),
               );
-              const providerStatuses = providerRegistry.streamChanges.pipe(
+              const providerStatuses = providerChanges.pipe(
                 Stream.map((providers) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,
@@ -2407,7 +2556,7 @@ const makeWsRpcLayer = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
-              const settingsUpdates = serverSettings.streamChanges.pipe(
+              const settingsUpdates = settingsChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
                 Stream.map((settings) => ({
                   version: 1 as const,
@@ -2420,9 +2569,9 @@ const makeWsRpcLayer = (
                 .refresh()
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
-              const liveUpdates = Stream.merge(
-                keybindingsUpdates,
-                Stream.merge(providerStatuses, settingsUpdates),
+              const liveUpdates = keybindingsUpdates.pipe(
+                Stream.merge(providerStatuses),
+                Stream.merge(settingsUpdates),
               );
 
               const snapshot = yield* loadServerConfig.pipe(
@@ -2445,14 +2594,11 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerLifecycle,
             Effect.gen(function* () {
-              const snapshot = yield* lifecycleEvents.snapshot;
+              const { snapshot, changes } = yield* lifecycleEvents.subscribe;
               const snapshotEvents = Array.from(snapshot.events).toSorted(
                 (left, right) => left.sequence - right.sequence,
               );
-              const liveEvents = lifecycleEvents.stream.pipe(
-                Stream.filter((event) => event.sequence > snapshot.sequence),
-              );
-              return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
+              return Stream.concat(Stream.fromIterable(snapshotEvents), changes);
             }),
             { "rpc.aggregate": "server" },
           ),
@@ -2460,11 +2606,13 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             WS_METHODS.subscribeAuthAccess,
             Effect.gen(function* () {
+              const pairingLinkChanges = yield* bootstrapCredentials.subscribeChanges;
+              const sessionChanges = yield* sessions.subscribeChanges;
               const initialSnapshot = yield* loadAuthAccessSnapshot();
               const revisionRef = yield* Ref.make(1);
               const accessChanges: Stream.Stream<
                 PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
+              > = Stream.merge(pairingLinkChanges, sessionChanges);
 
               const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
                 Stream.mapEffect((change) =>
@@ -2535,13 +2683,19 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           ),
         );
         const clientOrigin = readClientConnectionOrigin(request);
+        const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
-        yield* analytics.record("client.connected", clientOriginAnalyticsProps(clientOrigin));
+        yield* analytics.record("client.connected", clientAnalyticsProps);
         const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session, clientOrigin, previewAutomationBroker).pipe(
+            makeWsRpcLayer(
+              session,
+              clientOrigin,
+              clientAnalyticsProps,
+              previewAutomationBroker,
+            ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),

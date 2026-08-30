@@ -38,6 +38,7 @@ const RELAY_STATUS_AND_CONNECT_SCOPES = [
   RelayEnvironmentStatusScope,
   RelayEnvironmentConnectScope,
 ] satisfies ReadonlyArray<RelayDpopAccessTokenScope>;
+const CLOUD_STATUS_CONCURRENCY = 6;
 
 export function normalizeRelayBaseUrl(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -468,7 +469,7 @@ export function loadCloudEnvironmentStatuses(input: {
           }),
         }),
       ),
-    { concurrency: "unbounded" },
+    { concurrency: CLOUD_STATUS_CONCURRENCY },
   );
 }
 

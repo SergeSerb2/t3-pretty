@@ -309,4 +309,15 @@ describe("changed-files card contract", () => {
   it("the card still exposes data-changed-files-state", () => {
     expect(changedFilesSource).toContain("data-changed-files-state");
   });
+
+  it("the expanded header stays sticky on the card's glass instead of an opaque slab", () => {
+    expect(changedFilesSource).toContain(
+      "bg-secondary p-2 dark:border-transparent dark:bg-input/32",
+    );
+    expect(changedFilesSource).toContain(
+      '"sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900"',
+    );
+    expect(changedFilesSource).not.toContain("var(--contrast-foreground)_2.5%");
+    expect(changedFilesSource).not.toContain("backdrop-blur-md");
+  });
 });

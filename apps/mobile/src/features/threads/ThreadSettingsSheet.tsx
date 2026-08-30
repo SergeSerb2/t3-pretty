@@ -15,7 +15,8 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
+import { StackActions, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
@@ -42,6 +43,7 @@ import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
 import { applyProviderOptionSelection } from "../../lib/providerOptions";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -63,6 +65,7 @@ import {
 } from "./thread-settings-options";
 import { buildThreadModelIdentity } from "./threadModelIdentity";
 import { ThreadCheckpointsSection } from "./ThreadCheckpointsSection";
+import { useProjectTransferAction } from "./use-project-transfer";
 import {
   effectiveProviderFilter,
   initialProviderFilter,
@@ -226,13 +229,19 @@ function DisclosureRow(props: {
   readonly value: string | undefined;
   readonly onPress: () => void;
   readonly isLast?: boolean;
+  readonly disabled?: boolean;
 }) {
   const iconSubtle = useThemeColor("--color-icon-subtle");
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled === true }}
+      disabled={props.disabled}
       onPress={props.onPress}
-      className="min-h-11 flex-row items-center gap-2 px-5 py-2.5 active:opacity-70"
+      className={cn(
+        "min-h-11 flex-row items-center gap-2 px-5 py-2.5 active:opacity-70",
+        props.disabled && "opacity-55",
+      )}
     >
       <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
       <View className="flex-1" />
@@ -460,7 +469,10 @@ function ThreadSettingsSessionProvider(
       selectedModel: props.selectedModel,
     }),
   );
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQueryState] = useState("");
+  const setSearchQuery = useCallback((query: string) => {
+    setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
+  }, []);
   const [providerExpansionOverrides, setProviderExpansionOverrides] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -842,6 +854,10 @@ function ThreadSettingsOptionsCard(props: {
 function ThreadSettingsHomeContent(props: {
   readonly onOpenCatalog: () => void;
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
+  readonly projectTransfer?: {
+    readonly isPending: boolean;
+    readonly onPress: () => void;
+  };
 }) {
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
@@ -880,6 +896,25 @@ function ThreadSettingsHomeContent(props: {
 
       <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Options</Text>
       <ThreadSettingsOptionsCard onOpenSubmenu={props.onOpenSubmenu} />
+
+      {props.projectTransfer ? (
+        <>
+          <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">
+            Project
+          </Text>
+          <View className="mx-4 overflow-hidden rounded-2xl bg-card">
+            <DisclosureRow
+              disabled={props.projectTransfer.isPending}
+              label={props.projectTransfer.isPending ? "Moving thread…" : "Move to connection"}
+              value={CONNECT_BRANDING.connectName}
+              onPress={props.projectTransfer.onPress}
+            />
+          </View>
+          <Text className="px-5 pt-2 text-xs leading-4 text-foreground-muted">
+            Copies this conversation and project files. The source stays unchanged.
+          </Text>
+        </>
+      ) : null}
 
       {session.checkpointsThreadRef !== null ? (
         <ThreadCheckpointsSection threadRef={session.checkpointsThreadRef} />
@@ -1164,6 +1199,19 @@ function ThreadSettingsHomeScreen() {
   const presentation = useThreadSettingsPickerPresentation();
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const commitAndClose = useCommitThreadSettings();
+  const transfer = useProjectTransferAction(
+    session.checkpointsThreadRef,
+    (environmentId, threadId) => {
+      const parent = navigation.getParent();
+      presentation.onClose();
+      parent?.dispatch(
+        StackActions.replace("Thread", {
+          environmentId: String(environmentId),
+          threadId: String(threadId),
+        }),
+      );
+    },
+  );
 
   useLayoutEffect(() => {
     if (session.initialPage !== "catalog") {
@@ -1196,6 +1244,11 @@ function ThreadSettingsHomeScreen() {
       <ThreadSettingsHomeContent
         onOpenCatalog={() => navigation.navigate("ThreadSettingsCatalog")}
         onOpenSubmenu={(submenu) => openThreadSettingsSubmenu(navigation, session, submenu)}
+        projectTransfer={
+          transfer.supported
+            ? { isPending: transfer.isPending, onPress: transfer.present }
+            : undefined
+        }
       />
       <NativeHeaderToolbar placement="left">
         <NativeHeaderToolbar.Button

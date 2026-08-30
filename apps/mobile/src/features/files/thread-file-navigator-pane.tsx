@@ -12,6 +12,7 @@ import {
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
@@ -27,7 +28,10 @@ export function ThreadFileNavigatorPane(props: {
   readonly selectedPath: string | null;
   readonly onSelectFile: (path: string) => void;
 }) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQueryState] = useState("");
+  const setSearchQuery = useCallback((query: string) => {
+    setSearchQueryState(limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH));
+  }, []);
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
   const iconColor = String(useThemeColor("--color-icon-muted"));
   const foregroundColor = String(useThemeColor("--color-foreground"));

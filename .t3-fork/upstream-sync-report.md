@@ -487,5 +487,410 @@
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Treat a thread with both pinnedAt and settled state as unpinned and place it on the settled shelf immediately.. Reason: This conflicts with T3 Pretty's pinned-settle landing contract: the pin wins until persistence clears pinnedAt, avoiding a premature shelf transition.
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move a pinned thread to the settled shelf when its pull request merges under the default list policy.. Reason: T3 Pretty explicitly stopped auto-settling threads on pull-request merge; retaining the pin and active card is authoritative fork behavior.
 - `apps/mobile/src/features/threads/threadListV2.test.ts` — Automatically move an inactive pinned thread to the settled shelf while its persisted pinnedAt remains set.. Reason: T3 Pretty gives persisted pins precedence and requires an actual unpin before a pinned thread departs for the settled shelf.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Check settlement before persisted pin state when partitioning mobile rows.. Reason: This would contradict the preserved pin-first tests and T3 Pretty's web behavior; a pin remains visible until persistence clears `pinnedAt`.
 - `apps/web/src/components/Sidebar.tsx` — THEIRS removes the pre-settlement pinned-thread branch, which would make settlement take precedence when a thread is simultaneously pinned and settled.. Reason: That precedence conflicts with T3 Pretty’s documented lifecycle safeguard: pins must remain visible and must not auto-settle out of sight. Simultaneous state is expected only from stale or raced writes, so retaining pin-before-settlement prevents a fork behavior regression while omitting only the incompatible precedence change.
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.34-nightly.20260824.1173`
+- Previously integrated parent nightly: `v0.0.34-nightly.20260823.1170`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved the `skillMentionToken` integration used by T3 Pretty's provider-skill mention behavior.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved provider-specific runtime-mode entries in the slash menu.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved T3 Pretty's `/skills`, conditional `/auto-pr`, `/new`, `/commands`, and `/settings` composer commands, including the state-aware auto-PR description.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved dependency tracking for conditional auto-PR command visibility.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's Bot icon for built-in slash commands, runtime-mode icons, provider-command SkillGlyph, and branded AppIcon rendering remain intact.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's grouped slash, skill, file, and app menu presentation remains supported through CommandGroupLabel.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's command-row baseline alignment and wider gap rhythm are preserved rather than replaced by the parent's tighter row styling.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Fork-added app mention presentation continues to use each app's name, color, and icon domain.
+- `apps/web/src/components/usage/UsagePage.tsx` — Preserved T3 Pretty’s expanded provider support, including Cursor, Grok, and Kimi, because the span remains provider-agnostic and derives from activeProviders.
+- `apps/web/src/components/usage/UsagePage.tsx` — Preserved the existing T3 Pretty usage-page styling and empty-state presentation.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Preserved the `data-pull-requests-header` attribute used by T3 Pretty's pull-request visual design and World Scenery styling hooks.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Kept the existing conditional native-control reservation based on the Pretty right-panel layout.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/chat/ChatComposer.tsx` — Imported and used the parent's `getProviderSkillsForSlashMenu` helper so provider skills in the slash menu respect `settings.showSkillsInSlashMenu`.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated the parent's `getProviderSlashCommandsForSlashMenu` path, replacing direct provider command enumeration while retaining the existing menu-item presentation.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Added `settings.showSkillsInSlashMenu` to the composer menu memo dependencies so setting changes update the menu immediately.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Retained the parent's slash-menu skill items and provider command/skill composition around T3 Pretty's additional built-in commands.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's Badge import required by skill-source badges.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's isSlashSkill naming, matching the declaration and avoiding the stale slashSkill reference.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated the parent's bounded, truncating command-label layout so long skill and command names do not crowd descriptions or source badges.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Accepted the parent's removal of the obsolete FolderGit2Icon import, consistent with the current FolderIcon source-kind mapping.
+- `apps/web/src/components/usage/UsagePage.tsx` — Integrated the parent fix that calculates the empty-state colSpan from activeProviders, keeping it synchronized with the dynamically rendered provider columns.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Render `titlebarControls` as a descendant of `WorkspacePageHeader`, allowing its no-drag interactive region to receive clicks inside Electron's draggable header.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Apply the upstream relative positioning and background classes needed for the controls strip's header-local positioning.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Integrated the updated explanation of how the controls move between the column header and route-level anchor when the right panel opens.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The parent changed the command-row content container from baseline alignment with gap-3 to centered alignment with gap-2.. Reason: That styling conflicts with T3 Pretty's established command-menu visual spacing. The functional overflow and skill-badge improvements were integrated independently, so only the smallest conflicting presentation change was omitted.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.35-nightly.20260826.1194`
+- Previously integrated parent nightly: `v0.0.35-nightly.20260826.1193`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/main.tsx` — Electron Clerk and passkey modules remain dynamically imported, so desktop installations without an opened cloud sign-in gate do not load the Clerk bundle.
+- `apps/web/src/main.tsx` — The persistent Clerk gate behavior remains authoritative, including mounting the provider only after the gate opens and using a null Suspense fallback to preserve the intended tree/remount behavior.
+- `apps/web/src/main.tsx` — ManagedRelayAuthProvider remains inside the Electron Clerk provider when cloud authentication is active.
+- `apps/web/src/main.tsx` — T3 Pretty's shared Clerk appearance and presentation remain applied to both Electron and hosted-web authentication.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/main.tsx` — Removed the obsolete pinned `__internal_clerkUIVersion` canary override from the Electron Clerk provider, matching the parent nightly's provider configuration while retaining the fork's lazy-loading architecture.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.35-nightly.20260826.1195`
+- Previously integrated parent nightly: `v0.0.35-nightly.20260826.1194`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/persistence/Migrations.ts` — The established T3 Pretty migration history and IDs 41–51 remain unchanged, preventing already-applied databases from interpreting different migrations under existing IDs.
+- `apps/server/src/persistence/Migrations.ts` — Orchestration event recorded-at data and projection thread branch-head support remain registered.
+- `apps/server/src/persistence/Migrations.ts` — World Scenery thread assignments and the fork's thread canvas schema remain registered.
+- `apps/server/src/persistence/Migrations.ts` — Thread activity compaction metadata and superseded tool-update cleanup remain registered.
+- `apps/server/src/persistence/Migrations.ts` — Enabled skills and global/per-thread subagent policy persistence remain registered.
+- `apps/server/src/persistence/Migrations.ts` — The fork's BM25-backed thread search index remains registered.
+- `apps/server/src/persistence/Migrations.ts` — Auth session client connection and linked pull-request migrations retain their established collision-free T3 Pretty registrations at IDs 50 and 51.
+- `apps/web/src/lib/threadSort.ts` — Preserved T3 Pretty's `compareIsoDateTimes` export used by its cross-surface thread sorting reliability behavior.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/persistence/Migrations.ts` — The parent ProjectionThreadsUnsettledAt migration is fully incorporated using its upstream migration module and appended as migration ID 52 to coexist with T3 Pretty's established schema history.
+- `apps/server/src/persistence/Migrations.ts` — The parent auth-session client connection and linked pull-request migrations remain included at the fork's previously assigned IDs 50 and 51.
+- `apps/web/src/lib/threadSort.ts` — Integrated the parent runtime's new `activeThreadAnchorTimestampMs` export.
+
+## Parent changes intentionally omitted
+
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260827.1206`
+- Previously integrated parent nightly: `v0.0.35-nightly.20260826.1195`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/usage/usageProviders.ts` — Cursor and Kimi remain available on the mobile usage page with their labels and custom colors.
+- `apps/mobile/src/features/usage/usageProviders.ts` — T3 Pretty's full provider series/table order remains Codex, Claude, Cursor, Grok, then Kimi.
+- `apps/mobile/src/features/usage/usageProviders.ts` — Theme-aware provider coloring remains compatible with T3 Pretty's appearance preferences.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's model-aware Grok reasoning-effort menus and requested-effort selection remain available, preserving correct effort advertisement by model.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's KeyedLock-based per-thread serialization remains authoritative.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The bounded Grok runtime-event PubSub remains in place to preserve memory and cross-surface reliability safeguards.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Pending Grok user-input requests are still removed through acquire/use/release cleanup on success, failure, or interruption.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Interruption-safe approval bookkeeping through Effect.acquireUseRelease, ensuring pending approval entries are removed by a finalizer on success, failure, or interruption.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's hardened, stable permission-detail fallback instead of serializing missing provider descriptions into the approval summary.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's per-model Grok reasoning-effort menu presentation remains available around the parent's native reasoning-effort behavior.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The fork's selection-result architecture is retained by binding through boundSelection and deriving boundModelId from its modelId.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's session-scoped Grok notification consumer and turn-liveness watchdog remain untouched.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — T3 Pretty's surrounding steering-turn reuse, plan-fallback clearing, prompt interruption, and settlement safeguards remain untouched.
+- `apps/server/src/provider/Layers/GrokProvider.ts` — T3 Pretty's Grok discovery reliability safeguards remain intact: provider model-count limits, model-ID length validation, canonical base-model resolution, duplicate suppression, and bounded trimmed labels.
+- `apps/server/src/provider/acp/AcpRuntimeModel.test.ts` — Preserved coverage for bounded summaries of invalid ACP configuration values, avoiding retention of full provider option menus in error output.
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts` — Preserved T3 Pretty’s functional ability to attach model/provider metadata—including metadata used by model-specific reasoning integrations—to ACP session model changes, now through the parent’s first-party API.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Existing T3 Pretty Grok provider behavior outside the superseded reasoning-effort copy remains intact, including custom model-ID normalization.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — The T3-compatible Grok OAuth referrer override and spawn environment construction remain unchanged.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Existing model-selection no-op and reliability coverage is retained and adapted to the parent API.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — T3 Pretty's model-capability, model-selection, provider-bound, and option-bound contract imports remain intact.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Grok reasoning-effort metadata and selection interfaces remain available, including optional per-model effort state and advertised choices.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — The optional reasoningEffort runtime input remains in its existing positional slot, and only allowlisted reasoning-effort values are emitted through --reasoning-effort.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Reasoning effort remains compatible with every Grok launch mode rather than being displaced by the new permission arguments.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — The existing T3 Pretty model-specific Grok reasoning-effort menus, advertised metadata parsing, bounded model inspection, and fallback effort choices remain unchanged.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — The explicitly optional `currentReasoningEffort?: string | undefined` input remains available for compatibility with T3 Pretty callers.
+- `apps/server/src/provider/acp/XAiAcpExtension.ts` — Preserved T3 Pretty's provider-input reliability hardening through contract-defined maximum lengths and question/option count limits used by the xAI ACP schemas.
+- `apps/server/src/usage/UsageService.ts` — Bounded reads for persisted usage caches and bounded collection/release of LiteLLM HTTP response bodies remain in place.
+- `apps/server/src/usage/UsageService.ts` — The usage scan semaphore remains, preserving serialized scans and cache consistency under concurrent requests.
+- `apps/server/src/usage/UsageService.ts` — Kimi usage remains integrated through the configured Kimi home and `wire.jsonl` transcript discovery.
+- `apps/server/src/usage/UsageService.ts` — Transcript walk truncation and unreadable-directory diagnostics remain authoritative, and roots are only eligible for stale-cache pruning after a complete readable walk.
+- `apps/server/src/usage/usageScanCache.test.ts` — Preserved T3 Pretty's round-trip coverage for the /c.jsonl Grok usage record, supporting the fork's expanded Cursor, Grok, and Kimi usage-provider work.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved hardened cache decoding that requires file sizes to be nonnegative safe integers and mtimes to be finite, nonnegative numbers.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the centralized isUsageProviderKind validation so T3 Pretty's full provider set, including fork-added Cursor and Kimi support, is not narrowed to the parent's explicit provider list.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved Grok support through the same centralized provider-kind guard.
+- `apps/server/src/usage/usageTranscriptReader.ts` — Kimi transcript parsing remains available through parseKimiLine.
+- `apps/server/src/usage/usageTranscriptReader.ts` — Transcript walks retain T3 Pretty's file, directory, and entry ceilings to prevent unbounded usage-page scans.
+- `apps/server/src/usage/usageTranscriptReader.ts` — Transcript listings continue to expose truncation and unreadable-directory diagnostics through TranscriptListing.
+- `apps/server/src/usage/usageTranscriptReader.ts` — Existing T3 Pretty callers using the string fileName argument and separate limits object remain compatible.
+- `apps/server/src/usage/usageTranscripts.test.ts` — Preserved T3 Pretty's Kimi usage-provider integration by retaining the parseKimiLine import used by this test suite.
+- `apps/server/src/usage/usageTranscripts.ts` — Kimi remains a supported usage provider, including its pre-parse `usage.record` gate, `wire.jsonl` parser, duplicate-event avoidance, token mapping, timestamp conversion, session/model bounds, dedupe key, and session-folder ID extraction.
+- `apps/server/src/usage/usageTranscripts.ts` — Cursor remains explicitly recognized by the usage gate and continues to skip transcript parsing because its ACP session store does not persist token usage.
+- `apps/server/src/usage/usageTranscripts.ts` — The expanded T3 Pretty provider switch remains exhaustive for Claude, Codex, Grok, Kimi, and Cursor instead of applying the parent's Codex fallback to fork-only provider kinds.
+- `apps/web/src/assets/assetUrls.test.ts` — Asset URL origin-escape regression coverage for protocol-relative and absolute cross-origin URLs.
+- `apps/web/src/assets/assetUrls.test.ts` — Validation coverage ensuring blank and whitespace-only attachment IDs are not queried.
+- `apps/web/src/assets/assetUrls.test.ts` — Alignment coverage ensuring query results remain mapped to the original resource list when invalid attachments are skipped.
+- `apps/web/src/assets/assetUrls.test.ts` — Existing coverage for environment-relative URL resolution and invalid environment base URLs.
+- `apps/web/src/components/threadSidebarWidth.test.ts` — Regression coverage for retaining oversized sidebar width preferences while applying a live CSS viewport clamp, which keeps resizing correct even when no resize event is received.
+- `apps/web/src/components/threadSidebarWidth.test.ts` — Coverage for computing the sidebar's live maximum width while preserving its minimum width on undersized layouts.
+- `apps/web/src/components/threadSidebarWidth.test.ts` — T3 Pretty sidebar branding coverage requiring the generated /t3-pretty-mark.png asset and the desktop wordmark layout.
+- `apps/web/src/components/threadSidebarWidth.test.ts` — Coverage ensuring the environment-identification stage pill hides through its container-query wrapper before it can overflow the narrow sidebar header.
+- `apps/web/src/components/usage/UsageProviderChart.test.ts` — Preserved T3 Pretty usage-chart test coverage for zero-filled Cursor, Grok, and Kimi provider bands.
+- `apps/web/src/components/usage/usageProviders.ts` — Cursor remains represented on the usage page with its fork-provided label, color, and icon.
+- `apps/web/src/components/usage/usageProviders.ts` — Kimi remains represented on the usage page with its fork-provided label, color, and icon.
+- `apps/web/src/components/usage/usageProviders.ts` — The fork's expanded provider ordering remains composed around the parent Grok entry: Cursor, Grok Build, then Kimi.
+- `docs/user/usage.md` — Usage reporting remains documented across Codex, Claude Code, Cursor, Grok, and Kimi.
+- `docs/user/usage.md` — The Cursor-specific limitation remains documented: local sessions do not persist token usage, so its share remains zero.
+- `docs/user/usage.md` — Disconnected and offline environments remain unscanned and are not automatically reconnected when Usage is opened.
+- `packages/client-runtime/src/state/session.test.ts` — Preserved the T3 Pretty reliability regression test asserting that initial-config, prepared-connection, and session-state atoms all release idle subscriptions using SESSION_STATE_IDLE_TTL_MS.
+- `packages/contracts/src/usage.ts` — Usage reporting remains available for Pretty's Cursor and Kimi integrations in addition to Claude, Codex, and Grok.
+- `packages/contracts/src/usage.ts` — Kimi wire transcript and Cursor ACP session discovery remain documented, including the warning that Cursor currently yields no token usage.
+- `packages/contracts/src/usage.ts` — Pretty's centralized provider-kind tuple remains authoritative for both the schema and provider-derived limits.
+- `packages/contracts/src/usage.ts` — Usage model, time-zone, per-provider bucket, total bucket, and source-count limits remain intact.
+- `packages/shared/src/themePreview.test.ts` — Theme-preview geometry assertions that keep desktop preview rendering stable across clients.
+- `packages/shared/src/themePreview.test.ts` — OKLab canvas-base mixing assertions for the standard light and dark themes.
+- `packages/shared/src/themePreview.test.ts` — The T3 Pretty reliability regression test requiring malformed OKLCH input to fall back to the original canvas color instead of producing an invalid color.
+- `packages/shared/src/usageMerge.ts` — Preserved T3 Pretty's USAGE_MERGE_MAX_ENVIRONMENTS reliability safeguard by validating and merging only retainedEnvironments; excess environments remain represented through omittedEnvironmentCount.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/usage/usageProviders.ts` — The parent's first-party Grok provider remains included in the usage provider order.
+- `apps/mobile/src/features/usage/usageProviders.ts` — The fork's former Grok label is replaced with the parent-native "Grok Build" label.
+- `apps/mobile/src/features/usage/usageProviders.ts` — The parent's updated Grok dark-theme neutral color, #a1a1aa, replaces the fork's earlier #d4d4d8 value.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Integrated the parent Grok reasoning-effort normalization helper alongside the fork's model-aware selection layer.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Integrated validated, minimum-bounded turn inactivity timeout configuration and nanosecond conversion.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Integrated the separate active-tool inactivity timeout, allowing long-running tools a longer liveness deadline.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Integrated parent liveness signaling while Grok waits for user input and liveness resumption after the request settles; the resumption now also occurs through guaranteed release cleanup.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The parent now signals session-turn liveness before opening and waiting on an ACP permission request and resumes liveness after the request resolves.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The parent's first-party Grok startup reasoning-effort implementation replaces the fork-only startup filtering path: current effort is read from session setup, the requested option is read through getModelSelectionStringOptionValue, and both are supplied to ACP model selection.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Session context reasoning-effort state now follows the parent's normalization and requested-versus-current fallback semantics.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Adopted the parent's first-party Grok turn-level reasoning-effort implementation, replacing the fork-only selection path.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Preserved the parent's deferred model and reasoning-effort application after prompt and attachment validation, including current-model tracking and normalized reasoning state updates in the downstream code.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Avoided changing provider model state when prompt preparation or validation fails.
+- `apps/server/src/provider/Layers/GrokProvider.ts` — Replaced the fork-only Grok reasoning-effort implementation with the parent's first-party ACP metadata implementation, including validated effort tokens, advertised defaults, descriptions, and current-value handling.
+- `apps/server/src/provider/Layers/GrokProvider.ts` — Integrated the parent's Grok skills discovery dependency.
+- `apps/server/src/provider/Layers/GrokProvider.ts` — Restored the parent capability fallback semantics so unsupported or undiscovered models do not receive speculative reasoning options.
+- `apps/server/src/provider/acp/AcpRuntimeModel.test.ts` — Integrated the parent test dependency for ACP tool-call progress-length behavior.
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts` — Replaced the fork-only `_meta` options wrapper with the parent’s first-party direct `meta` parameter, as required for a native parent replacement.
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts` — Adopted `EffectAcpSchema.SetSessionModelRequest["_meta"]` so metadata remains aligned with the ACP request schema.
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts` — Adopted the explicit `meta !== undefined` forwarding behavior when constructing `SetSessionModelRequest`.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Integrated the parent `grokAcpSpawnArgs` permission-mode behavior, including forcing Supervised sessions to override an always-approve CLI configuration.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Replaced the fork's older Grok reasoning-effort copy with the parent's first-party ACP implementation and generic future-token validation.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Integrated the parent's direct `setSessionModel(modelId, meta)` metadata API instead of the fork's nested `_meta` wrapper.
+- `apps/server/src/provider/acp/GrokAcpSupport.test.ts` — Integrated the parent's model-selection string return contract and structured metadata recording, including malformed-effort handling covered by the surrounding upstream tests.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Imported RuntimeMode and added it to GrokAcpRuntimeInput.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Integrated grokAcpSpawnArgs with the parent's approval-required, auto-accept-edits, auto, full-access, and default argument mappings.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Propagated runtimeMode through makeGrokAcpRuntime into process spawning.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Composed parent permission-mode arguments with T3 Pretty reasoning-effort arguments while retaining the parent's argument ordering and stdio transport.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Replaced the fork-only Grok model/reasoning selection path with the parent’s first-party implementation, as required for a native parent replacement.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Normalized requested reasoning efforts before comparison or forwarding and dropped invalid values instead of sending them to the ACP runtime.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Preserved CLI-advertised defaults by distinguishing an omitted reasoning preference from an explicit same-model effort change.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Adopted the parent `setSessionModel(targetModelId, reasoningMeta)` metadata contract and `string | undefined` result contract.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Kept the parent’s guarded current-effort extraction, including missing-model-state handling, trimmed model identifiers, string validation, and normalization.
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — Removed the duplicate fork-era current-effort extractor so the merged file has a single coherent exported implementation.
+- `apps/server/src/provider/acp/XAiAcpExtension.ts` — Integrated the parent NodeOS namespace import needed by the upstream OS-aware xAI ACP implementation.
+- `apps/server/src/usage/UsageService.ts` — Added the host process environment dependency and home-path expansion utility.
+- `apps/server/src/usage/UsageService.ts` — Replaced the fork's hard-coded Grok directory discovery with the parent's first-party implementation: nonblank `GROK_HOME` is expanded and resolved, while blank or missing values fall back to `~/.grok`.
+- `apps/server/src/usage/UsageService.ts` — Integrated the parent's object-based `listTranscriptFiles` filename-filter API for Grok and Kimi transcript filenames.
+- `apps/server/src/usage/usageScanCache.test.ts` — Integrated upstream's /grok.jsonl round-trip assertion, including coverage of its Grok model and provider-specific dedupe key.
+- `apps/server/src/usage/usageScanCache.test.ts` — Adjusted the expected restored cache size so both fork and upstream fixtures are validated coherently.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent's addition of Grok as an accepted cached usage provider; isUsageProviderKind accepts it without narrowing T3 Pretty's broader provider support.
+- `apps/server/src/usage/usageScanCache.ts` — Retained the parent's basic requirement that serialized size and mtime values be numbers, with T3 Pretty's stricter validity checks layered on top.
+- `apps/server/src/usage/usageTranscriptReader.ts` — The parent first-party Grok parsing hook remains imported and active.
+- `apps/server/src/usage/usageTranscriptReader.ts` — The parent's object-based `{ fileName }` calling convention is accepted for native Grok `updates.jsonl` selection.
+- `apps/server/src/usage/usageTranscriptReader.ts` — The parent's behavior of matching an exact basename when configured and otherwise accepting `.jsonl` files is preserved without duplicating the predicate.
+- `apps/server/src/usage/usageTranscripts.test.ts` — Integrated the parent nightly's first-party parseGrokLine import without changing its name or behavior.
+- `apps/server/src/usage/usageTranscripts.ts` — Adopted the parent's first-party Grok Build transcript implementation in place of T3 Pretty's earlier fork-only Grok parser.
+- `apps/server/src/usage/usageTranscripts.ts` — Integrated Grok parsing as a zero-or-more-record API, including per-model `usage.modelUsage` rows and aggregate fallback records.
+- `apps/server/src/usage/usageTranscripts.ts` — Integrated the parent's Grok token normalization, zero-token filtering, high-resolution timestamp preference, prompt/model dedupe keys, and per-model cost allocation behavior.
+- `apps/server/src/usage/usageTranscripts.ts` — Integrated the parent-defined Grok cost conversion of 10^10 ticks per USD, including validation through `grokCostTicksToUsd`.
+- `apps/server/src/usage/usageTranscripts.ts` — Preserved the parent's usage substring gates for Claude, Codex, and Grok while composing them with T3 Pretty's additional providers.
+- `apps/web/src/components/usage/UsageProviderChart.test.ts` — Integrated the parent test expectation that Grok is represented as a zero-filled provider band when it has no usage.
+- `apps/web/src/components/usage/usageProviders.ts` — Adopted the parent's first-party Grok Build presentation in place of T3 Pretty's earlier fork-only Grok presentation.
+- `apps/web/src/components/usage/usageProviders.ts` — Adopted the parent's contrast-aware Grok chart color using `color-mix` with theme variables.
+- `apps/web/src/components/usage/usageProviders.ts` — Retained the parent Grok icon integration alongside the fork's additional provider icons.
+- `docs/user/usage.md` — Documented that Grok Build totals are derived from persisted session updates.
+- `docs/user/usage.md` — Documented that interactive Grok Build turns without completed-turn records are excluded from totals.
+- `packages/client-runtime/src/state/session.test.ts` — Integrated the parent commit's trivial-test pruning by removing the inherited initialConfigOption failure-to-empty-value test, its TestConfigError fixture, and all now-unused Effect, Option, and Schema imports.
+- `packages/contracts/src/usage.ts` — Added USAGE_MERGE_COMPATIBLE_SINCE = 4 so current clients can retain structurally compatible Claude/Codex totals from v4 environments.
+- `packages/contracts/src/usage.ts` — Retained the parent's Grok provider and transcript-source coverage within Pretty's broader provider set.
+- `packages/contracts/src/usage.ts` — Preserved the parent's mixed-version compatibility rationale while adapting its wording to avoid the inaccurate claim that Pretty's v5 adds only Grok.
+- `packages/shared/src/usageMerge.ts` — Integrated upstream's backward-compatible contract-version handling through isCompatibleContractVersion, allowing versions from USAGE_MERGE_COMPATIBLE_SINCE through expectedContractVersion instead of requiring exact equality.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The parent's SynchronizedRef&lt;Map&lt;string, Semaphore.Semaphore&gt;&gt; thread-lock implementation.. Reason: T3 Pretty's KeyedLock is the authoritative fork locking abstraction and is already consumed by withThreadLock; replacing it would regress the fork's hardened lifecycle and lock-management behavior.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The parent's unbounded ProviderRuntimeEvent PubSub.. Reason: T3 Pretty intentionally caps the Grok runtime-event buffer at GROK_RUNTIME_EVENT_BUFFER_CAPACITY to prevent unbounded memory growth under slow or disconnected consumers.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — The parent/base fallback serializes permission parameters into the approval detail when the provider supplies no description.. Reason: T3 Pretty deliberately replaced that path with a stable hardened fallback string; restoring diagnostic serialization would regress the fork's cross-surface approval reliability behavior. The original arguments and raw payload remain attached separately to the event.
+- `apps/server/src/usage/UsageService.ts` — Unconditionally add every existing transcript root to `walkedRoots` after attempting directory traversal.. Reason: T3 Pretty's reliability hardening requires proof of a complete, readable traversal before using absence to prune cached entries. Applying the parent behavior to truncated or partially unreadable walks could evict valid warm-cache records.
+- `apps/server/src/usage/usageTranscriptReader.ts` — The parent side's array-only `Promise&lt;readonly TranscriptFile[]&gt;` return contract.. Reason: Restoring the array-only result would remove T3 Pretty's required truncation and unreadable-directory observability. The parent Grok option and filtering behavior are integrated while the fork's cross-surface reliability contract remains authoritative.
+- `apps/web/src/assets/assetUrls.test.ts` — Deletion of apps/web/src/assets/assetUrls.test.ts as part of the parent low-signal test cleanup.. Reason: The fork materially expanded this file after the shared base with security and asset-alignment regression tests tied to recent T3 Pretty reliability fixes. No first-party replacement exists, so deleting it would remove authoritative fork test coverage.
+- `apps/web/src/components/threadSidebarWidth.test.ts` — Delete threadSidebarWidth.test.ts as part of the parent's pruning of trivial error and layout tests.. Reason: The surviving T3 Pretty file is no longer merely a trivial parent layout test: it contains recent fork-specific regression coverage for resize-event-independent sidebar sizing, T3 Pretty branding, and stage-pill overflow behavior. No first-party replacement test exists, so deleting it would silently remove protections required by the fork.
+- `packages/client-runtime/src/state/session.test.ts` — Deletion of packages/client-runtime/src/state/session.test.ts in its entirety.. Reason: The parent deleted a file that previously contained only the inherited trivial error test, but T3 Pretty subsequently added a material idle-subscription TTL regression test in its cross-surface reliability work. No first-party replacement for that fork-specific coverage is evidenced, so only the obsolete inherited test is removed.
+- `packages/shared/src/themePreview.test.ts` — Parent deletion of packages/shared/src/themePreview.test.ts as a low-signal test file.. Reason: The surviving T3 Pretty version has since gained a material malformed-OKLCH fallback regression test from the fork's cross-surface reliability hardening, and the parent provides no replacement test or relocated coverage. Deleting the file would silently remove fork-specific compatibility protection.
+- `packages/shared/src/usageMerge.ts` — Upstream's loop over every environment without applying the fork's environment-count bound.. Reason: This portion conflicts with T3 Pretty's cross-surface reliability safeguard. Only environments within USAGE_MERGE_MAX_ENVIRONMENTS are processed, while the remainder are explicitly counted as omitted.
+- `.github/workflows/desktop-macos-preview.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260827.1207`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260827.1206`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Preserved the T3 Pretty public Preview and Release adaptive-icon background color, #DFEFE3.
+- `apps/mobile/app.config.ts` — Preserved the fork-branded Android icon mark for public builds, including the existing Release presentation.
+- `apps/mobile/app.config.ts` — Kept Android public-build icon presentation within the T3 Pretty sage branding rather than restoring parent dark/candy artwork.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Preserved T3 Pretty’s reduced-motion behavior by disabling the newly introduced spinner animation when reduced motion is requested; normal update-progress animation remains intact.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Avoided reintroducing the old continuously bouncing advisory icon, retaining the fork’s hardened approach to nonessential animation.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Integrated the parent's fix for rounded-square universal exports being unsuitable as Android adaptive foregrounds: Preview now uses the silhouette-free Android mark rather than nightlyLinuxIconPng.
+- `apps/mobile/app.config.ts` — Kept adaptive foregrounds represented by a dedicated transparent mark for both Preview and Release, adapting the parent's implementation to the fork's branded asset.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s versionAdvisory.detail text in the update popover.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Integrated the parent’s optional one-click update button, including onRunUpdate handling, disabled state during updates, loading/download icons, and Updating/Update now labels.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/app.config.ts` — Use the parent's shared ./assets/android-icon-foreground.png asset for Preview and Release.. Reason: That parent asset selection would replace the fork's authoritative Pretty foreground presentation. The parent's adaptive-icon masking intent is preserved with the fork's existing Android mark instead.
+- `apps/mobile/app.config.ts` — Restore the parent Preview background #111533 and Release background #000000.. Reason: Those dark parent colors conflict with T3 Pretty's intentional pastel sage adaptive-icon plate, #DFEFE3.
+- `apps/web/src/components/settings/ProviderInstanceCard.tsx` — Animating the update progress spinner when the user has requested reduced motion.. Reason: T3 Pretty’s reduced-motion presentation is authoritative. The spinner still animates normally and only becomes static under the reduced-motion media preference.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260828.1209`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260828.1208`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Preserved T3 Pretty's native mobile pull-request manager by retaining useOpenNativePullRequest; tapping a completed action with a PR URL continues to open the native PR experience rather than leaving the app for an external URL.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's centralized deriveWorkLogEntry filtering architecture, which keeps work-log derivation consistent for incremental and full-feed processing.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's mobile work-log behavior that excludes generated turn headlines, transient tool/task activity, checkpoints, plan-boundary tools, and agent-internal activity while retaining terminal Codex child-task updates.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The compact T3 Pretty work-group toggle typography, spacing, hover treatment, custom easing, and reduced-motion fallback remain intact.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Collapsed groups containing failures continue to show Pretty's visible destructive X indicator with an accessible failure description.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Pretty's neutral in-progress tool-status handling remains imported for the existing empty/neutral marker UX.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Plain tool rows retain Pretty's compact size-4 icon wrapper, muted treatment for ordinary tool failures, and destructive runtime-warning presentation.
+- `apps/web/src/session-logic.test.ts` — Preserved T3 Pretty's regression coverage ensuring generated turn headlines remain excluded from the work log while ordinary completed tool entries remain visible.
+- `apps/web/src/session-logic.ts` — Preserved T3 Pretty's generated live-status headline lookup for the active turn, including stable last-match behavior and its exported API.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Integrated the parent mobileTheme themeColorWithAlpha utility used to derive adaptive glass tint and border colors in OverlayContent.
+- `apps/mobile/src/lib/threadActivity.ts` — Suppress runtime.warning activities whose summaries end with “(no displayable text content)”, using the parent's isNoContentRuntimeWarning helper within the fork's centralized derivation function.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Imported `workEntrySignalsSevereFailure`, allowing the surrounding parent severe-failure classification to distinguish severe failures from ordinary tool failures.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent's contextual `aria-label` announcing when a collapsed work group includes a failure.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Applied the parent's `row.hasFailure && !row.expanded` criterion through `showHiddenFailure`, so failure messaging and the Pretty indicator appear only while affected entries are hidden.
+- `apps/web/src/session-logic.test.ts` — Integrated the parent regression test that drops runtime warnings lacking displayable content while retaining warnings with a meaningful preview.
+- `apps/web/src/session-logic.ts` — Integrated the parent helper that recognizes wire-only SDK runtime warnings with no displayable content, allowing deriveWorkLogEntries to suppress those non-actionable rows.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — Parent import and implied use of tryOpenExternalUrl for PR links.. Reason: T3 Pretty already routes PR URLs through its fork-specific native pull-request manager. Retaining the external opener would be unused in the resolved implementation and switching to it would regress authoritative native mobile PR behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's roomier `min-h-6`, `text-sm`, reduced-gap work-group toggle styling and generic 200ms disclosure animation.. Reason: These directly replace T3 Pretty's authoritative compact row design, hover behavior, custom animation curve, and explicit reduced-motion handling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's always-chevron work-group presentation, which removes the visible collapsed-failure X indicator.. Reason: T3 Pretty intentionally keeps hidden failures visually discoverable instead of exposing them only through an accessible label.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's size-6 plain-row icon wrapper and `text-warning` color for runtime-warning icons.. Reason: T3 Pretty's compact icon geometry and destructive X treatment for runtime warnings are fork-specific visual behavior; the compatible parent severe-failure classifier is retained separately.
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.36-nightly.20260828.1210`
+- Previously integrated parent nightly: `v0.0.36-nightly.20260828.1209`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/provider/opencodeRuntime.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — kept T3 Pretty's intentional removal of the OpenCode provider
+- `apps/desktop/src/preload.ts` — Preserved T3 Pretty's preload listener and cached window-active state so renderer subscribers can recover state emitted before React effects attach.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — T3 Pretty's user-image source resolution, including local preview URI backfill keyed by message ID.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — T3 Pretty's user-only review-comment and wide-markdown bubble sizing logic, including avoiding unnecessary full-text scans for assistant rows.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Existing mobile image rendering and image-tap behavior remain fed by the normalized user image sources.
+- `apps/mobile/src/lib/authClientMetadata.ts` — The authentication client remains branded as "T3 Pretty Mobile" rather than being renamed to "T3 Code Mobile".
+- `apps/server/src/assets/AssetAccess.ts` — Preserved the mandatory resolved-asset source classification used to drive response caching and CORS behavior.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved attachment IDs on resolved attachment assets for T3 Pretty's attachment-aware behavior.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved Grok generated-image asset resolution, including basename validation, canonical allowed-root enforcement, and the generated-image source classification.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved source classifications for workspace files and project favicons through the composed ResolvedAsset type.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — The environment descriptor continues to advertise voice dictation only when host dictation is available.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — The environment descriptor continues to advertise read-aloud support only when host voice support is available.
+- `apps/server/src/http.test.ts` — Bounded JSON request-body tests continue to protect exact-limit acceptance and immediate rejection once streamed bytes exceed the configured limit.
+- `apps/server/src/http.test.ts` — Fork-specific asset-source policies remain covered: immutable attachment caching, cross-origin access for attachments, workspace files, and generated images, and restricted project favicons.
+- `apps/server/src/http.test.ts` — Static client asset tests continue to protect immutable caching for hashed Vite assets, no-cache handling for HTML/unhashed files, and Brotli Accept-Encoding detection.
+- `apps/server/src/http.test.ts` — Desktop and networking safeguards remain covered by disabling permessage-deflate for the t3code desktop origin and loopback peers while retaining it for LAN/tunneled clients and stripping only the relevant extension offer.
+- `apps/server/src/http.ts` — T3 Pretty's OTLP request-body JSON decoder retains its required effect/Schema import.
+- `apps/server/src/http.ts` — Asset cache policy remains source-aware, including immutable caching for attachment bytes.
+- `apps/server/src/http.ts` — Signed attachment, workspace-file, and generated-image capability URLs retain wildcard cross-origin access for desktop, remote, and generated-image surfaces.
+- `apps/server/src/http.ts` — Attachment feed-preview variant requests continue resolving through resolveAttachmentFeedPreview before serving the file.
+- `apps/server/src/http.ts` — Existing callers that pass a ResolvedAssetSource directly to assetResponseHeaders remain supported.
+- `apps/server/src/http.ts` — Inline HTML content typing and the existing sandboxed SVG content-security policy remain active for non-download assets.
+- `apps/server/src/http.ts` — The asset route remains wrapped with HttpMiddleware.withLoggerDisabled.
+- `apps/web/src/connection/platform.ts` — T3 Pretty remains the client presentation identity for both desktop and web labels.
+- `apps/web/src/connection/platform.ts` — Any additional label context produced by the parent helper is retained; only the `T3 Code` brand token is changed.
+- `packages/contracts/src/auth.ts` — Preserved T3 Pretty's NonNegativeInt schema import used by its hardened cross-surface authentication contracts.
+- `packages/contracts/src/orchestration.test.ts` — Provider-driver runtime-mode contract coverage remains available, including T3 Pretty's default, display, effective, and resolution helpers used to protect provider-specific behavior such as Kimi Yolo/full-access handling.
+- `packages/contracts/src/orchestration.test.ts` — The client turn attachment-count safeguard remains tested at the configured maximum and immediately above it.
+- `packages/contracts/src/orchestration.test.ts` — T3 Pretty's contract-test coverage dependencies for project/workflow script limits, ranked thread-search limits, provider interaction and user-input limits, and attachment-count limits are retained.
+- `packages/contracts/src/orchestration.test.ts` — World Scenery contract coverage remains intact through the thread scenery photo type and scenery URL length limit imports.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's explicit maximum lengths and trimmed non-empty schemas for orchestration titles, branches, and paths.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's large enabled-skill-ID character budget used by thread-start and skills behavior.
+- `packages/contracts/src/orchestration.ts` — T3 Pretty's allocation-free image data-URL inspection, including canonical base64 validation, bounded headers and decoded size, and MIME matching support.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/preload.ts` — Integrated the parent preload's `clientPlatform` initialization from Electron's sandbox-exposed `process.platform`, including its targeted oxlint suppression, so `getClientPlatform` remains functional.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — Parent attachment handling now filters message attachments to image entries before image rendering and empty-assistant-message checks.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — The Android fixed-width handling for review comments and intrinsically wide markdown remains active through the existing user-row-scoped implementation.
+- `apps/mobile/src/lib/authClientMetadata.ts` — Use Expo device information to report tablets as "tablet", phones as "mobile", and unrecognized device types as "unknown" instead of reporting every device as mobile.
+- `apps/server/src/assets/AssetAccess.ts` — Added optional download disposition metadata to resolved attachment assets.
+- `apps/server/src/assets/AssetAccess.ts` — Added caller-supplied attachment filename metadata to resolved attachment assets.
+- `apps/server/src/assets/AssetAccess.ts` — Added caller-supplied attachment MIME type metadata to resolved attachment assets.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — Added coverage that the environment descriptor exposes the structured fileAttachments capability with a 50 MiB upload limit.
+- `apps/server/src/http.test.ts` — Added the parent's downloadContentDisposition helper import and its filename-sanitization tests.
+- `apps/server/src/http.test.ts` — Integrated secure download-header coverage for uploaded documents, including Content-Disposition, sandboxing, and octet-stream handling for executable/renderable content.
+- `apps/server/src/http.test.ts` — Integrated support tests for claimed filenames and MIME types, including preservation of official Office Open XML MIME types.
+- `apps/server/src/http.test.ts` — Integrated RFC 5987 non-ASCII filename encoding, quote/control-character sanitization, and safe handling of unpaired Unicode surrogates.
+- `apps/server/src/http.ts` — Added the parent's RFC 6266 download Content-Disposition generation with sanitized ASCII fallback and UTF-8 filename\* support.
+- `apps/server/src/http.ts` — Added the parent's safe download MIME validation, with HTML/XML and invalid MIME values falling back to application/octet-stream.
+- `apps/server/src/http.ts` — Added the parent's restrictive download Content-Security-Policy and ensured download handling takes precedence over inline HTML/SVG handling.
+- `apps/server/src/http.ts` — Integrated download, fileName, and mimeType metadata from resolved assets into asset responses.
+- `apps/server/src/http.ts` — Retained the parent's Stream import alongside the fork-required Schema import.
+- `apps/web/src/connection/platform.ts` — Adopted the centralized `clientPresentationMetadata` implementation.
+- `apps/web/src/connection/platform.ts` — Passed hosted-static-app state, browser user agent, platform, touch-point count, desktop bridge, and app version into the parent metadata derivation, preserving its richer device and surface classification behavior.
+- `packages/contracts/src/auth.ts` — Integrated the parent's ClientWebDeployment schema import for the newest authentication deployment contract.
+- `packages/contracts/src/orchestration.test.ts` — Added OrchestrationMessage and ThreadMessageSentPayload schema dependencies for upstream's persisted-message compatibility coverage, including tolerance of future attachment types.
+- `packages/contracts/src/orchestration.test.ts` — Added PROVIDER_SEND_TURN_MAX_FILE_BYTES for upstream validation coverage of malformed or oversized known file attachments.
+- `packages/contracts/src/orchestration.test.ts` — Expanded the client attachment test to verify inline images, uploaded images, and uploaded non-image files together while retaining the fork's attachment-count test.
+- `packages/contracts/src/orchestration.ts` — Added the upstream 50 MiB provider turn file-size limit.
+- `packages/contracts/src/orchestration.ts` — Added the upstream persisted file attachment contract, including non-empty files and enforcement of the 50 MiB cap.
+- `packages/contracts/src/orchestration.ts` — Added the upstream forward-compatible unknown attachment contract while excluding known image and file discriminators so malformed known attachments cannot bypass their constraints.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/provider/opencodeRuntime.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — the parent nightly's changes to this retired OpenCode file. Reason: resurrecting it would restore the provider T3 Pretty intentionally removed
+- `apps/web/src/connection/platform.ts` — The raw `T3 Code` branding in labels returned by the parent presentation helper.. Reason: T3 Pretty branding is authoritative for the fork; only the brand token is replaced, with all other parent-generated metadata and label context preserved.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

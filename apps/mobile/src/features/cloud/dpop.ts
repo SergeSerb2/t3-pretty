@@ -1,14 +1,25 @@
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
+import * as Option from "effect/Option";
+import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as ExpoCrypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { p256 } from "@noble/curves/nist";
-import { DpopPublicJwk, normalizeDpopHtu } from "@t3tools/shared/dpopCommon";
+import {
+  DPOP_ACCESS_TOKEN_MAX_LENGTH,
+  DPOP_IDENTIFIER_MAX_LENGTH,
+  DPOP_JWK_COORDINATE_MAX_LENGTH,
+  DPOP_METHOD_MAX_LENGTH,
+  DPOP_URL_MAX_LENGTH,
+  DpopPublicJwk,
+  normalizeDpopHtu,
+} from "@t3tools/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
 export class CloudDpopError extends Data.TaggedError("CloudDpopError")<{
@@ -16,13 +27,15 @@ export class CloudDpopError extends Data.TaggedError("CloudDpopError")<{
   readonly cause?: unknown;
 }> {}
 
+const DPOP_NATIVE_OPERATION_TIMEOUT_MS = 10_000;
+
 function cloudDpopError(message: string) {
   return (cause: unknown) => new CloudDpopError({ message, cause });
 }
 
 const DpopPrivateJwkSchema = Schema.Struct({
   ...DpopPublicJwk.fields,
-  d: Schema.String,
+  d: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_JWK_COORDINATE_MAX_LENGTH)),
 });
 
 const DpopPrivateJwkJson = Schema.fromJsonString(DpopPrivateJwkSchema);
@@ -39,11 +52,13 @@ const DpopJwtHeaderJson = Schema.fromJsonString(
 
 const DpopJwtPayloadJson = Schema.fromJsonString(
   Schema.Struct({
-    htm: Schema.String,
-    htu: Schema.String,
-    jti: Schema.String,
+    htm: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_METHOD_MAX_LENGTH)),
+    htu: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_URL_MAX_LENGTH)),
+    jti: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_IDENTIFIER_MAX_LENGTH)),
     iat: Schema.Int,
-    ath: Schema.optionalKey(Schema.String),
+    ath: Schema.optionalKey(
+      Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_IDENTIFIER_MAX_LENGTH)),
+    ),
   }),
 );
 
@@ -70,11 +85,37 @@ export const cryptoLayer = Layer.succeed(
   Crypto.make({
     randomBytes: ExpoCrypto.getRandomBytes,
     digest: (algorithm, data) =>
-      Effect.promise(async () => {
-        const input = new Uint8Array(data.length);
-        input.set(data);
-        return new Uint8Array(await ExpoCrypto.digest(toExpoDigestAlgorithm(algorithm), input));
-      }),
+      Effect.tryPromise({
+        try: async () => {
+          const input = new Uint8Array(data.length);
+          input.set(data);
+          return new Uint8Array(await ExpoCrypto.digest(toExpoDigestAlgorithm(algorithm), input));
+        },
+        catch: (cause) =>
+          PlatformError.systemError({
+            module: "Crypto",
+            method: "digest",
+            _tag: "Unknown",
+            description: "Could not compute a native digest.",
+            cause,
+          }),
+      }).pipe(
+        Effect.timeoutOption(Duration.millis(DPOP_NATIVE_OPERATION_TIMEOUT_MS)),
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              Effect.fail(
+                PlatformError.systemError({
+                  module: "Crypto",
+                  method: "digest",
+                  _tag: "Unknown",
+                  description: "Native digest operation timed out.",
+                }),
+              ),
+            onSome: Effect.succeed,
+          }),
+        ),
+      ),
   }),
 );
 
@@ -87,6 +128,21 @@ export interface DpopProofKeyPair {
 }
 
 const DPOP_PROOF_KEY_STORAGE_KEY = "t3code.cloud.dpop-proof-key";
+
+function withDpopNativeDeadline<A, R>(
+  message: string,
+  effect: Effect.Effect<A, CloudDpopError, R>,
+): Effect.Effect<A, CloudDpopError, R> {
+  return effect.pipe(
+    Effect.timeoutOption(Duration.millis(DPOP_NATIVE_OPERATION_TIMEOUT_MS)),
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.fail(new CloudDpopError({ message })),
+        onSome: Effect.succeed,
+      }),
+    ),
+  );
+}
 
 function base64UrlToBytes(value: string): Uint8Array {
   return Result.getOrThrow(Encoding.decodeBase64Url(value));
@@ -197,10 +253,13 @@ export function loadOrCreateDpopProofKeyPair(): Effect.Effect<
   Crypto.Crypto
 > {
   return Effect.gen(function* () {
-    const stored = yield* Effect.tryPromise({
-      try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY),
-      catch: cloudDpopError("Could not read the DPoP proof key."),
-    });
+    const stored = yield* withDpopNativeDeadline(
+      "Reading the DPoP proof key timed out.",
+      Effect.tryPromise({
+        try: () => SecureStore.getItemAsync(DPOP_PROOF_KEY_STORAGE_KEY),
+        catch: cloudDpopError("Could not read the DPoP proof key."),
+      }),
+    );
     if (stored) {
       const storedPrivateJwk = yield* decodeDpopPrivateJwkJson(stored).pipe(
         Effect.mapError(cloudDpopError("Stored DPoP proof key is invalid.")),
@@ -228,10 +287,13 @@ export function loadOrCreateDpopProofKeyPair(): Effect.Effect<
     const encodedPrivateJwk = yield* encodeDpopPrivateJwkJson(generated.privateJwk).pipe(
       Effect.mapError(cloudDpopError("Could not encode the DPoP proof key.")),
     );
-    yield* Effect.tryPromise({
-      try: () => SecureStore.setItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, encodedPrivateJwk),
-      catch: cloudDpopError("Could not store the DPoP proof key."),
-    });
+    yield* withDpopNativeDeadline(
+      "Storing the DPoP proof key timed out.",
+      Effect.tryPromise({
+        try: () => SecureStore.setItemAsync(DPOP_PROOF_KEY_STORAGE_KEY, encodedPrivateJwk),
+        catch: cloudDpopError("Could not store the DPoP proof key."),
+      }),
+    );
     return generated;
   });
 }
@@ -254,6 +316,13 @@ export function createDpopProof(input: {
   Crypto.Crypto
 > {
   return Effect.gen(function* () {
+    if (input.method.length === 0 || input.method.length > DPOP_METHOD_MAX_LENGTH) {
+      return yield* Effect.fail(new CloudDpopError({ message: "DPoP proof method is invalid." }));
+    }
+    if (input.accessToken && input.accessToken.length > DPOP_ACCESS_TOKEN_MAX_LENGTH) {
+      return yield* Effect.fail(new CloudDpopError({ message: "DPoP access token is invalid." }));
+    }
+    const htu = yield* normalizeHtu(input.url);
     const keyPair = input.proofKey ?? (yield* generateDpopProofKeyPair());
     const privateKey = yield* Effect.try({
       try: () => base64UrlToBytes(keyPair.privateJwk.d),
@@ -264,7 +333,6 @@ export function createDpopProof(input: {
       Effect.flatMap((crypto) => crypto.randomUUIDv4),
       Effect.mapError(cloudDpopError("Could not generate DPoP proof identifier.")),
     );
-    const htu = yield* normalizeHtu(input.url);
     const header = yield* encodeDpopJwtHeaderJson({
       typ: "dpop+jwt",
       alg: "ES256",

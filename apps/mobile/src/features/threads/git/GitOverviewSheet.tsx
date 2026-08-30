@@ -13,7 +13,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../../components/AppSymbol";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
@@ -32,6 +32,7 @@ import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-wo
 import { vcsEnvironment } from "../../../state/vcs";
 import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigation";
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
+import { useThreadInspectorVisibility } from "../thread-inspector-content-stack";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -48,19 +49,31 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const insets = useSafeAreaInsets();
   const presentation = props.presentation ?? "sheet";
   const isInspector = presentation === "inspector";
+  const inspectorVisible = useThreadInspectorVisibility();
+  const loadInitialState = !isInspector || inspectorVisible;
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const threadId = ThreadId.make(props.route.params.threadId);
   const { selectedThread } = useThreadSelection();
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
-  const gitState = useSelectedThreadGitState();
-  const gitActions = useSelectedThreadGitActions();
+  const gitState = useSelectedThreadGitState({ loadInitialState });
+  const gitActions = useSelectedThreadGitActions({ loadInitialState });
+  const actionPendingRef = useRef(false);
+  const pullRefreshPendingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const iconColor = useThemeColor("--color-icon");
   const foregroundColor = String(useThemeColor("--color-foreground"));
   const sheetColor = String(useThemeColor("--color-sheet"));
 
   const gitStatus = useEnvironmentQuery(
-    selectedThread !== null && selectedThreadCwd !== null
+    loadInitialState && selectedThread !== null && selectedThreadCwd !== null
       ? vcsEnvironment.status({
           environmentId: selectedThread.environmentId,
           input: { cwd: selectedThreadCwd },
@@ -95,10 +108,6 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       })),
     [busy, gitStatus.data, hasPrimaryRemote, menuItems],
   );
-
-  useEffect(() => {
-    void gitActions.refreshSelectedThreadGitStatus({ quiet: true });
-  }, [gitActions]);
 
   const openNativePullRequest = useOpenNativePullRequest();
 
@@ -149,24 +158,29 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
 
   const onPressMenuItem = useCallback(
     async (item: (typeof menuItems)[number]) => {
-      if (item.disabled) return;
-      if (item.kind === "open_pr") {
-        await openExistingPr();
-        return;
-      }
-      if (item.dialogAction === "commit") {
-        navigation.navigate("GitCommit", {
-          environmentId: String(environmentId),
-          threadId: String(threadId),
-        });
-        return;
-      }
-      if (item.dialogAction === "push") {
-        await runActionWithPrompt({ action: "push" });
-        return;
-      }
-      if (item.dialogAction === "create_pr") {
-        await runActionWithPrompt({ action: "create_pr" });
+      if (item.disabled || actionPendingRef.current) return;
+      actionPendingRef.current = true;
+      try {
+        if (item.kind === "open_pr") {
+          await openExistingPr();
+          return;
+        }
+        if (item.dialogAction === "commit") {
+          navigation.navigate("GitCommit", {
+            environmentId: String(environmentId),
+            threadId: String(threadId),
+          });
+          return;
+        }
+        if (item.dialogAction === "push") {
+          await runActionWithPrompt({ action: "push" });
+          return;
+        }
+        if (item.dialogAction === "create_pr") {
+          await runActionWithPrompt({ action: "create_pr" });
+        }
+      } finally {
+        actionPendingRef.current = false;
       }
     },
     [environmentId, openExistingPr, navigation, runActionWithPrompt, threadId],
@@ -205,11 +219,14 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   // during quiet background refreshes too).
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const handlePullRefresh = useCallback(async () => {
+    if (pullRefreshPendingRef.current) return;
+    pullRefreshPendingRef.current = true;
     setIsPullRefreshing(true);
     try {
       await gitActions.refreshSelectedThreadGitStatus();
     } finally {
-      setIsPullRefreshing(false);
+      pullRefreshPendingRef.current = false;
+      if (mountedRef.current) setIsPullRefreshing(false);
     }
   }, [gitActions]);
 
@@ -377,6 +394,9 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       {isInspector ? (
         <View className="gap-1 border-b border-border px-4 pb-4 pt-3">
           <Pressable
+            accessibilityLabel="Refresh repository status"
+            accessibilityRole="button"
+            accessibilityState={{ busy, disabled: busy }}
             className={
               busy
                 ? "absolute right-3 top-4 z-[1] h-9 w-9 items-center justify-center rounded-full bg-subtle opacity-[0.45]"

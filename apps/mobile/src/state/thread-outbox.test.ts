@@ -5,6 +5,8 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ThreadId,
 } from "@t3tools/contracts";
 import { AtomRegistry } from "effect/unstable/reactivity";
@@ -86,6 +88,40 @@ describe("thread outbox", () => {
       decodeQueuedThreadMessage({
         schemaVersion: 1,
         environmentId: "environment-1",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects persisted payloads that cannot satisfy the provider turn contract", () => {
+    const message = queuedMessage({
+      messageId: "message-bounds",
+      createdAt: "2026-06-08T10:00:01.000Z",
+    });
+    const attachment = {
+      id: "image-1",
+      type: "image" as const,
+      name: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 3,
+      dataUrl: "data:image/png;base64,YWJj",
+      previewUri: "file:///image.png",
+    };
+
+    expect(() =>
+      decodeQueuedThreadMessage({
+        schemaVersion: 3,
+        ...message,
+        text: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS + 1),
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeQueuedThreadMessage({
+        schemaVersion: 3,
+        ...message,
+        attachments: Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1 }, (_, index) => ({
+          ...attachment,
+          id: `image-${index}`,
+        })),
       }),
     ).toThrow();
   });

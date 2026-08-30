@@ -71,7 +71,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    validation (a non-unique or missing `old_text`) is requested once more before the run gives
    up, and every completed file is checkpointed to the `automation/sync-resolution-cache` branch
    even when the run fails, so a rerun resumes where it stopped instead of re-resolving finished
-   files. Modify/delete conflicts resolve
+   files. The branch retains at most 256 valid entries and 64 MiB; older entries are best-effort
+   acceleration, not durable release state. Modify/delete conflicts resolve
    through the same contract, presented as one whole-file conflict against an empty deleted side;
    an empty resolution follows the deletion (the usual outcome when the parent's refactor removes
    a file the fork only tracked). Its preservation contract treats T3 Pretty and other
@@ -110,8 +111,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    macos-release generates with `--no-push` (baking the notes into the DMG)
    and runs `--publish` only after the artifacts and update feed are live,
    committing and pushing `changelogData.ts` when HEAD is still the `main`
-   tip; the build that push triggers sees the version in the feed and skips
-   packaging instead of publishing it twice. windows-release first reuses the
+   tip. That commit carries `[skip ci]` in its body: Buildkite cancels
+   intermediate `main` builds, so a build for the notes push would only
+   re-read the feed, skip packaging, and cancel the iOS, Linux, relay, and
+   CLI jobs of the release still running on the triggering commit. Packagers
+   that do meet a notes commit at HEAD (a manual retry) still read the feed
+   and skip a version it already lists. windows-release first reuses the
    notes commit from `origin/main` when it covers the same version, so both
    installers ship the same What's New text, and generates locally only as a
    fallback. Both packagers run `--publish` after their uploads, so main
@@ -253,13 +258,14 @@ without pretending that a newer upstream tag was integrated before its sync pull
   - Windows: `self-hosted`, `Windows`, `X64`, `t3code-fork`, `release-only`
 
 For unattended macOS installation, configure `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY`,
-`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `MACOS_PROVISIONING_PROFILE`, `APPLE_TEAM_ID`, and the
-Clerk passkey variables used by the upstream build. Without them, the workflow deliberately marks
-the macOS artifact as unsigned; it can be downloaded manually, but macOS `electron-updater` cannot
-reliably install it. Windows signing is optional for updater mechanics: missing Azure Trusted
-Signing secrets produce an unsigned NSIS installer and skip Authenticode verification. Add the
-existing Azure Trusted Signing secret names before broad distribution if SmartScreen prompts should
-go away.
+`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and `T3CODE_APPLE_TEAM_ID` (legacy fallback:
+`APPLE_TEAM_ID`), plus the Clerk passkey variables used by the upstream build. Missing required
+macOS signing or notarization credentials skips the updater release instead of publishing an
+unsigned macOS artifact. `MACOS_PROVISIONING_PROFILE` is optional; without it, the signed build
+ships without the passkey entitlement. Windows signing remains optional for updater mechanics:
+missing Azure Trusted Signing secrets produce an unsigned NSIS installer and skip Authenticode
+verification. Add the existing Azure Trusted Signing secret names before broad distribution if
+SmartScreen prompts should go away.
 
 ## Machines and expected times
 

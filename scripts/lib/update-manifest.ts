@@ -4,6 +4,8 @@ export interface UpdateManifestFile {
   readonly size: number;
 }
 
+export const UPDATE_MANIFEST_TEXT_BYTE_LIMIT = 1024 * 1024;
+
 export type UpdateManifestScalar = string | number | boolean;
 
 export interface UpdateManifest {
@@ -69,6 +71,24 @@ export function parseUpdateManifest(
   sourcePath: string,
   platformLabel: string,
 ): UpdateManifest {
+  if (Buffer.byteLength(raw, "utf8") > UPDATE_MANIFEST_TEXT_BYTE_LIMIT) {
+    throw new Error(
+      `Invalid ${platformLabel} update manifest at ${sourcePath}: file is too large.`,
+    );
+  }
+  for (const character of raw) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint <= 0x1f && character !== "\n" && character !== "\r" && character !== "\t") ||
+        codePoint === 0x7f)
+    ) {
+      throw new Error(
+        `Invalid ${platformLabel} update manifest at ${sourcePath}: control character is not allowed.`,
+      );
+    }
+  }
+
   const lines = raw.split(/\r?\n/);
   const files: UpdateManifestFile[] = [];
   const extras: Record<string, UpdateManifestScalar> = {};
@@ -128,7 +148,7 @@ export function parseUpdateManifest(
     const topLevelMatch = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.+)$/);
     if (!topLevelMatch?.[1] || topLevelMatch[2] === undefined) {
       throw new Error(
-        `Invalid ${platformLabel} update manifest at ${sourcePath}:${lineNumber}: unsupported line '${line}'.`,
+        `Invalid ${platformLabel} update manifest at ${sourcePath}:${lineNumber}: unsupported line.`,
       );
     }
 
@@ -196,7 +216,7 @@ function mergeExtras(
     const existing = merged[key];
     if (existing !== undefined && existing !== value) {
       throw new Error(
-        `Cannot merge ${platformLabel} update manifests: conflicting '${key}' values ('${existing}' vs '${value}').`,
+        `Cannot merge ${platformLabel} update manifests: conflicting '${key}' values.`,
       );
     }
     merged[key] = value;
@@ -211,18 +231,14 @@ export function mergeUpdateManifests(
   platformLabel: string,
 ): UpdateManifest {
   if (primary.version !== secondary.version) {
-    throw new Error(
-      `Cannot merge ${platformLabel} update manifests with different versions (${primary.version} vs ${secondary.version}).`,
-    );
+    throw new Error(`Cannot merge ${platformLabel} update manifests with different versions.`);
   }
 
   const filesByUrl = new Map<string, UpdateManifestFile>();
   for (const file of [...primary.files, ...secondary.files]) {
     const existing = filesByUrl.get(file.url);
     if (existing && (existing.sha512 !== file.sha512 || existing.size !== file.size)) {
-      throw new Error(
-        `Cannot merge ${platformLabel} update manifests: conflicting file entry for ${file.url}.`,
-      );
+      throw new Error(`Cannot merge ${platformLabel} update manifests: conflicting file entry.`);
     }
     filesByUrl.set(file.url, file);
   }

@@ -48,6 +48,16 @@ export function ProviderUpdateLaunchNotification() {
 }
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
+const MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS = 128;
+
+function rememberSeenProviderUpdateNotificationKey(key: string): void {
+  seenProviderUpdateNotificationKeys.delete(key);
+  seenProviderUpdateNotificationKeys.add(key);
+  if (seenProviderUpdateNotificationKeys.size > MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS) {
+    const oldestKey = seenProviderUpdateNotificationKeys.values().next().value;
+    if (oldestKey !== undefined) seenProviderUpdateNotificationKeys.delete(oldestKey);
+  }
+}
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 // While a local backend (e.g. WSL) is still connecting, defer the popover so it
@@ -144,7 +154,7 @@ function ProviderUpdateEnvironmentsNotification() {
       return;
     }
 
-    seenProviderUpdateNotificationKeys.add(notificationKey);
+    rememberSeenProviderUpdateNotificationKey(notificationKey);
     hasInteractedRef.current = false;
 
     const dismissPrompt = () => {

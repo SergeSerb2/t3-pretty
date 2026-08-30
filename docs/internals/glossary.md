@@ -32,6 +32,12 @@ A Git worktree used as an isolated workspace for a thread. If a thread has a `wo
 
 A server-side scan of **managed worktrees** under the environment's worktrees folder (`storage.getInventory` / `storage.streamInventory` / `storage.removeOrphan` in [the contracts][1]). Clients gate on the `storageInventory` capability and never probe older servers. Servers that advertise `storageInventoryStream` push incremental inventories while the walk is still running; older servers only answer the unary query. Project checkouts outside that folder are never listed or deleted. Unique paths are counted once when several threads share a checkout. `isDirty === null` is unsafe, never clean.
 
+#### Project transfer
+
+A copy of one project workspace and one thread's durable conversation into another managed
+environment. The source remains unchanged. Workspace bytes stream server to server; provider
+sessions, checkpoints, attachments, dependencies, and build caches do not move. See [T3 Connect](./t3-connect.md#project-and-thread-transfer).
+
 ### Thread timeline
 
 #### Thread
@@ -147,6 +153,10 @@ Controls how assistant text reaches the thread timeline. In [the contracts][1], 
 #### Snapshot
 
 A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
+
+#### Model manifest
+
+The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
 
 ### Checkpointing
 

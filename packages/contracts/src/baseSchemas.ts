@@ -18,7 +18,15 @@ export const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }));
 
-export const IsoDateTime = Schema.String;
+export const ISO_DATE_TIME_MAX_LENGTH = 128;
+export const ENTITY_ID_MAX_LENGTH = 4_096;
+
+export const ProviderNativeSessionId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ENTITY_ID_MAX_LENGTH),
+);
+export type ProviderNativeSessionId = typeof ProviderNativeSessionId.Type;
+
+export const IsoDateTime = Schema.String.check(Schema.isMaxLength(ISO_DATE_TIME_MAX_LENGTH));
 export type IsoDateTime = typeof IsoDateTime.Type;
 
 /**
@@ -46,10 +54,12 @@ export const ForwardCompatibleArray = <Element extends Schema.Top>(element: Elem
 };
 
 /**
- * Construct a branded identifier. Enforces non-empty trimmed strings
+ * Construct a branded identifier. Enforces bounded, non-empty trimmed strings.
  */
 const makeEntityId = <Brand extends string>(brand: Brand) => {
-  return TrimmedNonEmptyString.pipe(Schema.brand(brand));
+  return TrimmedNonEmptyString.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH)).pipe(
+    Schema.brand(brand),
+  );
 };
 
 export const ThreadId = makeEntityId("ThreadId");
@@ -79,6 +89,27 @@ export type RpcClientId = typeof RpcClientId.Type;
  */
 export const ClientSurface = Schema.Literals(["web", "desktop", "mobile"]);
 export type ClientSurface = typeof ClientSurface.Type;
+
+export const ClientOs = Schema.Literals([
+  "macOS",
+  "Windows",
+  "Linux",
+  "iOS",
+  "Android",
+  "ChromeOS",
+  "other",
+  "unknown",
+]);
+export type ClientOs = typeof ClientOs.Type;
+
+export const ClientDeviceType = Schema.Literals(["desktop", "phone", "tablet", "unknown"]);
+export type ClientDeviceType = typeof ClientDeviceType.Type;
+
+export const ClientWebDeployment = Schema.Literals(["hosted", "server"]);
+export type ClientWebDeployment = typeof ClientWebDeployment.Type;
+
+export const ClientConnectionMethod = Schema.Literals(["direct", "ssh", "relay", "unknown"]);
+export type ClientConnectionMethod = typeof ClientConnectionMethod.Type;
 
 export const ProviderItemId = makeEntityId("ProviderItemId");
 export type ProviderItemId = typeof ProviderItemId.Type;

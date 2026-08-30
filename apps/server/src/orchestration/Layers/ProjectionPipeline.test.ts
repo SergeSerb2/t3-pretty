@@ -2,6 +2,7 @@ import {
   CheckpointRef,
   CommandId,
   CorrelationId,
+  EnvironmentId,
   EventId,
   MessageId,
   ProjectId,
@@ -16,6 +17,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Stream from "effect/Stream";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
@@ -24,9 +26,11 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import type { OrchestrationEventStoreShape } from "../../persistence/Services/OrchestrationEventStore.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import {
+  indexAttachmentRootEntriesByThread,
   ORCHESTRATION_PROJECTOR_NAMES,
   OrchestrationProjectionPipelineLive,
 } from "./ProjectionPipeline.ts";
@@ -54,6 +58,65 @@ const exists = (filePath: string) =>
   });
 
 const BaseTestLayer = makeProjectionPipelinePrefixedTestLayer("t3-projection-pipeline-test-");
+
+it("indexes attachment-root entries once by their owning thread", () => {
+  const first = "thread-a-00000000-0000-4000-8000-000000000001.png";
+  const second = "thread-a-00000000-0000-4000-8000-000000000002.webp";
+  const third = "thread-b-00000000-0000-4000-8000-000000000003.jpg";
+
+  assert.deepEqual(
+    [
+      ...indexAttachmentRootEntriesByThread([
+        first,
+        `/${second}`,
+        third,
+        `${first}.feed.webp`,
+        `nested/${third}`,
+        "sentinel.txt",
+      ]),
+    ],
+    [
+      ["thread-a", [first, second]],
+      ["thread-b", [third]],
+    ],
+  );
+});
+
+it.effect("requests the complete event tail when bootstrapping every projector", () => {
+  const replayRequests: Array<{ readonly sequenceExclusive: number; readonly limit?: number }> = [];
+  const eventStore: OrchestrationEventStoreShape = {
+    append: () => Effect.die("append should not be called"),
+    readFromSequence: (sequenceExclusive, limit) => {
+      replayRequests.push({
+        sequenceExclusive,
+        ...(limit === undefined ? {} : { limit }),
+      });
+      return Stream.empty;
+    },
+    readAll: () => Stream.empty,
+  };
+  const layer = OrchestrationProjectionPipelineLive.pipe(
+    Layer.provideMerge(Layer.succeed(OrchestrationEventStore, eventStore)),
+    Layer.provideMerge(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-projection-replay-limit-test-" }),
+    ),
+    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const projectionPipeline = yield* OrchestrationProjectionPipeline;
+    yield* projectionPipeline.bootstrap;
+
+    assert.deepEqual(
+      replayRequests,
+      Object.keys(ORCHESTRATION_PROJECTOR_NAMES).map(() => ({
+        sequenceExclusive: 0,
+        limit: Number.MAX_SAFE_INTEGER,
+      })),
+    );
+  }).pipe(Effect.provide(layer));
+});
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   it.effect("bootstraps all projection states and writes projection rows", () =>
@@ -175,6 +238,78 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         assert.equal(row.lastAppliedSequence, 3);
       }
 
+      yield* sql`CREATE TABLE thread_shell_updates (count INTEGER NOT NULL)`;
+      yield* sql`INSERT INTO thread_shell_updates (count) VALUES (0)`;
+      yield* sql`
+        CREATE TRIGGER count_thread_shell_updates
+        AFTER UPDATE ON projection_threads
+        WHEN NEW.thread_id = 'thread-1'
+        BEGIN
+          UPDATE thread_shell_updates SET count = count + 1;
+        END;
+      `;
+
+      yield* eventStore.append({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-assistant-update"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        occurredAt: "2026-01-01T00:00:00.100Z",
+        commandId: CommandId.make("cmd-assistant-update"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-assistant-update"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: "more work",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-01-01T00:00:00.100Z",
+          updatedAt: "2026-01-01T00:00:00.100Z",
+        },
+      });
+      yield* projectionPipeline.bootstrap;
+
+      let threadShellUpdates = yield* sql<{ readonly count: number }>`
+        SELECT count FROM thread_shell_updates
+      `;
+      assert.deepEqual(threadShellUpdates, [{ count: 1 }]);
+
+      yield* sql`UPDATE thread_shell_updates SET count = 0`;
+      yield* eventStore.append({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-routine-activity"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        occurredAt: "2026-01-01T00:00:00.200Z",
+        commandId: CommandId.make("cmd-routine-activity"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-routine-activity"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make("activity-routine"),
+            tone: "tool",
+            kind: "tool.updated",
+            summary: "Tool made progress",
+            payload: {},
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00.200Z",
+          },
+        },
+      });
+      yield* projectionPipeline.bootstrap;
+
+      threadShellUpdates = yield* sql<{ readonly count: number }>`
+        SELECT count FROM thread_shell_updates
+      `;
+      assert.deepEqual(threadShellUpdates, [{ count: 1 }]);
+      yield* sql`DROP TRIGGER count_thread_shell_updates`;
+      yield* sql`DROP TABLE thread_shell_updates`;
+
       // Settled lifecycle through the DB pipeline: thread.settled writes the
       // override + timestamp, thread.unsettled(user) flips to the active pin.
       yield* eventStore.append({
@@ -198,15 +333,17 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const settledRows = yield* sql<{
         readonly settledOverride: string | null;
         readonly settledAt: string | null;
+        readonly unsettledAt: string | null;
       }>`
         SELECT
           settled_override AS "settledOverride",
-          settled_at AS "settledAt"
+          settled_at AS "settledAt",
+          unsettled_at AS "unsettledAt"
         FROM projection_threads
         WHERE thread_id = 'thread-1'
       `;
       assert.deepEqual(settledRows, [
-        { settledOverride: "settled", settledAt: "2026-01-01T00:00:01.000Z" },
+        { settledOverride: "settled", settledAt: "2026-01-01T00:00:01.000Z", unsettledAt: null },
       ]);
 
       yield* eventStore.append({
@@ -230,14 +367,24 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const unsettledRows = yield* sql<{
         readonly settledOverride: string | null;
         readonly settledAt: string | null;
+        readonly unsettledAt: string | null;
       }>`
         SELECT
           settled_override AS "settledOverride",
-          settled_at AS "settledAt"
+          settled_at AS "settledAt",
+          unsettled_at AS "unsettledAt"
         FROM projection_threads
         WHERE thread_id = 'thread-1'
       `;
-      assert.deepEqual(unsettledRows, [{ settledOverride: "active", settledAt: null }]);
+      // The un-settle stamps the active-list re-entry time so clients can
+      // surface the thread at the top of the list.
+      assert.deepEqual(unsettledRows, [
+        {
+          settledOverride: "active",
+          settledAt: null,
+          unsettledAt: "2026-01-01T00:00:02.000Z",
+        },
+      ]);
     }),
   );
 });
@@ -809,6 +956,7 @@ it.layer(
       const now = "2026-01-01T00:00:00.000Z";
       const threadId = ThreadId.make("Thread Revert.Files");
       const keepAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000001";
+      const keepFileAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000004-pdf";
       const removeAttachmentId = "thread-revert-files-00000000-0000-4000-8000-000000000002";
       const otherThreadAttachmentId =
         "thread-revert-files-extra-00000000-0000-4000-8000-000000000003";
@@ -910,6 +1058,13 @@ it.layer(
               mimeType: "image/png",
               sizeBytes: 5,
             },
+            {
+              type: "file",
+              id: keepFileAttachmentId,
+              name: "keep.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 5,
+            },
           ],
           turnId: TurnId.make("turn-keep"),
           streaming: false,
@@ -972,9 +1127,11 @@ it.layer(
       });
 
       const keepPath = path.join(attachmentsDir, `${keepAttachmentId}.png`);
+      const keepFilePath = path.join(attachmentsDir, `${keepFileAttachmentId}.pdf`);
       const removePath = path.join(attachmentsDir, `${removeAttachmentId}.png`);
       yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
       yield* fileSystem.writeFileString(keepPath, "keep");
+      yield* fileSystem.writeFileString(keepFilePath, "keep");
       yield* fileSystem.writeFileString(removePath, "remove");
       const otherThreadPath = path.join(attachmentsDir, `${otherThreadAttachmentId}.png`);
       yield* fileSystem.writeFileString(otherThreadPath, "other");
@@ -999,6 +1156,7 @@ it.layer(
       });
 
       assert.isTrue(yield* exists(keepPath));
+      assert.isTrue(yield* exists(keepFilePath));
       assert.isFalse(yield* exists(removePath));
       assert.isTrue(yield* exists(otherThreadPath));
     }),
@@ -1018,6 +1176,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         const now = "2026-01-01T00:00:00.000Z";
         const threadId = ThreadId.make("Thread Delete.Files");
         const attachmentId = "thread-delete-files-00000000-0000-4000-8000-000000000001";
+        const fileAttachmentId = "thread-delete-files-00000000-0000-4000-8000-000000000003-pdf";
         const otherThreadAttachmentId =
           "thread-delete-files-extra-00000000-0000-4000-8000-000000000002";
 
@@ -1096,6 +1255,13 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
                 mimeType: "image/png",
                 sizeBytes: 5,
               },
+              {
+                type: "file",
+                id: fileAttachmentId,
+                name: "delete.pdf",
+                mimeType: "application/pdf",
+                sizeBytes: 6,
+              },
             ],
             turnId: null,
             streaming: false,
@@ -1105,14 +1271,17 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         });
 
         const threadAttachmentPath = path.join(attachmentsDir, `${attachmentId}.png`);
+        const threadFileAttachmentPath = path.join(attachmentsDir, `${fileAttachmentId}.pdf`);
         const otherThreadAttachmentPath = path.join(
           attachmentsDir,
           `${otherThreadAttachmentId}.png`,
         );
         yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
         yield* fileSystem.writeFileString(threadAttachmentPath, "delete");
+        yield* fileSystem.writeFileString(threadFileAttachmentPath, "delete");
         yield* fileSystem.writeFileString(otherThreadAttachmentPath, "other-thread");
         assert.isTrue(yield* exists(threadAttachmentPath));
+        assert.isTrue(yield* exists(threadFileAttachmentPath));
         assert.isTrue(yield* exists(otherThreadAttachmentPath));
 
         yield* appendAndProject({
@@ -1132,6 +1301,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
         });
 
         assert.isFalse(yield* exists(threadAttachmentPath));
+        assert.isFalse(yield* exists(threadFileAttachmentPath));
         assert.isTrue(yield* exists(otherThreadAttachmentPath));
       }),
     );
@@ -1182,6 +1352,77 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-atta
 );
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
+  it.effect("replays a bootstrap backlog larger than the event store default limit", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-bootstrap-backlog");
+
+      const sequenceRows = yield* sql<{ readonly maxSequence: number | null }>`
+        SELECT MAX(sequence) AS "maxSequence" FROM orchestration_events
+      `;
+      const sequenceBeforeBacklog = sequenceRows[0]?.maxSequence ?? 0;
+      const appendedEvents = yield* Effect.forEach(
+        Array.from({ length: 1_001 }, (_, index) => index),
+        (index) => {
+          const eventId = EventId.make(`evt-bootstrap-backlog-${index}`);
+          const commandId = CommandId.make(`cmd-bootstrap-backlog-${index}`);
+          return eventStore.append({
+            type: "project.created",
+            eventId,
+            aggregateKind: "project",
+            aggregateId: projectId,
+            occurredAt: now,
+            commandId,
+            causationEventId: null,
+            correlationId: CorrelationId.make(commandId),
+            metadata: {},
+            payload: {
+              projectId,
+              title: `Bootstrap backlog ${index}`,
+              workspaceRoot: "/tmp/project-bootstrap-backlog",
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: now,
+              updatedAt: now,
+            },
+          });
+        },
+      );
+      const lastSequence = appendedEvents[appendedEvents.length - 1]!.sequence;
+
+      yield* Effect.forEach(
+        Object.values(ORCHESTRATION_PROJECTOR_NAMES),
+        (projector) => {
+          const lastAppliedSequence =
+            projector === ORCHESTRATION_PROJECTOR_NAMES.projects
+              ? sequenceBeforeBacklog
+              : lastSequence;
+          return sql`
+            INSERT INTO projection_state (projector, last_applied_sequence, updated_at)
+            VALUES (${projector}, ${lastAppliedSequence}, ${now})
+            ON CONFLICT (projector)
+            DO UPDATE SET
+              last_applied_sequence = excluded.last_applied_sequence,
+              updated_at = excluded.updated_at
+          `;
+        },
+        { discard: true },
+      );
+
+      yield* projectionPipeline.bootstrap;
+
+      const stateRows = yield* sql<{ readonly lastAppliedSequence: number }>`
+        SELECT last_applied_sequence AS "lastAppliedSequence"
+        FROM projection_state
+        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.projects}
+      `;
+      assert.deepEqual(stateRows, [{ lastAppliedSequence: lastSequence }]);
+    }),
+  );
+
   it.effect("resumes from projector last_applied_sequence without replaying older events", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
@@ -2818,6 +3059,143 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       ]);
     }),
   );
+
+  it.effect("projects transferred conversation turns for history and search", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-transfer-projection");
+      const threadId = ThreadId.make("thread-transfer-projection");
+      const turnId = TurnId.make("turn-transfer-projection");
+      const userMessageId = MessageId.make("message-transfer-user");
+      const assistantMessageId = MessageId.make("message-transfer-assistant");
+      const createdAt = "2026-03-03T00:00:00.000Z";
+      const completedAt = "2026-03-03T00:00:02.000Z";
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-transfer-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: createdAt,
+        commandId: CommandId.make("cmd-transfer-project"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-transfer-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Aerospace Lingo",
+          workspaceRoot: "/tmp/project-transfer-projection",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.transferred",
+        eventId: EventId.make("evt-transfer-thread"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: completedAt,
+        commandId: CommandId.make("cmd-transfer-thread"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-transfer-thread"),
+        metadata: {},
+        payload: {
+          sourceEnvironmentId: EnvironmentId.make("source-transfer-environment"),
+          sourceThreadId: ThreadId.make("source-transfer-thread"),
+          includesGitMetadata: true,
+          skippedAttachmentCount: 0,
+          thread: {
+            id: threadId,
+            projectId,
+            title: "Aerospace Lingo",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: "main",
+            worktreePath: null,
+            latestTurn: null,
+            createdAt,
+            updatedAt: completedAt,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            deletedAt: null,
+            enabledSkillIds: [],
+            messages: [
+              {
+                id: userMessageId,
+                role: "user",
+                text: "Teach me aerospace lingo.",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt,
+                updatedAt: createdAt,
+              },
+              {
+                id: assistantMessageId,
+                role: "assistant",
+                text: "Roger means received.",
+                attachments: [],
+                turnId,
+                streaming: false,
+                createdAt: completedAt,
+                updatedAt: completedAt,
+              },
+            ],
+            proposedPlans: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          },
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const turns = yield* sql<{
+        readonly turnId: string;
+        readonly pendingMessageId: string | null;
+        readonly assistantMessageId: string | null;
+        readonly state: string;
+      }>`
+        SELECT
+          turn_id AS "turnId",
+          pending_message_id AS "pendingMessageId",
+          assistant_message_id AS "assistantMessageId",
+          state
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(turns, [
+        {
+          turnId,
+          pendingMessageId: userMessageId,
+          assistantMessageId,
+          state: "completed",
+        },
+      ]);
+      const threadRows = yield* sql<{ readonly latestTurnId: string | null }>`
+        SELECT latest_turn_id AS "latestTurnId"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(threadRows, [{ latestTurnId: turnId }]);
+      const indexedAssistant = yield* sql<{ readonly messageId: string }>`
+        SELECT message_id AS "messageId"
+        FROM search_index_docs
+        WHERE message_id = ${assistantMessageId}
+      `;
+      assert.deepEqual(indexedAssistant, [{ messageId: assistantMessageId }]);
+    }),
+  );
 });
 
 it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-"))(
@@ -3135,6 +3513,74 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
           faviconPath: "brand/icon.svg",
         },
       ]);
+    }),
+  );
+
+  it.effect("deduplicates an atomic project transfer import by its thread receipt", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-transfer-receipt");
+      const threadId = ThreadId.make("thread-transfer-receipt");
+      const commandId = CommandId.make("cmd-transfer-receipt");
+      const importedAt = "2026-03-04T00:00:00.000Z";
+      const command = {
+        type: "project.transfer.import" as const,
+        commandId,
+        project: {
+          id: projectId,
+          title: "Aerospace Lingo Receipt",
+          workspaceRoot: "/tmp/project-transfer-receipt",
+          defaultModelSelection: null,
+          faviconPath: null,
+          scripts: [],
+          createdAt: importedAt,
+          updatedAt: importedAt,
+          deletedAt: null,
+        },
+        thread: {
+          id: threadId,
+          projectId,
+          title: "Aerospace Lingo Receipt",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access" as const,
+          interactionMode: "default" as const,
+          branch: null,
+          worktreePath: null,
+          latestTurn: null,
+          createdAt: importedAt,
+          updatedAt: importedAt,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          deletedAt: null,
+          enabledSkillIds: [],
+          messages: [],
+          proposedPlans: [],
+          activities: [],
+          checkpoints: [],
+          session: null,
+        },
+        sourceEnvironmentId: EnvironmentId.make("source-transfer-receipt"),
+        sourceThreadId: ThreadId.make("source-thread-transfer-receipt"),
+        includesGitMetadata: false,
+        skippedAttachmentCount: 0,
+        importedAt,
+      };
+
+      const first = yield* engine.dispatch(command);
+      const second = yield* engine.dispatch(command);
+      assert.deepEqual(second, first);
+
+      const eventRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM orchestration_events
+        WHERE command_id = ${commandId}
+      `;
+      assert.deepEqual(eventRows, [{ count: 2 }]);
     }),
   );
 });

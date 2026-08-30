@@ -6,7 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -52,7 +52,7 @@ function SelectionRow(props: {
     <Pressable
       accessibilityLabel={[props.title, props.subtitle].filter(Boolean).join(", ")}
       accessibilityRole="radio"
-      accessibilityState={{ checked: props.selected }}
+      accessibilityState={{ checked: props.selected, disabled: props.disabled === true }}
       className={cn(
         "min-h-14 flex-row items-center gap-3 bg-card px-4 py-3 active:bg-subtle",
         !props.isLast && "border-b border-border-subtle",
@@ -137,14 +137,34 @@ function BranchSelectionRow(props: {
   );
 }
 
-function PickerSurface(props: { readonly children: ReactNode }) {
-  return <View className="overflow-hidden rounded-2xl bg-card">{props.children}</View>;
-}
-
 export function NewTaskEnvironmentPickerRouteScreen() {
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const renderEnvironment = useCallback(
+    ({ item: environment, index }: { item: (typeof flow.environments)[number]; index: number }) => (
+      <View
+        className={cn(
+          "overflow-hidden",
+          index === 0 && "rounded-t-2xl",
+          index === flow.environments.length - 1 && "rounded-b-2xl",
+        )}
+      >
+        <SelectionRow
+          icon="desktopcomputer"
+          isLast={index === flow.environments.length - 1}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            flow.selectEnvironment(environment.environmentId);
+            navigation.goBack();
+          }}
+          selected={flow.selectedEnvironmentId === environment.environmentId}
+          title={environment.environmentLabel}
+        />
+      </View>
+    ),
+    [flow.environments, flow.selectEnvironment, flow.selectedEnvironmentId, navigation],
+  );
 
   return (
     <View className="flex-1 bg-sheet" collapsable={false}>
@@ -157,32 +177,22 @@ export function NewTaskEnvironmentPickerRouteScreen() {
       {Platform.OS === "android" ? (
         <AndroidScreenHeader title="Environment" onBack={() => navigation.goBack()} />
       ) : null}
-      <ScrollView
+      <LegendList
+        className="flex-1"
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 16) + 16,
           paddingHorizontal: 16,
           paddingTop: 16,
         }}
+        data={flow.environments}
+        estimatedItemSize={56}
+        extraData={flow.selectedEnvironmentId}
+        keyExtractor={(environment) => String(environment.environmentId)}
+        recycleItems
+        renderItem={renderEnvironment}
         showsVerticalScrollIndicator={false}
-      >
-        <PickerSurface>
-          {flow.environments.map((environment, index) => (
-            <SelectionRow
-              key={String(environment.environmentId)}
-              icon="desktopcomputer"
-              isLast={index === flow.environments.length - 1}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                flow.selectEnvironment(environment.environmentId);
-                navigation.goBack();
-              }}
-              selected={flow.selectedEnvironmentId === environment.environmentId}
-              title={environment.environmentLabel}
-            />
-          ))}
-        </PickerSurface>
-      </ScrollView>
+      />
     </View>
   );
 }
@@ -387,6 +397,7 @@ export function NewTaskBranchPickerRouteScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={branchListContentStyle}
         data={flow.filteredBranches}
+        extraData={`${selectedBranchName ?? ""}:${switchingBranchName ?? ""}:${flow.selectedProject?.environmentId ?? ""}:${flow.selectedProject?.id ?? ""}`}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(branch) =>

@@ -4,6 +4,38 @@ import { useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 
+const windowGeometryListeners = new Set<() => void>();
+let windowGeometryFrameId = 0;
+
+const scheduleWindowGeometryUpdate = () => {
+  if (windowGeometryFrameId !== 0) return;
+  windowGeometryFrameId = window.requestAnimationFrame(() => {
+    windowGeometryFrameId = 0;
+    for (const listener of windowGeometryListeners) listener();
+  });
+};
+
+function subscribeWindowGeometry(listener: () => void): () => void {
+  windowGeometryListeners.add(listener);
+  if (windowGeometryListeners.size === 1) {
+    window.addEventListener("resize", scheduleWindowGeometryUpdate);
+    window.addEventListener("scroll", scheduleWindowGeometryUpdate, {
+      capture: true,
+      passive: true,
+    });
+  }
+  return () => {
+    windowGeometryListeners.delete(listener);
+    if (windowGeometryListeners.size > 0) return;
+    window.removeEventListener("resize", scheduleWindowGeometryUpdate);
+    window.removeEventListener("scroll", scheduleWindowGeometryUpdate, true);
+    if (windowGeometryFrameId !== 0) {
+      window.cancelAnimationFrame(windowGeometryFrameId);
+      windowGeometryFrameId = 0;
+    }
+  };
+}
+
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
@@ -60,12 +92,10 @@ export function BrowserSurfaceSlot(props: {
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    const unsubscribeWindowGeometry = subscribeWindowGeometry(update);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      unsubscribeWindowGeometry();
       if (updateRef.current === update) updateRef.current = null;
       lease.release();
     };

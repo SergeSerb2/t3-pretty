@@ -102,3 +102,21 @@ export function mergePullRequestPanelView(
     ...(sectionOpen === undefined ? {} : { sectionOpen }),
   };
 }
+
+/**
+ * Identity of a pull request selection that came in through the URL. The page opens the linked
+ * pull request in its panel once per selection, keyed by this string rather than by object
+ * identity: the selection object is rebuilt whenever the project catalog re-emits, and reopening
+ * on every rebuild put a closed panel straight back on screen.
+ */
+export function linkedPullRequestKey(
+  selection: {
+    readonly environmentId: string;
+    readonly repository: string;
+    readonly number: number;
+  } | null,
+): string | null {
+  return selection === null
+    ? null
+    : `${selection.environmentId}:${selection.repository}#${selection.number}`;
+}

@@ -8,6 +8,13 @@ import type { AttachedFileRef } from "./attachFiles";
 
 type AttachedFilesByThread = Readonly<Record<string, ReadonlyArray<AttachedFileRef>>>;
 
+export const ATTACHED_FILE_PATH_MAX_COUNT = 32;
+
+export interface AttachedFileStoreUpdate {
+  readonly addedCount: number;
+  readonly droppedCount: number;
+}
+
 let attachedFilesByThread: AttachedFilesByThread = {};
 const listeners = new Set<() => void>();
 
@@ -45,26 +52,45 @@ export function useAttachedFiles(threadKey: string | null): ReadonlyArray<Attach
   return snapshot[threadKey] ?? [];
 }
 
-export function addAttachedFiles(threadKey: string, files: ReadonlyArray<AttachedFileRef>): void {
-  if (files.length === 0) {
-    return;
-  }
-  const existing = attachedFilesByThread[threadKey] ?? [];
+function mergeAttachedFiles(
+  existing: ReadonlyArray<AttachedFileRef>,
+  files: ReadonlyArray<AttachedFileRef>,
+): { readonly files: ReadonlyArray<AttachedFileRef> } & AttachedFileStoreUpdate {
   const seen = new Set(existing.map((file) => `${file.path}\0${file.name}\0${file.sizeBytes}`));
   const next = [...existing];
+  let addedCount = 0;
+  let droppedCount = 0;
   for (const file of files) {
     const key = `${file.path}\0${file.name}\0${file.sizeBytes}`;
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
+    if (next.length >= ATTACHED_FILE_PATH_MAX_COUNT) {
+      droppedCount += 1;
+      continue;
+    }
     next.push(file);
+    addedCount += 1;
   }
-  if (next.length === existing.length) {
-    return;
+  return { files: next, addedCount, droppedCount };
+}
+
+export function addAttachedFiles(
+  threadKey: string,
+  files: ReadonlyArray<AttachedFileRef>,
+): AttachedFileStoreUpdate {
+  if (files.length === 0) {
+    return { addedCount: 0, droppedCount: 0 };
   }
-  attachedFilesByThread = { ...attachedFilesByThread, [threadKey]: next };
+  const existing = attachedFilesByThread[threadKey] ?? [];
+  const update = mergeAttachedFiles(existing, files);
+  if (update.addedCount === 0) {
+    return update;
+  }
+  attachedFilesByThread = { ...attachedFilesByThread, [threadKey]: update.files };
   emit();
+  return update;
 }
 
 export function removeAttachedFile(threadKey: string, fileId: string): void {
@@ -82,6 +108,15 @@ export function removeAttachedFile(threadKey: string, fileId: string): void {
   } else {
     attachedFilesByThread = { ...attachedFilesByThread, [threadKey]: next };
   }
+  emit();
+}
+
+export function clearAttachedFilesForThread(threadKey: string): void {
+  if (!(threadKey in attachedFilesByThread)) {
+    return;
+  }
+  const { [threadKey]: _removed, ...rest } = attachedFilesByThread;
+  attachedFilesByThread = rest;
   emit();
 }
 
@@ -105,12 +140,18 @@ export function takeAttachedFilesForThread(
 export function restoreAttachedFiles(
   threadKey: string,
   files: ReadonlyArray<AttachedFileRef>,
-): void {
+): AttachedFileStoreUpdate {
   if (files.length === 0) {
-    return;
+    return { addedCount: 0, droppedCount: 0 };
   }
-  attachedFilesByThread = { ...attachedFilesByThread, [threadKey]: [...files] };
+  const existing = attachedFilesByThread[threadKey] ?? [];
+  const update = mergeAttachedFiles(existing, files);
+  if (update.addedCount === 0) {
+    return update;
+  }
+  attachedFilesByThread = { ...attachedFilesByThread, [threadKey]: update.files };
   emit();
+  return update;
 }
 
 /** Test helper. */

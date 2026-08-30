@@ -29,6 +29,7 @@ import {
 } from "react-native-nitro-markdown";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -97,7 +98,11 @@ import { buildReviewParsedDiff } from "../review/reviewModel";
 import { cn } from "../../lib/cn";
 import { recordThreadPerformanceSpan } from "../observability/threadPerformance";
 import { useOpenChangeRequestLink } from "../pull-requests/useOpenNativePullRequest";
-import { deriveCenteredContentHorizontalPadding, type LayoutVariant } from "../../lib/layout";
+import {
+  deriveCenteredContentHorizontalPadding,
+  deriveThreadFeedInitialContentInset,
+  type LayoutVariant,
+} from "../../lib/layout";
 import {
   resolveMarkdownFontSizes,
   resolveNativeMarkdownTypography,
@@ -135,6 +140,10 @@ import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-prev
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
+import { usePreparedConnection } from "../../state/session";
+import * as Option from "effect/Option";
+import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
+import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -220,6 +229,7 @@ export interface ThreadFeedProps {
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
   readonly onListReady?: () => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly readAloudEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: {
     readonly loading: boolean;
@@ -1166,6 +1176,10 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly readAloudEnabled: boolean;
+    readonly readAloudMessageId: string | null;
+    readonly readAloudPhase: ReadAloudPhase;
+    readonly onToggleReadAloud: (messageId: string, text: string) => void;
   },
 ) {
   const entry = info.item;
@@ -1214,7 +1228,9 @@ function renderFeedEntry(
     const isUser = message.role === "user";
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
-    const attachments = message.attachments ?? [];
+    const attachments = (message.attachments ?? []).filter(
+      (attachment) => attachment.type === "image",
+    );
     const userImages = isUser
       ? resolveUserMessageImageSources({
           attachments,
@@ -1346,6 +1362,17 @@ function renderFeedEntry(
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
+            {props.readAloudEnabled &&
+            !message.streaming &&
+            message.text.trim() &&
+            readAloudChunks(message.text).length > 0 ? (
+              <ReadAloudButton
+                active={props.readAloudMessageId === message.id}
+                phase={props.readAloudPhase}
+                tintColor={iconSubtleColor}
+                onPress={() => props.onToggleReadAloud(message.id, message.text)}
+              />
+            ) : null}
             <CopyTextButton
               accessibilityLabel="Copy message"
               text={message.text}
@@ -1375,6 +1402,49 @@ function renderFeedEntry(
       threadId={props.threadId}
       workspaceRoot={props.workspaceRoot}
     />
+  );
+}
+
+function ReadAloudButton(props: {
+  readonly active: boolean;
+  readonly phase: ReadAloudPhase;
+  readonly tintColor: ColorValue;
+  readonly onPress: () => void;
+}) {
+  const loading = props.active && props.phase === "loading";
+  const label = props.active
+    ? loading
+      ? "Stop preparing read aloud"
+      : "Stop read aloud"
+    : "Read response aloud";
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ busy: loading, selected: props.active }}
+      hitSlop={8}
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        width: 28,
+        height: 28,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 9,
+        opacity: pressed ? 0.52 : 1,
+      })}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={props.tintColor} />
+      ) : (
+        <SymbolView
+          name={props.active ? "stop.fill" : "play"}
+          size={13}
+          tintColor={props.tintColor}
+          type="monochrome"
+        />
+      )}
+    </Pressable>
   );
 }
 
@@ -1716,6 +1786,19 @@ function ThreadFeedPlaceholder(props: {
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
+  const preparedConnection = usePreparedConnection(props.environmentId);
+  const reportReadAloudError = useCallback((message: string) => {
+    Alert.alert("Read aloud", message);
+  }, []);
+  const readAloud = useNativeReadAloud({
+    enabled: props.readAloudEnabled === true,
+    prepared: Option.getOrNull(preparedConnection),
+    reportError: reportReadAloudError,
+  });
+  const onToggleReadAloud = useCallback(
+    (messageId: string, text: string) => void readAloud.toggle(messageId, text),
+    [readAloud.toggle],
+  );
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
@@ -1790,6 +1873,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const bottomContentInset = props.contentBottomInset ?? 18;
   const usesNativeAutomaticInsets =
     props.usesAutomaticContentInsets === true && Platform.OS === "ios";
+  const initialContentInset = deriveThreadFeedInitialContentInset({
+    platform: Platform.OS,
+    usesNativeAutomaticInsets,
+    bottomContentInset,
+  });
   // Footer clears the floating composer. With automatic insets UIKit already
   // adds the safe-area bottom, so only reserve the overlap above that strip —
   // same net amount the old animated contentInset path reported.
@@ -2018,10 +2106,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
 
   // The empty↔filled key below remounts the list, which resets its imperative
-  // content-inset override. Although keyboard padding re-reports through
-  // onContentInsetChange, re-apply any non-zero end inset in a layout effect
+  // content-inset override. Re-apply the current measured overlay height
+  // (composer plus any pending approval / user-input card) in a layout effect
   // before the fresh instance's first positioning tick so its one-shot initial
-  // end-scroll does not rest one composer-height short.
+  // end-scroll does not rest one overlay-height short. On Android the declarative
+  // contentInset floor below covers the window before this effect lands.
   const listMountKey = `${feedThreadKey}:${props.feed.length === 0 ? "empty" : "filled"}`;
   const listReadyForKeyRef = useRef<string | null>(null);
   const [listReady, setListReady] = useState(false);
@@ -2133,6 +2222,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      readAloudEnabled: props.readAloudEnabled === true,
+      readAloudMessageId: readAloud.activeMessageId,
+      readAloudPhase: readAloud.phase,
+      onToggleReadAloud,
     }),
     [
       copiedRowId,
@@ -2145,6 +2238,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      props.readAloudEnabled,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      onToggleReadAloud,
     ],
   );
 
@@ -2343,6 +2440,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
+        readAloudEnabled: props.readAloudEnabled === true,
+        readAloudMessageId: readAloud.activeMessageId,
+        readAloudPhase: readAloud.phase,
+        onToggleReadAloud,
       }),
     [
       copiedRowId,
@@ -2363,10 +2464,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,
+      props.readAloudEnabled,
       props.skills,
       props.threadId,
       props.workspaceRoot,
       renderMarkdownImage,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      onToggleReadAloud,
     ],
   );
 
@@ -2427,6 +2532,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // ThreadDetailScreen); this tells LegendList's scroll math about the
             // extra so programmatic end scrolls land at the true resting offset.
             contentInsetEndStaticAdjustment={usesNativeAutomaticInsets ? insets.bottom : 0}
+            // Android: the composer overlay only exists as the keyboard
+            // integration's animated bottom padding, which the list's scroll
+            // math cannot see until the inset reports above land — and those
+            // arrive via runOnJS, racing the remounted list's one-shot initial
+            // scroll-at-end. Seed the estimated overlay height as a declarative
+            // contentInset floor: LegendList consumes it in JS math only
+            // (Android's ScrollView has no native contentInset prop) and the
+            // first reported override REPLACES it instead of adding to it.
+            // Not on iOS: there the prop would reach UIKit and inset natively
+            // on top of the animated padding.
+            {...(initialContentInset ? { contentInset: initialContentInset } : {})}
             // The keyboard integration's offset math (end pinning, max scroll)
             // must add the same UIKit-added extra, or its keyboard-open end
             // targets land one safe-area short of the true resting offset.

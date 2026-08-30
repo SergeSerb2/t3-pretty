@@ -14,8 +14,10 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
 import type * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -88,6 +90,9 @@ const make = Effect.gen(function* () {
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
+  const backgroundRefreshScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -558,9 +563,18 @@ const make = Effect.gen(function* () {
     // Local refresh is cheap and must stay on the checkpoint path. A PR the
     // agent just opened lives on the remote side of status, behind GitManager's
     // lookup cache — bump that cache (refreshStatus) without blocking capture.
-    yield* vcsStatusBroadcaster
-      .refreshStatus(sessionRuntime.value.cwd)
-      .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+    yield* vcsStatusBroadcaster.refreshStatus(sessionRuntime.value.cwd).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("background VCS status refresh failed", {
+              threadId: event.threadId,
+              cause: Cause.pretty(cause),
+            }),
+      ),
+      Effect.forkIn(backgroundRefreshScope),
+      Effect.asVoid,
+    );
   });
 
   // A `git checkout` run inside a thread's dedicated worktree (by an agent or

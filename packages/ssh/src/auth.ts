@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
+import { readSshFileStringWithinLimit } from "./config.ts";
 import { SshPasswordPromptError } from "./errors.ts";
 
 export interface SshPasswordRequest {
@@ -159,7 +160,14 @@ export const ensureSshAskpassHelpers = Effect.fn("ssh/auth.ensureSshAskpassHelpe
 
     for (const file of descriptor.files) {
       const existing = yield* fs.exists(file.path);
-      const current = existing ? yield* fs.readFileString(file.path) : null;
+      const current = existing
+        ? Option.getOrNull(
+            yield* readSshFileStringWithinLimit(
+              file.path,
+              new TextEncoder().encode(file.contents).byteLength,
+            ),
+          )
+        : null;
       if (current !== file.contents) {
         yield* fs.writeFileString(file.path, file.contents);
       }
