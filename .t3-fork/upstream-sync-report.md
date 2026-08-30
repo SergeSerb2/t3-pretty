@@ -1581,3 +1581,25 @@
 
 - `apps/mobile/src/components/AppSymbol.tsx` — The parent side’s retained IconApps import.. Reason: The merged T3 Pretty symbol map uses IconLayoutGrid for the square-grid fallback and no longer references IconApps; retaining it would create an unused import without preserving any runtime behavior.
 - `apps/mobile/src/components/ControlPill.tsx` — Retain View in the react-native import list.. Reason: The composed T3 Pretty implementation does not use View because non-native menu presentation remains delegated to AnchoredMenu. Keeping the unused import would add no behavior and could fail unused-import linting.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.37-nightly.20260830.1227`
+- Previously integrated parent nightly: `v0.0.37-nightly.20260830.1226`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/providerUpdateDismissal.test.ts` — T3 Pretty's removal of the unused OpenCode provider is preserved: the obsolete test is deleted rather than restoring its former OpenCode-specific fixture.
+- `apps/web/src/providerUpdateDismissal.test.ts` — No T3 Pretty runtime provider or notification behavior is changed by removing this test-only file.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/providerUpdateDismissal.test.ts` — Integrated the parent deletion from 2daff8c25, which removed this test after the providerUpdateDismissal helpers became unreachable and the implementation was updated.
+- `apps/web/src/providerUpdateDismissal.test.ts` — followed the parent nightly's deletion of this file
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
