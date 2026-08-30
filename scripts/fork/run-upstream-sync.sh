@@ -76,15 +76,17 @@ origin_git() {
 # leaves MERGE_HEAD; `git checkout -B main` then fails in ~2s and every
 # later nightly opens another blocked PR instead of finishing the merge.
 abort_leftover_git_state() {
+  # A job killed mid-write leaves index.lock behind; the sync's concurrency
+  # group serializes this checkout, so at job start any lock is stale and
+  # would make every abort below fail silently, leaving MERGE_HEAD in place.
+  # Remove it FIRST, resolved through git (in a linked worktree `.git` is a
+  # file and a hardcoded .git/index.lock path exits 1 with ENOTDIR).
+  rm -f "$(git rev-parse --git-path index.lock)" || true
   git merge --abort >/dev/null 2>&1 || true
   git rebase --abort >/dev/null 2>&1 || true
   git cherry-pick --abort >/dev/null 2>&1 || true
   git am --abort >/dev/null 2>&1 || true
   git reset --hard HEAD >/dev/null 2>&1 || true
-  # A job killed mid-write leaves .git/index.lock behind; the sync's
-  # concurrency group serializes this checkout, so at job start any lock is
-  # stale and would fail every git command for the next runs.
-  rm -f .git/index.lock
   # An untracked leftover at a path a nightly adds makes `git merge` exit 2
   # before producing conflicts, which then fails every four-hour run
   # identically. Keep node_modules so the mobile publish can reuse installs.

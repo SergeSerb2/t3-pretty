@@ -288,6 +288,9 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     // Both sides survive, or the parent deleted: not a fork deletion.
     assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2, 3])));
     assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2])));
+    // Stage-3-only is "added by them" (file/directory or rename conflict on a
+    // path the fork never had), never a fork deletion.
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([3])));
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "isForkDeletionConflict(path)");

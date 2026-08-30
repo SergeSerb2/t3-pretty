@@ -680,9 +680,11 @@ export function formatSyncReport({
     `- Previously integrated parent nightly: \`${oneLine(previousUpstreamTag || "none recorded")}\``,
     resolutions.some((resolution) => !resolution.deterministic)
       ? `- Conflict resolver: \`${oneLine(model)}\` with \`${oneLine(reasoningEffort)}\` reasoning`
-      : resolutions.length > 0
-        ? "- Conflict resolver: conflicts resolved deterministically; no model request needed"
-        : "- Conflict resolver: not invoked; Git reported no text conflicts",
+      : fallbackCount > 0
+        ? "- Conflict resolver: deterministic rules and fork-side fallbacks; no model resolution completed"
+        : resolutions.length > 0
+          ? "- Conflict resolver: conflicts resolved deterministically; no model request needed"
+          : "- Conflict resolver: not invoked; Git reported no text conflicts",
     ...(fallbackCount > 0
       ? [
           `- ${fallbackCount} file(s) took the fork-side fallback because no model resolution was available; review their omissions below`,
@@ -767,9 +769,11 @@ function unmergedStages(path) {
 // while a hardcoded path list only ever covered the files someone already
 // noticed. Keep every fork deletion deterministically; the report records
 // the parent changes this omits, and a wrongly kept deletion resurfaces the
-// moment a maintainer restores the file on main.
+// moment a maintainer restores the file on main. Stage 1 must exist: a
+// stage-3-only entry is "added by them" (a file/directory or rename
+// conflict on a path the fork never had), not a fork deletion.
 export function isForkDeletionConflict(path, stages = unmergedStages(path)) {
-  return !stages.has(2) && stages.has(3);
+  return stages.has(1) && !stages.has(2) && stages.has(3);
 }
 
 function resolveForkDeletion(path) {
@@ -1208,7 +1212,7 @@ async function resolveConflict(path, token) {
   const upstreamChangesIntegrated = [];
   const upstreamChangesOmitted = [];
   let batches = 0;
-  let contextLines = DEFAULT_CONTEXT_LINES;
+  let widenNextBatch = false;
   while (LEFTOVER_MARKER_PATTERN.test(source)) {
     batches += 1;
     if (batches > MAX_BATCHES_PER_FILE) {
@@ -1222,7 +1226,10 @@ async function resolveConflict(path, token) {
       forkHistory,
       maxConflicts: MAX_CONFLICTS_PER_REQUEST,
       deleteConflict,
-      contextLines,
+      // Wide context applies only to the batch being retried: a later
+      // batch's 400-line window could blow the prompt budget that its
+      // 100-line window fits.
+      contextLines: widenNextBatch ? WIDE_CONTEXT_LINES : DEFAULT_CONTEXT_LINES,
     });
     // An edit set that fails validation (non-unique old_text, overlaps, a
     // missed conflict) is a sampling defect, not a hard failure: request two
@@ -1265,16 +1272,19 @@ async function resolveConflict(path, token) {
     } catch (error) {
       // A decline often names context the fork moved outside the default
       // window. Rebuild the batch once with a much wider window before the
-      // decline becomes this file's failure.
-      if (error?.modelDeclined === true && contextLines === DEFAULT_CONTEXT_LINES) {
-        contextLines = WIDE_CONTEXT_LINES;
+      // decline becomes this file's failure. The retry re-runs this batch,
+      // so it does not consume budget.
+      if (error?.modelDeclined === true && !widenNextBatch) {
+        widenNextBatch = true;
+        batches -= 1;
         process.stdout.write(
-          `[fork-sync] batch ${batches} for ${path} was declined as unsafe; retrying once with ${WIDE_CONTEXT_LINES}-line conflict context\n`,
+          `[fork-sync] batch ${batches + 1} for ${path} was declined as unsafe; retrying once with ${WIDE_CONTEXT_LINES}-line conflict context\n`,
         );
         continue;
       }
       throw error;
     }
+    widenNextBatch = false;
     forkChangesPreserved.push(
       ...stringList(resolution.fork_changes_preserved, "fork_changes_preserved"),
     );
