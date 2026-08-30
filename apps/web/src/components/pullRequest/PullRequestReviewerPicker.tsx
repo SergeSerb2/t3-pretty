@@ -11,7 +11,7 @@ import type {
   PullRequestReviewerCandidate,
 } from "@t3tools/contracts";
 import { CheckIcon, UserPlusIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -55,6 +55,27 @@ export function PullRequestReviewerPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
+  const targetKey = JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.repository,
+    reference.number,
+  ]);
+  const pendingByTargetRef = useRef(new Map<string, string>());
+  const activeTargetKeyRef = useRef(targetKey);
+  const mountedRef = useRef(false);
+  activeTargetKeyRef.current = targetKey;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPending(pendingByTargetRef.current.get(targetKey) ?? null);
+  }, [targetKey]);
 
   // Mounted with the menu closed, so nothing is asked of the host until it opens.
   const candidatesQuery = useEnvironmentQuery(
@@ -70,38 +91,51 @@ export function PullRequestReviewerPicker({
   );
 
   const toggle = async (candidate: PullRequestReviewerCandidate) => {
-    if (pending !== null) return;
+    if (pendingByTargetRef.current.has(targetKey)) return;
+    pendingByTargetRef.current.set(targetKey, candidate.id);
     setPending(candidate.id);
-    const result = await requestReviewers({
-      environmentId,
-      input: {
-        ...reference,
-        reviewers: [{ id: candidate.id, kind: candidate.kind }],
-        requested: !candidate.isRequested,
-      },
-    });
-    setPending(null);
-    if (result._tag === "Failure") {
+    try {
+      const result = await requestReviewers({
+        environmentId,
+        input: {
+          ...reference,
+          reviewers: [{ id: candidate.id, kind: candidate.kind }],
+          requested: !candidate.isRequested,
+        },
+      });
+      if (result._tag === "Failure") {
+        toastManager.add({
+          type: "error",
+          title: candidate.isRequested
+            ? `Could not take back the review request to ${candidate.login}`
+            : `Could not ask ${candidate.login} for a review`,
+          description: readableFailure(
+            squashAtomCommandFailure(result),
+            "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
+          ),
+        });
+        return;
+      }
+      toastManager.add({
+        type: "success",
+        title: candidate.isRequested
+          ? `Review request to ${candidate.login} taken back`
+          : `Review requested from ${candidate.login}`,
+      });
+      onRequested();
+      candidatesQuery.refresh();
+    } catch (error) {
       toastManager.add({
         type: "error",
         title: candidate.isRequested
           ? `Could not take back the review request to ${candidate.login}`
           : `Could not ask ${candidate.login} for a review`,
-        description: readableFailure(
-          squashAtomCommandFailure(result),
-          "The host refused it. Check that you have write access on this repository, and that they still have access to it.",
-        ),
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
       });
-      return;
+    } finally {
+      pendingByTargetRef.current.delete(targetKey);
+      if (mountedRef.current && activeTargetKeyRef.current === targetKey) setPending(null);
     }
-    toastManager.add({
-      type: "success",
-      title: candidate.isRequested
-        ? `Review request to ${candidate.login} taken back`
-        : `Review requested from ${candidate.login}`,
-    });
-    onRequested();
-    candidatesQuery.refresh();
   };
 
   if (!allowed) {

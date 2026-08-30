@@ -1,4 +1,8 @@
-import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  type ExecutionEnvironmentDescriptor,
+} from "@t3tools/contracts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -10,12 +14,16 @@ import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { resolveDictationAvailability } from "../dictation/availability.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
+
+const ENVIRONMENT_ID_FILE_MAX_BYTES = 1024;
 
 export class ServerEnvironmentIdPersistenceError extends Schema.TaggedErrorClass<ServerEnvironmentIdPersistenceError>()(
   "ServerEnvironmentIdPersistenceError",
@@ -88,7 +96,11 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    const raw = yield* fileSystem.readFileString(serverConfig.environmentIdPath).pipe(
+    const raw = yield* readTextWithinLimit(
+      fileSystem,
+      serverConfig.environmentIdPath,
+      ENVIRONMENT_ID_FILE_MAX_BYTES,
+    ).pipe(
       Effect.map((value) => value.trim()),
       Effect.mapError(
         (cause) =>
@@ -147,9 +159,12 @@ export const make = Effect.gen(function* () {
       repositoryIdentity: true,
       connectionProbe: true,
       serverConfigHttp: true,
+      attachmentUploads: true,
+      fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       threadSettlement: true,
       threadSnooze: true,
+      environmentThemes: true,
       threadPinning: true,
       threadPinReorder: true,
       threadScenery: true,
@@ -157,6 +172,8 @@ export const make = Effect.gen(function* () {
       providerHandoff: true,
       storageInventory: true,
       storageInventoryStream: true,
+      threadPullRequestLinking: true,
+      projectTransfer: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" ? { serverSelfUpdateProgress: true } : {}),
     },
@@ -170,7 +187,13 @@ export const make = Effect.gen(function* () {
     getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
       Effect.map((agentActivityPublishing) => ({
         ...descriptor,
-        capabilities: { ...descriptor.capabilities, agentActivityPublishing },
+        capabilities: {
+          ...descriptor.capabilities,
+          ...(resolveDictationAvailability().available
+            ? { voiceDictation: true, readAloud: true }
+            : {}),
+          agentActivityPublishing,
+        },
       })),
     ),
   });

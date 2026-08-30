@@ -1,11 +1,9 @@
-import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
 import { requireNativeView } from "expo";
 import { TextInputWrapper } from "expo-paste-input";
 import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,16 +17,16 @@ import { resolveMarkdownFileIcon } from "@t3tools/mobile-markdown-text/links";
 import { MOBILE_TYPOGRAPHY } from "../lib/typography";
 import { useNativePaste } from "../lib/useNativePaste";
 import { useFontFamily } from "../lib/useFontFamily";
-import { useThemeColor } from "../lib/useThemeColor";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 import {
   acknowledgeComposerNativeEvent,
   assumeComposerControlledState,
   isComposerNativeEcho,
   pruneAcknowledgedComposerNativeEvents,
-  replaceAcknowledgedComposerSnapshot,
   resolveComposerControlledEventCount,
   type ComposerNativeEventSnapshot,
 } from "./composerEditorRevision";
+import { collectNativeComposerInlineTokens } from "./composerEditorTokens";
 import type { ComposerEditorProps, ComposerEditorSelection } from "./T3ComposerEditor.types";
 
 const NATIVE_MODULE_NAME = "T3ComposerEditor";
@@ -111,18 +109,9 @@ export function ComposerEditor({
   // first controlled payload must be a non-echo so a restored draft (or a
   // recycled native view) is applied rather than skipped.
   const nativeEventSnapshotsRef = useRef<ComposerNativeEventSnapshot[]>([]);
-  const [initialConfirmedTokens] = useState(() => collectComposerInlineTokens(props.value));
+  const [initialConfirmedTokens] = useState(() => collectNativeComposerInlineTokens(props.value));
   const confirmedTokensRef = useRef(initialConfirmedTokens);
-  const textColor = useThemeColor("--color-foreground");
-  const placeholderColor = useThemeColor("--color-placeholder");
-  const chipBackground = useThemeColor("--color-subtle");
-  const chipBorder = useThemeColor("--color-border");
-  const chipText = useThemeColor("--color-foreground");
-  const skillBackground = useThemeColor("--color-inline-skill-background");
-  const skillBorder = useThemeColor("--color-inline-skill-border");
-  const skillText = useThemeColor("--color-inline-skill-foreground");
-  const fileTint = useThemeColor("--color-icon-muted");
-  const caret = useThemeColor("--color-primary");
+  const theme = useUniwindTheme();
   const handlePaste = useNativePaste((uris) => onPasteImages?.(uris));
 
   useImperativeHandle(
@@ -141,7 +130,7 @@ export function ComposerEditor({
     [skills],
   );
   const tokensJson = useMemo(() => {
-    const tokens = collectComposerInlineTokens(props.value, {
+    const tokens = collectNativeComposerInlineTokens(props.value, {
       preserveTrailingFrom: confirmedTokensRef.current,
     });
     confirmedTokensRef.current = tokens;
@@ -227,16 +216,16 @@ export function ComposerEditor({
     [],
   );
   const themeJson = JSON.stringify({
-    text: String(textColor),
-    placeholder: String(placeholderColor),
-    chipBackground: String(chipBackground),
-    chipBorder: String(chipBorder),
-    chipText: String(chipText),
-    skillBackground: String(skillBackground),
-    skillBorder: String(skillBorder),
-    skillText: String(skillText),
-    fileTint: String(fileTint),
-    caret: String(caret),
+    text: theme["--color-foreground"],
+    placeholder: theme["--color-placeholder"],
+    chipBackground: theme["--color-subtle"],
+    chipBorder: theme["--color-border"],
+    chipText: theme["--color-foreground"],
+    skillBackground: theme["--color-inline-skill-background"],
+    skillBorder: theme["--color-inline-skill-border"],
+    skillText: theme["--color-inline-skill-foreground"],
+    fileTint: theme["--color-icon-muted"],
+    caret: theme["--color-primary"],
   });
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   const regularFontFamily = useFontFamily("regular");

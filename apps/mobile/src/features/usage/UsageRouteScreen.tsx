@@ -1,5 +1,9 @@
-import { useNavigation } from "@react-navigation/native";
-import type { DailyTotals, MergedUsage } from "@t3tools/shared/usageMerge";
+import { useIsFocused, useNavigation } from "@react-navigation/native";
+import {
+  type DailyTotals,
+  type MergedUsage,
+  USAGE_MERGE_MAX_ENVIRONMENTS,
+} from "@t3tools/shared/usageMerge";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -35,6 +39,7 @@ const CHART_HEIGHT = 180;
 
 export function UsageRouteScreen() {
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: 30,
@@ -43,7 +48,10 @@ export function UsageRouteScreen() {
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, omittedEnvironmentCount, refresh } = useUsage(
+    window,
+    isFocused,
+  );
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -115,7 +123,12 @@ export function UsageRouteScreen() {
           onSelect={selectWindow}
         />
 
-        <UsageCoverageNotice environments={environments} merged={merged} isPartial={isPartial} />
+        <UsageCoverageNotice
+          environments={environments}
+          merged={merged}
+          isPartial={isPartial}
+          omittedEnvironmentCount={omittedEnvironmentCount}
+        />
 
         {isPending ? (
           <Text className="py-16 text-center text-base text-foreground-muted">
@@ -457,16 +470,23 @@ function UsageCoverageNotice(props: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly merged: MergedUsage;
   readonly isPartial: boolean;
+  readonly omittedEnvironmentCount: number;
 }) {
-  const failed = props.environments.filter((environment) => environment.error !== null);
-  const stale = props.environments.filter((environment) =>
-    props.merged.staleEnvironments.includes(environment.environmentId),
-  );
+  const staleEnvironmentIds = new Set(props.merged.staleEnvironments);
+  const failed: EnvironmentUsageStatus[] = [];
+  const stale: EnvironmentUsageStatus[] = [];
+  for (const environment of props.environments) {
+    if (environment.error !== null) failed.push(environment);
+    if (staleEnvironmentIds.has(environment.environmentId)) stale.push(environment);
+  }
   const duplicateSources = props.merged.duplicateSources;
   if (
     failed.length === 0 &&
     stale.length === 0 &&
     duplicateSources.length === 0 &&
+    props.merged.sourceWarnings.length === 0 &&
+    props.omittedEnvironmentCount === 0 &&
+    props.merged.coverageWarningsOmitted === 0 &&
     !props.isPartial
   ) {
     return null;
@@ -489,10 +509,28 @@ function UsageCoverageNotice(props: {
           {environment.label} runs an older server version and is excluded from totals.
         </Text>
       ))}
+      {props.omittedEnvironmentCount > 0 ? (
+        <Text className="text-sm text-foreground-muted">
+          {props.omittedEnvironmentCount} additional environment
+          {props.omittedEnvironmentCount === 1 ? " was" : "s were"} not queried because usage is
+          limited to {USAGE_MERGE_MAX_ENVIRONMENTS} environments at once.
+        </Text>
+      ) : null}
+      {props.merged.sourceWarnings.map((warning) => (
+        <Text key={warning} className="text-sm text-foreground-muted">
+          {warning}
+        </Text>
+      ))}
       {duplicateSources.length > 0 ? (
         <Text className="text-sm text-foreground-muted">
           Counted once across environments sharing a transcript directory:{" "}
           {duplicateSources.join(", ")}
+        </Text>
+      ) : null}
+      {props.merged.coverageWarningsOmitted > 0 ? (
+        <Text className="text-sm text-foreground-muted">
+          {props.merged.coverageWarningsOmitted} additional coverage notice
+          {props.merged.coverageWarningsOmitted === 1 ? " was" : "s were"} omitted.
         </Text>
       ) : null}
     </View>

@@ -4,6 +4,7 @@ import {
   getProjectFaviconCacheKey,
   isManagedProjectFaviconPath,
   isProjectFaviconFallbackUrl,
+  MANAGED_PROJECT_FAVICON_PREFIX,
   managedProjectFaviconFileName,
   PROJECT_FAVICON_FALLBACK_MARKER,
   toManagedProjectFaviconPath,
@@ -70,5 +71,16 @@ describe("project favicon", () => {
       "Logo.png",
     );
     expect(managedProjectFaviconFileName("t3-project-icon/Logo.png")).toBeNull();
+  });
+
+  it("keeps the managed basename within common filesystem limits", () => {
+    const managed = toManagedProjectFaviconPath(
+      `${"project-icon-".repeat(30)}.png`,
+      "0123456789abcdef",
+    );
+
+    expect(managed).not.toBeNull();
+    expect(managedProjectFaviconFileName(managed!)).toHaveLength(255 - 17);
+    expect(managed!.slice(MANAGED_PROJECT_FAVICON_PREFIX.length)).toHaveLength(255);
   });
 });

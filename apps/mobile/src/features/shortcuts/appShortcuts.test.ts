@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { NavigationState } from "@react-navigation/native";
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 
 import type { RecentThreadShortcut } from "../../persistence/imperative";
 import {
@@ -7,6 +8,7 @@ import {
   buildShortcutActions,
   MAX_RECENT_THREAD_SHORTCUTS,
   NEW_TASK_SHORTCUT_ID,
+  normalizeRecentThreadShortcuts,
   shortcutHref,
   withRecentThreadShortcut,
 } from "./appShortcuts";
@@ -57,6 +59,23 @@ describe("withRecentThreadShortcut", () => {
   });
 });
 
+describe("normalizeRecentThreadShortcuts", () => {
+  it("keeps only the first three unique persisted thread records", () => {
+    const current = [thread("a"), thread("a", "Duplicate"), thread("b"), thread("c"), thread("d")];
+
+    expect(normalizeRecentThreadShortcuts(current).map((entry) => entry.threadId)).toEqual([
+      "thread-a",
+      "thread-b",
+      "thread-c",
+    ]);
+  });
+
+  it("preserves identity for an already normalized list", () => {
+    const current = [thread("a"), thread("b")];
+    expect(normalizeRecentThreadShortcuts(current)).toBe(current);
+  });
+});
+
 describe("buildShortcutActions", () => {
   it("leads with the static new-task action", () => {
     const actions = buildShortcutActions([thread("a")]);
@@ -100,12 +119,21 @@ describe("shortcutHref", () => {
       "/threads//x",
       "/threads/a/b?x=1",
       "/threads/a/b#frag",
+      "/threads/%/thread",
+      "/threads/env/%E0%A4%A",
       "/new/extra",
     ]) {
       expect(shortcutHref({ id: "x", title: "x", params: { href } })).toBe(null);
     }
     expect(shortcutHref({ id: "x", title: "x", params: { href: 3 } })).toBe(null);
     expect(shortcutHref({ id: "x", title: "x" })).toBe(null);
+    expect(
+      shortcutHref({
+        id: "x",
+        title: "x",
+        params: { href: `/threads/${"e".repeat(ENTITY_ID_MAX_LENGTH + 1)}/thread` },
+      }),
+    ).toBe(null);
   });
 });
 

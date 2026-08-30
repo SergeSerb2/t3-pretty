@@ -17,13 +17,13 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
-  grok: "Grok",
+  grok: "Grok Build",
   kimi: "Kimi",
 };
 
 /**
- * Claude's brand orange holds in both themes; Codex is neutral and must flip
- * with the theme or its bars vanish against the matching background.
+ * Claude's brand orange holds in both themes; Codex and Grok are neutrals and
+ * must flip with the theme or their bars vanish against the matching background.
  */
 export function useProviderColors(): Record<UsageProviderKind, string> {
   const { themeAppearance: scheme } = useAppearancePreferences();
@@ -31,7 +31,7 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
     claude: "#d97757",
     codex: scheme === "dark" ? "#e6e6e6" : "#3c3c43",
     cursor: "#64748b",
-    grok: scheme === "dark" ? "#d4d4d8" : "#52525b",
+    grok: scheme === "dark" ? "#a1a1aa" : "#52525b",
     kimi: "#56A8FF",
   };
 }

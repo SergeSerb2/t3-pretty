@@ -33,6 +33,7 @@ export interface QuitHoldKeyInput {
 export interface QuitHoldOptions {
   readonly platform: NodeJS.Platform;
   readonly isEnabled: () => Promise<boolean>;
+  readonly isActive?: () => boolean;
   readonly notify: (state: QuitHoldState) => void;
   readonly quit: () => void;
 }
@@ -75,6 +76,7 @@ export function makeQuitHoldHandler(
   // renderer must not be left with a stuck "Hold to Quit" hint.
   const quitNow = () => {
     release();
+    if (options.isActive?.() === false) return;
     options.quit();
   };
 

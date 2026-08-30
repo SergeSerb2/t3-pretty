@@ -210,6 +210,102 @@ describe("projectActivityPayload", () => {
     expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
   });
 
+  it("normalizes small Claude MCP input to arguments for client rendering", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          toolName: "mcp__t3-code__preview_click",
+          input: { locator: "role=button[name='Send']" },
+          result: { content: [{ type: "text", text: "{}" }] },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    expect(data.arguments).toEqual({ locator: "role=button[name='Send']" });
+    expect(data.input).toBeUndefined();
+  });
+
+  it("drops oversized Codex MCP arguments instead of shipping them", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_evaluate",
+            server: "t3-code",
+            status: "completed",
+            arguments: { expression: "e".repeat(50_000) },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.tool).toBe("preview_evaluate");
+    expect(item.arguments).toBeUndefined();
+  });
+
+  it("caps reconstructed MCP arguments at the wire budget", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              extra: "x".repeat(3_900),
+              more: "y".repeat(3_900),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    const argumentsValue = item.arguments as Record<string, unknown>;
+    expect(argumentsValue.locator).toBe("role=textbox[name='Prompt']");
+    expect(argumentsValue.text).toBe("hello");
+    expect(argumentsValue.more).toBeUndefined();
+    expect(JSON.stringify(argumentsValue).length).toBeLessThanOrEqual(4_000);
+  });
+
+  it("keeps locator and text when only an MCP argument field is oversized", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            id: "item-1",
+            tool: "preview_type",
+            server: "t3-code",
+            status: "completed",
+            arguments: {
+              locator: "role=textbox[name='Prompt']",
+              text: "hello",
+              expression: "e".repeat(50_000),
+            },
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
+    const item = data.item as Record<string, unknown>;
+    expect(item.arguments).toEqual({
+      locator: "role=textbox[name='Prompt']",
+      text: "hello",
+    });
+  });
+
   it("keeps first-line summary semantics across MCP text blocks", () => {
     const projected = projectActivityPayload(
       activity({
@@ -324,6 +420,80 @@ describe("projectActivityPayload", () => {
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
 
     expect(data.files).toEqual([{ path: "apps/mobile/src/App.tsx" }]);
+  });
+
+  it("keeps a bounded per-file diff for ACP, Codex, and Claude file changes", () => {
+    const acp = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          kind: "edit",
+          content: [
+            { type: "diff", path: "src/a.ts", oldText: "before", newText: "after" },
+            { type: "diff", path: "src/gone.ts", oldText: "deleted\nfile", newText: "" },
+          ],
+        },
+      }),
+    );
+    const acpFiles = ((acp.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    expect(acpFiles).toEqual([
+      { path: "src/a.ts", kind: "update", diff: "-before\n+after" },
+      { path: "src/gone.ts", kind: "delete", diff: "-deleted\n-file" },
+    ]);
+
+    const hugePatch = Array.from({ length: 80 }, (_, index) => `+line ${index}`).join("\n");
+    const codex = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          item: {
+            type: "fileChange",
+            changes: [{ path: "src/b.ts", kind: { type: "update" }, diff: hugePatch }],
+          },
+        },
+      }),
+    );
+    const [codexFile] = ((codex.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    expect(codexFile).toMatchObject({ path: "src/b.ts", kind: "update" });
+    expect(String(codexFile?.diff).split("\n").length).toBeLessThanOrEqual(33);
+    expect(String(codexFile?.diff).endsWith("…")).toBe(true);
+    expect(JSON.stringify(codex.payload).length).toBeLessThan(2_000);
+
+    const claudeWrite = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          toolName: "Write",
+          input: { file_path: "src/new.ts", content: "hello\nworld" },
+        },
+      }),
+    );
+    expect(
+      ((claudeWrite.payload as Record<string, unknown>).data as Record<string, unknown>).files,
+    ).toEqual([{ path: "src/new.ts", kind: "add", diff: "+hello\n+world" }]);
+  });
+
+  it("keeps additions when the old side of an update exceeds the compact budget", () => {
+    const oldText = Array.from({ length: 80 }, (_, index) => `old ${index}`).join("\n");
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "file_change",
+        data: {
+          kind: "edit",
+          content: [{ type: "diff", path: "src/a.ts", oldText, newText: "after" }],
+        },
+      }),
+    );
+    const [file] = ((projected.payload as Record<string, unknown>).data as Record<string, unknown>)
+      .files as Array<Record<string, unknown>>;
+    const diff = String(file?.diff);
+    expect(diff).toContain("-old 0");
+    expect(diff).toContain("…");
+    expect(diff).toContain("+after");
+    expect(diff.split("\n").length).toBeLessThanOrEqual(33);
+    expect(diff.length).toBeLessThanOrEqual(1_600);
   });
 
   it("passes task lifecycle payloads (no data field) through untouched", () => {

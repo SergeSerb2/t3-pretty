@@ -54,7 +54,7 @@ const readWithLogs = (fileSystemLayer: Layer.Layer<FileSystem.FileSystem>) => {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const settings = yield* DesktopClientSettings.DesktopClientSettings;
     return {
-      result: yield* settings.get,
+      result: yield* Effect.result(settings.get),
       settingsPath: environment.clientSettingsPath,
       records,
     };
@@ -73,7 +73,10 @@ describe("DesktopClientSettings diagnostics", () => {
     Effect.gen(function* () {
       const result = yield* readWithLogs(FileSystem.layerNoop({}));
 
-      assert.isTrue(Option.isNone(result.result));
+      assert.equal(result.result._tag, "Success");
+      if (result.result._tag === "Success") {
+        assert.isTrue(Option.isNone(result.result.success));
+      }
       assert.deepEqual(result.records, []);
     }),
   );
@@ -93,7 +96,14 @@ describe("DesktopClientSettings diagnostics", () => {
         }),
       );
 
-      assert.isTrue(Option.isNone(result.result));
+      assert.equal(result.result._tag, "Failure");
+      if (result.result._tag === "Failure") {
+        assert.instanceOf(
+          result.result.failure,
+          DesktopClientSettings.DesktopClientSettingsReadError,
+        );
+        assert.equal(result.result.failure.operation, "read-document");
+      }
       assert.equal(result.records.length, 1);
       assert.deepEqual(result.records[0]?.message, [
         "Could not read desktop client settings.",
@@ -111,7 +121,14 @@ describe("DesktopClientSettings diagnostics", () => {
         }),
       );
 
-      assert.isTrue(Option.isNone(result.result));
+      assert.equal(result.result._tag, "Failure");
+      if (result.result._tag === "Failure") {
+        assert.instanceOf(
+          result.result.failure,
+          DesktopClientSettings.DesktopClientSettingsReadError,
+        );
+        assert.equal(result.result.failure.operation, "decode-document");
+      }
       assert.equal(result.records.length, 1);
       const message = result.records[0]?.message;
       if (!Array.isArray(message)) {

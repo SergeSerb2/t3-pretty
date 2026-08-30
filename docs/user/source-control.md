@@ -42,6 +42,9 @@ T3 Code works with the platforms your team already uses:
 - For open GitHub PRs, open the git menu beside the PR action to see Codex Auto Review's public
   state: running, complete, feedback, an earlier result, or no public signal
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- List filters stay where you left them when you come back. **Reset filters** in the filter
+  menu returns the list to open pull requests across every project. On iPhone and iPad the
+  list is always one server, so clear also returns to your preferred server
 - On iPhone and iPad, open **Pull Requests** from the home header or sidebar to browse, review,
   merge, comment, and resolve conflicts in the app. A thread's git controls and pull request
   links in the conversation open the same native manager instead of the host in the browser
@@ -53,12 +56,18 @@ T3 Code works with the platforms your team already uses:
 - **Fix all** on an open pull request starts a thread that works through every unresolved review
   finding — GitHub, GitLab, Bitbucket, Azure DevOps, Origin, and Grok Origin comments — then
   resolves the conversations it fixed. You pick the agent and reasoning effort first. Per-comment
-  **Fix in a thread** buttons still handle one finding at a time
+  **Fix in a thread** buttons still handle one finding at a time. The action stays hidden until
+  the pull request has unresolved review comments
+- **Fix continuously** starts the same focused sweep, then keeps the agent watching latest-commit
+  reviews and checks, fixing new actionable feedback until the pull request is green. It appears
+  with **Fix all**, only when those comments are present
 - On GitHub pull requests, see emoji reactions on the description and comments — including Codex's
   eyes while it reviews and thumbs-up when it finishes without comments
 - Resolved review conversations collapse in the pull request conversation and on the diff, so you
   can see which comments are done without opening GitHub. Hide them entirely with **Hide resolved**
 - Open the review directly in your browser with one click
+- If T3 Code cannot load a GitHub pull request, including when GitHub rate limits requests, use
+  **Open on GitHub** in the error view
 - Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it in your browser instead of in T3 Code
 - Check out a teammate's branch to review code locally
 

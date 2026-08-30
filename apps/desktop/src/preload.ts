@@ -20,6 +20,9 @@ ipcRenderer.on(IpcChannels.WINDOW_ACTIVE_STATE_CHANNEL, (_event, active) => {
   }
 });
 
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Electron exposes the client platform in its sandboxed preload process.
+const clientPlatform = process.platform;
+
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
     typeof result === "object" &&
@@ -44,6 +47,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     }
     return result as ReturnType<DesktopBridge["getAppBranding"]>;
   },
+  getClientPlatform: () => clientPlatform,
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;

@@ -1,7 +1,6 @@
 import { SymbolView } from "../components/AppSymbol";
 import { Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
-import { useThemeColor } from "../lib/useThemeColor";
 
 import { AppText as Text } from "./AppText";
 
@@ -37,7 +36,6 @@ const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
  * buttons.  Used by both the thread composer and the new-task draft screen.
  */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
-  const subtleBg = useThemeColor("--color-subtle");
   const size = props.imageSize ?? 72;
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
@@ -71,7 +69,6 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                 previewUri={image.previewUri}
                 size={size}
                 borderRadius={radius}
-                backgroundColor={typeof subtleBg === "string" ? subtleBg : "#e5e5ea"}
                 preparing={preparing}
                 onPress={
                   props.onPressImage && !preparing
@@ -88,6 +85,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   }}
                   hitSlop={6}
                   accessibilityLabel="Remove attachment"
+                  accessibilityRole="button"
                   onPress={() => props.onRemove(image.id)}
                 >
                   <SymbolView
@@ -111,19 +109,29 @@ export function ComposerAttachmentThumb(props: {
   readonly previewUri: string;
   readonly size: number;
   readonly borderRadius: number;
-  readonly backgroundColor: string;
   readonly preparing?: boolean;
   readonly onPress?: () => void;
 }) {
+  const accessibilityLabel = props.preparing
+    ? "Preparing image attachment"
+    : props.onPress
+      ? "Preview image attachment"
+      : "Image attachment";
   const image = (
-    <View style={{ width: props.size, height: props.size }}>
+    <View
+      accessible={!props.onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={!props.onPress ? "image" : undefined}
+      style={{ width: props.size, height: props.size }}
+    >
       <Image
+        accessible={false}
         source={{ uri: props.previewUri }}
+        className="bg-subtle"
         style={{
           width: props.size,
           height: props.size,
           borderRadius: props.borderRadius,
-          backgroundColor: props.backgroundColor,
         }}
         resizeMode="cover"
       />
@@ -145,7 +153,15 @@ export function ComposerAttachmentThumb(props: {
     return image;
   }
 
-  return <Pressable onPress={props.onPress}>{image}</Pressable>;
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={props.onPress}
+    >
+      {image}
+    </Pressable>
+  );
 }
 
 export function ComposerDispatchStatusLabel(props: { readonly label: string }) {

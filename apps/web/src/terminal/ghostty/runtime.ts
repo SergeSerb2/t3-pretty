@@ -18,6 +18,67 @@ interface TypeLayout {
 type TypeLayouts = Readonly<Record<string, TypeLayout>>;
 
 const textDecoder = new TextDecoder();
+const GHOSTTY_ASSET_TIMEOUT_MS = 30_000;
+const GHOSTTY_ASSET_MAX_BYTES = 2 * 1024 * 1024;
+
+async function readGhosttyAsset(response: Response, label: string): Promise<ArrayBuffer> {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > GHOSTTY_ASSET_MAX_BYTES) {
+    throw new Error(`Unable to load ${label}: asset exceeds 2 MiB.`);
+  }
+  if (!response.body) {
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > GHOSTTY_ASSET_MAX_BYTES) {
+      throw new Error(`Unable to load ${label}: asset exceeds 2 MiB.`);
+    }
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > GHOSTTY_ASSET_MAX_BYTES) {
+        await reader.cancel();
+        throw new Error(`Unable to load ${label}: asset exceeds 2 MiB.`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes.buffer;
+}
+
+async function loadGhosttyWasmAsset(url: string, label: string): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GHOSTTY_ASSET_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Unable to load ${label} (${response.status})`);
+    }
+    return await readGhosttyAsset(response, label);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Unable to load ${label} within 30 seconds.`, { cause: error });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export class GhosttyRuntime {
   readonly memory: WebAssembly.Memory;
@@ -42,10 +103,6 @@ export class GhosttyRuntime {
   }
 
   static async load(): Promise<GhosttyRuntime> {
-    const response = await fetch(ghosttyWasmUrl);
-    if (!response.ok) {
-      throw new Error(`Unable to load libghostty-vt (${response.status})`);
-    }
     let instance: WebAssembly.Instance | undefined;
     const imports = {
       env: {
@@ -58,7 +115,10 @@ export class GhosttyRuntime {
         },
       },
     };
-    const result = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
+    const result = await WebAssembly.instantiate(
+      await loadGhosttyWasmAsset(ghosttyWasmUrl, "libghostty-vt"),
+      imports,
+    );
     instance = result.instance;
     const runtime = new GhosttyRuntime(result.instance);
     await runtime.installWritePtyTrampoline();
@@ -113,15 +173,23 @@ export class GhosttyRuntime {
     }
     const id = this.nextPtyWriterId++;
     this.ptyWriters.set(id, writer);
-    this.call("ghostty_terminal_set", terminal, 0, id);
-    this.call("ghostty_terminal_set", terminal, 1, this.writePtyFunctionIndex);
-    return id;
+    try {
+      this.call("ghostty_terminal_set", terminal, 0, id);
+      this.call("ghostty_terminal_set", terminal, 1, this.writePtyFunctionIndex);
+      return id;
+    } catch (cause) {
+      this.ptyWriters.delete(id);
+      throw cause;
+    }
   }
 
   detachPtyWriter(terminal: number, id: number): void {
-    this.call("ghostty_terminal_set", terminal, 1, 0);
-    this.call("ghostty_terminal_set", terminal, 0, 0);
-    this.ptyWriters.delete(id);
+    try {
+      this.call("ghostty_terminal_set", terminal, 1, 0);
+      this.call("ghostty_terminal_set", terminal, 0, 0);
+    } finally {
+      this.ptyWriters.delete(id);
+    }
   }
 
   view(pointer: number, size?: number): DataView {
@@ -182,19 +250,18 @@ export class GhosttyRuntime {
   }
 
   private async installWritePtyTrampoline(): Promise<void> {
-    const response = await fetch(ghosttyWritePtyWasmUrl);
-    if (!response.ok) {
-      throw new Error(`Unable to load the libghostty-vt PTY trampoline (${response.status})`);
-    }
-    const result = await WebAssembly.instantiate(await response.arrayBuffer(), {
-      env: {
-        t3_write_pty: (_terminal: number, userdata: number, pointer: number, length: number) => {
-          const writer = this.ptyWriters.get(userdata);
-          if (!writer || length === 0) return;
-          writer(textDecoder.decode(new Uint8Array(this.memory.buffer, pointer, length)));
+    const result = await WebAssembly.instantiate(
+      await loadGhosttyWasmAsset(ghosttyWritePtyWasmUrl, "the libghostty-vt PTY trampoline"),
+      {
+        env: {
+          t3_write_pty: (_terminal: number, userdata: number, pointer: number, length: number) => {
+            const writer = this.ptyWriters.get(userdata);
+            if (!writer || length === 0) return;
+            writer(textDecoder.decode(new Uint8Array(this.memory.buffer, pointer, length)));
+          },
         },
       },
-    });
+    );
     const trampoline = result.instance.exports.ghostty_write_pty;
     const table = this.exports.__indirect_function_table;
     if (typeof trampoline !== "function" || !(table instanceof WebAssembly.Table)) {

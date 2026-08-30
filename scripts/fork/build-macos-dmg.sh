@@ -90,9 +90,9 @@ fi
 echo "Building macOS arm64 $version"
 
 # Bake What's New notes into this artifact. They are pushed to main only
-# after the artifacts and update feed are live (end of this script), so the
-# build that push triggers sees the version in the feed and skips packaging
-# instead of publishing the same version twice. Changelog-commit retries
+# after the artifacts and update feed are live (end of this script), with
+# [skip ci] so the push starts no build. A manual retry that meets the notes
+# commit at HEAD still reads the feed and skips a shipped version. Changelog-commit retries
 # already persisted notes; do not regenerate them (model/fallback drift would
 # rewrite the shipped file). Hosted Linux preflight cannot load
 # CLI_PROXY_API_KEY or push to Origin, which is why notes froze after
@@ -211,9 +211,9 @@ done
 (( ${#assets[@]} > 0 ))
 node scripts/fork/origin-forge.mjs upload-assets "${assets[@]}"
 
-# Push the baked notes only now that the feed lists this version: the build
-# this push triggers reads the feed and skips packaging instead of racing
-# this release.
+# Push the baked notes only now that the feed lists this version. The notes
+# commit carries [skip ci], so the push starts no build that would cancel
+# the iOS/Linux/relay jobs of this release still running.
 if [[ "$notes_pending" == "1" ]]; then
   if ! node scripts/fork/generate-changelog.mjs --publish; then
     echo "warning: release notes ship with $version but could not be pushed to main"

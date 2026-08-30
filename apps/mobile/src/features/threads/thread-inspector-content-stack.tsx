@@ -1,9 +1,13 @@
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
 export type ThreadInspectorMode = "route" | "git" | "files";
 
-const INSPECTOR_PREWARM_DELAY_MS = 350;
+const ThreadInspectorVisibilityContext = createContext(true);
+
+export function useThreadInspectorVisibility(): boolean {
+  return useContext(ThreadInspectorVisibilityContext);
+}
 
 function InspectorContentPane(props: {
   readonly children: ReactNode;
@@ -15,64 +19,47 @@ function InspectorContentPane(props: {
   }
 
   return (
-    <View
-      accessibilityElementsHidden={!props.visible}
-      focusable={props.visible}
-      importantForAccessibility={props.visible ? "auto" : "no-hide-descendants"}
-      pointerEvents={props.visible ? "auto" : "none"}
-      style={{
-        position: "absolute",
-        inset: 0,
-        opacity: props.visible ? 1 : 0,
-        zIndex: props.visible ? 1 : 0,
-      }}
-    >
-      {props.children}
-    </View>
+    <ThreadInspectorVisibilityContext.Provider value={props.visible}>
+      <View
+        accessibilityElementsHidden={!props.visible}
+        focusable={props.visible}
+        importantForAccessibility={props.visible ? "auto" : "no-hide-descendants"}
+        pointerEvents={props.visible ? "auto" : "none"}
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: props.visible ? 1 : 0,
+          zIndex: props.visible ? 1 : 0,
+        }}
+      >
+        {props.children}
+      </View>
+    </ThreadInspectorVisibilityContext.Provider>
   );
 }
 
 export function ThreadInspectorContentStack(props: {
-  readonly Files: ComponentType;
-  readonly Git: ComponentType;
+  // Keep these as nodes, not callback component types: live thread props can
+  // replace a renderer closure without remounting the retained pane beneath it.
+  readonly files: ReactNode;
+  readonly git: ReactNode;
   readonly mode: ThreadInspectorMode;
-  readonly Route?: ComponentType;
+  readonly route?: ReactNode;
 }) {
   const [mountedModes, setMountedModes] = useState<ReadonlySet<ThreadInspectorMode>>(
     () => new Set([props.mode]),
   );
 
   useEffect(() => {
+    // Mount each inspector on first use and retain it so UIKit does not rebuild
+    // the file tree's focus graph on later switches.
     setMountedModes((current) => {
       if (current.has(props.mode)) {
         return current;
       }
       return new Set([...current, props.mode]);
     });
-
-    if (props.mode === "route") {
-      return;
-    }
-
-    // The file tree is expensive to detach because UIKit rebuilds its focus
-    // graph. Keep both chat inspectors alive after the opening animation so a
-    // later Files/Git switch only changes visibility.
-    const alternateMode = props.mode === "files" ? "git" : "files";
-    const timeout = setTimeout(() => {
-      setMountedModes((current) => {
-        if (current.has(alternateMode)) {
-          return current;
-        }
-        return new Set([...current, alternateMode]);
-      });
-    }, INSPECTOR_PREWARM_DELAY_MS);
-
-    return () => clearTimeout(timeout);
   }, [props.mode]);
-
-  const Files = props.Files;
-  const Git = props.Git;
-  const Route = props.Route;
 
   return (
     <View className="flex-1">
@@ -80,20 +67,20 @@ export function ThreadInspectorContentStack(props: {
         mounted={mountedModes.has("files") || props.mode === "files"}
         visible={props.mode === "files"}
       >
-        <Files />
+        {props.files}
       </InspectorContentPane>
       <InspectorContentPane
         mounted={mountedModes.has("git") || props.mode === "git"}
         visible={props.mode === "git"}
       >
-        <Git />
+        {props.git}
       </InspectorContentPane>
-      {Route ? (
+      {props.route !== undefined ? (
         <InspectorContentPane
           mounted={mountedModes.has("route") || props.mode === "route"}
           visible={props.mode === "route"}
         >
-          <Route />
+          {props.route}
         </InspectorContentPane>
       ) : null}
     </View>

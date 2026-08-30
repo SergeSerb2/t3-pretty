@@ -2,6 +2,7 @@ import {
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import type { ResolvedSharePayload, SharePayload } from "expo-sharing";
@@ -47,13 +48,22 @@ export function decodeIncomingShareDraft(value: unknown): IncomingShareDraft {
 }
 
 export interface IncomingShareFileReader {
-  readonly readBase64: (uri: string) => Promise<string>;
+  /** Returns null when a native size preflight exceeds maxBytes. */
+  readonly readBase64: (uri: string, maxBytes: number) => Promise<string | null>;
+  readonly writePreviewFile: (input: {
+    readonly base64: string;
+    readonly extension: string;
+  }) => Promise<string | null>;
   readonly removeOwnedFile: (uri: string) => Promise<void> | void;
 }
 
-function sharedText(payloads: ReadonlyArray<SharePayload>): string {
+function sharedText(payloads: ReadonlyArray<SharePayload>): {
+  readonly text: string;
+  readonly truncated: boolean;
+} {
   const seen = new Set<string>();
   const values: string[] = [];
+  let length = 0;
   for (const payload of payloads) {
     if (payload.shareType !== "text" && payload.shareType !== "url") {
       continue;
@@ -63,9 +73,19 @@ function sharedText(payloads: ReadonlyArray<SharePayload>): string {
       continue;
     }
     seen.add(value);
+    const separatorLength = values.length > 0 ? 2 : 0;
+    const available = PROVIDER_SEND_TURN_MAX_INPUT_CHARS - length - separatorLength;
+    if (available <= 0) {
+      return { text: values.join("\n\n"), truncated: true };
+    }
+    if (value.length > available) {
+      values.push(value.slice(0, available));
+      return { text: values.join("\n\n"), truncated: true };
+    }
     values.push(value);
+    length += separatorLength + value.length;
   }
-  return values.join("\n\n");
+  return { text: values.join("\n\n"), truncated: false };
 }
 
 function resolvedImageFor(
@@ -132,6 +152,12 @@ export async function buildIncomingShareDraft(input: {
 }): Promise<IncomingShareDraft> {
   const attachments: DraftComposerImageAttachment[] = [];
   const warnings: string[] = [];
+  const text = sharedText(input.payloads);
+  if (text.truncated) {
+    warnings.push(
+      `Shared text was truncated to the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS.toLocaleString("en-US")} character composer limit.`,
+    );
+  }
   const consumedResolvedPayloadIndexes = new Set<number>();
   let warnedAttachmentLimit = false;
 
@@ -183,8 +209,16 @@ export async function buildIncomingShareDraft(input: {
     }
 
     try {
-      const base64 = await input.fileReader.readBase64(uri);
-      const sizeBytes = resolved?.contentSize ?? estimateBase64ByteSize(base64);
+      const base64 = await input.fileReader.readBase64(uri, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
+      if (base64 === null) {
+        warnings.push(
+          `'${resolved?.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
+        );
+        continue;
+      }
+      // Provider metadata is only an early rejection hint. Enforce the hard
+      // limit against the bytes that will actually be persisted and sent.
+      const sizeBytes = estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
         warnings.push(
           `'${resolved?.originalName ?? fallbackName(uri, index, mimeType)}' exceeds the 10 MB attachment limit.`,
@@ -192,6 +226,16 @@ export async function buildIncomingShareDraft(input: {
         continue;
       }
       const dataUrl = `data:${mimeType};base64,${base64}`;
+      const previewUri = await input.fileReader.writePreviewFile({
+        base64,
+        extension: mimeType.split("/")[1] ?? "png",
+      });
+      if (previewUri === null) {
+        warnings.push(
+          `Could not preserve '${resolved?.originalName ?? fallbackName(uri, index, mimeType)}'.`,
+        );
+        continue;
+      }
       attachments.push({
         id: `${input.id}:image:${index}`,
         type: "image",
@@ -199,9 +243,9 @@ export async function buildIncomingShareDraft(input: {
         mimeType,
         sizeBytes,
         dataUrl,
-        // The share provider's file is temporary. A data-backed preview keeps
-        // the composer valid after its source file and App Group entry are gone.
-        previewUri: dataUrl,
+        // The share provider's file is temporary. The app-owned preview is the
+        // durable byte source after the inbox strips dataUrl for persistence.
+        previewUri,
       });
     } catch {
       warnings.push(`Could not read '${fallbackName(uri, index, mimeType)}'.`);
@@ -214,7 +258,7 @@ export async function buildIncomingShareDraft(input: {
     schemaVersion: 1,
     id: input.id,
     createdAt: input.createdAt,
-    text: sharedText(input.payloads),
+    text: text.text,
     attachments,
     warnings,
   };
