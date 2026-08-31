@@ -10,7 +10,6 @@ import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
-import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
 import composerSpecularSource from "../components/chat/ComposerSpecular.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
@@ -110,44 +109,6 @@ describe("scenery structural contract with upstream markup", () => {
     expect(threadRouteViewSource).toContain(
       'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
     );
-  });
-});
-
-describe("composer attach contract with upstream markup", () => {
-  it("the right action group the attach slot is injected into still exists", () => {
-    expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
-  });
-
-  it("the editor chrome the file-chip strip mounts into still exists", () => {
-    expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
-  });
-
-  it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
-    expect(chatViewSource).toContain("onDrop={workspaceFileDropHandlers.onDrop}");
-    expect(chatComposerSource).toContain("addDroppedFiles: (files: File[]) => {");
-    expect(chatComposerSource).toContain("void addComposerImages(files)");
-  });
-
-  it("ChatView still bakes attached filepaths into the outgoing prompt", () => {
-    expect(chatViewSource).toContain("applyAttachedFilePathsSuffix");
-    expect(chatViewSource).toContain("takeAttachedFilesForThread");
-  });
-
-  it("plan follow-up send also bakes attached filepaths before starting the turn", () => {
-    const followUpFnStart = chatViewSource.indexOf("const onSubmitPlanFollowUp = useCallback");
-    expect(followUpFnStart).toBeGreaterThan(-1);
-    const nextCallback = chatViewSource.indexOf(
-      "const onImplementPlanInNewThread = useCallback",
-      followUpFnStart,
-    );
-    const followUpSlice = chatViewSource.slice(
-      followUpFnStart,
-      nextCallback === -1 ? followUpFnStart + 8000 : nextCallback,
-    );
-    expect(followUpSlice).toContain("takeAttachedFilesForThread(activeThreadKey)");
-    expect(followUpSlice).toContain("applyAttachedFilePathsSuffix");
-    expect(followUpSlice).toContain("validateProviderInput(outgoingMessageText)");
-    expect(followUpSlice).toContain("restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot)");
   });
 });
 

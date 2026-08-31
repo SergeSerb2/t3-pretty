@@ -41,7 +41,6 @@ import uiSidebarSource from "../components/ui/sidebar.tsx?raw";
 import toastSource from "../components/ui/toast.tsx?raw";
 import whatsNewSource from "../components/WhatsNewDialog.tsx?raw";
 import chatIndexRouteSource from "../routes/_chat.index.tsx?raw";
-import composerAttachSource from "./ComposerAttachControl.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
 
 const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
@@ -108,12 +107,6 @@ describe("working-row thinking indicator contract", () => {
   });
 });
 
-describe("composer attach mutation contract", () => {
-  it("filters body mutations before scheduling a composer attach sync", () => {
-    expect(composerAttachSource).toContain("mutationsRequireComposerAttachSync(mutations)");
-  });
-});
-
 describe("tool card disclosure contract", () => {
   it("the expanded body still mounts under the ms-7 indent wrapper", () => {
     // The wrapper moved from MessagesTimeline into ToolCallExpandedBody.
@@ -162,7 +155,6 @@ describe("composer contract", () => {
   it("draft attachments still own a direct-child Remove button inside the editor chrome", () => {
     expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
     expect(chatComposerSource).toContain("aria-label={`Remove ${image.name}`}");
-    expect(composerAttachSource).toContain("aria-label={`Remove ${props.file.name}`}");
   });
 
   it("the agent-question option check still swaps in as a lucide CheckIcon inside the collapsible", () => {

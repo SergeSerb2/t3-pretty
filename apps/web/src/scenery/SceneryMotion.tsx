@@ -1,7 +1,7 @@
 /**
- * The fork's motion driver: watches upstream's chat DOM through the same
- * MutationObserver pattern as ComposerAttachControl and gives the thread its
- * animation layer without touching upstream files.
+ * The fork's motion driver: watches upstream's chat DOM through a
+ * MutationObserver and gives the thread its animation layer without touching
+ * upstream files.
  *
  * Two jobs:
  *

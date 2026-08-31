@@ -518,12 +518,6 @@ export function deriveComposerSendState(options: {
    * contexts do: a prompt of just element chips is still a valid send.
    */
   elementContextCount?: number;
-  /**
-   * Pending non-image path attachments from the scenery attach control. A
-   * chip-only draft is still sendable — the filepath is baked into the
-   * outgoing prompt at send time.
-   */
-  fileAttachmentCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -535,7 +529,6 @@ export function deriveComposerSendState(options: {
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
   const elementContextCount = options.elementContextCount ?? 0;
-  const fileAttachmentCount = options.fileAttachmentCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -544,8 +537,7 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0 ||
-      fileAttachmentCount > 0,
+      elementContextCount > 0,
   };
 }
 

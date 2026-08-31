@@ -151,12 +151,6 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
-import { applyAttachedFilePathsSuffix } from "../scenery/attachFiles";
-import {
-  getAttachedFilesForThread,
-  restoreAttachedFiles,
-  takeAttachedFilesForThread,
-} from "../scenery/attachedFileStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -5970,7 +5964,6 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerCanvasSelections.length +
         composerReviewComments.length,
-      fileAttachmentCount: getAttachedFilesForThread(activeThreadKey).length,
     });
     const feedbackCommand =
       ctxSelectedProvider === "codex" &&
@@ -6168,7 +6161,6 @@ function ChatViewContent(props: ChatViewProps) {
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerCanvasSelectionsSnapshot = [...composerCanvasSelections];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
-    const attachedFilesSnapshot = takeAttachedFilesForThread(activeThreadKey);
     // Per-thread skill picks staged on the draft ride thread creation below;
     // the server unions the global set on top at materialization time.
     const draftEnabledSkillIdsSnapshot = isLocalDraftThread
@@ -6191,17 +6183,14 @@ function ChatViewContent(props: ChatViewProps) {
       (text, selection) => appendCanvasSelectionPrompt(text, selection),
       messageTextWithPreviewAnnotations,
     );
-    // Path attachments bake absolute filepaths into a trailing marker block
-    // the timeline strips from the bubble — same invisible agent-only pattern
-    // as the auto-PR suffix that follows.
-    const messageTextWithAttachedFiles = applyAttachedFilePathsSuffix(
-      appendReviewCommentsToPrompt(messageTextWithCanvasSelections, composerReviewCommentsSnapshot),
-      attachedFilesSnapshot,
+    const messageTextWithReviewComments = appendReviewCommentsToPrompt(
+      messageTextWithCanvasSelections,
+      composerReviewCommentsSnapshot,
     );
     // The attachment-only fallback substitutes before the auto-PR suffix so an
     // attachment-only first message still carries the PR instruction.
     const messageTextForSend = applyCreatePullRequestSuffix({
-      text: messageTextWithAttachedFiles || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextWithReviewComments || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
       autoCreatePullRequest,
       threadHasStarted: !isFirstMessage,
       model: ctxSelectedModelSelection.model,
@@ -6214,19 +6203,6 @@ function ChatViewContent(props: ChatViewProps) {
       text: messageTextForSend,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
-      // Path attachments are removed from the external store before we build
-      // the provider prompt. A local validation failure never enters the
-      // dispatch/retry path below, so put them back instead of silently
-      // dropping their chips when the composed prompt is too long.
-      if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
-        if (restore.droppedCount > 0) {
-          toastManager.add({
-            type: "warning",
-            title: "Some files could not be restored because the attachment limit was reached.",
-          });
-        }
-      }
       return;
     }
 
@@ -6442,8 +6418,6 @@ function ChatViewContent(props: ChatViewProps) {
     if (!titleSeed) {
       if (firstComposerImageName) {
         titleSeed = `Image: ${firstComposerImageName}`;
-      } else if (attachedFilesSnapshot[0]) {
-        titleSeed = `File: ${attachedFilesSnapshot[0].name}`;
       } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
@@ -6659,7 +6633,6 @@ function ChatViewContent(props: ChatViewProps) {
         composerFilesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         composerElementContextsRef.current.length === 0 &&
-        getAttachedFilesForThread(activeThreadKey).length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.previewAnnotations
           .length ?? 0) === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.canvasSelections
@@ -6681,15 +6654,6 @@ function ChatViewContent(props: ChatViewProps) {
         setComposerDraftPreviewAnnotations(composerDraftTarget, composerPreviewAnnotationsSnapshot);
         setComposerDraftCanvasSelections(composerDraftTarget, composerCanvasSelectionsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
-        if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
-          if (restore.droppedCount > 0) {
-            toastManager.add({
-              type: "warning",
-              title: "Some files could not be restored because the attachment limit was reached.",
-            });
-          }
-        }
         composerRef.current?.resetCursorState({
           cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
           prompt: promptForSend,
@@ -7039,12 +7003,6 @@ function ChatViewContent(props: ChatViewProps) {
         runtimeMode,
       );
 
-      // Same path-suffix bake as the normal composer send — plan follow-up
-      // used to return before takeAttachedFilesForThread ran, so refine /
-      // implement with a file chip dropped the attachment entirely.
-      const attachedFilesSnapshot = takeAttachedFilesForThread(activeThreadKey);
-      const textWithAttachedFiles = applyAttachedFilePathsSuffix(trimmed, attachedFilesSnapshot);
-
       const threadIdForSend = activeThread.id;
       const messageIdForSend = newMessageId();
       const messageCreatedAt = new Date().toISOString();
@@ -7053,18 +7011,9 @@ function ChatViewContent(props: ChatViewProps) {
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
         effort: ctxSelectedPromptEffort,
-        text: textWithAttachedFiles,
+        text: trimmed,
       });
       if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
-        if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-          const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
-          if (restore.droppedCount > 0) {
-            toastManager.add({
-              type: "warning",
-              title: "Some files could not be restored because the attachment limit was reached.",
-            });
-          }
-        }
         return;
       }
 
@@ -7158,15 +7107,6 @@ function ChatViewContent(props: ChatViewProps) {
       setOptimisticUserMessages((existing) =>
         existing.filter((message) => message.id !== messageIdForSend),
       );
-      if (activeThreadKey && attachedFilesSnapshot.length > 0) {
-        const restore = restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot);
-        if (restore.droppedCount > 0) {
-          toastManager.add({
-            type: "warning",
-            title: "Some files could not be restored because the attachment limit was reached.",
-          });
-        }
-      }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
