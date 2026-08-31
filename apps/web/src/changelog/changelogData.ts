@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.37-nightly.20260830.1227001282",
+    date: "2026-08-31",
+    items: [
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+    ],
+  },
+  {
     version: "0.0.37-nightly.20260830.1227001272",
     date: "2026-08-30",
     items: [
