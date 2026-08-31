@@ -16,6 +16,7 @@ import {
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
+  parseCursorListAvailableModelsResponse,
 } from "./CursorAcpExtension.ts";
 
 describe("CursorAcpExtension", () => {
@@ -206,6 +207,48 @@ describe("CursorAcpExtension", () => {
         { step: "Whitespace content", status: "inProgress" },
       ],
     });
+  });
+
+  it("keeps valid models when one sibling fails strict schema decode", () => {
+    const parsed = parseCursorListAvailableModelsResponse({
+      models: [
+        {
+          value: "glm-5.2",
+          name: "GLM 5.2",
+          extraField: "ignored",
+        },
+        {
+          value: "glm-5.3-flash",
+          name: "GLM 5.3 Flash",
+          configOptions: [
+            {
+              id: "reasoning",
+              name: "Reasoning",
+              category: "thought_level",
+              type: "select",
+              currentValue: "high",
+              options: [
+                { value: "high", name: "High" },
+                { value: "max", name: "Max" },
+              ],
+            },
+            {
+              id: "unknown-new-control",
+              name: "New Control",
+              type: "range",
+              currentValue: 3,
+            },
+          ],
+        },
+        {
+          value: "",
+          name: "Broken",
+        },
+      ],
+    });
+
+    expect(parsed.models.map((model) => model.value)).toEqual(["glm-5.2", "glm-5.3-flash"]);
+    expect(parsed.models[1]?.configOptions?.map((option) => option.id)).toEqual(["reasoning"]);
   });
 
   it("decodes Cursor list_available_models responses with per-model config options", () => {

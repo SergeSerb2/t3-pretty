@@ -15,12 +15,15 @@ import {
   buildCursorProviderSnapshot,
   buildCursorCapabilitiesFromConfigOptions,
   checkCursorProviderStatus,
+  cursorCliVariantBaseSlug,
   discoverCursorModelsViaAcp,
   enrichCursorAutoModelCapabilities,
   getCursorFallbackModels,
   getCursorParameterizedModelPickerUnsupportedMessage,
+  mergeCursorCliModelsIntoDiscoveredModels,
   parseCursorAboutOutput,
   parseCursorCliConfigChannel,
+  parseCursorListModelsOutput,
   parseCursorVersionDate,
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
@@ -104,6 +107,15 @@ const makeMockAgentWithAboutWrapper = Effect.fn("makeMockAgentWithAboutWrapper")
 if [ "$1" = "about" ]; then
   printf 'CLI Version         2026.04.09-f2b0fcd\\n'
   printf 'User Email          cursor@example.com\\n'
+  exit 0
+fi
+if [ "$1" = "--list-models" ] || [ "$1" = "models" ]; then
+  printf 'Available models\\n'
+  printf 'auto - Auto (default)\\n'
+  printf 'composer-2 - Composer 2\\n'
+  printf 'gpt-5.4 - GPT-5.4\\n'
+  printf 'claude-opus-4-6 - Opus 4.6\\n'
+  printf 'glm-5.3-flash - GLM 5.3 Flash\\n'
   exit 0
 fi
 exec ${mockAgentCommand} "$@"
@@ -529,6 +541,7 @@ describe("checkCursorProviderStatus", () => {
       "composer-2",
       "gpt-5.4",
       "claude-opus-4-6",
+      "glm-5.3-flash",
     ]);
     await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
   });
@@ -660,11 +673,18 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(parseCursorCliConfigChannel("not-json")).toBeUndefined();
   });
 
-  it("returns no warning when the preview requirements are met", () => {
+  it("returns no warning when the Cursor Agent is new enough", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.08-c4e73a3",
-        channel: "lab",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not require the lab channel for model discovery", () => {
+    expect(
+      getCursorParameterizedModelPickerUnsupportedMessage({
+        version: "2026.08.11-e8db854",
       }),
     ).toBeUndefined();
   });
@@ -673,18 +693,64 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.07-c4e73a3",
-        channel: "lab",
       }),
     ).toContain("too old");
   });
+});
 
-  it("explains when the Cursor Agent channel is not lab", () => {
+describe("cursor CLI model list parsing", () => {
+  it("parses `cursor-agent --list-models` output including glm-5.3-flash", () => {
     expect(
-      getCursorParameterizedModelPickerUnsupportedMessage({
-        version: "2026.04.08-c4e73a3",
-        channel: "stable",
-      }),
-    ).toContain("lab channel");
+      parseCursorListModelsOutput(`Available models
+
+auto - Auto (default)
+glm-5.2-high - GLM 5.2
+glm-5.2-max - GLM 5.2 Max
+glm-5.3-flash - GLM 5.3 Flash
+composer-2.5-fast - Composer 2.5 Fast
+`),
+    ).toEqual([
+      { slug: "default", name: "Auto" },
+      { slug: "glm-5.2-high", name: "GLM 5.2" },
+      { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+      { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+      { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
+    ]);
+  });
+
+  it("strips CLI effort/fast suffixes without treating flash as a variant", () => {
+    expect(cursorCliVariantBaseSlug("glm-5.3-flash")).toBe("glm-5.3-flash");
+    expect(cursorCliVariantBaseSlug("glm-5.2-high")).toBe("glm-5.2");
+    expect(cursorCliVariantBaseSlug("gpt-5.5-extra-high-fast")).toBe("gpt-5.5");
+    expect(cursorCliVariantBaseSlug("claude-opus-5-thinking-high-fast")).toBe("claude-opus-5");
+    expect(cursorCliVariantBaseSlug("composer-2.5-fast")).toBe("composer-2.5");
+    expect(cursorCliVariantBaseSlug("gemini-3.7-flash")).toBe("gemini-3.7-flash");
+  });
+
+  it("adds CLI-only families without duplicating ACP parameterized bases", () => {
+    const merged = mergeCursorCliModelsIntoDiscoveredModels(
+      [
+        {
+          slug: "glm-5.2",
+          name: "GLM 5.2",
+          isCustom: false,
+          capabilities: EMPTY_CAPABILITIES,
+        },
+        {
+          slug: "default",
+          name: "Auto",
+          isCustom: false,
+          capabilities: EMPTY_CAPABILITIES,
+        },
+      ],
+      [
+        { slug: "default", name: "Auto" },
+        { slug: "glm-5.2-high", name: "GLM 5.2" },
+        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+      ],
+    );
+    expect(merged.map((model) => model.slug)).toEqual(["glm-5.2", "default", "glm-5.3-flash"]);
   });
 });
 
