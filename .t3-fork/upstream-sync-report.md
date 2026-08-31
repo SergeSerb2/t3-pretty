@@ -1880,3 +1880,31 @@
 - `docs/user/source-control.md` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `packages/client-runtime/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `patches/@legendapp__list@3.3.5.patch` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260831.1240`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260831.1236`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved the T3 Pretty new-task loading and recovery presentation through ActivityIndicator and the existing native UI imports.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved World Scenery and themed draft-frame support through StyleSheet, useColorScheme, useMemo, ReactNode, and Expo Linking used for scenery presentation and attribution.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's thread-open performance tracking by calling markThreadOpenStarted before scheduling the Thread route replacement.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved the optimistic new-thread destination and replacement semantics; the existing StackActions.replace("Thread", ...) action remains intact.
+- `apps/mobile/src/lib/threadActivity.ts` — Generated-image activities remain visible when a large activity group is collapsed; only older non-image activities become overflow.
+- `apps/mobile/src/lib/threadActivity.ts` — Visible activities continue to be emitted as individual activity groups, preserving the fork's expandable file-change and compact-diff row behavior.
+- `apps/mobile/src/lib/threadActivity.ts` — The WeakMap-backed singleton activity groups retain stable row identities and avoid rebuilding presentation objects on the mobile feed hot path.
+- `apps/mobile/src/lib/threadActivity.ts` — The fork's existing hidden-activity toggle and `onlyToolActivities` semantics remain intact.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's CommonActions, useFocusEffect, and NavigationAction imports needed by its updated focus-aware navigation lifecycle.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's state-mediated setSubmitNavigationAction path instead of directly dispatching the route action, allowing the upstream submit/removal-guard behavior to operate.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/lib/threadActivity.ts` — The parent live-summary work-toggle block, including the nightly change from lifecycle-gated shimmer to `shimmer: live` so the summary shimmers until the turn or contiguous tool run settles.. Reason: T3 Pretty has replaced this summarized live-toggle path with visible per-activity singleton rows plus a separate overflow toggle. This function no longer has the parent's `activeTail`, `latestInProgressActivity`, `sourceGroup`, `isWorking`, or `unsettledTurnId` inputs, and its overflow toggle does not represent the live contiguous run. Taking the parent block would not compile and would remove the fork's generated-image visibility, compact-diff presentation, and stable row identities; assigning live shimmer to the unrelated overflow toggle would invent incorrect semantics.
