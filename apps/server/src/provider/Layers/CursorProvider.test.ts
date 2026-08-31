@@ -357,6 +357,33 @@ describe("buildCursorProviderSnapshot", () => {
     });
   });
 
+  it("keeps ACP discovery warnings when CLI fill-in still produced models", () => {
+    expect(
+      buildCursorProviderSnapshot({
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        cursorSettings: baseCursorSettings,
+        parsed: {
+          version: "2026.04.09-f2b0fcd",
+          status: "ready",
+          auth: { status: "authenticated", type: "Team", label: "Cursor Team Subscription" },
+        },
+        discoveredModels: [
+          {
+            slug: "glm-5.3-flash",
+            name: "GLM 5.3 Flash",
+            isCustom: false,
+            capabilities: EMPTY_CAPABILITIES,
+          },
+        ],
+        discoveryWarning: "Cursor ACP model discovery timed out after 15000ms.",
+      }),
+    ).toMatchObject({
+      status: "warning",
+      message: "Cursor ACP model discovery timed out after 15000ms.",
+      models: [{ slug: "glm-5.3-flash" }],
+    });
+  });
+
   it("preserves provider error state while appending discovery warnings", () => {
     expect(
       buildCursorProviderSnapshot({

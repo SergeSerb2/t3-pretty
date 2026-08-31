@@ -1388,7 +1388,9 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
     const mergedModels = mergeCursorCliModelsIntoDiscoveredModels(acpModels, cliModels);
     if (mergedModels.length > 0) {
       discoveredModels = Option.some(mergedModels);
-      discoveryWarning = undefined;
+      if (acpModels.length > 0) {
+        discoveryWarning = undefined;
+      }
     }
   }
   return buildCursorProviderSnapshot({
