@@ -779,6 +779,23 @@ composer-2.5-fast - Composer 2.5 Fast
     );
     expect(merged.map((model) => model.slug)).toEqual(["glm-5.2", "default", "glm-5.3-flash"]);
   });
+
+  it("keeps advertised CLI ids when ACP omitted the family", () => {
+    const merged = mergeCursorCliModelsIntoDiscoveredModels(
+      [],
+      [
+        { slug: "glm-5.2-high", name: "GLM 5.2" },
+        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+        { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
+      ],
+    );
+    expect(merged.map((model) => model.slug)).toEqual([
+      "glm-5.2-high",
+      "glm-5.3-flash",
+      "composer-2.5-fast",
+    ]);
+  });
 });
 
 describe("resolveCursorAcpBaseModelId", () => {

@@ -848,13 +848,17 @@ export function mergeCursorCliModelsIntoDiscoveredModels(
     ) {
       continue;
     }
-    seenSlugs.add(baseSlug);
+    seenSlugs.add(resolvedSlug);
     coveredBases.add(baseSlug);
     merged.push({
-      slug: baseSlug,
+      slug: resolvedSlug,
       name: cliModel.name,
       isCustom: false,
-      capabilities: enrichCursorAutoModelCapabilities(EMPTY_CAPABILITIES, baseSlug, cliModel.name),
+      capabilities: enrichCursorAutoModelCapabilities(
+        EMPTY_CAPABILITIES,
+        resolvedSlug,
+        cliModel.name,
+      ),
     });
   }
   return merged;
