@@ -7,16 +7,28 @@ import type * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
+import {
+  ConnectionEnvironmentId,
+  ConnectionLabel,
+  ConnectionSecret,
+  ConnectionUrl,
+} from "../connection/model.ts";
+
+const PersistedRelayManagedEndpoint = Schema.Struct({
+  ...RelayManagedEndpoint.fields,
+  httpBaseUrl: ConnectionUrl,
+  wsBaseUrl: ConnectionUrl,
+});
 
 export class RemoteDpopAccessToken extends Schema.Class<RemoteDpopAccessToken>(
   "@t3tools/client-runtime/authorization/RemoteDpopAccessToken",
 )({
-  environmentId: EnvironmentId,
-  label: Schema.String,
-  endpoint: RelayManagedEndpoint,
-  accessToken: Schema.String,
-  expiresAtEpochMs: Schema.Number,
-  dpopThumbprint: Schema.String,
+  environmentId: ConnectionEnvironmentId,
+  label: ConnectionLabel,
+  endpoint: PersistedRelayManagedEndpoint,
+  accessToken: ConnectionSecret,
+  expiresAtEpochMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  dpopThumbprint: Schema.String.check(Schema.isMaxLength(512)),
 }) {}
 
 export class RemoteDpopAccessTokenStore extends Context.Service<

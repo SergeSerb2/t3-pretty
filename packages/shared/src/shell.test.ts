@@ -16,6 +16,7 @@ import {
   readEnvironmentFromWindowsShell,
   readPathFromLaunchctl,
   readPathFromLoginShell,
+  CommandResolutionCache,
   resolveCommandPath,
   resolveKnownWindowsCliDirs,
   resolveSpawnCommand,
@@ -363,6 +364,29 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
       }).pipe(Effect.provideService(HostProcessPlatform, "win32"), Effect.result);
 
       expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("refreshes an expired full-cache key without evicting another entry", () =>
+    Effect.gen(function* () {
+      const cache = new Map<string, { resolvedPath: string | null; expiresAtNanos: bigint }>();
+      for (let index = 0; index < 511; index += 1) {
+        cache.set(`older-${index}`, { resolvedPath: null, expiresAtNanos: 0n });
+      }
+      const targetKey = ["linux", "/definitely/not-installed", "", "missing-command"].join("\0");
+      cache.set(targetKey, { resolvedPath: null, expiresAtNanos: 0n });
+
+      yield* resolveCommandPath("missing-command", {
+        env: { PATH: "/definitely/not-installed" },
+      }).pipe(
+        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(CommandResolutionCache, cache),
+        Effect.result,
+      );
+
+      expect(cache.size).toBe(512);
+      expect(cache.has("older-0")).toBe(true);
+      expect(Array.from(cache.keys()).at(-1)).toBe(targetKey);
     }),
   );
 });

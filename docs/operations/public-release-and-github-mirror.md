@@ -14,7 +14,10 @@ The first run preserves the old GitHub `main` tip in
 archive exists, any non-ancestor GitHub `main` tip aborts the mirror. Configure
 `GITHUB_MIRROR_SSH_KEY` as a dedicated deploy key with write access only to the
 mirror repository, and allow deploy keys to bypass the GitHub `main` pull-request
-ruleset. Do not use a personal token.
+ruleset. Do not use a personal token. Do not expand that variable in the
+Buildkite `command:` block: the agent interpolates `${}` before
+`load-buildkite-secrets.sh` runs, so a YAML `test -n "${GITHUB_MIRROR_SSH_KEY:-}"`
+becomes `test -n ""` and the step dies with the key still on disk.
 
 `.github/workflows/public-release.yml` is manual-only and sets
 `T3CODE_BUILD_FLAVOR=public`. It builds unsigned macOS DMG, Windows NSIS, and
@@ -40,6 +43,14 @@ option requires the repository Actions variables
 `T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID`, `T3CODE_PUBLIC_MOBILE_EXPO_OWNER`, and
 `T3CODE_PUBLIC_MOBILE_EXPO_SLUG`, plus the `EXPO_TOKEN` Actions secret. The
 workflow does not submit mobile binaries to stores or publish OTA updates.
+
+Public Android closed testing is separate from that GitHub artifact workflow.
+Start a Buildkite UI build of Origin `main` with
+`T3CODE_PUBLIC_ANDROID_RELEASE=1`; it builds package
+`com.sergeserbinenko.t3pretty.app` against official T3 Connect and submits the
+exact AAB to Google Play's internal track. The public EAS project identifiers
+live on `macos-release`, and its Google service-account key lives in EAS—not in
+GitHub or Buildkite.
 
 One-time repository setup: enable GitHub Actions for Pages with the `github-pages`
 environment, add the three public EAS variables if mobile builds are needed, and

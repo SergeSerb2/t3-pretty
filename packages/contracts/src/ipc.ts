@@ -51,6 +51,7 @@ import type {
   TerminalWriteInput,
 } from "./terminal.ts";
 import * as Schema from "effect/Schema";
+import { PortSchema } from "./baseSchemas.ts";
 import type {
   DiscoveredLocalServerList,
   PreviewCloseInput,
@@ -64,6 +65,7 @@ import type {
   PreviewResizeInput,
   PreviewSessionSnapshot,
 } from "./preview.ts";
+import { PREVIEW_VIEWPORT_MAX_AREA, PREVIEW_VIEWPORT_MAX_DIMENSION } from "./preview.ts";
 import {
   PreviewAutomationClickInput,
   PreviewAutomationEvaluateInput,
@@ -134,19 +136,34 @@ export interface ContextMenuItemSchemaType {
   readonly children?: readonly ContextMenuItemSchemaType[];
 }
 
+export const CONTEXT_MENU_ITEM_ID_MAX_LENGTH = 512;
+export const CONTEXT_MENU_ITEM_LABEL_MAX_LENGTH = 512;
+export const CONTEXT_MENU_ITEM_ICON_MAX_LENGTH = 128;
+export const CONTEXT_MENU_CHILD_MAX_COUNT = 64;
+
+const ContextMenuItemIdSchema = Schema.String.check(
+  Schema.isMaxLength(CONTEXT_MENU_ITEM_ID_MAX_LENGTH),
+);
+const ContextMenuItemLabelSchema = Schema.String.check(
+  Schema.isMaxLength(CONTEXT_MENU_ITEM_LABEL_MAX_LENGTH),
+);
+const ContextMenuItemIconSchema = Schema.String.check(
+  Schema.isMaxLength(CONTEXT_MENU_ITEM_ICON_MAX_LENGTH),
+);
+
 export const ContextMenuItemSchema: Schema.Codec<ContextMenuItemSchemaType> = Schema.Struct({
-  id: Schema.String,
-  label: Schema.String,
+  id: ContextMenuItemIdSchema,
+  label: ContextMenuItemLabelSchema,
   destructive: Schema.optionalKey(Schema.Boolean),
   disabled: Schema.optionalKey(Schema.Boolean),
   header: Schema.optionalKey(Schema.Boolean),
   separator: Schema.optionalKey(Schema.Boolean),
-  icon: Schema.optionalKey(Schema.String),
+  icon: Schema.optionalKey(ContextMenuItemIconSchema),
   separatorBefore: Schema.optionalKey(Schema.Boolean),
   children: Schema.optionalKey(
     Schema.Array(
       Schema.suspend((): Schema.Codec<ContextMenuItemSchemaType> => ContextMenuItemSchema),
-    ),
+    ).check(Schema.isMaxLength(CONTEXT_MENU_CHILD_MAX_COUNT)),
   ),
 });
 
@@ -242,24 +259,24 @@ export interface DesktopUpdateReleaseNote {
 }
 
 export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
-  version: Schema.String,
-  items: Schema.Array(Schema.String),
+  version: Schema.String.check(Schema.isMaxLength(128)),
+  items: Schema.Array(Schema.String.check(Schema.isMaxLength(220))).check(Schema.isMaxLength(8)),
 });
 
 export const DesktopUpdateStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
   status: DesktopUpdateStatusSchema,
   channel: DesktopUpdateChannelSchema,
-  currentVersion: Schema.String,
+  currentVersion: Schema.String.check(Schema.isMaxLength(128)),
   hostArch: DesktopRuntimeArchSchema,
   appArch: DesktopRuntimeArchSchema,
   runningUnderArm64Translation: Schema.Boolean,
-  availableVersion: Schema.NullOr(Schema.String),
-  downloadedVersion: Schema.NullOr(Schema.String),
-  releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema),
+  availableVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
+  downloadedVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
+  releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema).check(Schema.isMaxLength(6)),
   downloadPercent: Schema.NullOr(Schema.Number),
-  checkedAt: Schema.NullOr(Schema.String),
-  message: Schema.NullOr(Schema.String),
+  checkedAt: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
+  message: Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192))),
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),
   canRetry: Schema.Boolean,
 });
@@ -292,6 +309,48 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
 // importing brand machinery from the desktop package.
 export const PRIMARY_LOCAL_ENVIRONMENT_ID = "primary";
 
+export const DESKTOP_IPC_URL_MAX_LENGTH = 8_192;
+export const DESKTOP_IPC_CREDENTIAL_MAX_LENGTH = 64 * 1024;
+export const DESKTOP_CONNECTION_CATALOG_MAX_LENGTH = 4 * 1024 * 1024;
+export const DESKTOP_IPC_PATH_MAX_LENGTH = 32 * 1024;
+export const DESKTOP_SSH_ALIAS_MAX_LENGTH = 512;
+export const DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH = 512;
+export const DESKTOP_SSH_DESTINATION_MAX_LENGTH = 1_024;
+export const DESKTOP_SSH_USERNAME_MAX_LENGTH = 512;
+export const DESKTOP_SSH_PROMPT_REQUEST_ID_MAX_LENGTH = 128;
+export const DESKTOP_SSH_PROMPT_MAX_LENGTH = 4_096;
+export const DesktopEnvironmentIdSchema = Schema.String.check(Schema.isMaxLength(512));
+const DesktopEnvironmentLabelSchema = Schema.String.check(Schema.isMaxLength(2_048));
+export const DesktopUrlSchema = Schema.String.check(Schema.isMaxLength(DESKTOP_IPC_URL_MAX_LENGTH));
+export const DesktopCredentialSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_IPC_CREDENTIAL_MAX_LENGTH),
+);
+export const DesktopPathSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_IPC_PATH_MAX_LENGTH),
+);
+export const DesktopConnectionCatalogSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_CONNECTION_CATALOG_MAX_LENGTH),
+);
+export const DesktopSshAliasSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_SSH_ALIAS_MAX_LENGTH),
+);
+export const DesktopWslDistroNameSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_WSL_DISTRO_NAME_MAX_LENGTH),
+);
+const DesktopSshHostnameSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_SSH_DESTINATION_MAX_LENGTH),
+);
+const DesktopSshUsernameSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_SSH_USERNAME_MAX_LENGTH),
+);
+const DesktopSshPromptRequestIdSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_SSH_PROMPT_REQUEST_ID_MAX_LENGTH),
+);
+const DesktopSshPromptSchema = Schema.String.check(
+  Schema.isMaxLength(DESKTOP_SSH_PROMPT_MAX_LENGTH),
+);
+const DesktopTimestampSchema = Schema.String.check(Schema.isMaxLength(128));
+
 export interface DesktopEnvironmentBootstrap {
   // Stable backend instance id (e.g. "primary" or "wsl:ubuntu"). The
   // web env runtime keys local environments off this so projects
@@ -308,19 +367,19 @@ export interface DesktopEnvironmentBootstrap {
 }
 
 export const DesktopEnvironmentBootstrapSchema = Schema.Struct({
-  id: Schema.String,
-  label: Schema.String,
-  runningDistro: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  httpBaseUrl: Schema.NullOr(Schema.String),
-  wsBaseUrl: Schema.NullOr(Schema.String),
-  bootstrapToken: Schema.optionalKey(Schema.String),
+  id: DesktopEnvironmentIdSchema,
+  label: DesktopEnvironmentLabelSchema,
+  runningDistro: Schema.optionalKey(Schema.NullOr(DesktopWslDistroNameSchema)),
+  httpBaseUrl: Schema.NullOr(DesktopUrlSchema),
+  wsBaseUrl: Schema.NullOr(DesktopUrlSchema),
+  bootstrapToken: Schema.optionalKey(DesktopCredentialSchema),
 });
 
 export const DesktopSshEnvironmentTargetSchema = Schema.Struct({
-  alias: Schema.String,
-  hostname: Schema.String,
-  username: Schema.NullOr(Schema.String),
-  port: Schema.NullOr(Schema.Number),
+  alias: DesktopSshAliasSchema,
+  hostname: DesktopSshHostnameSchema,
+  username: Schema.NullOr(DesktopSshUsernameSchema),
+  port: Schema.NullOr(PortSchema),
 });
 export type DesktopSshEnvironmentTarget = typeof DesktopSshEnvironmentTargetSchema.Type;
 
@@ -332,10 +391,10 @@ export interface DesktopDiscoveredSshHost extends DesktopSshEnvironmentTarget {
 }
 
 export const DesktopDiscoveredSshHostSchema = Schema.Struct({
-  alias: Schema.String,
-  hostname: Schema.String,
-  username: Schema.NullOr(Schema.String),
-  port: Schema.NullOr(Schema.Number),
+  alias: DesktopSshAliasSchema,
+  hostname: DesktopSshHostnameSchema,
+  username: Schema.NullOr(DesktopSshUsernameSchema),
+  port: Schema.NullOr(PortSchema),
   source: DesktopSshHostSourceSchema,
 });
 
@@ -350,10 +409,10 @@ export interface DesktopSshEnvironmentBootstrap {
 
 export const DesktopSshEnvironmentBootstrapSchema = Schema.Struct({
   target: DesktopSshEnvironmentTargetSchema,
-  httpBaseUrl: Schema.String,
-  wsBaseUrl: Schema.String,
-  pairingToken: Schema.NullOr(Schema.String),
-  remotePort: Schema.optionalKey(Schema.Number),
+  httpBaseUrl: DesktopUrlSchema,
+  wsBaseUrl: DesktopUrlSchema,
+  pairingToken: Schema.NullOr(DesktopCredentialSchema),
+  remotePort: Schema.optionalKey(PortSchema),
   remoteServerKind: Schema.optionalKey(Schema.Literals(["external", "managed"])),
 });
 
@@ -366,18 +425,18 @@ export interface DesktopSshPasswordPromptRequest {
 }
 
 export const DesktopSshPasswordPromptRequestSchema = Schema.Struct({
-  requestId: Schema.String,
-  destination: Schema.String,
-  username: Schema.NullOr(Schema.String),
-  prompt: Schema.String,
-  expiresAt: Schema.String,
+  requestId: DesktopSshPromptRequestIdSchema,
+  destination: DesktopSshHostnameSchema,
+  username: Schema.NullOr(DesktopSshUsernameSchema),
+  prompt: DesktopSshPromptSchema,
+  expiresAt: DesktopTimestampSchema,
 });
 
 export const DesktopSshPasswordPromptCancelledType = "ssh-password-prompt-cancelled" as const;
 
 export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
   type: Schema.Literal(DesktopSshPasswordPromptCancelledType),
-  message: Schema.String,
+  message: Schema.String.check(Schema.isMaxLength(8_192)),
 });
 
 export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
@@ -395,35 +454,35 @@ export const DesktopSshEnvironmentEnsureResultSchema = Schema.Union([
 ]);
 
 export const DesktopSshHttpBaseUrlInputSchema = Schema.Struct({
-  httpBaseUrl: Schema.String,
+  httpBaseUrl: DesktopUrlSchema,
 });
 
 export const DesktopSshBearerRequestInputSchema = Schema.Struct({
-  httpBaseUrl: Schema.String,
-  bearerToken: Schema.String,
+  httpBaseUrl: DesktopUrlSchema,
+  bearerToken: DesktopCredentialSchema,
 });
 
 export const DesktopSshBearerBootstrapInputSchema = Schema.Struct({
-  httpBaseUrl: Schema.String,
-  credential: Schema.String,
+  httpBaseUrl: DesktopUrlSchema,
+  credential: DesktopCredentialSchema,
 });
 
 export const DesktopSshPasswordPromptResolutionInputSchema = Schema.Struct({
-  requestId: Schema.String,
-  password: Schema.NullOr(Schema.String),
+  requestId: DesktopSshPromptRequestIdSchema,
+  password: Schema.NullOr(DesktopCredentialSchema),
 });
 
 export const PersistedSavedEnvironmentRecordSchema = Schema.Struct({
   environmentId: EnvironmentId,
-  label: Schema.String,
-  wsBaseUrl: Schema.String,
-  httpBaseUrl: Schema.String,
-  createdAt: Schema.String,
-  lastConnectedAt: Schema.NullOr(Schema.String),
+  label: DesktopEnvironmentLabelSchema,
+  wsBaseUrl: DesktopUrlSchema,
+  httpBaseUrl: DesktopUrlSchema,
+  createdAt: DesktopTimestampSchema,
+  lastConnectedAt: Schema.NullOr(DesktopTimestampSchema),
   desktopSsh: Schema.optionalKey(DesktopSshEnvironmentTargetSchema),
   relayManaged: Schema.optionalKey(
     Schema.Struct({
-      relayUrl: Schema.String,
+      relayUrl: DesktopUrlSchema,
     }),
   ),
 });
@@ -446,10 +505,10 @@ export interface DesktopServerExposureState {
 
 export const DesktopServerExposureStateSchema = Schema.Struct({
   mode: DesktopServerExposureModeSchema,
-  endpointUrl: Schema.NullOr(Schema.String),
-  advertisedHost: Schema.NullOr(Schema.String),
+  endpointUrl: Schema.NullOr(DesktopUrlSchema),
+  advertisedHost: Schema.NullOr(DesktopSshHostnameSchema),
   tailscaleServeEnabled: Schema.Boolean,
-  tailscaleServePort: Schema.Number,
+  tailscaleServePort: PortSchema,
 });
 
 export interface PickFolderOptions {
@@ -463,8 +522,8 @@ export interface PickFolderOptions {
 }
 
 export const PickFolderOptionsSchema = Schema.Struct({
-  initialPath: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  targetEnvironmentId: Schema.optionalKey(Schema.String),
+  initialPath: Schema.optionalKey(Schema.NullOr(DesktopPathSchema)),
+  targetEnvironmentId: Schema.optionalKey(DesktopEnvironmentIdSchema),
 });
 
 /**
@@ -479,9 +538,9 @@ export interface PickedThemeFile {
 }
 
 export const PickedThemeFileSchema = Schema.Struct({
-  name: Schema.String,
+  name: Schema.String.check(Schema.isMaxLength(1_024)),
   size: Schema.Number,
-  text: Schema.String,
+  text: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });
 
 export interface DesktopWslDistro {
@@ -491,7 +550,7 @@ export interface DesktopWslDistro {
 }
 
 export const DesktopWslDistroSchema = Schema.Struct({
-  name: Schema.String,
+  name: DesktopWslDistroNameSchema,
   isDefault: Schema.Boolean,
   version: Schema.Literals([1, 2]),
 });
@@ -519,11 +578,11 @@ export interface DesktopWslState {
 
 export const DesktopWslStateSchema = Schema.Struct({
   enabled: Schema.Boolean,
-  distro: Schema.NullOr(Schema.String),
+  distro: Schema.NullOr(DesktopWslDistroNameSchema),
   available: Schema.Boolean,
   wslOnly: Schema.Boolean,
-  distros: Schema.Array(DesktopWslDistroSchema),
-  preflightError: Schema.NullOr(Schema.String),
+  distros: Schema.Array(DesktopWslDistroSchema).check(Schema.isMaxLength(64)),
+  preflightError: Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192))),
 });
 
 /**
@@ -553,6 +612,10 @@ export const DesktopPreviewColorSchemeSchema: Schema.Codec<DesktopPreviewColorSc
 
 export const FAVICON_DATA_URL_MAX_LENGTH = 8192;
 export const FAVICON_CAPTURED_AT_MAX = 8_640_000_000_000_000;
+// Runtime tab ids JSON-encode environment, thread, server-epoch, and server tab
+// identities, so they are intentionally larger than the server-local 128-char
+// tab id contract.
+export const DESKTOP_PREVIEW_TAB_ID_MAX_LENGTH = 1_024;
 
 export interface DesktopPreviewFavicon {
   dataUrl: string;
@@ -604,7 +667,14 @@ export interface DesktopPreviewTabState {
 
 export const DesktopPreviewTabIdSchema = Schema.String.check(Schema.isTrimmed()).check(
   Schema.isNonEmpty(),
+  Schema.isMaxLength(DESKTOP_PREVIEW_TAB_ID_MAX_LENGTH),
 );
+
+export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
+  ...PreviewAutomationStatus.fields,
+  tabId: Schema.NullOr(DesktopPreviewTabIdSchema),
+});
+export type DesktopPreviewAutomationStatus = typeof DesktopPreviewAutomationStatusSchema.Type;
 
 export const DesktopPreviewNavStatusSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("Idle") }),
@@ -645,7 +715,7 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
 
 export interface DesktopPreviewPointerEvent {
   tabId: string;
-  phase: "move" | "click";
+  phase: "move" | "click" | "type" | "press" | "scroll";
   x: number;
   y: number;
   sequence: number;
@@ -655,7 +725,7 @@ export interface DesktopPreviewPointerEvent {
 export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointerEvent> =
   Schema.Struct({
     tabId: DesktopPreviewTabIdSchema,
-    phase: Schema.Literals(["move", "click"]),
+    phase: Schema.Literals(["move", "click", "type", "press", "scroll"]),
     x: Schema.Number,
     y: Schema.Number,
     sequence: Schema.Int,
@@ -741,13 +811,23 @@ export interface DesktopPreviewRecordingFrame {
   receivedAt: string;
 }
 
+export const DESKTOP_PREVIEW_RECORDING_FRAME_MAX_BYTES = 8 * 1024 * 1024;
+export const DESKTOP_PREVIEW_RECORDING_MAX_DIMENSION = 1_600;
+export const DESKTOP_PREVIEW_RECORDING_MIME_TYPE_MAX_LENGTH = 256;
+
 export const DesktopPreviewRecordingFrameSchema: Schema.Codec<DesktopPreviewRecordingFrame> =
   Schema.Struct({
     tabId: DesktopPreviewTabIdSchema,
-    data: Schema.Uint8Array,
-    width: Schema.Number,
-    height: Schema.Number,
-    receivedAt: Schema.String,
+    data: Schema.Uint8Array.check(Schema.isMaxLength(DESKTOP_PREVIEW_RECORDING_FRAME_MAX_BYTES)),
+    width: Schema.Int.check(
+      Schema.isGreaterThan(0),
+      Schema.isLessThanOrEqualTo(DESKTOP_PREVIEW_RECORDING_MAX_DIMENSION),
+    ),
+    height: Schema.Int.check(
+      Schema.isGreaterThan(0),
+      Schema.isLessThanOrEqualTo(DESKTOP_PREVIEW_RECORDING_MAX_DIMENSION),
+    ),
+    receivedAt: DesktopTimestampSchema,
   });
 
 export interface DesktopPreviewRecordingArtifact {
@@ -800,11 +880,30 @@ export interface PickedElementStackFrame {
   columnNumber: number | null;
 }
 
+export const PICKED_ELEMENT_MAX_URL_LENGTH = 2_048;
+export const PICKED_ELEMENT_MAX_TITLE_LENGTH = 512;
+export const PICKED_ELEMENT_MAX_TAG_NAME_LENGTH = 128;
+export const PICKED_ELEMENT_MAX_SELECTOR_LENGTH = 8_192;
+export const PICKED_ELEMENT_MAX_HTML_LENGTH = 65_536;
+export const PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH = 512;
+export const PICKED_ELEMENT_MAX_STACK_FRAME_NAME_LENGTH = 512;
+export const PICKED_ELEMENT_MAX_STACK_FRAME_FILE_LENGTH = 4_096;
+export const PICKED_ELEMENT_MAX_STACK_FRAMES = 128;
+export const PICKED_ELEMENT_MAX_STYLES_LENGTH = 65_536;
+export const PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH = 64;
+
+const PickedElementStackFrameNameSchema = Schema.String.check(
+  Schema.isMaxLength(PICKED_ELEMENT_MAX_STACK_FRAME_NAME_LENGTH),
+);
+const PickedElementStackFrameFileSchema = Schema.String.check(
+  Schema.isMaxLength(PICKED_ELEMENT_MAX_STACK_FRAME_FILE_LENGTH),
+);
+
 export const PickedElementStackFrameSchema: Schema.Codec<PickedElementStackFrame> = Schema.Struct({
-  functionName: Schema.NullOr(Schema.String),
-  fileName: Schema.NullOr(Schema.String),
-  lineNumber: Schema.NullOr(Schema.Number),
-  columnNumber: Schema.NullOr(Schema.Number),
+  functionName: Schema.NullOr(PickedElementStackFrameNameSchema),
+  fileName: Schema.NullOr(PickedElementStackFrameFileSchema),
+  lineNumber: Schema.NullOr(Schema.Finite),
+  columnNumber: Schema.NullOr(Schema.Finite),
 });
 
 /**
@@ -837,17 +936,45 @@ export interface PickedElementPayload {
 }
 
 export const PickedElementPayloadSchema: Schema.Codec<PickedElementPayload> = Schema.Struct({
-  pageUrl: Schema.String,
-  pageTitle: Schema.NullOr(Schema.String),
-  tagName: Schema.String,
-  selector: Schema.NullOr(Schema.String),
-  htmlPreview: Schema.String,
-  componentName: Schema.NullOr(Schema.String),
+  pageUrl: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_URL_LENGTH)),
+  pageTitle: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_TITLE_LENGTH)),
+  ),
+  tagName: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_TAG_NAME_LENGTH)),
+  selector: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_SELECTOR_LENGTH)),
+  ),
+  htmlPreview: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_HTML_LENGTH)),
+  componentName: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH)),
+  ),
   source: Schema.NullOr(PickedElementStackFrameSchema),
-  stack: Schema.Array(PickedElementStackFrameSchema),
-  styles: Schema.String,
-  pickedAt: Schema.String,
+  stack: Schema.Array(PickedElementStackFrameSchema).check(
+    Schema.isMaxLength(PICKED_ELEMENT_MAX_STACK_FRAMES),
+  ),
+  styles: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_STYLES_LENGTH)),
+  pickedAt: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH)),
 });
+
+export const PREVIEW_ANNOTATION_MAX_ID_LENGTH = 128;
+export const PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH = 10_000;
+export const PREVIEW_ANNOTATION_MAX_ELEMENTS = 64;
+export const PREVIEW_ANNOTATION_MAX_REGIONS = 64;
+export const PREVIEW_ANNOTATION_MAX_STROKES = 64;
+export const PREVIEW_ANNOTATION_MAX_STROKE_POINTS = 4_096;
+export const PREVIEW_ANNOTATION_MAX_STYLE_CHANGES = 1_024;
+export const PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS = 65_536;
+export const PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH = 1024 * 1024;
+export const PREVIEW_ANNOTATION_MAX_CSS_PROPERTY_LENGTH = 128;
+export const PREVIEW_ANNOTATION_MAX_CSS_VALUE_LENGTH = 8_192;
+export const PREVIEW_ANNOTATION_SCREENSHOT_MAX_DATA_URL_LENGTH = 48 * 1024 * 1024;
+
+const PreviewAnnotationIdSchema = Schema.String.check(
+  Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_ID_LENGTH),
+);
+const PreviewAnnotationCssValueSchema = Schema.String.check(
+  Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_CSS_VALUE_LENGTH),
+);
 
 export interface PreviewAnnotationRect {
   x: number;
@@ -857,10 +984,10 @@ export interface PreviewAnnotationRect {
 }
 
 export const PreviewAnnotationRectSchema: Schema.Codec<PreviewAnnotationRect> = Schema.Struct({
-  x: Schema.Number,
-  y: Schema.Number,
-  width: Schema.Number,
-  height: Schema.Number,
+  x: Schema.Finite,
+  y: Schema.Finite,
+  width: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  height: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 
 export interface PreviewAnnotationPoint {
@@ -869,8 +996,8 @@ export interface PreviewAnnotationPoint {
 }
 
 export const PreviewAnnotationPointSchema: Schema.Codec<PreviewAnnotationPoint> = Schema.Struct({
-  x: Schema.Number,
-  y: Schema.Number,
+  x: Schema.Finite,
+  y: Schema.Finite,
 });
 
 export interface PreviewAnnotationElementTarget {
@@ -881,7 +1008,7 @@ export interface PreviewAnnotationElementTarget {
 
 export const PreviewAnnotationElementTargetSchema: Schema.Codec<PreviewAnnotationElementTarget> =
   Schema.Struct({
-    id: Schema.String,
+    id: PreviewAnnotationIdSchema,
     element: PickedElementPayloadSchema,
     rect: PreviewAnnotationRectSchema,
   });
@@ -893,7 +1020,7 @@ export interface PreviewAnnotationRegionTarget {
 
 export const PreviewAnnotationRegionTargetSchema: Schema.Codec<PreviewAnnotationRegionTarget> =
   Schema.Struct({
-    id: Schema.String,
+    id: PreviewAnnotationIdSchema,
     rect: PreviewAnnotationRectSchema,
   });
 
@@ -907,10 +1034,12 @@ export interface PreviewAnnotationStrokeTarget {
 
 export const PreviewAnnotationStrokeTargetSchema: Schema.Codec<PreviewAnnotationStrokeTarget> =
   Schema.Struct({
-    id: Schema.String,
-    color: Schema.String,
-    width: Schema.Number,
-    points: Schema.Array(PreviewAnnotationPointSchema),
+    id: PreviewAnnotationIdSchema,
+    color: PreviewAnnotationCssValueSchema,
+    width: Schema.Finite.check(Schema.isGreaterThan(0)),
+    points: Schema.Array(PreviewAnnotationPointSchema).check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_STROKE_POINTS),
+    ),
     bounds: PreviewAnnotationRectSchema,
   });
 
@@ -924,11 +1053,13 @@ export interface PreviewAnnotationStyleChange {
 
 export const PreviewAnnotationStyleChangeSchema: Schema.Codec<PreviewAnnotationStyleChange> =
   Schema.Struct({
-    targetId: Schema.String,
-    selector: Schema.NullOr(Schema.String),
-    property: Schema.String,
-    previousValue: Schema.String,
-    value: Schema.String,
+    targetId: PreviewAnnotationIdSchema,
+    selector: Schema.NullOr(
+      Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_SELECTOR_LENGTH)),
+    ),
+    property: Schema.String.check(Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_CSS_PROPERTY_LENGTH)),
+    previousValue: PreviewAnnotationCssValueSchema,
+    value: PreviewAnnotationCssValueSchema,
   });
 
 export interface PreviewAnnotationScreenshot {
@@ -940,11 +1071,26 @@ export interface PreviewAnnotationScreenshot {
 
 export const PreviewAnnotationScreenshotSchema: Schema.Codec<PreviewAnnotationScreenshot> =
   Schema.Struct({
-    dataUrl: Schema.String,
-    width: Schema.Number,
-    height: Schema.Number,
+    dataUrl: Schema.String.check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_SCREENSHOT_MAX_DATA_URL_LENGTH),
+      Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/iu),
+    ),
+    width: Schema.Int.check(
+      Schema.isGreaterThan(0),
+      Schema.isLessThanOrEqualTo(PREVIEW_VIEWPORT_MAX_DIMENSION),
+    ),
+    height: Schema.Int.check(
+      Schema.isGreaterThan(0),
+      Schema.isLessThanOrEqualTo(PREVIEW_VIEWPORT_MAX_DIMENSION),
+    ),
     cropRect: PreviewAnnotationRectSchema,
-  });
+  }).check(
+    Schema.makeFilter(
+      ({ width, height }) =>
+        width * height <= PREVIEW_VIEWPORT_MAX_AREA ||
+        `Annotation screenshot area must not exceed ${PREVIEW_VIEWPORT_MAX_AREA} pixels.`,
+    ),
+  );
 
 /**
  * A submitted preview annotation. One annotation may reference multiple DOM
@@ -964,20 +1110,53 @@ export interface PreviewAnnotationPayload {
   createdAt: string;
 }
 
-export const PreviewAnnotationPayloadSchema: Schema.Codec<PreviewAnnotationPayload> = Schema.Struct(
-  {
-    id: Schema.String,
-    pageUrl: Schema.String,
-    pageTitle: Schema.NullOr(Schema.String),
-    comment: Schema.String,
-    elements: Schema.Array(PreviewAnnotationElementTargetSchema),
-    regions: Schema.Array(PreviewAnnotationRegionTargetSchema),
-    strokes: Schema.Array(PreviewAnnotationStrokeTargetSchema),
-    styleChanges: Schema.Array(PreviewAnnotationStyleChangeSchema),
-    screenshot: Schema.NullOr(PreviewAnnotationScreenshotSchema),
-    createdAt: Schema.String,
+const PreviewAnnotationPayloadAggregateLimits = Schema.makeFilter(
+  (input: PreviewAnnotationPayload) => {
+    const strokePoints = input.strokes.reduce((total, stroke) => total + stroke.points.length, 0);
+    if (strokePoints > PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS) {
+      return `Annotation must not exceed ${PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS} total stroke points.`;
+    }
+    const styleCharacters = input.styleChanges.reduce(
+      (total, change) =>
+        total +
+        change.targetId.length +
+        (change.selector?.length ?? 0) +
+        change.property.length +
+        change.previousValue.length +
+        change.value.length,
+      0,
+    );
+    return (
+      styleCharacters <= PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH ||
+      `Annotation style payload must not exceed ${PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH} characters.`
+    );
   },
 );
+
+export const PreviewAnnotationPayloadSchema: Schema.Codec<PreviewAnnotationPayload> = Schema.Struct(
+  {
+    id: PreviewAnnotationIdSchema,
+    pageUrl: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_URL_LENGTH)),
+    pageTitle: Schema.NullOr(
+      Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_TITLE_LENGTH)),
+    ),
+    comment: Schema.String.check(Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH)),
+    elements: Schema.Array(PreviewAnnotationElementTargetSchema).check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_ELEMENTS),
+    ),
+    regions: Schema.Array(PreviewAnnotationRegionTargetSchema).check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_REGIONS),
+    ),
+    strokes: Schema.Array(PreviewAnnotationStrokeTargetSchema).check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_STROKES),
+    ),
+    styleChanges: Schema.Array(PreviewAnnotationStyleChangeSchema).check(
+      Schema.isMaxLength(PREVIEW_ANNOTATION_MAX_STYLE_CHANGES),
+    ),
+    screenshot: Schema.NullOr(PreviewAnnotationScreenshotSchema),
+    createdAt: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH)),
+  },
+).check(PreviewAnnotationPayloadAggregateLimits);
 
 export type PreviewAnnotationSubmission = "attach" | "send";
 export const PreviewAnnotationSubmissionSchema: Schema.Codec<PreviewAnnotationSubmission> =
@@ -1022,7 +1201,7 @@ export const DesktopPreviewRegisterWebviewInputSchema = Schema.Struct({
 
 export const DesktopPreviewNavigateInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
-  url: Schema.String,
+  url: Schema.String.check(Schema.isMaxLength(PICKED_ELEMENT_MAX_URL_LENGTH)),
 });
 
 export const DesktopPreviewConfigInputSchema = Schema.Struct({
@@ -1049,7 +1228,10 @@ export const DesktopPreviewArtifactInputSchema = Schema.Struct({
 
 export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
-  mimeType: Schema.String.check(Schema.isTrimmed()).check(Schema.isNonEmpty()),
+  mimeType: Schema.String.check(Schema.isTrimmed()).check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(DESKTOP_PREVIEW_RECORDING_MIME_TYPE_MAX_LENGTH),
+  ),
   data: Schema.Uint8Array,
 });
 
@@ -1085,6 +1267,8 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
+  /** The desktop client's OS platform, read from Electron's preload process. */
+  getClientPlatform?: () => string;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
    * the packaged app ships only the `en-US` Chromium locale pak, so
@@ -1280,7 +1464,7 @@ export interface DesktopPreviewBridge {
     onFrame: (listener: (frame: DesktopPreviewRecordingFrame) => void) => () => void;
   };
   automation: {
-    status: (tabId: string) => Promise<PreviewAutomationStatus>;
+    status: (tabId: string) => Promise<DesktopPreviewAutomationStatus>;
     snapshot: (tabId: string) => Promise<PreviewAutomationSnapshot>;
     click: (tabId: string, input: PreviewAutomationClickInput) => Promise<void>;
     type: (tabId: string, input: PreviewAutomationTypeInput) => Promise<void>;

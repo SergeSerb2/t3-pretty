@@ -794,11 +794,15 @@ export const make = Effect.gen(function* () {
     ) {
       const repositoryNameWithOwner = resolveHeadRepositoryNameWithOwner(pullRequest) ?? "";
 
-      if (repositoryNameWithOwner.length === 0) {
-        yield* gitCore.fetchPullRequestBranch({
+      // Same-repo and Origin CRs (no isCrossRepository) fetch the primary remote
+      // head first. The wrapper still falls back to refs/pull/<n>/head.
+      if (repositoryNameWithOwner.length === 0 || pullRequest.isCrossRepository !== true) {
+        const remoteName = yield* gitCore.resolvePrimaryRemoteName(cwd);
+        yield* gitCore.fetchRemoteBranch({
           cwd,
-          prNumber: pullRequest.number,
-          branch: localBranch,
+          remoteName,
+          remoteBranch: pullRequest.headBranch,
+          localBranch,
         });
         return;
       }
@@ -1448,15 +1452,17 @@ export const make = Effect.gen(function* () {
    * cannot exist for it and asking the provider is a guaranteed-empty API call.
    *
    * `git push` writes the remote-tracking ref even without `-u` (how most
-   * terminal and agent pushes land), which makes this a safer "did it ever
-   * reach the host" test than looking for upstream config, and the glob spans
-   * every remote so a fork branch still counts. A repository that tracks no
-   * remotes at all cannot answer the question, because then every branch looks
-   * unpublished; it, and any failed probe, keeps the lookup.
+   * terminal and agent pushes land), and configured upstream metadata survives
+   * when a merged change request's remote branch is deleted. Together they
+   * distinguish branches known to have reached a host from genuinely local
+   * branches. The ref glob spans every remote so a fork branch still counts. A
+   * repository that tracks no remotes at all cannot answer the question,
+   * because then every branch looks unpublished; it, and any failed probe,
+   * keeps the lookup.
    */
   const isUnpublishedBranch = Effect.fn("isUnpublishedBranch")(function* (
     cwd: string,
-    headContext: Pick<BranchHeadContext, "headBranch">,
+    headContext: Pick<BranchHeadContext, "headBranch" | "localBranch">,
   ) {
     if (headContext.headBranch.length === 0) {
       return false;
@@ -1471,13 +1477,24 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.map((result) => result.stdout.trim().length > 0));
 
-    return yield* Effect.all(
-      [matchesRef("refs/remotes"), matchesRef(`refs/remotes/*/${headContext.headBranch}`)],
-      { concurrency: "unbounded" },
-    ).pipe(
-      Effect.map(([tracksAnyRemote, tracksThisBranch]) => tracksAnyRemote && !tracksThisBranch),
-      Effect.orElseSucceed(() => false),
-    );
+    return yield* Effect.gen(function* () {
+      const [configuredRemote, configuredMerge] = yield* Effect.all(
+        [
+          gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.remote`),
+          gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.merge`),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (configuredRemote !== null && configuredMerge !== null) {
+        return false;
+      }
+
+      const [tracksAnyRemote, tracksThisBranch] = yield* Effect.all(
+        [matchesRef("refs/remotes"), matchesRef(`refs/remotes/*/${headContext.headBranch}`)],
+        { concurrency: "unbounded" },
+      );
+      return tracksAnyRemote && !tracksThisBranch;
+    }).pipe(Effect.orElseSucceed(() => false));
   });
 
   const findOpenPr = Effect.fn("findOpenPr")(function* (
@@ -2284,10 +2301,13 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd, refresh: true });
-        const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-        );
+        const result = yield* gitCore.listRefs({
+          cwd,
+          query: localPullRequestBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        const localBranch = result.refs.find((branch) => branch.name === localPullRequestBranch);
         if (localBranch) {
           return localBranch;
         }
@@ -2295,8 +2315,14 @@ export const make = Effect.gen(function* () {
           return null;
         }
 
-        for (const branch of result.refs) {
-          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
+        const headResult = yield* gitCore.listRefs({
+          cwd,
+          query: pullRequest.headBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        for (const branch of headResult.refs) {
+          if (branch.name !== pullRequest.headBranch || !branch.worktreePath) {
             continue;
           }
 

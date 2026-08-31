@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import {
   type PendingThreadLifecycleEntry,
   PendingThreadLifecycleEntries,
+  THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH,
 } from "./threadLifecycleOutboxModel.ts";
 
 export class ThreadLifecycleOutboxPersistenceError extends Schema.TaggedErrorClass<ThreadLifecycleOutboxPersistenceError>()(
@@ -46,8 +47,16 @@ export class ThreadLifecycleOutboxStore extends Context.Reference<{
   defaultValue: memoryThreadLifecycleOutboxStore,
 }) {}
 
-const PendingThreadLifecycleEntriesJson = Schema.fromJsonString(PendingThreadLifecycleEntries);
-export const decodeStoredPendingEntries = Schema.decodeUnknownEffect(
-  PendingThreadLifecycleEntriesJson,
+const StoredPendingEntriesJsonString = Schema.String.check(
+  Schema.isMaxLength(THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH),
 );
-export const encodePendingEntries = Schema.encodeEffect(PendingThreadLifecycleEntriesJson);
+const PendingThreadLifecycleEntriesJson = Schema.fromJsonString(PendingThreadLifecycleEntries);
+const decodeStoredJsonString = Schema.decodeUnknownEffect(StoredPendingEntriesJsonString);
+const decodePendingEntriesJson = Schema.decodeUnknownEffect(PendingThreadLifecycleEntriesJson);
+const encodePendingEntriesJson = Schema.encodeEffect(PendingThreadLifecycleEntriesJson);
+
+export const decodeStoredPendingEntries = (input: unknown) =>
+  decodeStoredJsonString(input).pipe(Effect.flatMap(decodePendingEntriesJson));
+
+export const encodePendingEntries = (entries: PendingThreadLifecycleEntries) =>
+  encodePendingEntriesJson(entries).pipe(Effect.flatMap(decodeStoredJsonString));

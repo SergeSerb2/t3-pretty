@@ -3,7 +3,6 @@ import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
-import { useThemeColor } from "../../lib/useThemeColor";
 
 /** Matches `size-14` on the FAB. */
 export const ANDROID_HOME_FAB_SIZE = 56;
@@ -11,8 +10,8 @@ export const ANDROID_HOME_FAB_SIZE = 56;
 export const ANDROID_HOME_FAB_EDGE_GAP = 16;
 
 /**
- * Android-only wrapper that overlays a bottom-right new-task FAB on the home
- * screen. Other platforms render children unchanged.
+ * Android-only wrapper that overlays a bottom-right new-task FAB on a thread
+ * list. Other platforms render children unchanged.
  */
 export function AndroidHomeFabLayout(props: {
   readonly onStartNewTask: () => void;
@@ -30,8 +29,6 @@ function AndroidHomeFab(props: {
   readonly children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const primaryForegroundColor = useThemeColor("--color-primary-foreground");
-
   return (
     <View className="flex-1">
       {props.children}
@@ -47,7 +44,7 @@ function AndroidHomeFab(props: {
         <SymbolView
           name="square.and.pencil"
           size={22}
-          tintColor={primaryForegroundColor}
+          tintColorClassName={"accent-primary-foreground"}
           type="monochrome"
         />
       </Pressable>

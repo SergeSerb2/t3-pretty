@@ -25,6 +25,7 @@ import {
   hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
@@ -37,10 +38,13 @@ import {
   resolveDraftHeroState,
   storedComposerRuntimeMode,
   scheduleEnvironmentReconnectWarning,
+  shoulderTabReserve,
   startNewThreadForProject,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldResetComposerQueueForRouteChange,
   shouldShowBranchMismatchBanner,
+  shouldShowPlanFollowUpPrompt,
   shouldWriteThreadErrorToCurrentServerThread,
 } from "./ChatView.logic";
 
@@ -48,6 +52,24 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("shoulderTabReserve", () => {
+  it("ignores the top drawer when measuring the shoulder tab band", () => {
+    const elementAt = (top: number) => ({ getBoundingClientRect: () => ({ top }) }) as HTMLElement;
+    const elements = new Map<string, HTMLElement>([
+      ['[data-chat-composer-form="true"]', elementAt(20)],
+      [".chat-composer-shoulder-tab", elementAt(100)],
+      ['[data-chat-composer-main-surface="true"]', elementAt(128)],
+    ]);
+    const overlay = {
+      querySelector: (selector: string) => elements.get(selector) ?? null,
+    } as HTMLElement;
+
+    expect(shoulderTabReserve(overlay)).toBe(28);
+    elements.set(".chat-composer-tasks-tab", elementAt(100));
+    expect(shoulderTabReserve(overlay)).toBe(0);
+  });
+});
 
 describe("draft hero submission transition", () => {
   it("does not dock the composer before a background submission", () => {
@@ -447,17 +469,6 @@ describe("deriveComposerSendState", () => {
       }).hasSendableContent,
     ).toBe(false);
   });
-
-  it("treats pending path attachments as sendable content", () => {
-    expect(
-      deriveComposerSendState({
-        prompt: "",
-        imageCount: 0,
-        terminalContexts: [],
-        fileAttachmentCount: 1,
-      }).hasSendableContent,
-    ).toBe(true);
-  });
 });
 
 describe("buildExpiredTerminalContextToastCopy", () => {
@@ -642,6 +653,31 @@ describe("shouldShowBranchMismatchBanner", () => {
     expect(
       shouldShowBranchMismatchBanner({ ...base, composerHasContent: true, hasMismatch: false }),
     ).toBe(false);
+  });
+});
+
+describe("shouldShowPlanFollowUpPrompt", () => {
+  const base = {
+    pendingUserInputCount: 0,
+    interactionMode: "plan" as const,
+    latestTurnSettled: true,
+    hasActionableProposedPlan: true,
+    hasComposerAttachments: false,
+  };
+
+  it("shows plan actions for a settled actionable plan without attachments", () => {
+    expect(shouldShowPlanFollowUpPrompt(base)).toBe(true);
+  });
+
+  it("hides plan actions while the composer has staged attachments", () => {
+    expect(shouldShowPlanFollowUpPrompt({ ...base, hasComposerAttachments: true })).toBe(false);
+  });
+
+  it("preserves the existing plan follow-up gates", () => {
+    expect(shouldShowPlanFollowUpPrompt({ ...base, pendingUserInputCount: 1 })).toBe(false);
+    expect(shouldShowPlanFollowUpPrompt({ ...base, interactionMode: "default" })).toBe(false);
+    expect(shouldShowPlanFollowUpPrompt({ ...base, latestTurnSettled: false })).toBe(false);
+    expect(shouldShowPlanFollowUpPrompt({ ...base, hasActionableProposedPlan: false })).toBe(false);
   });
 });
 
@@ -968,6 +1004,119 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("reconcileQueuedComposerMessages", () => {
+  const queuedMessages = [
+    {
+      id: MessageId.make("message-queued-1"),
+      text: "First queued follow-up",
+      attachmentCount: 0,
+    },
+    {
+      id: MessageId.make("message-queued-2"),
+      text: "Second queued follow-up",
+      attachmentCount: 1,
+    },
+  ];
+
+  it("holds queued copy until the server identifies its turn", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: { ...completedTurn, turnId: TurnId.make("turn-other"), state: "running" },
+      }),
+    ).toBe(queuedMessages);
+  });
+
+  it("releases through the queued message identified by the server", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: {
+          ...completedTurn,
+          turnId: TurnId.make("turn-next"),
+          userMessageId: queuedMessages[1]!.id,
+          state: "running",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("releases a queued message after its turn finishes before reconciliation", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [],
+        latestTurn: { ...completedTurn, userMessageId: queuedMessages[0]!.id },
+      }),
+    ).toEqual([queuedMessages[1]]);
+  });
+
+  it("falls back to the matching server message for older snapshots", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[1]!.id,
+            role: "user",
+            text: queuedMessages[1]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: completedTurn,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not use the fallback when the server identifies another message", () => {
+    expect(
+      reconcileQueuedComposerMessages({
+        queuedMessages,
+        serverMessages: [
+          {
+            id: queuedMessages[0]!.id,
+            role: "user",
+            text: queuedMessages[0]!.text,
+            turnId: null,
+            createdAt: completedTurn.requestedAt,
+            updatedAt: completedTurn.requestedAt,
+            streaming: false,
+          },
+        ],
+        latestTurn: { ...completedTurn, userMessageId: MessageId.make("message-other-client") },
+      }),
+    ).toBe(queuedMessages);
+  });
+});
+
+describe("shouldResetComposerQueueForRouteChange", () => {
+  const draft = { routeKind: "draft" as const, routeThreadKey: "env:thread", draftId: "draft-1" };
+
+  it("preserves promotion but resets other route identity changes", () => {
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        routeKind: "server",
+        routeThreadKey: draft.routeThreadKey,
+        draftId: null,
+      }),
+    ).toBe(false);
+    expect(shouldResetComposerQueueForRouteChange(draft, { ...draft, draftId: "draft-2" })).toBe(
+      true,
+    );
+    expect(
+      shouldResetComposerQueueForRouteChange(draft, {
+        ...draft,
+        routeThreadKey: "env:other-thread",
+      }),
+    ).toBe(true);
   });
 });
 

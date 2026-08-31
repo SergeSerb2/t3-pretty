@@ -7,7 +7,7 @@ import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { assert, it } from "@effect/vitest";
 
-import { GitCommandError } from "@t3tools/contracts";
+import { GitCommandError, VCS_REMOTE_MAX_COUNT } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -34,6 +34,30 @@ const runGit = (cwd: string, args: ReadonlyArray<string>) =>
   });
 
 type GitContractError = GitCommandError | PlatformError.PlatformError;
+
+it.effect("bounds NUL-separated workspace paths without retaining the remainder", () =>
+  Effect.sync(() => {
+    const capped = GitVcsDriver.splitNullSeparatedPathsBounded("a\0b\0c\0", false, 2);
+    const partial = GitVcsDriver.splitNullSeparatedPathsBounded("a\0unfinished", true, 2);
+
+    assert.deepStrictEqual(capped, { paths: ["a", "b"], truncated: true });
+    assert.deepStrictEqual(partial, { paths: ["a"], truncated: true });
+  }),
+);
+
+it("bounds and marks remote listings without retaining later entries", () => {
+  const remotes = new Map(
+    Array.from(
+      { length: VCS_REMOTE_MAX_COUNT + 1 },
+      (_, index) => [`remote-${index}`, { url: `https://example.com/repo-${index}.git` }] as const,
+    ),
+  );
+
+  const result = GitVcsDriver.collectBoundedGitRemotes(remotes, false);
+
+  assert.strictEqual(result.remotes.length, VCS_REMOTE_MAX_COUNT);
+  assert.isTrue(result.truncated);
+});
 
 runVcsDriverContractSuite<GitVcsDriver.GitVcsDriver, GitContractError>({
   name: "Git",

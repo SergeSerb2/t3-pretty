@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  OPEN_VSX_SEARCH_QUERY_MAX_LENGTH,
   importOpenVsxThemeExtension,
   searchOpenVsxThemes,
   type OpenVsxThemeExtension,
@@ -192,6 +193,16 @@ describe("Open VSX themes", () => {
     const searchUrl = new URL(String(fetchMock.mock.calls[0]![0]));
     expect(searchUrl.searchParams.get("sortBy")).toBe("rating");
     expect(searchUrl.searchParams.get("sortOrder")).toBe("desc");
+  });
+
+  it("rejects oversized search terms before constructing or fetching a URL", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      searchOpenVsxThemes("q".repeat(OPEN_VSX_SEARCH_QUERY_MAX_LENGTH + 1)),
+    ).rejects.toThrow("Open VSX search terms must be 256 characters or fewer.");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects malformed search responses", async () => {

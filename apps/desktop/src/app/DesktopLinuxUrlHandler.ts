@@ -21,6 +21,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // scheme default via xdg-mime, exactly what the file manager's "set as
 // default" checkbox would record in mimeapps.list.
 export const URL_HANDLER_DESKTOP_ENTRY_NAME = "t3code-url-handler.desktop";
+const URL_HANDLER_REGISTRATION_TIMEOUT = "10 seconds";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
@@ -150,6 +151,9 @@ export const make = Effect.gen(function* () {
       }
     }),
   ).pipe(
+    // URL-handler registration is best-effort startup work. A wedged desktop
+    // database or xdg-mime helper must not keep the Linux app blank forever.
+    Effect.timeout(URL_HANDLER_REGISTRATION_TIMEOUT),
     Effect.mapError((error) =>
       isRegistrationError(error)
         ? error

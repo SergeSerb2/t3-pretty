@@ -1,5 +1,6 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { StackActions, useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -9,6 +10,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  useColorScheme,
   View,
 } from "react-native";
 import * as Linking from "expo-linking";
@@ -20,8 +22,7 @@ import {
 } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useFontFamily } from "../../lib/useFontFamily";
 
 import { MessageId, resolveRuntimeModeForProviderDriver, ThreadId } from "@t3tools/contracts";
@@ -30,8 +31,13 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/unstable/reactivity";
+import * as Option from "effect/Option";
 
-import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
+import {
+  ComposerEditor,
+  type ComposerEditorHandle,
+  type ComposerEditorSelection,
+} from "../../components/ComposerEditor";
 import {
   ComposerInlineControl,
   ComposerToolbarButton,
@@ -52,6 +58,8 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { ComposerSurface } from "./ThreadComposer";
+import { ComposerCommandPopover } from "./ComposerCommandPopover";
+import { useComposerCommandMenu } from "./use-composer-command-menu";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { useDailySceneryPhoto, useSceneryChromeActive } from "../scenery/SceneryProvider";
 import { UNSPLASH_UTM, type SceneryPhoto } from "../scenery/sceneryLogic";
@@ -65,7 +73,6 @@ import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   clearComposerDraftContent,
   getComposerDraftSnapshot,
@@ -98,6 +105,8 @@ import {
   resolveNewTaskWorkspaceLabel,
 } from "./new-task-context-presentation";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { usePreparedConnection } from "../../state/session";
+import { useNativeDictation } from "./useNativeDictation";
 
 // KeyboardStickyView memos its animated style against `style` identity.
 const DRAFT_COMPOSER_STICKY_STYLE = { position: "absolute", bottom: 0, left: 0, right: 0 } as const;
@@ -107,17 +116,32 @@ function NewTaskWorkspaceIcon(props: {
   readonly workspaceMode: "local" | "worktree";
   readonly worktreePath: string | null;
 }) {
-  const iconColor = useThemeColor("--color-icon-muted");
-
   if (props.workspaceMode === "local" && props.worktreePath === null) {
-    return <SymbolView name="folder" size={16} tintColor={iconColor} type="monochrome" />;
+    return (
+      <SymbolView
+        name="folder"
+        size={16}
+        tintColorClassName={"accent-icon-muted"}
+        type="monochrome"
+      />
+    );
   }
 
   return (
     <View className="size-4">
-      <SymbolView name="folder" size={16} tintColor={iconColor} type="monochrome" />
+      <SymbolView
+        name="folder"
+        size={16}
+        tintColorClassName={"accent-icon-muted"}
+        type="monochrome"
+      />
       <View className="absolute -right-1 -bottom-1">
-        <SymbolView name="arrow.triangle.branch" size={9} tintColor={iconColor} type="monochrome" />
+        <SymbolView
+          name="arrow.triangle.branch"
+          size={9}
+          tintColorClassName={"accent-icon-muted"}
+          type="monochrome"
+        />
       </View>
     </View>
   );
@@ -232,7 +256,6 @@ export function NewTaskDraftScreen(props: {
     reserveShare,
   } = useIncomingShare();
   const insets = useSafeAreaInsets();
-  const { themeAppearance: colorScheme } = useAppearancePreferences();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const controlsBottomPadding = Math.max(insets.bottom, 10);
   const keyboardOpenedOffset = Math.max(0, controlsBottomPadding - 8);
@@ -261,6 +284,10 @@ export function NewTaskDraftScreen(props: {
       (environment) => environment.environmentId === selectedProject.environmentId,
     )?.connectionState === "connected";
   const promptInputRef = useRef<ComposerEditorHandle>(null);
+  const [promptSelection, setPromptSelection] = useState<ComposerEditorSelection>(() => ({
+    start: flow.prompt.length,
+    end: flow.prompt.length,
+  }));
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
@@ -343,6 +370,19 @@ export function NewTaskDraftScreen(props: {
   );
   const isDispatching = flow.submitting || pendingPreviews.length > 0;
   const composerSelectorsLocked = isIncomingShareTransferPending || isDispatching;
+  const composerMenu = useComposerCommandMenu({
+    draftMessage: flow.prompt,
+    environmentId: selectedProject?.environmentId ?? null,
+    projectCwd:
+      (flow.workspaceMode === "worktree"
+        ? selectedProject?.workspaceRoot
+        : (flow.selectedWorktreePath ?? selectedProject?.workspaceRoot)) || null,
+    selectedProviderStatus: flow.selectedProviderStatus,
+    hasThread: false,
+    enabled: isComposerFocused && !isIncomingShareTransferPending,
+    onChangeDraftMessage: flow.setPrompt,
+    onUpdateInteractionMode: flow.planModeEnabled ? flow.setInteractionMode : undefined,
+  });
   usePreventRemove(
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) || isCancellingShareImport,
     () => undefined,
@@ -430,14 +470,16 @@ export function NewTaskDraftScreen(props: {
     };
   }, [props.pendingTaskId, cancelEditingPendingTask]);
 
-  const foregroundColor = useThemeColor("--color-foreground");
-  const projectUnderlineColor = useThemeColor("--color-foreground-muted");
+  const sceneryColorScheme = useColorScheme();
+  const uniwindTheme = useUniwindTheme();
+  const foregroundColor = uniwindTheme["--color-foreground"];
+  const projectUnderlineColor = uniwindTheme["--color-foreground-muted"];
   const regularFontFamily = useFontFamily("regular");
   const bodyText = useScaledTextRole("body");
   const sceneryChrome = useSceneryChromeActive();
   const dailyPhoto = useDailySceneryPhoto();
   // Fade into the composer card, not the sheet: the toolbar lives inside the glass surface.
-  const toolbarSurface = String(useThemeColor("--color-card"));
+  const toolbarSurface = String(uniwindTheme["--color-card"]);
   const toolbarFadeOpaque = themeColorWithAlpha(toolbarSurface, 0.95);
   const toolbarFadeTransparent = themeColorWithAlpha(toolbarSurface, 0);
 
@@ -782,12 +824,15 @@ export function NewTaskDraftScreen(props: {
         })),
       );
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: flow.attachments.length,
         });
-        if (images.length > 0) {
-          flow.appendAttachments(images);
+        if (result.images.length > 0) {
+          flow.appendAttachments(result.images);
+        }
+        if (result.error) {
+          Alert.alert("Could not attach image", result.error);
         }
       } catch (error) {
         console.error("[native paste] error converting images", error);
@@ -896,10 +941,12 @@ export function NewTaskDraftScreen(props: {
       if (editingPendingTask) {
         flow.finishEditingPendingTask();
       } else {
-        // Drop the workspace selection with the content: the next task should
-        // re-resolve mode/branch/origin from the server's configured defaults
-        // instead of resurrecting this task's picks.
-        clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+        // Drop draft-local model/workspace selections with the content. The
+        // next task re-resolves project defaults before sticky app defaults.
+        clearComposerDraftContent(draftKey, {
+          clearModelSelection: true,
+          clearWorkspaceSelection: true,
+        });
       }
       navigation.getParent()?.goBack();
       return;
@@ -1013,7 +1060,10 @@ export function NewTaskDraftScreen(props: {
       }
       flow.finishEditingPendingTask();
     } else {
-      clearComposerDraftContent(draftKey, { clearWorkspaceSelection: true });
+      clearComposerDraftContent(draftKey, {
+        clearModelSelection: true,
+        clearWorkspaceSelection: true,
+      });
     }
 
     markThreadOpenStarted(String(selectedProject.environmentId), String(threadId));
@@ -1110,7 +1160,7 @@ export function NewTaskDraftScreen(props: {
   }
 
   const isAndroid = Platform.OS === "android";
-  const isDarkMode = colorScheme === "dark";
+  const isDarkMode = sceneryColorScheme === "dark";
   const attachedUris = new Set(flow.attachments.map((image) => image.previewUri));
   const stripAttachments = [
     ...flow.attachments,
@@ -1127,6 +1177,37 @@ export function NewTaskDraftScreen(props: {
           }
         : { kind: "idle" },
   );
+  const preparedConnection = usePreparedConnection(selectedProject?.environmentId ?? null);
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    selectedEnvironmentServerConfig?.environment.capabilities.voiceDictation === true;
+  const reportDictationError = useCallback((message: string) => {
+    Alert.alert("Voice dictation", message);
+  }, []);
+  const dictation = useNativeDictation({
+    enabled:
+      supportsVoiceDictation &&
+      Option.isSome(preparedConnection) &&
+      !isIncomingShareTransferPending &&
+      !isDispatching,
+    prepared: Option.getOrNull(preparedConnection),
+    value: flow.prompt,
+    cursor: promptSelection.end,
+    onChangeValue: flow.setPrompt,
+    onChangeCursor: (cursor) => {
+      const selection = { start: cursor, end: cursor };
+      setPromptSelection(selection);
+      composerMenu.onSelectionChange(selection);
+    },
+    reportError: reportDictationError,
+  });
+  useEffect(() => {
+    const end = flow.prompt.length;
+    setPromptSelection({
+      start: Math.min(composerMenu.selection.start, end),
+      end: Math.min(composerMenu.selection.end, end),
+    });
+  }, [composerMenu.selection.end, composerMenu.selection.start, flow.prompt.length]);
   const canStart =
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
@@ -1134,6 +1215,7 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !isDispatching &&
+    !dictation.active &&
     // The auto-PR choice must be settled (draft override or hydrated
     // preferences) so a cold-start send cannot race the stored setting.
     flow.autoCreatePullRequestSettled &&
@@ -1146,12 +1228,19 @@ export function NewTaskDraftScreen(props: {
       ref={promptInputRef}
       // The context-first screen intentionally opens with the keyboard closed.
       autoFocus={false}
-      editable={!isIncomingShareTransferPending && !isDispatching}
+      editable={!isIncomingShareTransferPending && !isDispatching && !dictation.active}
       multiline
       scrollEnabled
       value={flow.prompt}
-      skills={flow.selectedProviderSkills}
+      selection={promptSelection}
+      skills={flow.selectedProviderStatus?.skills ?? []}
       onChangeText={flow.setPrompt}
+      onSelectionChange={(selection) => {
+        setPromptSelection(selection);
+        composerMenu.onSelectionChange(selection);
+      }}
+      onFocus={() => setIsComposerFocused(true)}
+      onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
       placeholder="Ask anything…"
       singleLineCentered={false}
@@ -1208,11 +1297,7 @@ export function NewTaskDraftScreen(props: {
             accessibilityRole="button"
             disabled={composerSelectorsLocked}
             onPress={chooseProject}
-            className="min-w-0 max-w-[250px] active:opacity-65"
-            style={{
-              borderBottomColor: projectUnderlineColor,
-              borderBottomWidth: 1,
-            }}
+            className="min-w-0 max-w-[250px] border-b border-foreground-muted active:opacity-65"
           >
             <Text
               className="text-2xl font-t3-medium tracking-tight text-foreground"
@@ -1314,13 +1399,22 @@ export function NewTaskDraftScreen(props: {
       className={sceneryChrome ? "px-4 pt-1" : "bg-sheet px-4 pt-1"}
       style={{ paddingBottom: controlsBottomPadding }}
     >
+      {composerMenu.trigger && composerMenu.items.length > 0 ? (
+        <View className="mb-2">
+          <ComposerCommandPopover
+            items={composerMenu.items}
+            triggerKind={composerMenu.trigger.kind}
+            isLoading={composerMenu.isLoading}
+            onSelect={composerMenu.onSelect}
+          />
+        </View>
+      ) : null}
       <View className="pb-1">
         <NewTaskGlassChip active={sceneryChrome}>{workspaceControls}</NewTaskGlassChip>
       </View>
 
       <ComposerSurface
         animateLayout={false}
-        isDarkMode={isDarkMode}
         style={{
           borderRadius: 26,
           minHeight: 140,
@@ -1349,9 +1443,10 @@ export function NewTaskDraftScreen(props: {
 
         <ComposerToolbarRow paddingBottom={0} paddingHorizontal={0} paddingTop={4}>
           <ComposerToolbarScroller
-            fadeOpaque={toolbarFadeOpaque}
-            fadeTransparent={toolbarFadeTransparent}
             contentPaddingRight={8}
+            {...(sceneryChrome
+              ? { fadeOpaque: toolbarFadeOpaque, fadeTransparent: toolbarFadeTransparent }
+              : { fadeSurface: "sheet" as const })}
           >
             <ComposerToolbarButton
               accessibilityLabel="Add attachment"
@@ -1360,6 +1455,27 @@ export function NewTaskDraftScreen(props: {
               onPress={() => void handlePickImages()}
               showChevron={false}
             />
+            {supportsVoiceDictation ? (
+              <ComposerToolbarButton
+                accessibilityLabel={
+                  dictation.phase === "recording"
+                    ? "Stop voice dictation"
+                    : dictation.phase === "processing"
+                      ? "Finishing voice dictation"
+                      : "Start voice dictation"
+                }
+                icon={dictation.phase === "recording" ? "stop.fill" : "mic.fill"}
+                variant={dictation.phase === "recording" ? "danger" : "default"}
+                disabled={
+                  dictation.phase === "processing" ||
+                  (dictation.phase === "idle" &&
+                    (isDispatching || Option.isNone(preparedConnection)))
+                }
+                loading={dictation.phase === "processing"}
+                onPress={() => void dictation.toggle()}
+                showChevron={false}
+              />
+            ) : null}
             <ThreadSettingsPickerPopover
               accessibilityLabel="Model and reasoning settings"
               disabled={isIncomingShareTransferPending}
@@ -1419,7 +1535,7 @@ export function NewTaskDraftScreen(props: {
                   ? "Start task"
                   : "Queue task"
             }
-            disabled={!canStart && !isDispatching}
+            disabled={dictation.active || (!canStart && !isDispatching)}
             icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
             loading={isDispatching}
             onPress={() => void handleStart()}

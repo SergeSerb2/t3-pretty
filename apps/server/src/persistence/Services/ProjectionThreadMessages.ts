@@ -63,6 +63,14 @@ export interface ProjectionThreadMessageRepositoryShape {
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
+   * Append one streaming text delta without hydrating or rewriting the
+   * already-persisted message body.
+   */
+  readonly appendStreamingDelta: (
+    message: ProjectionThreadMessage,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
    * Read a projected thread message by id.
    */
   readonly getByMessageId: (

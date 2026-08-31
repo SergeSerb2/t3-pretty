@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import * as NodeFS from "node:fs";
-
 import { BUILT_IN_THEME_IDS, BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
-import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme";
+import { readDefaultMobileThemeVariables } from "./mobileTheme.test-support";
 
 import {
   BORING_MOBILE_THEME_ID,
@@ -13,7 +11,6 @@ import {
   getMobileThemePreviewColors,
   getMobileThemeVariables,
   isBoringMobileTheme,
-  MOBILE_THEME_IDS,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
   resolveMobileThemeIds,
@@ -54,30 +51,20 @@ function compositeOver(overlay: string, background: string): string {
 
 describe("mobile themes", () => {
   it("declares every runtime theme variable in the static stylesheet", () => {
-    const stylesheet = NodeFS.readFileSync(new URL("../../global.css", import.meta.url), "utf8");
-    const stylesheetVariables = new Set(
-      Array.from(stylesheet.matchAll(/--color-[a-z0-9-]+/g), ([variable]) => variable),
+    const generatedVariables = createMobileThemeVariables(BUILT_IN_THEMES[0].colors, "light");
+    expect(Object.keys(readDefaultMobileThemeVariables("light")).sort()).toEqual(
+      Object.keys(generatedVariables).sort(),
     );
-
-    expect(Array.from(stylesheetVariables).sort()).toEqual(
-      Object.keys(DEFAULT_MOBILE_THEME_VARIABLES.light).sort(),
+    expect(Object.keys(readDefaultMobileThemeVariables("dark")).sort()).toEqual(
+      Object.keys(generatedVariables).sort(),
     );
   });
 
   it("keeps the static stylesheet in lockstep with the default palette", () => {
-    const stylesheet = NodeFS.readFileSync(new URL("../../global.css", import.meta.url), "utf8");
     for (const appearance of ["light", "dark"] as const) {
-      const block = stylesheet.match(
-        new RegExp(`@variant ${appearance} \\{([\\s\\S]*?)\\n    \\}`),
+      expect(readDefaultMobileThemeVariables(appearance)).toEqual(
+        getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance),
       );
-      expect(block).not.toBeNull();
-      const stylesheetValues = Object.fromEntries(
-        Array.from(block![1]!.matchAll(/(--color-[a-z0-9-]+):\s*([^;]+);/g), (match) => [
-          match[1],
-          match[2]!.trim(),
-        ]),
-      );
-      expect(stylesheetValues).toEqual(DEFAULT_MOBILE_THEME_VARIABLES[appearance]);
     }
   });
 
@@ -90,6 +77,11 @@ describe("mobile themes", () => {
   });
 
   it("uses the World Scenery palette as the default", () => {
+    expect(readDefaultMobileThemeVariables("light")["--color-screen"]).toBe("#f4f6f4");
+    expect(readDefaultMobileThemeVariables("dark")["--color-screen"]).toBe("#0e1110");
+    expect(readDefaultMobileThemeVariables("light")["--color-user-bubble-skill-foreground"]).toBe(
+      "#27633f",
+    );
     expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-screen"]).toBe(
       "#f4f6f4",
     );
@@ -215,17 +207,11 @@ describe("mobile themes", () => {
     expect(variables["--color-backdrop"]).toBe("rgba(0, 0, 0, 0.22)");
     expect(variables["--color-drawer-shadow"]).toBe("rgba(0, 0, 0, 0.12)");
     expect(variables["--color-user-bubble-foreground"]).toMatch(/^#/);
-    expect(Object.keys(DEFAULT_MOBILE_THEME_VARIABLES.light).sort()).toEqual(
-      Object.keys(variables).sort(),
-    );
-    expect(Object.keys(DEFAULT_MOBILE_THEME_VARIABLES.dark).sort()).toEqual(
-      Object.keys(variables).sort(),
-    );
   });
 
   it("keeps every built-in shadow and backdrop black-based in dark mode", () => {
-    for (const theme of BUILT_IN_THEMES) {
-      const variables = getMobileThemeVariables(normalizeMobileThemeId(theme.id), "dark");
+    for (const themeId of BUILT_IN_THEME_IDS) {
+      const variables = getMobileThemeVariables(themeId, "dark");
       expect(variables["--color-primary-shadow"]).toBe("#000000");
       expect(variables["--color-backdrop"]).toBe("rgba(0, 0, 0, 0.48)");
       expect(variables["--color-drawer-shadow"]).toBe("rgba(0, 0, 0, 0.32)");
@@ -233,7 +219,7 @@ describe("mobile themes", () => {
   });
 
   it("keeps placeholders and selected-row labels readable on their mobile surfaces", () => {
-    for (const themeId of MOBILE_THEME_IDS) {
+    for (const themeId of BUILT_IN_THEME_IDS) {
       for (const appearance of ["light", "dark"] as const) {
         const variables = getMobileThemeVariables(themeId, appearance);
         expect(
