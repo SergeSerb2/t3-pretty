@@ -1603,3 +1603,280 @@
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260831.1236`
+- Previously integrated parent nightly: `v0.0.37-nightly.20260830.1227`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 36 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/desktop/src/preview/Manager.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/desktop/src/preview/Manager.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/package.json` — Preserved the expo-audio dependency required by T3 Pretty's host-routed mobile voice input/dictation behavior.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The exported ComposerAttachmentPreview API remains available and retains the optional per-attachment preparing state used by T3 Pretty send-progress flows.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Global busy and per-attachment preparing states continue to dim thumbnails, suppress removal, and disable image preview while work is in progress.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Preparation overlays retain T3 Pretty's FadeIn/FadeOut timing and system reduced-motion behavior; the same presentation is extended compatibly to upstream file cards.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The reusable accessible ComposerAttachmentThumb implementation, configurable overlay/gutter remove placement, enlarged remove hit target, and attachment accessibility labels remain intact.
+- `apps/mobile/src/components/ControlPill.tsx` — Preserved the useEffect cleanup required by T3 Pretty's deferred press-reset logic, preventing stale timers and duplicate activate-on-press-in dispatches.
+- `apps/mobile/src/components/ControlPill.tsx` — Preserved useThemeColor-based control icon tinting for T3 Pretty themes and visual design.
+- `apps/mobile/src/components/ControlPill.tsx` — Preserved the fork's AnchoredMenu abstraction at the existing AndroidAnchoredMenu module path rather than regressing its name and integration back to AndroidAnchoredMenu.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — The 10-second timeout and timer cleanup protecting shared-file metadata resolution from hanging.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — T3 Pretty's composer image-preview generation for incoming image shares.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — Rollback cleanup for generated composer preview files, preventing failed share ingestion from leaking preview artifacts.
+- `apps/mobile/src/features/sharing/incoming-share-inbox.test.ts` — Preserved T3 Pretty’s reliability coverage requiring rollback to run exactly once when durable incoming-share persistence fails.
+- `apps/mobile/src/features/sharing/incoming-share-inbox.test.ts` — Preserved the surrounding guarantees that a failed durable write neither acknowledges the payload nor performs cleanup.
+- `apps/mobile/src/features/sharing/incoming-share-inbox.ts` — Preserved T3 Pretty's explicit rollback contract for removing app-owned files created before the durable inbox write commits.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Durable incoming-share persistence remains covered through encodeIncomingShareDraftForPersistence, including stripping base64 image data before persistence.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — T3 Pretty's raw image-size preflight remains explicitly tested so oversized or unreadable image data is rejected before preview creation or base64 retention.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — The existing T3 Pretty composer-preview file helper and image-share behavior remain intact alongside the parent additions.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Compact incoming-share persistence that removes attachment payloads only after previews are stored in app-owned files, while retaining payloads for non-owned previews that may disappear.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Load-time attachment hydration and migration of legacy data-backed previews into app-owned composer preview files.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Sequential attachment processing to limit transient memory use, with cleanup rollback for preview files created before a migration failure.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Graceful handling of unavailable shared images, including user-facing warnings and persisted-draft rewrite tracking.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Injectable attachment storage operations used to support reliability testing and controlled preview cleanup.
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's Reanimated composer behavior, including named animation hooks and stable KeyboardStickyView style identities used to avoid keyboard-layout regressions.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's asynchronous composer dispatch state, explicit dispatch-status presentation, minimum send-indicator duration, and attachment preview typing.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's optimistic new-thread registration and cleanup plus outgoing attachment previews, preserving immediate thread starts and cross-surface send reliability.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's EmptyState recovery UI, GlassSurface visual design, and existing ComposerSurface presentation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's instant-apply provider/model settings architecture, including provider option defaults and the ThreadSettingsPickerPopover used for the fork's model and skills UX.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pretty's custom composer and keyboard presentation remains in place around the parent's replacement voice-input implementation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's composer dispatch safeguards remain authoritative: submitting, pasted-image preparation, and parent media/file preparation all lock selectors and task start.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's native dictation state continues to disable task start and editor mutation, alongside the parent voice-input controller.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork-only NewTaskSkills context route remains available.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Cold-start auto-PR preference hydration remains mandatory before Start, and pull-request handoffs retain their branch-selection exception.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's immediate optimistic thread-entry architecture is preserved, including branch/worktree context, enabled skills, creation/send timestamps, remapped initial message text, and outgoing attachment tracking.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pending pasted-image previews and their preparation lifecycle remain intact.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — World Scenery presentation remains intact: the environment control stays inside NewTaskGlassChip and the composer dock does not apply an opaque sheet background while scenery chrome is active.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork-specific composerSelectorsLocked safeguards continue to protect environment, workspace, and branch selection during T3 Pretty lifecycle states such as attachment preparation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The attachment strip remains gated by stripAttachments, matching the transformed/renderable attachment collection rather than the raw flow collection.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Incoming-share transfer and dispatch safeguards continue to prevent attachment removal during unsafe lifecycle states.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork-only Skills control and its existing selector locking remain unchanged.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's instant-apply ThreadSettingsPickerPopover remains authoritative, including model, option, and runtime callbacks.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork-only automatic pull-request toggle remains available in the new-task toolbar.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — World Scenery-aware toolbar fade colors and sheet fallback styling are retained.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Dispatch progress remains visible through the loading send button, dispatch-specific accessibility status, and ComposerDispatchStatusLabel.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Incoming-share, dispatch, and centralized composer interaction locks continue to protect attachment and settings actions.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The iOS live-IME draftKeyboardAvoidStyle remains in place, preserving the form-sheet under-lift and stale-keyboard-height safeguards.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork's NewTaskDraftFrame hierarchy and mobile presentation remain intact.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Generated work-log images retain workspace-relative and absolute path handling, asset URL loading, loading/error states, optional image opening, and fixed-height feed measurement, including pending images.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Work-log row derivation remains memoized by the activities array so copy-feedback and expansion repaints do not repeat detail normalization.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Disclosure feedback retains T3 Pretty's layout animation, selection haptic, and rejected-haptic handling safeguard.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — T3 Pretty's existing row enter/exit and layout-transition imports and behavior remain available alongside the new shimmer implementation.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Reduced-motion behavior remains protected: the parent shimmer is parked when Reduce Motion is enabled and also stops when the app is inactive or the screen is unfocused.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Animated per-row terminal-status affordances remain visible for failure, success, and intermediate states, including T3 Pretty's layout transition behavior.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — The work-log group-toggle label remains inside a fixed-height, overflow-clipped animated container, preserving T3 Pretty's non-stacking transition behavior while using the parent's new summary text.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Preserved registration of the new thread's original draft attachments under its outgoing message ID, which keeps images visible after sending a new thread.
+- `apps/mobile/src/lib/composer-image-schema.ts` — Preserved the T3 Pretty persisted image attachment schema in which `dataUrl` is optional, preventing draft keystrokes from repeatedly serializing large base64 image payloads while allowing rehydration from the preview URI.
+- `apps/mobile/src/lib/composerImages.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Skill selection remains part of thread bootstrap through SkillId and enabledSkillIds.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Native provider sessions continue to receive the dedicated resumed-thread title through parseNativeResumeCommand and NATIVE_RESUME_THREAD_TITLE.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Auto-PR agent instructions remain excluded from user-facing derived thread titles through stripCreatePullRequestSuffix.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Mobile working-indicator behavior: assistant commentary suppresses a redundant working row, while filtered live tool calls keep it visible.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Working-indicator ordering and stale-tool safeguards across streaming text, later tool groups, fresh user messages, and tools left over from earlier turns.
+- `apps/mobile/src/lib/threadActivity.test.ts` — The fork’s generic work-log overflow presentation, including its visible tail row and expandable hidden rows.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Generated-image visibility without zero-count toggles.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Incremental feed derivation, out-of-order rebuild behavior, completion collapsing, and stable row, fold, and working-indicator identities.
+- `apps/mobile/src/lib/threadActivity.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/state/thread-outbox-manager.ts` — Environment outbox files are removed sequentially, preventing a large offline queue from bursting open many file operations while environment teardown concurrently performs SQLite and draft cleanup.
+- `apps/mobile/src/state/thread-outbox-model.ts` — Preserved T3 Pretty's schema-level enforcement of PROVIDER_SEND_TURN_MAX_INPUT_CHARS for queued message text.
+- `apps/mobile/src/state/thread-outbox-model.ts` — Preserved T3 Pretty's schema-level enforcement of PROVIDER_SEND_TURN_MAX_ATTACHMENTS for queued message attachments.
+- `apps/mobile/src/state/thread-outbox.test.ts` — Preserved T3 Pretty's regression coverage requiring persisted outbox payloads to reject text exceeding PROVIDER_SEND_TURN_MAX_INPUT_CHARS and attachment counts exceeding PROVIDER_SEND_TURN_MAX_ATTACHMENTS.
+- `apps/mobile/src/state/thread-outbox.ts` — Updated queued messages continue registering their draft attachments so image previews remain available after sending or rewriting an outbox entry.
+- `apps/mobile/src/state/use-composer-drafts.test.ts` — Preserved the T3 Pretty SkillId import required by the fork's mobile skill selection and draft-management behavior.
+- `apps/mobile/src/state/use-composer-drafts.ts` — T3 Pretty's stale atomic-write temporary-file cleanup remains imported alongside atomic draft persistence.
+- `apps/mobile/src/state/use-composer-drafts.ts` — The fork's bounded-growth intent remains intact: ordinary appends are capped against live draft state and rejected attachments are released through the generalized cleanup path.
+- `apps/mobile/src/state/use-composer-drafts.ts` — The fork's failed-enqueue reliability intent remains intact through the parent's first-party allowOverflow restoration path, which preserves both failed-message attachments and attachments added concurrently.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Delivery-aware composer sends remain intact, including standard queue/steer delivery metadata for messages sent mid-turn.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Provider-aware runtime-mode remapping remains authoritative, so display-only Yolo values are not sent instead of the provider-compatible access mode.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — The composer still clears immediately after enqueue publication and restores failed queue writes without dropping text or attachments added while persistence was in flight.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Queue-write, picker, and paste failures continue to use T3 Pretty's immediate native alert presentation rather than being routed only through connection-error state.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — The optional picked-preview callback is retained around the upstream media picker so T3 Pretty's mobile image-send progress and preview UX can continue to receive immediate selections.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/http.ts` — Asset-route request logging remains disabled through HttpMiddleware.withLoggerDisabled.
+- `apps/server/src/http.ts` — Attachment feed preview variants continue to resolve through resolveAttachmentFeedPreview using the configured attachments directory, attachment identity, and source path.
+- `apps/server/src/http.ts` — The resolved preview path continues to be used for file serving and response-header inference.
+- `apps/server/src/http.ts` — Asset source metadata continues to be passed to assetResponseHeaders, preserving source-specific fork behavior.
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/Layers/GrokProvider.ts` — Grok continues to advertise `supportsNativeResume: true`, preserving T3 Pretty's native session-resume integration.
+- `apps/server/src/usage/usagePricing.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usagePricing.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageScanCache.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/browser/browserRecording.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/browser/browserRecording.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatMarkdown.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatView.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/DiffPanel.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ChatComposer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.test.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ThreadSyncStatusPill.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/files/FileBrowserPanel.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/files/FilePreviewPanel.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/settingsSearch.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/index.css` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/session-logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/versionSkew.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `docs/user/source-control.md` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/package.json` — kept the fork side wholesale as a fork-side fallback resolution
+- `patches/@legendapp__list@3.3.5.patch` — kept the fork side wholesale as a fork-side fallback resolution
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/mobile/package.json` — Updated expo-audio from ~57.0.0 to the parent's ~57.0.4 dependency version.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The strip now consumes the parent's generalized DraftComposerAttachment model rather than being limited to image attachments.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The parent's first-party non-image attachment presentation is incorporated, including document icon, filename, sizing, theming, and removal by generalized attachment ID.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Attachment-facing documentation and rendering semantics are generalized from images to all supported attachment variants.
+- `apps/mobile/src/components/ControlPill.tsx` — Integrated the parent's memoized menu-action icon color processing through useMemo and withMenuActionIconColors.
+- `apps/mobile/src/components/ControlPill.tsx` — Integrated the parent's Uniwind bridge and ColorValue typing used to pass themed regular and destructive icon colors into the native MenuView.
+- `apps/mobile/src/components/ControlPill.tsx` — Integrated the parent's View dependency for the updated control/menu layout while adapting its anchored-menu integration to the fork's existing AnchoredMenu API.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — Generalized the metadata helper name to resolvedPayloadsForFiles and kept call sites consistent.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — Detected generic file, audio, and video payloads and avoided unnecessary image metadata resolution when they are present.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — Added bounded persistence of incoming attachments using PROVIDER_SEND_TURN_MAX_FILE_BYTES.
+- `apps/mobile/src/features/sharing/IncomingShareProvider.tsx` — Added file-size reads for parent attachment validation and tracked persisted files for rollback cleanup.
+- `apps/mobile/src/features/sharing/incoming-share-inbox.test.ts` — Adopted the parent’s `toHaveBeenCalledOnce()` matcher refactor for the rollback assertion.
+- `apps/mobile/src/features/sharing/incoming-share-inbox.ts` — Integrated the parent's optional asynchronous rollback callback on built incoming-share drafts.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Imported the parent's owned-root URI predicate and incoming-share attachment selection helpers.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Added parent coverage for persisting shared PDFs and other files on disk without converting them to base64.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Added generic file-size-limit, unreadable-file, video-import, and temporary-file cleanup coverage.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Added Android content-URI handling tests for post-copy sizing, under-reported and zero sizes, empty persisted copies, display names, and source/copy ownership.
+- `apps/mobile/src/features/sharing/incoming-share-model.test.ts` — Added destination-server capability and per-server file-size selection tests, including pending configuration and unsupported-file warnings.
+- `apps/mobile/src/features/sharing/incoming-share-storage.test.ts` — Replaced the fork-only incoming-share persistence test implementation at this add/add conflict boundary with the parent’s first-party storage implementation, as required by the parent-replacement exception.
+- `apps/mobile/src/features/sharing/incoming-share-storage.test.ts` — Integrated the parent’s hoisted Expo FileSystem mocks and per-test cleanup.
+- `apps/mobile/src/features/sharing/incoming-share-storage.test.ts` — Integrated coverage that malformed persisted shares are skipped with a warning during normal loading.
+- `apps/mobile/src/features/sharing/incoming-share-storage.test.ts` — Integrated strict-mode coverage requiring malformed persisted shares to reject with IncomingShareStorageError.
+- `apps/mobile/src/features/sharing/incoming-share-storage.test.ts` — Integrated the parent’s vite-plus/test source for vi.
+- `apps/mobile/src/features/sharing/incoming-share-storage.ts` — Added the optional `strict` setting to `loadIncomingShareDrafts`, enabling the surrounding parent load logic to rethrow invalid persisted-share errors instead of always logging and skipping them.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent's first-party mobile voice-input implementation—dictation toolbar actions, status presentation, controller, presentation resolver, atom registry, and server-environment routing—replaces the fork-only useNativeDictation/usePreparedConnection path.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The provider-wide send-turn attachment maximum and the new ComposerAttachmentButton are integrated alongside Pretty's richer attachment status UI.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The upstream COMPOSER_LAYOUT_TRANSITION composer animation is imported without removing Pretty's existing animation support.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Incoming shared attachments can use the parent's server-aware selection helper.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The thread-outbox removal API refactor is adopted by importing removeThreadOutboxMessage from thread-outbox-removal.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent composer interaction lock and in-flight-submit navigation safeguard are integrated into the stronger fork lock.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent voice controller now blocks media/file picking and submission when busy, and freezes the editor through its read-only state.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The image-only picker is replaced with the parent's photo/video media picker, including server upload capability and video-size handling.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent's file picker is added with server availability checks and maximum upload size enforcement.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Parent attachment-cap rejection reporting, picker error aggregation, and photo/video/file-specific alerts are retained.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent uploaded-attachment reconciliation callback is added to the fork-shaped optimistic starting-thread registration and flushes the updated draft.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — All ordinary upstream worktree branch gating remains effective while accommodating T3 Pretty's pull-request checkout handoff.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Environment and workspace controls now also honor isComposerInteractionLocked and voiceInput.isBusy.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The branch control now also honors the parent's generalized isComposerInteractionLocked state.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The command popover is suppressed while host-routed voice input is busy.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The composer dock adopts the parent's 12-pixel horizontal spacing outside and inside scenery presentation.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The attachment strip adopts the parent's 14-pixel horizontal alignment.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Attachment removal now also respects the parent's generalized interaction lock and voice-input busy state.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Replaced the fork-only toolbar dictation control with the parent's first-party voiceInput implementation, including animated presentation, cancel, recording status, levels, elapsed time, error dismissal, start, stop, and availability handling.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's media-and-file attachment control, including server capability gating for file attachments.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's centralized composer interaction lock into attachment, model, plan-mode, and PR controls.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's share-import lock into the first-party dictation primary action.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's animated composer layout transition and box-none pointer-event handling.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's conditional send presentation through voicePresentation.showsSend while retaining Pretty's dispatch progress behavior.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Added the parent's native masked-gradient shimmer for live work-log rows, including measured sweep width and highlighted icon/text rendering.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated parent lifecycle and accessibility controls for shimmer animation: app-state tracking, navigation focus tracking, animation cancellation, and Reduce Motion observation.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated the parent work-log presentation type and expanded Reanimated/SVG dependencies required by the new presentation and animation behavior.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Adopted the parent's simplified collapsed-row height model while composing T3 Pretty's generated-image height contribution into it.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Adopted the parent's direct consumption of the already-presented activities array instead of applying the obsolete visibleWorkLogActivities filtering layer.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — The group toggle now uses the parent's summary-driven contract instead of the obsolete onlyToolActivities-based previous-entry labels.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Failure-aware accessibility labels are derived from hasFailure and summary.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — The parent summary-kind symbol, shimmer presentation, static summary presentation, and expanded/collapsed chevron are incorporated.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — The parent's text styling and visible summary content are retained inside the fork's animation container.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Validate initial file attachments against the active environment's server configuration before starting the thread.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Prepare and upload turn attachments, persisting uploaded draft references through onAttachmentsUploaded.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Convert attachment upload failures and unavailable attachments into surfaced pending connection errors and failed AsyncResults.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Revalidate prepared draft attachments before passing the prepared attachment payload to startTurn.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Retained the parent pipeline's prepared attachment lifecycle used by the surrounding startTurn and upload-release code.
+- `apps/mobile/src/lib/composer-image-schema.ts` — Added the parent draft file-attachment schema, including local file URI, optional uploaded attachment ID, and optional upload environment ID.
+- `apps/mobile/src/lib/composer-image-schema.ts` — Added the parent draft attachment union supporting both image and file attachments.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Added UploadChatImageAttachment typing for pre-uploaded image attachments alongside ChatFileAttachment.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Adopted DraftComposerAttachment so the start-turn specification supports the parent's generalized composer attachment model while retaining image conversion for attachments that have not already been uploaded.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Structured `workEntry` metadata for command activities, including command text, labels, timestamps, turn identity, and tool tone.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Upstream command-overflow presentation using the generated `work-group:activity-1` identity, a collapsed `Ran 3 commands` summary with three hidden completed rows, and toggle-first ordering when expanded.
+- `apps/mobile/src/state/thread-outbox-manager.ts` — Environment clearing removes only the revision-stable `candidates` captured for this clear request rather than every matching message from `allMessages`.
+- `apps/mobile/src/state/thread-outbox-manager.ts` — Successful storage removals are recorded in `removedFromStorage`, preserving compatibility with upstream's subsequent same-ID enqueue restoration, reconciliation, and accurate removed-message reporting.
+- `apps/mobile/src/state/thread-outbox-model.ts` — Adopted DraftComposerAttachmentSchema so the outbox accepts the parent's generalized composer attachment model rather than the older image-only schema.
+- `apps/mobile/src/state/thread-outbox.test.ts` — Integrated the parent test verifying generic file attachment paths and upload metadata round-trip through outbox encoding and decoding without embedding file contents.
+- `apps/mobile/src/state/thread-outbox.ts` — Added the optional expectedRevision argument to updateThreadOutboxMessage and forwarded it to the manager's compare-and-swap update implementation.
+- `apps/mobile/src/state/thread-outbox.ts` — Integrated the parent documentation describing revision-aware update rejection.
+- `apps/mobile/src/state/use-composer-drafts.test.ts` — Integrated upstream CommandId, MessageId, and ThreadId contract imports for expanded composer-draft test coverage.
+- `apps/mobile/src/state/use-composer-drafts.test.ts` — Integrated upstream onTestFinished test cleanup support while retaining vi.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Adopted the parent's first-party DraftComposerAttachment model and DraftComposerAttachmentSchema, enabling generalized composer attachments instead of image-only drafts.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Integrated attachment file-reference tracking through composerAttachmentFileReferenceKey and the generalized unused-attachment cleanup path.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Integrated the upstream append API's allowOverflow behavior, provider-limit enforcement, rejection count, and support for restoring failed sends.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Replaced the fork-only image-specific append and failed-send restoration implementation with the parent's generalized first-party implementation.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added the send-time attachment-cap guard for overflow drafts restored after a failed enqueue, preventing permanently unrecoverable outbox messages.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Deferred composer attachment cleanup until durable enqueue success, preventing an attachment sweep from deleting files during a failed write rollback.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Restored failed enqueue attachments with allowOverflow so recovery never silently discards user files.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Adopted the parent media picker and its photo/video behavior, including server-advertised video upload limits and combined picker/cap error reporting.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added the parent file picker with server capability checks, contract-clamped upload limits, attachment-cap handling, and combined error reporting.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Added explicit reporting when pasted attachments are rejected because the composer attachment limit has been reached.
+- `apps/server/src/http.ts` — Explicit asset MIME types are now passed to assetResponseHeaders even when the asset is not marked for download.
+- `apps/server/src/http.ts` — Filename metadata follows upstream's expanded header-options path when either download handling or an explicit MIME type is present.
+- `apps/server/src/provider/Layers/GrokProvider.ts` — Removed `requiresNewThreadForModelChange: true` from Grok presentation metadata, matching the parent provider's updated model-change behavior.
+
+## Parent changes intentionally omitted
+
+- `apps/desktop/src/preview/Manager.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/desktop/src/preview/Manager.test.ts after 3 attempts
+- `apps/desktop/src/preview/Manager.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/desktop/src/preview/Manager.ts after 3 attempts
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Unconditional preview/remove interaction from the parent's attachment renderer while an attachment is preparing or the composer is busy.. Reason: Only the busy/preparing portion is omitted. T3 Pretty intentionally disables image preview and hides removal during reading/sending to prevent composer races and accurately communicate send progress; upstream interactions remain available when idle.
+- `apps/mobile/src/features/threads/GitActionProgressOverlay.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/GitActionProgressOverlay.tsx after 3 attempts
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The parent's retained useThreadSettingsSheetPresentation and NavigationWithFinishTransitioning settings-sheet wiring.. Reason: T3 Pretty intentionally replaced that legacy sheet path with its authoritative instant-apply ThreadSettingsPickerPopover/provider-options architecture. Restoring the old presentation path would regress the fork's redesigned model and skills picker.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Use the parent's bare, unwrapped environment-control presentation.. Reason: The NewTaskGlassChip wrapper is required by T3 Pretty's World Scenery and themed glass presentation; all parent interaction behavior was retained inside that wrapper.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Apply bg-sheet to the composer dock unconditionally.. Reason: T3 Pretty intentionally leaves the dock background transparent when sceneryChrome is active so World Scenery remains visible. The parent background remains applied in ordinary sheet mode.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Gate attachment-strip rendering on flow.attachments.length.. Reason: T3 Pretty uses stripAttachments as the authoritative transformed/renderable collection, avoiding an empty or mismatched strip while attachments are prepared or remapped.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Use the parent's interaction predicates as exclusive replacements for the fork's existing locks.. Reason: That would weaken T3 Pretty's image-preparation, incoming-share, and dispatch safeguards. The parent predicates were added alongside the fork predicates instead.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Open model and reasoning settings through settingsSheetPresentation.open on a plain ComposerInlineControl.. Reason: This would regress T3 Pretty's newer instant-apply ThreadSettingsPickerPopover, including its model-option defaults and runtime/option callbacks.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Use the parent's plain ComposerActionButton with flow.submitting-only status for task dispatch.. Reason: This would remove T3 Pretty's dispatch spinner and richer dispatchStatus accessibility feedback; the parent's conditional send placement and start behavior are retained around the fork button.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Wrap the iOS composer in the parent's full-screen KeyboardStickyView.. Reason: T3 Pretty's live-IME draftKeyboardAvoidStyle specifically fixes formSheet measureInWindow under-lift and stale-height behavior. The compatible parent layout transition and pointer-event changes are applied directly to that fork-safe wrapper instead.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadComposer.tsx after 3 attempts
+- `apps/mobile/src/features/threads/ThreadDetailScreen.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadDetailScreen.tsx after 3 attempts
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Removal of the trailing per-row status glyph and its status slot.. Reason: That removal would regress T3 Pretty's explicit animated work-log status affordance and mobile streaming-animation behavior. The smallest conflicting parent portion is therefore omitted while the rest of the parent group-toggle redesign is integrated.
+- `apps/mobile/src/lib/composerImages.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/composerImages.ts after 3 attempts
+- `apps/mobile/src/lib/threadActivity.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/threadActivity.ts after 3 attempts
+- `apps/mobile/src/state/thread-outbox-manager.ts` — Remove all clear-environment candidates concurrently with `Promise.all`.. Reason: Concurrent deletion conflicts with T3 Pretty's reliability safeguard against unbounded bursts of outbox file operations during parallel environment teardown. Only the concurrency strategy is omitted; upstream's candidate filtering, error handling, and removal tracking are retained.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Route queued-message persistence failures through setPendingConnectionError.. Reason: T3 Pretty intentionally presents queue persistence failures as immediate native alerts; retaining the parent state-routing mechanism as well would duplicate or alter the fork's established error UX.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Route clipboard paste errors and attachment-cap rejections through setPendingConnectionError.. Reason: The same parent errors are preserved and surfaced, but through T3 Pretty's authoritative immediate Alert presentation rather than connection-error state.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Enqueue the draft runtime mode directly without provider-driver remapping and without optional delivery metadata.. Reason: That form would regress T3 Pretty's provider access-mode correction and standard queue/steer delivery behavior; the compatible parent enqueue and cleanup improvements were composed around the fork values instead.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/usage/usagePricing.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/usage/usagePricing.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/usage/usageScanCache.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/browser/browserRecording.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/browser/browserRecording.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ChatMarkdown.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ChatView.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/DiffPanel.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ChatComposer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ComposerBannerStack.test.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.test.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ThreadSyncStatusPill.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/files/FileBrowserPanel.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/files/FilePreviewPanel.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/settings/settingsSearch.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/index.css` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/session-logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/versionSkew.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `docs/user/source-control.md` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `patches/@legendapp__list@3.3.5.patch` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback

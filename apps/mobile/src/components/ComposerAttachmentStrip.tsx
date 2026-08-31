@@ -3,18 +3,17 @@ import { Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
 import { AppText as Text } from "./AppText";
+import type { DraftComposerAttachment } from "../lib/composerImages";
 
-export interface ComposerAttachmentPreview {
-  readonly id: string;
-  readonly previewUri: string;
-  /** True while the image is still being read or the message is sending. */
+export type ComposerAttachmentPreview = DraftComposerAttachment & {
+  /** True while the attachment is still being read or the message is sending. */
   readonly preparing?: boolean;
-}
+};
 
 export interface ComposerAttachmentStripProps {
-  /** Attachment images to display. */
+  /** Attachments to display. */
   readonly attachments: ReadonlyArray<ComposerAttachmentPreview>;
-  /** Called when the user taps the remove button on an image. */
+  /** Called when the user removes an attachment. */
   readonly onRemove: (imageId: string) => void;
   /** Called when the user taps on an image thumbnail to preview it. */
   readonly onPressImage?: (previewUri: string) => void;
@@ -32,8 +31,7 @@ const OVERLAY_ENTER = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
 /**
- * A horizontally-scrollable strip of image attachment thumbnails with remove
- * buttons.  Used by both the thread composer and the new-task draft screen.
+ * Attachment thumbnails used by the thread composer and the new-task draft screen.
  */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
   const size = props.imageSize ?? 72;
@@ -54,28 +52,61 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
       className="grow-0"
     >
       <View className="flex-row gap-2.5">
-        {props.attachments.map((image) => {
-          const preparing = busy || image.preparing === true;
+        {props.attachments.map((attachment) => {
+          const preparing = busy || attachment.preparing === true;
           return (
             <View
-              key={image.id}
+              key={attachment.id}
               className="relative"
               style={{
                 paddingTop: removeButtonGutter,
                 paddingRight: removeButtonGutter,
               }}
             >
-              <ComposerAttachmentThumb
-                previewUri={image.previewUri}
-                size={size}
-                borderRadius={radius}
-                preparing={preparing}
-                onPress={
-                  props.onPressImage && !preparing
-                    ? () => props.onPressImage!(image.previewUri)
-                    : undefined
-                }
-              />
+              {attachment.type === "image" ? (
+                <ComposerAttachmentThumb
+                  previewUri={attachment.previewUri}
+                  size={size}
+                  borderRadius={radius}
+                  preparing={preparing}
+                  onPress={
+                    props.onPressImage && !preparing
+                      ? () => props.onPressImage!(attachment.previewUri)
+                      : undefined
+                  }
+                />
+              ) : (
+                <View
+                  accessible
+                  accessibilityLabel={
+                    preparing
+                      ? `Preparing file attachment, ${attachment.name}`
+                      : `File attachment, ${attachment.name}`
+                  }
+                  className="items-center justify-center gap-1 bg-subtle px-2"
+                  style={{
+                    width: size,
+                    height: size,
+                    borderRadius: radius,
+                  }}
+                >
+                  <SymbolView name="doc.text" size={22} tintColor="#a3a3a3" type="monochrome" />
+                  <Text className="w-full text-center text-2xs text-foreground" numberOfLines={1}>
+                    {attachment.name}
+                  </Text>
+                  {preparing ? (
+                    <Animated.View
+                      entering={OVERLAY_ENTER}
+                      exiting={OVERLAY_EXIT}
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                      className="absolute inset-0 bg-black/45"
+                      style={{ borderRadius: radius }}
+                    />
+                  ) : null}
+                </View>
+              )}
               {preparing ? null : (
                 <Pressable
                   className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
@@ -86,7 +117,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   hitSlop={6}
                   accessibilityLabel="Remove attachment"
                   accessibilityRole="button"
-                  onPress={() => props.onRemove(image.id)}
+                  onPress={() => props.onRemove(attachment.id)}
                 >
                   <SymbolView
                     name="xmark"

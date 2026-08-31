@@ -171,7 +171,7 @@ describe("IncomingShareInbox", () => {
     await expect(inbox.refresh({ ingestNative: true })).rejects.toThrow("disk full");
     expect(clearPayloads).not.toHaveBeenCalled();
     expect(cleanup).not.toHaveBeenCalled();
-    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(rollback).toHaveBeenCalledOnce();
   });
 
   it("durably reserves a share for one project before draft import", async () => {

@@ -6,6 +6,7 @@ import * as Cause from "effect/Cause";
 import {
   CommandId,
   MessageId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type EnvironmentId,
   type ModelSelection,
   type OrchestrationThreadActivity,
@@ -34,7 +35,8 @@ import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import {
   convertPastedImagesToAttachments,
   pasteComposerClipboard,
-  pickComposerImages,
+  pickComposerFiles,
+  pickComposerMedia,
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import {
@@ -56,6 +58,7 @@ import {
   getComposerDraftSnapshot,
   mergeComposerDraftContent,
   removeComposerDraftAttachment,
+  scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftText,
   updateComposerDraftSettings,
   useComposerDraft,
@@ -86,7 +89,14 @@ export function appendReviewCommentToDraft(input: {
   const separator = existing.trim().length > 0 && !existing.endsWith("\n") ? "\n\n" : "";
   setComposerDraftText(threadKey, `${existing}${separator}${input.text}`);
   if (input.attachments && input.attachments.length > 0) {
-    appendComposerDraftAttachments(threadKey, input.attachments);
+    // Capped: a review comment is new content, not a send-failure restore, so
+    // it must not push the draft over the send limit. Overflow is released.
+    const rejectedCount = appendComposerDraftAttachments(threadKey, input.attachments);
+    if (rejectedCount > 0) {
+      setPendingConnectionError(
+        `${rejectedCount} comment attachment${rejectedCount === 1 ? " was" : "s were"} not added. Messages can contain at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments.`,
+      );
+    }
   }
 }
 
@@ -312,6 +322,17 @@ export function useThreadComposerState() {
       if (text.length === 0 && attachments.length === 0) {
         return null;
       }
+      // A send-failure restore appends with allowOverflow so it never drops the
+      // user's files, which can leave the draft over the cap. Sending it anyway
+      // would enqueue a message that outbox recovery rejects forever, so block
+      // here until the user removes attachments.
+      if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+        Alert.alert(
+          "Too many attachments",
+          `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
+        );
+        return null;
+      }
 
       const sendModelSelection = draft.modelSelection ?? thread.modelSelection;
       const sendProvider = selectedEnvironmentRuntime?.serverConfig?.providers.find(
@@ -402,19 +423,27 @@ export function useThreadComposerState() {
         createdAt: metadata.createdAt,
         ...(delivery ? { delivery } : {}),
       });
-      clearComposerDraftContent(threadKey);
-      enqueuePromise.catch((error: unknown) => {
-        // Restore text via merge (idempotent) but attachments via the uncapped
-        // append: the merge path slots existing attachments first and truncates
-        // at the send limit, which would silently drop this message's images if
-        // the user attached new ones while the write was in flight.
-        void mergeComposerDraftContent(threadKey, { text, attachments: [] });
-        appendComposerDraftAttachments(threadKey, attachments);
-        Alert.alert(
-          "Could not queue message",
-          error instanceof Error ? error.message : "Failed to save the queued message.",
-        );
-      });
+      clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
+      enqueuePromise.then(
+        () => {
+          // The queued message owns the files now; the sweep sees that and
+          // spares them. Deferred to here so a failed write cannot roll the
+          // message out of the queue mid-sweep and lose the bytes.
+          scheduleUnusedComposerAttachmentCleanup(attachments);
+        },
+        (error: unknown) => {
+          // Restore text via merge (idempotent) but attachments via the uncapped
+          // append: the merge path slots existing attachments first and truncates
+          // at the send limit, which would silently drop this message's images if
+          // the user attached new ones while the write was in flight.
+          void mergeComposerDraftContent(threadKey, { text, attachments: [] });
+          appendComposerDraftAttachments(threadKey, attachments, { allowOverflow: true });
+          Alert.alert(
+            "Could not queue message",
+            error instanceof Error ? error.message : "Failed to save the queued message.",
+          );
+        },
+      );
       return messageId;
     },
     [
@@ -436,7 +465,7 @@ export function useThreadComposerState() {
     [selectedThreadKey],
   );
 
-  const onPickDraftImages = useCallback(
+  const onPickDraftMedia = useCallback(
     async (input?: {
       readonly onPicked?: (
         previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
@@ -447,19 +476,60 @@ export function useThreadComposerState() {
       }
 
       const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-      const result = await pickComposerImages({
+      const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
+      const result = await pickComposerMedia({
         existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
+        maxVideoBytes:
+          capabilities?.attachmentUploads === true
+            ? capabilities.fileAttachments?.maxUploadBytes
+            : undefined,
         onPicked: input?.onPicked,
       });
-      if (result.images.length > 0) {
-        appendComposerDraftAttachments(threadKey, result.images);
-      }
-      if (result.error) {
-        Alert.alert("Could not attach image", result.error);
+      const rejectedCount = appendComposerDraftAttachments(threadKey, result.attachments);
+      const problems = [
+        ...(result.error ? [result.error] : []),
+        ...(rejectedCount > 0
+          ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
+          : []),
+      ];
+      if (problems.length > 0) {
+        Alert.alert("Could not attach photo or video", problems.join("\n\n"));
       }
     },
-    [composerDrafts, selectedThreadShell],
+    [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell],
   );
+
+  const onPickDraftFiles = useCallback(async () => {
+    if (!selectedThreadShell) {
+      return;
+    }
+    const maxBytes =
+      selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.fileAttachments
+        ?.maxUploadBytes;
+    if (maxBytes === undefined) {
+      Alert.alert("Could not attach file", "This server does not support file attachments.");
+      return;
+    }
+
+    const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+    // pickComposerFiles clamps the advertised limit to the contract maximum.
+    const result = await pickComposerFiles({
+      existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
+      maxBytes,
+    });
+    const rejectedCount = appendComposerDraftAttachments(threadKey, result.files);
+    // The picker error and the live-cap rejection can both happen in one
+    // pick; report both in a single alert.
+    const problems = [
+      ...(result.error ? [result.error] : []),
+      ...(rejectedCount > 0
+        ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`]
+        : []),
+    ];
+    if (problems.length > 0) {
+      Alert.alert("Could not attach file", problems.join("\n\n"));
+    }
+  }, [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell]);
 
   const onPasteIntoDraft = useCallback(async () => {
     if (!selectedThreadShell) {
@@ -470,14 +540,18 @@ export function useThreadComposerState() {
     const result = await pasteComposerClipboard({
       existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
     });
-    if (result.images.length > 0) {
-      appendComposerDraftAttachments(threadKey, result.images);
-    }
+    const rejectedPasteCount = appendComposerDraftAttachments(threadKey, result.images);
     if (result.text) {
       appendComposerDraftText(threadKey, result.text);
     }
     if (result.error) {
       Alert.alert("Could not attach image", result.error);
+    } else if (rejectedPasteCount > 0) {
+      Alert.alert(
+        "Could not attach image",
+        `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
+      );
+
     }
   }, [composerDrafts, selectedThreadShell]);
 
@@ -567,7 +641,8 @@ export function useThreadComposerState() {
     interactionMode,
     activeThreadBusy,
     onChangeDraftMessage,
-    onPickDraftImages,
+    onPickDraftMedia,
+    onPickDraftFiles,
     onPasteIntoDraft,
     onNativePasteImages,
     onRemoveDraftImage,
