@@ -18,6 +18,7 @@ import {
   type UserInputQuestion,
 } from "@t3tools/contracts";
 import * as AcpSchema from "effect-acp/schema";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 const CursorEntityId = Schema.String.check(Schema.isMaxLength(ENTITY_ID_MAX_LENGTH));
@@ -98,6 +99,84 @@ export const CursorListAvailableModelsResponse = Schema.Struct({
     Schema.isMaxLength(SERVER_PROVIDER_MODELS_MAX_ITEMS),
   ),
 });
+export type CursorListAvailableModelsResponse = typeof CursorListAvailableModelsResponse.Type;
+
+const decodeCursorAvailableModelExit = Schema.decodeUnknownExit(CursorAvailableModel);
+const decodeCursorSessionConfigOptionExit = Schema.decodeUnknownExit(AcpSchema.SessionConfigOption);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseCursorSessionConfigOptions(
+  value: unknown,
+): ReadonlyArray<AcpSchema.SessionConfigOption> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const options: Array<AcpSchema.SessionConfigOption> = [];
+  for (const entry of value) {
+    if (options.length >= PROVIDER_OPTION_MAX_COUNT) {
+      break;
+    }
+    const decoded = decodeCursorSessionConfigOptionExit(entry);
+    if (Exit.isSuccess(decoded)) {
+      options.push(decoded.value);
+    }
+  }
+  return options.length > 0 ? options : undefined;
+}
+
+function parseCursorAvailableModel(value: unknown): typeof CursorAvailableModel.Type | undefined {
+  const decoded = decodeCursorAvailableModelExit(value);
+  if (Exit.isSuccess(decoded)) {
+    const slug = decoded.value.value.trim();
+    const name = decoded.value.name.trim();
+    if (!slug || !name) {
+      return undefined;
+    }
+    return {
+      ...decoded.value,
+      value: slug,
+      name,
+    };
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const slug = typeof value.value === "string" ? value.value.trim() : "";
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  if (!slug || !name || slug.length > PROVIDER_MODEL_ID_MAX_LENGTH) {
+    return undefined;
+  }
+  const configOptions = parseCursorSessionConfigOptions(value.configOptions);
+  return {
+    value: slug,
+    name: name.slice(0, SERVER_PROVIDER_LABEL_MAX_LENGTH),
+    ...(configOptions ? { configOptions } : {}),
+  };
+}
+
+/**
+ * Decode `cursor/list_available_models` without failing the whole catalog
+ * when one model or config option uses a newer shape than the schema.
+ */
+export function parseCursorListAvailableModelsResponse(
+  value: unknown,
+): CursorListAvailableModelsResponse {
+  const models: Array<typeof CursorAvailableModel.Type> = [];
+  const rawModels = isRecord(value) && Array.isArray(value.models) ? value.models : [];
+  for (const entry of rawModels) {
+    if (models.length >= SERVER_PROVIDER_MODELS_MAX_ITEMS) {
+      break;
+    }
+    const model = parseCursorAvailableModel(entry);
+    if (model) {
+      models.push(model);
+    }
+  }
+  return { models };
+}
 
 export function extractAskQuestions(
   params: typeof CursorAskQuestionRequest.Type,
