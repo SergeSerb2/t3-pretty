@@ -72,10 +72,16 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    up, and every completed file is checkpointed to the `automation/sync-resolution-cache` branch
    even when the run fails, so a rerun resumes where it stopped instead of re-resolving finished
    files. The branch retains at most 256 valid entries and 64 MiB; older entries are best-effort
-   acceleration, not durable release state. Modify/delete conflicts resolve
-   through the same contract, presented as one whole-file conflict against an empty deleted side;
-   an empty resolution follows the deletion (the usual outcome when the parent's refactor removes
-   a file the fork only tracked). Its preservation contract treats T3 Pretty and other
+   acceleration, not durable release state. A modify/delete conflict where the fork deleted the
+   file resolves deterministically — the deletion is committed fork intent, so it is kept and the
+   parent's changes to the file are recorded as omissions. A modify/delete where the parent
+   deleted the file goes through the model with the parent's deletion evidence, presented as one
+   whole-file conflict against an empty deleted side; an empty resolution follows the deletion.
+   A model refusal is retried once with a much wider (400-line) conflict context; if the model
+   still declines, or CLIProxyAPI stays unreachable through every retry, the file takes the
+   fork-side fallback: the fork side is kept wholesale, and the report and sync pull request
+   record every parent change it omitted so the sync lands instead of blocking for days on the
+   same path. Its preservation contract treats T3 Pretty and other
    fork-specific behavior as
    authoritative, integrates compatible parent improvements around it, and keeps the smallest
    T3 Pretty side when both intents genuinely cannot coexist. One exception: if the parent later
@@ -92,10 +98,16 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
 5. The workflow merges the Origin pull request once Origin reports it mergeable. It does not treat
    merge-when-ready (`--auto`) as success: that flag can return before the change lands, after
-   which deleting the head branch strands an open pull request. Parent CI is
+   which deleting the head branch strands an open pull request. Before treating an Origin merge
+   failure as real, the job checks whether its HEAD already reached `origin/main` — the merge
+   queue can land the pull request after the polling window gives up. Once the merge lands, the
+   remaining steps (branch delete, release dispatch, inline mobile publish) are best-effort and
+   cannot repaint a landed sync as failed. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
-   Release Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and open an
-   Origin pull request titled `Upstream sync blocked: <tag>` with the failure notes.
+   Release Smoke. Only a run that genuinely cannot land — a git object error, or Origin refusing
+   the merge twice — opens an Origin pull request titled `Upstream sync blocked: <tag>` with the
+   failure notes; cancelled and superseded runs checkpoint their finished resolutions and file
+   nothing.
 6. Every commit merged to `main`, whether from the parent sync or a T3 Pretty pull request,
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the CI run number

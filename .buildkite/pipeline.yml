@@ -96,7 +96,9 @@ steps:
     # fork-upstream-sync.yml: macos GHA steps need GITHUB_OUTPUT
     # for discover, and the importer often leaves that file unset.
     if: 'build.branch == "main" && (build.source == "schedule" || build.source == "ui" || build.source == "api")'
-    timeout_in_minutes: 120
+    # Build 1241 finished with 26 seconds of margin at 120; a backlog merge
+    # that times out re-pays its conflicts next run, so keep headroom.
+    timeout_in_minutes: 180
     concurrency: 1
     concurrency_group: "t3-pretty/upstream-sync"
     # Ahead of Origin PR review so a feature-branch review cannot occupy

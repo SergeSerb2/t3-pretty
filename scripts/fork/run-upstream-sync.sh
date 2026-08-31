@@ -11,14 +11,25 @@ set -euo pipefail
 # Buildkite sets FORCE_COLOR and NO_COLOR together. Origin's bun CLI then
 # prints assertion_error while loading tty colors and, on the macos-release
 # agent, can exit 255 from `git fetch` (credential helper) and `origin`.
+# Any truthy value (1, true, 2, 3) trips it, so force 0 unconditionally.
 unset NO_COLOR || true
-export FORCE_COLOR="${FORCE_COLOR:-0}"
-if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
-  export FORCE_COLOR=0
-fi
+export FORCE_COLOR=0
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+
+# Transient network failures (upstream ls-remote, Origin fetches, the pnpm
+# registry) must not kill a four-hour sync slot on the first blip. Three
+# attempts with a short backoff; the caller decides whether a final failure
+# is fatal.
+retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    "$@" && return 0
+    (( attempt < 3 )) && sleep $(( attempt * 10 ))
+  done
+  return 1
+}
 
 . scripts/fork/macos-ci-prelude.sh
 . scripts/fork/load-buildkite-secrets.sh CURSOR_API_KEY CLI_PROXY_API_KEY
@@ -38,6 +49,10 @@ SYNC_FAIL_REASON=""
 CACHE_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 CACHE_ROOT="${CACHE_ROOT%/}"
 export SYNC_RESOLUTION_CACHE_DIR="${SYNC_RESOLUTION_CACHE_DIR:-${CACHE_ROOT}/sync-resolution-cache}"
+# Stop issuing model requests 150 minutes in: the Buildkite timeout is 180,
+# a timed-out job files no blocked report, and the remaining files land
+# through the fork-side fallback instead.
+export SYNC_MODEL_DEADLINE_EPOCH_MS="$(( ($(date +%s) + 150 * 60) * 1000 ))"
 mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
 
 origin_git() {
@@ -65,11 +80,21 @@ origin_git() {
 # leaves MERGE_HEAD; `git checkout -B main` then fails in ~2s and every
 # later nightly opens another blocked PR instead of finishing the merge.
 abort_leftover_git_state() {
+  # A job killed mid-write leaves index.lock behind; the sync's concurrency
+  # group serializes this checkout, so at job start any lock is stale and
+  # would make every abort below fail silently, leaving MERGE_HEAD in place.
+  # Remove it FIRST, resolved through git (in a linked worktree `.git` is a
+  # file and a hardcoded .git/index.lock path exits 1 with ENOTDIR).
+  rm -f "$(git rev-parse --git-path index.lock)" || true
   git merge --abort >/dev/null 2>&1 || true
   git rebase --abort >/dev/null 2>&1 || true
   git cherry-pick --abort >/dev/null 2>&1 || true
   git am --abort >/dev/null 2>&1 || true
   git reset --hard HEAD >/dev/null 2>&1 || true
+  # An untracked leftover at a path a nightly adds makes `git merge` exit 2
+  # before producing conflicts, which then fails every four-hour run
+  # identically. Keep node_modules so the mobile publish can reuse installs.
+  git clean -ffd -e node_modules >/dev/null 2>&1 || true
 }
 
 git config user.name "t3-pretty-sync[bot]"
@@ -96,53 +121,8 @@ fi
 # upstream fetch inherit the blob:none filter, recreating the
 # missing-blob state this fetch strategy exists to avoid. Earlier
 # runs did register it on this reused workspace, so unset it here.
-git config --unset remote.upstream.promisor || true
-git config --unset remote.upstream.partialclonefilter || true
-
-if git rev-parse --is-shallow-repository >/dev/null 2>&1 &&
-  [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
-  origin_git fetch --unshallow origin || origin_git fetch --update-shallow origin main
-fi
-origin_git fetch origin main
-git checkout --force -B main origin/main
-
-latest_tag="$({
-  git ls-remote --tags --refs upstream 'refs/tags/v*-nightly.*' |
-    awk '{sub("refs/tags/", "", $2); print $2}' |
-    sort -V |
-    tail -n 1
-})"
-if [[ -z "$latest_tag" ]]; then
-  echo "No upstream nightly tag found." >&2
-  exit 1
-fi
-
-git fetch --no-tags --no-filter --force upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
-current_tag=""
-if [[ -f .t3-fork/upstream-nightly ]]; then
-  current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
-fi
-# The resolver uses previous_tag..origin/main to recover the fork's
-# intent for conflicted paths. Fresh clones do not have the
-# previous tag ref even though its commit is in main's history.
-if [[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]; then
-  git fetch --no-tags --no-filter --force upstream "refs/tags/$current_tag:refs/tags/$current_tag"
-fi
-
-export UPSTREAM_TAG="$latest_tag"
-export PREVIOUS_UPSTREAM_TAG="$current_tag"
-export REUSED_SYNC_RESOLUTION=false
-has_update=0
-
-if [[ "$current_tag" == "$latest_tag" ]] &&
-  git merge-base --is-ancestor "$latest_tag^{commit}" HEAD; then
-  echo "Fork already contains $latest_tag."
-  exit 0
-fi
-
-branch="automation/upstream-${latest_tag//[^0-9A-Za-z._-]/-}"
-export SYNC_BRANCH="$branch"
-has_update=1
+git config --unset-all remote.upstream.promisor || true
+git config --unset-all remote.upstream.partialclonefilter || true
 
 checkpoint_resolutions() {
   shopt -s nullglob
@@ -177,43 +157,131 @@ checkpoint_resolutions() {
   fi
   local commit
   commit="$(git commit-tree "$tree" ${parent_args[@]+"${parent_args[@]}"} -m "chore(sync): checkpoint conflict resolutions")"
+  # No retry here: this also runs from the EXIT trap inside Buildkite's
+  # short cancel grace period, and retry's backoff sleeps would eat it.
   origin_git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
   echo "Checkpointed ${#entries[@]} resolution(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
 report_blocked() {
   local status="${1:-1}"
+  local tag="${UPSTREAM_TAG:-unknown}"
   node scripts/fork/origin-forge.mjs setup-ci
   local detail="${SYNC_FAIL_REASON:-The job exited ${status}.}"
-  local body="The guarded four-hour T3 Pretty sync could not safely merge $UPSTREAM_TAG.
+  local body="The guarded four-hour T3 Pretty sync could not safely merge $tag.
 
 ${detail}
 
 Inspect the failed Origin-connected CI run for this commit."
   node scripts/fork/origin-forge.mjs report-blocked \
-    --upstream-tag "$UPSTREAM_TAG" \
-    --title "Upstream sync blocked: $UPSTREAM_TAG" \
+    --upstream-tag "$tag" \
+    --title "Upstream sync blocked: $tag" \
     --body "$body"
 }
+
+has_update=0
+sync_landed=0
 
 on_exit() {
   local status=$?
   trap - EXIT
+  # On cancellation the log tee dies first; without this, the first echo in
+  # checkpoint_resolutions takes SIGPIPE and kills the trap before the push.
+  trap '' PIPE
   if [[ "$has_update" == 1 ]]; then
     checkpoint_resolutions || true
-    if (( status != 0 )); then
-      report_blocked "$status" || true
-    fi
+  fi
+  # 143/130 mean the job was cancelled or superseded — not a blockage, and
+  # the kill grace period is better spent on the checkpoint above. A landed
+  # sync must never file a blocked report over a best-effort post-land step.
+  if (( status != 0 && status != 143 && status != 130 )) && [[ "$sync_landed" != 1 ]]; then
+    report_blocked "$status" || true
   fi
   exit "$status"
 }
 trap on_exit EXIT
+# Buildkite cancels with SIGTERM (SIGKILL only after the grace period), and
+# bash without a TERM trap dies WITHOUT running its EXIT trap — losing every
+# completed resolution exactly when a timed-out backlog run needs them most.
+trap 'exit 143' TERM INT
+
+if git rev-parse --is-shallow-repository >/dev/null 2>&1 &&
+  [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+  retry origin_git fetch --unshallow origin || retry origin_git fetch --update-shallow origin main
+fi
+retry origin_git fetch origin main
+git checkout --force -B main origin/main
+
+# `set -o pipefail` makes a failed command substitution fatal even mid
+# pipeline, so capture the listing through retry and only then post-process.
+list_upstream_nightly_tags() {
+  git ls-remote --tags --refs upstream 'refs/tags/v*-nightly.*'
+}
+upstream_tag_listing=""
+if ! upstream_tag_listing="$(retry list_upstream_nightly_tags)"; then
+  echo "Could not list upstream nightly tags after 3 attempts." >&2
+  exit 1
+fi
+latest_tag="$(printf '%s\n' "$upstream_tag_listing" |
+  awk '{sub("refs/tags/", "", $2); print $2}' |
+  sort -V |
+  tail -n 1)"
+if [[ -z "$latest_tag" ]]; then
+  echo "No upstream nightly tag found." >&2
+  exit 1
+fi
+
+retry git fetch --no-tags --no-filter --force upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
+current_tag=""
+if [[ -f .t3-fork/upstream-nightly ]]; then
+  current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
+fi
+# The resolver uses previous_tag..origin/main to recover the fork's
+# intent for conflicted paths. Fresh clones do not have the
+# previous tag ref even though its commit is in main's history, and
+# upstream occasionally prunes old nightly tags — that only costs
+# history context, never the sync.
+if [[ -n "$current_tag" && "$current_tag" != "$latest_tag" ]]; then
+  retry git fetch --no-tags --no-filter --force upstream "refs/tags/$current_tag:refs/tags/$current_tag" ||
+    echo "warning: previous nightly tag $current_tag is no longer fetchable; continuing without its history context."
+fi
+
+export UPSTREAM_TAG="$latest_tag"
+export PREVIOUS_UPSTREAM_TAG="$current_tag"
+export REUSED_SYNC_RESOLUTION=false
+
+if [[ "$current_tag" == "$latest_tag" ]] &&
+  git merge-base --is-ancestor "$latest_tag^{commit}" HEAD; then
+  echo "Fork already contains $latest_tag."
+  exit 0
+fi
+
+branch="automation/upstream-${latest_tag//[^0-9A-Za-z._-]/-}"
+export SYNC_BRANCH="$branch"
+has_update=1
 
 # Restore checkpointed per-file resolutions first: a run that failed
 # or timed out mid-merge reruns only the files that never finished.
 load_resolution_cache() {
   if origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
     git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
+  fi
+}
+
+# Homebrew's node no longer ships corepack, and a bare `corepack enable`
+# exited 127 on every scheduled sync. Prefer the pinned pnpm that vite-plus
+# already manages on macos-release, then corepack, then a one-off pnpm.
+regenerate_lockfile() {
+  local pnpm_version managed_pnpm
+  pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+  managed_pnpm="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin"
+  if [[ -x "${managed_pnpm}/pnpm" ]]; then
+    PATH="${managed_pnpm}:${PATH}" pnpm install --lockfile-only --no-frozen-lockfile
+  elif command -v corepack >/dev/null; then
+    corepack enable
+    corepack pnpm install --lockfile-only --no-frozen-lockfile
+  else
+    npx --yes "pnpm@${pnpm_version}" install --lockfile-only --no-frozen-lockfile
   fi
 }
 
@@ -263,19 +331,9 @@ resolve_current_merge() {
   # manifests so the committed lockfile actually installs (the runner
   # sets CI=true, which would force a frozen lockfile, so opt out).
   if [[ "$lockfile_conflicted" == "true" ]]; then
-    # Homebrew's node no longer ships corepack, and a bare `corepack enable`
-    # exited 127 on every scheduled sync. Prefer the pinned pnpm that vite-plus
-    # already manages on macos-release, then corepack, then a one-off pnpm.
-    pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
-    managed_pnpm="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin"
-    if [[ -x "${managed_pnpm}/pnpm" ]]; then
-      PATH="${managed_pnpm}:${PATH}" pnpm install --lockfile-only --no-frozen-lockfile
-    elif command -v corepack >/dev/null; then
-      corepack enable
-      corepack pnpm install --lockfile-only --no-frozen-lockfile
-    else
-      npx --yes "pnpm@${pnpm_version}" install --lockfile-only --no-frozen-lockfile
-    fi
+    # Retried: a registry 5xx here used to fail the run after the model had
+    # already paid for the entire resolution.
+    retry regenerate_lockfile
     git add pnpm-lock.yaml
   fi
 
@@ -303,6 +361,14 @@ merge_ref() {
   local refresh_remote="${3:-}"
   local refresh_refspec="${4:-}"
   local merge_status
+  # Tell the resolver which side carries fork intent: merging origin/main
+  # into a reused sync branch puts the fork on THEIRS, and the resolver's
+  # fork-preference rules invert without this.
+  if [[ "$ref" == "origin/main" ]]; then
+    export SYNC_FORK_SIDE=theirs
+  else
+    export SYNC_FORK_SIDE=ours
+  fi
   if git merge-base --is-ancestor "$ref^{commit}" HEAD 2>/dev/null ||
     git merge-base --is-ancestor "$ref" HEAD 2>/dev/null; then
     echo "HEAD already contains $ref."
@@ -348,8 +414,11 @@ same_first_parent_line() {
   a="$(git rev-parse "$1")"
   b="$(git rev-parse "$2")"
   [[ "$a" == "$b" ]] && return 0
-  git rev-list --first-parent "$a" | grep -qx "$b" && return 0
-  git rev-list --first-parent "$b" | grep -qx "$a" && return 0
+  # Not a plain pipe: grep -q exits on the first match, rev-list takes
+  # SIGPIPE, and pipefail then reports 141 — reading "same line" as
+  # "different lines" exactly when the match comes early.
+  grep -qx "$b" < <(git rev-list --first-parent "$a") && return 0
+  grep -qx "$a" < <(git rev-list --first-parent "$b") && return 0
   return 1
 }
 while IFS=$'\t' read -r _sha ref; do
@@ -360,7 +429,9 @@ while IFS=$'\t' read -r _sha ref; do
     *) continue ;;
   esac
   origin_git fetch origin "refs/heads/$local_name:refs/remotes/origin/$local_name" 2>/dev/null || continue
-  candidate_tag="$(git show "origin/$local_name:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]')"
+  # `|| true` inside the substitution: with pipefail a branch tip lacking
+  # the marker file would otherwise kill the whole run, not skip the branch.
+  candidate_tag="$(git show "origin/$local_name:.t3-fork/upstream-nightly" 2>/dev/null | tr -d '[:space:]' || true)"
   [[ -n "$candidate_tag" ]] || continue
   git rev-parse -q --verify "$candidate_tag^{commit}" >/dev/null 2>&1 ||
     git fetch --no-tags --no-filter --force upstream "refs/tags/$candidate_tag:refs/tags/$candidate_tag" 2>/dev/null ||
@@ -408,23 +479,36 @@ push_sync_branch() {
   remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"
   if [[ "$(git rev-parse HEAD)" == "$remote_head" ]]; then
     echo "$SYNC_BRANCH is already current."
+  elif [[ -n "$remote_head" ]]; then
+    # An explicit lease: a bare --force-with-lease needs the remote-tracking
+    # ref and is rejected with "stale info" whenever the fetch above flaked
+    # or a fresh workspace never had the ref.
+    retry origin_git push "--force-with-lease=refs/heads/$SYNC_BRANCH:$remote_head" \
+      origin "HEAD:refs/heads/$SYNC_BRANCH"
   else
-    origin_git push --force-with-lease origin "HEAD:refs/heads/$SYNC_BRANCH"
+    # No readable remote head — a lease against a ref we could not read is
+    # meaningless (an empty expectation is rejected as "stale info" too when
+    # the branch exists). A plain push creates the branch, and git still
+    # rejects a non-fast-forward if the branch exists after a flaked fetch.
+    retry origin_git push origin "HEAD:refs/heads/$SYNC_BRANCH"
   fi
 }
 
 push_sync_branch
 
-node scripts/fork/origin-forge.mjs setup-ci
+retry node scripts/fork/origin-forge.mjs setup-ci
 pr_body_path="${CACHE_ROOT}/t3-pretty-upstream-sync.md"
 write_sync_pr_body() {
   printf '%s\n\n' \
     'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
     'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
   printf 'The complete conflict-resolution audit for `%s` is committed in `.t3-fork/upstream-sync-report.md`.\n' "$UPSTREAM_TAG"
+  if grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md 2>/dev/null; then
+    printf '\n%s\n' 'Some conflicted files took the deterministic fork-side fallback because no model resolution was available; the committed report lists every parent change it omitted.'
+  fi
 }
 write_sync_pr_body > "$pr_body_path"
-node scripts/fork/origin-forge.mjs ensure-pr \
+retry node scripts/fork/origin-forge.mjs ensure-pr \
   --base main \
   --head "$SYNC_BRANCH" \
   --title "chore(sync): merge upstream $UPSTREAM_TAG" \
@@ -448,7 +532,22 @@ land_sync_pr() {
   node scripts/fork/origin-forge.mjs merge-pr --head "$SYNC_BRANCH" --sha "$head_sha"
 }
 
-if ! land_sync_pr; then
+# Origin's merge queue can land the PR after merge-pr's polling window gave
+# up, and a post-merge CLI field regression can misreport a finished merge.
+# Before treating a merge failure as real, check whether HEAD already
+# reached origin/main — retrying a landed merge duplicates PRs and files a
+# false blocked report.
+sync_already_landed() {
+  origin_git fetch origin main >/dev/null 2>&1 || true
+  git merge-base --is-ancestor HEAD origin/main 2>/dev/null
+}
+
+if land_sync_pr || {
+  sync_already_landed &&
+    echo "Origin reported a merge failure, but HEAD is already contained in origin/main; the sync landed."
+}; then
+  sync_landed=1
+else
   echo "Origin merge failed; merging origin/main and retrying once."
   origin_git fetch origin main
   # Treat the existing integration report as the base for this merge:
@@ -465,31 +564,66 @@ if ! land_sync_pr; then
   fi
   push_sync_branch
   write_sync_pr_body > "$pr_body_path"
-  node scripts/fork/origin-forge.mjs ensure-pr \
+  retry node scripts/fork/origin-forge.mjs ensure-pr \
     --base main \
     --head "$SYNC_BRANCH" \
     --title "chore(sync): merge upstream $UPSTREAM_TAG" \
     --body-file "$pr_body_path"
-  if ! land_sync_pr; then
+  if land_sync_pr || {
+    sync_already_landed &&
+      echo "Origin reported a merge failure, but HEAD is already contained in origin/main; the sync landed."
+  }; then
+    sync_landed=1
+  else
     SYNC_FAIL_REASON="Origin could not merge $SYNC_BRANCH into main after retrying with a refreshed origin/main."
     echo "$SYNC_FAIL_REASON" >&2
     exit 1
   fi
 fi
 
-node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH"
+# A landed sync that used fork-side fallbacks omitted parent changes.
+# Landing anyway is the contract, but the omission must never be silent —
+# especially when the cause is a config failure like a missing
+# CLI_PROXY_API_KEY, where every conflicted file quietly kept the fork
+# side. Annotate the build and file a per-tag notice PR at the report.
+if grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md 2>/dev/null; then
+  fallback_note="The sync for $UPSTREAM_TAG landed, but some conflicted files took the deterministic fork-side fallback because no model resolution was available. Review .t3-fork/upstream-sync-report.md on main for every omitted parent change, and check CLI_PROXY_API_KEY if every file fell back."
+  if command -v buildkite-agent >/dev/null; then
+    buildkite-agent annotate --style warning --context upstream-sync-fallback "$fallback_note" || true
+  fi
+  node scripts/fork/origin-forge.mjs report-blocked \
+    --upstream-tag "$UPSTREAM_TAG" \
+    --title "Upstream sync landed with fork-side fallbacks: $UPSTREAM_TAG" \
+    --body "$fallback_note" ||
+    echo "warning: could not file the fork-side fallback notice on Origin."
+fi
+
+# The sync's success contract ends when the merge lands on main. Everything
+# below is follow-up delivery with its own recovery path (the merge push
+# triggers desktop and mobile jobs, and the OTA coverage mark re-releases
+# anything stranded), so a failure here must not repaint a landed sync as
+# blocked.
+node scripts/fork/origin-forge.mjs delete-branch --head "$SYNC_BRANCH" ||
+  echo "warning: could not delete $SYNC_BRANCH on Origin; the merged branch can be removed manually."
 
 # Dispatch desktop preflight if the merge push is missed. Mobile no
 # longer has an imported workflow; if this integration changed
 # mobile paths, publish from this macos-release job. The script
 # flocks /tmp/t3-pretty-ios-mobile.lock so a follow-up ios-mobile
 # push job cannot overlap eas update or a local IPA.
-node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main
+node scripts/fork/origin-forge.mjs dispatch --workflow fork-release.yml --ref main ||
+  echo "warning: fork-release dispatch failed; the merge push's own build covers the desktop preflight."
 if [[ "$mobile_release_needed" == "true" ]]; then
   echo "Upstream integration changed mobile-relevant paths; publishing OTA/TestFlight from this Mac."
   T3CODE_MOBILE_SKIP_PATH_FILTER=1 \
     T3CODE_MOBILE_UPDATE_MESSAGE="Upstream sync $UPSTREAM_TAG" \
-    bash scripts/fork/publish-mobile-release.sh
+    bash scripts/fork/publish-mobile-release.sh || {
+    echo "warning: the inline mobile publish failed; the merge push's mobile jobs and the OTA coverage mark re-release it."
+    if command -v buildkite-agent >/dev/null; then
+      buildkite-agent annotate --style warning --context upstream-sync-mobile \
+        "The inline mobile publish for $UPSTREAM_TAG failed after the merge landed; check the merge push's mobile jobs." || true
+    fi
+  }
 else
   echo "The upstream integration changed no mobile-relevant paths; skipping mobile release."
 fi

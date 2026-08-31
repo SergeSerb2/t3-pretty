@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -12,7 +13,7 @@ import {
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
-  isRetiredOpenCodeDeletion,
+  isForkDeletionConflict,
   MAX_VALIDATION_ATTEMPTS,
   prepareConflictPrompt,
   pruneResolutionCache,
@@ -269,45 +270,140 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "<<<<<<< OURS (T3 Pretty main");
     assert.include(resolver, 'git(["rm", "-q", "--", path])');
-    assert.include(resolver, 'git(["ls-files", "-u", "--", path])');
+    assert.include(resolver, 'git(["ls-files", "-u", "-z", "--", path])');
     assert.include(resolver, "parentDeletionEvidence");
   });
 
-  it("keeps the intentionally retired OpenCode provider deleted without a model request", () => {
-    const forkDeleted = new Set([1, 3]);
-    const retiredPaths = [
-      "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
-      "apps/server/src/provider/opencodeRuntime.cliParsers.test.ts",
-      "apps/server/src/provider/opencodeRuntime.ts",
-      "apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts",
-      "apps/server/src/textGeneration/OpenCodeTextGeneration.ts",
-    ];
-    const paths = [...retiredPaths, "apps/server/src/provider/Layers/CodexAdapter.ts"];
-
-    assert.deepEqual(
-      paths.filter((path) => isRetiredOpenCodeDeletion(path, forkDeleted)),
-      retiredPaths,
-    );
-    assert.isFalse(isRetiredOpenCodeDeletion("packages/foo/opencode.config.ts", forkDeleted));
-    assert.isFalse(
-      isRetiredOpenCodeDeletion(
-        "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
-        new Set([1, 2, 3]),
+  it("keeps every fork deletion deterministically without a model request", () => {
+    // Fork deleted (no stage 2), parent modified (stage 3): established fork
+    // intent, resolved deterministically. Any path qualifies — a hardcoded
+    // list only ever covered the files someone already noticed blocking runs.
+    assert.isTrue(
+      isForkDeletionConflict(
+        "apps/server/src/provider/opencodeRuntime.inventory.test.ts",
+        new Set([1, 3]),
       ),
     );
+    assert.isTrue(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 3])));
+    // Both sides survive, or the parent deleted: not a fork deletion.
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2, 3])));
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2])));
+    // Stage-3-only is "added by them" (file/directory or rename conflict on a
+    // path the fork never had), never a fork deletion.
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([3])));
+    // Merging origin/main into a reused sync branch puts the fork on THEIRS;
+    // the rule must follow the fork side or it inverts on that merge.
+    assert.isTrue(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2]), "theirs"));
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 3]), "theirs"));
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
-    assert.include(resolver, "paths.filter((path) => isRetiredOpenCodeDeletion(path))");
+    assert.include(resolver, "isForkDeletionConflict(path)");
+    assert.include(resolver, "kept T3 Pretty's deletion of");
   });
 
-  it("resolves every resolvable file before reporting the ones that failed", () => {
+  it("falls back to the fork side instead of failing when no model resolution is available", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // A declined or repeatedly invalid file must not stop the run: later
-    // files still resolve and checkpoint, so the next run only faces the
-    // paths that failed this one.
-    assert.include(resolver, "leaving ${path} unresolved this run");
+    // A declined, invalid, or unreachable model must not stop the run: the
+    // file keeps the fork side wholesale, the omission lands in the durable
+    // report, and only a path whose fallback itself fails can fail the run.
+    assert.include(resolver, "fork-side fallback for ${oneLine(path)}");
+    assert.include(resolver, "the fork-side fallback then failed");
+    assert.include(resolver, "leaving ${oneLine(path)} unresolved this run");
     assert.include(resolver, "could not be resolved this run");
+    // A missing token fails fast into the fallback instead of retrying 401s.
+    assert.include(resolver, "CLI_PROXY_API_KEY is unavailable");
+  });
+
+  it("lands a conflicted merge with zero model access: fork deletions and fork-side fallbacks", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-fallback-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "base\n");
+      NodeFS.writeFileSync(NodePath.join(dir, "deleted.txt"), "base\n");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "theirs\n");
+      NodeFS.writeFileSync(NodePath.join(dir, "deleted.txt"), "theirs\n");
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "ours\n");
+      git("rm", "-q", "deleted.txt");
+      git("commit", "-aqm", "fork changes");
+      let merged = true;
+      try {
+        git("merge", "theirs");
+      } catch {
+        merged = false;
+      }
+      assert.isFalse(merged, "the merge must conflict for this test to mean anything");
+
+      // No CLI_PROXY_API_KEY: the resolver must still land every conflict —
+      // the fork deletion deterministically, the content conflict through
+      // the fork-side fallback — and exit 0.
+      const env = {
+        ...process.env,
+        SYNC_RESOLUTION_CACHE_DIR: NodePath.join(dir, "cache"),
+        UPSTREAM_TAG: "v0.0.0-nightly.test",
+        PREVIOUS_UPSTREAM_TAG: "",
+        REUSED_SYNC_RESOLUTION: "false",
+      };
+      delete env.CLI_PROXY_API_KEY;
+      const output = NodeChildProcess.execFileSync(process.execPath, [resolverPath], {
+        cwd: dir,
+        encoding: "utf8",
+        env,
+      });
+
+      assert.include(output, "kept T3 Pretty's deletion of deleted.txt");
+      assert.include(output, "fork-side fallback for kept.txt");
+      assert.equal(NodeFS.readFileSync(NodePath.join(dir, "kept.txt"), "utf8"), "ours\n");
+      assert.isFalse(NodeFS.existsSync(NodePath.join(dir, "deleted.txt")));
+      assert.equal(git("diff", "--name-only", "--diff-filter=U"), "");
+      const report = NodeFS.readFileSync(
+        NodePath.join(dir, ".t3-fork/upstream-sync-report.md"),
+        "utf8",
+      );
+      assert.include(report, "took the fork-side fallback");
+      assert.include(report, "kept T3 Pretty's intentional deletion of this file");
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("summarizes fork-side fallbacks in the durable report", () => {
+    const report = formatSyncReport({
+      upstreamTag: "v0.0.37-nightly.20260830.1227",
+      previousUpstreamTag: "v0.0.37-nightly.20260830.1226",
+      model: "gpt-5.6-sol",
+      reasoningEffort: "xhigh",
+      protectedWorkflowPaths: [],
+      resolutions: [
+        {
+          path: "apps/web/src/cloud/linkEnvironment.ts",
+          deterministic: true,
+          fallback: true,
+          forkChangesPreserved: ["kept the fork side wholesale as a fork-side fallback resolution"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [
+            {
+              change: "every parent change at this file's conflict boundaries (fork-side fallback)",
+              reason: "CLIProxyAPI did not produce a completed response after 3 attempts",
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.include(report, "1 file(s) took the fork-side fallback");
+    assert.include(report, "fork-side fallback");
+    assert.include(report, "did not produce a completed response");
+    assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
   });
 
   it("still refuses files large enough to risk local conflict processing", () => {
@@ -373,7 +469,7 @@ ${">".repeat(7)} theirs
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "run-upstream-sync.sh");
     assert.include(pipeline, 'build.source != "schedule"');
-    assert.include(mobileRelease, "does not change mobile-relevant paths");
+    assert.include(mobileRelease, "mobile path filter");
     assert.include(mobileRelease, "apps/mobile");
     assert.include(mobileRelease, '"$MODE" == "update" || "$MODE" == "release"');
     assert.include(mobileRelease, '"$MODE" != "build" && "$MODE" != "release"');
@@ -410,14 +506,17 @@ ${">".repeat(7)} theirs
     assert.isAbove(restore, remove);
   });
 
-  it("backfills upstream-only objects from the upstream promisor, not the fork", () => {
+  it("fetches upstream objects eagerly instead of registering a second promisor", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
-    // The sparse checkout is a blob:none partial clone; blobs a nightly adds
-    // under .repos/ exist only upstream, and the fork promisor answers
-    // "not our ref" for them, killing the merge before it starts.
-    assert.include(script, "git config remote.upstream.promisor true");
-    assert.include(script, "git config remote.upstream.partialclonefilter blob:none");
+    // The checkout is a blob:none partial clone of the fork remote; upstream
+    // tags are fetched with --no-filter so a merge never lazily backfills an
+    // upstream-only object through the fork promisor ("not our ref"). A
+    // registered upstream promisor would inherit the blob:none filter and
+    // recreate the missing-blob state, so leftover registrations are unset.
+    assert.include(script, "git config --unset-all remote.upstream.promisor");
+    assert.include(script, "git config --unset-all remote.upstream.partialclonefilter");
+    assert.include(script, "--no-tags --no-filter --force upstream");
   });
 
   it("checks upstream every four hours and supports an explicit retry", () => {
@@ -585,7 +684,7 @@ ${">".repeat(7)} theirs
       ],
     });
 
-    assert.include(report, "generated lockfiles resolved deterministically");
+    assert.include(report, "conflicts resolved deterministically");
     assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
     assert.include(report, "AI-splicing");
     assert.include(report, "fork-only dependency entries");
@@ -594,11 +693,12 @@ ${">".repeat(7)} theirs
   it("retries transient resolver failures instead of aborting the whole sync", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // Network errors, 429, 5xx, and unparseable/incomplete responses retry;
-    // the last attempt drops to high effort so one long-think cannot 502.
+    // Network errors, 408, 429, 5xx, and unparseable/incomplete responses
+    // retry; the last attempt drops to high effort so one long-think cannot
+    // 502.
     assert.include(resolver, "const maxAttempts = 3");
     assert.include(resolver, 'attempt < maxAttempts ? REASONING_EFFORT : "high"');
-    assert.include(resolver, "status !== 0 && status !== 429 && status < 500");
+    assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
     assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
     assert.include(resolver, "did not produce a completed response");
     // Non-transient HTTP failures (auth, bad request) still throw immediately.

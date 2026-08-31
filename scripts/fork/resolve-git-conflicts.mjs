@@ -37,23 +37,22 @@ const MAX_RESOLUTION_CACHE_ENTRIES = 256;
 const MAX_RESOLUTION_CACHE_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_SYNC_REPORT_BYTES = 8 * 1024 * 1024;
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+// Refusals sometimes name exactly what they need ("provide the
+// renderProjectScope definition", nightly 1226): the fork moved code out of
+// the default 100-line window. One retry with a much wider window keeps a
+// real integration instead of dropping to the fork-side fallback.
+const DEFAULT_CONTEXT_LINES = 100;
+const WIDE_CONTEXT_LINES = 400;
+// Wall-clock guard: worst-case model time for one batch (validation retries
+// x transient retries x the 10-minute request timeout, doubled by the wide
+// retry) exceeds the Buildkite job timeout, and a timed-out job is killed
+// with no blocked report. Past the deadline every remaining request throws
+// immediately and the affected files take the fork-side fallback, so the
+// run still lands. run-upstream-sync.sh sets this to job start + 150min.
+const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS ?? "") || undefined;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
-const RETIRED_OPENCODE_PATHS = new Set([
-  "apps/marketing/public/harnesses/opencode-dark.svg",
-  "apps/server/src/provider/Drivers/OpenCodeDriver.ts",
-  "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts",
-  "apps/server/src/provider/Layers/OpenCodeAdapter.ts",
-  "apps/server/src/provider/Layers/OpenCodeProvider.test.ts",
-  "apps/server/src/provider/Layers/OpenCodeProvider.ts",
-  "apps/server/src/provider/Services/OpenCodeAdapter.ts",
-  "apps/server/src/provider/opencodeRuntime.cliParsers.test.ts",
-  "apps/server/src/provider/opencodeRuntime.environment.test.ts",
-  "apps/server/src/provider/opencodeRuntime.ts",
-  "apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts",
-  "apps/server/src/textGeneration/OpenCodeTextGeneration.ts",
-]);
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
 // Completed per-file resolutions are checkpointed here (one JSON per file,
 // keyed by a hash of the conflicted input) and pushed to the
@@ -293,22 +292,22 @@ function extractResponseText(response) {
   throw new Error("CLIProxyAPI response did not contain output text");
 }
 
-function contextBounds(source, start, end) {
+function contextBounds(source, start, end, contextLines = DEFAULT_CONTEXT_LINES) {
   let contextStart = 0;
   let searchFrom = start;
-  for (let line = 0; line < 100; line += 1) {
+  for (let line = 0; line < contextLines; line += 1) {
     const newline = source.lastIndexOf("\n", searchFrom - 1);
     if (newline === -1) break;
-    if (line === 99) contextStart = newline + 1;
+    if (line === contextLines - 1) contextStart = newline + 1;
     searchFrom = newline;
   }
 
   let contextEnd = source.length;
   searchFrom = end;
-  for (let line = 0; line < 100; line += 1) {
+  for (let line = 0; line < contextLines; line += 1) {
     const newline = source.indexOf("\n", searchFrom);
     if (newline === -1) break;
-    if (line === 99) contextEnd = newline;
+    if (line === contextLines - 1) contextEnd = newline;
     searchFrom = newline + 1;
   }
 
@@ -340,8 +339,8 @@ function utf8ByteLengthThrough(source, start, end, maxBytes) {
   return bytes;
 }
 
-function contextAround(source, start, end, maxBytes, conflictBounds = []) {
-  let { contextStart, contextEnd } = contextBounds(source, start, end);
+function contextAround(source, start, end, maxBytes, conflictBounds = [], contextLines) {
+  let { contextStart, contextEnd } = contextBounds(source, start, end, contextLines);
   // Never cut a context window through another conflict block. A clipped
   // marker block reads as a truncated, unresolvable conflict to the model,
   // which then declines the whole file as unsafe (seen on nightly 1093).
@@ -591,6 +590,7 @@ export function prepareConflictPrompt({
   forkHistory,
   maxConflicts = Number.POSITIVE_INFINITY,
   deleteConflict,
+  contextLines = DEFAULT_CONTEXT_LINES,
 }) {
   if (Buffer.byteLength(conflictedSource) > MAX_CONFLICT_FILE_BYTES) {
     throw new Error(`${path} exceeds the ${MAX_CONFLICT_FILE_BYTES}-byte local file limit`);
@@ -631,6 +631,7 @@ export function prepareConflictPrompt({
       end,
       MAX_PROMPT_BYTES - promptBytes - prefixBytes,
       allConflicts,
+      contextLines,
     );
     if (context === undefined) {
       if (conflicts.length === 0) {
@@ -678,6 +679,7 @@ export function formatSyncReport({
     ),
   );
 
+  const fallbackCount = resolutions.filter((resolution) => resolution.fallback).length;
   return [
     "# T3 Pretty upstream integration report",
     "",
@@ -685,9 +687,16 @@ export function formatSyncReport({
     `- Previously integrated parent nightly: \`${oneLine(previousUpstreamTag || "none recorded")}\``,
     resolutions.some((resolution) => !resolution.deterministic)
       ? `- Conflict resolver: \`${oneLine(model)}\` with \`${oneLine(reasoningEffort)}\` reasoning`
-      : resolutions.length > 0
-        ? "- Conflict resolver: generated lockfiles resolved deterministically; no model request needed"
-        : "- Conflict resolver: not invoked; Git reported no text conflicts",
+      : fallbackCount > 0
+        ? "- Conflict resolver: deterministic rules and fork-side fallbacks; no model resolution completed"
+        : resolutions.length > 0
+          ? "- Conflict resolver: conflicts resolved deterministically; no model request needed"
+          : "- Conflict resolver: not invoked; Git reported no text conflicts",
+    ...(fallbackCount > 0
+      ? [
+          `- ${fallbackCount} file(s) took the fork-side fallback because no model resolution was available; review their omissions below`,
+        ]
+      : []),
     "",
     "## T3 Pretty changes preserved at conflict boundaries",
     "",
@@ -759,24 +768,85 @@ function unmergedStages(path) {
   );
 }
 
-export function isRetiredOpenCodeDeletion(path, stages = unmergedStages(path)) {
-  return RETIRED_OPENCODE_PATHS.has(path) && !stages.has(2) && stages.has(3);
+// The resolver runs for two different merges: the upstream tag merge, where
+// OURS is the fork, and the origin/main merge on a reused sync branch, where
+// THEIRS is the fork. The fork-preference rules below must know which side
+// carries fork intent or they invert on the second merge — a fork-deleted
+// file would be resurrected and a fork modification deleted, each reported
+// as the opposite. run-upstream-sync.sh sets SYNC_FORK_SIDE per merge_ref.
+const FORK_SIDE = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours";
+const forkStageOf = (forkSide) => (forkSide === "theirs" ? 3 : 2);
+const parentStageOf = (forkSide) => (forkSide === "theirs" ? 2 : 3);
+
+// A modify/delete conflict where the fork deleted the file is established
+// fork intent: the deletion is committed fork history (the retired
+// OpenCode provider, pruned tests). The model cannot see the replacement
+// surface from the surviving file alone, so it refused these run after run
+// (opencodeRuntime.*.test.ts blocked five consecutive syncs on 2026-08-29)
+// while a hardcoded path list only ever covered the files someone already
+// noticed. Keep every fork deletion deterministically; the report records
+// the parent changes this omits, and a wrongly kept deletion resurfaces the
+// moment a maintainer restores the file on main. Stage 1 must exist: a
+// parent-stage-only entry is "added by them" (a file/directory or rename
+// conflict on a path the fork never had), not a fork deletion.
+export function isForkDeletionConflict(path, stages = unmergedStages(path), forkSide = FORK_SIDE) {
+  return stages.has(1) && !stages.has(forkStageOf(forkSide)) && stages.has(parentStageOf(forkSide));
 }
 
-function resolveRetiredOpenCodeDeletion(path) {
+function resolveForkDeletion(path) {
   git(["rm", "-q", "--", path]);
   process.stdout.write(
-    `[fork-sync] kept T3 Pretty's retired OpenCode deletion for ${path} deterministically\n`,
+    `[fork-sync] kept T3 Pretty's deletion of ${oneLine(path)} deterministically\n`,
   );
   return {
     path,
     deterministic: true,
-    forkChangesPreserved: ["kept T3 Pretty's intentional removal of the OpenCode provider"],
+    forkChangesPreserved: ["kept T3 Pretty's intentional deletion of this file"],
     upstreamChangesIntegrated: [],
     upstreamChangesOmitted: [
       {
-        change: "the parent nightly's changes to this retired OpenCode file",
-        reason: "resurrecting it would restore the provider T3 Pretty intentionally removed",
+        change: "the parent nightly's changes to this fork-deleted file",
+        reason: "resurrecting it would undo a deletion T3 Pretty made deliberately on main",
+      },
+    ],
+  };
+}
+
+// The last line of defense: when a file cannot be model-resolved (the model
+// declined as unsafe, the proxy stayed down through every retry, or the token
+// is missing), keep the fork side wholesale instead of blocking the sync.
+// This follows the preservation contract's own tie-breaker — when both
+// intents cannot be reconciled, T3 Pretty wins — and the report records every
+// parent change the fallback omitted so the omission is never silent.
+function fallbackResolution(path, reason) {
+  const stages = unmergedStages(path);
+  const forkStage = forkStageOf(FORK_SIDE);
+  if (stages.has(forkStage)) {
+    git(["checkout", FORK_SIDE === "theirs" ? "--theirs" : "--ours", "--", path]);
+    git(["add", "--", path]);
+  } else if (stages.has(parentStageOf(FORK_SIDE))) {
+    git(["rm", "-q", "--", path]);
+  } else {
+    // No fork stage and no parent stage: the path is not a recognizable
+    // conflict any more (or ls-files failed). Deleting on that evidence
+    // would be a guess, not a fallback.
+    throw new Error(`${path} has no fork or parent stage to fall back to`);
+  }
+  process.stdout.write(`[fork-sync] fork-side fallback for ${oneLine(path)}: ${oneLine(reason)}\n`);
+  return {
+    path,
+    deterministic: true,
+    fallback: true,
+    forkChangesPreserved: [
+      stages.has(forkStage)
+        ? "kept the fork side wholesale as a fork-side fallback resolution"
+        : "kept the fork's deletion of this file as a fork-side fallback resolution",
+    ],
+    upstreamChangesIntegrated: [],
+    upstreamChangesOmitted: [
+      {
+        change: "every parent change at this file's conflict boundaries (fork-side fallback)",
+        reason: oneLine(reason),
       },
     ],
   };
@@ -895,6 +965,11 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
       "CLI_PROXY_API_URL must be a bounded credential-free HTTPS URL or a loopback HTTP URL.",
     );
   }
+  // Fail fast into the fork-side fallback instead of burning three retry
+  // cycles per file on guaranteed 401s.
+  if (!token) {
+    throw new Error("CLI_PROXY_API_KEY is unavailable, so no model resolution is possible");
+  }
   // The proxy intermittently 502s when a single xhigh call reasons for very
   // long, and one gateway blip otherwise aborts the whole sync (seen
   // 2026-08-14 on nightly 1089). Retry transient failures — network errors,
@@ -905,6 +980,11 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   let apiResponse;
   let usedEffort = REASONING_EFFORT;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (MODEL_DEADLINE_EPOCH_MS !== undefined && Date.now() > MODEL_DEADLINE_EPOCH_MS) {
+      throw new Error(
+        "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
+      );
+    }
     const effort = attempt < maxAttempts ? REASONING_EFFORT : "high";
     let response;
     let raw = "";
@@ -1004,7 +1084,9 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
       );
     } else {
       const status = response?.status ?? 0;
-      if (status !== 0 && status !== 429 && status < 500) {
+      // 408 is the proxy timing out a long think ("stream closed before
+      // response.completed", seen on nightly 1226) — as transient as a 5xx.
+      if (status !== 0 && status !== 408 && status !== 429 && status < 500) {
         throw new Error(`CLIProxyAPI returned HTTP ${status}: ${oneLine(raw).slice(0, 500)}`);
       }
       process.stdout.write(
@@ -1022,9 +1104,11 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   }
   const resolution = JSON.parse(extractResponseText(apiResponse));
   if (resolution.safe !== true) {
-    throw new Error(
+    const declined = new Error(
       `${path} was not safe to resolve automatically: ${oneLine(resolution.summary)}`,
     );
+    declined.modelDeclined = true;
+    throw declined;
   }
   if (!Array.isArray(resolution.edits)) {
     throw new Error(`${path} did not include an edits array`);
@@ -1156,6 +1240,7 @@ async function resolveConflict(path, token) {
   const upstreamChangesIntegrated = [];
   const upstreamChangesOmitted = [];
   let batches = 0;
+  let widenNextBatch = false;
   while (LEFTOVER_MARKER_PATTERN.test(source)) {
     batches += 1;
     if (batches > MAX_BATCHES_PER_FILE) {
@@ -1169,6 +1254,10 @@ async function resolveConflict(path, token) {
       forkHistory,
       maxConflicts: MAX_CONFLICTS_PER_REQUEST,
       deleteConflict,
+      // Wide context applies only to the batch being retried: a later
+      // batch's 400-line window could blow the prompt budget that its
+      // 100-line window fits.
+      contextLines: widenNextBatch ? WIDE_CONTEXT_LINES : DEFAULT_CONTEXT_LINES,
     });
     // An edit set that fails validation (non-unique old_text, overlaps, a
     // missed conflict) is a sampling defect, not a hard failure: request two
@@ -1177,36 +1266,53 @@ async function resolveConflict(path, token) {
     let usedEffort = REASONING_EFFORT;
     let effectiveTier = "unknown";
     let validationError;
-    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
-      const response = await requestConflictResolution({
-        path,
-        prompt: buildValidationRetryPrompt(prompt, validationError),
-        conflictCount: conflicts.length,
-        token,
-      });
-      try {
-        const nextSource = applyResolutionEdits({
+    try {
+      for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
+        const response = await requestConflictResolution({
           path,
-          source,
-          conflicts,
-          resolution: response.resolution,
+          prompt: buildValidationRetryPrompt(prompt, validationError),
+          conflictCount: conflicts.length,
+          token,
         });
-        resolution = response.resolution;
-        usedEffort = response.usedEffort;
-        effectiveTier = response.effectiveTier;
-        source = nextSource;
-        validationError = undefined;
-        break;
-      } catch (error) {
-        validationError = error;
-        if (attempt < MAX_VALIDATION_ATTEMPTS) {
-          process.stdout.write(
-            `[fork-sync] batch ${batches} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
-          );
+        try {
+          const nextSource = applyResolutionEdits({
+            path,
+            source,
+            conflicts,
+            resolution: response.resolution,
+          });
+          resolution = response.resolution;
+          usedEffort = response.usedEffort;
+          effectiveTier = response.effectiveTier;
+          source = nextSource;
+          validationError = undefined;
+          break;
+        } catch (error) {
+          validationError = error;
+          if (attempt < MAX_VALIDATION_ATTEMPTS) {
+            process.stdout.write(
+              `[fork-sync] batch ${batches} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
+            );
+          }
         }
       }
+      if (validationError) throw validationError;
+    } catch (error) {
+      // A decline often names context the fork moved outside the default
+      // window. Rebuild the batch once with a much wider window before the
+      // decline becomes this file's failure. The retry re-runs this batch,
+      // so it does not consume budget.
+      if (error?.modelDeclined === true && !widenNextBatch) {
+        widenNextBatch = true;
+        batches -= 1;
+        process.stdout.write(
+          `[fork-sync] batch ${batches + 1} for ${path} was declined as unsafe; retrying once with ${WIDE_CONTEXT_LINES}-line conflict context\n`,
+        );
+        continue;
+      }
+      throw error;
     }
-    if (validationError) throw validationError;
+    widenNextBatch = false;
     forkChangesPreserved.push(
       ...stringList(resolution.fork_changes_preserved, "fork_changes_preserved"),
     );
@@ -1295,18 +1401,22 @@ async function main() {
   const paths = git(["diff", "--name-only", "--diff-filter=U", "-z"]).split("\0").filter(Boolean);
 
   const lockfilePaths = paths.filter(isGeneratedLockfile);
-  const retiredOpenCodePaths = paths.filter((path) => isRetiredOpenCodeDeletion(path));
+  const forkDeletionPaths = paths.filter(
+    (path) => !isGeneratedLockfile(path) && isForkDeletionConflict(path),
+  );
   const modelPaths = paths.filter(
-    (path) => !isGeneratedLockfile(path) && !isRetiredOpenCodeDeletion(path),
+    (path) => !isGeneratedLockfile(path) && !isForkDeletionConflict(path),
   );
 
   const rawToken = process.env.CLI_PROXY_API_KEY ?? "";
   const token = resolveCliProxyToken(rawToken);
   if (modelPaths.length > 0 && !token) {
-    throw new Error(
-      rawToken
-        ? "CLI_PROXY_API_KEY exceeds its safety limit or has controls"
-        : "CLI_PROXY_API_KEY is required when merge conflicts exist",
+    process.stdout.write(
+      `[fork-sync] ${
+        rawToken
+          ? "CLI_PROXY_API_KEY exceeds its safety limit or has controls"
+          : "CLI_PROXY_API_KEY is not set"
+      }; every remaining conflict takes the fork-side fallback\n`,
     );
   }
 
@@ -1315,27 +1425,35 @@ async function main() {
   for (const path of lockfilePaths) {
     resolutions.push(resolveGeneratedLockfile(path));
   }
-  for (const path of retiredOpenCodePaths) {
-    resolutions.push(resolveRetiredOpenCodeDeletion(path));
+  for (const path of forkDeletionPaths) {
+    resolutions.push(resolveForkDeletion(path));
   }
   const failures = [];
   for (const path of modelPaths) {
     const entries = unmergedModes.filter((line) => line.endsWith(`\t${path}`));
-    if (entries.some((entry) => !entry.startsWith("100644 ") && !entry.startsWith("100755 "))) {
-      failures.push({ path, reason: "has a non-regular git mode and requires manual resolution" });
-      continue;
-    }
+    // A model failure must not block the merge: the file falls back to the
+    // fork side, every completed file is checkpointed, and only a path whose
+    // fallback itself fails (a broken index entry) can still fail the run.
     try {
+      if (entries.some((entry) => !entry.startsWith("100644 ") && !entry.startsWith("100755 "))) {
+        throw new Error("has a non-regular git mode and cannot be model-resolved");
+      }
       resolutions.push(await resolveConflict(path, token));
     } catch (error) {
-      // A file the model declines or repeatedly mis-edits must not block the
-      // rest of the merge: every other completed file is checkpointed, so the
-      // next run only faces the paths that failed this one.
       const reason = error instanceof Error ? error.message : String(error);
-      failures.push({ path, reason });
-      process.stdout.write(
-        `[fork-sync] leaving ${oneLine(path)} unresolved this run: ${oneLine(reason)}\n`,
-      );
+      try {
+        resolutions.push(fallbackResolution(path, reason));
+      } catch (fallbackError) {
+        const fallbackReason =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        failures.push({
+          path,
+          reason: `${reason}; the fork-side fallback then failed: ${fallbackReason}`,
+        });
+        process.stdout.write(
+          `[fork-sync] leaving ${oneLine(path)} unresolved this run: ${oneLine(reason)}\n`,
+        );
+      }
     }
   }
   if (failures.length > 0) {

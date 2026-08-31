@@ -46,8 +46,11 @@ orchestration, contract, or client change is required for the common case.
 
 ## OpenCode server ownership and catalog
 
+> T3 Pretty removed the OpenCode provider; this section describes parent T3 Code behavior and is
+> kept for upstream-sync context.
+
 Each OpenCode provider instance owns one lazy local server for catalog discovery and
-text-generation helpers through [`OpenCodeServerOwner.ts`][opencode-server-owner]. Concurrent
+text-generation helpers through `OpenCodeServerOwner.ts`. Concurrent
 borrowers share startup. The server closes 30 seconds after the last borrower releases it, or
 when the provider instance closes. A failed or exited process can be started again on the next
 use. An externally configured OpenCode server remains externally owned.
@@ -173,7 +176,6 @@ when a request opens (approval) or user input is requested, via
 [acp-runtime]: ../../apps/server/src/provider/acp/AcpSessionRuntime.ts
 [acp-terminal]: ../../apps/server/src/provider/acp/AcpTerminalHost.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
-[opencode-server-owner]: ../../apps/server/src/provider/OpenCodeServerOwner.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts
 [registry]: ../../apps/server/src/provider/Services/ProviderAdapterRegistry.ts

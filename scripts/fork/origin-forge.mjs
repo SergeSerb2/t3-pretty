@@ -605,7 +605,12 @@ export function selectPullRequest(
   const owner = String(repo).split("/", 1)[0];
   const aliases = new Set([head, `${owner}:${head}`, `${owner}/${head}`]);
   const withHeadMetadata = matches.filter((item) => pullRequestHeadName(item) !== undefined);
-  const exact = withHeadMetadata.find((item) => aliases.has(String(pullRequestHeadName(item))));
+  // Tolerate a fully-qualified head ref: an Origin CLI that returns
+  // refs/heads/<branch> would otherwise match nothing, and ensure-pr would
+  // create a duplicate PR on every run and then fail to read it back.
+  const exact = withHeadMetadata.find((item) =>
+    aliases.has(String(pullRequestHeadName(item)).replace(/^refs\/heads\//u, "")),
+  );
   if (exact) return exact;
   // Older Origin CLIs omit head metadata from --json; in that case -H already
   // filtered the list. Never fall back when Origin returned a different head.
