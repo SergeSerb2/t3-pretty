@@ -1,11 +1,21 @@
 # Organizing threads
 
 Pin a thread from its context menu to keep it in the pinned section above your active work.
-Pinned threads are shown independently of their project, including when you connect to more than
-one environment.
+`mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
+their project, including when you connect to more than one environment.
+
+To require confirmation before unpinning, enable **Settings → General → Unpin confirmation**. The
+confirmation applies to the sidebar controls, thread menus, and the `mod+shift+p` shortcut.
 
 Pinned threads still move to **Settled** when they become inactive. They also move when their pull
 request merges if **Auto-settle merged threads** is enabled.
+
+When you un-settle a thread, it returns to the top of the active list so you can find it right
+away. Its timestamps do not change. Other threads keep their positions.
+
+Right-click a pull request link in a thread and choose **Link to thread** to show that pull request
+in the sidebar. The thread settles when the linked pull request merges if **Auto-settle merged
+threads** is enabled. Right-click the same link and choose **Unlink from thread** to remove it.
 
 On web and desktop, drag a pinned thread to change its position. On mobile, open the thread's menu
 and choose **Move up** or **Move down**. The order is stored by the server and appears on your
@@ -17,6 +27,17 @@ their pinned threads keep the default newest-first order below the ones you have
 On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted cards and plates over
 the landscape photo. Solid rows return if Boring is on, scenery is off, or iOS Reduce Transparency
 is on.
+
+## Clearing settled threads
+
+The **Settled** section header has a **Clear** action that archives every settled thread at once,
+after a confirmation. The thread you currently have open is left in the list. Archiving removes
+threads from the sidebar without deleting anything; they remain in each project's archived list,
+and the toast offers **Undo**.
+
+To keep the settled list from growing forever, enable **Auto-archive settled threads** in Settings
+under General. Threads that have been settled longer than the number of days you choose are
+archived automatically. The thread you currently have open is never archived out from under you.
 
 ## Dock badge on macOS
 

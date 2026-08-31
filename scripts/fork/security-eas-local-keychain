@@ -8,7 +8,7 @@
 # can pass. Codesign still validates trust later via Security.framework.
 set -euo pipefail
 
-real="${T3CODE_REAL_SECURITY:-/usr/bin/security}"
+real="/usr/bin/security"
 
 if [[ "${1:-}" == "find-identity" ]]; then
   eas_keychain=0

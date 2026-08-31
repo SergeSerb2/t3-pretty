@@ -8,6 +8,7 @@ import {
   CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
   ConnectOnboardingOptOutSchema,
   EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
+  rememberConnectOnboardingOptOut,
 } from "~/cloud/connectOnboarding";
 import { useCloudUiEnabled } from "~/cloud/clerkGate";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
@@ -89,6 +90,14 @@ function ConfiguredConnectOnboardingDialog() {
   const [isApplying, setIsApplying] = useState(false);
   const prefilledFromLinkStateRef = useRef(false);
   const observedAccountRef = useRef<string | null | undefined>(undefined);
+  const applyRequestRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      applyRequestRef.current += 1;
+    },
+    [],
+  );
 
   const optOutAccounts = optOutState.optOutAccounts;
 
@@ -146,6 +155,8 @@ function ConfiguredConnectOnboardingDialog() {
   // wizard would do — close it and let the sign-in trigger re-evaluate.
   useEffect(() => {
     if (openForAccount !== null && (!isSignedIn || userId !== openForAccount)) {
+      applyRequestRef.current += 1;
+      setIsApplying(false);
       setOpenForAccount(null);
     }
     if (requestedAccount !== null && (!isSignedIn || userId !== requestedAccount)) {
@@ -174,14 +185,11 @@ function ConfiguredConnectOnboardingDialog() {
     // Keep the wizard up while a link request is in flight so its outcome
     // (and any failure) stays visible.
     if (isApplying) return;
+    applyRequestRef.current += 1;
     const account = openForAccount;
     setOpenForAccount(null);
     if (account !== null && dontShowAgain) {
-      setOptOutState((state) =>
-        state.optOutAccounts.includes(account)
-          ? state
-          : { optOutAccounts: [...state.optOutAccounts, account] },
-      );
+      setOptOutState((state) => rememberConnectOnboardingOptOut(state, account));
     }
   };
 
@@ -192,11 +200,15 @@ function ConfiguredConnectOnboardingDialog() {
       setStep("devices");
       return;
     }
+    const account = openForAccount;
+    if (account === null) return;
+    const requestId = ++applyRequestRef.current;
     setIsApplying(true);
     const ok = await controller.reconcileCloudState({
       managedTunnel: exposeEnvironment,
       publish: publishAgentActivity,
     });
+    if (requestId !== applyRequestRef.current) return;
     setIsApplying(false);
     if (!ok) return;
     toastManager.add({

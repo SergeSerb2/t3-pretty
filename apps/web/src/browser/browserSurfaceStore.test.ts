@@ -2,13 +2,25 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   acquireBrowserSurface,
+  acquireBrowserSurfaceActivity,
   resolveBrowserSurfacePanelRect,
   useBrowserSurfaceStore,
 } from "./browserSurfaceStore";
 
 describe("browserSurfaceStore", () => {
   beforeEach(() => {
-    useBrowserSurfaceStore.setState({ byTabId: {} });
+    useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
+  });
+
+  it("keeps concurrent background work active until every lease is released", () => {
+    const first = acquireBrowserSurfaceActivity("background-browser");
+    const second = acquireBrowserSurfaceActivity("background-browser");
+
+    first();
+    expect(useBrowserSurfaceStore.getState().activityByTabId["background-browser"]).toBe(1);
+
+    second();
+    expect(useBrowserSurfaceStore.getState().activityByTabId["background-browser"]).toBeUndefined();
   });
 
   it("freezes the source content dimensions for a fitted presentation", () => {
@@ -171,5 +183,33 @@ describe("browserSurfaceStore", () => {
       owner: null,
       visible: false,
     });
+  });
+
+  it("forgets presentation state when a runtime tab disappears", () => {
+    const removedTabId = "removed-browser-surface";
+    const retainedTabId = "retained-browser-surface";
+    useBrowserSurfaceStore.getState().presentContent(removedTabId, {
+      x: 0,
+      y: 0,
+      width: 1_280,
+      height: 720,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    useBrowserSurfaceStore.getState().presentContent(retainedTabId, {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 480,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+
+    useBrowserSurfaceStore.getState().remove(removedTabId);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[removedTabId]).toBeUndefined();
+    expect(useBrowserSurfaceStore.getState().byTabId[retainedTabId]).toBeDefined();
   });
 });

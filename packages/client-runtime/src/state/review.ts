@@ -8,6 +8,8 @@ import {
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
+export const REVIEW_DIFF_PREVIEW_IDLE_TTL_MS = 60_000;
+
 export function createReviewEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -17,6 +19,7 @@ export function createReviewEnvironmentAtoms<R, E>(
       label: "environment-data:review:diff-preview",
       tag: WS_METHODS.reviewGetDiffPreview,
       staleTimeMs: 5_000,
+      idleTtlMs: REVIEW_DIFF_PREVIEW_IDLE_TTL_MS,
     }),
     diffFileContents: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:review:diff-file-contents",

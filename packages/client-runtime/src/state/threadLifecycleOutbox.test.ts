@@ -15,6 +15,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
@@ -29,8 +30,10 @@ import {
   applyPendingThreadLifecycleToSnapshot,
   applyPendingThreadLifecycleToThread,
   asQueuedThreadLifecycleCommand,
+  coalescePendingThreadLifecycleEntryBatch,
   coalescePendingThreadLifecycleEntries,
   makeThreadLifecycleOutbox,
+  ThreadLifecycleOutboxPersistenceError,
   ThreadLifecycleOutboxStore,
   type PendingThreadLifecycleEntry,
 } from "./threadLifecycleOutbox.ts";
@@ -51,6 +54,7 @@ function isolatedOutboxStore() {
 }
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const SECOND_ENVIRONMENT_ID = EnvironmentId.make("environment-2");
 const THREAD_ID = ThreadId.make("thread-1");
 const OTHER_THREAD_ID = ThreadId.make("thread-2");
 
@@ -59,6 +63,13 @@ const TARGET = new PrimaryConnectionTarget({
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",
   wsBaseUrl: "wss://environment.example.test",
+});
+
+const SECOND_TARGET = new PrimaryConnectionTarget({
+  environmentId: SECOND_ENVIRONMENT_ID,
+  label: "Second test environment",
+  httpBaseUrl: "https://environment-two.example.test",
+  wsBaseUrl: "wss://environment-two.example.test",
 });
 
 function entry(
@@ -169,6 +180,56 @@ describe("queued thread lifecycle commands", () => {
       settle,
     ]);
   });
+
+  it("coalesces a persisted batch in one pass without reviving a removed snooze", () => {
+    const snooze = entry({
+      command: {
+        type: "thread.snooze",
+        commandId: CommandId.make("snooze-before-settle"),
+        threadId: THREAD_ID,
+        snoozedUntil: "2026-08-16T12:00:00.000Z",
+      },
+    });
+    const settle = entry({
+      command: {
+        type: "thread.settle",
+        commandId: CommandId.make("settle-before-unsettle"),
+        threadId: THREAD_ID,
+      },
+    });
+    const unsettle = entry({
+      command: {
+        type: "thread.unsettle",
+        commandId: CommandId.make("latest-unsettle"),
+        threadId: THREAD_ID,
+        reason: "user",
+      },
+    });
+
+    expect(coalescePendingThreadLifecycleEntryBatch([snooze, settle, unsettle])).toEqual([
+      unsettle,
+    ]);
+
+    let threadIdReads = 0;
+    const manyThreads = Array.from({ length: 2_000 }, (_, index) => {
+      const threadId = ThreadId.make(`thread-${index}`);
+      const command = {
+        type: "thread.settle" as const,
+        commandId: CommandId.make(`settle-${index}`),
+        threadId,
+      };
+      Object.defineProperty(command, "threadId", {
+        get: () => {
+          threadIdReads += 1;
+          return threadId;
+        },
+      });
+      return entry({ command });
+    });
+
+    expect(coalescePendingThreadLifecycleEntryBatch(manyThreads)).toHaveLength(manyThreads.length);
+    expect(threadIdReads).toBe(manyThreads.length);
+  });
 });
 
 describe("pending thread lifecycle overlay", () => {
@@ -234,9 +295,312 @@ describe("pending thread lifecycle overlay", () => {
     };
     expect(applyPendingThreadLifecycleToSnapshot(snapshot, [])).toBe(snapshot);
   });
+
+  it("indexes interleaved pending commands once while preserving per-thread order", () => {
+    const untouched = makeShell({ id: ThreadId.make("thread-3"), title: "Untouched" });
+    const snapshot: OrchestrationShellSnapshot = {
+      snapshotSequence: 4,
+      projects: [],
+      threads: [makeShell(), makeShell({ id: OTHER_THREAD_ID, title: "Other" }), untouched],
+      updatedAt: "2026-08-15T00:00:00.000Z",
+    };
+    const entries = [
+      entry({
+        command: {
+          type: "thread.snooze",
+          commandId: CommandId.make("snooze"),
+          threadId: THREAD_ID,
+          snoozedUntil: "2026-08-16T09:00:00.000Z",
+        },
+      }),
+      entry({
+        queuedAt: "2026-08-15T12:30:00.000Z",
+        command: {
+          type: "thread.settle",
+          commandId: CommandId.make("settle-other"),
+          threadId: OTHER_THREAD_ID,
+        },
+      }),
+      entry({
+        queuedAt: "2026-08-15T13:00:00.000Z",
+        command: {
+          type: "thread.unsettle",
+          commandId: CommandId.make("unsettle"),
+          threadId: THREAD_ID,
+          reason: "user",
+        },
+      }),
+    ];
+    let iteratorReads = 0;
+    const instrumented = new Proxy(entries, {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) iteratorReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const overlayed = applyPendingThreadLifecycleToSnapshot(snapshot, instrumented);
+
+    expect(iteratorReads).toBe(1);
+    expect(overlayed.threads[0]).toMatchObject({
+      snoozedUntil: "2026-08-16T09:00:00.000Z",
+      settledOverride: "active",
+      updatedAt: "2026-08-15T13:00:00.000Z",
+    });
+    expect(overlayed.threads[1]).toMatchObject({
+      settledOverride: "settled",
+      updatedAt: "2026-08-15T12:30:00.000Z",
+    });
+    expect(overlayed.threads[2]).toBe(untouched);
+  });
 });
 
 describe("ThreadLifecycleOutbox", () => {
+  it.effect("does not lose stored commands when the first enqueue races initial loading", () =>
+    Effect.gen(function* () {
+      const loadStarted = yield* Deferred.make<void>();
+      const releaseInitialLoad = yield* Deferred.make<void>();
+      let loadCount = 0;
+      const stored = entry({
+        command: {
+          type: "thread.settle",
+          commandId: CommandId.make("stored-settle"),
+          threadId: THREAD_ID,
+        },
+      });
+      const store = ThreadLifecycleOutboxStore.of({
+        load: () =>
+          Effect.suspend(() => {
+            loadCount += 1;
+            return loadCount === 1
+              ? Deferred.succeed(loadStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseInitialLoad)),
+                  Effect.as([stored]),
+                )
+              : Effect.succeed([]);
+          }),
+        save: () => Effect.void,
+      });
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.none<RpcSession>()),
+        prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      const outbox = yield* makeThreadLifecycleOutbox().pipe(
+        Effect.provideService(ThreadLifecycleOutboxStore, store),
+      );
+
+      const watcher = yield* outbox
+        .watchAndDrain(supervisor)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(loadStarted);
+      const enqueue = yield* outbox
+        .enqueue(ENVIRONMENT_ID, {
+          type: "thread.settle",
+          commandId: CommandId.make("new-settle"),
+          threadId: OTHER_THREAD_ID,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Effect.yieldNow;
+      yield* Deferred.succeed(releaseInitialLoad, undefined);
+      expect(yield* Fiber.join(enqueue)).toBe(true);
+      yield* Fiber.interrupt(watcher);
+
+      expect(loadCount).toBe(1);
+      expect(
+        (yield* SubscriptionRef.get(outbox.pending))
+          .get(ENVIRONMENT_ID)
+          ?.map((pending) => pending.command.commandId),
+      ).toEqual(["stored-settle", "new-settle"]);
+    }),
+  );
+
+  it.effect("does not block another environment behind a stalled initial load", () =>
+    Effect.gen(function* () {
+      const slowLoadStarted = yield* Deferred.make<void>();
+      const releaseSlowLoad = yield* Deferred.make<void>();
+      const store = ThreadLifecycleOutboxStore.of({
+        load: (environmentId) =>
+          environmentId === ENVIRONMENT_ID
+            ? Deferred.succeed(slowLoadStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSlowLoad)),
+                Effect.as([]),
+              )
+            : Effect.succeed([]),
+        save: () => Effect.void,
+      });
+      const outbox = yield* makeThreadLifecycleOutbox().pipe(
+        Effect.provideService(ThreadLifecycleOutboxStore, store),
+      );
+
+      const slowEnqueue = yield* outbox
+        .enqueue(ENVIRONMENT_ID, {
+          type: "thread.settle",
+          commandId: CommandId.make("slow-load-settle"),
+          threadId: THREAD_ID,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(slowLoadStarted);
+      const fastEnqueue = yield* outbox
+        .enqueue(SECOND_ENVIRONMENT_ID, {
+          type: "thread.settle",
+          commandId: CommandId.make("independent-settle"),
+          threadId: OTHER_THREAD_ID,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+
+      expect(yield* Fiber.join(fastEnqueue)).toBe(true);
+      yield* Deferred.succeed(releaseSlowLoad, undefined);
+      expect(yield* Fiber.join(slowEnqueue)).toBe(true);
+    }),
+  );
+
+  it.effect("merges in-memory commands after a transient initial load failure", () =>
+    Effect.gen(function* () {
+      let loadCount = 0;
+      let saveCount = 0;
+      const persisted = yield* Deferred.make<ReadonlyArray<PendingThreadLifecycleEntry>>();
+      const stored = entry({
+        command: {
+          type: "thread.settle",
+          commandId: CommandId.make("stored-before-failure"),
+          threadId: THREAD_ID,
+        },
+      });
+      const store = ThreadLifecycleOutboxStore.of({
+        load: () =>
+          Effect.suspend(() => {
+            loadCount += 1;
+            return loadCount === 1
+              ? Effect.fail(
+                  new ThreadLifecycleOutboxPersistenceError({
+                    operation: "load",
+                    message: "temporary read failure",
+                  }),
+                )
+              : Effect.succeed([stored]);
+          }),
+        save: (_environmentId, entries) =>
+          Effect.sync(() => {
+            saveCount += 1;
+          }).pipe(Effect.andThen(Deferred.succeed(persisted, entries)), Effect.asVoid),
+      });
+      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+        target: TARGET,
+        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+        session: yield* SubscriptionRef.make(Option.none<RpcSession>()),
+        prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+        connect: Effect.void,
+        disconnect: Effect.void,
+        retryNow: Effect.void,
+      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      const outbox = yield* makeThreadLifecycleOutbox().pipe(
+        Effect.provideService(ThreadLifecycleOutboxStore, store),
+      );
+
+      yield* outbox.enqueue(ENVIRONMENT_ID, {
+        type: "thread.settle",
+        commandId: CommandId.make("queued-during-failure"),
+        threadId: OTHER_THREAD_ID,
+      });
+      expect(saveCount).toBe(0);
+
+      const watcher = yield* outbox
+        .watchAndDrain(supervisor)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      const merged = yield* Deferred.await(persisted);
+      yield* Fiber.interrupt(watcher);
+
+      expect(loadCount).toBe(2);
+      expect(saveCount).toBe(1);
+      expect(merged.map((pending) => pending.command.commandId)).toEqual([
+        "stored-before-failure",
+        "queued-during-failure",
+      ]);
+    }),
+  );
+
+  it.effect("drains different environments independently", () =>
+    Effect.gen(function* () {
+      const slowDispatchStarted = yield* Deferred.make<void>();
+      const releaseSlowDispatch = yield* Deferred.make<void>();
+      const fastDispatchFinished = yield* Deferred.make<void>();
+      const sessionFor = (dispatch: Effect.Effect<void>): RpcSession => ({
+        client: {
+          [ORCHESTRATION_WS_METHODS.dispatchCommand]: () =>
+            dispatch.pipe(Effect.as({ sequence: 1 })),
+        } as unknown as WsRpcProtocolClient,
+        initialConfig: Effect.never,
+        ready: Effect.void,
+        probe: Effect.void,
+        closed: Effect.never,
+      });
+      const supervisorFor = Effect.fn("TestThreadLifecycleOutbox.supervisorFor")(function* (
+        target: PrimaryConnectionTarget,
+        session: RpcSession,
+      ) {
+        return EnvironmentSupervisor.EnvironmentSupervisor.of({
+          target,
+          state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+          session: yield* SubscriptionRef.make(Option.some(session)),
+          prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+          connect: Effect.void,
+          disconnect: Effect.void,
+          retryNow: Effect.void,
+        } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+      });
+      const slowSupervisor = yield* supervisorFor(
+        TARGET,
+        sessionFor(
+          Deferred.succeed(slowDispatchStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseSlowDispatch)),
+          ),
+        ),
+      );
+      const fastSupervisor = yield* supervisorFor(
+        SECOND_TARGET,
+        sessionFor(Deferred.succeed(fastDispatchFinished, undefined).pipe(Effect.asVoid)),
+      );
+      const outbox = yield* makeThreadLifecycleOutbox();
+      yield* outbox.enqueue(ENVIRONMENT_ID, {
+        type: "thread.settle",
+        commandId: CommandId.make("slow-settle"),
+        threadId: THREAD_ID,
+      });
+      yield* outbox.enqueue(SECOND_ENVIRONMENT_ID, {
+        type: "thread.settle",
+        commandId: CommandId.make("fast-settle"),
+        threadId: THREAD_ID,
+      });
+
+      const slowWatcher = yield* outbox
+        .watchAndDrain(slowSupervisor)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(slowDispatchStarted);
+      const fastPendingCleared = yield* SubscriptionRef.changes(outbox.pending).pipe(
+        Stream.filter((pending) => !pending.has(SECOND_ENVIRONMENT_ID)),
+        Stream.runHead,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const fastWatcher = yield* outbox
+        .watchAndDrain(fastSupervisor)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(fastDispatchFinished);
+      yield* Fiber.join(fastPendingCleared);
+      yield* Deferred.succeed(releaseSlowDispatch, undefined);
+      yield* Fiber.interrupt(fastWatcher);
+      yield* Fiber.interrupt(slowWatcher);
+
+      expect(
+        (yield* SubscriptionRef.get(outbox.pending)).get(SECOND_ENVIRONMENT_ID),
+      ).toBeUndefined();
+    }).pipe(Effect.provideService(ThreadLifecycleOutboxStore, isolatedOutboxStore())),
+  );
+
   it.effect("dispatches parked commands once the environment session is back", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];

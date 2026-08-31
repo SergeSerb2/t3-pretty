@@ -1,3 +1,9 @@
+import {
+  AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH,
+  AUTH_CLIENT_LABEL_MAX_LENGTH,
+  AUTH_CLIENT_OS_MAX_LENGTH,
+  AUTH_CLIENT_USER_AGENT_MAX_LENGTH,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -54,6 +60,28 @@ describe("deriveAuthClientMetadata", () => {
       os: "iOS",
     });
     expect(metadata.userAgent).toContain("Electron/36.3.2");
+  });
+
+  it("bounds request-derived and client-presented metadata before persistence", () => {
+    const metadata = deriveAuthClientMetadata({
+      request: {
+        headers: {
+          "user-agent": `Browser/${"u".repeat(AUTH_CLIENT_USER_AGENT_MAX_LENGTH + 100)}`,
+        },
+        source: {
+          remoteAddress: "1".repeat(AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH + 100),
+        },
+      } as never,
+      presented: {
+        label: "l".repeat(AUTH_CLIENT_LABEL_MAX_LENGTH + 100),
+        os: "o".repeat(AUTH_CLIENT_OS_MAX_LENGTH + 100),
+      },
+    });
+
+    expect(metadata.userAgent).toHaveLength(AUTH_CLIENT_USER_AGENT_MAX_LENGTH);
+    expect(metadata.ipAddress).toHaveLength(AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH);
+    expect(metadata.label).toHaveLength(AUTH_CLIENT_LABEL_MAX_LENGTH);
+    expect(metadata.os).toHaveLength(AUTH_CLIENT_OS_MAX_LENGTH);
   });
 });
 

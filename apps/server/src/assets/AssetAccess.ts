@@ -12,6 +12,7 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
+  PROJECT_IMPORT_FAVICON_MAX_BYTES,
 } from "@t3tools/contracts";
 import {
   isWorkspaceImagePreviewPath,
@@ -43,7 +44,7 @@ import {
   timingSafeEqualBase64Url,
 } from "../auth/utils.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { resolveAttachmentPathById } from "../attachmentStore.ts";
+import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import { resolveManagedProjectFaviconFile } from "../project/ProjectFaviconStore.ts";
@@ -56,6 +57,7 @@ const SIGNING_SECRET_NAME = "asset-access-signing-key";
 const ASSET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const PROJECT_FAVICON_TOKEN_BUCKET_MS = 30 * 60 * 1000;
 const PROJECT_FAVICON_VERSION_PREFIX = "v";
+const INLINE_VIDEO_MIME_TYPE_PATTERN = /^video\/[\w!#$&^.+-]+$/i;
 const PREVIEW_ASSET_EXTENSIONS = new Set([
   ...WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   ...WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
@@ -87,6 +89,13 @@ const AssetClaimsSchema = Schema.Union([
     version: Schema.Literal(1),
     kind: Schema.Literal("attachment"),
     attachmentId: Schema.String,
+    /** Decided at mint time. Absent tokens (from before this field) serve
+        inline, which is only ever the image case. */
+    download: Schema.optionalKey(Schema.Boolean),
+    /** Display name and mime the caller supplied at mint time; drive the
+        download filename and Content-Type. */
+    fileName: Schema.optionalKey(Schema.String),
+    mimeType: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -129,6 +138,9 @@ export type ResolvedAsset = {
   /** Which claim kind authorized the bytes; drives response caching and CORS. */
   readonly source: ResolvedAssetSource;
   readonly attachmentId?: string;
+  readonly download?: boolean;
+  readonly fileName?: string;
+  readonly mimeType?: string;
 };
 
 function decodeClaims(encodedPayload: string): AssetClaims | null {
@@ -419,13 +431,24 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
           resource: input.resource,
         });
       }
+      // Generic files carry their extension inside the attachment id (that
+      // shape resolves the on-disk path); images do not. Videos and images
+      // render inline; other generic files download.
+      const isGenericFile = parseAttachmentFileExtension(input.resource.attachmentId) !== null;
+      const videoMimeType = input.resource.mimeType?.split(";", 1)[0]?.trim() ?? "";
+      const isVideo = INLINE_VIDEO_MIME_TYPE_PATTERN.test(videoMimeType);
       claims = {
         version: 1,
         kind: "attachment",
         attachmentId: input.resource.attachmentId,
+        ...(isGenericFile && !isVideo ? { download: true } : {}),
+        ...(input.resource.fileName !== undefined ? { fileName: input.resource.fileName } : {}),
+        ...(input.resource.mimeType !== undefined
+          ? { mimeType: isVideo ? videoMimeType : input.resource.mimeType }
+          : {}),
         expiresAt,
       };
-      fileName = path.basename(attachmentPath);
+      fileName = input.resource.fileName ?? path.basename(attachmentPath);
       break;
     }
     case "project-favicon": {
@@ -544,7 +567,13 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
             };
       if (sourceFaviconPath && canonicalFaviconPath) {
         const crypto = yield* Crypto.Crypto;
-        const faviconBytes = yield* fileSystem.readFile(canonicalFaviconPath).pipe(
+        const faviconBytes = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const handle = yield* fileSystem.open(canonicalFaviconPath, { flag: "r" });
+            return yield* handle.readAlloc(PROJECT_IMPORT_FAVICON_MAX_BYTES + 1);
+          }),
+        ).pipe(
+          Effect.map(Option.getOrElse(() => new Uint8Array())),
           Effect.mapError(
             (cause) =>
               new AssetProjectFaviconInspectionError({
@@ -553,6 +582,12 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
               }),
           ),
         );
+        if (faviconBytes.byteLength > PROJECT_IMPORT_FAVICON_MAX_BYTES) {
+          return yield* new AssetProjectFaviconInspectionError({
+            resource: input.resource,
+            cause: new Error("Project favicon exceeds the 2 MiB inspection limit."),
+          });
+        }
         const revision = yield* crypto.digest("SHA-256", faviconBytes).pipe(
           Effect.map(Encoding.encodeHex),
           Effect.mapError(
@@ -639,6 +674,9 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
           path: attachmentPath,
           source: "attachment",
           attachmentId: claims.attachmentId,
+          ...(claims.download ? { download: true } : {}),
+          ...(claims.fileName !== undefined ? { fileName: claims.fileName } : {}),
+          ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
         } satisfies ResolvedAsset)
       : null;
   }

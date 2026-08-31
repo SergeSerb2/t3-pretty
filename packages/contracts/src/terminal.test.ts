@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_TERMINAL_ID,
+  TERMINAL_ERROR_MESSAGE_MAX_LENGTH,
+  TERMINAL_OUTPUT_MAX_LENGTH,
   TerminalAttachInput,
   TerminalClearInput,
   TerminalCloseInput,
@@ -13,6 +15,8 @@ import {
   TerminalThreadInput,
   TerminalWriteInput,
 } from "./terminal.ts";
+import { ENTITY_ID_MAX_LENGTH } from "./baseSchemas.ts";
+import { PROJECT_PATH_MAX_LENGTH } from "./project.ts";
 
 function decodeSync<S extends Schema.Top>(schema: S, input: unknown): Schema.Schema.Type<S> {
   return Schema.decodeUnknownSync(schema as never)(input) as Schema.Schema.Type<S>;
@@ -159,6 +163,12 @@ describe("TerminalThreadInput", () => {
     const parsed = decodeSync(TerminalThreadInput, { threadId: " thread-1 " });
     expect(parsed.threadId).toBe("thread-1");
   });
+
+  it("rejects oversized thread ids", () => {
+    expect(decodes(TerminalThreadInput, { threadId: "x".repeat(ENTITY_ID_MAX_LENGTH + 1) })).toBe(
+      false,
+    );
+  });
 });
 
 describe("TerminalResizeInput", () => {
@@ -229,6 +239,35 @@ describe("TerminalSessionSnapshot", () => {
       }),
     ).toBe(true);
   });
+
+  it("rejects oversized paths and timestamps", () => {
+    const base = {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      cwd: "/tmp/project",
+      worktreePath: null,
+      status: "running",
+      pid: 1234,
+      history: "",
+      exitCode: null,
+      exitSignal: null,
+      label: "Primary",
+      updatedAt: isoTimestamp,
+    } as const;
+
+    expect(
+      decodes(TerminalSessionSnapshot, {
+        ...base,
+        cwd: `/${"x".repeat(PROJECT_PATH_MAX_LENGTH)}`,
+      }),
+    ).toBe(false);
+    expect(
+      decodes(TerminalSessionSnapshot, {
+        ...base,
+        updatedAt: "x".repeat(129),
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("TerminalEvent", () => {
@@ -243,6 +282,25 @@ describe("TerminalEvent", () => {
         data: "line\n",
       }),
     ).toBe(true);
+  });
+
+  it("rejects oversized output and error events", () => {
+    expect(
+      decodes(TerminalEvent, {
+        type: "output",
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        data: "x".repeat(TERMINAL_OUTPUT_MAX_LENGTH + 1),
+      }),
+    ).toBe(false);
+    expect(
+      decodes(TerminalEvent, {
+        type: "error",
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        message: "x".repeat(TERMINAL_ERROR_MESSAGE_MAX_LENGTH + 1),
+      }),
+    ).toBe(false);
   });
 
   it("accepts exited events", () => {

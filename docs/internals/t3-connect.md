@@ -297,13 +297,35 @@ returns to the foreground. The desktop's bounded live-refresh cadence only refre
 membership: mesh reconciliation does not need to probe every environment endpoint once per minute.
 The previous list is retained during an in-flight refresh; only an authoritative successful list
 mutates the catalog.
-Clicking **Connect** on desktop first saves the requested remote target and then enables the local
-managed link if necessary, making the relationship reciprocal. An explicitly disabled local link
-is not re-enabled in the background.
+Clicking **Connect** on desktop first enables the local managed link if necessary, then saves the
+requested remote target. A local-link failure therefore cannot leave a silently one-way desktop
+connection. An explicitly disabled local link is not re-enabled in the background.
+After authoritative discovery, a locally stored link whose primary environment is absent from the
+account catalog is presented as inactive. Desktop automatically repairs a never-observed stale
+membership once when the stored local setting is still enabled. After that membership has been
+observed, a later account deregistration remains respected until the user explicitly enables or
+connects the host again. Failed, offline, and in-flight discovery never invalidate local link state.
 
 Headless servers and browser-only clients do not run the desktop reconciler. A headless server can
 be discovered and added by desktops but has no client catalog to populate, which keeps that
 connection one-way by construction.
+
+## Project and Thread Transfer
+
+Project transfer is a client-coordinated, server-to-server copy between two managed relay
+environments. The client asks the source for an immutable manifest, asks the destination for a
+one-hour signed upload URL, then tells the source server to stream a compressed workspace archive
+to that URL. Project bytes never pass through the browser or mobile process.
+
+The destination reserves a unique directory below its projects root, extracts into staging, and
+commits `project.created` plus `thread.transferred` in one database transaction after extraction
+succeeds. The imported thread gets new project, thread, message, activity, plan, and turn IDs.
+Provider sessions and checkpoints are not portable; the first destination turn uses the bounded
+provider-handoff transcript instead. The source remains authoritative for its original copy.
+
+Archives omit dependencies, build outputs, T3 state, attachments, and file-form `.git` worktree
+pointers. A real `.git` directory is retained. The compressed body is capped at 96 MB, upload URLs
+expire after one hour and are single-use, and failed imports remove staging and destination data.
 
 ## Restricting Sign-ups: Known-User Allowlist
 

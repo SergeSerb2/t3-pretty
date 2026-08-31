@@ -414,6 +414,10 @@ function normalizePathEntryForComparison(entry: string, platform: NodeJS.Platfor
   return platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+function sanitizePathEntry(entry: string, platform: NodeJS.Platform): string {
+  return platform === "win32" ? entry.replaceAll('"', "") : entry;
+}
+
 export function mergePathValues(
   preferredPath: string | undefined,
   inheritedPath: string | undefined,
@@ -427,14 +431,14 @@ export function mergePathValues(
     if (!rawValue) continue;
 
     for (const entry of rawValue.split(delimiter)) {
-      const trimmed = entry.trim();
-      if (trimmed.length === 0) continue;
+      const sanitized = sanitizePathEntry(entry.trim(), platform);
+      if (sanitized.length === 0) continue;
 
-      const normalized = normalizePathEntryForComparison(trimmed, platform);
+      const normalized = normalizePathEntryForComparison(sanitized, platform);
       if (normalized.length === 0 || seen.has(normalized)) continue;
 
       seen.add(normalized);
-      merged.push(trimmed);
+      merged.push(sanitized);
     }
   }
 
@@ -528,11 +532,14 @@ function cacheCommandResolution(
   resolvedPath: string | null,
   nowNanos: bigint,
 ): void {
-  if (cache.size >= COMMAND_RESOLUTION_CACHE_MAX_ENTRIES) {
+  // Remove replacements first: Map.set does not refresh insertion order, and
+  // evicting before replacing a full-cache key would discard an unrelated
+  // entry while leaving this key in its stale FIFO position.
+  cache.delete(cacheKey);
+  while (cache.size >= COMMAND_RESOLUTION_CACHE_MAX_ENTRIES) {
     const oldestKey = cache.keys().next().value;
-    if (oldestKey !== undefined) {
-      cache.delete(oldestKey);
-    }
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
   }
   cache.set(cacheKey, {
     resolvedPath,

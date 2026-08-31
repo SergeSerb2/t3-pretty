@@ -1,6 +1,6 @@
 import type { PullRequestActor } from "@t3tools/contracts";
 import { Image } from "expo-image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -20,13 +20,10 @@ export function PullRequestActorAvatar(props: {
   readonly size?: number;
 }) {
   const size = props.size ?? 28;
-  const [failed, setFailed] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
   const muted = useThemeColor("--color-foreground-muted");
   const avatarUrl = props.actor?.avatarUrl ?? null;
-  useEffect(() => {
-    setFailed(false);
-  }, [avatarUrl]);
-  const uri = failed ? null : avatarUrl;
+  const uri = failedAvatarUrl === avatarUrl ? null : avatarUrl;
   const radius = size / 2;
 
   return (
@@ -37,7 +34,7 @@ export function PullRequestActorAvatar(props: {
       {uri ? (
         <Image
           accessibilityIgnoresInvertColors
-          onError={() => setFailed(true)}
+          onError={() => setFailedAvatarUrl(avatarUrl)}
           recyclingKey={uri}
           source={{ uri }}
           style={{ width: size, height: size }}

@@ -37,7 +37,9 @@ export function parseAssetCollectionKey(
 
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    const baseUrl = new URL(httpBaseUrl);
+    const resolvedUrl = new URL(relativeUrl, baseUrl);
+    return resolvedUrl.origin === baseUrl.origin ? resolvedUrl.toString() : null;
   } catch {
     return null;
   }

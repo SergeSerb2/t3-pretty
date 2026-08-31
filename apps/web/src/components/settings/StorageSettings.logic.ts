@@ -71,6 +71,20 @@ export function storageDeviceStatusText(environment: {
   return "Measuring…";
 }
 
+export const STORAGE_SETTINGS_ROW_BATCH_SIZE = 100;
+
+export function storageSettingsRowWindow(
+  totalCount: number,
+  requestedVisibleCount: number,
+): { readonly visibleCount: number; readonly remainingCount: number } {
+  const safeTotalCount = Number.isFinite(totalCount) ? Math.max(0, Math.floor(totalCount)) : 0;
+  const safeRequestedCount = Number.isFinite(requestedVisibleCount)
+    ? Math.max(STORAGE_SETTINGS_ROW_BATCH_SIZE, Math.floor(requestedVisibleCount))
+    : STORAGE_SETTINGS_ROW_BATCH_SIZE;
+  const visibleCount = Math.min(safeTotalCount, safeRequestedCount);
+  return { visibleCount, remainingCount: safeTotalCount - visibleCount };
+}
+
 export function formatStorageBytes(value: number): string {
   if (value < 1024) return `${value} B`;
   const units = ["KB", "MB", "GB"] as const;
@@ -186,6 +200,19 @@ export function scanProgressCaption(inventory: StorageInventory): string | null 
     return "Looking for managed worktrees…";
   }
   return `Found ${formatStorageBytes(inventory.totalBytes)} so far · ${scan.measuredCount} of ${scan.totalCount} paths`;
+}
+
+export function storageInventoryCoverageWarning(inventory: StorageInventory): string | null {
+  const scan = inventory.scan;
+  if (scan === undefined) return null;
+  const reasons: string[] = [];
+  if (scan.truncated === true) reasons.push("discovery reached a safety limit");
+  const unreadable = scan.unreadableDirectories ?? 0;
+  if (unreadable > 0) {
+    reasons.push(`${pluralCount(unreadable, "directory")} could not be read`);
+  }
+  if (reasons.length === 0) return null;
+  return `Inventory is incomplete: ${reasons.join(" and ")}. Bulk cleanup is disabled; listed paths can still be removed individually.`;
 }
 
 export function summaryCaption(inventory: StorageInventory): string {
