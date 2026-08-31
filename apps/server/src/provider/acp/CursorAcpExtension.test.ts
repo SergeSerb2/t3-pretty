@@ -251,6 +251,23 @@ describe("CursorAcpExtension", () => {
     expect(parsed.models[1]?.configOptions?.map((option) => option.id)).toEqual(["reasoning"]);
   });
 
+  it("drops empty slugs and names even when the catalog otherwise matches the schema", () => {
+    const parsed = parseCursorListAvailableModelsResponse({
+      models: [
+        { value: "gpt-5.4", name: "GPT-5.4" },
+        { value: "", name: "Broken" },
+        { value: "   ", name: "Whitespace slug" },
+        { value: "composer-2", name: "  " },
+        { value: "  glm-5.3-flash  ", name: "  GLM 5.3 Flash  " },
+      ],
+    });
+
+    expect(parsed.models.map((model) => ({ value: model.value, name: model.name }))).toEqual([
+      { value: "gpt-5.4", name: "GPT-5.4" },
+      { value: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+    ]);
+  });
+
   it("decodes Cursor list_available_models responses with per-model config options", () => {
     const decoded = CursorListAvailableModelsResponse.make({
       models: [

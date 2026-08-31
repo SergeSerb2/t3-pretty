@@ -101,9 +101,6 @@ export const CursorListAvailableModelsResponse = Schema.Struct({
 });
 export type CursorListAvailableModelsResponse = typeof CursorListAvailableModelsResponse.Type;
 
-const decodeCursorListAvailableModelsResponseExit = Schema.decodeUnknownExit(
-  CursorListAvailableModelsResponse,
-);
 const decodeCursorAvailableModelExit = Schema.decodeUnknownExit(CursorAvailableModel);
 const decodeCursorSessionConfigOptionExit = Schema.decodeUnknownExit(AcpSchema.SessionConfigOption);
 
@@ -167,10 +164,6 @@ function parseCursorAvailableModel(value: unknown): typeof CursorAvailableModel.
 export function parseCursorListAvailableModelsResponse(
   value: unknown,
 ): CursorListAvailableModelsResponse {
-  const decoded = decodeCursorListAvailableModelsResponseExit(value);
-  if (Exit.isSuccess(decoded)) {
-    return decoded.value;
-  }
   const models: Array<typeof CursorAvailableModel.Type> = [];
   const rawModels = isRecord(value) && Array.isArray(value.models) ? value.models : [];
   for (const entry of rawModels) {

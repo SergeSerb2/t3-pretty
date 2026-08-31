@@ -1368,12 +1368,22 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
         errorTag: causeErrorTag(discoveryExit.cause),
       });
       discoveryWarning = CURSOR_ACP_MODEL_DISCOVERY_FAILED_MESSAGE;
-    } else if (Option.isNone(discoveryExit.value)) {
-      discoveryWarning = `Cursor ACP model discovery timed out after ${CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`;
-    } else if (discoveryExit.value.value.length === 0) {
-      discoveryWarning = "Cursor ACP model discovery returned no built-in models.";
     } else {
-      acpModels = discoveryExit.value.value;
+      const acpDiscovery = Option.match(discoveryExit.value, {
+        onNone: () => ({
+          models: [] as ReadonlyArray<ServerProviderModel>,
+          warning: `Cursor ACP model discovery timed out after ${CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`,
+        }),
+        onSome: (models) => ({
+          models,
+          warning:
+            models.length === 0
+              ? "Cursor ACP model discovery returned no built-in models."
+              : undefined,
+        }),
+      });
+      acpModels = acpDiscovery.models;
+      discoveryWarning = acpDiscovery.warning;
     }
     const mergedModels = mergeCursorCliModelsIntoDiscoveredModels(acpModels, cliModels);
     if (mergedModels.length > 0) {
