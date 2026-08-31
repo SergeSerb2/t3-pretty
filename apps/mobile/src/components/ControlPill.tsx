@@ -7,17 +7,48 @@ import {
   type ReactElement,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
 } from "react";
-import { Platform, Pressable, type PressableProps } from "react-native";
+import { Platform, Pressable, View, type ColorValue, type PressableProps } from "react-native";
+import { withUniwind } from "uniwind";
 import { useThemeColor } from "../lib/useThemeColor";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { cn } from "../lib/cn";
+import { withMenuActionIconColors } from "../lib/menu-action-colors";
 import { AnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { ComposerSendIconSlot } from "./ComposerSendIndicator";
+
+const ThemedMenuView = withUniwind(
+  function NativeMenuView({
+    iconColor,
+    destructiveIconColor,
+    ...props
+  }: ComponentProps<typeof MenuView> & {
+    readonly iconColor?: ColorValue;
+    readonly destructiveIconColor?: ColorValue;
+  }) {
+    const actions = useMemo(
+      () =>
+        withMenuActionIconColors(props.actions, {
+          icon: iconColor,
+          destructiveIcon: destructiveIconColor,
+        }),
+      [props.actions, iconColor, destructiveIconColor],
+    );
+    return <MenuView {...props} actions={actions} />;
+  },
+  {
+    iconColor: { fromClassName: "iconColorClassName", styleProperty: "accentColor" },
+    destructiveIconColor: {
+      fromClassName: "destructiveIconColorClassName",
+      styleProperty: "accentColor",
+    },
+  },
+);
 
 export function ControlPill(props: {
   readonly icon?: ComponentProps<typeof SymbolView>["name"];
@@ -254,8 +285,13 @@ export function ControlPillMenu(
     };
   }
   return (
-    <MenuView {...menuProps} themeVariant={isDarkMode ? "dark" : "light"}>
+    <ThemedMenuView
+      {...menuProps}
+      iconColorClassName="accent-icon"
+      destructiveIconColorClassName="accent-danger-foreground"
+      themeVariant={isDarkMode ? "dark" : "light"}
+    >
       {children}
-    </MenuView>
+    </ThemedMenuView>
   );
 }

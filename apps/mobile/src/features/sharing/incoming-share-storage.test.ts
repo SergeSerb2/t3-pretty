@@ -1,100 +1,79 @@
-import { describe, expect, it, vi } from "@effect/vitest";
+import { afterEach, describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 
-import type { IncomingShareDraft } from "./incoming-share-model";
-import {
-  encodeIncomingShareDraftForPersistence,
-  prepareIncomingShareDraftForUse,
-} from "./incoming-share-storage";
+const fileSystemMocks = vi.hoisted(() => {
+  let entries: File[] = [];
 
-const DATA_URL = "data:image/png;base64,YWJj";
-const OWNED_PREVIEW = "file:///documents/t3-composer-previews/share.png";
+  class File {
+    readonly exists = true;
 
-function draft(previewUri: string, dataUrl = DATA_URL): IncomingShareDraft {
+    constructor(
+      readonly name: string,
+      private readonly contents: string,
+    ) {}
+
+    async text(): Promise<string> {
+      return this.contents;
+    }
+  }
+
+  class Directory {
+    create(): void {}
+
+    list(): ReadonlyArray<File> {
+      return entries;
+    }
+  }
+
   return {
-    schemaVersion: 1,
-    id: "share-1",
-    createdAt: "2026-07-15T10:00:00.000Z",
-    text: "",
-    attachments: [
-      {
-        id: "image-1",
-        type: "image",
-        name: "share.png",
-        mimeType: "image/png",
-        sizeBytes: 3,
-        dataUrl,
-        previewUri,
-      },
-    ],
-    warnings: [],
+    Directory,
+    File,
+    setEntries(next: File[]) {
+      entries = next;
+    },
   };
-}
+});
+
+vi.mock("expo-file-system", () => ({
+  Directory: fileSystemMocks.Directory,
+  File: fileSystemMocks.File,
+  Paths: { document: "/documents" },
+}));
+
+import { IncomingShareStorageError, loadIncomingShareDrafts } from "./incoming-share-storage";
+
+const VALID_DRAFT = {
+  schemaVersion: 1,
+  id: "share-valid",
+  createdAt: "2026-08-28T12:00:00.000Z",
+  text: "Review this file",
+  attachments: [],
+  warnings: [],
+} as const;
+
+afterEach(() => {
+  fileSystemMocks.setEntries([]);
+  vi.restoreAllMocks();
+});
 
 describe("incoming share storage", () => {
-  it("omits payloads only when an app-owned preview durably holds the bytes", () => {
-    const compact = encodeIncomingShareDraftForPersistence(draft(OWNED_PREVIEW));
-    expect(compact.attachments[0]?.dataUrl).toBe("");
-    expect(JSON.stringify(compact)).not.toContain(";base64,");
+  it("skips an invalid persisted share by default", async () => {
+    fileSystemMocks.setEntries([
+      new fileSystemMocks.File("valid.json", JSON.stringify(VALID_DRAFT)),
+      new fileSystemMocks.File("invalid.json", "{"),
+    ]);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const transient = encodeIncomingShareDraftForPersistence(draft("file:///temporary/share.png"));
-    expect(transient.attachments[0]?.dataUrl).toBe(DATA_URL);
+    await expect(loadIncomingShareDrafts()).resolves.toEqual([VALID_DRAFT]);
+    expect(warning).toHaveBeenCalledOnce();
   });
 
-  it("materializes a durable preview before compacting a legacy data-backed share", async () => {
-    const writePreviewFile = vi.fn(async () => OWNED_PREVIEW);
-    const prepared = await prepareIncomingShareDraftForUse(draft(DATA_URL), {
-      resolveDataUrl: vi.fn(async () => DATA_URL),
-      writePreviewFile,
-    });
+  it("rejects an invalid persisted share in strict mode", async () => {
+    fileSystemMocks.setEntries([new fileSystemMocks.File("invalid.json", "{")]);
 
-    expect(prepared.migrated).toBe(true);
-    expect(prepared.requiresRewrite).toBe(true);
-    expect(prepared.createdPreviewUris).toEqual([OWNED_PREVIEW]);
-    expect(prepared.draft.attachments[0]?.previewUri).toBe(OWNED_PREVIEW);
-    expect(writePreviewFile).toHaveBeenCalledWith({ base64: "YWJj", extension: "png" });
-    expect(JSON.stringify(encodeIncomingShareDraftForPersistence(prepared.draft))).not.toContain(
-      ";base64,",
+    await expect(loadIncomingShareDrafts({ strict: true })).rejects.toBeInstanceOf(
+      IncomingShareStorageError,
     );
   });
-
-  it("rehydrates a compact attachment from its owned preview", async () => {
-    const resolveDataUrl = vi.fn(async () => DATA_URL);
-    const writePreviewFile = vi.fn(async () => null);
-    const prepared = await prepareIncomingShareDraftForUse(draft(OWNED_PREVIEW, ""), {
-      resolveDataUrl,
-      writePreviewFile,
-    });
-
-    expect(prepared.draft.attachments[0]?.dataUrl).toBe(DATA_URL);
-    expect(prepared.migrated).toBe(false);
-    expect(prepared.requiresRewrite).toBe(false);
-    expect(resolveDataUrl).toHaveBeenCalledTimes(1);
-    expect(writePreviewFile).not.toHaveBeenCalled();
-  });
-
-  it("removes previews created before a later attachment migration fails", async () => {
-    const deletePreviewFiles = vi.fn(async () => undefined);
-    const failingDraft: IncomingShareDraft = {
-      ...draft("file:///temporary/first.png"),
-      attachments: [
-        draft("file:///temporary/first.png").attachments[0]!,
-        {
-          ...draft("file:///documents/t3-composer-previews/second.png", "").attachments[0]!,
-          id: "image-2",
-        },
-      ],
-    };
-
-    await expect(
-      prepareIncomingShareDraftForUse(failingDraft, {
-        resolveDataUrl: vi.fn(async () => {
-          throw new Error("transient read failure");
-        }),
-        writePreviewFile: vi.fn(async () => OWNED_PREVIEW),
-        deletePreviewFiles,
-      }),
-    ).rejects.toThrow("transient read failure");
-
-    expect(deletePreviewFiles).toHaveBeenCalledWith([OWNED_PREVIEW]);
-  });
 });
+

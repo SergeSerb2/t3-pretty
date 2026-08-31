@@ -64,6 +64,7 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly lineHeight: number;
   readonly contentInsetVertical: number;
   readonly editable: boolean;
+  readonly readOnly: boolean;
   readonly scrollEnabled: boolean;
   readonly autoFocus: boolean;
   readonly autoCorrect: boolean;
@@ -264,6 +265,7 @@ export function ComposerEditor({
       }
       contentInsetVertical={contentInsetVertical}
       editable={props.editable ?? true}
+      readOnly={props.readOnly ?? false}
       scrollEnabled={props.scrollEnabled ?? true}
       autoFocus={props.autoFocus ?? false}
       autoCorrect={props.autoCorrect ?? true}

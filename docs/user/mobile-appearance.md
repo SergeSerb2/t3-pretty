@@ -4,8 +4,8 @@ T3 Code Mobile uses the World Scenery theme by default — alpine greens that ma
 wallpaper look, including the pastel sage user bubble. Light and dark colors apply throughout the
 app, including code reviews, file previews, the terminal, native headers, and sheets.
 
-On supported iOS versions, the new-task and thread composers use the system glass material.
-Other platforms use a themed background.
+On supported iOS versions, the new-task and thread composers, working timer, and scroll-to-end
+button use the system glass material. Other platforms use a themed background.
 
 To change the look:
 

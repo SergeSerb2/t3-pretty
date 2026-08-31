@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
+import { PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
 import {
   clearSharedPayloads,
   getResolvedSharedPayloadsAsync,
@@ -14,11 +15,13 @@ import { deleteComposerPreviewFiles, writeComposerPreviewFile } from "../../lib/
 
 import {
   buildIncomingShareDraft,
+  isShareFileUriUnderOwnedRoots,
   type IncomingShareDestination,
   type IncomingShareDraft,
 } from "./incoming-share-model";
 import { createIncomingSharePayloadReader } from "./incoming-share-native";
 import { IncomingShareInbox } from "./incoming-share-inbox";
+import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import {
   loadIncomingShareDrafts,
   removeIncomingShareDraft,
@@ -57,7 +60,7 @@ const getIncomingSharePayloads = createIncomingSharePayloadReader({
   readPayloads: getSharedPayloads,
 });
 
-async function resolvedPayloadsForImages(): Promise<ReadonlyArray<ResolvedSharePayload>> {
+async function resolvedPayloadsForFiles(): Promise<ReadonlyArray<ResolvedSharePayload>> {
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
@@ -111,12 +114,29 @@ async function readBase64(uri: string, maxBytes: number): Promise<string | null>
   return file.base64();
 }
 
+async function readFileSize(uri: string): Promise<number | null> {
+  const { File } = await import("expo-file-system");
+  return new File(uri).size ?? null;
+}
+
 async function removeOwnedFile(uri: string): Promise<void> {
   if (!uri.startsWith("file:")) {
     return;
   }
   try {
-    const { File } = await import("expo-file-system");
+    const { File, Paths } = await import("expo-file-system");
+    // Only delete files in directories this app owns: its documents and cache
+    // sandbox and its share-extension App Group container. An iOS
+    // open-in-place share points at the sender's own storage; deleting that
+    // URI would destroy the user's document.
+    const ownedRootUris = [
+      Paths.document.uri,
+      Paths.cache.uri,
+      ...Object.values(Paths.appleSharedContainers ?? {}).map((directory) => directory.uri),
+    ];
+    if (!isShareFileUriUnderOwnedRoots(uri, ownedRootUris)) {
+      return;
+    }
     const file = new File(uri);
     if (file.exists) {
       file.delete();
@@ -126,21 +146,23 @@ async function removeOwnedFile(uri: string): Promise<void> {
   }
 }
 
-async function removeReplayedImagePayloadFiles(
-  payloads: ReadonlyArray<SharePayload>,
-): Promise<void> {
+async function removeReplayedPayloadFiles(payloads: ReadonlyArray<SharePayload>): Promise<void> {
   const uris = new Set<string>();
   for (const payload of payloads) {
-    if (payload.shareType === "image") {
+    if (["image", "file", "audio", "video"].includes(payload.shareType)) {
       uris.add(payload.value);
     }
   }
   if (uris.size === 0) {
     return;
   }
-  const resolvedPayloads = await resolvedPayloadsForImages();
+  const resolvedPayloads = payloads.some((payload) =>
+    ["file", "audio", "video"].includes(payload.shareType),
+  )
+    ? []
+    : await resolvedPayloadsForFiles();
   for (const payload of resolvedPayloads) {
-    if (payload.shareType === "image" && payload.contentUri) {
+    if (["image", "file", "audio", "video"].includes(payload.shareType) && payload.contentUri) {
       uris.add(payload.contentUri);
     }
   }
@@ -159,9 +181,14 @@ const incomingShareInbox = new IncomingShareInbox({
   buildDraft: async ({ payloads, id, createdAt }) => {
     const cleanupUris = new Set<string>();
     const previewUris = new Set<string>();
-    const resolvedPayloads = payloads.some((payload) => payload.shareType === "image")
-      ? await resolvedPayloadsForImages()
-      : [];
+    const persistedUris = new Set<string>();
+    const hasGenericFilePayload = payloads.some((payload) =>
+      ["file", "audio", "video"].includes(payload.shareType),
+    );
+    const resolvedPayloads =
+      !hasGenericFilePayload && payloads.some((payload) => payload.shareType === "image")
+        ? await resolvedPayloadsForFiles()
+        : [];
     const draft = await buildIncomingShareDraft({
       payloads,
       resolvedPayloads,
@@ -174,6 +201,16 @@ const incomingShareInbox = new IncomingShareInbox({
           }
           return uri;
         },
+        persistFile: async (uri, name) => {
+          const persistedUri = await persistComposerAttachmentFile(
+            uri,
+            name,
+            PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+          );
+          persistedUris.add(persistedUri);
+          return persistedUri;
+        },
+        readSize: readFileSize,
         removeOwnedFile: (uri) => {
           cleanupUris.add(uri);
         },
@@ -186,10 +223,15 @@ const incomingShareInbox = new IncomingShareInbox({
       cleanup: async () => {
         await Promise.all([...cleanupUris].map(removeOwnedFile));
       },
-      rollback: () => deleteComposerPreviewFiles([...previewUris]),
+      rollback: async () => {
+        await Promise.all([
+          deleteComposerPreviewFiles([...previewUris]),
+          ...[...persistedUris].map(removeOwnedFile),
+        ]);
+      },
     };
   },
-  cleanupReplayedPayloads: removeReplayedImagePayloadFiles,
+  cleanupReplayedPayloads: removeReplayedPayloadFiles,
   idForPayloads: incomingShareIdForPayloads,
   now: () => new Date().toISOString(),
   onClearError: (error) => {
