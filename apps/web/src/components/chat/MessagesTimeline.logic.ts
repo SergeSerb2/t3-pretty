@@ -1,5 +1,17 @@
 import * as Equal from "effect/Equal";
 import {
+  omitSupersededLifecycleMarkers,
+  summarizeToolGroup,
+  toolGroupSummaryKind,
+  type ToolGroupSummaryKind,
+} from "@t3tools/client-runtime/work-log/presentation";
+export {
+  normalizeCompactToolLabel,
+  summarizeToolGroup,
+  toolGroupAction,
+  workLogEntryIsLocalCodeSearch,
+} from "@t3tools/client-runtime/work-log/presentation";
+import {
   formatDuration,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,

@@ -2169,3 +2169,117 @@
 - `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Append a standalone `thinking` row after the latest tool call completes while the turn remains running.. Reason: T3 Pretty intentionally keeps this state in its single replacing `work-live` presentation; adding another indicator would regress the fork's duplicate-indicator fix.
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The parent adds a separate `thinking` timeline-row variant, appends it whenever a working turn has no live work row, and compares it in stable-row equality.. Reason: That row can coexist with the existing `working` row and recreate the duplicate thinking indicator explicitly removed by T3 Pretty; preserving the fork's single-indicator behavior is authoritative.
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The parent removes the active-turn visible-content and visible-tool-entry derivation at this conflict boundary.. Reason: The surrounding composed implementation still relies on these values for live-tool grouping and working-row suppression, and removing them would both leave unresolved references and regress T3 Pretty's handling of visible assistant content, tools, and plans.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260901.1244`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260901.1243`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 2 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — T3 Pretty's generated-image loading through useAssetUrl remains intact.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Relative generated-image paths continue to resolve against the workspace root while absolute and cwd-less paths retain their existing behavior.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Thread and workspace context remain available to the work-log generated-image component, preserving loading, failure, image-tap, and custom presentation behavior.
+- `apps/web/src/components/ChatMarkdown.tsx` — Preserved T3 Pretty's signed environment asset-image rendering path for workspace files and attachments.
+- `apps/web/src/components/ChatMarkdown.tsx` — Preserved optional source-fragment support without changing the existing loading, fallback, styling, lazy-loading, or failed-URL behavior.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Preview automation remains a distinct browser action and is summarized as browser activity, preserving T3 Pretty's watchable cross-provider agent browser UX.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Provider-neutral compact tool summaries remain available, including local code-search detection, changed-file counting, mixed tool-kind classification, and readable grouped labels.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Superseded statusless lifecycle markers continue to be removed so completed tool activity is not duplicated in the timeline.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Unclassified work-log activity continues to use T3 Pretty's generic tool grouping rather than restoring the older parent-only update category.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's AnimatedHeight-based tool disclosure, including its animation and reduced-motion behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's structured ToolCallExpandedBody presentation, compact heading/preview handling, clipping-aware disclosure, and browser-automation labeling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's generated-image card with pending lifecycle state, workspace resolution, thread/environment binding, and expanded-image handling.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's activity-aware neutral status indicator and custom warning, severe-failure, and ordinary tool-failure presentation.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's original tool-call icons remain visible; failures continue to use the fork's separate failure affordance rather than replacing every tool icon.
+- `apps/web/src/components/pullRequest/PullRequestListFilters.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved T3 Pretty's narrow-list metadata sizing for the environment and author, including removal of the actor's fixed minimum width so metadata cannot force overlap with the right-hand diff stat.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved T3 Pretty's normal actor-label presentation rather than restoring the parent's container-query rule that hides the text from visual presentation in narrow rows.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved host-aware pull-request link opening through openPullRequestLinkOnHost.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved PullRequestPanelViewSnapshot and PullRequestSummarySection types used by T3 Pretty's pull-request panel navigation, section state, and scroll restoration behavior.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — Late diff-stat query results cannot restore rows that are no longer present in currentKeys.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — Unchanged diff statistics retain the previous map identity, avoiding unnecessary downstream updates.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — New or changed statistics set the changed flag so the merged map is actually returned.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The connection control remains visibly branded with SURGE_CONNECT_NAME rather than the parent’s T3 Connect name.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The agent-activity description continues to use SURGE_CONNECT_NAME, preserving T3 Pretty’s Surge Connect identity.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Existing managed-tunnel, publishing, notification, and Live Activity behavior remains unchanged.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — The World Scenery photo-set and Boring personalization library remains the authoritative theme-selection experience.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — System, Light, and Dark cards continue to preview the currently selected T3 Pretty scenery or Boring color scheme rather than generic upstream theme cards.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — T3 Pretty's visual card layout, accessibility labels, and appearance-save failure handling remain intact.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — The fork-specific searchable Personalization and Boring controls remain intact.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Surge Connect branding and managed-account search routing through SURGE_CODE_ACCOUNT_NAME and the surge-connect-account catalog entry.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Search discoverability coverage for the T3 Pretty interface-font setting.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — World Scenery search gating, including hiding photo-blur controls when the scenery theme is inactive.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — T3 Pretty storage search routes for disk use and active worktrees.
+- `apps/web/src/components/settings/settingsSearch.ts` — T3 Pretty's branded Surge Connect account search entry and SURGE_CODE_ACCOUNT_NAME identity source remain intact.
+- `apps/web/src/components/settings/settingsSearch.ts` — World Scenery appearance items remain searchable, while scenery-specific controls remain hidden unless the World Scenery theme is active.
+- `apps/web/src/components/settings/settingsSearch.ts` — The Boring personalization item remains semantically separate from generic theme search; parent theme aliases are attached to T3 Pretty's World Scenery theme item instead.
+- `apps/web/src/components/settings/settingsSearch.ts` — T3 Pretty's Disk use, Cleanup, Active worktrees, Archived worktrees, and Residual managed files search destinations are retained.
+- `apps/web/src/components/settings/settingsSearch.ts` — Existing desktop-only and Windows-only search-result safeguards remain active and are composed with the new parent macOS guard.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — The shared pull-request search parser and patcher remain authoritative for T3 Pretty's persisted-filter restoration, canonical URL handling, scope hydration, and reliable navigation away from the page.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Cleared search fields continue to be removed canonically rather than lingering as explicit undefined URL state.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Target-aware diff-stat merging continues to retain visible counts across query rekeys while pruning stats that no longer belong to displayed rows.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — The data-pull-requests-panel scenery hook and combined controls/list surface remain intact for T3 Pretty's frosted World Scenery presentation.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — The in-flow scroll marker remains intact so condensed title-bar search and controls transition at the intended scroll position.
+- `docs/user/keybindings.md` — T3 Pretty's message search continues to match whole words, rank threads by relevance, and prefix-match the final query word so results refine while typing.
+- `docs/user/keybindings.md` — The existing two-character search threshold and contextual labeled message excerpts remain documented.
+- `docs/user/source-control.md` — Persistent pull-request list filters, including Reset filters behavior across projects and restoration of the preferred server on iPhone and iPad.
+- `docs/user/source-control.md` — T3 Pretty's native pull-request manager on iPhone and iPad, including access from the home header/sidebar and routing thread git controls and conversation PR links into the native manager.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated workEntryViewedImagePath so parent-native viewed-image entries can be derived from work-log entries.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated the required MarkdownImageRenderer prop used by the parent's native work-log image rendering path.
+- `apps/web/src/components/ChatMarkdown.tsx` — Integrated the parent fix that treats an absent srcFragment as an empty string, preventing signed asset URLs from receiving a literal "undefined" suffix.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added parent work-log viewed-image path detection and workspace/thread-aware asset resolution.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the parent ChatMarkdownAssetImage preview to expanded image-viewing tool rows, including source fragments, alt text, maximum height, and expanded-image interaction.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Viewed-image availability now keeps an otherwise duplicate-suppressed tool disclosure expandable so the parent preview remains reachable.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Integrated the parent pull-request label display in each row, using PullRequestRowLabels to show the first label and the count of additional labels.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the parent pullRequestLabelColor helper import for consistent pull-request label color presentation.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — Use pullRequestDiffStatKey instead of the former diffStatKey helper.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — Retain the parent's expanded additions/deletions object construction around the fork's reliability safeguards.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The Publish agent activity row now obtains its title from searchableSetting("publish-agent-activity"), integrating the parent’s centralized searchable-settings metadata refactor.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Retained the parent's settings-search metadata import.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — Changed the Color scheme heading to use searchableSetting("color-scheme").title, integrating the parent's searchable-title refactor into the fork UI.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — The vi test utility required by upstream locale and platform tests.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Unicode/diacritic-normalized settings search coverage.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — A regression test ensuring search casing does not depend on String.prototype.toLocaleLowerCase.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Availability filtering coverage for cloud, environment, provider, local-backend, T3 Connect, Tailscale, and WSL-gated controls.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Updated browser-recording search routing coverage that verifies the obsolete browser targetId is absent.
+- `apps/web/src/components/settings/settingsSearch.ts` — Imported and used the parent's shared normalizeSearchText helper and isMacPlatform utility.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the parent's macOnly search-item metadata and platform filtering.
+- `apps/web/src/components/settings/settingsSearch.ts` — Integrated the parent's multi-token matching across titles, section labels, and aliases, together with relevance ranking and stable catalog-order tie breaking.
+- `apps/web/src/components/settings/settingsSearch.ts` — Integrated the parent's appearance/theme search aliases, adapted to the fork's World Scenery theme architecture.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the parent Git fetch interval, source-control writing style, change-request template, and source-control writer model search entries with primary-environment availability restrictions.
+- `apps/web/src/components/settings/settingsSearch.ts` — Integrated the parent's Network access naming and search destination while retaining the separate dedicated Remote environments item elsewhere in the catalog.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Pull-request URLs now validate and expose the parent sort, author, and multi-label search fields.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Search updates now persist or clear sort, author, and labels, while omitting the default updated sort from canonical URLs.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Pull-request rows are enriched with diff statistics and can be sorted by newest, oldest, largest, or smallest, with deterministic timestamp fallbacks.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — The parent sort menu is shown alongside search and filter controls.
+- `docs/user/keybindings.md` — The command palette now documents searching settings in addition to threads, projects, branches, and messages.
+- `docs/user/keybindings.md` — Setting results are documented as opening their exact control or section.
+- `docs/user/source-control.md` — Pull-request list filtering by author and labels.
+- `docs/user/source-control.md` — Author ranking by merge count in loaded results.
+- `docs/user/source-control.md` — Label and change-size context on pull-request rows.
+- `docs/user/source-control.md` — Sorting displayed pull requests by update time, creation time, or change size.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Remove the compact tool-group classification, labeling, lifecycle-deduplication, and fallback-summary helpers from MessagesTimeline.logic.ts.. Reason: The deletion conflicts directly with T3 Pretty's fork-specific browser activity presentation and its retained provider-neutral timeline summary behavior. No parent replacement implementation is present in this conflict, so preserving the fork implementation is required.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Restore CodexArtifactTemplate and commandProgramName imports from the parent-side hunk.. Reason: T3 Pretty removed these imports and the composed implementation at this boundary does not reference them; restoring them would create obsolete or unused dependencies.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Destructure isExpandedToolGroupEntry in PlainWorkEntryRow.. Reason: The T3 Pretty component props shown here do not define that field, and the parent image-preview behavior does not use it; accepting the parent destructure would be incoherent and type-invalid.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Replace warning and failed tool icons with a generic circle-alert icon.. Reason: This would regress T3 Pretty's deliberate behavior of keeping tool-call icons visible and presenting failure through a separate status affordance.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Replace T3 Pretty's heading/preview derivation and structured ToolCallExpandedBody with the parent's legacy buildToolCallExpandedBody and raw preformatted block.. Reason: That replacement would discard the fork's richer structured sections, browser-automation labeling, clipping-aware disclosure, and animated expansion. The compatible parent viewed-image behavior was integrated around the fork renderer instead.
+- `apps/web/src/components/pullRequest/PullRequestListFilters.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/web/src/components/pullRequest/PullRequestListFilters.tsx after 3 attempts
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — The parent side's inherited environment `min-w-0`, actor `min-w-4`, and responsive `sr-only` actor-label classes.. Reason: OURS deliberately replaced these exact metadata constraints as part of T3 Pretty's narrow-list overlap fix. Restoring the parent class set would weaken the authoritative fork layout and actor-label behavior; only this conflicting sizing/presentation portion is omitted.
+- `apps/web/src/components/pullRequest/pullRequestList.logic.ts` — Unconditionally insert every returned diff stat without checking currentKeys or whether its value changed.. Reason: This conflicts with T3 Pretty's cross-surface reliability hardening: a late query could reintroduce statistics for removed rows, and unconditional writes would defeat stable-map deduplication. The parent hunk also does not mark those writes as changed, so they could be discarded when returning previous.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Use searchableSetting("t3-connect").title as the visible managed-connection row title.. Reason: The parent metadata is keyed to the T3 Connect identity and using its title here could overwrite T3 Pretty’s authoritative Surge Connect branding. Only this conflicting title-source change is omitted.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — The parent hunk's generic built-in/custom theme library, theme editor, and theme import controls, including their Tooltip, ThemeImportDialog, theme-editor-store, and STANDARD_THEME_CARDS dependencies.. Reason: Those controls are unchanged base behavior carried through the conflicting hunk and were intentionally replaced by T3 Pretty's authoritative World Scenery/Boring theme experience; restoring them here would overwrite the fork's theme architecture and leave incompatible duplicate selection UIs.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — The parent Themes heading using searchableSetting("theme").title.. Reason: T3 Pretty no longer has the corresponding generic Themes section at this boundary; its searchable Personalization and Boring controls replace that section, so adding this heading alone would be misleading and structurally incoherent.
+- `apps/web/src/components/settings/ThemeSettings.tsx` — The generic parent introduction stating “Choose how T3 Code looks. Use a built-in theme or make your own.”. Reason: It conflicts with T3 Pretty branding and inaccurately describes the fork's photo-theme/Boring personalization UI, which already has fork-specific explanatory copy.
+- `docs/user/keybindings.md` — Describe message search as using SQLite's ASCII case-insensitive matching.. Reason: That description would regress and contradict T3 Pretty's newer BM25 search behavior, which performs whole-word relevance ranking and final-word prefix matching.

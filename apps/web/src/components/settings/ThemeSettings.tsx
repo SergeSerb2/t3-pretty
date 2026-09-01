@@ -233,7 +233,7 @@ export function ThemeLibrary({
 
       <div className="space-y-3">
         <h3 className="px-3 text-sm font-medium tracking-[-0.005em] text-foreground sm:px-4">
-          Color scheme
+          {searchableSetting("color-scheme").title}
         </h3>
         <div
           aria-label="Appearance mode"

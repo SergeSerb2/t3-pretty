@@ -59,11 +59,12 @@ shortcut is `mod+shift+s`, and it does not run while the terminal has focus.
 already pinned. Its default shortcut is `mod+shift+p`, and it does not run while the terminal has
 focus. See [Organizing threads](./thread-sidebar.md) for how pinned threads are ordered.
 
-The command palette searches active thread titles, projects, branches, user messages, and final
-agent responses across connected environments. Message matches show one labeled excerpt while
-keeping the thread's project, branch, and machine context visible. Message search begins after
-two characters. It matches on whole words and ranks threads by relevance; the last word of a
-query also matches the start of words, so results refine as you type.
+The command palette searches settings, active thread titles, projects, branches, user messages, and
+final agent responses across connected environments. A setting result opens its exact control or
+section. Message matches show one labeled excerpt while keeping the thread's project, branch, and
+machine context visible. Message search begins after two characters. It matches on whole words and
+ranks threads by relevance; the last word of a query also matches the start of words, so results
+refine as you type.
 
 The full command list and the current defaults are shown in **Settings** → **Keybindings**, which
 always matches the build you are running. Use that rather than a copied list.
