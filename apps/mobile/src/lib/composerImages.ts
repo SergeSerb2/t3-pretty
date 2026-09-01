@@ -11,6 +11,8 @@ import { uuidv4 } from "./uuid";
 export interface DraftComposerImageAttachment extends UploadChatImageAttachment {
   readonly id: string;
   readonly previewUri: string;
+  readonly uploadedAttachmentId?: string;
+  readonly uploadEnvironmentId?: EnvironmentId;
 }
 
 export function appendComposerImagesWithinLimit(
@@ -234,16 +236,21 @@ export async function pickComposerImages(input: {
   let error: string | null = null;
 
   for (const asset of result.assets) {
-    const mimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
-    if (!mimeType.startsWith("image/")) {
+    if (nextImages.length >= remainingSlots) {
+      error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
+      break;
+    }
+    const pickedMimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
+    let mimeType = pickedMimeType;
+    if (
+      asset.type === "video" ||
+      (asset.type !== "image" && !mimeType.startsWith("image/"))
+    ) {
       error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
       continue;
     }
-    if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
-      error = `'${asset.fileName ?? "image"}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
-      continue;
-    }
-    if (asset.fileSize !== undefined && asset.fileSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+    let name = asset.fileName?.trim() || "image";
+    if (asset.fileSize != null && asset.fileSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
       error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
       continue;
     }
@@ -251,15 +258,30 @@ export async function pickComposerImages(input: {
     try {
       const file = new File(asset.uri);
       if (file.size !== null && file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+        error = `'${name}' exceeds the 10 MB attachment limit.`;
         continue;
       }
       const base64 = await file.base64();
+
+      // The bytes read from the app-owned file are authoritative. Correct stale
+      // picker metadata when the payload is JPEG, while retaining original PNG,
+      // GIF, and WebP bytes so transparency and animation survive.
+      if (base64.startsWith("/9j/") && mimeType !== "image/jpeg") {
+        mimeType = "image/jpeg";
+        if (!/\.jpe?g$/i.test(name)) {
+          name = `${name.replace(/\.[^.]+$/, "")}.jpg`;
+        }
+      }
+      if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
+        error = `'${name}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
+        continue;
+      }
+
       // Picker metadata is advisory and can be stale or wrong. The encoded
       // bytes are the payload we persist and send, so enforce the limit on it.
       const sizeBytes = estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+        error = `'${name}' exceeds the 10 MB attachment limit.`;
         continue;
       }
 
@@ -269,18 +291,19 @@ export async function pickComposerImages(input: {
         base64,
         extension: mimeType.split("/")[1] ?? "png",
       });
+      const dataUrl = `data:${mimeType};base64,${base64}`;
 
       nextImages.push({
         id: uuidv4(),
         type: "image",
-        name: asset.fileName ?? "image",
+        name,
         mimeType,
         sizeBytes,
-        dataUrl: `data:${mimeType};base64,${base64}`,
-        previewUri: previewFileUri ?? asset.uri,
+        dataUrl,
+        previewUri: previewFileUri ?? (mimeType === pickedMimeType ? asset.uri : dataUrl),
       });
     } catch {
-      error = `Failed to read '${asset.fileName ?? "image"}'.`;
+      error = `Failed to read '${name}'.`;
     }
   }
 

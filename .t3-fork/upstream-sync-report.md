@@ -2028,3 +2028,144 @@
 - `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Parent assertion that the retained `working` row has `showThinking: false`.. Reason: T3 Pretty intentionally emits no `working` row in this state, so the property assertion is inapplicable and retaining that row would weaken the fork behavior.
 - `apps/web/src/components/chat/MessagesTimeline.tsx` — Remove ThinkingActivityRow and render a hard-coded Thinking label directly at the relocated call site.. Reason: That smallest portion conflicts with T3 Pretty’s generated live-headline feature. Keeping a thin context-aware helper preserves the fork behavior without changing the parent’s row placement or lifecycle logic.
 - `apps/web/src/routes/_chat.draft.$draftId.tsx` — Upstream's inline `DraftChatThreadRouteView` hunk, including its revised `resolveDraftPromotionNavigationTarget` call that passes `serverThread` directly.. Reason: T3 Pretty has intentionally superseded this route-local implementation with `./-threadRouteView` to prevent the new-thread screen flash and centralize route lifecycle behavior. Restoring the inline parent component would bypass and regress that authoritative fork fix; any equivalent resolver API adaptation belongs in the shared implementation rather than resurrecting the deleted component here.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260901.1243`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260831.1241`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 4 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/app.config.ts` — T3 Pretty remains the named mobile app in the iOS local-network permission prompt.
+- `apps/mobile/app.config.ts` — T3 Pretty branding is applied to the newly added iOS photo-library permission prompt without changing its upstream behavior.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/review/ReviewCommentComposerSheet.tsx` — Pending attachment previews remain tracked through ComposerAttachmentPreview entries.
+- `apps/mobile/src/features/review/ReviewCommentComposerSheet.tsx` — Image preparation continues to derive isPreparingImages from pending previews, protecting submission and attachment actions while pasted or picked images are being prepared.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's normalized `stripAttachments` presentation remains authoritative, preserving its composed attachment and incoming-share preview behavior instead of reverting to the raw flow-only list.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's hardened dispatch lifecycle remains visible through `ComposerDispatchStatusLabel`, minimum send-indicator support, and detailed accessibility labels during dispatch.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Existing video-preview behavior remains available while being adapted to the parent's unified preview lifecycle.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/composerImages.ts` — The picker remains nonblocking by avoiding picker-side base64 encoding, preserving the in-place preparing-thumbnail progress flow driven by onPicked.
+- `apps/mobile/src/lib/composerImages.ts` — Selected image bytes are read through the already-loaded expo-file-system File implementation rather than relying on optional picker base64 data.
+- `apps/mobile/src/lib/composerImages.ts` — Both file metadata and the actual encoded payload remain bounded by the 10 MB provider image limit.
+- `apps/mobile/src/lib/composerImages.ts` — Draft previews continue to use app-owned files so they survive beyond temporary picker URIs and persisted drafts that omit dataUrl.
+- `apps/mobile/src/lib/composerImages.ts` — The function retains its image-only input/output contract and populates nextImages, avoiding incompatible references to the parent's generalized attachments array and maxVideoBytes API.
+- `apps/mobile/src/lib/composerImages.ts` — Supported original PNG, GIF, and WebP file bytes remain intact, preserving transparency and animation.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Preserved SkillId typing for enabledSkillIds, which supports T3 Pretty's mobile skill selection and thread bootstrap behavior.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Persisted draft text and handoff prompts remain bounded by the provider input limit during decode.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Image payloads omitted from the compact persisted document are marked with an empty data URL and rehydrated from app-owned preview files; missing files are dropped without retaining newly empty drafts.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Stale bare model selections on empty new-task drafts are cleared so project, sticky, and provider model precedence is recalculated.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Contentless drafts carrying native share-import receipts remain retained to prevent duplicate share imports after restart.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Persisted-state open, read, decode, and hydration failures continue to throw a structured ComposerDraftPersistenceError rather than silently discarding Pretty user state.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Delivery-aware queueing remains intact, including the optional queue/steer delivery mode placed on outbox messages.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Provider-aware model selection and runtime-mode remapping remain intact, including preservation of stored provider-specific modes.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Native Codex feedback commands continue to use the dedicated feedback submission flow, status tracking, success/error alerts, and feedback-ID copying.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Optimistic draft clearing, deferred attachment cleanup, and uncapped attachment restoration after durable enqueue failures remain intact.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Queue persistence failures continue to use T3 Pretty's immediate, specifically labeled "Could not queue message" alert rather than being represented as a connection error.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/auth/EnvironmentAuth.test.ts` — Preserved T3 Pretty's hardened regression intent: rejecting an over-scoped token exchange must not consume the ordinary pairing grant, allowing a subsequent correctly scoped exchange to succeed.
+- `apps/server/src/auth/EnvironmentAuth.ts` — Preserved T3 Pretty's ambient-cookie WebSocket Origin validation, including trusted t3code://app and t3code-dev://app desktop renderer origins, strict HTTP(S) origin parsing, and WS(S)-to-HTTP(S) same-origin normalization.
+- `apps/server/src/auth/EnvironmentAuth.ts` — Preserved the preferExplicitAuthorization behavior so explicit Bearer or DPoP credentials take precedence over cookies where requested, without weakening the existing DPoP-bound token verification path.
+- `apps/server/src/auth/SessionStore.test.ts` — Preserved T3 Pretty’s authentication-session hardening imports for active-session limits, client user-agent limits, credential limits, subject limits, and typed session IDs.
+- `apps/server/src/bin.test.ts` — Preserved the T3 Pretty `CONNECT_BRANDING` import used by fork-specific Connect branding behavior and tests.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — Preserved T3 Pretty's filesystem test adaptation that exercises persisted environment ID read failures through `FileSystem.open` rather than the obsolete `readFileString` stub.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Preserved the structural-efficiency optimization that computes the latest user-message timestamp with a database aggregate instead of loading every message body.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Preserved direct aggregate queries for actionable proposed plans, pending user input, and pending approvals rather than materializing complete projection collections.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Preserved the latest-turn-aware actionable-plan calculation used by T3 Pretty's thread shell summaries.
+- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` — Preserved the merged pull-request settlement candidate contract, including observed branch identity and event provenance.
+- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` — Preserved cross-repository branch-head metadata used to avoid settling the wrong pull request or repository.
+- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` — Preserved paginated candidate scanning via afterThreadId and limit for reliable automatic settlement.
+- `apps/server/src/persistence/Layers/ProjectionThreadActivities.ts` — T3 Pretty's countPendingUserInputByThreadId repository API remains available.
+- `apps/server/src/persistence/Layers/ProjectionThreadActivities.ts` — The fork's efficient SQL-backed pending user-input count behavior remains wired through, including its handling of resolved requests and stale/unknown response-failure states.
+- `apps/server/src/server.test.ts` — Preserved imports for HTTP_MAX_REQUEST_BODY_BYTES and WEBSOCKET_MAX_MESSAGE_BYTES, maintaining T3 Pretty's server reliability and transfer-limit test coverage.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved T3 Pretty's runtime usage-provider validation through isUsageProviderKind, including support for the fork's expanded provider set.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the USAGE_MODEL_MAX_LENGTH trust-boundary limit used to harden persisted cache hydration.
+- `apps/web/src/components/ChatMarkdown.tsx` — Generated-image expansion remains exposed exactly once and grouped with the fork's generatedImagePaths behavior, avoiding duplicate TypeScript properties and destructured bindings.
+- `apps/web/src/components/ChatMarkdown.tsx` — The fork's sanitizer policy continues to omit CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES from raw div elements rather than restoring a removed allowance.
+- `apps/web/src/components/ChatMarkdown.tsx` — MemoizedReactMarkdown remains the rendering boundary, preserving T3 Pretty's markdown hot-path optimization and avoiding unnecessary parsing and rendering work.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Active adjacent tool calls remain represented by one replacing `work-live` row, avoiding the duplicate thread working/thinking indicator that T3 Pretty intentionally removed.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — A latest completed tool call remains the sole replacing row while the turn continues, without additional `working` or trailing `thinking` rows.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Coverage continues to verify that the selected tool entry and all grouped entries are retained in the replacing row.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — T3 Pretty's single in-thread working indicator behavior, avoiding the duplicate trailing thinking indicator previously removed by the fork.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Active-turn suppression of the working indicator when assistant text, an in-progress tool, a proposed plan, or a turn plan already provides visible activity.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — T3 Pretty's visibility filtering for grouped live tool entries, including omission of superseded or otherwise hidden lifecycle markers.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Turn-plan timeline rows continue to render through T3 Pretty's TurnPlanTimelineRow.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Thinking activity continues to use TimelineRowActivityCtx.liveHeadline through ThinkingActivityRow, preserving generated live activity headlines rather than reverting to a static label.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Live work-entry rows continue to prefer T3 Pretty's generated live headline when one is available.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The setup-to-thinking handoff retains its reserved minimum height and suppresses thinking content while the worktree is being prepared.
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Preserved T3 Pretty's openPullRequestLinkOnHost integration for opening pull-request links through the fork's host-aware behavior.
+- `apps/web/src/components/settings/settingsSearch.ts` — Surge Connect account branding continues to use SURGE_CODE_ACCOUNT_NAME rather than a parent-branded hard-coded name.
+- `apps/web/src/components/settings/settingsSearch.ts` — World Scenery theme identity remains available to settings search through WORLD_SCENERY_THEME_ID.
+- `apps/web/src/components/settings/settingsSearch.ts` — Settings marked sceneryOnly remain hidden unless the World Scenery theme is active, preventing search results from targeting absent controls.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/app.config.ts` — Added NSPhotoLibraryAddUsageDescription so iOS can present a purpose string when the app saves images to the photo library.
+- `apps/mobile/src/features/review/ReviewCommentComposerSheet.tsx` — Replaced the image-URI-only preview state with the parent's FilePreviewSource-based previewFile state, enabling the newer generalized FilePreviewModal flow.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated attachment-upload tracking through `composerAttachmentUploadsAtom` and `composerAttachmentUploadBlockReason`.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Passed the selected environment identifier to `ComposerAttachmentStrip`, enabling environment-scoped upstream upload state while retaining the fork's attachment list.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Surfaced upstream attachment-upload blocking reasons in the send button's accessibility label and retained the parent's explicit `flow.submitting` fallback.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Adopted the parent's first-party `FilePreviewModal` implementation and shared `closeMediaPreview` lifecycle for both file and video previews.
+- `apps/mobile/src/lib/composerImages.ts` — Added a defensive post-picker slot limit so an over-returning picker cannot exceed the remaining attachment count.
+- `apps/mobile/src/lib/composerImages.ts` — Integrated asset.type-aware validation in addition to MIME-based validation.
+- `apps/mobile/src/lib/composerImages.ts` — Normalized and trimmed selected attachment names.
+- `apps/mobile/src/lib/composerImages.ts` — Integrated JPEG payload-signature handling so stale or incorrect picker MIME metadata is corrected to image/jpeg and the filename receives a .jpg extension.
+- `apps/mobile/src/lib/composerImages.ts` — Used a data URL as the fallback preview when corrected MIME metadata no longer matches the picker URI, while still preferring Pretty's durable app-owned preview file.
+- `apps/mobile/src/lib/composerImages.ts` — Retained the parent's intent to validate size from the actual base64 payload rather than trusting picker metadata alone.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Integrated upstream cleanup removing the unused UploadChatImageAttachment contract import.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Decode the persisted cloud account identifier and signed-out cloud draft collections.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Deserialize queued messages stored with signed-out cloud drafts through decodeQueuedThreadMessage.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Return decoded cloud-draft state from successful persisted composer-state loads alongside rehydrated local drafts and sticky model selection.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Sending is now blocked when composerAttachmentUploadBlockReason reports that current attachments cannot be uploaded because of connection state, server capabilities/configuration, or tracked upload state.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — The send callback now depends on the environment connection state and the complete server configuration, preventing stale attachment eligibility and provider configuration from being captured.
+- `apps/server/src/auth/EnvironmentAuth.test.ts` — Integrated the parent regression test verifying that a valid bearer token takes precedence over a stale legacy session cookie in web mode.
+- `apps/server/src/auth/EnvironmentAuth.ts` — Integrated upstream's exported selectRequestCredential abstraction and source-tagged credential results.
+- `apps/server/src/auth/EnvironmentAuth.ts` — Integrated support for sessions.legacyCookieName as the lowest-priority credential fallback.
+- `apps/server/src/auth/EnvironmentAuth.ts` — Retained upstream's normal credential precedence: current cookie, then Bearer authorization, then DPoP authorization, then legacy cookie.
+- `apps/server/src/auth/SessionStore.test.ts` — Integrated the parent’s EnvironmentId contract import used by the environment-aware SessionStore test layers.
+- `apps/server/src/bin.test.ts` — Integrated the parent `HostProcessEnvironment` import needed to provide the service in `DisconnectedLauncherChildLayer`.
+- `apps/server/src/environment/ServerEnvironment.test.ts` — Integrated the parent's `makeTempFileScoped` test implementation so write attempts use the controlled temporary path and continue asserting atomic persistence failures correctly.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Integrated the upstream user-input-lifecycle filtering intent: `countPendingUserInputByThreadId` directly computes only pending user-input state and avoids the broader activity listing that upstream replaced with `listUserInputLifecycleByThreadId`.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Retained concurrent execution of all four independent thread shell-summary reads.
+- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` — Added ProjectionThreadDetailQuery with optional activityKinds filtering, including the documented optimized behavior for explicit filters and empty filter lists.
+- `apps/server/src/persistence/Layers/ProjectionThreadActivities.ts` — Added the parent listUserInputLifecycleByThreadId repository implementation.
+- `apps/server/src/persistence/Layers/ProjectionThreadActivities.ts` — Preserved the parent's SQL/decode error mapping and activity-row mapping for lifecycle results.
+- `apps/server/src/persistence/Layers/ProjectionThreadActivities.ts` — Exported the parent lifecycle-listing method from the repository implementation.
+- `apps/server/src/server.test.ts` — Integrated the parent HTTP_ROUTER_CONFIG import while retaining makeRoutesLayer.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent's node:path namespace import for its new path-handling logic.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the parent's Effect diagnostics override for the Node built-in import.
+- `apps/web/src/components/ChatMarkdown.tsx` — Added the extraRemarkPlugins ChatMarkdown API with EMPTY_REMARK_PLUGINS as its stable default.
+- `apps/web/src/components/ChatMarkdown.tsx` — Used the upstream-composed remarkPlugins list so caller-provided plugins run in addition to the normal or hard-break plugin set.
+- `apps/web/src/components/ChatMarkdown.tsx` — Added dataPullRequestAutolink to the sanitized anchor attribute allowlist so upstream pull-request autolink metadata reaches the custom link renderer.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Explicitly verify that an in-progress grouped tool run does not emit a standalone `thinking` row.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Verify that a `work-live` row whose latest tool call has completed is marked `active: false`.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Working rows now use the parent's WorkingTimelineRow instead of directly rendering the thinking activity.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent's distinct `thinking` timeline-row kind and ThinkingTimelineRow structure are integrated.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Thinking activity is separated from the working timer row, matching the parent's revised timeline model.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The updated liveWorkEntryLabel API receives row.active, preserving the parent's active-state-aware fallback labeling.
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Integrated the parent PullRequestMarkdownContext import used by the upstream pull-request Markdown implementation.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the isWindowsPlatform utility used by settings search.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added windowsOnly metadata to SettingsSearchItem alongside the fork-specific sceneryOnly metadata.
+- `apps/web/src/components/settings/settingsSearch.ts` — Windows-only settings, including the WSL backend entry, are filtered out when the browser platform is not Windows, preventing results from targeting missing anchors.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/components/ComposerAttachmentStrip.tsx after 3 attempts
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadComposer.tsx after 3 attempts
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/mobile/src/lib/composerImages.ts` — Generalized video attachment handling using input.maxVideoBytes, createComposerFileAttachment, and the attachments result array.. Reason: The conflict boundary is the fork's image-only pickComposerImages API, whose signature returns images and has no maxVideoBytes or generalized attachments collection. Inserting the parent hunk would reference unavailable API state and regress the fork's image preparation and durable-preview flow.
+- `apps/mobile/src/lib/composerImages.ts` — Picker-provided base64 and its native iOS JPEG conversion path for unsupported source formats such as HEIC.. Reason: Pretty deliberately disables picker-side base64 because it blocks picker completion and previously left the composer without timely thumbnails or send progress. The resolution instead reads original files asynchronously and adopts JPEG signature correction when those bytes are already JPEG; unsupported non-JPEG provider formats remain rejected rather than restoring the blocking behavior.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Warn and ignore persisted composer-state failures by returning empty local drafts, sticky selection, and cloud-draft state.. Reason: This conflicts with T3 Pretty's hardened persistence behavior, which must surface structured load and hydration failures instead of silently replacing potentially recoverable user state with empty state. The compatible cloud-state success path is still integrated.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Route an outbox persistence failure through setPendingConnectionError.. Reason: T3 Pretty intentionally presents this local durable-queue failure as an immediate, specifically labeled queue error. Also setting a pending connection error would duplicate the failure surface and misclassify a storage/queue failure as a connectivity problem.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/state/use-thread-outbox-drain.ts after 3 attempts
+- `apps/web/src/components/ChatMarkdown.tsx` — Restore the inherited CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES allowlist on sanitized div elements.. Reason: OURS explicitly removed this allowance. Restoring it would broaden accepted raw-HTML div metadata and undo the fork's sanitizer policy; the new pull-request anchor metadata is integrated independently.
+- `apps/web/src/components/ChatMarkdown.tsx` — Render through a direct ReactMarkdown component at this call site.. Reason: That would replace T3 Pretty's MemoizedReactMarkdown optimization and regress the fork's markdown hot path. The upstream remark-plugin behavior is fully adapted to the memoized wrapper instead.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Emit a separate `working` row before `work-live` for both active and just-completed tool runs.. Reason: This conflicts with T3 Pretty's authoritative replacing-row behavior and would restore the duplicate working/thinking presentation that the fork removed.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Append a standalone `thinking` row after the latest tool call completes while the turn remains running.. Reason: T3 Pretty intentionally keeps this state in its single replacing `work-live` presentation; adding another indicator would regress the fork's duplicate-indicator fix.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The parent adds a separate `thinking` timeline-row variant, appends it whenever a working turn has no live work row, and compares it in stable-row equality.. Reason: That row can coexist with the existing `working` row and recreate the duplicate thinking indicator explicitly removed by T3 Pretty; preserving the fork's single-indicator behavior is authoritative.
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The parent removes the active-turn visible-content and visible-tool-entry derivation at this conflict boundary.. Reason: The surrounding composed implementation still relies on these values for live-tool grouping and working-row suppression, and removing them would both leave unresolved references and regress T3 Pretty's handling of visible assistant content, tools, and plans.

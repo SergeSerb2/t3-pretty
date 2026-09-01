@@ -161,6 +161,7 @@ interface ChatMarkdownProps {
   /** Parse sanitized raw HTML instead of displaying its source text. */
   parseRawHtml?: boolean;
   imageBaseDir?: string | undefined;
+  extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -193,6 +194,7 @@ export function shouldUseMarkdownFileBrowserPrimaryAction(input: {
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
@@ -283,6 +285,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
     img: [...(defaultSchema.attributes?.img ?? []), "dataLocalSrc", "dataMarkdownTitle"],
   },
   protocols: {
@@ -1712,6 +1715,7 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
   imageBaseDir,
+  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const navigate = useNavigate();
   // Streaming providers can deliver many deltas in a single frame. Keep the
@@ -2126,12 +2130,24 @@ function ChatMarkdown({
           : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
+          const pullRequestAutolink = String(
+            (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+          );
+          const pullRequestCopy =
+            pullRequestAutolink === "commit"
+              ? /\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+              : pullRequestAutolink === "reference"
+                ? plainHastText(node)
+                : undefined;
+          const isPullRequestAutolink = pullRequestCopy !== undefined;
           const isSameDocumentLink = href?.startsWith("#") ?? false;
           const onClick = props.onClick;
           const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
           const link = (
             <a
               {...props}
+              className={cn(props.className, pullRequestAutolink === "commit" && "font-mono")}
+              data-markdown-copy={pullRequestCopy}
               href={href}
               target={isSameDocumentLink ? undefined : "_blank"}
               rel={isSameDocumentLink ? undefined : "noopener noreferrer"}
@@ -2203,7 +2219,7 @@ function ChatMarkdown({
                 });
               }}
             >
-              {faviconHost && hastHasText(node) ? (
+              {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
                 <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
                   {children}
                 </MarkdownExternalLinkContent>
@@ -2362,6 +2378,14 @@ function ChatMarkdown({
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
+  const remarkPlugins = useMemo(
+    () => [
+      ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
+      ...extraRemarkPlugins,
+    ],
+    [extraRemarkPlugins, lineBreaks],
+  );
+
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the
   // complete source token instead of dropping it from the rendered message.
@@ -2374,9 +2398,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <MemoizedReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
         components={markdownComponents}

@@ -1,5 +1,6 @@
 import { isElectron } from "~/env";
 import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
+import { isWindowsPlatform } from "~/lib/utils";
 
 import { WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 
@@ -28,6 +29,9 @@ export interface SettingsSearchItem {
   readonly desktopOnly?: boolean;
   // Its row only renders under the World Scenery theme, same anchor problem.
   readonly sceneryOnly?: boolean;
+  // Its row only renders on Windows desktop, so other desktop platforms must
+  // not expose a result that points to a missing anchor.
+  readonly windowsOnly?: boolean;
 }
 
 /**
@@ -440,6 +444,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
   },
   {
+    id: "wsl-backend",
+    title: "WSL backend",
+    to: "/settings/connections",
+    desktopOnly: true,
+    windowsOnly: true,
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
@@ -489,6 +500,8 @@ export function searchSettings(
     (item) =>
       (isElectron || item.desktopOnly !== true) &&
       (sceneryActive || item.sceneryOnly !== true) &&
+      (!item.windowsOnly ||
+        isWindowsPlatform(typeof navigator === "undefined" ? "" : navigator.platform)) &&
       normalizeSearchText(item.title).includes(normalizedQuery),
   );
 }

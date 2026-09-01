@@ -77,6 +77,10 @@ import {
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentUploadsAtom,
+} from "./composer-attachment-uploads";
 
 export function appendReviewCommentToDraft(input: {
   readonly environmentId: EnvironmentId;
@@ -319,6 +323,17 @@ export function useThreadComposerState() {
       const thread = selectedThreadDetail ?? selectedThreadShell;
       const text = draft.text.trim();
       const attachments = draft.attachments;
+      if (
+        composerAttachmentUploadBlockReason({
+          environmentId: selectedThreadShell.environmentId,
+          attachments,
+          connected: selectedEnvironmentRuntime?.connectionState === "connected",
+          serverConfig: selectedEnvironmentRuntime?.serverConfig ?? null,
+          states: appAtomRegistry.get(composerAttachmentUploadsAtom),
+        }) !== null
+      ) {
+        return null;
+      }
       if (text.length === 0 && attachments.length === 0) {
         return null;
       }
@@ -447,7 +462,8 @@ export function useThreadComposerState() {
       return messageId;
     },
     [
-      selectedEnvironmentRuntime?.serverConfig?.providers,
+      selectedEnvironmentRuntime?.connectionState,
+      selectedEnvironmentRuntime?.serverConfig,
       selectedThreadDetail,
       selectedThreadShell,
       uploadThreadFeedback,

@@ -2,19 +2,18 @@ import {
   CommandId,
   MessageId,
   ThreadId,
-  type ChatFileAttachment,
   type ModelSelection,
   type ProjectId,
   type ProviderInteractionMode,
   type RuntimeMode,
   type SkillId,
-  type UploadChatImageAttachment,
 } from "@t3tools/contracts";
 
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import { toUploadChatImageAttachments, type DraftComposerAttachment } from "./composerImages";
+import type { UploadedMobileAttachment } from "./attachmentUpload";
 
 export function deriveThreadTitleFromPrompt(value: string): string {
   if (parseNativeResumeCommand(value)?._tag === "Resume") {
@@ -40,7 +39,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly createdAt: string;
   readonly text: string;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
-  readonly uploadedAttachments?: ReadonlyArray<UploadChatImageAttachment | ChatFileAttachment>;
+  readonly uploadedAttachments?: ReadonlyArray<UploadedMobileAttachment>;
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
