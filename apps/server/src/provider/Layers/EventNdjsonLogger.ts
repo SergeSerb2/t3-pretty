@@ -45,6 +45,17 @@ const transientCanonicalEventTypes = new Set([
   "tool.progress",
   "turn.proposed.delta",
 ]);
+const transientNativeMethods = new Set([
+  "item/agentMessage/delta",
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
+  "item/plan/delta",
+  "item/reasoning/summaryTextDelta",
+  "item/reasoning/textDelta",
+  "thread/realtime/outputAudio/delta",
+  "thread/realtime/transcript/delta",
+]);
+const transientAcpUpdates = new Set(["agent_message_chunk", "agent_thought_chunk"]);
 
 // Native records that arrive per token or repeat a cumulative payload on every
 // update. Dropped unless the store is verbose; lifecycle records (start,
@@ -149,7 +160,7 @@ export interface PendingRecord {
 }
 
 interface StoreState {
-  readonly pending: ReadonlyArray<PendingRecord>;
+  readonly pending: Array<PendingRecord>;
   readonly pendingBytes: number;
   readonly sinks: ReadonlyMap<string, RotatingFileSink>;
   readonly flushScheduled: boolean;
@@ -231,14 +242,53 @@ function shouldPersist(stream: EventNdjsonStream, event: unknown, verbose: boole
     return true;
   }
   if (stream === "native") {
-    return verbose || !isTransientNativeEvent(event);
+    if (verbose) return true;
+    if (isTransientNativeEvent(event)) return false;
   }
-  if (stream !== "canonical") {
+  if (stream === "orchestration") {
     return true;
   }
   try {
     const type = Reflect.get(event, "type");
-    return typeof type !== "string" || !transientCanonicalEventTypes.has(type);
+    if (typeof type === "string" && transientCanonicalEventTypes.has(type)) {
+      return false;
+    }
+    if (stream !== "native") return true;
+
+    const nested = Reflect.get(event, "event");
+    const nativeEvent = typeof nested === "object" && nested !== null ? nested : event;
+    const method = Reflect.get(nativeEvent, "method");
+    if (
+      typeof method === "string" &&
+      (transientNativeMethods.has(method) ||
+        method.startsWith("claude/stream_event/content_block_delta/"))
+    ) {
+      return false;
+    }
+
+    const nativeType = Reflect.get(nativeEvent, "type");
+    if (nativeType === "message.part.delta") return false;
+
+    const payload = Reflect.get(nativeEvent, "payload");
+    if (typeof payload !== "object" || payload === null) return true;
+
+    if (method === "session/update") {
+      const update = Reflect.get(payload, "update");
+      if (typeof update !== "object" || update === null) return true;
+      const updateType = Reflect.get(update, "sessionUpdate");
+      return typeof updateType !== "string" || !transientAcpUpdates.has(updateType);
+    }
+
+    if (nativeType === "message.part.updated") {
+      const properties = Reflect.get(payload, "properties");
+      if (typeof properties !== "object" || properties === null) return true;
+      const part = Reflect.get(properties, "part");
+      if (typeof part !== "object" || part === null) return true;
+      const partType = Reflect.get(part, "type");
+      return partType !== "text" && partType !== "reasoning";
+    }
+
+    return true;
   } catch {
     return true;
   }
@@ -644,7 +694,8 @@ export const makeEventNdjsonLogStore = Effect.fnUntraced(function* (
         if (state.closed) {
           return Effect.succeed([{ flush: false }, state] as const);
         }
-        const pending = [...state.pending, { stream, threadSegment, line, bytes }];
+        const pending = state.pending;
+        pending.push({ stream, threadSegment, line, bytes });
         const pendingBytes = state.pendingBytes + bytes;
         const flush =
           resolved.batchWindowMs === 0 ||
