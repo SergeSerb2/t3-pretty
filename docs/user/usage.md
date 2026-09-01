@@ -6,6 +6,9 @@ processed tokens, cache savings, provider shares, and model breakdowns. Subscrip
 separate from the raw token cost shown here. Cursor does not currently persist token usage in its
 local session files, so its share stays at zero until that changes.
 
+Grok Build totals come from persisted session updates. Interactive turns that never wrote a
+completed-turn record will not appear.
+
 Disconnected or offline environments are left alone: opening Usage does not reconnect them, and
 their totals are omitted until they are connected again.
 

@@ -3,9 +3,9 @@ import type {
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
+import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -20,6 +20,7 @@ import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
+import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
 interface FileBrowserPanelProps {
@@ -32,6 +33,7 @@ interface FileBrowserPanelProps {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
+  selectedFileRefreshPending?: boolean;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -60,6 +62,7 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
             variant="ghost"
             size="icon-xs"
             aria-label="Refresh workspace files"
+            disabled={props.isPending}
             onClick={props.onRefresh}
           />
         }
@@ -107,6 +110,7 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
+  selectedFileRefreshPending = false,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
@@ -118,6 +122,10 @@ export default function FileBrowserPanel({
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
+  const directoryPaths = useMemo(
+    () => entries.filter((entry) => entry.kind === "directory").map(treePath),
+    [entries],
+  );
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
   const treeSelectionPathRef = useRef<string | null>(null);
@@ -126,13 +134,16 @@ export default function FileBrowserPanel({
   // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
   // capture the right-click position ourselves; contextmenu is a composed
   // event, so a capture-phase listener sees it with viewport coordinates.
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
     const capturePointer = (event: MouseEvent) => {
       contextMenuPointerRef.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
     };
-    document.addEventListener("contextmenu", capturePointer, true);
-    return () => document.removeEventListener("contextmenu", capturePointer, true);
+    panel.addEventListener("contextmenu", capturePointer, true);
+    return () => panel.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
   const showEntryContextMenu = async (
@@ -197,9 +208,7 @@ export default function FileBrowserPanel({
     }
   };
   const showEntryContextMenuRef = useRef(showEntryContextMenu);
-  useEffect(() => {
-    showEntryContextMenuRef.current = showEntryContextMenu;
-  });
+  showEntryContextMenuRef.current = showEntryContextMenu;
 
   const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
   const dragMention = useMemo(
@@ -249,6 +258,12 @@ export default function FileBrowserPanel({
     unsafeCSS: TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
+  const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
+    areAllDirectoriesExpanded(currentModel, directoryPaths),
+  );
+  const toggleAllDirectories = () => {
+    setAllDirectoriesExpanded(model, directoryPaths, !allDirectoriesExpanded);
+  };
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
       search.close();
@@ -331,10 +346,7 @@ export default function FileBrowserPanel({
   // data store is writable for every dragstart listener in the dispatch.
   // The capture phase runs before the tree's own dragstart handler selects
   // the dragged row, so the drag flag is up before that selection emits.
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    treeModelRef.current = model;
-  }, [model]);
+  treeModelRef.current = model;
   useEffect(() => {
     const panel = panelRef.current;
     if (panel === null) {
@@ -360,7 +372,10 @@ export default function FileBrowserPanel({
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
-        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
+        <RefreshFilesButton
+          isPending={entriesQuery.isPending || selectedFileRefreshPending}
+          onRefresh={handleRefresh}
+        />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -368,9 +383,37 @@ export default function FileBrowserPanel({
           onValueChange={handleSearchValueChange}
           onClose={search.close}
         />
+        {directoryPaths.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={
+                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                  }
+                  onClick={toggleAllDirectories}
+                />
+              }
+            >
+              {allDirectoriesExpanded ? (
+                <ChevronsDownUpIcon className="size-3.5" />
+              ) : (
+                <ChevronsUpDownIcon className="size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
       {entriesQuery.error && entriesQuery.data === null ? (
-        <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
+        <div role="alert" className="p-4 text-xs leading-relaxed text-destructive">
+          {entriesQuery.error}
+        </div>
       ) : (
         <FileTree
           model={model}

@@ -14,6 +14,10 @@ if [[ "${FORCE_COLOR}" == "1" || "${FORCE_COLOR}" == "true" ]]; then
 fi
 export GIT_TERMINAL_PROMPT=0
 
+if ! origin update; then
+  echo "Origin update failed; continuing with the installed version" >&2
+fi
+
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FILES=(
   review-origin-pr-ci.sh
@@ -30,8 +34,8 @@ copy_from_main() {
   # a root, so `git diff origin/main...HEAD` has no merge-base and exits 128
   # (Buildkite #563). --deepen on the PR checkout does the same when main is
   # not in the shallow PR ancestry (Buildkite #757).
-  git -C "$ROOT" fetch --depth=1 origin "refs/heads/main:${main_ref}" \
-    || git -C "$ROOT" fetch origin "refs/heads/main:${main_ref}" \
+  git -C "$ROOT" fetch --depth=1 origin "+refs/heads/main:${main_ref}" \
+    || git -C "$ROOT" fetch origin "+refs/heads/main:${main_ref}" \
     || return 1
   git -C "$ROOT" cat-file -e "${main_ref}:scripts/fork/review-origin-pr-ci.sh" || return 1
   for name in "${FILES[@]}"; do

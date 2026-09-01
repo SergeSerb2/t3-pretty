@@ -9,6 +9,7 @@ import {
 } from "effect/unstable/http";
 
 import { readDesktopPrimaryBearerToken } from "./desktopAuth";
+import { fetchPrimaryEnvironmentWithDeadline } from "./fetchDeadline";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
 
 function isSameOriginBrowserPrimary(): boolean {
@@ -51,7 +52,9 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
 export function makePrimaryEnvironmentHttpLayer() {
   return Layer.unwrap(
     Effect.sync(() => {
-      const baseLayer = remoteHttpClientLayer(globalThis.fetch);
+      const baseLayer = remoteHttpClientLayer((input, init) =>
+        fetchPrimaryEnvironmentWithDeadline(globalThis.fetch, input, init),
+      );
       if (isSameOriginBrowserPrimary()) {
         return Layer.merge(
           baseLayer,

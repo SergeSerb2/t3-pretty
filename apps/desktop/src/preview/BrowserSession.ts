@@ -168,7 +168,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
           Effect.tryPromise({
             try: () =>
               browserSession.clearStorageData({
-                storages: ["cookies", "localstorage", "indexdb", "websql", "serviceworkers"],
+                storages: ["cookies", "localstorage", "indexdb", "serviceworkers"],
               }),
             catch: (cause) =>
               new BrowserSessionStorageClearError({
@@ -177,7 +177,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
               }),
           }),
         ),
-        { concurrency: "unbounded", discard: true },
+        { concurrency: 8, discard: true },
       );
     }),
     clearCache: Effect.fn("BrowserSession.clearCache")(function* () {
@@ -193,7 +193,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
               }),
           }),
         ),
-        { concurrency: "unbounded", discard: true },
+        { concurrency: 8, discard: true },
       );
     }),
   });

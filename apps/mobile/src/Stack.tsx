@@ -86,6 +86,7 @@ import { FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPT
 import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
 import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
+import { useComposerAttachmentUploadWorker } from "./state/composer-attachment-uploads";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -444,6 +445,7 @@ function ThreadOutboxDrainWorker() {
 
 function ThreadOutboxDrainWorkerInner() {
   useThreadOutboxDrain();
+  useComposerAttachmentUploadWorker();
   return null;
 }
 

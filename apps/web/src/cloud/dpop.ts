@@ -5,6 +5,12 @@ import {
   normalizeDpopPublicJwk,
   padP256Coordinate,
 } from "@t3tools/shared/dpop";
+import {
+  DPOP_ACCESS_TOKEN_MAX_LENGTH,
+  DPOP_JWK_COORDINATE_MAX_LENGTH,
+  DPOP_METHOD_MAX_LENGTH,
+  normalizeDpopHtu,
+} from "@t3tools/shared/dpopCommon";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -17,7 +23,7 @@ import { importJWK, SignJWT, type JWK } from "jose";
 
 const StoredDpopPrivateJwk = Schema.Struct({
   ...DpopPublicJwk.fields,
-  d: Schema.String.check(Schema.isNonEmpty()),
+  d: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DPOP_JWK_COORDINATE_MAX_LENGTH)),
 });
 type StoredDpopPrivateJwk = typeof StoredDpopPrivateJwk.Type;
 const StoredDpopKeyV2 = Schema.Struct({
@@ -75,18 +81,51 @@ function dpopError(message: string, cause?: unknown) {
 
 function openDpopDatabase(): Effect.Effect<IDBDatabase, BrowserDpopError> {
   return Effect.callback<IDBDatabase, BrowserDpopError>((resume) => {
-    const request = indexedDB.open(DPOP_DATABASE_NAME, DPOP_DATABASE_VERSION);
-    request.addEventListener("error", () =>
-      resume(
-        Effect.fail(dpopError("Could not open DPoP key storage.", request.error ?? undefined)),
-      ),
-    );
-    request.addEventListener("upgradeneeded", () => {
-      if (!request.result.objectStoreNames.contains(DPOP_KEY_STORE_NAME)) {
-        request.result.createObjectStore(DPOP_KEY_STORE_NAME);
-      }
+    let settled = false;
+    const settle = (effect: Effect.Effect<IDBDatabase, BrowserDpopError>) => {
+      if (settled) return false;
+      settled = true;
+      resume(effect);
+      return true;
+    };
+    try {
+      const request = indexedDB.open(DPOP_DATABASE_NAME, DPOP_DATABASE_VERSION);
+      request.addEventListener("error", () => {
+        settle(
+          Effect.fail(dpopError("Could not open DPoP key storage.", request.error ?? undefined)),
+        );
+      });
+      request.addEventListener("blocked", () => {
+        settle(
+          Effect.fail(
+            dpopError(
+              "Could not open DPoP key storage because another tab is blocking its upgrade.",
+            ),
+          ),
+        );
+      });
+      request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains(DPOP_KEY_STORE_NAME)) {
+          request.result.createObjectStore(DPOP_KEY_STORE_NAME);
+        }
+      });
+      request.addEventListener("success", () => {
+        const database = request.result;
+        if (!settle(Effect.succeed(database))) {
+          database.close();
+          return;
+        }
+        database.addEventListener("versionchange", () => database.close(), { once: true });
+      });
+    } catch (cause) {
+      settle(Effect.fail(dpopError("Could not open DPoP key storage.", cause)));
+    }
+    return Effect.sync(() => {
+      if (settled) return;
+      settled = true;
+      // IDBOpenDBRequest cannot be aborted. Its success handler sees this
+      // settled flag and closes the database if it opens after interruption.
     });
-    request.addEventListener("success", () => resume(Effect.succeed(request.result)));
   });
 }
 
@@ -98,16 +137,62 @@ export function readStoredBrowserDpopKey(): Effect.Effect<BrowserDpopKey | null,
     openDpopDatabase(),
     (database) =>
       Effect.callback<BrowserDpopKey | null, BrowserDpopError>((resume) => {
-        const request = database
-          .transaction(DPOP_KEY_STORE_NAME, "readonly")
-          .objectStore(DPOP_KEY_STORE_NAME)
-          .get(DPOP_KEY_ID);
-        request.addEventListener("error", () =>
-          resume(Effect.fail(dpopError("Could not read DPoP key.", request.error ?? undefined))),
-        );
-        request.addEventListener("success", () =>
-          resume(hydrateStoredBrowserDpopKey(request.result)),
-        );
+        let settled = false;
+        let transaction: IDBTransaction | null = null;
+        const settle = (effect: Effect.Effect<BrowserDpopKey | null, BrowserDpopError>) => {
+          if (settled) return;
+          settled = true;
+          resume(effect);
+        };
+        try {
+          const activeTransaction = database.transaction(DPOP_KEY_STORE_NAME, "readonly");
+          transaction = activeTransaction;
+          const request = activeTransaction.objectStore(DPOP_KEY_STORE_NAME).get(DPOP_KEY_ID);
+          let result: unknown;
+          let requestSucceeded = false;
+          request.addEventListener("success", () => {
+            result = request.result;
+            requestSucceeded = true;
+          });
+          request.addEventListener("error", () => {
+            settle(Effect.fail(dpopError("Could not read DPoP key.", request.error ?? undefined)));
+          });
+          activeTransaction.addEventListener("error", () => {
+            settle(
+              Effect.fail(
+                dpopError("Could not read DPoP key.", activeTransaction.error ?? undefined),
+              ),
+            );
+          });
+          activeTransaction.addEventListener("abort", () => {
+            settle(
+              Effect.fail(
+                dpopError(
+                  "Could not read DPoP key because its transaction was aborted.",
+                  activeTransaction.error ?? undefined,
+                ),
+              ),
+            );
+          });
+          activeTransaction.addEventListener("complete", () => {
+            settle(
+              requestSucceeded
+                ? hydrateStoredBrowserDpopKey(result)
+                : Effect.fail(dpopError("DPoP key read completed without a result.")),
+            );
+          });
+        } catch (cause) {
+          settle(Effect.fail(dpopError("Could not read DPoP key.", cause)));
+        }
+        return Effect.sync(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            transaction?.abort();
+          } catch {
+            // A transaction can finish between interruption and cleanup.
+          }
+        });
       }),
     (database) => Effect.sync(() => database.close()),
   );
@@ -123,21 +208,57 @@ export function writeStoredBrowserDpopKey(
     openDpopDatabase(),
     (database) =>
       Effect.callback<void, BrowserDpopError>((resume) => {
-        const transaction = database.transaction(DPOP_KEY_STORE_NAME, "readwrite");
-        transaction.addEventListener("error", () =>
-          resume(
-            Effect.fail(dpopError("Could not write DPoP key.", transaction.error ?? undefined)),
-          ),
-        );
-        transaction.addEventListener("complete", () => resume(Effect.void));
-        transaction.objectStore(DPOP_KEY_STORE_NAME).put(
-          {
-            version: 2,
-            privateJwk: key.privateJwk,
-            publicJwk: key.publicJwk,
-          } satisfies typeof StoredDpopKeyV2.Type,
-          DPOP_KEY_ID,
-        );
+        let settled = false;
+        let transaction: IDBTransaction | null = null;
+        const settle = (effect: Effect.Effect<void, BrowserDpopError>) => {
+          if (settled) return;
+          settled = true;
+          resume(effect);
+        };
+        try {
+          const activeTransaction = database.transaction(DPOP_KEY_STORE_NAME, "readwrite");
+          transaction = activeTransaction;
+          activeTransaction.addEventListener("error", () => {
+            settle(
+              Effect.fail(
+                dpopError("Could not write DPoP key.", activeTransaction.error ?? undefined),
+              ),
+            );
+          });
+          activeTransaction.addEventListener("abort", () => {
+            settle(
+              Effect.fail(
+                dpopError(
+                  "Could not write DPoP key because its transaction was aborted.",
+                  activeTransaction.error ?? undefined,
+                ),
+              ),
+            );
+          });
+          activeTransaction.addEventListener("complete", () => settle(Effect.void));
+          const request = activeTransaction.objectStore(DPOP_KEY_STORE_NAME).put(
+            {
+              version: 2,
+              privateJwk: key.privateJwk,
+              publicJwk: key.publicJwk,
+            } satisfies typeof StoredDpopKeyV2.Type,
+            DPOP_KEY_ID,
+          );
+          request.addEventListener("error", () => {
+            settle(Effect.fail(dpopError("Could not write DPoP key.", request.error ?? undefined)));
+          });
+        } catch (cause) {
+          settle(Effect.fail(dpopError("Could not write DPoP key.", cause)));
+        }
+        return Effect.sync(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            transaction?.abort();
+          } catch {
+            // A transaction can finish between interruption and cleanup.
+          }
+        });
       }),
     (database) => Effect.sync(() => database.close()),
   );
@@ -221,12 +342,16 @@ export function createBrowserDpopProof(input: {
   Crypto.Crypto
 > {
   return Effect.gen(function* () {
-    const normalizedUrl = yield* Effect.try({
-      try: () => new URL(input.url),
-      catch: (cause) => dpopError("Could not normalize DPoP proof URL.", cause),
-    });
-    normalizedUrl.search = "";
-    normalizedUrl.hash = "";
+    if (input.method.length === 0 || input.method.length > DPOP_METHOD_MAX_LENGTH) {
+      return yield* Effect.fail(dpopError("DPoP proof method is invalid."));
+    }
+    const normalizedUrl = normalizeDpopHtu(input.url);
+    if (normalizedUrl === null) {
+      return yield* Effect.fail(dpopError("Could not normalize DPoP proof URL."));
+    }
+    if (input.accessToken && input.accessToken.length > DPOP_ACCESS_TOKEN_MAX_LENGTH) {
+      return yield* Effect.fail(dpopError("DPoP access token is invalid."));
+    }
     const jti = yield* Crypto.Crypto.pipe(
       Effect.flatMap((crypto) => crypto.randomUUIDv4),
       Effect.mapError((cause) => dpopError("Could not generate DPoP proof identifier.", cause)),
@@ -235,7 +360,7 @@ export function createBrowserDpopProof(input: {
       try: () =>
         new SignJWT({
           htm: input.method.toUpperCase(),
-          htu: normalizedUrl.toString(),
+          htu: normalizedUrl,
           jti,
           ...(input.accessToken ? { ath: computeDpopAccessTokenHash(input.accessToken) } : {}),
         })

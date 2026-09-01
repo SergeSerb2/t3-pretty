@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
 import * as ServerConfig from "../config.ts";
@@ -18,6 +19,11 @@ const makeServerConfigLayer = () =>
 const makeServerSecretStoreLayer = () =>
   Layer.provide(ServerSecretStore.layer, makeServerConfigLayer());
 
+const makeServerSecretStoreWithConfigLayer = () => {
+  const configLayer = makeServerConfigLayer();
+  return Layer.merge(configLayer, ServerSecretStore.layer.pipe(Layer.provide(configLayer)));
+};
+
 const PermissionDeniedFileSystemLayer = Layer.effect(
   FileSystem.FileSystem,
   Effect.gen(function* () {
@@ -25,12 +31,12 @@ const PermissionDeniedFileSystemLayer = Layer.effect(
 
     return {
       ...fileSystem,
-      readFile: (path) =>
+      open: (path) =>
         Effect.fail(
           PlatformError.systemError({
             _tag: "PermissionDenied",
             module: "FileSystem",
-            method: "readFile",
+            method: "open",
             pathOrDescriptor: path,
             description: "Permission denied while reading secret file.",
           }),
@@ -108,12 +114,12 @@ const ConcurrentReadMissFileSystemLayer = Layer.effect(
 
     return {
       ...fileSystem,
-      readFile: (path) =>
+      open: (path, options) =>
         String(path).endsWith("/session-signing-key.bin")
           ? Ref.updateAndGet(readCountRef, (count) => count + 1).pipe(
               Effect.flatMap((count) => {
                 if (count > 2) {
-                  return fileSystem.readFile(path);
+                  return fileSystem.open(path, options);
                 }
                 return Effect.gen(function* () {
                   if (count === 2) {
@@ -125,7 +131,7 @@ const ConcurrentReadMissFileSystemLayer = Layer.effect(
                       PlatformError.systemError({
                         _tag: "NotFound",
                         module: "FileSystem",
-                        method: "readFile",
+                        method: "open",
                         pathOrDescriptor: String(path),
                         description: "Secret file does not exist yet.",
                       }),
@@ -134,7 +140,7 @@ const ConcurrentReadMissFileSystemLayer = Layer.effect(
                 });
               }),
             )
-          : fileSystem.readFile(path),
+          : fileSystem.open(path, options),
     } satisfies FileSystem.FileSystem;
   }),
 ).pipe(Layer.provide(NodeServices.layer));
@@ -223,6 +229,65 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
       );
       assert.isAtLeast(chmodCalls.filter((call) => call.mode === 0o600).length, 2);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("rejects secret names that could address another path", () =>
+    Effect.gen(function* () {
+      const secretStore = yield* ServerSecretStore.ServerSecretStore;
+
+      for (const name of ["", "../outside", "..\\outside", "nested/secret", "name:stream"]) {
+        const operations: ReadonlyArray<Effect.Effect<void, ServerSecretStore.SecretStoreError>> = [
+          secretStore.get(name).pipe(Effect.asVoid),
+          secretStore.set(name, Uint8Array.from([1, 2, 3])),
+          secretStore.create(name, Uint8Array.from([1, 2, 3])),
+          secretStore.getOrCreateRandom(name, 32).pipe(Effect.asVoid),
+          secretStore.remove(name),
+        ];
+        for (const operation of operations) {
+          const error = yield* Effect.flip(operation);
+          assert.instanceOf(error, ServerSecretStore.SecretStoreInvalidNameError);
+        }
+      }
+    }).pipe(Effect.provide(makeServerSecretStoreLayer())),
+  );
+
+  it.effect("rejects oversized secret writes and bounded reads", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const secretStore = yield* ServerSecretStore.ServerSecretStore;
+      const oversized = new Uint8Array(ServerSecretStore.SECRET_VALUE_MAX_BYTES + 1);
+
+      for (const operation of [
+        secretStore.set("oversized-secret", oversized),
+        secretStore.create("oversized-secret", oversized),
+        secretStore
+          .getOrCreateRandom(
+            "oversized-random-secret",
+            ServerSecretStore.SECRET_VALUE_MAX_BYTES + 1,
+          )
+          .pipe(Effect.asVoid),
+      ]) {
+        const error = yield* Effect.flip(operation);
+        assert.instanceOf(error, ServerSecretStore.SecretStoreValueTooLargeError);
+        assert.equal(error.observedBytes, oversized.byteLength);
+      }
+
+      const secretPath = path.join(config.secretsDir, "oversized-secret.bin");
+      yield* fileSystem.writeFileString(secretPath, "");
+      yield* fileSystem.truncate(secretPath, ServerSecretStore.SECRET_VALUE_MAX_BYTES + 1);
+      const readError = yield* Effect.flip(secretStore.get("oversized-secret"));
+      assert.instanceOf(readError, ServerSecretStore.SecretStoreValueTooLargeError);
+      assert.equal(readError.observedBytes, ServerSecretStore.SECRET_VALUE_MAX_BYTES + 1);
+
+      for (const [index, bytes] of [-1, 1.5, Number.POSITIVE_INFINITY].entries()) {
+        const randomError = yield* Effect.flip(
+          secretStore.getOrCreateRandom(`invalid-random-secret-${index}`, bytes),
+        );
+        assert.instanceOf(randomError, ServerSecretStore.SecretStoreRandomGenerationError);
+      }
+    }).pipe(Effect.provide(makeServerSecretStoreWithConfigLayer())),
   );
 
   it.effect("propagates read failures other than missing-file errors", () =>

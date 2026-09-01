@@ -1,4 +1,11 @@
+import { SECURE_RELAY_URL_MAX_LENGTH } from "@t3tools/contracts/relay";
+
+export { SECURE_RELAY_URL_MAX_LENGTH };
+
 export function normalizeSecureRelayUrl(value: string): string | null {
+  if (value.length === 0 || value.length > SECURE_RELAY_URL_MAX_LENGTH) {
+    return null;
+  }
   try {
     const url = new URL(value.trim());
     if (
@@ -11,7 +18,7 @@ export function normalizeSecureRelayUrl(value: string): string | null {
     ) {
       return null;
     }
-    return url.origin;
+    return url.origin.length <= SECURE_RELAY_URL_MAX_LENGTH ? url.origin : null;
   } catch {
     return null;
   }

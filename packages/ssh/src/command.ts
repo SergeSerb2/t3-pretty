@@ -18,6 +18,8 @@ import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 const PUBLISHABLE_T3_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
+const MAX_SSH_COMMAND_OUTPUT_BYTES = 1024 * 1024;
+const SSH_OUTPUT_TRUNCATION_MARKER = "[earlier output truncated]\n";
 
 /**
  * ssh is a real executable everywhere (`ssh.exe` on Windows), so it is always
@@ -123,16 +125,94 @@ export function getLastNonEmptyOutputLine(stdout: string): string | null {
   );
 }
 
+interface ProcessOutputTailState {
+  chunks: Uint8Array[];
+  firstIndex: number;
+  firstOffset: number;
+  byteLength: number;
+  truncated: boolean;
+}
+
+const appendProcessOutputTail = (
+  state: ProcessOutputTailState,
+  chunk: Uint8Array,
+  maxBytes: number,
+): ProcessOutputTailState => {
+  if (chunk.byteLength === 0) return state;
+  if (chunk.byteLength >= maxBytes) {
+    return {
+      chunks: [chunk.slice(chunk.byteLength - maxBytes)],
+      firstIndex: 0,
+      firstOffset: 0,
+      byteLength: maxBytes,
+      truncated: state.truncated || state.byteLength > 0 || chunk.byteLength > maxBytes,
+    };
+  }
+
+  state.chunks.push(chunk);
+  state.byteLength += chunk.byteLength;
+  let overflow = state.byteLength - maxBytes;
+  if (overflow > 0) state.truncated = true;
+
+  while (overflow > 0) {
+    const first = state.chunks[state.firstIndex];
+    if (first === undefined) break;
+    const retainedBytes = first.byteLength - state.firstOffset;
+    if (retainedBytes <= overflow) {
+      state.firstIndex += 1;
+      state.firstOffset = 0;
+      state.byteLength -= retainedBytes;
+      overflow -= retainedBytes;
+      continue;
+    }
+    state.firstOffset += overflow;
+    state.byteLength -= overflow;
+    overflow = 0;
+  }
+
+  if (state.firstIndex >= 64 && state.firstIndex * 2 >= state.chunks.length) {
+    state.chunks = state.chunks.slice(state.firstIndex);
+    state.firstIndex = 0;
+  }
+  return state;
+};
+
+const decodeProcessOutputTail = (state: ProcessOutputTailState): string => {
+  const retainedChunks = state.chunks.slice(state.firstIndex);
+  if (state.firstOffset > 0 && retainedChunks[0] !== undefined) {
+    retainedChunks[0] = retainedChunks[0].slice(state.firstOffset);
+  }
+  const output = new Uint8Array(state.byteLength);
+  let offset = 0;
+  for (const chunk of retainedChunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const decoded = new TextDecoder("utf-8").decode(output);
+  return state.truncated ? `${SSH_OUTPUT_TRUNCATION_MARKER}${decoded}` : decoded;
+};
+
 export const collectProcessOutput = <E>(
   stream: Stream.Stream<Uint8Array, E>,
-): Effect.Effect<string, E> =>
-  stream.pipe(
-    Stream.decodeText(),
+  maxBytes = MAX_SSH_COMMAND_OUTPUT_BYTES,
+): Effect.Effect<string, E> => {
+  const byteLimit = Number.isFinite(maxBytes)
+    ? Math.max(0, Math.trunc(maxBytes))
+    : MAX_SSH_COMMAND_OUTPUT_BYTES;
+  return stream.pipe(
     Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
+      (): ProcessOutputTailState => ({
+        chunks: [],
+        firstIndex: 0,
+        firstOffset: 0,
+        byteLength: 0,
+        truncated: false,
+      }),
+      (state, chunk) => appendProcessOutputTail(state, chunk, byteLimit),
     ),
+    Effect.map(decodeProcessOutputTail),
   );
+};
 
 function redactSshErrorOutput(output: string): string {
   const redacted = output.replace(
@@ -263,21 +343,22 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
 
   if (exitCode !== 0) {
     const diagnosticStdout = redactSshErrorOutput(stdout);
+    const diagnosticStderr = redactSshErrorOutput(stderr);
     yield* Effect.logWarning("ssh.command.failed", {
       ...sshTargetLogFields(target),
       command: ["ssh", ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
     });
     return yield* new SshCommandError({
       command: ["ssh", ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
       message: normalizeSshErrorMessage({
         stdout: diagnosticStdout,
-        stderr,
+        stderr: diagnosticStderr,
         fallbackMessage: `SSH command failed for ${hostSpec} (exit ${exitCode}).`,
       }),
     });

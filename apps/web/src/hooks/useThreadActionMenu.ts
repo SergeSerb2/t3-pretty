@@ -24,6 +24,7 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   readEnvironmentSupportsPinning,
+  readEnvironmentSupportsProjectTransfer,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
@@ -31,6 +32,7 @@ import {
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
+import { openProjectTransferDialog } from "../projectTransferStore";
 import { useCopyThreadConversation } from "./useCopyThreadConversation";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -72,7 +74,7 @@ export function useThreadActionMenu(input: {
     snoozeThread,
     unsnoozeThread,
     pinThread,
-    unpinThread,
+    confirmAndUnpinThread,
     archiveThread,
     deleteThread,
   } = useThreadActions();
@@ -122,6 +124,7 @@ export function useThreadActionMenu(input: {
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
           pinning: readEnvironmentSupportsPinning(threadRef.environmentId),
           titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
+          projectTransfer: readEnvironmentSupportsProjectTransfer(threadRef.environmentId),
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
@@ -217,9 +220,10 @@ export function useThreadActionMenu(input: {
           case "pin":
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
             return;
-          case "unpin":
-            await reportFailure("Failed to unpin thread", () => unpinThread(threadRef));
+          case "unpin": {
+            await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
+          }
           case "rename":
             onStartRename();
             return;
@@ -234,6 +238,9 @@ export function useThreadActionMenu(input: {
             return;
           case "mark-unread":
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
+            return;
+          case "transfer":
+            openProjectTransferDialog(threadRef);
             return;
           case "copy":
           case "copy-conversation":
@@ -320,6 +327,7 @@ export function useThreadActionMenu(input: {
       changeRequest,
       confirmThreadArchive,
       confirmThreadDelete,
+      confirmAndUnpinThread,
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadConversation,
@@ -334,7 +342,6 @@ export function useThreadActionMenu(input: {
       snoozeThread,
       threadRef,
       timestampFormat,
-      unpinThread,
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,
