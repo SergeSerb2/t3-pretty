@@ -1908,3 +1908,123 @@
 ## Parent changes intentionally omitted
 
 - `apps/mobile/src/lib/threadActivity.ts` — The parent live-summary work-toggle block, including the nightly change from lifecycle-gated shimmer to `shimmer: live` so the summary shimmers until the turn or contiguous tool run settles.. Reason: T3 Pretty has replaced this summarized live-toggle path with visible per-activity singleton rows plus a separate overflow toggle. This function no longer has the parent's `activeTail`, `latestInProgressActivity`, `sourceGroup`, `isWorking`, or `unsettledTurnId` inputs, and its overflow toggle does not represent the live contiguous run. Taking the parent block would not compile and would remove the fork's generated-image visibility, compact-diff presentation, and stable row identities; assigning live shimmer to the unrelated overflow toggle would invent incorrect semantics.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260831.1241`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260831.1240`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 2 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Reduced-motion-aware FadeIn/FadeOut animations for composer preparation and dispatch status UI.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Busy and per-attachment preparing states continue to dim thumbnails, prevent image/video actions, and hide removal controls while a send is in progress.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Preparing and normal attachment accessibility labels remain available, including button semantics for image previews and attachment removal.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The existing ComposerAttachmentThumb and ComposerDispatchStatusLabel fork APIs and behavior remain intact.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Remove-button overlay/gutter placement and T3 Pretty's existing attachment-strip presentation remain unchanged.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Pending attachment previews, attachment-picking state, dispatch status labels, and minimum send-indicator timing remain intact.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — World Scenery color-scheme/theme handling and the fork's project underline color remain available.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Composer selectors retain Pretty's dispatch/share-transfer locking safeguards.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — The fork-only new-task skills picker, selected-skill count, platform-specific icon, and accessibility labeling remain intact.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Voice-input busy-state interaction locks remain applied to the workspace control.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's dispatch status label so new-task progress remains visible across composer dispatches.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Host-routed native voice dictation dependencies and error presentation, including the internal-build capability gate and Effect Option connection handling.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Pretty's optimistic attachment preparation previews and composer dispatch-status labeling.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The hardened local send-busy lifecycle, minimum send-indicator duration, queue/retry tracking, and in-flight message state.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The timer-tracked preview-close refocus lifecycle, including cleanup on unmount to prevent stale focus callbacks.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Pretty's attachable-app composer mentions, app avatar presentation, ranked path-menu augmentation, provider grouping, and instant model-picker support.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Pretty's existing composer styling dependencies and visual attachment-strip components.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — T3 Pretty's host-routed `dictation` lifecycle remains authoritative; the editor stays disabled while fork dictation is active and the parent `voiceInput` wrapper is not restored.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The Pretty expanded/collapsed composer design, Android single-line centering, editor insets, and compact stop/send control pills are retained.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Attachment rendering continues to use `stripAttachments`, preserving queued, preparing, and in-flight attachment visibility rather than falling back to only the current draft array.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Pretty's custom image thumbnails retain their dark/light backgrounds, preparation indicator, and disabled interaction while dispatching or preparing.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The expanded attachment strip keeps Pretty's sending-state `busy` presentation.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/composerImages.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/threadActivity.test.ts` — Preserved T3 Pretty tests requiring derived activity-group rows to retain identity across unrelated streaming-message updates.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Preserved incremental feed tests ensuring only identity-changed message rows are replaced while unchanged messages and work rows remain stable.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Preserved sorted-feed correctness for older replayed messages and equal-timestamp message reordering.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Preserved loaded-message window equivalence between the incremental builder and stateless feed derivation.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Preserved behavior that activity groups are rebuilt when an initially hidden streaming message becomes visible.
+- `apps/mobile/src/lib/threadActivity.ts` — T3 Pretty's shell/tool display formatting, including compact changed-file diffs, redundant-output suppression, leftover sibling-path preservation, and display-section serialization.
+- `apps/mobile/src/lib/threadActivity.ts` — The centralized deriveWorkLogEntry path used by T3 Pretty's incremental mobile feed derivation and stable row handling.
+- `apps/mobile/src/lib/threadActivity.ts` — Existing mobile work-log rules for generated headlines, terminal child-agent signals, internal-agent activity, plan boundaries, runtime warnings, and other filtered lifecycle events.
+- `apps/server/src/http.test.ts` — T3 Pretty's bounded JSON request-body tests remain intact, including acceptance at the exact UTF-8 byte limit.
+- `apps/server/src/http.test.ts` — T3 Pretty's split-stream overflow test continues to verify immediate rejection and the exact RequestBodySizeLimitExceededError metadata.
+- `apps/server/src/http.ts` — Preserved T3 Pretty attachment feed previews selected by the `variant` query parameter, including preview generation from the configured attachments directory.
+- `apps/server/src/http.ts` — Preserved the complete resolved asset metadata—including source, download disposition, filename, and MIME information—while replacing only its served path with the generated preview path when applicable.
+- `apps/server/src/http.ts` — Preserved the logger-disabled middleware wrapping the asset route and the existing 404/500 response behavior.
+- `apps/web/src/components/ChatView.tsx` — The T3 Pretty build-flavor identity remains available through T3CODE_BUILD_FLAVOR for fork-specific branding behavior.
+- `apps/web/src/components/ChatView.tsx` — MessagesTimeline continues treating a currently working or not-yet-settled latest turn as active, preserving T3 Pretty's active-turn rendering behavior.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved T3 Pretty's duplicate-thinking-indicator fix: adjacent active tool calls produce a single `work-live` row rather than an additional `working` row.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved the test's one-replacing-row semantics while retaining the existing grouped-entry assertions for completed and running tool calls.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The required activeTurnInProgress input and its propagation through TimelineRowActivityState remain intact.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Generated live headlines remain reactive through the activity-state memo dependency list.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — T3 Pretty's compact inline turn-plan row remains collapsed by default, expandable in place, and retains its progress segments, status styling, keyboard focus treatment, animation, and reduced-motion behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Generated live activity headlines continue to replace the static Thinking label when TimelineRowActivityCtx provides one.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The standard Thinking label remains as the fallback when no generated headline is available.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Existing LiveActivityRow presentation, including shimmer behavior and row-height continuity, remains intact.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — T3 Pretty's shared `ThreadRouteView` architecture for draft routes, including the fork's fix that avoids a screen flash when a newly promoted thread starts.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — The minimal route-module boundary, preventing the older inline draft rendering and navigation lifecycle from bypassing fork-specific shared route behavior.
+- `apps/web/src/session-logic.test.ts` — Preserved T3 Pretty's generated-headline behavior by retaining the test that turn.headline activities are omitted while completed tool activity remains visible.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Parent reusable ComposerAttachmentThumbnail implementation for image, file, compact, and video attachment rendering.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Parent native video attachment detection through videoMimeType and VideoAttachmentTile integration.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Parent local video preview/share flow, including abort-on-unmount cleanup, share progress locking, preview disposal, and user-facing share errors.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Parent onPressVideo callback and stable draft video source identifiers are wired through the attachment strip.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Parent thumbnail refactor is composed with the fork's send-progress safeguards rather than retaining the older fork-only file rendering path.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Added native local video attachment preview support, including source state, modal imports, and restoring composer focus when the preview closes.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Restored composer focus tracking and settings-sheet presentation wiring.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Added the accessible shimmering “Setting up worktree…” state for connected worktree submissions.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Made the upstream theme binding available for the worktree progress icon color.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Retained upstream's revised workspace-control sizing and normal/submitting conditional structure.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent mobile video preview modal, including its preview source and close handler.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Generalized draft attachment typing through DraftComposerAttachment.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — First-party file/video attachment support through DraftComposerFileAttachment, ComposerAttachmentButton, ComposerAttachmentThumbnail, VideoPreviewModal, and VideoPreviewSource.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Mutually exclusive image and video preview state and callbacks.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The navigation focus guard that prevents restoring editor focus after navigating away from the thread composer.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The parent's removal of obsolete inline React Native Image and AppSymbol imports.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Added the parent's `onPressVideo` handling to the expanded attachment strip.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Integrated the parent's `ComposerAttachmentThumbnail` for compact non-image attachments, providing native file/video thumbnail behavior and video preview actions.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Disabled newly integrated compact attachment preview actions during dispatch to fit T3 Pretty's existing runner and interaction safeguards.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Integrated upstream coverage that routine setup-script requested/started notices remain hidden while setup failures stay visible, retain failure status, expose diagnostic copy text, and behave consistently before and during a turn.
+- `apps/mobile/src/lib/threadActivity.test.ts` — Integrated upstream coverage that error-toned setup-script requested and started events remain visible as failure activities.
+- `apps/mobile/src/lib/threadActivity.ts` — Imported the parent's isWorktreeSetupActivity classifier.
+- `apps/mobile/src/lib/threadActivity.ts` — Non-error worktree setup activity is now omitted from the mobile work log, while setup failures remain visible.
+- `apps/mobile/src/lib/threadActivity.ts` — Applied the parent filtering behavior inside the fork's per-activity helper so it also covers incremental derivation paths rather than only full-array derivation.
+- `apps/server/src/http.test.ts` — Added the parent Node HTTP/services test layer used to exercise filesystem-backed asset responses.
+- `apps/server/src/http.test.ts` — Added upstream coverage for valid fixed, open-ended, suffix, and oversized video byte ranges, including 206 status and range headers.
+- `apps/server/src/http.test.ts` — Added upstream coverage ensuring malformed, multipart, inverted, non-byte, absent, and conditionally inapplicable ranges fall back to full downloads.
+- `apps/server/src/http.test.ts` — Added upstream coverage for case-insensitive video MIME handling and for preventing range semantics on non-video assets.
+- `apps/server/src/http.test.ts` — Added upstream coverage for 416 responses on unsatisfiable ranges and empty video files.
+- `apps/server/src/http.ts` — Integrated upstream's `assetFileResponse` path for asset delivery.
+- `apps/server/src/http.ts` — Integrated upstream handling of `Range` and `If-Range` request headers, including only forwarding `Range` for GET requests.
+- `apps/web/src/components/ChatView.tsx` — Removed the superseded CHAT_LIST_ANCHOR_OFFSET import in line with upstream's timeline anchoring refactor.
+- `apps/web/src/components/ChatView.tsx` — Passed isPreparingWorktree to MessagesTimeline so upstream worktree preparation state can be represented in the timeline.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Added the optional isPreparingWorktree timeline input with a false default and propagated it through activity context state.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated the parent's worktree-setup working-row presentation, including the setup label, shimmer overlay, keyed transition, fixed row height, and reduced-motion class.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Integrated the parent's reserved activity-row height during worktree setup and its handoff to LiveActivityRow once setup completes.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Retained both the fork turn-plan row and the parent's WorkingTimelineRow rather than choosing either implementation wholesale.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent’s current thinking-row placement and setup handoff remain intact, including reserving row height and suppressing content while the worktree is being prepared.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — The parent’s LiveActivityRow implementation continues to render the activity content; the fork helper only supplies the context-aware label.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — The resolved route has no stale dependency on `threadHasStarted`, consistent with upstream's removal of that route-local predicate.
+- `apps/web/src/session-logic.test.ts` — Added parent coverage that routine setup-script.requested and setup-script.started updates are omitted both before work and when followed by activity from later turns.
+- `apps/web/src/session-logic.test.ts` — Added parent coverage that setup-script.failed entries retain their error label, detail, and null turn ID.
+- `apps/web/src/session-logic.test.ts` — Added parent coverage that unrelated displayable runtime warnings without a turn ID remain in the work log.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Wrap the composer in the parent's `ComposerDictationDraftContent` and restore `ComposerDictationStartAction` backed by `voiceInput`.. Reason: That would replace T3 Pretty's newer host-routed, hardened dictation lifecycle and regress its custom composer controls.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Restore the parent's collapsed `ComposerAttachmentButton` for media and file picking.. Reason: It conflicts with T3 Pretty's intentionally reworked compact composer layout and fork attachment toolbar architecture.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Use the parent's generic `ComposerAttachmentThumbnail` for compact image attachments as well as videos/files.. Reason: The generic image path would remove T3 Pretty's preparing/loading visualization, dispatch lockout, theme-aware thumbnail background, and queued `stripAttachments` behavior; only the smallest conflicting image portion is retained from the fork.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/mobile/src/lib/composerImages.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/composerImages.ts after 3 attempts
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Parent expectation that the derived timeline contains both `working` and `work-live` rows during an adjacent active tool run.. Reason: This conflicts directly with T3 Pretty's authoritative behavior that the live tool row replaces the separate working row, protecting the fork's duplicate-indicator fix.
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Parent assertion that the retained `working` row has `showThinking: false`.. Reason: T3 Pretty intentionally emits no `working` row in this state, so the property assertion is inapplicable and retaining that row would weaken the fork behavior.
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — Remove ThinkingActivityRow and render a hard-coded Thinking label directly at the relocated call site.. Reason: That smallest portion conflicts with T3 Pretty’s generated live-headline feature. Keeping a thin context-aware helper preserves the fork behavior without changing the parent’s row placement or lifecycle logic.
+- `apps/web/src/routes/_chat.draft.$draftId.tsx` — Upstream's inline `DraftChatThreadRouteView` hunk, including its revised `resolveDraftPromotionNavigationTarget` call that passes `serverThread` directly.. Reason: T3 Pretty has intentionally superseded this route-local implementation with `./-threadRouteView` to prevent the new-thread screen flash and centralize route lifecycle behavior. Restoring the inline parent component would bypass and regress that authoritative fork fix; any equivalent resolver API adaptation belongs in the shared implementation rather than resurrecting the deleted component here.

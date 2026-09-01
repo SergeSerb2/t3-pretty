@@ -53,12 +53,15 @@ import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/re
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumb,
+  ComposerAttachmentThumbnail,
   ComposerDispatchStatusLabel,
   type ComposerAttachmentPreview,
 } from "../../components/ComposerAttachmentStrip";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import {
   composerDispatchStatusLabel,
   shouldKeepLocalComposerSendBusy,
@@ -74,7 +77,10 @@ import {
 } from "../../components/ComposerToolbar";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type {
+  DraftComposerAttachment,
+  DraftComposerFileAttachment,
+} from "../../lib/composerImages";
 import {
   buildModelOptions,
   groupByProvider,
@@ -130,7 +136,7 @@ export const COMPOSER_EXPANDED_CHROME = 156;
 
 export interface ThreadComposerProps {
   readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly placeholder: string;
   readonly contentMaxWidth?: number;
   readonly bottomInset?: number;
@@ -398,6 +404,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const preparingImagesRef = useRef(false);
   const previewFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendStartedAtRef = useRef(0);
+  const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
   const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
   const [composerSelection, setComposerSelection] = useState(() => ({
@@ -427,7 +434,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // toolbar visible so the Stop control remains reachable.
   const isExpanded = isFocused || settingsSheetPresentation.isActive || dictation.active;
   const canSend = hasContent;
-  const stripAttachments = useMemo((): ComposerAttachmentPreview[] => {
+  const stripAttachments = useMemo(() => {
     const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
     return [
       ...props.draftAttachments,
@@ -496,6 +503,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const onPressImage = useCallback(
     (uri: string) => {
       wasExpandedBeforePreviewRef.current = isFocused;
+      setPreviewVideo(null);
       setPreviewImageUri(uri);
     },
     [isFocused],
@@ -503,16 +511,26 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const closePreview = useCallback(() => {
     setPreviewImageUri(null);
+    setPreviewVideo(null);
     if (wasExpandedBeforePreviewRef.current) {
       if (previewFocusTimerRef.current) {
         clearTimeout(previewFocusTimerRef.current);
       }
       previewFocusTimerRef.current = setTimeout(() => {
         previewFocusTimerRef.current = null;
-        inputRef.current?.focus();
+        if (navigation.isFocused()) inputRef.current?.focus();
       }, 100);
     }
-  }, [inputRef]);
+  }, [inputRef, navigation]);
+
+  const onPressVideo = useCallback(
+    (attachment: DraftComposerFileAttachment, sourceIdentifier: string) => {
+      wasExpandedBeforePreviewRef.current = isFocused;
+      setPreviewImageUri(null);
+      setPreviewVideo((current) => current ?? { type: "local", attachment, sourceIdentifier });
+    },
+    [isFocused],
+  );
 
   useEffect(
     () => () => {
@@ -982,6 +1000,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 busy={isSending && props.draftAttachments.length > 0}
                 onRemove={props.onRemoveDraftImage}
                 onPressImage={onPressImage}
+                onPressVideo={onPressVideo}
               />
             </Animated.View>
           ) : null}
@@ -1012,21 +1031,33 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </View>
           {!isExpanded && stripAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">
-              {stripAttachments.slice(0, 3).map((image) => (
-                <ComposerAttachmentThumb
-                  key={image.id}
-                  previewUri={image.previewUri}
-                  size={30}
-                  borderRadius={8}
-                  backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
-                  preparing={isDispatching || image.preparing === true}
-                  onPress={
-                    isDispatching || image.preparing === true
-                      ? undefined
-                      : () => onPressImage(image.previewUri)
-                  }
-                />
-              ))}
+              {stripAttachments.slice(0, 3).map((attachment) =>
+                attachment.type === "image" ? (
+                  <ComposerAttachmentThumb
+                    key={attachment.id}
+                    previewUri={attachment.previewUri}
+                    size={30}
+                    borderRadius={8}
+                    backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
+                    preparing={isDispatching || attachment.preparing === true}
+                    onPress={
+                      isDispatching || attachment.preparing === true
+                        ? undefined
+                        : () => onPressImage(attachment.previewUri)
+                    }
+                  />
+                ) : (
+                  <ComposerAttachmentThumbnail
+                    key={attachment.id}
+                    attachment={attachment}
+                    size={30}
+                    borderRadius={8}
+                    compact
+                    onPressImage={isDispatching ? undefined : onPressImage}
+                    onPressVideo={isDispatching ? undefined : onPressVideo}
+                  />
+                ),
+              )}
               {stripAttachments.length > 3 ? (
                 <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                   <Text className="text-foreground-muted text-2xs font-t3-bold">
@@ -1170,6 +1201,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         ) : null}
       </Animated.View>
 
+      <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />
       <ImageViewing
         images={previewImageUri ? [{ uri: previewImageUri }] : []}
         imageIndex={0}

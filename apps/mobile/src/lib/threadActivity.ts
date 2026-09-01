@@ -26,6 +26,7 @@ import {
   leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
+import { isWorktreeSetupActivity } from "@t3tools/client-runtime/work-log/presentation";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -361,6 +362,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
 
 /** Per-activity work-log derivation; null for rows the work log drops. */
 function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry | null {
+  if (activity.tone !== "error" && isWorktreeSetupActivity(activity.kind)) return null;
   if (activity.kind === "tool.started") return null;
   // Generated live-status headlines feed the web work-live row, never the log.
   if (activity.kind === "turn.headline") return null;

@@ -61,12 +61,14 @@ import {
 } from "../../components/ComposerAttachmentStrip";
 import { waitForComposerSendIndicatorMin } from "../../components/ComposerSendIndicator";
 import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { COMPOSER_LAYOUT_TRANSITION, ComposerSurface } from "./ThreadComposer";
+import { ShimmeringWorkContent } from "./thread-work-log";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
@@ -92,6 +94,7 @@ import {
   convertPastedImagesToAttachments,
   pickComposerFiles,
   pickComposerMedia,
+  type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import {
@@ -318,6 +321,28 @@ export function NewTaskDraftScreen(props: {
     [],
   );
   const [isPickingAttachments, setIsPickingAttachments] = useState(false);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
+  const wasFocusedBeforeVideoRef = useRef(false);
+  const openVideoPreview = useCallback(
+    (attachment: DraftComposerFileAttachment, sourceIdentifier: string) => {
+      wasFocusedBeforeVideoRef.current = isComposerFocused;
+      setPreviewVideo((current) => current ?? { type: "local", attachment, sourceIdentifier });
+    },
+    [isComposerFocused],
+  );
+  const closeVideoPreview = useCallback(() => {
+    setPreviewVideo(null);
+    if (wasFocusedBeforeVideoRef.current) {
+      setTimeout(() => {
+        if (navigation.isFocused()) promptInputRef.current?.focus();
+      }, 100);
+    }
+  }, [navigation]);
+  const settingsSheetPresentation = useThreadSettingsSheetPresentation({
+    editorRef: promptInputRef,
+    isEditorFocused: isComposerFocused,
+  });
   useEffect(() => {
     if (Platform.OS !== "ios") {
       return;
@@ -538,6 +563,7 @@ export function NewTaskDraftScreen(props: {
 
   const sceneryColorScheme = useColorScheme();
   const uniwindTheme = useUniwindTheme();
+  const theme = uniwindTheme;
   const foregroundColor = uniwindTheme["--color-foreground"];
   const projectUnderlineColor = uniwindTheme["--color-foreground-muted"];
   const regularFontFamily = useFontFamily("regular");
@@ -1516,49 +1542,70 @@ export function NewTaskDraftScreen(props: {
 
   const workspaceControls = (
     <View className="flex-row items-center gap-1 px-2">
-      <ComposerInlineControl
-        accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
-        accessibilityLabel={workspaceLabel}
-        disabled={
-          composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy
-        }
-        iconNode={
-          <NewTaskWorkspaceIcon
-            workspaceMode={flow.workspaceMode}
-            worktreePath={flow.selectedWorktreePath}
+      {flow.submitting && environmentConnected && flow.workspaceMode === "worktree" ? (
+        <View
+          accessible
+          accessibilityLabel="Setting up worktree…"
+          className="h-11 w-full max-w-[260px] flex-row items-center px-2"
+        >
+          <ShimmeringWorkContent
+            icon="arrow.triangle.branch"
+            iconSubtleColor={theme["--color-icon-subtle"]}
+            label="Setting up worktree…"
+            showIcon
           />
-        }
-        label={workspaceLabel}
-        maxWidth={flow.workspaceMode === "local" ? 220 : 148}
-        onPress={() => flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")}
-        showChevron={false}
-      />
+        </View>
+      ) : (
+        <>
+          <ComposerInlineControl
+            accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
+            accessibilityLabel={workspaceLabel}
+            disabled={
+              composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy
+            }
+            iconNode={
+              <NewTaskWorkspaceIcon
+                workspaceMode={flow.workspaceMode}
+                worktreePath={flow.selectedWorktreePath}
+              />
+            }
+            label={workspaceLabel}
+            maxWidth={flow.workspaceMode === "local" ? 220 : 148}
+            onPress={() =>
+              flow.setWorkspaceMode(flow.workspaceMode === "local" ? "worktree" : "local")
+            }
+            showChevron={false}
+          />
 
-      <ComposerInlineControl
-        accessibilityLabel={`${flow.workspaceMode === "worktree" ? "Base branch" : "Branch"}: ${selectedBranchLabel}`}
-        chevronDirection="right"
-        disabled={composerSelectorsLocked || isComposerInteractionLocked}
-        icon="arrow.triangle.branch"
-        label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
-        maxWidth={190}
-        onPress={() => openContextPicker("NewTaskBranch")}
-      />
+          <ComposerInlineControl
+            accessibilityLabel={`${flow.workspaceMode === "worktree" ? "Base branch" : "Branch"}: ${selectedBranchLabel}`}
+            chevronDirection="right"
+            disabled={composerSelectorsLocked || isComposerInteractionLocked}
+            icon="arrow.triangle.branch"
+            label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
+            maxWidth={190}
+            onPress={() => openContextPicker("NewTaskBranch")}
+          />
 
-      <ComposerInlineControl
-        accessibilityLabel={
-          flow.selectedSkillIds.length > 0
-            ? `Skills: ${flow.selectedSkillIds.length} selected`
-            : "Skills"
-        }
-        chevronDirection="right"
-        disabled={composerSelectorsLocked}
-        icon={{ ios: "sparkles", android: "auto_awesome" }}
-        label={
-          flow.selectedSkillIds.length > 0 ? `Skills · ${flow.selectedSkillIds.length}` : "Skills"
-        }
-        maxWidth={120}
-        onPress={() => openContextPicker("NewTaskSkills")}
-      />
+          <ComposerInlineControl
+            accessibilityLabel={
+              flow.selectedSkillIds.length > 0
+                ? `Skills: ${flow.selectedSkillIds.length} selected`
+                : "Skills"
+            }
+            chevronDirection="right"
+            disabled={composerSelectorsLocked}
+            icon={{ ios: "sparkles", android: "auto_awesome" }}
+            label={
+              flow.selectedSkillIds.length > 0
+                ? `Skills · ${flow.selectedSkillIds.length}`
+                : "Skills"
+            }
+            maxWidth={120}
+            onPress={() => openContextPicker("NewTaskSkills")}
+          />
+        </>
+      )}
     </View>
   );
 
@@ -1603,6 +1650,9 @@ export function NewTaskDraftScreen(props: {
                 voiceInput.isBusy
                   ? () => undefined
                   : flow.removeAttachment
+              }
+              onPressVideo={
+                isComposerInteractionLocked || voiceInput.isBusy ? undefined : openVideoPreview
               }
             />
           </View>
@@ -1756,6 +1806,7 @@ export function NewTaskDraftScreen(props: {
         </Animated.View>
       </ComposerSurface>
       {dispatchStatus ? <ComposerDispatchStatusLabel label={dispatchStatus} /> : null}
+      <VideoPreviewModal source={previewVideo} onRequestClose={closeVideoPreview} />
     </View>
   );
 
