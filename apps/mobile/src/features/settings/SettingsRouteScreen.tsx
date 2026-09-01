@@ -36,6 +36,9 @@ import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { openWhatsNew } from "../whats-new/whatsNewController";
 import {
@@ -569,9 +572,11 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function GeneralSettingsSection() {
+
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
       <SettingsRow
         icon="server.rack"
@@ -581,6 +586,7 @@ function GeneralSettingsSection() {
     </SettingsSection>
   );
 }
+
 
 /**
  * Device-local legacy toggles. Mobile has no client-settings sync, so this is

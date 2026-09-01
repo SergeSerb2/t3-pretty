@@ -94,6 +94,7 @@ function registryLayer(options?: {
       const session: RpcSession = {
         client,
         initialConfig: Effect.never,
+        subscribeServerConfig: (input) => client.subscribeServerConfig(input),
         ready: Effect.void,
         probe: Effect.void,
         closed: Effect.never,

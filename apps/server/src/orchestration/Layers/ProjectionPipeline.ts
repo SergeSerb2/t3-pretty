@@ -1173,20 +1173,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
         case "thread.message-sent": {
           if (event.payload.streaming) {
-            const nextAttachments =
+            const attachments =
               event.payload.attachments !== undefined
                 ? yield* materializeAttachmentsForProjection({
                     attachments: event.payload.attachments,
                   })
                 : undefined;
-            yield* projectionThreadMessageRepository.appendStreamingDelta({
+            yield* projectionThreadMessageRepository.appendStreaming({
               messageId: event.payload.messageId,
               threadId: event.payload.threadId,
               turnId: event.payload.turnId,
               role: event.payload.role,
               text: event.payload.text,
-              ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
-              isStreaming: true,
+              ...(attachments !== undefined ? { attachments: [...attachments] } : {}),
               createdAt: event.payload.createdAt,
               updatedAt: event.payload.updatedAt,
             });
@@ -1215,7 +1214,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             role: event.payload.role,
             text: nextText,
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
-            isStreaming: event.payload.streaming,
+            isStreaming: false,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
           });

@@ -1120,6 +1120,13 @@ const ThreadSettleCommand = Schema.Struct({
   expectedBranchEventId: Schema.optional(EventId),
 });
 
+const ThreadAutoSettleCommand = Schema.Struct({
+  type: Schema.Literal("thread.auto-settle"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  snapshotSequence: NonNegativeInt,
+});
+
 const ThreadUnsettleCommand = Schema.Struct({
   type: Schema.Literal("thread.unsettle"),
   commandId: CommandId,
@@ -1540,6 +1547,7 @@ const ProjectTransferImportCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadAutoSettleCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
