@@ -27,6 +27,15 @@ describe("skillTool", () => {
     expect(skillNameFromToolInput({ name: "not-a-skill" })).toBeUndefined();
   });
 
+  it("ignores opaque provider fields whose getters throw", () => {
+    const input = Object.defineProperty({}, "skill", {
+      get: () => {
+        throw new Error("getter failed");
+      },
+    });
+    expect(skillNameFromToolInput(input)).toBeUndefined();
+  });
+
   it("parses Skill titles used by ACP adapters", () => {
     expect(isSkillToolTitle("Skill")).toBe(true);
     expect(skillNameFromTitle("Skill: grill-me")).toBe("grill-me");

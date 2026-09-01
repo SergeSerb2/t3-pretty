@@ -1,4 +1,8 @@
-import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import {
+  type ClientConnectionMethod,
+  EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+} from "@t3tools/contracts";
 import type { RelayManagedEndpoint } from "@t3tools/contracts/relay";
 import {
   exchangeRemoteDpopAccessToken,
@@ -6,7 +10,11 @@ import {
   resolveRemoteDpopWebSocketConnectionUrl,
   resolveRemoteWebSocketConnectionUrl,
 } from "./remote.ts";
-import { environmentMismatchError, mapRemoteEnvironmentError } from "../connection/errors.ts";
+import {
+  environmentMismatchError,
+  mapRemoteDpopEnvironmentError,
+  mapRemoteEnvironmentError,
+} from "../connection/errors.ts";
 import { ConnectionBlockedError, type ConnectionAttemptError } from "../connection/model.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
@@ -46,6 +54,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
+      readonly connectionMethod: ClientConnectionMethod;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     readonly authorizeDpop: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
@@ -62,11 +71,12 @@ const TOKEN_EXPIRY_SAFETY_MARGIN_MS = 60_000;
 // handshake through the relay; a stale endpoint still fails fast on DNS/TCP.
 const CACHED_ENDPOINT_SOCKET_TIMEOUT_MS = 6_000;
 const BEARER_DESCRIPTOR_CACHE_TTL_MS = 10_000;
+const BEARER_DESCRIPTOR_CACHE_MAX_ENTRIES = 1_024;
 
 function mapDpopSocketError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return error._tag === "ConnectionTransientError" || error._tag === "ConnectionBlockedError"
     ? error
-    : mapRemoteEnvironmentError(error);
+    : mapRemoteDpopEnvironmentError(error);
 }
 
 const fetchDescriptor = Effect.fn("clientRuntime.connection.remote.fetchDescriptor")(function* (
@@ -101,6 +111,7 @@ export const make = Effect.gen(function* () {
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
+      readonly connectionMethod: ClientConnectionMethod;
     }) {
       const now = yield* Clock.currentTimeMillis;
       const cachedDescriptor = (yield* Ref.get(bearerDescriptors)).get(input.expectedEnvironmentId);
@@ -120,7 +131,18 @@ export const make = Effect.gen(function* () {
       }
       if (!canReuseDescriptor) {
         yield* Ref.update(bearerDescriptors, (current) => {
-          const next = new Map(current);
+          const next = new Map(
+            [...current].filter(
+              ([, candidate]) =>
+                candidate.validatedAtEpochMs + BEARER_DESCRIPTOR_CACHE_TTL_MS > now,
+            ),
+          );
+          next.delete(input.expectedEnvironmentId);
+          while (next.size >= BEARER_DESCRIPTOR_CACHE_MAX_ENTRIES) {
+            const oldestEnvironmentId = next.keys().next().value;
+            if (oldestEnvironmentId === undefined) break;
+            next.delete(oldestEnvironmentId);
+          }
           next.set(input.expectedEnvironmentId, {
             httpBaseUrl: input.httpBaseUrl,
             descriptor,
@@ -134,6 +156,7 @@ export const make = Effect.gen(function* () {
         httpBaseUrl: input.httpBaseUrl,
         bearerToken: input.bearerToken,
         clientMetadata: presentation.metadata,
+        connectionMethod: input.connectionMethod,
       }).pipe(
         Effect.mapError(mapRemoteEnvironmentError),
         Effect.provideService(HttpClient.HttpClient, httpClient),
@@ -174,6 +197,7 @@ export const make = Effect.gen(function* () {
         accessToken: token.accessToken,
         dpopProof: ticketProof,
         clientMetadata: presentation.metadata,
+        connectionMethod: "relay",
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
     },
@@ -218,7 +242,7 @@ export const make = Effect.gen(function* () {
         scopes: presentation.scopes,
         clientMetadata: presentation.metadata,
       }).pipe(
-        Effect.mapError(mapRemoteEnvironmentError),
+        Effect.mapError(mapRemoteDpopEnvironmentError),
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.accessToken.exchange"),
       );

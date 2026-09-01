@@ -1,7 +1,12 @@
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 
-import { PersistedComposerImageAttachment } from "./composerDraftStore";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+
+import {
+  PersistedComposerFileAttachment,
+  PersistedComposerImageAttachment,
+} from "./composerDraftStore";
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 
 export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v2";
@@ -27,16 +32,15 @@ export const MAX_STASH_ENTRIES = 20;
 export const MAX_STASH_ENTRY_ATTACHMENT_CHARS = 2_700_000;
 
 /**
- * A stashed prompt carries only what every provider can accept: text and
- * image attachments. Deliberately no provider instance or model selection —
- * the point of stashing is to move a prompt into a different thread or
- * provider, so restoring must never drag the old model choice along.
+ * Stashed files keep signed-upload references instead of storing their bytes.
+ * Image payloads remain subject to the localStorage budget.
  */
 const StashEntrySchema = Schema.Struct({
   id: Schema.String,
   createdAt: Schema.String,
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
+  files: Schema.optionalKey(Schema.Array(PersistedComposerFileAttachment)),
   /** Names of images that exceeded the attachment budget and were not saved. */
   droppedImageNames: Schema.Array(Schema.String),
   /**
@@ -78,7 +82,10 @@ function clearOrphanedPendingImages(
 ): ReadonlyArray<PromptStashEntry> {
   return entries.map((entry) => {
     if (!entry.pendingImageCount) return entry;
-    const lostCount = entry.pendingImageCount;
+    const lostCount = Math.min(
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+      Math.max(0, Math.trunc(entry.pendingImageCount)),
+    );
     return {
       ...entry,
       pendingImageCount: 0,
@@ -88,7 +95,7 @@ function clearOrphanedPendingImages(
           { length: lostCount },
           (_, index) => `image ${index + 1} (not saved before reload)`,
         ),
-      ],
+      ].slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
     };
   });
 }
@@ -108,14 +115,80 @@ export function partitionStashAttachments(
   const droppedNames: string[] = [];
   let usedChars = 0;
   for (const attachment of attachments) {
-    if (usedChars + attachment.dataUrl.length > MAX_STASH_ENTRY_ATTACHMENT_CHARS) {
-      droppedNames.push(attachment.name);
+    if (
+      kept.length >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS ||
+      usedChars + attachment.dataUrl.length > MAX_STASH_ENTRY_ATTACHMENT_CHARS
+    ) {
+      if (droppedNames.length < PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+        droppedNames.push(attachment.name);
+      }
       continue;
     }
     usedChars += attachment.dataUrl.length;
     kept.push(attachment);
   }
   return { kept, droppedNames };
+}
+
+function normalizeStashEntry(entry: PromptStashEntry): PromptStashEntry {
+  const { kept, droppedNames } = partitionStashAttachments(entry.attachments);
+  const pendingImageCount =
+    typeof entry.pendingImageCount === "number" && Number.isFinite(entry.pendingImageCount)
+      ? Math.min(
+          PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+          Math.max(0, Math.trunc(entry.pendingImageCount)),
+        )
+      : 0;
+  return {
+    ...entry,
+    attachments: kept,
+    droppedImageNames: [
+      ...entry.droppedImageNames.slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+      ...droppedNames,
+    ].slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    unreadableImageNames: (entry.unreadableImageNames ?? []).slice(
+      0,
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+    ),
+    pendingImageCount,
+  };
+}
+
+function boundRawPersistedState(state: unknown): unknown {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return state;
+  const candidate = state as Record<string, unknown>;
+  if (!Array.isArray(candidate.entries)) return state;
+  return {
+    ...candidate,
+    entries: candidate.entries.slice(0, MAX_STASH_ENTRIES).map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      const rawEntry = entry as Record<string, unknown>;
+      return {
+        ...rawEntry,
+        ...(Array.isArray(rawEntry.attachments)
+          ? {
+              attachments: rawEntry.attachments.slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+            }
+          : {}),
+        ...(Array.isArray(rawEntry.droppedImageNames)
+          ? {
+              droppedImageNames: rawEntry.droppedImageNames.slice(
+                0,
+                PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+              ),
+            }
+          : {}),
+        ...(Array.isArray(rawEntry.unreadableImageNames)
+          ? {
+              unreadableImageNames: rawEntry.unreadableImageNames.slice(
+                0,
+                PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+              ),
+            }
+          : {}),
+      };
+    }),
+  };
 }
 
 /**
@@ -179,7 +252,11 @@ function readPersistedEntries(): ReadonlyArray<PromptStashEntry> | null {
     const parsed: unknown = JSON.parse(raw);
     const state = (parsed as { state?: unknown } | null)?.state;
     if (!state) return null;
-    return clearOrphanedPendingImages(decodePersistedPromptStashState(state).entries);
+    return clearOrphanedPendingImages(
+      decodePersistedPromptStashState(boundRawPersistedState(state)).entries.map(
+        normalizeStashEntry,
+      ),
+    );
   } catch {
     return null;
   }
@@ -226,7 +303,7 @@ interface PromptStashStoreState {
 export const usePromptStashStore = create<PromptStashStoreState>()((set, get) => ({
   entries: [],
   stashEntry: (entry) => {
-    const nextEntries = [entry, ...get().entries];
+    const nextEntries = [normalizeStashEntry(entry), ...get().entries];
     const evicted = nextEntries.length > MAX_STASH_ENTRIES ? (nextEntries.pop() ?? null) : null;
     const { written, durable } = persistEntries(nextEntries);
     // A rejected write must not leave the entry visible either: the caller
@@ -253,12 +330,19 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     const existing = index === -1 ? undefined : entries[index];
     // Restored or deleted mid-encode: nothing to attach to.
     if (!existing) return { attached: false, durable: true };
+    const { kept, droppedNames } = partitionStashAttachments(images.attachments);
     const nextEntries = [...entries];
     nextEntries[index] = {
       ...existing,
-      attachments: images.attachments,
-      droppedImageNames: images.droppedImageNames,
-      unreadableImageNames: images.unreadableImageNames,
+      attachments: kept,
+      droppedImageNames: [
+        ...images.droppedImageNames.slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+        ...droppedNames,
+      ].slice(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+      unreadableImageNames: images.unreadableImageNames.slice(
+        0,
+        PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+      ),
       pendingImageCount: 0,
     };
     const { durable } = persistEntries(nextEntries);

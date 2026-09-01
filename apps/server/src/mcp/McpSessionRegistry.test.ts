@@ -39,8 +39,10 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     const issued = yield* registry.issue({
       threadId,
       providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
     });
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+    expect(issued.config.servers).toEqual([{ name: "t3-code", url: "http://127.0.0.1:43123/mcp" }]);
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
@@ -52,6 +54,68 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
+  }),
+);
+
+it.effect("stores only the capabilities requested for a provider session", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-computer-use"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["computer-use"]),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(Array.from((yield* registry.resolve(token))?.capabilities ?? [])).toEqual([
+      "computer-use",
+    ]);
+    expect(issued.config.servers).toEqual([
+      {
+        name: "t3-code-computer",
+        url: "http://127.0.0.1:43123/mcp/computer-use",
+      },
+    ]);
+  }),
+);
+
+it.effect("defaults omitted capabilities to no built-in tools", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-tools"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+
+    expect(issued.config.capabilities.size).toBe(0);
+    expect(issued.config.servers).toEqual([]);
+  }),
+);
+
+it.effect("rejects oversized bearer tokens before hashing", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+
+    expect(
+      yield* registry.resolve("x".repeat(McpSessionRegistry.MCP_BEARER_TOKEN_MAX_CHARS + 1)),
+    ).toBeUndefined();
+  }),
+);
+
+it.effect("atomically replaces the previous credential for the same thread", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const request = {
+      threadId: ThreadId.make("thread-replaced"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    };
+    const first = yield* registry.issue(request);
+    const second = yield* registry.issue(request);
+    const firstToken = first.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const secondToken = second.config.authorizationHeader.replace(/^Bearer\s+/, "");
+
+    expect(yield* registry.resolve(firstToken)).toBeUndefined();
+    expect((yield* registry.resolve(secondToken))?.threadId).toBe(request.threadId);
   }),
 );
 

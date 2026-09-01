@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 
 import { parseActiveThreadPath } from "./hardwareKeyboardCommands";
 
@@ -24,5 +25,11 @@ describe("parseActiveThreadPath", () => {
 
   it("ignores malformed encoded route components", () => {
     expect(parseActiveThreadPath("/threads/%E0%A4%A/thread-1")).toBeNull();
+  });
+
+  it("rejects oversized route identifiers before navigation", () => {
+    expect(
+      parseActiveThreadPath(`/threads/${"e".repeat(ENTITY_ID_MAX_LENGTH + 1)}/thread-1`),
+    ).toBeNull();
   });
 });

@@ -231,6 +231,38 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     );
   });
 
+  it("bounds published-state deduplication by thread recency", () => {
+    let published = new Map<ThreadId, string>();
+    for (
+      let index = 0;
+      index <= AgentAwarenessRelay.AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES;
+      index += 1
+    ) {
+      published = AgentAwarenessRelay.upsertBoundedPublishedState(
+        published,
+        `thread-${index}` as ThreadId,
+        `state-${index}`,
+      );
+    }
+
+    expect(published.size).toBe(AgentAwarenessRelay.AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES);
+    expect(published.has("thread-0" as ThreadId)).toBe(false);
+
+    published = AgentAwarenessRelay.upsertBoundedPublishedState(
+      published,
+      "thread-1" as ThreadId,
+      "refreshed",
+    );
+    published = AgentAwarenessRelay.upsertBoundedPublishedState(
+      published,
+      "thread-new" as ThreadId,
+      "new",
+    );
+
+    expect(published.get("thread-1" as ThreadId)).toBe("refreshed");
+    expect(published.has("thread-2" as ThreadId)).toBe(false);
+  });
+
   it("requires an explicit opt-in before publishing agent activity", () => {
     expect(AgentAwarenessRelay.isAgentActivityPublishingEnabled(null)).toBe(false);
     expect(AgentAwarenessRelay.isAgentActivityPublishingEnabled("false")).toBe(false);

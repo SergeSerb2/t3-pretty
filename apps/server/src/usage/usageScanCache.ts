@@ -14,13 +14,27 @@
  *
  * @module usageScanCache
  */
-import { isUsageProviderKind, type UsageProviderKind } from "@t3tools/contracts";
+import {
+  isUsageProviderKind,
+  USAGE_MODEL_MAX_LENGTH,
+  type UsageProviderKind,
+} from "@t3tools/contracts";
 
 import type { UsageRecord } from "./usageTranscripts.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
 // entries would keep serving double-counted records forever.
 export const USAGE_SCAN_CACHE_VERSION = 2 as const;
+
+/** Hard hydration limits for the persisted cache trust boundary. */
+export const USAGE_SCAN_CACHE_MAX_FILES = 100_000;
+export const USAGE_SCAN_CACHE_MAX_RECORDS = 500_000;
+
+const USAGE_CACHE_PATH_MAX_LENGTH = 4_096;
+const USAGE_SESSION_ID_MAX_LENGTH = 1_024;
+const USAGE_DEDUPE_KEY_MAX_LENGTH = 4_096;
+const USAGE_TOKEN_FIELD_MAX = 10_000_000_000;
+const REPORTED_COST_USD_MAX = 1_000_000;
 
 export interface CachedFile {
   readonly size: number;
@@ -113,7 +127,13 @@ function isRecordArray(value: unknown): value is readonly unknown[] {
  * Anything malformed yields an empty cache rather than an error: a corrupt
  * cache should cost one cold scan, never a broken page.
  */
-export function decodeScanCache(document: unknown): ScanCache {
+export function decodeScanCache(
+  document: unknown,
+  limits: {
+    readonly maxFiles?: number;
+    readonly maxRecords?: number;
+  } = {},
+): ScanCache {
   const cache: ScanCache = new Map();
   if (typeof document !== "object" || document === null) return cache;
 
@@ -125,17 +145,58 @@ export function decodeScanCache(document: unknown): ScanCache {
   // The intern tables must be all strings: a numeric entry would pass the
   // undefined guard below, land in a record's model, and crash the aggregate
   // at normalizeModelName. A corrupt table rejects the whole cache.
-  if (!root.models.every((value) => typeof value === "string")) return cache;
-  if (!root.sessions.every((value) => typeof value === "string")) return cache;
+  const maxFiles = limits.maxFiles ?? USAGE_SCAN_CACHE_MAX_FILES;
+  const maxRecords = limits.maxRecords ?? USAGE_SCAN_CACHE_MAX_RECORDS;
+  if (!Number.isSafeInteger(maxFiles) || maxFiles < 0) return cache;
+  if (!Number.isSafeInteger(maxRecords) || maxRecords < 0) return cache;
+  if (root.models.length > maxRecords || root.sessions.length > maxRecords) return cache;
+  if (
+    !root.models.every(
+      (value) =>
+        typeof value === "string" && value.length > 0 && value.length <= USAGE_MODEL_MAX_LENGTH,
+    )
+  ) {
+    return cache;
+  }
+  if (
+    !root.sessions.every(
+      (value) => typeof value === "string" && value.length <= USAGE_SESSION_ID_MAX_LENGTH,
+    )
+  ) {
+    return cache;
+  }
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
 
-  for (const [path, raw] of Object.entries(root.files)) {
+  let fileCount = 0;
+  let recordCount = 0;
+  const files = root.files as Readonly<Record<string, unknown>>;
+  for (const path in files) {
+    if (!Object.prototype.hasOwnProperty.call(files, path)) continue;
+    fileCount += 1;
+    // Reject the whole cache at a structural limit. Retaining a prefix would
+    // make the omitted entries look like valid misses without scheduling a
+    // rewrite of the oversized document.
+    if (fileCount > maxFiles) return new Map();
+    if (path.length === 0 || path.length > USAGE_CACHE_PATH_MAX_LENGTH) continue;
+
+    const raw = files[path];
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw as Partial<SerializedFile>;
-    if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
+    if (
+      typeof entry.s !== "number" ||
+      !Number.isSafeInteger(entry.s) ||
+      entry.s < 0 ||
+      typeof entry.m !== "number" ||
+      !Number.isFinite(entry.m) ||
+      entry.m < 0
+    ) {
+      continue;
+    }
     if (!isUsageProviderKind(entry.p)) continue;
     if (!isRecordArray(entry.r)) continue;
+    recordCount += entry.r.length;
+    if (recordCount > maxRecords) return new Map();
 
     const provider: UsageProviderKind = entry.p;
     const records: UsageRecord[] = [];
@@ -144,7 +205,7 @@ export function decodeScanCache(document: unknown): ScanCache {
     // file would never be re-parsed, silently losing the dropped rows' usage.
     let corrupt = false;
     for (const row of entry.r) {
-      if (!isRecordArray(row) || row.length < 10) {
+      if (!isRecordArray(row) || row.length !== 10) {
         corrupt = true;
         break;
       }
@@ -161,16 +222,30 @@ export function decodeScanCache(document: unknown): ScanCache {
         reportedCostUsd,
       ] = row as SerializedRecord;
 
-      const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
+      const model = Number.isSafeInteger(modelIndex) ? models[modelIndex] : undefined;
+      const session = Number.isSafeInteger(sessionIndex) ? sessions[sessionIndex] : undefined;
+      const validTokenField = (value: unknown): value is number =>
+        typeof value === "number" &&
+        Number.isSafeInteger(value) &&
+        value >= 0 &&
+        value <= USAGE_TOKEN_FIELD_MAX;
       if (
         typeof timestampMs !== "number" ||
         !Number.isFinite(timestampMs) ||
         model === undefined ||
-        !Number.isFinite(uncached) ||
-        !Number.isFinite(cached) ||
-        !Number.isFinite(cacheCreation) ||
-        !Number.isFinite(output) ||
-        !Number.isFinite(reasoning)
+        session === undefined ||
+        !validTokenField(uncached) ||
+        !validTokenField(cached) ||
+        !validTokenField(cacheCreation) ||
+        !validTokenField(output) ||
+        !validTokenField(reasoning) ||
+        (dedupeKey !== null &&
+          (typeof dedupeKey !== "string" || dedupeKey.length > USAGE_DEDUPE_KEY_MAX_LENGTH)) ||
+        (reportedCostUsd !== null &&
+          (typeof reportedCostUsd !== "number" ||
+            !Number.isFinite(reportedCostUsd) ||
+            reportedCostUsd < 0 ||
+            reportedCostUsd > REPORTED_COST_USD_MAX))
       ) {
         corrupt = true;
         break;
@@ -180,7 +255,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         provider,
         timestampMs,
         model,
-        sessionId: (typeof sessionIndex === "number" ? sessions[sessionIndex] : undefined) ?? "",
+        sessionId: session,
         totals: {
           uncachedInputTokens: uncached,
           cachedInputTokens: cached,
@@ -188,8 +263,8 @@ export function decodeScanCache(document: unknown): ScanCache {
           outputTokens: output,
           reasoningTokens: reasoning,
         },
-        reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
-        dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
+        reportedCostUsd,
+        dedupeKey,
       });
     }
 

@@ -319,6 +319,19 @@ describe("ElectronProtocol", () => {
     assert.equal(ElectronProtocol.clientAssetCacheControl("index.html"), "no-cache");
   });
 
+  it("keeps network-path renderer URLs on the configured proxy origin", () => {
+    const targetOrigin = new URL("http://127.0.0.1:3773/");
+    const target = ElectronProtocol.resolveProxyTargetUrl(
+      new URL("t3code://app//attacker.example/api/health?verbose=1"),
+      targetOrigin,
+    );
+
+    assert.equal(target.origin, "http://127.0.0.1:3773");
+    assert.equal(target.pathname, "//attacker.example/api/health");
+    assert.equal(target.search, "?verbose=1");
+    assert.equal(targetOrigin.toString(), "http://127.0.0.1:3773/");
+  });
+
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {
     const policy = ElectronProtocol.makeDesktopContentSecurityPolicy({
       scheme: "t3code",
@@ -350,6 +363,7 @@ describe("ElectronProtocol", () => {
       "http:",
       "https:",
     ]);
+    assert.deepEqual(directives["media-src"], ["'self'", "t3code:", "blob:"]);
     assert.deepEqual(directives["font-src"], ["'self'", "t3code:", "data:"]);
   });
 });

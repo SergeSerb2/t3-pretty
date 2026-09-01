@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlarmClockOffIcon,
   ArchiveIcon,
+  ArrowRightLeftIcon,
   CheckIcon,
   ClipboardPasteIcon,
   ClockIcon,
@@ -25,6 +26,7 @@ import {
 const CONTEXT_MENU_ICONS = {
   "alarm-off": AlarmClockOffIcon,
   archive: ArchiveIcon,
+  "arrow-right-left": ArrowRightLeftIcon,
   check: CheckIcon,
   "clipboard-paste": ClipboardPasteIcon,
   clock: ClockIcon,

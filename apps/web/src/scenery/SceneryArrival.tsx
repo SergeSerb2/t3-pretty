@@ -129,6 +129,7 @@ export function SceneryArrival({
   const armedThreadRef = useRef<string | null>(null);
   const originThreadRef = useRef<string | null>(null);
   const revealedRef = useRef(false);
+  const activeSequenceCleanupRef = useRef<(() => void) | null>(null);
   const onPhaseChangeRef = useRef(onPhaseChange);
   onPhaseChangeRef.current = onPhaseChange;
 
@@ -140,6 +141,8 @@ export function SceneryArrival({
 
   useLayoutEffect(() => {
     return () => {
+      activeSequenceCleanupRef.current?.();
+      activeSequenceCleanupRef.current = null;
       writeSceneryArrivalPhase(null);
     };
   }, []);
@@ -173,6 +176,8 @@ export function SceneryArrival({
       if (armedThreadRef.current === targetKey) {
         return;
       }
+      activeSequenceCleanupRef.current?.();
+      activeSequenceCleanupRef.current = null;
       originThreadRef.current = threadKey;
       armedThreadRef.current = targetKey;
       revealedRef.current = false;
@@ -194,6 +199,8 @@ export function SceneryArrival({
     }
 
     if (armed !== null) {
+      activeSequenceCleanupRef.current?.();
+      activeSequenceCleanupRef.current = null;
       travelRef.current?.cancel();
       travelRef.current = null;
     }
@@ -218,6 +225,19 @@ export function SceneryArrival({
     let cancelled = false;
     let startReveal = 0;
     let settle = 0;
+    let revealFrame = 0;
+
+    function cancelSequence() {
+      if (cancelled) {
+        return;
+      }
+      cancelled = true;
+      window.clearTimeout(startReveal);
+      window.clearTimeout(settle);
+      window.cancelAnimationFrame(revealFrame);
+      travelRef.current?.cancel();
+      travelRef.current = null;
+    }
 
     const beginReveal = () => {
       if (cancelled) {
@@ -225,7 +245,8 @@ export function SceneryArrival({
       }
       revealedRef.current = true;
       publishPhase("reveal");
-      requestAnimationFrame(() => {
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = 0;
         if (cancelled) {
           return;
         }
@@ -270,6 +291,9 @@ export function SceneryArrival({
           }
           markSceneryArrivalPlayed(sequenceKey);
           publishPhase("settled");
+          if (activeSequenceCleanupRef.current === cancelSequence) {
+            activeSequenceCleanupRef.current = null;
+          }
         },
         Math.max(SCENERY_ARRIVAL.locationTravelMs, SCENERY_ARRIVAL.fogClearMs),
       );
@@ -287,16 +311,16 @@ export function SceneryArrival({
       // there is no name to hand over, so the travel finds nothing to move.
       startReveal = window.setTimeout(beginReveal, SCENERY_ARRIVAL.fogMaxWaitMs);
     }
+    activeSequenceCleanupRef.current = cancelSequence;
 
     return () => {
       if (revealedRef.current) {
         return;
       }
-      cancelled = true;
-      window.clearTimeout(startReveal);
-      window.clearTimeout(settle);
-      travelRef.current?.cancel();
-      travelRef.current = null;
+      cancelSequence();
+      if (activeSequenceCleanupRef.current === cancelSequence) {
+        activeSequenceCleanupRef.current = null;
+      }
     };
     // photo is read from this render when photoId changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

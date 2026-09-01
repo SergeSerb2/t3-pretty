@@ -48,13 +48,22 @@ describe("scan cache round trip", () => {
       ["/b.jsonl", 200, [record({ sessionId: "session-b", reportedCostUsd: 1.5 })]],
       ["/c.jsonl", 300, [record({ provider: "grok", model: "grok-4.6", sessionId: "session-g" })]],
     ]);
+    original.set("/grok.jsonl", {
+      size: 40,
+      mtimeMs: 300,
+      provider: "grok",
+      records: [
+        record({ provider: "grok", model: "grok-4.5-build", dedupeKey: "s:p:grok-4.5-build" }),
+      ],
+    });
 
     const restored = decodeScanCache(JSON.parse(JSON.stringify(encodeScanCache(original))));
 
-    expect(restored.size).toBe(3);
+    expect(restored.size).toBe(4);
     expect(restored.get("/a.jsonl")).toEqual(original.get("/a.jsonl"));
     expect(restored.get("/b.jsonl")).toEqual(original.get("/b.jsonl"));
     expect(restored.get("/c.jsonl")).toEqual(original.get("/c.jsonl"));
+    expect(restored.get("/grok.jsonl")).toEqual(original.get("/grok.jsonl"));
   });
 
   it("interns repeated model and session strings", () => {
@@ -86,11 +95,46 @@ describe("scan cache round trip", () => {
 
   it("rejects the whole cache when an intern table holds a non-string", () => {
     // models: [1] would pass the undefined guard, put a number in a record's
-    // model, and crash normalizeModelName at aggregate time.
+    // model, and crash lookupRate at aggregate time.
     const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
     const poisoned = { ...encoded, models: [1] };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).size).toBe(0);
+  });
+
+  it("rejects overlong interned fields from an old or corrupt cache", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+
+    expect(decodeScanCache({ ...encoded, models: ["m".repeat(513)] }).size).toBe(0);
+    expect(decodeScanCache({ ...encoded, sessions: ["s".repeat(1_025)] }).size).toBe(0);
+  });
+
+  it("rejects caches whose file or record cardinality exceeds hydration limits", () => {
+    const encoded = encodeScanCache(
+      cacheWith([
+        ["/a.jsonl", 100, [record()]],
+        ["/b.jsonl", 200, [record({ dedupeKey: "msg_2:" })]],
+      ]),
+    );
+
+    expect(decodeScanCache(encoded, { maxFiles: 1 }).size).toBe(0);
+    expect(decodeScanCache(encoded, { maxRecords: 1 }).size).toBe(0);
+  });
+
+  it("drops entries with out-of-range cached usage fields", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
+    const row = encoded.files["/a.jsonl"]!.r[0]!;
+    const poisoned = {
+      ...encoded,
+      files: {
+        "/a.jsonl": {
+          ...encoded.files["/a.jsonl"]!,
+          r: [[...row.slice(0, 3), 10_000_000_001, ...row.slice(4)]],
+        },
+      },
+    };
+
+    expect(decodeScanCache(poisoned).has("/a.jsonl")).toBe(false);
   });
 
   it("drops the whole entry when any row is corrupt, forcing a cold re-parse", () => {

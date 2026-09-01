@@ -16,6 +16,8 @@ import {
   type ServerAuthDescriptor,
   type ServerAuthSessionMethod,
   type AuthWebSocketTicketResult,
+  DpopFailureReason,
+  type DpopFailureReason as DpopFailureReasonType,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Context from "effect/Context";
@@ -347,6 +349,7 @@ export class ServerAuthInvalidCredentialError extends Schema.TaggedErrorClass<Se
   "ServerAuthInvalidCredentialError",
   {
     diagnostic: Schema.optional(Schema.String),
+    dpopFailureReason: Schema.optionalKey(DpopFailureReason),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -365,6 +368,11 @@ export const serverAuthCredentialReason = (
   error: ServerAuthCredentialError,
 ): "missing_credential" | "invalid_credential" =>
   error._tag === "ServerAuthMissingCredentialError" ? "missing_credential" : "invalid_credential";
+
+export const serverAuthDpopFailureReason = (
+  error: ServerAuthCredentialError,
+): DpopFailureReasonType | undefined =>
+  error._tag === "ServerAuthInvalidCredentialError" ? error.dpopFailureReason : undefined;
 
 export class ServerAuthInvalidScopeError extends Schema.TaggedErrorClass<ServerAuthInvalidScopeError>()(
   "ServerAuthInvalidScopeError",
@@ -500,6 +508,7 @@ type BootstrapExchangeResult = {
 const AUTHORIZATION_PREFIX = "Bearer ";
 const DPOP_AUTHORIZATION_PREFIX = "DPoP ";
 const WEBSOCKET_TICKET_QUERY_PARAM = "wsTicket";
+const DESKTOP_RENDERER_ORIGINS = new Set(["t3code://app", "t3code-dev://app"]);
 
 const bySessionPriority = (left: AuthClientSession, right: AuthClientSession) => {
   const leftCanManage = left.scopes.includes(AuthAccessWriteScope);
@@ -554,6 +563,54 @@ function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | 
   return token.length > 0 ? token : null;
 }
 
+function comparableHttpOrigin(url: URL): string {
+  if (url.protocol === "ws:") {
+    const normalized = new URL(url);
+    normalized.protocol = "http:";
+    return normalized.origin;
+  }
+  if (url.protocol === "wss:") {
+    const normalized = new URL(url);
+    normalized.protocol = "https:";
+    return normalized.origin;
+  }
+  return url.origin;
+}
+
+export function isAllowedAmbientCookieWebSocketOrigin(input: {
+  readonly requestUrl: URL | undefined;
+  readonly origin: string | undefined;
+}): boolean {
+  if (input.origin === undefined) {
+    return true;
+  }
+
+  const origin = input.origin.trim();
+  if (DESKTOP_RENDERER_ORIGINS.has(origin)) {
+    return true;
+  }
+  if (!input.requestUrl || origin.length === 0) {
+    return false;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    if (
+      (parsedOrigin.protocol !== "http:" && parsedOrigin.protocol !== "https:") ||
+      parsedOrigin.username.length > 0 ||
+      parsedOrigin.password.length > 0 ||
+      parsedOrigin.pathname !== "/" ||
+      parsedOrigin.search.length > 0 ||
+      parsedOrigin.hash.length > 0
+    ) {
+      return false;
+    }
+    return parsedOrigin.origin === comparableHttpOrigin(input.requestUrl);
+  } catch {
+    return false;
+  }
+}
+
 export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -591,11 +648,14 @@ export const make = Effect.gen(function* () {
 
   const authenticateRequest = (
     request: HttpServerRequest.HttpServerRequest,
+    options?: { readonly preferExplicitAuthorization?: boolean },
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
     const cookieToken = request.cookies[sessions.cookieName];
     const bearerToken = parseBearerToken(request);
     const dpopToken = parseDpopToken(request);
-    const credential = cookieToken ?? bearerToken ?? dpopToken;
+    const credential = options?.preferExplicitAuthorization
+      ? (bearerToken ?? dpopToken ?? cookieToken)
+      : (cookieToken ?? bearerToken ?? dpopToken);
     if (!credential) {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
     }
@@ -606,6 +666,7 @@ export const make = Effect.gen(function* () {
             return Effect.fail(
               new ServerAuthInvalidCredentialError({
                 diagnostic: "DPoP-bound access token requires DPoP authorization.",
+                dpopFailureReason: "invalid_proof",
               }),
             );
           }
@@ -623,6 +684,7 @@ export const make = Effect.gen(function* () {
           return Effect.fail(
             new ServerAuthInvalidCredentialError({
               diagnostic: "DPoP authorization requires a proof-bound access token.",
+              dpopFailureReason: "invalid_proof",
             }),
           );
         }
@@ -690,62 +752,70 @@ export const make = Effect.gen(function* () {
 
   const exchangeBootstrapCredentialForAccessToken: EnvironmentAuth["Service"]["exchangeBootstrapCredentialForAccessToken"] =
     (credential, requestedScopes, requestMetadata, input) =>
-      bootstrapCredentials.consume(credential, input).pipe(
-        Effect.mapError(toBootstrapExchangeError),
-        Effect.flatMap((grant) =>
-          Effect.gen(function* () {
-            const grantedScopes = requestedScopes ?? grant.scopes;
-            if (!grantedScopes.every((scope) => grant.scopes.includes(scope))) {
-              return yield* new ServerAuthScopeNotGrantedError({});
-            }
-            return yield* sessions
-              .issue({
-                method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
-                subject: grant.subject,
-                scopes: grantedScopes,
-                ...(input?.proofKeyThumbprint
-                  ? {
-                      proofKeyThumbprint: input.proofKeyThumbprint,
-                      // Sender-constrained by the client's DPoP key, so it can
-                      // outlive a bearer ticket without widening exposure; a
-                      // day keeps a phone's resume on the cached fast path
-                      // instead of a five-leg re-exchange every hour.
-                      ttl: Duration.hours(24),
-                    }
-                  : {}),
-                client: {
-                  ...requestMetadata,
-                  ...(grant.label ? { label: grant.label } : {}),
-                },
-              })
-              .pipe(
-                Effect.mapError(
-                  (cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause }),
-                ),
-              );
-          }),
-        ),
-        Effect.flatMap((session) =>
-          DateTime.now.pipe(
-            Effect.map(
-              (now) =>
-                ({
-                  access_token: session.token,
-                  issued_token_type: AuthAccessTokenType,
-                  token_type: input?.proofKeyThumbprint ? "DPoP" : "Bearer",
-                  expires_in: Math.max(
-                    0,
-                    Math.floor(
-                      (session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000,
-                    ),
+      bootstrapCredentials
+        .consume(credential, {
+          ...(input?.proofKeyThumbprint !== undefined
+            ? { proofKeyThumbprint: input.proofKeyThumbprint }
+            : {}),
+          ...(requestedScopes !== undefined ? { requestedScopes } : {}),
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "BootstrapCredentialScopeNotGrantedError"
+              ? new ServerAuthScopeNotGrantedError({})
+              : toBootstrapExchangeError(cause),
+          ),
+          Effect.flatMap((grant) =>
+            Effect.gen(function* () {
+              const grantedScopes = requestedScopes ?? grant.scopes;
+              return yield* sessions
+                .issue({
+                  method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
+                  subject: grant.subject,
+                  scopes: grantedScopes,
+                  ...(input?.proofKeyThumbprint
+                    ? {
+                        proofKeyThumbprint: input.proofKeyThumbprint,
+                        // Sender-constrained by the client's DPoP key, so it can
+                        // outlive a bearer ticket without widening exposure; a
+                        // day keeps a phone's resume on the cached fast path
+                        // instead of a five-leg re-exchange every hour.
+                        ttl: Duration.hours(24),
+                      }
+                    : {}),
+                  client: {
+                    ...requestMetadata,
+                    ...(grant.label ? { label: grant.label } : {}),
+                  },
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause }),
                   ),
-                  scope: encodeOAuthScope(session.scopes),
-                }) satisfies AuthAccessTokenResult,
+                );
+            }),
+          ),
+          Effect.flatMap((session) =>
+            DateTime.now.pipe(
+              Effect.map(
+                (now) =>
+                  ({
+                    access_token: session.token,
+                    issued_token_type: AuthAccessTokenType,
+                    token_type: input?.proofKeyThumbprint ? "DPoP" : "Bearer",
+                    expires_in: Math.max(
+                      0,
+                      Math.floor(
+                        (session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000,
+                      ),
+                    ),
+                    scope: encodeOAuthScope(session.scopes),
+                  }) satisfies AuthAccessTokenResult,
+              ),
             ),
           ),
-        ),
-        Effect.withSpan("EnvironmentAuth.exchangeBootstrapCredentialForAccessToken"),
-      );
+          Effect.withSpan("EnvironmentAuth.exchangeBootstrapCredentialForAccessToken"),
+        );
 
   const issuePairingCredentialForSubject = (input: {
     readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
@@ -961,7 +1031,24 @@ export const make = Effect.gen(function* () {
         }
       }
 
-      return yield* authenticateRequest(request);
+      const usesExplicitAuthorization =
+        parseBearerToken(request) !== null || parseDpopToken(request) !== null;
+      const cookieToken = request.cookies[sessions.cookieName];
+      if (
+        !usesExplicitAuthorization &&
+        typeof cookieToken === "string" &&
+        cookieToken.length > 0 &&
+        !isAllowedAmbientCookieWebSocketOrigin({
+          requestUrl: Option.isSome(requestUrl) ? requestUrl.value : undefined,
+          origin: request.headers.origin,
+        })
+      ) {
+        return yield* new ServerAuthInvalidCredentialError({
+          diagnostic: "Cross-origin WebSocket cookie authentication is not allowed.",
+        });
+      }
+
+      return yield* authenticateRequest(request, { preferExplicitAuthorization: true });
     });
 
   return EnvironmentAuth.of({

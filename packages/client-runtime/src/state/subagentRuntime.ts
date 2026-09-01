@@ -19,6 +19,8 @@
  */
 import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 
+import { compareIsoDateTimes } from "./threadSort.ts";
+
 export type RuntimeSubagentStatus =
   | "pending"
   | "running"
@@ -659,19 +661,28 @@ export function foldSubagentActivities(
     }
   }
 
+  const membersByParent = new Map<string, MutableAgent[]>();
+  for (const member of agents.values()) {
+    if (member.parentAgentId === null) continue;
+    const siblings = membersByParent.get(member.parentAgentId);
+    if (siblings) {
+      siblings.push(member);
+    } else {
+      membersByParent.set(member.parentAgentId, [member]);
+    }
+  }
+
   // Consistency pass: when a workflow coordinator has settled, members that
   // never received their own terminal row cannot still be in-flight — the
   // run is over. Cascade the coordinator's outcome so stalled member rows
   // don't read as working forever (live-test finding: statuses drifted
-  // whenever member terminal rows were lost or never emitted).
+  // whenever member terminal rows were lost or never emitted). The one-time
+  // index avoids rescanning every agent for every settled workflow.
   for (const agent of agents.values()) {
     if (agent.kind !== "workflow" || !isTerminalSubagentStatus(agent.status)) {
       continue;
     }
-    for (const member of agents.values()) {
-      if (member.parentAgentId !== agent.id) {
-        continue;
-      }
+    for (const member of membersByParent.get(agent.id) ?? []) {
       if (isTerminalSubagentStatus(member.status) || member.status === "idle") {
         continue;
       }
@@ -700,7 +711,7 @@ export function foldSubagentActivities(
       isActiveSubagentStatus(agent.status) ? 0 : agent.status === "idle" ? 1 : 2;
     roster = roster
       .slice()
-      .sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))
+      .sort((a, b) => rank(a) - rank(b) || compareIsoDateTimes(b.updatedAt, a.updatedAt))
       .slice(0, ROSTER_LIMIT);
   }
 
@@ -771,7 +782,7 @@ export function deriveAgentPanelModel({
   const workflows = source
     .filter((agent) => agent.kind === "workflow")
     .slice()
-    .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id));
+    .sort((a, b) => compareIsoDateTimes(a.firstSeenAt, b.firstSeenAt) || a.id.localeCompare(b.id));
   const workflowIds = new Set(workflows.map((workflow) => workflow.id));
   const members = new Map<string, RuntimeSubagent[]>();
   const direct: RuntimeSubagent[] = [];
@@ -877,7 +888,9 @@ export function deriveAgentPanelModel({
     // that remain visible.
     directAgents: direct
       .slice()
-      .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id)),
+      .sort(
+        (a, b) => compareIsoDateTimes(a.firstSeenAt, b.firstSeenAt) || a.id.localeCompare(b.id),
+      ),
     runningCount,
     waitingCount,
     idleCount,
@@ -905,7 +918,7 @@ export function workflowCardMembers(
   };
   const ordered = all
     .slice()
-    .sort((a, b) => urgency(a) - urgency(b) || b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => urgency(a) - urgency(b) || compareIsoDateTimes(b.updatedAt, a.updatedAt));
   return {
     visible: ordered.slice(0, limit),
     overflow: Math.max(0, ordered.length - limit),
