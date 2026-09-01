@@ -1,9 +1,11 @@
+
 import { cn } from "../../lib/utils";
 import { PHOTO_SETS, type PhotoSetId } from "../../scenery/photoSets";
 import { usePhotoSetStore } from "../../scenery/photoSetStore";
 import { isBoringChatTheme } from "../../scenery/productTheme";
 import { WORLD_SCENERY_THEME, WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 import {
+
   T3_CHAT_THEME,
   T3_CHAT_THEME_ID,
   type ThemeColors,
@@ -231,7 +233,7 @@ export function ThemeLibrary({
 
       <div className="space-y-3">
         <h3 className="px-3 text-sm font-medium tracking-[-0.005em] text-foreground sm:px-4">
-          Color scheme
+          {searchableSetting("color-scheme").title}
         </h3>
         <div
           aria-label="Appearance mode"

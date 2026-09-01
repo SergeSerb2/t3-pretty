@@ -8,7 +8,9 @@ import * as Semaphore from "effect/Semaphore";
 
 import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { SERVICE_RUNTIME_SENTINEL_MAX_BYTES } from "./serviceProtocol.ts";
 
 /**
  * A pinned runtime is an exact fork CLI tarball npm-installed into
@@ -99,7 +101,9 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   const [versionDirExists, entryExists, sentinel] = yield* Effect.all([
     fs.exists(paths.versionDir),
     fs.exists(paths.entryPath),
-    fs.readFileString(paths.sentinelPath).pipe(Effect.option),
+    readTextWithinLimit(fs, paths.sentinelPath, SERVICE_RUNTIME_SENTINEL_MAX_BYTES).pipe(
+      Effect.option,
+    ),
   ]).pipe(
     Effect.mapError(
       (cause) => new PinnedRuntimeInstallError({ step: "checking the pinned runtime", cause }),
@@ -197,7 +201,9 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
       Effect.catch((cause) =>
         Effect.all([
           fs.exists(paths.entryPath),
-          fs.readFileString(paths.sentinelPath).pipe(Effect.option),
+          readTextWithinLimit(fs, paths.sentinelPath, SERVICE_RUNTIME_SENTINEL_MAX_BYTES).pipe(
+            Effect.option,
+          ),
         ]).pipe(
           Effect.mapError(
             (checkCause) =>

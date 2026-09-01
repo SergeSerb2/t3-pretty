@@ -4,6 +4,7 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
+  activeThreadAnchorTimestampMs,
   getThreadSortTimestamp,
   sortThreads,
   toSortableTimestamp,
@@ -13,10 +14,9 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
-import { resolveServerBackedAppStageLabel } from "../branding.logic";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
-export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
+export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
 // nearby thread usually reuses an already-hot subscription. Each prewarmed
 // thread holds a live, fully hydrated detail subscription (all messages and
@@ -90,6 +90,31 @@ export async function archiveSelectedThreadEntries<
   }
 
   return { archivedThreadKeys, mutationFailure: null, followupFailures };
+}
+
+export async function unarchiveSelectedThreadEntries<
+  TEntry,
+  TResult extends { readonly _tag: "Success" | "Failure" },
+>(input: {
+  entries: readonly TEntry[];
+  unarchive: (entry: TEntry) => Promise<TResult>;
+}): Promise<{
+  restored: readonly TEntry[];
+  failures: readonly Extract<TResult, { readonly _tag: "Failure" }>[];
+}> {
+  const restored: TEntry[] = [];
+  const failures: Extract<TResult, { readonly _tag: "Failure" }>[] = [];
+
+  for (const entry of input.entries) {
+    const result = await input.unarchive(entry);
+    if (result._tag === "Success") {
+      restored.push(entry);
+      continue;
+    }
+    failures.push(result as Extract<TResult, { readonly _tag: "Failure" }>);
+  }
+
+  return { restored, failures };
 }
 
 export function buildMultiSelectThreadContextMenuItems(input: {
@@ -168,13 +193,6 @@ type ThreadStatusInput = Pick<
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
   dispose: () => void;
-}
-
-export function resolveSidebarStageBadgeLabel(input: {
-  primaryServerVersion: string | null | undefined;
-  fallbackStageLabel: string;
-}): string {
-  return resolveServerBackedAppStageLabel(input);
 }
 
 export function createThreadJumpHintVisibilityController(input: {
@@ -574,16 +592,23 @@ export function firstValidTimestamp(
   return null;
 }
 
-// Sidebar sort: static creation order, newest thread on top. Activity NEVER
-// reorders the list — a row holds its position from open until settled, so
-// the screen only moves at lifecycle transitions. Status (including pending
-// approval) is carried by each card's edge strip, not by position.
+// Sidebar sort: static order, newest anchor on top. Activity NEVER reorders
+// the list — a row holds its position between lifecycle transitions, so the
+// screen only moves when a thread enters or leaves the active list. The
+// anchor is creation time until an un-settle re-anchors it (see
+// activeThreadAnchorTimestampMs), so an un-settled thread surfaces at the
+// top instead of sinking back to its creation-order slot. Status (including
+// pending approval) is carried by each card's edge strip, not by position.
 export function sortThreadsForSidebar<
-  T extends { readonly id: string; readonly createdAt: string },
+  T extends {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly unsettledAt?: string | null | undefined;
+  },
 >(threads: readonly T[]): T[] {
   return [...threads].toSorted(
     (left, right) =>
-      parseTimestampMs(right.createdAt) - parseTimestampMs(left.createdAt) ||
+      activeThreadAnchorTimestampMs(right) - activeThreadAnchorTimestampMs(left) ||
       left.id.localeCompare(right.id),
   );
 }
@@ -609,6 +634,44 @@ export function searchSidebarThreadsByTitle<T extends { readonly title: string }
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length === 0) return [];
   return threads.filter((thread) => thread.title.toLowerCase().includes(normalizedQuery));
+}
+
+export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
+  items: readonly TItem[];
+  activeScopeKey: string | null;
+  query: string;
+  matches: (item: TItem, query: string) => boolean;
+}): readonly TItem[] {
+  const projectItems = input.items.filter((item) => item.value !== "all");
+  const query = input.query.trim();
+  if (query.length > 0) {
+    return projectItems.filter((item) => input.matches(item, query));
+  }
+  return input.activeScopeKey === null ? projectItems : input.items;
+}
+
+export interface SidebarProjectScopeMenuState {
+  readonly open: boolean;
+  readonly query: string;
+}
+
+export type SidebarProjectScopeMenuAction =
+  | { readonly type: "query-changed"; readonly query: string }
+  | { readonly type: "open-changed"; readonly open: boolean }
+  | { readonly type: "project-settings-opened" };
+
+export function reduceSidebarProjectScopeMenuState(
+  state: SidebarProjectScopeMenuState,
+  action: SidebarProjectScopeMenuAction,
+): SidebarProjectScopeMenuState {
+  switch (action.type) {
+    case "query-changed":
+      return { ...state, query: action.query };
+    case "open-changed":
+      return { open: action.open, query: "" };
+    case "project-settings-opened":
+      return { open: false, query: "" };
+  }
 }
 
 type SettledTimestampInput = Pick<
@@ -640,6 +703,67 @@ export function resolveSettledTimestamp(thread: SettledTimestampInput): string |
     }
   }
   return latest ?? firstValidTimestamp(thread.updatedAt);
+}
+
+/** Whether a settled thread has been settled (or quiet, for auto-settled
+    threads with no settledAt stamp) long enough to auto-archive. Uses the
+    same timestamp the settled tail sorts and labels by, so a row never
+    archives before the age its label shows. A thread with no resolvable
+    timestamp never auto-archives. */
+export function isSettledThreadPastArchiveAge(
+  thread: SettledTimestampInput,
+  input: { nowMs: number; afterDays: number },
+): boolean {
+  const timestamp = resolveSettledTimestamp(thread);
+  if (timestamp === null) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
+}
+
+/** Drop auto-archive attempts that have left the settled tail so a later
+    unarchive (Clear undo, archived list) can be attempted again. Keys still
+    in the tail stay, covering projection lag after a successful archive. */
+export function retainSettledAutoArchiveAttempts(
+  attemptedKeys: ReadonlySet<string>,
+  settledThreadKeys: ReadonlySet<string>,
+): Set<string> {
+  const retained = new Set<string>();
+  for (const key of attemptedKeys) {
+    if (settledThreadKeys.has(key)) retained.add(key);
+  }
+  return retained;
+}
+
+/** Claim keys that are not already reserved so Clear and auto-archive cannot
+    mutate the same thread concurrently. Returns the newly reserved keys. */
+export function reserveSettledArchiveAttempts(
+  attemptedKeys: Set<string>,
+  threadKeys: readonly string[],
+): string[] {
+  const reserved: string[] = [];
+  for (const key of threadKeys) {
+    if (attemptedKeys.has(key)) continue;
+    attemptedKeys.add(key);
+    reserved.push(key);
+  }
+  return reserved;
+}
+
+/** After Clear undo, re-reserve only restored keys already past archive
+    age so a minute sweep cannot immediately reverse the undo. Younger
+    restored keys stay unreserved so they can still auto-archive later. */
+export function reserveUndonePastArchiveAgeAttempts(
+  attemptedKeys: Set<string>,
+  restored: readonly { threadKey: string; thread: SettledTimestampInput }[],
+  input: { nowMs: number; afterDays: number | null },
+): void {
+  if (input.afterDays === null) return;
+  const afterDays = input.afterDays;
+  for (const entry of restored) {
+    if (isSettledThreadPastArchiveAge(entry.thread, { nowMs: input.nowMs, afterDays })) {
+      attemptedKeys.add(entry.threadKey);
+    }
+  }
 }
 
 // Settled rows are history, so they order by when the work ENDED, not when

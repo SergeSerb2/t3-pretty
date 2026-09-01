@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -25,6 +26,7 @@ import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { compareIsoDateTimes } from "./threadSort.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
 
@@ -89,7 +91,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     );
   });
 
-  yield* Stream.fromQueue(persistence).pipe(
+  const persistenceFiber = yield* Stream.fromQueue(persistence).pipe(
     Stream.debounce("8 seconds"),
     Stream.filter(() => typeof document === "undefined" || document.visibilityState === "visible"),
     Stream.runForEach(persist),
@@ -178,7 +180,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   });
 
   yield* setSynchronizing;
-  yield* Effect.forkScoped(
+  const subscriptionFiber = yield* Effect.forkScoped(
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
@@ -254,7 +256,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       },
     ).pipe(Stream.runForEach(applyItem)),
   );
-  yield* SubscriptionRef.changes(supervisor.state).pipe(
+  const connectionStateFiber = yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
@@ -266,6 +268,21 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       }
     }),
     Effect.forkScoped,
+  );
+
+  // Debounced writes are intentionally skipped while a browser document is
+  // hidden. Stop every producer and the existing writer before reading the
+  // final value, so a stale in-flight save cannot land after this flush.
+  yield* Effect.addFinalizer(() =>
+    Effect.all([persistenceFiber, subscriptionFiber, connectionStateFiber].map(Fiber.interrupt), {
+      concurrency: 3,
+      discard: true,
+    }).pipe(
+      Effect.andThen(SubscriptionRef.get(state)),
+      Effect.flatMap((current) =>
+        Option.match(current.snapshot, { onNone: () => Effect.void, onSome: persist }),
+      ),
+    ),
   );
 
   return state;
@@ -355,7 +372,10 @@ export function createEnvironmentShellSummaryAtom(input: {
       }
       hasSnapshot = true;
       const updatedAt = state.snapshot.value.updatedAt;
-      if (latestSnapshotUpdatedAt === null || updatedAt > latestSnapshotUpdatedAt) {
+      if (
+        latestSnapshotUpdatedAt === null ||
+        compareIsoDateTimes(updatedAt, latestSnapshotUpdatedAt) > 0
+      ) {
         latestSnapshotUpdatedAt = updatedAt;
       }
     }

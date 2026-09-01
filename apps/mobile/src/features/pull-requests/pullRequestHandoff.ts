@@ -2,8 +2,8 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import {
-  ensureComposerDraftsLoaded,
   getComposerDraftSnapshot,
+  requireComposerDraftsLoaded,
   setComposerDraftHandoffText,
 } from "../../state/use-composer-drafts";
 import { handoffPrompt } from "./pullRequestDetail.logic";
@@ -16,20 +16,26 @@ export function newTaskComposerDraftKey(
 }
 
 /**
- * Pastes a pull-request hand-off into the project's new-task composer draft.
- * Does not start a thread — the new-task sheet is where the reader picks a
- * model and sends. The URL is stored so Start can prepare that checkout.
- *
- * Waits for persisted drafts to hydrate first so a cold-launch hand-off does
- * not overwrite a saved new-task draft with an empty in-memory snapshot.
+ * Loads persisted drafts before a pull-request hand-off reads or writes one.
+ * Keeping hydration separate lets the caller verify that it still owns the
+ * navigation action before mutating a draft after this async boundary.
  */
-export async function writePullRequestHandoffDraft(input: {
+export async function requirePullRequestHandoffDraftsLoaded(): Promise<void> {
+  await requireComposerDraftsLoaded();
+}
+
+/**
+ * Pastes a pull-request hand-off into the project's loaded new-task composer
+ * draft. Does not start a thread — the new-task sheet is where the reader
+ * picks a model and sends. The URL is stored so Start can prepare that
+ * checkout.
+ */
+export function writePullRequestHandoffDraft(input: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly prompt: string;
   readonly url: string;
-}): Promise<string> {
-  await ensureComposerDraftsLoaded();
+}): string {
   const draftKey = newTaskComposerDraftKey(input.environmentId, input.projectId);
   const existing = getComposerDraftSnapshot(draftKey);
   const prompt = handoffPrompt(

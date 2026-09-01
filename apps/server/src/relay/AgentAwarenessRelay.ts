@@ -11,7 +11,7 @@ import {
   type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
 import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
   normalizeRelayIssuer,
@@ -23,10 +23,11 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
-import type * as Scope from "effect/Scope";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
@@ -46,6 +47,24 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
+
+export const AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES = 4_096;
+
+export function upsertBoundedPublishedState(
+  current: ReadonlyMap<ThreadId, string>,
+  threadId: ThreadId,
+  publishIdentity: string,
+): Map<ThreadId, string> {
+  const next = new Map(current);
+  next.delete(threadId);
+  next.set(threadId, publishIdentity);
+  while (next.size > AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES) {
+    const oldestThreadId = next.keys().next().value;
+    if (oldestThreadId === undefined) break;
+    next.delete(oldestThreadId);
+  }
+  return next;
+}
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -121,6 +140,17 @@ export function resolveAgentActivityPublishingStartupState(input: {
 
 const RELAY_AGENT_ACTIVITY_DETAIL_MAX_LENGTH = 160;
 const REDACTED_RELAY_AGENT_FAILURE_DETAIL = "The agent run failed.";
+const RELAY_AGENT_ACTIVITY_PUBLISH_TIMEOUT = "15 seconds";
+
+function relayOriginForDiagnostics(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "invalid-relay-url";
+  }
+}
 
 export function sanitizeRelayAgentActivityState(
   state: RelayAgentActivityState | null,
@@ -303,6 +333,9 @@ export const make = Effect.gen(function* () {
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
   const activeSnapshotPublishedRef = yield* Ref.make(false);
   const publishedStateByThreadRef = yield* Ref.make(new Map<ThreadId, string>());
+  const confirmationScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
 
   const readSecretString = (name: string) =>
     secrets
@@ -339,7 +372,7 @@ export const make = Effect.gen(function* () {
 
   // Deadlines for publishes that need confirmation (tombstones and
   // first-state completions). The confirming publish is re-enqueued through
-  // the same drainable worker as every other publish, so a confirmed
+  // the same keyed worker as every other publish, so a confirmed
   // tombstone can never race an in-flight live update; a recovered state
   // clears the deadline. Assigned after the worker exists.
   const publishConfirmDeadlines = new Map<ThreadId, number>();
@@ -389,16 +422,18 @@ export const make = Effect.gen(function* () {
           reason: input.reason,
         });
 
-        const response = yield* relayClient.server.publishAgentActivity({
-          params: {
-            environmentId,
-            threadId,
-          },
-          payload: {
-            state: input.state,
-            proof,
-          },
-        });
+        const response = yield* relayClient.server
+          .publishAgentActivity({
+            params: {
+              environmentId,
+              threadId,
+            },
+            payload: {
+              state: input.state,
+              proof,
+            },
+          })
+          .pipe(Effect.timeout(RELAY_AGENT_ACTIVITY_PUBLISH_TIMEOUT));
 
         yield* Effect.logInfo("agent activity publish completed", {
           environmentId,
@@ -496,21 +531,20 @@ export const make = Effect.gen(function* () {
       state: snapshot.state,
       reason: snapshot.reason,
     });
-    yield* Ref.update(publishedStateByThreadRef, (publishedStates) => {
-      const nextPublishedStates = new Map(publishedStates);
-      nextPublishedStates.set(threadId, publishIdentity);
-      return nextPublishedStates;
-    });
+    yield* Ref.update(publishedStateByThreadRef, (publishedStates) =>
+      upsertBoundedPublishedState(publishedStates, threadId, publishIdentity),
+    );
   });
 
   const publishThread: AgentAwarenessRelay["Service"]["publishThread"] = (threadId) =>
     publishThreadUnsafe(threadId).pipe(
-      Effect.catchCause((cause) => {
-        return Effect.logWarning("agent activity publish failed", {
-          threadId,
-          cause: Cause.pretty(cause),
-        });
-      }),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning("agent activity publish failed", {
+              threadId,
+            }),
+      ),
       Effect.withSpan("AgentAwarenessRelay.publishThread"),
       withRelayClientTracing,
     );
@@ -555,7 +589,7 @@ export const make = Effect.gen(function* () {
           if (logEnabledWhenReady) {
             const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
             yield* Effect.logInfo("agent activity publishing enabled after link reconciliation", {
-              relayUrl: relayConfig?.url,
+              relayOrigin: relayOriginForDiagnostics(relayConfig?.url),
             });
           }
           return;
@@ -564,20 +598,25 @@ export const make = Effect.gen(function* () {
       }
     });
 
-  const worker = yield* makeDrainableWorker(publishThread);
+  const worker = yield* makeKeyedCoalescingWorker({
+    merge: () => undefined,
+    process: (threadId: ThreadId) => publishThread(threadId),
+  });
 
   schedulePublishConfirm = (threadId) =>
-    Effect.forkDetach(
-      Effect.sleep("5 seconds").pipe(
-        Effect.andThen(worker.enqueue(threadId)),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("deferred agent activity confirmation failed", {
-            threadId,
-            cause: Cause.pretty(cause),
-          }),
-        ),
+    Effect.sleep("5 seconds").pipe(
+      Effect.andThen(worker.enqueue(threadId, undefined)),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("deferred agent activity confirmation failed", {
+              threadId,
+              cause: Cause.pretty(cause),
+            }),
       ),
-    ).pipe(Effect.asVoid);
+      Effect.forkIn(confirmationScope),
+      Effect.asVoid,
+    );
 
   const start: AgentAwarenessRelay["Service"]["start"] = Effect.fn("AgentAwarenessRelay.start")(
     function* () {
@@ -600,7 +639,7 @@ export const make = Effect.gen(function* () {
           break;
         case "enabled":
           yield* Effect.logInfo("agent activity publishing enabled", {
-            relayUrl: relayConfig?.url,
+            relayOrigin: relayOriginForDiagnostics(relayConfig?.url),
           });
           break;
       }
@@ -629,7 +668,7 @@ export const make = Effect.gen(function* () {
           return Effect.logDebug("agent activity publishing queued thread publish", {
             eventType: event.type,
             threadId,
-          }).pipe(Effect.andThen(worker.enqueue(threadId)));
+          }).pipe(Effect.andThen(worker.enqueue(threadId, undefined)));
         }),
       );
     },

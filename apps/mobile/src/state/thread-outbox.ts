@@ -1,5 +1,3 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-
 import { appAtomRegistry } from "./atom-registry";
 import { rememberOutgoingMessageDraftAttachments } from "./outgoing-message-previews";
 import { createThreadOutboxManager } from "./thread-outbox-manager";
@@ -29,6 +27,10 @@ export function ensureThreadOutboxLoaded(): void {
 }
 
 export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
+  // A startup read failure resets the manager's memoized load. Retry before a
+  // new enqueue so persisted prompts cannot remain hidden for the whole active
+  // session merely because the app has not backgrounded yet.
+  ensureThreadOutboxLoaded();
   rememberOutgoingMessageDraftAttachments(message.messageId, message.attachments);
   return threadOutboxManager.enqueue(message);
 }
@@ -38,16 +40,24 @@ export function confirmThreadOutboxMessageQueued(message: QueuedThreadMessage): 
   return threadOutboxManager.confirmQueued(message);
 }
 
-/** Rewrite a queued message; no-op (false) if it was removed in the meantime. */
-export function updateThreadOutboxMessage(message: QueuedThreadMessage): Promise<boolean> {
+/**
+ * Rewrite a queued message; no-op (false) if it was removed in the meantime,
+ * or (with `expectedRevision` from `threadOutboxRevision`) if any other write
+ * was accepted since the revision was read.
+ */
+export function updateThreadOutboxMessage(
+  message: QueuedThreadMessage,
+  expectedRevision?: number,
+): Promise<boolean> {
   rememberOutgoingMessageDraftAttachments(message.messageId, message.attachments);
-  return threadOutboxManager.update(message);
+  return threadOutboxManager.update(message, expectedRevision);
 }
 
-export function removeThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
-  return threadOutboxManager.remove(message);
+/** Snapshot of a queued message's write revision, for update's CAS. */
+export function threadOutboxRevision(messageId: QueuedThreadMessage["messageId"]): number {
+  return threadOutboxManager.revisionOf(messageId);
 }
 
-export function clearThreadOutboxEnvironment(environmentId: EnvironmentId): Promise<void> {
-  return threadOutboxManager.clearEnvironment(environmentId);
-}
+// Removal lives in `thread-outbox-removal.ts`: taking a message out of the
+// outbox must also release its local attachment files, and that owner needs
+// the composer draft state this module must not depend on.

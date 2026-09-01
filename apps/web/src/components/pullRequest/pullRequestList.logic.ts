@@ -8,12 +8,16 @@ import {
   resolvePullRequestAuthorFilter,
 } from "@t3tools/contracts";
 import type {
+  PullRequestActor,
   PullRequestDiffStat,
   PullRequestInvolvement,
+  PullRequestLabel,
   PullRequestListCursors,
   PullRequestListFilters,
   PullRequestListState,
 } from "@t3tools/contracts";
+
+import { compareIsoDateTimes } from "~/lib/threadSort";
 
 /**
  * A listed change request with the environment that read it. Nothing on a row says which machine
@@ -40,6 +44,16 @@ export interface PullRequestGroup<Entry extends PullRequestListEntry = PullReque
   readonly entries: ReadonlyArray<Entry>;
 }
 
+export interface PullRequestAuthorFacet {
+  readonly actor: PullRequestActor;
+  readonly count: number;
+  readonly mergedCount: number;
+}
+
+export interface PullRequestLabelFacet extends PullRequestLabel {
+  readonly count: number;
+}
+
 /**
  * The signed-in account per host. Keyed `"<environmentId> <host>"` once a listing spans more than
  * one environment: two machines can both reach github.com signed in as different people, and a
@@ -63,6 +77,59 @@ const GROUP_LABELS: Record<PullRequestGroupKey, string> = {
 function normalize(value: string | null | undefined): string | null {
   const trimmed = value?.trim().toLowerCase() ?? "";
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function pullRequestLabelColor(color: string | null): string | null {
+  const hex = color?.trim().replace(/^#/, "") ?? "";
+  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
+}
+
+export function collectPullRequestListFacets(
+  entries: ReadonlyArray<PullRequestListEntry>,
+  state: PullRequestListState,
+) {
+  const authors = new Map<string, PullRequestAuthorFacet>();
+  const labels = new Map<string, PullRequestLabelFacet>();
+  const uniqueEntries = new Map(entries.map((entry) => [pullRequestEntryKey(entry), entry]));
+  for (const entry of uniqueEntries.values()) {
+    const inState = state === "all" || entry.state === state;
+    if (entry.author !== null) {
+      const key = normalize(entry.author.login);
+      if (key !== null) {
+        const held = authors.get(key);
+        authors.set(key, {
+          actor: held?.actor ?? entry.author,
+          count: (held?.count ?? 0) + Number(inState),
+          mergedCount: (held?.mergedCount ?? 0) + Number(entry.state === "merged"),
+        });
+      }
+    }
+    if (!inState) continue;
+    for (const label of entry.labels) {
+      const key = normalize(label.name);
+      if (key === null) continue;
+      const held = labels.get(key);
+      labels.set(key, {
+        ...label,
+        name: held?.name ?? label.name,
+        color: held?.color ?? label.color,
+        count: (held?.count ?? 0) + 1,
+      });
+    }
+  }
+  return {
+    authors: [...authors.values()]
+      .filter((author) => author.count > 0)
+      .toSorted(
+        (left, right) =>
+          right.mergedCount - left.mergedCount ||
+          right.count - left.count ||
+          left.actor.login.localeCompare(right.actor.login),
+      ),
+    labels: [...labels.values()].toSorted(
+      (left, right) => right.count - left.count || left.name.localeCompare(right.name),
+    ),
+  };
 }
 
 /**
@@ -311,8 +378,8 @@ export function matchesPullRequestFilters(
   filters: PullRequestListFilters,
   viewer?: string | null,
 ): boolean {
-  const labels = entry.labels.map((label) => label.name.trim().toLowerCase());
-  const holds = (label: string) => labels.includes(label.trim().toLowerCase());
+  const labels = new Set(entry.labels.map((label) => label.name.trim().toLowerCase()));
+  const holds = (label: string) => labels.has(label.trim().toLowerCase());
   return (
     (filters.draft === undefined || entry.isDraft === (filters.draft === "only")) &&
     (filters.review === undefined ||
@@ -397,7 +464,8 @@ export function partitionPullRequestsWithPriority<Entry extends PullRequestListE
       others.push(entry);
     }
   }
-  const byRecency = (left: Entry, right: Entry) => right.updatedAt.localeCompare(left.updatedAt);
+  const byRecency = (left: Entry, right: Entry) =>
+    compareIsoDateTimes(right.updatedAt, left.updatedAt);
   return (
     [
       { key: "reviewRequested", entries: [...reviewByKey.values()].toSorted(byRecency) },
@@ -415,10 +483,10 @@ export type PullRequestDiffStats = ReadonlyMap<
 >;
 
 /**
- * The line counts held so far, with a new batch merged on. The stats read is keyed by the rows
- * on screen, so adding or removing one row is a fresh query with nothing in it yet; replacing
- * the map would blank every count already showing for the round trip. Merging by row identity
- * keeps them until their replacements arrive.
+ * The line counts held so far, reconciled with the rows still on screen and a new batch. The stats
+ * read is keyed by those rows, so adding or removing one starts a fresh query with nothing in it
+ * yet. Retaining current keys keeps their counts through that round trip; filtering both the held
+ * and incoming maps prevents removed rows from returning through a late query result.
  */
 export function mergePullRequestDiffStats(
   previous: PullRequestDiffStats,
@@ -429,17 +497,33 @@ export function mergePullRequestDiffStats(
     readonly additions: number;
     readonly deletions: number;
   }>,
+  currentKeys: ReadonlySet<string>,
 ): PullRequestDiffStats {
-  if (stats.length === 0) return previous;
-  const next = new Map(previous);
-  for (const stat of stats) {
-    next.set(diffStatKey(stat), { additions: stat.additions, deletions: stat.deletions });
+  let changed = false;
+  const next = new Map<string, { readonly additions: number; readonly deletions: number }>();
+  for (const [key, stat] of previous) {
+    if (currentKeys.has(key)) {
+      next.set(key, stat);
+    } else {
+      changed = true;
+    }
   }
-  return next;
+  for (const stat of stats) {
+    const key = pullRequestDiffStatKey(stat);
+    if (!currentKeys.has(key)) continue;
+    const current = next.get(key);
+    if (current?.additions === stat.additions && current.deletions === stat.deletions) continue;
+    next.set(key, {
+      additions: stat.additions,
+      deletions: stat.deletions,
+    });
+    changed = true;
+  }
+  return changed ? next : previous;
 }
 
 /** A project id only names a project within its own environment, so the key carries both. */
-const diffStatKey = (row: {
+export const pullRequestDiffStatKey = (row: {
   readonly environmentId: string;
   readonly projectId: string;
   readonly number: number;
@@ -513,7 +597,9 @@ export function mergePullRequestLists(
   return {
     viewers,
     providers: [...providers.values()],
-    entries: entries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    entries: entries.toSorted((left, right) =>
+      compareIsoDateTimes(right.updatedAt, left.updatedAt),
+    ),
     errors,
     truncated,
     nextCursors,
@@ -523,8 +609,9 @@ export function mergePullRequestLists(
 
 /** One page is what the list itself starts with, and all a cold start needs to look warm. */
 const SNAPSHOT_MAX_ENTRIES = 99;
+export const PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS = 1024 * 1024;
 
-type SnapshotStorage = Pick<Storage, "getItem" | "setItem">;
+type SnapshotStorage = Pick<Storage, "getItem" | "setItem"> & Partial<Pick<Storage, "removeItem">>;
 
 /**
  * Keyed by the whole set of environments the list was read from: connecting or dropping one
@@ -536,6 +623,14 @@ export const pullRequestEnvironmentSetKey = (environmentIds: ReadonlyArray<strin
 
 const snapshotStorageKey = (environmentSetKey: string) =>
   `t3.pullRequests.list:${environmentSetKey}`;
+
+function removePullRequestListSnapshot(storage: SnapshotStorage | undefined, key: string): void {
+  try {
+    storage?.removeItem?.(key);
+  } catch {
+    // Snapshot cleanup is best-effort; storage may be denied or unavailable.
+  }
+}
 
 /**
  * The priority groups' own server-filtered answers, carried with the feed. An authored pull
@@ -601,12 +696,20 @@ export function readPullRequestListSnapshot(
   storage: SnapshotStorage | undefined,
   environmentSetKey: string,
 ): PullRequestListSnapshot | null {
+  const key = snapshotStorageKey(environmentSetKey);
   try {
-    const raw = storage?.getItem(snapshotStorageKey(environmentSetKey));
+    const raw = storage?.getItem(key);
     if (!raw) return null;
+    if (raw.length > PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS) {
+      removePullRequestListSnapshot(storage, key);
+      return null;
+    }
     const decoded = decodeSnapshot(JSON.parse(raw));
-    return decoded._tag === "Some" ? decoded.value : null;
+    if (decoded._tag === "Some") return decoded.value;
+    removePullRequestListSnapshot(storage, key);
+    return null;
   } catch {
+    removePullRequestListSnapshot(storage, key);
     return null;
   }
 }
@@ -616,31 +719,34 @@ export function writePullRequestListSnapshot(
   environmentSetKey: string,
   snapshot: PullRequestListSnapshot,
 ): void {
+  const key = snapshotStorageKey(environmentSetKey);
   try {
-    storage?.setItem(
-      snapshotStorageKey(environmentSetKey),
-      JSON.stringify({
-        scope: snapshot.scope,
-        data: {
-          ...snapshot.data,
-          entries: snapshot.data.entries.slice(0, SNAPSHOT_MAX_ENTRIES),
-          // A failure is never cached and yesterday's is not this morning's; a cursor names a
-          // position in a listing the host has long since forgotten.
-          errors: [],
-          nextCursors: {},
-          // Where a listing stopped is as stale as the cursor that named it.
-          truncatedEnvironments: [],
-        },
-        ...(snapshot.partitions === undefined
-          ? {}
-          : {
-              partitions: {
-                authored: snapshot.partitions.authored.slice(0, SNAPSHOT_MAX_ENTRIES),
-                reviewing: snapshot.partitions.reviewing.slice(0, SNAPSHOT_MAX_ENTRIES),
-              },
-            }),
-      }),
-    );
+    const encoded = JSON.stringify({
+      scope: snapshot.scope,
+      data: {
+        ...snapshot.data,
+        entries: snapshot.data.entries.slice(0, SNAPSHOT_MAX_ENTRIES),
+        // A failure is never cached and yesterday's is not this morning's; a cursor names a
+        // position in a listing the host has long since forgotten.
+        errors: [],
+        nextCursors: {},
+        // Where a listing stopped is as stale as the cursor that named it.
+        truncatedEnvironments: [],
+      },
+      ...(snapshot.partitions === undefined
+        ? {}
+        : {
+            partitions: {
+              authored: snapshot.partitions.authored.slice(0, SNAPSHOT_MAX_ENTRIES),
+              reviewing: snapshot.partitions.reviewing.slice(0, SNAPSHOT_MAX_ENTRIES),
+            },
+          }),
+    });
+    if (encoded.length > PULL_REQUEST_LIST_SNAPSHOT_MAX_CHARS) {
+      removePullRequestListSnapshot(storage, key);
+      return;
+    }
+    storage?.setItem(key, encoded);
   } catch {
     // Storage can be full or denied; the snapshot is a convenience, not a record.
   }
@@ -776,7 +882,7 @@ export function rankPullRequestMatches<Entry extends PullRequestListEntry>(
   if (query.trim().length === 0) return entries;
   return entries.toSorted((left, right) => {
     const byScore = scorePullRequestMatch(right, query) - scorePullRequestMatch(left, query);
-    return byScore !== 0 ? byScore : right.updatedAt.localeCompare(left.updatedAt);
+    return byScore !== 0 ? byScore : compareIsoDateTimes(right.updatedAt, left.updatedAt);
   });
 }
 
@@ -792,6 +898,6 @@ export function withDiffStat<
   statsByRow: ReadonlyMap<string, { readonly additions: number; readonly deletions: number }>,
 ): Entry {
   if (entry.additions !== 0 || entry.deletions !== 0) return entry;
-  const stat = statsByRow.get(diffStatKey(entry));
+  const stat = statsByRow.get(pullRequestDiffStatKey(entry));
   return stat === undefined ? entry : { ...entry, ...stat };
 }

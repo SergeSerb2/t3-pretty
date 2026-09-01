@@ -5,6 +5,32 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PullRequestFiltersMenu, pullRequestProjectKey } from "./PullRequestListFilters";
 
+function findClear(node: ReactNode): ReactElement<{ readonly onClick: () => void }> | undefined {
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement(child)) continue;
+    const props = child.props as {
+      readonly children?: ReactNode;
+      readonly onClick?: () => void;
+    };
+    if (typeof props.onClick === "function" && containsText(props.children, "Reset filters")) {
+      return child as ReactElement<{ readonly onClick: () => void }>;
+    }
+    const nested = findClear(props.children);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function containsText(node: ReactNode, text: string): boolean {
+  for (const child of Children.toArray(node)) {
+    if (child === text) return true;
+    if (!isValidElement(child)) continue;
+    const props = child.props as { readonly children?: ReactNode };
+    if (containsText(props.children, text)) return true;
+  }
+  return false;
+}
+
 function findValueChange(
   node: ReactNode,
 ):
@@ -34,7 +60,8 @@ function findLabeledGroup(node: ReactNode, label: string): ReactNode {
     if (!isValidElement(child)) continue;
     const props = child.props as { readonly children?: ReactNode; readonly label?: string };
     if (props.label === label && typeof child.type === "function") {
-      return (child.type as (properties: unknown) => ReactNode)(child.props);
+      const rendered = (child.type as (properties: unknown) => ReactNode)(child.props);
+      return findLabeledGroup(rendered, label) ?? rendered;
     }
     const nested = findLabeledGroup(props.children, label);
     if (nested !== undefined) return nested;
@@ -71,6 +98,12 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
 }
 
 describe("pull request filters menu", () => {
+  it("does not inert the page while nested filter flyouts are open", () => {
+    const view = menu({});
+    expect(isValidElement(view)).toBe(true);
+    expect((view as ReactElement<{ modal?: boolean }>).props.modal).toBe(false);
+  });
+
   it("does not emit a change when the selected state is chosen again", () => {
     const onState = vi.fn();
     const group = findValueChange(findLabeledGroup(menu({ onState }), "State"));
@@ -126,7 +159,7 @@ describe("pull request filters menu", () => {
       projectEnvironmentId: environmentId,
       onProject,
     });
-    const radioGroup = findValueChange(view);
+    const radioGroup = findValueChange(findLabeledGroup(view, "Project"));
     expect(radioGroup).toBeDefined();
 
     radioGroup?.props.onValueChange(pullRequestProjectKey({ id: projectId, environmentId }));
@@ -156,13 +189,28 @@ describe("pull request filters menu", () => {
       ],
       onProject,
     });
-    const radioGroup = findValueChange(view);
+    const radioGroup = findValueChange(findLabeledGroup(view, "Project"));
     expect(radioGroup).toBeDefined();
 
     radioGroup?.props.onValueChange(
       pullRequestProjectKey({ id: projectId, environmentId: "env-2" as EnvironmentId }),
     );
     expect(onProject).toHaveBeenCalledWith(projectId, "env-2");
+  });
+
+  it("offers a reset action only when a filter is off its default", () => {
+    const onReset = vi.fn();
+    expect(findClear(menu({ onReset }))).toBeUndefined();
+
+    const item = findClear(
+      menu({
+        involvement: "authored",
+        onReset,
+      }),
+    );
+    expect(item).toBeDefined();
+    item?.props.onClick();
+    expect(onReset).toHaveBeenCalledOnce();
   });
 
   it("does not collide when environment and project ids contain spaces", () => {

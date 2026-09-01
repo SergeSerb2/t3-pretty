@@ -40,6 +40,7 @@ import {
   VcsActionRemoteFailureError,
   VcsActionTargetKeyParseError,
   VcsActionUnavailableError,
+  VCS_ACTION_COMMAND_CACHE_MAX_ENTRIES,
 } from "./vcsAction.ts";
 import { vcsRefsCacheStateAtom } from "./vcsRefInvalidation.ts";
 
@@ -481,6 +482,22 @@ describe("vcsActionState", () => {
     expect(registry.get(manager.stateAtom(target))).toEqual(EMPTY_VCS_ACTION_STATE);
 
     registry.dispose();
+  });
+
+  it("bounds cached stacked-action commands by least-recent use", () => {
+    const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
+      EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore,
+      never
+    >;
+    const manager = createVcsActionManager(runtime);
+    const firstTarget = { environmentId, cwd: "/repo/first" };
+    const first = manager.runStackedAction(firstTarget);
+
+    for (let index = 0; index < VCS_ACTION_COMMAND_CACHE_MAX_ENTRIES; index += 1) {
+      manager.runStackedAction({ environmentId, cwd: `/repo/${index}` });
+    }
+
+    expect(manager.runStackedAction(firstTarget)).not.toBe(first);
   });
 
   it("retains the incomplete target and operation when tracking is unavailable", async () => {

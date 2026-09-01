@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import ImageViewing from "react-native-image-viewing";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
@@ -17,7 +17,6 @@ import { ControlPill } from "../../components/ControlPill";
 import { cn } from "../../lib/cn";
 import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { convertPastedImagesToAttachments, pickComposerImages } from "../../lib/composerImages";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { useNativePaste } from "../../lib/useNativePaste";
 import { appendReviewCommentToDraft } from "../../state/use-thread-composer-state";
 import {
@@ -48,7 +47,6 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { themeAppearance: selectedTheme } = useAppearancePreferences();
-  const iconTint = String(useThemeColor("--color-icon"));
   const target = useReviewCommentTarget();
   const { codeSurface } = useAppearanceCodeSurface();
   const { environmentId, threadId } = props.route.params;
@@ -60,7 +58,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
-  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FilePreviewSource | null>(null);
   const isPreparingImages = pendingPreviews.length > 0;
 
   const selectedLines = useMemo(
@@ -107,12 +105,15 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
         })),
       );
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: attachments.length,
         });
-        if (images.length > 0) {
-          setAttachments((current) => [...current, ...images]);
+        if (result.images.length > 0) {
+          setAttachments((current) => [...current, ...result.images]);
+        }
+        if (result.error) {
+          Alert.alert("Could not attach image", result.error);
         }
       } catch (error) {
         console.error("[review comment] error converting pasted images", error);
@@ -215,7 +216,12 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               className="bg-subtle h-12 w-12 items-center justify-center rounded-full"
               onPress={dismissComposer}
             >
-              <SymbolView name="xmark" size={18} tintColor={iconTint} type="monochrome" />
+              <SymbolView
+                name="xmark"
+                size={18}
+                tintColorClassName={"accent-icon"}
+                type="monochrome"
+              />
             </Pressable>
 
             <Text className="text-lg font-t3-bold text-foreground">Add Comment</Text>
@@ -322,7 +328,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                         ]}
                         imageBorderRadius={16}
                         imageSize={60}
-                        onPressImage={setPreviewImageUri}
+                        onPressPreview={setPreviewFile}
                         removeButtonPlacement="gutter"
                         onRemove={(imageId) => {
                           setAttachments((current) =>
@@ -386,14 +392,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
           </View>
         </KeyboardStickyView>
       ) : null}
-      <ImageViewing
-        images={previewImageUri ? [{ uri: previewImageUri }] : []}
-        imageIndex={0}
-        visible={previewImageUri !== null}
-        onRequestClose={() => setPreviewImageUri(null)}
-        swipeToCloseEnabled
-        doubleTapToZoomEnabled
-      />
+      <FilePreviewModal source={previewFile} onRequestClose={() => setPreviewFile(null)} />
     </View>
   );
 }
