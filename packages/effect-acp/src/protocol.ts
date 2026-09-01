@@ -185,6 +185,7 @@ const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.ElicitationCompleteNotification,
 );
 const parserFactory = RpcSerialization.ndJsonRpc();
+const MAX_BUFFERED_RAW_NOTIFICATIONS = 32;
 
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
@@ -202,7 +203,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   // stream is an optional raw observer. A queue retained every notification
   // forever in the normal no-observer server path.
   const notificationPubSub = yield* PubSub.sliding<AcpIncomingNotification>(
-    ACP_NOTIFICATION_OBSERVER_CAPACITY,
+    Math.min(ACP_NOTIFICATION_OBSERVER_CAPACITY, MAX_BUFFERED_RAW_NOTIFICATIONS),
   );
   const disconnects = yield* Queue.bounded<number>(1);
   const outgoing = yield* Queue.bounded<string | Uint8Array, Cause.Done<void>>(
@@ -536,11 +537,14 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   };
 
   const handleLine = (line: string): Effect.Effect<void, AcpError.AcpError> =>
-    logProtocol({
-      direction: "incoming",
-      stage: "raw",
-      payload: line,
-    }).pipe(
+    (options.logIncoming
+      ? logProtocol({
+          direction: "incoming",
+          stage: "raw",
+          payload: line,
+        })
+      : Effect.void
+    ).pipe(
       Effect.flatMap(() =>
         Effect.try({
           // The Effect NDJSON parser emits only newline-terminated records.

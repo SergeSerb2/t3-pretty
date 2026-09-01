@@ -430,7 +430,10 @@ function summarizeToolTextOutput(value: string): string | null {
     if (line.length > 0) {
       meaningfulLineCount += 1;
       if (line !== "```") {
-        return line.length <= 84 ? line : `${line.slice(0, 83).trimEnd()}…`;
+        const summary = line.length <= 84 ? line : `${line.slice(0, 83).trimEnd()}…`;
+        // V8 can retain the full tool output behind a short sliced string.
+        // Join a tiny character array so the returned preview owns its bytes.
+        return Array.from(summary).join("");
       }
     }
     lineStart = cursor + 1;

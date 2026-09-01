@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import * as NodeFS from "node:fs";
 
-import { Menu, MenuCheckboxItem, MenuRadioGroup, MenuRadioItem } from "./menu";
+import { Menu, MenuCheckboxItem } from "./menu";
 import menuSource from "./menu.tsx?raw";
 
 // ?raw on a .css module yields "" under the test pipeline (the CSS transform
@@ -27,25 +27,6 @@ describe("menu flyout pointer events", () => {
     expect(indexCss).toMatch(
       /\[data-slot="menu-popup"\]\[data-open\]\s*,\s*\[data-slot="menu-sub-content"\]\[data-open\]\s*\{\s*pointer-events:\s*auto\s*!important/,
     );
-  });
-});
-
-describe("menu radio item geometry", () => {
-  it("keeps radio-item icons on the same text grid as menu items", () => {
-    const html = renderToStaticMarkup(
-      <Menu>
-        <MenuRadioGroup value="merge">
-          <MenuRadioItem value="merge">
-            <span className="flex items-center gap-2">
-              <svg aria-hidden className="size-3.5" />
-              <span>Merge</span>
-            </span>
-          </MenuRadioItem>
-        </MenuRadioGroup>
-      </Menu>,
-    );
-
-    expect(html).toContain("-mx-0.5");
   });
 });
 

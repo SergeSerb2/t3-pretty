@@ -2283,3 +2283,70 @@
 - `apps/web/src/components/settings/ThemeSettings.tsx` — The parent Themes heading using searchableSetting("theme").title.. Reason: T3 Pretty no longer has the corresponding generic Themes section at this boundary; its searchable Personalization and Boring controls replace that section, so adding this heading alone would be misleading and structurally incoherent.
 - `apps/web/src/components/settings/ThemeSettings.tsx` — The generic parent introduction stating “Choose how T3 Code looks. Use a built-in theme or make your own.”. Reason: It conflicts with T3 Pretty branding and inaccurately describes the fork's photo-theme/Boring personalization UI, which already has fork-specific explanatory copy.
 - `docs/user/keybindings.md` — Describe message search as using SQLite's ASCII case-insensitive matching.. Reason: That description would regress and contradict T3 Pretty's newer BM25 search behavior, which performs whole-word relevance ranking and final-word prefix matching.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260901.1245`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260901.1244`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 1 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Tool-output summarization remains capped by TOOL_TEXT_SCAN_MAX_CHARS, protecting server and client hot paths from scanning arbitrarily large command or MCP output.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Fence-only line-count summaries are emitted only after the complete value has been inspected, avoiding misleading partial counts when the scan ceiling is reached.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — The existing compact 84-character first-meaningful-line preview behavior remains intact.
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — Fresh ToolProgressService activity ticks replace older persisted copies with the same activity ID, so newly subscribed clients see current in-flight tool progress.
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — Live progress is only added to the newest or unbounded page; historical pages remain projection-backed reads.
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — The merged persisted and live activity list retains deterministic sequence, creation-time, and ID ordering.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — The exported `isTransientNativeEvent` helper remains available and continues recognizing Pretty's wrapped and bare Claude, Codex, and ACP transient native event shapes.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — The fork-only `verbose` option remains authoritative: verbose native logging persists all native events instead of applying transient-event suppression.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — The sanitized `threadSegment` resolved before entering the synchronized state update is reused when constructing the pending record.
+- `apps/server/src/provider/acp/AcpNativeLogging.ts` — Preserved T3 Pretty's structural-efficiency behavior whereby the native event logger's `verbose` setting enables raw and decoded ACP protocol traces.
+- `apps/server/src/provider/acp/AcpNativeLogging.ts` — Preserved the explanatory comment and the existing transient protocol-message filtering path.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts` — Preserved T3 Pretty's performance intent that background native telemetry remains inexpensive while active diagnostics run at 1Hz.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts` — Preserved regression coverage requiring a known suspended host to retain the 15-second recovery cadence even when no live diagnostics consumer is present.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — The no-live-subscriber path continues to use T3 Pretty's BACKGROUND_SAMPLE_INTERVAL_MS cadence, preserving its desktop/mobile hot-path throttling behavior.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — Native telemetry history remains bounded by both snapshot count and retained process-entry count.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — Oversized history requests are removed from the pending map and fail deterministically with NativeTelemetryLimitExceeded, while valid multi-chunk requests retain their bounded accumulation behavior.
+- `apps/web/src/components/ui/menu.test.tsx` — Regression coverage ensuring dropdown menus default to non-modal behavior and do not inert the page or trap navigation.
+- `apps/web/src/components/ui/menu.test.tsx` — Regression coverage for the scoped pointer-events override that keeps a parent menu usable while its submenu flyout is open without affecting closing popups.
+- `apps/web/src/components/ui/menu.test.tsx` — Regression coverage ensuring long switch-menu labels can shrink and remain overflow-contained.
+- `packages/effect-acp/src/protocol.ts` — Bounded ACP server, client, outgoing, and disconnect queues remain in place, preserving T3 Pretty's transport backpressure and long-lived-session reliability safeguards.
+- `packages/effect-acp/src/protocol.ts` — Raw notifications remain an optional sliding PubSub observer rather than a retained queue, preventing the normal no-observer server path from accumulating notifications.
+- `packages/effect-acp/src/protocol.ts` — Incremental byte-level NDJSON framing, configured maximum wire-line enforcement, fragmented-input handling, detailed parse logging, and oversized-line termination behavior are preserved.
+- `packages/effect-codex-app-server/src/protocol.test.ts` — Preserved the T3 Pretty `effect/Sink` import required by fork-side protocol test coverage.
+- `packages/effect-codex-app-server/src/protocol.ts` — kept the fork side wholesale as a fork-side fallback resolution
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Returned first-line previews are copied with Array.from(summary).join("") so V8 cannot retain the full underlying tool-output string behind a short slice.
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — The upstream activitiesEffect result is used directly as the persisted activity base, preserving its query-aware reads, pinned-activity handling, activity-ID deduplication, deterministic row ordering, and mapThreadActivityRow normalization.
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — The obsolete local dependency on activityRows and pinnedActivityRows is removed to match the upstream Effect.all result shape.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Non-verbose native events not rejected by Pretty's classifier now proceed through the parent's additional filtering for transient native methods, Claude content-block deltas, `message.part.delta`, ACP session updates, and text/reasoning `message.part.updated` events.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — The parent's explicit orchestration pass-through is retained while canonical transient-event filtering remains intact.
+- `apps/server/src/provider/Layers/EventNdjsonLogger.ts` — Pending records are appended to the synchronized state's existing array in place, incorporating the parent's batching allocation/performance improvement without recomputing the thread segment.
+- `apps/server/src/provider/acp/AcpNativeLogging.ts` — Integrated the parent's `verboseProtocolLogging` input as an additional way to enable ACP protocol logging when a native event logger is available.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts` — Integrated the parent expectation that normal background telemetry with no consumers runs at a slowed 5-second interval.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts` — Integrated the parent expectation that live diagnostics consumers receive telemetry at 1Hz.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts` — Integrated the parent's explicit background-slowdown terminology into the composed test description.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — History chunks still update the client's health state and latest sample timestamp, but health changes are published only when the client transitions to healthy or clears an existing error, avoiding redundant PubSub work.
+- `apps/web/src/components/ui/menu.test.tsx` — Removed the inherited menu radio-item geometry static-presentation snapshot deleted by the parent cleanup.
+- `apps/web/src/components/ui/menu.test.tsx` — Removed the now-unused MenuRadioGroup and MenuRadioItem imports associated with that snapshot.
+- `packages/effect-acp/src/protocol.ts` — The parent's 32-entry maximum for buffered raw notifications is applied as an upper bound alongside T3 Pretty's existing observer-capacity limit.
+- `packages/effect-acp/src/protocol.ts` — The parent's optimization to bypass raw incoming logging when logIncoming is disabled is incorporated into T3 Pretty's framed-line processing path.
+- `packages/effect-codex-app-server/src/protocol.test.ts` — Integrated the parent nightly's `effect/Stdio` import.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Upstream's unbounded indexOf-based scan, including exact fence-only line counts for outputs larger than TOOL_TEXT_SCAN_MAX_CHARS.. Reason: It conflicts with T3 Pretty's deliberate bounded-scan safeguard for oversized command and MCP outputs; retaining it would regress hot-path performance and memory protections.
+- `apps/server/src/provider/acp/AcpNativeLogging.ts` — Making `verboseProtocolLogging` the exclusive protocol-logging gate, including allowing an explicit false value to disable logging when T3 Pretty's native logger is verbose.. Reason: That would regress T3 Pretty's authoritative logger-level verbose behavior. The parent flag is instead supported as an additional compatible enablement source.
+- `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — Use UNKNOWN_BACKGROUND_SAMPLE_INTERVAL_MS for a known, unconstrained, non-battery host when there are no live subscribers.. Reason: That branch directly conflicts with T3 Pretty's established use of BACKGROUND_SAMPLE_INTERVAL_MS and its fork-specific hot-path performance behavior; both interval choices cannot apply to the same state.
+- `apps/web/src/components/ui/menu.test.tsx` — Delete apps/web/src/components/ui/menu.test.tsx in its entirety as part of removing static presentation snapshots.. Reason: The surviving file has since gained T3 Pretty-specific regression tests for non-modal navigation, submenu flyout pointer events, and long switch-label overflow. No parent replacement provides this coverage, so deleting the whole file would silently weaken fork behavior safeguards.
+- `packages/effect-codex-app-server/src/protocol.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for packages/effect-codex-app-server/src/protocol.ts after 3 attempts
