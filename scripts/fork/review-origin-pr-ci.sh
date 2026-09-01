@@ -45,7 +45,7 @@ ensure_node() {
   fi
   if command -v brew >/dev/null; then
     echo "Installing node with Homebrew"
-    brew install node
+    HOMEBREW_NO_ASK=1 HOMEBREW_NO_AUTO_UPDATE=1 brew install node
     return 0
   fi
   local ver="v24.13.1"

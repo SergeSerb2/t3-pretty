@@ -78,6 +78,11 @@ The desktop app repairs links left on an older relay or signed in to a different
 synchronizes the mesh. Managed SSH backends launched by the desktop app inherit that build's public
 T3 Connect configuration instead of silently joining another relay deployment.
 
+After updating, the desktop repairs an older missing host registration once when that host's local
+T3 Connect setting is still on. A host deregistered later from **Manage account** stays off after the
+account list refreshes; turn T3 Connect on once on that host to register it again. Older desktop
+builds require turning T3 Connect off and back on manually.
+
 Use **Manage account** on the T3 account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
 does not need the T3 Connect tunnel to be on. The iOS Live Activity lists your threads by name —
@@ -85,6 +90,25 @@ what each one is doing, a live elapsed timer while it works, and how long anythi
 waiting — with threads that need you first. Tap it to open the thread that needs attention, or the
 first working thread. If the account row says **Unavailable**, that build does not include T3 Connect
 configuration.
+
+### Move a Thread to Another Environment
+
+When two updated environments are connected to the same T3 Connect or Surge Connect account, open a
+thread's menu and choose **Move to connection…**. On mobile, open the thread settings sheet first.
+Choose the destination, then select **Move and open**.
+
+T3 Code copies the project workspace and conversation directly between the two environments into
+the destination's T3-managed projects folder, then opens a new thread there. The original project
+and thread stay unchanged. Regular Git metadata is included for a normal repository.
+
+Dependency folders, generated build caches, message attachments, and worktree-only Git metadata are
+skipped. Reinstall dependencies on the destination before running the project. Compressed transfers
+larger than 96 MB are rejected.
+
+The source thread must be idle, both environments must be online, and both servers must advertise
+transfer support. The first new turn on the destination receives a bounded copy of the transferred
+conversation so the local provider can continue with context even though provider sessions do not
+move between machines.
 
 ## Enabling Network Access
 
@@ -248,6 +272,8 @@ When the T3 Code web or desktop app and a remote server use different versions, 
 the conversation and in **Settings** → **Connections**. Follow the action shown there: T3 Code may
 be able to update and reconnect the server for you, or it may ask you to update the desktop app or
 run a copied command on the server machine.
+
+If T3 Connect cannot connect, check the date and time on both devices, then try again.
 
 Finish active work before updating because the server restarts briefly. For step-by-step guidance,
 see [Keeping T3 Code in Sync](./updating.md).

@@ -5,6 +5,195 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* Animate UI's icon catalog uses Lucide glyphs, which the app already ships.
+   Keep that existing dependency and apply the catalog's interaction language
+   at shared control boundaries so static/status icons remain still. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(
+    [data-slot="button"],
+    [data-slot="sidebar-menu-button"],
+    [data-slot="sidebar-menu-action"],
+    [data-slot="sidebar-menu-sub-button"],
+    [data-slot="menu-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="command-item"],
+    [data-slot="dialog-close"],
+    [data-slot="sheet-close"],
+    [data-slot="popover-close"],
+    [data-slot="select-trigger"],
+    [data-slot="autocomplete-trigger"],
+    [data-slot="autocomplete-clear"],
+    [data-slot="combobox-trigger"],
+    [data-slot="combobox-clear"],
+    [data-slot="combobox-chip-remove"],
+    [data-slot="number-field-decrement"],
+    [data-slot="number-field-increment"],
+    [data-slot="panel-tab-close-button"],
+    [data-slot="toggle"],
+    [data-animate-ui-icons]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    & svg.lucide,
+    & svg.lucide > * {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    & svg.lucide {
+      transition:
+        scale 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        translate 180ms cubic-bezier(0.25, 1, 0.5, 1),
+        rotate 220ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & svg.lucide > * {
+      transition:
+        transform 220ms cubic-bezier(0.25, 1, 0.5, 1),
+        opacity 180ms cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(2) {
+      transition-delay: 35ms;
+    }
+
+    & :is(.lucide-ellipsis, .lucide-chart-no-axes-column) > :nth-child(3) {
+      transition-delay: 70ms;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        & :is(.lucide-plus, .lucide-x, .lucide-circle-x) {
+          rotate: 90deg;
+        }
+
+        & .lucide-settings {
+          rotate: 180deg;
+        }
+
+        & .lucide-refresh-cw {
+          rotate: var(--refresh-cw-tilt, 90deg);
+        }
+
+        & .lucide-rotate-ccw {
+          rotate: -90deg;
+        }
+
+        & :is(.lucide-chevron-down, .lucide-arrow-down) {
+          translate: 0 2px;
+        }
+
+        & :is(.lucide-chevron-up, .lucide-arrow-up) {
+          translate: 0 -2px;
+        }
+
+        & :is(.lucide-chevron-left, .lucide-arrow-left) {
+          translate: -2px 0;
+        }
+
+        & :is(.lucide-chevron-right, .lucide-arrow-right, .lucide-play) {
+          translate: 2px 0;
+        }
+
+        & .lucide-copy > :first-child {
+          transform: translate(2px, 2px);
+        }
+
+        & .lucide-copy > :last-child {
+          transform: translate(-2px, -2px);
+        }
+
+        & .lucide-download > :is(:first-child, :last-child) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-link > :first-child {
+          transform: translate(-1.5px, 1.5px);
+        }
+
+        & .lucide-link > :last-child {
+          transform: translate(1.5px, -1.5px);
+        }
+
+        & .lucide-external-link {
+          translate: 1.5px -1.5px;
+        }
+
+        & :is(.lucide-panel-left, .lucide-panel-left-close) > :nth-child(2) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-left-close > :nth-child(3) {
+          transform: translateX(-2px);
+        }
+
+        & .lucide-panel-right > :nth-child(2) {
+          transform: translateX(2px);
+        }
+
+        & .lucide-panel-bottom > :nth-child(2) {
+          transform: translateY(2px);
+        }
+
+        & .lucide-git-pull-request > :is(:nth-child(1), :nth-child(3)) {
+          transform: translate(1.5px, -1.5px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(1), :nth-child(2), :nth-child(3)) {
+          transform: translateY(1px);
+        }
+
+        & .lucide-trash-2 > :is(:nth-child(4), :nth-child(5)) {
+          transform: translateY(-1px);
+        }
+
+        & :is(.lucide-message-square, .lucide-search) {
+          rotate: 8deg;
+        }
+
+        & :is(.lucide-check, .lucide-star) {
+          scale: 1.1;
+        }
+
+        & :is(.lucide-send, .lucide-paperclip, .lucide-hammer, .lucide-bot) {
+          translate: 1.5px -1.5px;
+          rotate: 6deg;
+        }
+
+        & .lucide-terminal > :first-child {
+          opacity: 0.25;
+        }
+
+        & .lucide-ellipsis > * {
+          transform: translateY(-2px);
+        }
+
+        & .lucide-chart-no-axes-column > * {
+          transform: scaleY(0.55);
+        }
+
+        & .lucide-sparkles > * {
+          transform: scale(1.12);
+        }
+      }
+    }
+
+    &:active svg.lucide {
+      scale: 0.86;
+    }
+  }
+
+  svg.lucide-refresh-cw {
+    --refresh-cw-tilt: 90deg;
+  }
+
+  /* --refresh-cw-from is snapshotted on the control at click (90deg if the
+     pointer was hovering, else 0deg) so spin/settle do not retarget live. */
+  svg.lucide-refresh-cw:is(.animate-spin, .animate-desktop-update-check-settle) {
+    transform-box: fill-box;
+    transform-origin: center;
+    rotate: var(--refresh-cw-from, 0deg);
+  }
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
@@ -164,6 +353,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      are not here: they are JS-stepped (see .status-pulse below). */
   --animate-ghost-pulse: ghost-pulse 2.4s infinite;
   --animate-status-ping: status-ping 2s infinite;
+  /* One-shot click ripple for the agent browser cursor; finite by design. */
+  --animate-agent-ripple: agent-ripple 450ms ease-out forwards;
+  /* Desktop sidebar update-check: after the linear spin completes a turn,
+     carry a sliver of momentum past its endpoint, then return to rest. Finite. */
+  --animate-desktop-update-check-settle: desktop-update-check-settle 280ms linear forwards;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -262,6 +456,30 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     100% {
       opacity: 0;
       scale: 2;
+    }
+  }
+  @keyframes agent-ripple {
+    from {
+      opacity: 0.5;
+      scale: 0.4;
+    }
+    to {
+      opacity: 0;
+      scale: 2.2;
+    }
+  }
+  @keyframes desktop-update-check-settle {
+    /* One restrained momentum overshoot, then a continuous return to rest. */
+    0% {
+      rotate: var(--refresh-cw-from, 0deg);
+      animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    18% {
+      rotate: calc(var(--refresh-cw-from, 0deg) + 10deg);
+      animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
+    }
+    100% {
+      rotate: 0deg;
     }
   }
 }
@@ -708,6 +926,18 @@ html[data-window-inactive]
   ):focus-visible {
     @apply outline-none ring-0;
   }
+  /* While a submenu flyout is open, Base UI's hover traversal writes inline
+     pointer-events: none on the parent menu popup and only restores it when
+     the flyout closes cleanly. Our standalone menu roots miss the floating
+     tree wiring that keeps that restore reliable, so the parent menu goes
+     dead: rows stop highlighting, and clicks inside the menu can neither
+     select nor dismiss — the "stuck open menu". Forcing open popups
+     interactive keeps every row and the dismiss paths alive; closing popups
+     drop [data-open], so exit transitions stay untouched. */
+  [data-slot="menu-popup"][data-open],
+  [data-slot="menu-sub-content"][data-open] {
+    pointer-events: auto !important;
+  }
   html,
   body {
     background-color: var(--app-chrome-background);
@@ -1152,6 +1382,8 @@ html[data-window-inactive]
       black var(--chat-composer-attachment-overlap)
     );
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
+    transition: border-color calc(160ms * var(--composer-hover-dur, 1))
+      cubic-bezier(0.32, 0.72, 0, 1);
     content: "";
 
     @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1197,6 +1429,8 @@ html[data-window-inactive]
     --chat-composer-outline: rgb(0 0 0 / 8%);
     /* Light mode gets its own specular top edge; dark overrides below. */
     --chat-composer-highlight: rgb(255 255 255 / 60%);
+    /* Pointer speed multiplier; ComposerSpecular writes this on hover cross. */
+    --composer-hover-dur: 1;
 
     isolation: isolate;
 
@@ -1269,7 +1503,7 @@ html[data-window-inactive]
 
   .chat-composer-glass-host {
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
-    transition: box-shadow 260ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: box-shadow calc(260ms * var(--composer-hover-dur, 1)) cubic-bezier(0.32, 0.72, 0, 1);
 
     @variant dark {
       box-shadow: none;
@@ -1278,8 +1512,9 @@ html[data-window-inactive]
 
   /* The resting drop shadow deepens and stretches on hover so the composer
      lifts toward the pointer. Dark mode stays flat: there the rim and the
-     specular carry the hover state. One 260ms shadow transition per hover
-     change on a single small element — not a per-frame repaint. */
+     specular carry the hover state. One shadow transition per hover change
+     on a single small element — not a per-frame repaint. Duration follows
+     pointer speed via --composer-hover-dur. */
   .chat-composer-glass-shell:hover .chat-composer-glass-host {
     box-shadow: 0 18px 40px -18px rgb(0 0 0 / 46%);
 
@@ -1296,7 +1531,8 @@ html[data-window-inactive]
     border: 1px solid var(--chat-composer-outline);
     border-radius: inherit;
     box-shadow: inset 0 1px var(--chat-composer-highlight);
-    transition: border-color 160ms cubic-bezier(0.32, 0.72, 0, 1);
+    transition: border-color calc(160ms * var(--composer-hover-dur, 1))
+      cubic-bezier(0.32, 0.72, 0, 1);
     content: "";
   }
 
@@ -1347,7 +1583,8 @@ html[data-window-inactive]
       border: 1px solid var(--chat-composer-outline);
       border-radius: inherit;
       box-shadow: inset 0 1px var(--chat-composer-highlight);
-      transition: border-color 160ms cubic-bezier(0.32, 0.72, 0, 1);
+      transition: border-color calc(160ms * var(--composer-hover-dur, 1))
+        cubic-bezier(0.32, 0.72, 0, 1);
       content: "";
     }
 
@@ -1358,6 +1595,22 @@ html[data-window-inactive]
     @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
       background: var(--chat-composer-glass-surface);
     }
+  }
+
+  /* The inset top drawer leaves a joined seam in the full-width composer.
+     Keep that opening out of the rim so hover/focus follows the real outline. */
+  .chat-composer-glass-shell:has(.chat-composer-top-drawer)
+    [data-chat-composer-main-surface="true"]::after {
+    clip-path: polygon(
+      0 0,
+      var(--chat-composer-drawer-inset) 0,
+      var(--chat-composer-drawer-inset) 2px,
+      calc(100% - var(--chat-composer-drawer-inset)) 2px,
+      calc(100% - var(--chat-composer-drawer-inset)) 0,
+      100% 0,
+      100% 100%,
+      0 100%
+    );
   }
 
   .chat-composer-glass-shell:is(
@@ -1383,6 +1636,10 @@ html[data-window-inactive]
     border-color: color-mix(in srgb, var(--ring) 16%, var(--chat-composer-outline));
   }
 
+  .chat-composer-glass-shell:hover .chat-composer-top-drawer::before {
+    border-color: color-mix(in srgb, var(--ring) 16%, var(--chat-composer-attached-outline));
+  }
+
   .chat-composer-glass-shell:focus-within .chat-composer-glass-host::after,
   .chat-composer-glass-shell:is(
       .chat-composer-glass-shell-attached,
@@ -1393,6 +1650,10 @@ html[data-window-inactive]
     border-color: color-mix(in srgb, var(--ring) 38%, var(--chat-composer-outline));
   }
 
+  .chat-composer-glass-shell:focus-within .chat-composer-top-drawer::before {
+    border-color: color-mix(in srgb, var(--ring) 38%, var(--chat-composer-attached-outline));
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .chat-composer-glass-host,
     .chat-composer-glass-host::after,
@@ -1401,21 +1662,28 @@ html[data-window-inactive]
         :has(:is(.chat-composer-top-drawer, .chat-composer-shoulder-tab))
       )
       .chat-composer-glass-host
-      [data-chat-composer-main-surface="true"]::after {
+      [data-chat-composer-main-surface="true"]::after,
+    .chat-composer-top-drawer::before {
       transition: none;
     }
   }
 
   /* Pointer-reactive specular: a fixed-size radial highlight rasterized once
      and moved with `translate` only, so every pointer update is a compositor
-     transform on an existing layer. The listener (ComposerSpecular) only runs
-     while the pointer moves inside the composer; a still pointer is zero work.
+     transform on an existing layer. The listener (ComposerSpecular) only
+     writes coordinates while the pointer moves inside the composer; a still
+     pointer is zero work. Approach speed is sampled on document pointermove
+     (numbers only) and written to --composer-hover-dur on hover cross.
      The layer spans the whole glass shell — context strip included — clipped
      to the same joined silhouette as the shell's glass, so the glow follows
      the pointer down into the strip instead of cutting off at the composer
      lip. A wider halo (::after) sits under the core and blooms from 72% to
      full size on hover; `scale` transitions independently of the per-frame
-     `translate` updates, so tracking stays instant while the bloom settles. */
+     `translate` updates, so tracking stays instant while the bloom settles.
+     Opacity and bloom keep their speed-scaled durations both ways so leave
+     matches enter.
+     Each gradient keeps a full-range alpha ramp and applies its faintness as
+     post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
     .chat-composer-specular {
       position: absolute;
@@ -1425,7 +1693,7 @@ html[data-window-inactive]
       border-radius: 22px;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
+      transition: opacity calc(480ms * var(--composer-hover-dur, 1)) cubic-bezier(0.33, 0, 0.2, 1);
     }
 
     .chat-composer-glass-shell-with-context .chat-composer-specular {
@@ -1455,6 +1723,12 @@ html[data-window-inactive]
       );
     }
 
+    /* Top drawers are narrower than the shell and can vary in height, so the
+       full-shell glow has no single correct clip while one is expanded. */
+    .chat-composer-glass-shell:has(.chat-composer-top-drawer) .chat-composer-specular {
+      display: none;
+    }
+
     .chat-composer-glass-shell:hover .chat-composer-specular {
       opacity: 1;
     }
@@ -1467,16 +1741,14 @@ html[data-window-inactive]
       width: 320px;
       height: 320px;
       margin: -160px 0 0 -160px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 6%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
       will-change: translate;
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.05;
       }
     }
 
@@ -1488,18 +1760,16 @@ html[data-window-inactive]
       width: 560px;
       height: 560px;
       margin: -280px 0 0 -280px;
-      background: radial-gradient(
-        circle closest-side,
-        color-mix(in srgb, var(--foreground) 3.5%, transparent),
-        transparent
-      );
+      background: radial-gradient(circle closest-side, var(--foreground), transparent);
+      opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: 0.72;
       will-change: translate;
-      transition: scale 420ms cubic-bezier(0.22, 1, 0.36, 1);
+      transition: scale calc(520ms * var(--composer-hover-dur, 1)) cubic-bezier(0.22, 1, 0.36, 1);
 
       @variant dark {
-        background: radial-gradient(circle closest-side, rgb(255 255 255 / 2.5%), transparent);
+        background: radial-gradient(circle closest-side, white, transparent);
+        opacity: 0.025;
       }
     }
 
@@ -2982,13 +3252,13 @@ code {
   font-size: 0.75rem;
 }
 
-.chat-markdown a.chat-markdown-file-link,
-.chat-markdown a.chat-markdown-file-link:hover {
+.chat-markdown .chat-markdown-file-link,
+.chat-markdown .chat-markdown-file-link:hover {
   color: var(--contrast-foreground);
   text-decoration: none;
 }
 
-.chat-markdown a.chat-markdown-file-link:focus-visible {
+.chat-markdown .chat-markdown-file-link:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
 }
@@ -3317,7 +3587,7 @@ code {
 }
 
 .ultrathink-chroma {
-  animation: ultrathink-chroma-shift 10s linear infinite;
+  animation: ultrathink-chroma-shift 800ms ease-out both;
 }
 
 /* Hold the static spectrum when motion is off (app toggle or OS). */
@@ -3353,6 +3623,16 @@ html:not([data-scenery-motion]) .ultrathink-chroma {
 .preview-loading-progress[data-loading="true"] {
   opacity: 1;
   animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
+}
+
+html:not([data-scenery-motion]) .preview-loading-progress,
+html:not([data-scenery-motion]) .preview-loading-progress[data-loading="true"] {
+  transition: none;
+  animation: none;
+}
+
+html:not([data-scenery-motion]) .preview-loading-progress[data-loading="true"] {
+  transform: scaleX(0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {

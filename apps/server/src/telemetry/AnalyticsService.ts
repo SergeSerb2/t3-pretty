@@ -7,6 +7,7 @@
  * @module AnalyticsService
  */
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import type { ClientOs } from "@t3tools/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -14,12 +15,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -27,6 +30,16 @@ interface BufferedAnalyticsEvent {
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly capturedAt: string;
 }
+
+const ANALYTICS_REQUEST_TIMEOUT = "10 seconds";
+const ANALYTICS_SHUTDOWN_FLUSH_TIMEOUT = "2 seconds";
+const ANALYTICS_FLUSH_INTERVAL_MS = 1_000;
+const ANALYTICS_MAX_RETRY_DELAY_MS = 60_000;
+const ANALYTICS_MAX_BATCH_SIZE = 100;
+const ANALYTICS_MAX_BUFFERED_EVENTS = 10_000;
+
+const boundedInteger = (value: number, fallback: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, Math.floor(Number.isFinite(value) ? value : fallback)));
 
 const TelemetryEnvConfig = Config.all({
   posthogKey: Config.string("T3CODE_POSTHOG_KEY").pipe(
@@ -66,12 +79,41 @@ export class AnalyticsService extends Context.Service<
   );
 }
 
+export function serverOsFromNodePlatform(platform: string): ClientOs {
+  switch (platform) {
+    case "darwin":
+      return "macOS";
+    case "win32":
+      return "Windows";
+    case "linux":
+      return "Linux";
+    case "android":
+      return "Android";
+    default:
+      return "other";
+  }
+}
+
 export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
+  const flushBatchSize = boundedInteger(
+    telemetryConfig.flushBatchSize,
+    20,
+    1,
+    ANALYTICS_MAX_BATCH_SIZE,
+  );
+  const maxBufferedEvents = boundedInteger(
+    telemetryConfig.maxBufferedEvents,
+    1_000,
+    0,
+    ANALYTICS_MAX_BUFFERED_EVENTS,
+  );
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const identifier = yield* getTelemetryIdentifier;
   const bufferRef = yield* Ref.make<ReadonlyArray<BufferedAnalyticsEvent>>([]);
+  const flushFailureCountRef = yield* Ref.make(0);
+  const flushSemaphore = yield* Semaphore.make(1);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
@@ -89,8 +131,8 @@ export const make = Effect.gen(function* () {
         ];
 
         const next =
-          appended.length > telemetryConfig.maxBufferedEvents
-            ? appended.slice(appended.length - telemetryConfig.maxBufferedEvents)
+          appended.length > maxBufferedEvents
+            ? appended.slice(appended.length - maxBufferedEvents)
             : appended;
 
         return [
@@ -121,6 +163,11 @@ export const make = Effect.gen(function* () {
           arch: hostArchitecture,
           t3CodeVersion: packageJson.version,
           clientType,
+          serverOs: serverOsFromNodePlatform(hostPlatform),
+          serverArch: hostArchitecture,
+          serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
+          serverAppVersion: packageJson.version,
+          serverMode: serverConfig.mode,
         },
         timestamp: event.capturedAt,
       })),
@@ -129,34 +176,52 @@ export const make = Effect.gen(function* () {
     yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
       Effect.flatMap(httpClient.execute),
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((response) =>
+        releaseHttpClientResponseBody(response).pipe(
+          Effect.andThen(HttpClientResponse.filterStatusOk(response)),
+        ),
+      ),
+      Effect.timeout(ANALYTICS_REQUEST_TIMEOUT),
     );
   });
 
-  const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
-    while (true) {
-      const batch = yield* Ref.modify(bufferRef, (current) => {
-        if (current.length === 0) {
-          return [[] as ReadonlyArray<BufferedAnalyticsEvent>, current] as const;
+  const flush: AnalyticsService["Service"]["flush"] = flushSemaphore.withPermits(1)(
+    Effect.gen(function* () {
+      while (true) {
+        const batch = yield* Ref.modify(bufferRef, (current) => {
+          if (current.length === 0) {
+            return [[] as ReadonlyArray<BufferedAnalyticsEvent>, current] as const;
+          }
+          const nextBatch = current.slice(0, flushBatchSize);
+          const remaining = current.slice(nextBatch.length);
+          return [nextBatch, remaining] as const;
+        });
+
+        if (batch.length === 0) {
+          return;
         }
-        const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
-        const remaining = current.slice(nextBatch.length);
-        return [nextBatch, remaining] as const;
-      });
 
-      if (batch.length === 0) {
-        return;
-      }
-
-      yield* sendBatch(batch).pipe(
-        Effect.catch((error) =>
-          Ref.update(bufferRef, (current) => [...batch, ...current]).pipe(
-            Effect.flatMap(() => Effect.fail(error)),
+        yield* sendBatch(batch).pipe(
+          Effect.catch((error) =>
+            Ref.update(bufferRef, (current) => {
+              const requeued = [...batch, ...current];
+              const overflow = requeued.length - maxBufferedEvents;
+              return overflow > 0 ? requeued.slice(overflow) : requeued;
+            }).pipe(Effect.flatMap(() => Effect.fail(error))),
           ),
+        );
+      }
+    }).pipe(
+      Effect.tap(() => Ref.set(flushFailureCountRef, 0)),
+      // HTTP failures retain request data, including telemetry properties and the PostHog key.
+      // The service is best-effort, so keep its diagnostic stable and payload-free.
+      Effect.catch(() =>
+        Ref.update(flushFailureCountRef, (count) => Math.min(count + 1, 16)).pipe(
+          Effect.andThen(Effect.logError("Failed to flush telemetry")),
         ),
-      );
-    }
-  }).pipe(Effect.catch((cause) => Effect.logError("Failed to flush telemetry", { cause })));
+      ),
+    ),
+  );
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
     function* (event, properties) {
@@ -172,11 +237,22 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  yield* Effect.forever(Effect.sleep(1000).pipe(Effect.flatMap(() => flush)), {
-    disableYield: true,
-  }).pipe(Effect.forkScoped);
+  const periodicFlush = Ref.get(flushFailureCountRef).pipe(
+    Effect.flatMap((failureCount) =>
+      Effect.sleep(
+        Math.min(
+          ANALYTICS_MAX_RETRY_DELAY_MS,
+          ANALYTICS_FLUSH_INTERVAL_MS * 2 ** Math.min(failureCount, 6),
+        ),
+      ),
+    ),
+    Effect.andThen(flush),
+  );
+  yield* Effect.forever(periodicFlush, { disableYield: true }).pipe(Effect.forkScoped);
 
-  yield* Effect.addFinalizer(() => flush);
+  yield* Effect.addFinalizer(() =>
+    flush.pipe(Effect.timeout(ANALYTICS_SHUTDOWN_FLUSH_TIMEOUT), Effect.ignore),
+  );
 
   return AnalyticsService.of({ record, flush });
 });

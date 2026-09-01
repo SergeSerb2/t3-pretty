@@ -14,8 +14,11 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+
 const LATEST_VERSION_CACHE_TTL_MS = 60 * 60 * 1_000;
 const LATEST_VERSION_TIMEOUT_MS = 4_000;
+const LATEST_VERSION_RESPONSE_MAX_BYTES = 64 * 1024;
 const PROVIDER_UPDATE_ACTION_TOAST_MESSAGE = "Install the update now or review provider settings.";
 
 const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.ProcessEnv =>
@@ -68,7 +71,6 @@ export interface PackageManagedProviderMaintenanceDefinition {
   readonly npmPackageName: string;
   readonly homebrewFormula: string | null;
   readonly nativeUpdate: {
-    readonly executable: string;
     readonly args: ReadonlyArray<string>;
     readonly lockKey: string;
     readonly isCommandPath: (commandPath: string) => boolean;
@@ -89,6 +91,9 @@ export const ProviderVersionCache = Context.Reference<Map<string, ProviderVersio
 const NpmLatestVersionResponse = Schema.Struct({
   version: Schema.optional(Schema.String),
 });
+const decodeNpmLatestVersionResponse = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(NpmLatestVersionResponse),
+);
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -209,6 +214,7 @@ function makeHomebrewProviderMaintenanceCapabilities(
 
 function makeNativeProviderMaintenanceCapabilities(
   definition: PackageManagedProviderMaintenanceDefinition,
+  executable: string,
 ): ProviderMaintenanceCapabilities | null {
   if (!definition.nativeUpdate) {
     return null;
@@ -217,7 +223,7 @@ function makeNativeProviderMaintenanceCapabilities(
   return makeProviderMaintenanceCapabilities({
     provider: definition.provider,
     packageName: definition.npmPackageName,
-    updateExecutable: definition.nativeUpdate.executable,
+    updateExecutable: executable,
     updateArgs: definition.nativeUpdate.args,
     updateLockKey: definition.nativeUpdate.lockKey,
   });
@@ -297,7 +303,7 @@ export function resolvePackageManagedProviderMaintenance(
       commandPaths.some((commandPath) => nativeUpdate.isCommandPath(commandPath))
     ) {
       return (
-        makeNativeProviderMaintenanceCapabilities(definition) ??
+        makeNativeProviderMaintenanceCapabilities(definition, resolvedCommandPath) ??
         makeNpmGlobalProviderMaintenanceCapabilities(definition)
       );
     }
@@ -435,22 +441,28 @@ const fetchNpmLatestVersion = Effect.fn("fetchNpmLatestVersion")(function* (pack
   const request = HttpClientRequest.get(
     `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
   ).pipe(HttpClientRequest.setHeader("accept", "application/json"));
-  const response = yield* client.execute(request).pipe(
+  return yield* Effect.gen(function* () {
+    const httpResponse = yield* client.execute(request);
+    if (httpResponse.status < 200 || httpResponse.status >= 300) {
+      return null;
+    }
+    const declaredLength = Number(httpResponse.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > LATEST_VERSION_RESPONSE_MAX_BYTES) {
+      return null;
+    }
+    const collected = yield* collectUint8StreamText({
+      stream: httpResponse.stream,
+      maxBytes: LATEST_VERSION_RESPONSE_MAX_BYTES,
+      drainAfterTruncation: false,
+    });
+    if (collected.truncated) return null;
+    const payload = yield* decodeNpmLatestVersionResponse(collected.text);
+    return nonEmptyString(payload.version);
+  }).pipe(
     Effect.timeoutOption(LATEST_VERSION_TIMEOUT_MS),
-    Effect.orElseSucceed(() => Option.none()),
-  );
-  if (Option.isNone(response)) {
-    return null;
-  }
-  const httpResponse = response.value;
-  if (httpResponse.status < 200 || httpResponse.status >= 300) {
-    return null;
-  }
-  const payload = yield* httpResponse.json.pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(NpmLatestVersionResponse)),
+    Effect.map(Option.getOrNull),
     Effect.orElseSucceed(() => null),
   );
-  return payload ? nonEmptyString(payload.version) : null;
 });
 
 export const resolveLatestProviderVersion = Effect.fn("resolveLatestProviderVersion")(function* (

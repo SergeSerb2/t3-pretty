@@ -94,6 +94,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           interaction_mode,
           branch,
           worktree_path,
+          linked_pull_request_json,
           latest_turn_id,
           latest_user_message_at,
           pending_approval_count,
@@ -114,6 +115,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'default',
           NULL,
           NULL,
+          '{"projectId":"project-1","repository":"pingdotgg/t3code","number":42,"url":"https://github.com/pingdotgg/t3code/pull/42"}',
           'turn-1',
           '2026-02-24T00:00:04.000Z',
           1,
@@ -316,6 +318,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          linkedPullRequest: {
+            projectId: asProjectId("project-1"),
+            repository: "pingdotgg/t3code",
+            number: 42,
+            url: "https://github.com/pingdotgg/t3code/pull/42",
+          },
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -333,6 +341,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
@@ -437,6 +446,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          linkedPullRequest: {
+            projectId: asProjectId("project-1"),
+            repository: "pingdotgg/t3code",
+            number: 42,
+            url: "https://github.com/pingdotgg/t3code/pull/42",
+          },
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -454,6 +469,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
@@ -640,17 +656,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadIsCrossRepository: null,
         },
         {
-          threadId: ThreadId.make("eligible-worktree"),
-          branch: "feature/worktree",
-          cwd: "/tmp/project-worktree",
-          branchObservedAt: "2026-08-10T00:00:03.800Z",
-          branchEventId: EventId.make("event-eligible-worktree-branch"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
-        },
-        {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
@@ -661,7 +666,28 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadOwner: null,
           branchHeadIsCrossRepository: null,
         },
+        {
+          threadId: ThreadId.make("eligible-worktree"),
+          branch: "feature/worktree",
+          cwd: "/tmp/project-worktree",
+          branchObservedAt: "2026-08-10T00:00:03.800Z",
+          branchEventId: EventId.make("event-eligible-worktree-branch"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
       ]);
+
+      const firstPage = yield* snapshotQuery.listMergedPullRequestCandidates({ limit: 2 });
+      assert.deepEqual(firstPage, candidates.slice(0, 2));
+      const lastFirstPageCandidate = firstPage.at(-1);
+      assert.ok(lastFirstPageCandidate);
+      const secondPage = yield* snapshotQuery.listMergedPullRequestCandidates({
+        afterThreadId: lastFirstPageCandidate.threadId,
+        limit: 2,
+      });
+      assert.deepEqual(secondPage, candidates.slice(2));
     }),
   );
 

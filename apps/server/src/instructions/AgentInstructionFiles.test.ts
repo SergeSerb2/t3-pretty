@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { AGENT_INSTRUCTION_FILE_MAX_BYTES } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -142,6 +143,22 @@ it.layer(NodeServices.layer)("AgentInstructionFiles", (it) => {
       });
       const read = yield* service.read({ fileId: "project:AGENTS.md", projectCwd: workspace });
       assert.strictEqual(read.contents, "# Rules\n");
+    }),
+  );
+
+  it.effect("reads only the bounded prefix of oversized instruction files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspace = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agent-workspace-" });
+      const prefix = "x".repeat(AGENT_INSTRUCTION_FILE_MAX_BYTES);
+      yield* fs.writeFileString(path.join(workspace, "AGENTS.md"), `${prefix}tail`);
+      const service = yield* makeService();
+
+      const read = yield* service.read({ fileId: "project:AGENTS.md", projectCwd: workspace });
+
+      assert.strictEqual(read.contents, prefix);
+      assert.strictEqual(read.truncated, true);
     }),
   );
 

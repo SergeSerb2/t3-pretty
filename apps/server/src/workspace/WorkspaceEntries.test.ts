@@ -18,7 +18,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, readdir: vi.fn(actual.readdir) };
+  return { ...actual, opendir: vi.fn(actual.opendir) };
 });
 
 const TestLayer = Layer.empty.pipe(
@@ -654,6 +654,7 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
             { name: "alpha", fullPath: path.join(cwd, "alpha") },
             { name: "alpine", fullPath: path.join(cwd, "alpine") },
           ],
+          truncated: false,
         });
       }),
     );
@@ -678,6 +679,7 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(hiddenPrefixResult).toEqual({
           parentPath: cwd,
           entries: [{ name: ".config", fullPath: path.join(cwd, ".config") }],
+          truncated: false,
         });
       }),
     );
@@ -697,6 +699,7 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(result).toEqual({
           parentPath: cwd,
           entries: [{ name: "packages", fullPath: path.join(cwd, "packages") }],
+          truncated: false,
         });
       }),
     );
@@ -724,12 +727,12 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const cwd = yield* makeTempDir({ prefix: "t3code-workspace-browse-eacces-" });
 
         const denied = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
-        vi.mocked(NodeFSP.readdir).mockRejectedValueOnce(denied);
+        vi.mocked(NodeFSP.opendir).mockRejectedValueOnce(denied);
 
         const result = yield* workspaceEntries.browse({
           partialPath: yield* appendSeparator(cwd),
         });
-        expect(result).toEqual({ parentPath: cwd, entries: [] });
+        expect(result).toEqual({ parentPath: cwd, entries: [], truncated: false });
       }),
     );
   });

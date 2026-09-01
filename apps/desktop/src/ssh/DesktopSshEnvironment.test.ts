@@ -49,6 +49,17 @@ describe("sshEnvironment", () => {
     );
   });
 
+  it("maps prompt capacity to a retryable authentication error without treating it as cancellation", () => {
+    const cause = new DesktopSshPasswordPrompts.DesktopSshPromptCapacityError({
+      destination: "devbox",
+      limit: 16,
+    });
+    const error = DesktopSshEnvironment.toSshPasswordPromptError(cause);
+
+    assert.include(error.message, "Too many SSH authentication prompts");
+    assert.equal(DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation(error), false);
+  });
+
   it.effect("wires desktop host discovery through the ssh package runtime", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -38,6 +38,7 @@ import {
   narrowPullRequestsToFilters,
   mergePullRequestDiffStats,
   partitionPullRequestsWithPriority,
+  pullRequestDiffStatKey,
   pullRequestEntryKey,
   pullRequestEntryViewer,
   rankPullRequestMatches,
@@ -55,6 +56,7 @@ import {
   type PullRequestPartitionsSnapshot,
 } from "../components/pullRequest/pullRequestList.logic";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
+import { linkedPullRequestKey } from "../components/pullRequest/pullRequestPanelView.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
 import {
   PullRequestFiltersMenu,
@@ -65,7 +67,18 @@ import {
   type PullRequestFilterOption,
 } from "../components/pullRequest/PullRequestListFilters";
 import {
+  DEFAULT_PULL_REQUEST_LIST_FILTERS,
+  livePullRequestListFilters,
+  persistedFiltersFromSearch,
+  pullRequestListFiltersToPersist,
+  readPersistedPullRequestListFilters,
+  restoredListSearchToReplaceUrl,
+  shouldRestorePersistedListFilters,
+  writePersistedPullRequestListFilters,
+} from "../components/pullRequest/pullRequestListFiltersPersistence";
+import {
   applyPullRequestsSearchPatch,
+  parsePullRequestsSearch,
   resetPullRequestsListSearch,
   type PullRequestsSearch,
   type PullRequestsSearchPatch,
@@ -86,6 +99,8 @@ import { isElectron } from "../env";
 import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
 import { Button } from "../components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../components/ui/menu";
+import { resolveLocalStorage } from "../lib/storage";
+import { compareIsoDateTimes } from "../lib/threadSort";
 import { SidebarInset } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -157,46 +172,15 @@ const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 
 export const Route = createFileRoute("/_chat/pull-requests")({
-  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
-    involvement:
-      raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
-    state:
-      raw.state === "closed" || raw.state === "merged" || raw.state === "all" ? raw.state : "open",
-    ...(typeof raw.repository === "string" && raw.repository
-      ? { repository: raw.repository.slice(0, 200) }
-      : {}),
-    ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
-      ? { number: raw.number }
-      : {}),
-    ...(typeof raw.projectId === "string" && raw.projectId
-      ? { projectId: raw.projectId as ProjectId }
-      : {}),
-    ...(typeof raw.environmentId === "string" && raw.environmentId
-      ? { environmentId: raw.environmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.host === "string" && raw.host ? { host: raw.host.slice(0, 200) } : {}),
-    ...(typeof raw.selectedProjectId === "string" && raw.selectedProjectId
-      ? { selectedProjectId: raw.selectedProjectId as ProjectId }
-      : {}),
-    ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
-      ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
-    ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
-    ...(raw.review === "approved" ||
-    raw.review === "changes-requested" ||
-    raw.review === "review-required" ||
-    raw.review === "none"
-      ? { review: raw.review }
-      : {}),
-    ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
-  }),
+  validateSearch: parsePullRequestsSearch,
   component: PullRequestsRouteView,
 });
 
 function PullRequestsRouteView() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
+  const skipNextListPersist = useRef(false);
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
   // keys, the scope key and the stored snapshot all read the same whichever order the
@@ -387,6 +371,57 @@ function PullRequestsRouteView() {
     [navigate],
   );
 
+  // Restore browser state after pure URL validation, then keep the address bar and storage aligned.
+  // Reads this match's validated search, never `useLocation`: the location store flips to the
+  // next route while this page is still mounted, and a restore issued from that pending location
+  // navigated straight back to `/pull-requests`, so the page could not be left.
+  useEffect(() => {
+    const raw: Record<string, unknown> = { ...search };
+    if (skipNextListPersist.current) {
+      skipNextListPersist.current = false;
+      return;
+    }
+    const restoring = shouldRestorePersistedListFilters(raw);
+    const current = restoring
+      ? readPersistedPullRequestListFilters()
+      : persistedFiltersFromSearch(search);
+    const scoped = livePullRequestListFilters(
+      current,
+      projectsKnown ? environments.map((environment) => environment.environmentId) : undefined,
+      projectsKnown ? allProjects.map((project) => project.id) : undefined,
+    );
+    const scopePatch = {
+      environmentId: scoped.environmentId,
+      projectId: scoped.projectId,
+      host: scoped.host,
+    };
+    const scopeChanged =
+      scoped.environmentId !== current.environmentId ||
+      scoped.projectId !== current.projectId ||
+      scoped.host !== current.host;
+    if (restoring) {
+      const next = restoredListSearchToReplaceUrl(raw, scoped);
+      if (next !== null) {
+        skipNextListPersist.current = scopeChanged;
+        updateSearch({ ...next, ...scopePatch });
+      }
+      return;
+    }
+    const persistable = pullRequestListFiltersToPersist(raw, scoped, false);
+    if (
+      scoped.environmentId !== search.environmentId ||
+      scoped.projectId !== search.projectId ||
+      scoped.host !== search.host
+    ) {
+      skipNextListPersist.current = true;
+      updateSearch(scopePatch);
+      return;
+    }
+    if (persistable !== null) {
+      writePersistedPullRequestListFilters(persistable);
+    }
+  }, [allProjects, environments, projectsKnown, search, updateSearch]);
+
   // Changing what the list contains must not leave a selection from the previous view open.
   // The project filter is untouched: it is the user's scope, not part of the selection.
   const clearedSelection = {
@@ -403,7 +438,13 @@ function PullRequestsRouteView() {
   };
   const updateListScope = (patch: PullRequestsSearchPatch) => {
     closeListSelection();
-    updateSearch({ ...patch, ...clearedSelection });
+    updateSearch({
+      ...patch,
+      ...clearedSelection,
+      ...(patch.state === undefined && search.state === "all"
+        ? { state: readPersistedPullRequestListFilters().state }
+        : {}),
+    });
   };
 
   // Searching asks the hosts, which takes a round trip, so the text is held for a moment before
@@ -711,10 +752,7 @@ function PullRequestsRouteView() {
       // Rows read from a different set of environments cannot even be narrowed — one of them may
       // no longer be connected at all — so that set's own snapshot beats holding them.
       if (current !== null && current.environmentKey === environmentKey) return current;
-      const snapshot = readPullRequestListSnapshot(
-        typeof window === "undefined" ? undefined : window.localStorage,
-        environmentKey,
-      );
+      const snapshot = readPullRequestListSnapshot(resolveLocalStorage(), environmentKey);
       if (snapshot === null) return null;
       return {
         environmentKey,
@@ -756,20 +794,16 @@ function PullRequestsRouteView() {
       // read — which never drops an environment for lack of a cursor — carries the full hosts.
       if (environmentKey.length > 0 && sentQuery.length === 0) {
         const accumulatedEntries = ordered?.key === filterKey ? ordered.entries : data.entries;
-        writePullRequestListSnapshot(
-          typeof window === "undefined" ? undefined : window.localStorage,
-          environmentKey,
-          {
-            scope: scopeKey,
-            data: {
-              ...data,
-              entries: accumulatedEntries,
-              viewers: baselineQuery.data?.viewers ?? data.viewers,
-              providers: baselineQuery.data?.providers ?? data.providers,
-            },
-            ...(partitions === undefined ? {} : { partitions }),
+        writePullRequestListSnapshot(resolveLocalStorage(), environmentKey, {
+          scope: scopeKey,
+          data: {
+            ...data,
+            entries: accumulatedEntries,
+            viewers: baselineQuery.data?.viewers ?? data.viewers,
+            providers: baselineQuery.data?.providers ?? data.providers,
           },
-        );
+          ...(partitions === undefined ? {} : { partitions }),
+        });
       }
       return {
         environmentKey,
@@ -853,7 +887,7 @@ function PullRequestsRouteView() {
         const held = new Set(previous.entries.map(pullRequestEntryKey));
         const arrived = answered.entries.filter((entry) => !held.has(pullRequestEntryKey(entry)));
         const appended = rankPullRequestMatches(
-          arrived.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+          arrived.toSorted((left, right) => compareIsoDateTimes(right.updatedAt, left.updatedAt)),
           sentParsed.text,
         );
         return { key: filterKey, entries: [...previous.entries, ...appended] };
@@ -967,7 +1001,7 @@ function PullRequestsRouteView() {
     // the order, and re-sorting by date here would undo it.
     if (typedParsed.text.length === 0) {
       return narrowedEntries.toSorted((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt),
+        compareIsoDateTimes(right.updatedAt, left.updatedAt),
       );
     }
     const answeredLocally = querySettled && !showingCarried;
@@ -1091,13 +1125,15 @@ function PullRequestsRouteView() {
   // Keyed by every row being shown — the partitions can hold rows the feed has not paged to —
   // so scrolling further asks only about what is new. One read per environment, each asking only
   // about its own rows: a reference names a project, and a project belongs to one machine.
-  const statsTargets = useMemo(() => {
+  const { statsTargets, statsTargetKeys } = useMemo(() => {
     const refsByEnvironment = new Map<
       EnvironmentId,
       Array<{ projectId: ProjectId; repository: string; number: number }>
     >();
+    const currentKeys = new Set<string>();
     for (const group of groups) {
       for (const entry of group.entries) {
+        currentKeys.add(pullRequestDiffStatKey(entry));
         const refs = refsByEnvironment.get(entry.environmentId) ?? [];
         refs.push({
           projectId: entry.projectId,
@@ -1107,10 +1143,13 @@ function PullRequestsRouteView() {
         refsByEnvironment.set(entry.environmentId, refs);
       }
     }
-    return [...refsByEnvironment].map(([environmentId, refs]) => ({
-      environmentId,
-      input: { refs },
-    }));
+    return {
+      statsTargets: [...refsByEnvironment].map(([environmentId, refs]) => ({
+        environmentId,
+        input: { refs },
+      })),
+      statsTargetKeys: currentKeys,
+    };
   }, [groups]);
   const statsQuery = usePullRequestListStats(statsTargets);
   // Adding or removing one row keys a fresh stats query with nothing in it yet, so the counts
@@ -1118,10 +1157,10 @@ function PullRequestsRouteView() {
   // its replacement arrives.
   const [statsByRow, setStatsByRow] = useState<PullRequestDiffStats>(() => new Map());
   useEffect(() => {
-    const stats = statsQuery.stats;
-    if (stats === null) return;
-    setStatsByRow((previous) => mergePullRequestDiffStats(previous, stats));
-  }, [statsQuery.stats]);
+    setStatsByRow((previous) =>
+      mergePullRequestDiffStats(previous, statsQuery.stats ?? [], statsTargetKeys),
+    );
+  }, [statsQuery.stats, statsTargetKeys]);
 
   const linkedSelection = useMemo(
     () =>
@@ -1136,10 +1175,18 @@ function PullRequestsRouteView() {
     [search.number, search.repository, selectedProject],
   );
   const rightPanelAvailable = selectedPullRequestSurface !== null;
+  // Open the linked pull request once per selection. `linkedSelection` is rebuilt whenever the
+  // project catalog re-emits (any thread or git activity on a live desktop), and opening on every
+  // rebuild reopened the panel right after the reader closed it, with no way out short of a
+  // restart. A new selection (another row, another link) still opens.
+  const linkedSelectionKey = linkedPullRequestKey(linkedSelection);
+  const openedLinkedSelectionKey = useRef<string | null>(null);
   useEffect(() => {
     if (!pullRequestsSupported || rightPanelRef === null || linkedSelection === null) return;
+    if (openedLinkedSelectionKey.current === linkedSelectionKey) return;
+    openedLinkedSelectionKey.current = linkedSelectionKey;
     useRightPanelStore.getState().openPullRequest(rightPanelRef, linkedSelection);
-  }, [linkedSelection, pullRequestsSupported, rightPanelRef]);
+  }, [linkedSelection, linkedSelectionKey, pullRequestsSupported, rightPanelRef]);
 
   const selected =
     rightPanelState.isOpen && activePullRequestSurface !== null
@@ -1433,6 +1480,7 @@ function PullRequestsRouteView() {
       }
       onReset={() => {
         closeListSelection();
+        writePersistedPullRequestListFilters(DEFAULT_PULL_REQUEST_LIST_FILTERS);
         void navigate({
           search: resetPullRequestsListSearch,
           replace: true,
@@ -1461,6 +1509,13 @@ function PullRequestsRouteView() {
       !pullRequestsSupported || rightPanelState.isOpen ? null : (
         <span aria-hidden className="w-7 shrink-0 sm:w-5" />
       ),
+    titlebarControls:
+      // While the panel is closed the strip lives inside the header: a no-drag
+      // descendant beats the header's desktop drag-region, where a floating
+      // sibling loses (app-region hit-testing ignores z-index). Open, it moves
+      // back out to the route container, which spans the panel too, so the
+      // toggle keeps one fixed top-right anchor and never jumps sideways.
+      pullRequestsSupported && !rightPanelState.isOpen ? openPanelControls : null,
     rightPanelOpen: rightPanelState.isOpen,
     listBody,
   };
@@ -1502,7 +1557,7 @@ function PullRequestsRouteView() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="relative flex min-h-0 flex-1">
-        {pullRequestsSupported ? openPanelControls : null}
+        {pullRequestsSupported && rightPanelState.isOpen ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />
 
         {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
@@ -1581,22 +1636,31 @@ function CompactFilterMenu<Value extends string>({
   value,
   options,
   onChange,
+  className,
 }: {
   label: string;
   value: Value;
   options: ReadonlyArray<PullRequestFilterOption<Value>>;
   onChange: (value: Value) => void;
+  className?: string;
 }) {
   const current = options.find((option) => option.value === value) ?? options[0];
   if (!current) return null;
   return (
-    <Menu>
+    <Menu
+      // Same trap as the overflow filter menu: modal mode inerts Back, the
+      // sidebar, and every other control that would leave this page.
+      modal={false}
+    >
       <MenuTrigger
         aria-label={label}
-        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+        className={cn(
+          "inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground",
+          className,
+        )}
       >
-        {current.label}
-        <ChevronDownIcon aria-hidden className="size-3 text-muted-foreground/70" />
+        <span className="truncate">{current.label}</span>
+        <ChevronDownIcon aria-hidden className="size-3 shrink-0 text-muted-foreground/70" />
       </MenuTrigger>
       <MenuPopup align="start" side="bottom" className="min-w-40">
         <MenuRadioGroup value={value} onValueChange={(next) => onChange(next as Value)}>
@@ -1674,7 +1738,7 @@ function ExpandableSearch({
     return (
       <div
         ref={containerRef}
-        className="w-56 shrink-0"
+        className="w-56 min-w-24 shrink"
         onFocus={() => onFocusWithin?.(true)}
         onBlur={() => {
           onFocusWithin?.(false);
@@ -1719,6 +1783,7 @@ function PullRequestsColumn({
   searchInput,
   filtersMenu,
   rightPanelControl,
+  titlebarControls,
   rightPanelOpen,
   listBody,
 }: {
@@ -1735,6 +1800,7 @@ function PullRequestsColumn({
   searchInput: ReactNode;
   filtersMenu: ReactNode;
   rightPanelControl: ReactNode;
+  titlebarControls: ReactNode;
   rightPanelOpen: boolean;
   listBody: ReactNode;
 }) {
@@ -1759,6 +1825,7 @@ function PullRequestsColumn({
   const inFlowSearchRef = useRef<HTMLDivElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchExpanded = searchOpen || searchValue.length > 0;
   // Mod+F belongs to this page's own search: the desktop shell binds no find-in-page, so the
   // shortcut would otherwise do nothing. Condensed, it unfolds the topbar search; at the top,
   // it focuses the in-flow bar and selects the query the way a find field would.
@@ -1799,28 +1866,34 @@ function PullRequestsColumn({
     // (scenery.css), and the content panel below frosts its own plate for readability.
     <div data-pull-requests-column className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       {/* A closed right panel leaves this column full-width, so the shared header
-          reserves native window controls. While the panel is open, the column ends
-          at the panel and the absolute controls strip owns the top-right corner. */}
+          reserves native window controls and hosts the controls strip itself: on
+          desktop the header is a drag-region, and only a no-drag descendant wins
+          clicks from it - a floating sibling loses to app-region hit-testing no
+          matter its z-index. While the panel is open, the strip mounts back at
+          the route level, whose box spans the panel too, so the toggle keeps one
+          fixed top-right anchor. */}
       <WorkspacePageHeader
         data-pull-requests-header
         electron={isElectron}
         reserveNativeControls={!rightPanelOpen}
+        className="relative bg-background"
       >
+        {titlebarControls}
         {condensed ? (
-          <WorkspaceBreadcrumb ariaLabel="Pull request scope">
-            {/* The page name remains the foreground anchor in both states; the live filters are
-                its compact scope, grouped as the second crumb rather than pretending each menu
-                is a separate page in the hierarchy. */}
-            <WorkspaceBreadcrumbItem current>
+          <WorkspaceBreadcrumb ariaLabel="Pull request scope" className="overflow-hidden">
+            {/* An expanded search owns the scarce horizontal space. The page title stays
+                available to readers while the live filters remain available in both states. */}
+            <WorkspaceBreadcrumbItem current className={cn(searchExpanded && "sr-only")}>
               <h1 className="truncate">Pull Requests</h1>
             </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator />
-            <WorkspaceBreadcrumbItem className="gap-1.5 overflow-hidden">
+            {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
+            <WorkspaceBreadcrumbItem className="shrink gap-1.5">
               <CompactFilterMenu
                 label="Filter by state"
                 value={state}
                 options={STATE_TABS}
                 onChange={onState}
+                className="shrink-0"
               />
               <CompactFilterMenu
                 label="Filter by involvement"
@@ -1847,7 +1920,7 @@ function PullRequestsColumn({
         )}
         <div className="min-w-0 flex-1" />
         {condensed ? (
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink items-center gap-1.5">
             <ExpandableSearch
               searchInput={searchInput}
               searchValue={searchValue}
@@ -1866,9 +1939,9 @@ function PullRequestsColumn({
 
       <div
         ref={scrollRef}
-        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto [--topbar-scroll-fade-height:1.5rem] sm:[--topbar-scroll-fade-height:1.5rem]"
+        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
       >
-        {/* The top padding is the fade band's own height (1.5rem here), the same pairing the
+        {/* The top padding is the shared fade band's height, the same pairing the
             settings page makes: at rest the controls sit fully below the mask, and only
             content actually passing under the chrome fades. */}
         <WorkspacePageContainer className="gap-4">

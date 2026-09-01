@@ -1,3 +1,4 @@
+import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import "culori/css";
 import { converter, parse } from "culori/fn";
@@ -8,6 +9,7 @@ import {
   IRIS_THEME,
   OCEAN_THEME,
   T3_CHAT_THEME,
+  RESERVED_THEME_IDS,
   THEME_COLOR_ROLES,
   type ThemeAppearance,
   type ThemeColorRole,
@@ -56,23 +58,19 @@ export type ThemeFile = Readonly<{
   managed?: boolean;
 }>;
 
-const RESERVED_THEME_IDS = new Set([
-  "system",
-  "light",
-  "dark",
-  T3_CHAT_THEME_ID,
-  GROVE_THEME_ID,
-  OCEAN_THEME_ID,
-  EMBER_THEME_ID,
-  IRIS_THEME_ID,
-  LEGACY_T3_CHAT_DARK_THEME_ID,
-  "t3-grove",
-  "t3-ocean",
-  "t3-ember",
-  "t3-iris",
-]);
+// Reserved ids come from shared so the CLI, the server watcher, and this
+// library cannot drift on what a published theme may be called.
+
+/**
+ * The environment's palettes are not saved: they are republished by the
+ * server on every change and would go stale the moment the machine's theme
+ * moved on. They ride the custom-theme listeners so every theme consumer
+ * already re-reads when they change.
+ */
+let environmentThemeDefinitions: ReadonlyArray<ThemeDefinition> = [];
 
 const customThemeListeners = new Set<() => void>();
+let customThemeStorageListenerAttached = false;
 type CustomThemeLibrarySnapshot =
   | Readonly<{
       status: "ready";
@@ -130,21 +128,28 @@ function parseThemeCollection(value: unknown): ThemeCollection | undefined {
     : undefined;
 }
 
-function parseStoredThemeColors(value: unknown, appearance: ThemeAppearance): ThemeColors | null {
-  if (!isRecord(value)) return null;
-
-  const colors: Partial<Record<ThemeColorRole, string>> = {
-    ...getDefaultThemeColors(appearance),
-  };
-  // Tolerate unknown roles and malformed values so themes saved by other
-  // builds (for example one that adds a new role) keep their remaining colors.
+/**
+ * Tolerates unknown roles and malformed values so themes written by other
+ * builds (for example one that adds a new role) keep their remaining colors.
+ * The one canonicalization path for every externally supplied color record:
+ * stored themes, imported files, and environment-published themes.
+ */
+export function lenientThemeColorOverrides(
+  value: Readonly<Record<string, unknown>>,
+): Partial<Record<ThemeColorRole, string>> {
+  const overrides: Partial<Record<ThemeColorRole, string>> = {};
   for (const [role, color] of Object.entries(value)) {
     const normalized = toCanonicalThemeColor(color);
     if (THEME_COLOR_ROLE_SET.has(role) && normalized) {
-      colors[role as ThemeColorRole] = normalized;
+      overrides[role as ThemeColorRole] = normalized;
     }
   }
-  return colors as ThemeColors;
+  return overrides;
+}
+
+function parseStoredThemeColors(value: unknown, appearance: ThemeAppearance): ThemeColors | null {
+  if (!isRecord(value)) return null;
+  return { ...getDefaultThemeColors(appearance), ...lenientThemeColorOverrides(value) };
 }
 
 function parseStoredThemeVariants(
@@ -190,11 +195,12 @@ function parseStoredTheme(value: unknown): ThemeDefinition | null {
 
 function parseStoredThemes(storedThemes: ReadonlyArray<unknown>): ReadonlyArray<ThemeDefinition> {
   const themes: ThemeDefinition[] = [];
+  const seenThemeIds = new Set<string>();
   for (const value of storedThemes) {
     const theme = parseStoredTheme(value);
-    if (theme && !themes.some((existing) => existing.id === theme.id)) {
-      themes.push(theme);
-    }
+    if (!theme || seenThemeIds.has(theme.id)) continue;
+    seenThemeIds.add(theme.id);
+    themes.push(theme);
   }
   return themes;
 }
@@ -244,6 +250,27 @@ export function getCustomThemes(): ReadonlyArray<ThemeDefinition> {
   return snapshot.status === "ready" ? snapshot.themes : [];
 }
 
+export function getEnvironmentThemes(): ReadonlyArray<ThemeDefinition> {
+  return environmentThemeDefinitions;
+}
+
+/**
+ * Returns whether anything changed, structurally: config snapshots arrive as
+ * fresh arrays on every reconnect, and a repaint for identical colors is the
+ * kind of wasted work users of this product notice.
+ */
+export function setEnvironmentThemes(themes: ReadonlyArray<ThemeDefinition>): boolean {
+  if (Equal.equals(environmentThemeDefinitions, themes)) return false;
+  environmentThemeDefinitions = themes;
+  notifyCustomThemeListeners();
+  return true;
+}
+
+/** Ids no published theme may occupy: appearance keywords and built-in ids. */
+export function isReservedThemeId(themeId: string): boolean {
+  return RESERVED_THEME_IDS.has(themeId);
+}
+
 export function getStoredCustomThemeCollection(
   collectionId: string,
 ): ReadonlyArray<ThemeDefinition> {
@@ -252,21 +279,34 @@ export function getStoredCustomThemeCollection(
   );
 }
 
+function handleCustomThemeStorage(event: StorageEvent): void {
+  if (event.key === CUSTOM_THEMES_STORAGE_KEY || event.key === null) {
+    invalidateCustomThemes();
+  }
+}
+
 export function subscribeToCustomThemes(listener: () => void): () => void {
   customThemeListeners.add(listener);
-  if (typeof window === "undefined") {
-    return () => customThemeListeners.delete(listener);
+  if (
+    !customThemeStorageListenerAttached &&
+    typeof window !== "undefined" &&
+    typeof window.addEventListener === "function"
+  ) {
+    window.addEventListener("storage", handleCustomThemeStorage);
+    customThemeStorageListenerAttached = true;
   }
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === CUSTOM_THEMES_STORAGE_KEY || event.key === null) {
-      invalidateCustomThemes();
-    }
-  };
-  window.addEventListener("storage", handleStorage);
 
   return () => {
     customThemeListeners.delete(listener);
-    window.removeEventListener("storage", handleStorage);
+    if (
+      customThemeListeners.size === 0 &&
+      customThemeStorageListenerAttached &&
+      typeof window !== "undefined" &&
+      typeof window.removeEventListener === "function"
+    ) {
+      window.removeEventListener("storage", handleCustomThemeStorage);
+      customThemeStorageListenerAttached = false;
+    }
   };
 }
 
@@ -1573,6 +1613,9 @@ export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | nu
   return (
     BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === themeId) ??
     getCustomThemes().find((definition) => definition.id === themeId) ??
+    // Resolved last so a theme the user saved always wins over one the
+    // machine happens to publish under the same id.
+    environmentThemeDefinitions.find((definition) => definition.id === themeId) ??
     null
   );
 }
@@ -1584,6 +1627,17 @@ export function themeAllowsSidebarArtwork(theme: ThemePreference): boolean {
     BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === themeId)?.sidebarArtwork ===
     true
   );
+}
+
+/**
+ * Which half a theme can claim, or null when it renders both appearances.
+ * Selecting a single-appearance theme as the base preference would clear the
+ * light/dark mix and leave the appearance tiles disagreeing with what is on
+ * screen, so every path that selects a theme has to make the same call.
+ */
+export function singleAppearanceOf(theme: ThemeDefinition): ThemeAppearance | null {
+  const modes = getThemeModes(theme);
+  return modes.length === 1 ? modes[0]! : null;
 }
 
 export function getThemeColorsForMode(

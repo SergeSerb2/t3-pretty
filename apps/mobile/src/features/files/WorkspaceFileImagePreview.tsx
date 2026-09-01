@@ -88,6 +88,7 @@ function CachedWorkspaceFileImagePreview(props: {
 
   return (
     <ResolvedWorkspaceFileImagePreview
+      key={imageResult.value}
       accessibilityLabel={props.accessibilityLabel}
       uri={imageResult.value}
     />
@@ -111,6 +112,7 @@ export function WorkspaceFileImagePreview(props: {
 
   return (
     <CachedWorkspaceFileImagePreview
+      key={props.uri}
       accessibilityLabel={props.accessibilityLabel}
       uri={props.uri}
     />

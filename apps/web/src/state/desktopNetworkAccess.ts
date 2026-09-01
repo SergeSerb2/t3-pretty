@@ -10,11 +10,41 @@ import { Atom } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 const DESKTOP_NETWORK_ACCESS_STALE_TIME_MS = 30_000;
+const DESKTOP_NETWORK_ACCESS_REQUEST_TIMEOUT_MS = 5_000;
 
 type DesktopNetworkAccessBridge = Pick<
   DesktopBridge,
   "getAdvertisedEndpoints" | "getServerExposureState"
 >;
+
+interface DesktopNetworkAccessStateOptions {
+  readonly requestTimeoutMs?: number;
+}
+
+function readDesktopNetworkAccessValue<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const settle = (outcome: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      outcome();
+    };
+    const timeoutId = setTimeout(
+      () => settle(() => reject(new Error(`Desktop network read timed out after ${timeoutMs}ms.`))),
+      timeoutMs,
+    );
+    void Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => settle(() => resolve(value)),
+        (cause) => settle(() => reject(cause)),
+      );
+  });
+}
 
 export interface DesktopNetworkAccessSnapshot {
   readonly advertisedEndpoints: ReadonlyArray<AdvertisedEndpoint>;
@@ -54,7 +84,9 @@ function getDesktopNetworkAccessBridge(): DesktopNetworkAccessBridge | undefined
 
 export function createDesktopNetworkAccessStateAtom(
   getBridge: () => DesktopNetworkAccessBridge | undefined,
+  options: DesktopNetworkAccessStateOptions = {},
 ) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? DESKTOP_NETWORK_ACCESS_REQUEST_TIMEOUT_MS;
   const loadDesktopNetworkAccess = Effect.fn("loadDesktopNetworkAccess")(function* () {
     const bridge = getBridge();
     if (!bridge) {
@@ -63,11 +95,13 @@ export function createDesktopNetworkAccessStateAtom(
     const [serverExposureState, advertisedEndpoints] = yield* Effect.all(
       [
         Effect.tryPromise({
-          try: () => bridge.getServerExposureState(),
+          try: () =>
+            readDesktopNetworkAccessValue(() => bridge.getServerExposureState(), requestTimeoutMs),
           catch: (cause) => new DesktopServerExposureStateLoadError({ cause }),
         }),
         Effect.tryPromise({
-          try: () => bridge.getAdvertisedEndpoints(),
+          try: () =>
+            readDesktopNetworkAccessValue(() => bridge.getAdvertisedEndpoints(), requestTimeoutMs),
           catch: (cause) => new DesktopAdvertisedEndpointsLoadError({ cause }),
         }),
       ],

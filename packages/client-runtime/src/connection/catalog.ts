@@ -1,9 +1,14 @@
-import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
+import { DesktopSshEnvironmentTargetSchema } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
   BearerConnectionTarget,
+  ConnectionEnvironmentId,
+  ConnectionId,
+  ConnectionLabel,
+  ConnectionSecret,
+  ConnectionUrl,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -11,17 +16,17 @@ import {
 } from "./model.ts";
 
 const ConnectionProfileBase = {
-  connectionId: Schema.String,
-  environmentId: EnvironmentId,
-  label: Schema.String,
+  connectionId: ConnectionId,
+  environmentId: ConnectionEnvironmentId,
+  label: ConnectionLabel,
 };
 
 export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnectionProfile>()(
   "BearerConnectionProfile",
   {
     ...ConnectionProfileBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
+    httpBaseUrl: ConnectionUrl,
+    wsBaseUrl: ConnectionUrl,
   },
 ) {}
 
@@ -44,7 +49,7 @@ export interface ConnectionCatalogEntry {
 export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnectionCredential>()(
   "BearerConnectionCredential",
   {
-    token: Schema.String,
+    token: ConnectionSecret,
   },
 ) {}
 

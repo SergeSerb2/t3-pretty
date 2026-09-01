@@ -8,16 +8,29 @@ import {
 } from "./baseSchemas.ts";
 import { ProjectFaviconPath } from "./orchestration.ts";
 
-const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
-const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
+export const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
+export const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
+export const PROJECT_PATH_MAX_LENGTH = 32 * 1024;
+export const PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH = 64 * 1024;
+export const PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX = 100;
+export const PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX = 8 * 1024 * 1024;
+export const PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX = 2 * 1024 * 1024;
+export const PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX = 50_000;
+export const PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH = 8_192;
+export const PROJECT_LIST_ENTRIES_MAX = 25_000;
+export const PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX = 16 * 1024 * 1024;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
+export const PROJECT_FILE_CONTENTS_MAX_BYTES = 1024 * 1024;
+export const PROJECT_FILE_CONTENTS_MAX_LENGTH = PROJECT_FILE_CONTENTS_MAX_BYTES;
+
+const ProjectPath = TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_PATH_MAX_LENGTH));
 
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
 
 export const ProjectSearchEntriesInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
   // An empty query is a bounded browse: the index returns frecency-ordered
   // entries, which the file picker uses for its initial results.
   query: TrimmedString.check(Schema.isMaxLength(256)),
@@ -28,19 +41,19 @@ export const ProjectSearchEntriesInput = Schema.Struct({
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
 export const ProjectEntry = Schema.Struct({
-  path: TrimmedNonEmptyString,
+  path: ProjectPath,
   kind: ProjectEntryKind,
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
 export const ProjectSearchEntriesResult = Schema.Struct({
-  entries: Schema.Array(ProjectEntry),
+  entries: Schema.Array(ProjectEntry).check(Schema.isMaxLength(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   truncated: Schema.Boolean,
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
 export const ProjectSearchContentsInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
   // Whitespace is significant in content queries (" foo", regex trailing
   // spaces), so the query is deliberately not trimmed on the wire.
   query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
@@ -52,35 +65,73 @@ export const ProjectSearchContentsInput = Schema.Struct({
 export type ProjectSearchContentsInput = typeof ProjectSearchContentsInput.Type;
 
 export const ProjectContentMatchRange = Schema.Struct({
-  start: NonNegativeInt,
-  end: NonNegativeInt,
-});
+  start: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+  end: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+}).check(
+  Schema.makeFilter((range) => range.start <= range.end || "match range must not be reversed"),
+);
 export type ProjectContentMatchRange = typeof ProjectContentMatchRange.Type;
 
 export const ProjectContentMatch = Schema.Struct({
-  path: TrimmedNonEmptyString,
+  path: ProjectPath,
   lineNumber: PositiveInt,
-  lineContent: Schema.String,
-  matchRanges: Schema.Array(ProjectContentMatchRange),
+  lineContent: Schema.String.check(Schema.isMaxLength(PROJECT_SEARCH_CONTENT_LINE_MAX_LENGTH)),
+  matchRanges: Schema.Array(ProjectContentMatchRange).check(
+    Schema.isMaxLength(PROJECT_SEARCH_CONTENT_MATCH_RANGES_MAX),
+  ),
 });
 export type ProjectContentMatch = typeof ProjectContentMatch.Type;
 
 export const ProjectSearchContentsResult = Schema.Struct({
-  matches: Schema.Array(ProjectContentMatch),
+  matches: Schema.Array(ProjectContentMatch).check(
+    Schema.isMaxLength(PROJECT_SEARCH_CONTENTS_MAX_LIMIT),
+  ),
   truncated: Schema.Boolean,
-  regexFallbackError: Schema.optional(Schema.String),
-});
+  regexFallbackError: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROJECT_SEARCH_CONTENT_REGEX_ERROR_MAX_LENGTH)),
+  ),
+}).check(
+  Schema.makeFilter((result) => {
+    let totalLineCharacters = 0;
+    let totalPathCharacters = 0;
+    let totalMatchRanges = 0;
+    for (const match of result.matches) {
+      totalLineCharacters += match.lineContent.length;
+      totalPathCharacters += match.path.length;
+      totalMatchRanges += match.matchRanges.length;
+      if (
+        totalLineCharacters > PROJECT_SEARCH_CONTENT_TOTAL_LINE_CHARS_MAX ||
+        totalPathCharacters > PROJECT_SEARCH_CONTENT_TOTAL_PATH_CHARS_MAX ||
+        totalMatchRanges > PROJECT_SEARCH_CONTENT_TOTAL_MATCH_RANGES_MAX
+      ) {
+        return "content search result exceeds its aggregate wire budget";
+      }
+    }
+    return true;
+  }),
+);
 export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
+  cwd: ProjectPath,
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
 export const ProjectListEntriesResult = Schema.Struct({
-  entries: Schema.Array(ProjectEntry),
+  entries: Schema.Array(ProjectEntry).check(Schema.isMaxLength(PROJECT_LIST_ENTRIES_MAX)),
   truncated: Schema.Boolean,
-});
+}).check(
+  Schema.makeFilter((result) => {
+    let totalPathCharacters = 0;
+    for (const entry of result.entries) {
+      totalPathCharacters += entry.path.length;
+      if (totalPathCharacters > PROJECT_LIST_ENTRIES_TOTAL_PATH_CHARS_MAX) {
+        return "project listing exceeds its aggregate path budget";
+      }
+    }
+    return true;
+  }),
+);
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
 export const ProjectEntriesFailure = Schema.Literals([
@@ -201,7 +252,7 @@ export type ProjectReadFileInput = typeof ProjectReadFileInput.Type;
 
 export const ProjectReadFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENTS_MAX_LENGTH)),
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
 });
@@ -212,6 +263,7 @@ export const ProjectFileFailure = Schema.Literals([
   "resolved_path_outside_root",
   "path_not_file",
   "binary_file",
+  "too_large",
   "operation_failed",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
@@ -267,7 +319,7 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENTS_MAX_LENGTH)),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 

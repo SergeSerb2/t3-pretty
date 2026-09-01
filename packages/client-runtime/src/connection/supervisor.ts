@@ -46,6 +46,10 @@ const MOBILE_CONNECTION_PROBE_TIMEOUT = "3 seconds";
 // when the old transport is in real doubt.
 const REPLACEMENT_HEAD_START = "500 millis";
 const BACKOFF_RESET_AFTER_MS = 30_000;
+// Control signals are lossless: dropping a disconnect while connected can
+// leave a lease alive indefinitely. A bounded queue keeps bursts from growing
+// without limit while applying backpressure until the supervisor catches up.
+const SUPERVISOR_SIGNAL_BUFFER_CAPACITY = 64;
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -280,7 +284,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     network: yield* connectivity.status,
   };
   const intent = yield* Ref.make(initialIntent);
-  const signals = yield* Queue.unbounded<SupervisorSignal>();
+  const signals = yield* Queue.bounded<SupervisorSignal>(SUPERVISOR_SIGNAL_BUFFER_CAPACITY);
   const resetRetryState = yield* Ref.make(false);
   // Set when a foreground wake finds a dead transport (probe failed or timed
   // out) and no replacement lease could be established: the user is actively
