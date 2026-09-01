@@ -7,6 +7,7 @@ import {
   type PreviewAutomationCallSummary,
 } from "@t3tools/client-runtime/preview-automation-calls";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
+import { isWorktreeSetupActivity } from "@t3tools/client-runtime/work-log/presentation";
 import {
   ApprovalRequestId,
   isToolLifecycleItemType,
@@ -888,6 +889,7 @@ export function deriveWorkLogEntries(
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
+    if (activity.tone !== "error" && isWorktreeSetupActivity(activity.kind)) continue;
     if (activity.kind === "tool.started") continue;
     // Generated live-status headlines feed the work-live row, never the log.
     if (activity.kind === "turn.headline") continue;
