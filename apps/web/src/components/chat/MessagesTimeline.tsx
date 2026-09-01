@@ -7,6 +7,10 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import {
+  resolveViewedImageAsset,
+  workEntryViewedImagePath,
+} from "@t3tools/client-runtime/work-log/presentation";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
@@ -55,7 +59,7 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import { AnimatedHeight } from "../AnimatedHeight";
-import ChatMarkdown from "../ChatMarkdown";
+import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
@@ -2899,6 +2903,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     workEntry.itemType === "image_generation" &&
     workEntry.toolLifecycleStatus !== "completed" &&
     workEntry.toolLifecycleStatus !== "failed";
+  const viewedImagePath = workEntryViewedImagePath(workEntry);
+  const viewedImage =
+    viewedImagePath && ctx.threadRef
+      ? resolveViewedImageAsset(viewedImagePath, {
+          threadId: ctx.threadRef.threadId,
+          workspaceRoot,
+        })
+      : null;
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2941,8 +2953,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   }, [bodyRepeatsPreview, preview]);
   const canExpand =
     displaySections.length > 0 &&
-    (!bodyRepeatsPreview || previewClipped || workEntryDisplayAddsStructure(displaySections));
+    (viewedImage !== null ||
+      !bodyRepeatsPreview ||
+      previewClipped ||
+      workEntryDisplayAddsStructure(displaySections));
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
+
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
@@ -3049,7 +3065,23 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       </div>
       {canExpand && displaySections.length > 0 ? (
         <AnimatedHeight>
-          {expanded ? <ToolCallExpandedBody sections={displaySections} /> : null}
+          {expanded ? (
+            <>
+              {viewedImage && ctx.threadRef ? (
+                <div className="mt-1 mb-1.5 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5">
+                  <ChatMarkdownAssetImage
+                    environmentId={ctx.threadRef.environmentId}
+                    resource={viewedImage.resource}
+                    alt={viewedImage.alt}
+                    srcFragment={viewedImage.srcFragment}
+                    style={{ maxHeight: "16rem" }}
+                    onImageExpand={ctx.onImageExpand}
+                  />
+                </div>
+              ) : null}
+              <ToolCallExpandedBody sections={displaySections} />
+            </>
+          ) : null}
         </AnimatedHeight>
       ) : null}
       {workEntry.itemType === "image_generation" ? (
