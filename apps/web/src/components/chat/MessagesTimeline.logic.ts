@@ -194,6 +194,7 @@ export type MessagesTimelineRow =
       groupedEntries: WorkLogEntry[];
       groupId: string;
       expanded: boolean;
+      active: boolean;
     }
   | {
       kind: "work-toggle";
@@ -243,6 +244,7 @@ export type MessagesTimelineRow =
       kind: "working";
       id: string;
       createdAt: string | null;
+
     };
 
 export interface TimelineMinimapTurn {
@@ -575,6 +577,14 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
   return entry.kind === "work" ? (entry.entry.turnId ?? null) : null;
 }
 
+function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
+  return (
+    entry.toolLifecycleStatus === "inProgress" ||
+    entry.sourceActivityKind === "task.progress" ||
+    (entry.toolLifecycleStatus === undefined && workLogEntryIsToolLike(entry))
+  );
+}
+
 /**
  * Settled turns keep their first and terminal assistant messages visible.
  * Everything between them folds behind a "Worked for ..." row anchored at
@@ -815,29 +825,36 @@ export function deriveMessagesTimelineRows(input: {
     }
     activeToolEntries.unshift(entry);
   }
-  const activeWorkEntryIds = new Set(activeToolEntries.map((entry) => entry.id));
   const visibleActiveToolEntries = omitSupersededLifecycleMarkers(
     activeToolEntries.filter((entry) => isVisibleActiveToolEntry(entry.entry)),
     (entry) => entry.entry,
   );
   const activeWorkAnchor = activeToolEntries[0];
-  const latestActiveToolEntry = visibleActiveToolEntries.at(-1);
-  const activeWorkPlacementEntryId = latestActiveToolEntry?.id;
+  const latestVisibleToolEntry = visibleActiveToolEntries.at(-1);
+  const latestRunningToolEntry = visibleActiveToolEntries.findLast((entry) =>
+    workEntryIsActiveTurnActivity(entry.entry),
+  );
+  const displayedToolEntry = latestRunningToolEntry ?? latestVisibleToolEntry;
+  const activeWorkPlacementEntryId = latestVisibleToolEntry?.id;
   const activeWorkRow =
-    activeWorkAnchor && latestActiveToolEntry
+    activeWorkAnchor && displayedToolEntry
       ? (() => {
           const groupId = workGroupId(activeWorkAnchor.id, activeWorkAnchor.entry);
           return {
             kind: "work-live" as const,
             id: `work-live:${workGroupIdentity(activeWorkAnchor.id, activeWorkAnchor.entry)}`,
             createdAt: activeWorkAnchor.createdAt,
-            entry: latestActiveToolEntry.entry,
+            entry: displayedToolEntry.entry,
             groupedEntries: visibleActiveToolEntries.map((entry) => entry.entry),
             groupId,
             expanded: input.expandedWorkGroupIds?.has(groupId) ?? false,
+            active: latestRunningToolEntry !== undefined,
           };
         })()
       : null;
+  const activeWorkEntryIds = new Set(
+    activeWorkRow === null ? [] : activeToolEntries.map((entry) => entry.id),
+  );
   const appendWorkingRow = () => {
     // Only while nothing else signals activity — live tool rows and streaming
     // content are their own indicators.
@@ -941,7 +958,9 @@ export function deriveMessagesTimelineRows(input: {
             groupedEntries: visibleGroupedEntries,
             groupId,
             expanded,
+            active: true,
           });
+          hasLiveWorkRow = true;
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
               nextRows.push({
@@ -1109,6 +1128,7 @@ export function deriveMessagesTimelineRows(input: {
     appendWorkingRow();
   }
 
+
   return nextRows;
 }
 
@@ -1170,6 +1190,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.createdAt === bw.createdAt &&
         a.groupId === bw.groupId &&
         a.expanded === bw.expanded &&
+        a.active === bw.active &&
         Equal.equals(a.entry, bw.entry) &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );

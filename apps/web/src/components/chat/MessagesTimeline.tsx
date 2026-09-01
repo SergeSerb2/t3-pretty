@@ -1037,7 +1037,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
             : "pb-0"
           : isExpandedToolGroupHeader
             ? "pb-0"
-            : row.kind === "turn-fold" || row.kind === "working"
+            : row.kind === "turn-fold" || row.kind === "working" || row.kind === "thinking"
               ? "pb-1.5"
               : (row.kind === "message" &&
                     row.message.role === "assistant" &&
@@ -1070,7 +1070,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
-      {row.kind === "working" ? <ThinkingActivityRow /> : null}
+      {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
+      {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
     </div>
   );
 });
@@ -1552,34 +1553,36 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   const { isPreparingWorktree } = use(TimelineRowActivityCtx);
 
   return (
-    <div>
-      <div className="border-b border-border/60 pb-2 pt-1">
-        <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
-          <span
-            key={isPreparingWorktree ? "setup" : "working"}
-            className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
-          >
-            {isPreparingWorktree ? (
-              <>
-                Setting up worktree…
-                <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
-              </>
-            ) : row.createdAt ? (
-              <>
-                Working for <WorkingTimer createdAt={row.createdAt} />
-              </>
-            ) : (
-              "Working..."
-            )}
-          </span>
-        </div>
+    <div className="border-b border-border/60 pb-2 pt-1">
+      <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+        <span
+          key={isPreparingWorktree ? "setup" : "working"}
+          className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
+        >
+          {isPreparingWorktree ? (
+            <>
+              Setting up worktree…
+              <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
+            </>
+          ) : row.createdAt ? (
+            <>
+              Working for <WorkingTimer createdAt={row.createdAt} />
+            </>
+          ) : (
+            "Working..."
+          )}
+        </span>
       </div>
-      {row.showThinking ? (
-        // Reserve the activity row during setup so the handoff keeps the same height.
-        <div className="mt-1 min-h-7">
-          {isPreparingWorktree ? null : <ThinkingActivityRow />}
-        </div>
-      ) : null}
+    </div>
+  );
+}
+
+function ThinkingTimelineRow() {
+  const { isPreparingWorktree } = use(TimelineRowActivityCtx);
+  // Reserve the activity row during setup so the handoff keeps the same height.
+  return (
+    <div className="min-h-7">
+      {isPreparingWorktree ? null : <ThinkingActivityRow />}
     </div>
   );
 }
@@ -1722,7 +1725,8 @@ function LiveActivityContent({
 function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "work-live" }> }) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
-  const label = activity.liveHeadline ?? liveWorkEntryLabel(row.entry, ctx.workspaceRoot);
+  const label =
+    activity.liveHeadline ?? liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
 
   return (
@@ -1733,7 +1737,18 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
+      {row.active ? (
+        <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
+      ) : (
+        <div className="min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
+          <LiveActivityContent
+            label={label}
+            iconName={workEntryIconName(row.entry)}
+            failed={failed}
+            announceFailure={failed}
+          />
+        </div>
+      )}
     </button>
   );
 }
@@ -2664,15 +2679,19 @@ function commandProgramName(command: string, depth = 0): string | null {
 function liveWorkEntryLabel(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
+  active: boolean,
 ): string {
   if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
   const command = workEntry.command?.trim();
   if (command) {
-    // This row describes the active parent turn, not the command lifecycle.
-    // Keep its live "Running" copy until the turn or contiguous tool run settles.
     const program = commandProgramName(command);
-    if (program) return `Running ${program}`;
-    return "Running command";
+    const verb = active
+      ? "Running"
+      : workEntry.toolLifecycleStatus === "declined"
+        ? "Declined"
+        : "Ran";
+    if (program) return `${verb} ${program}`;
+    return `${verb} command`;
   }
 
   return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);

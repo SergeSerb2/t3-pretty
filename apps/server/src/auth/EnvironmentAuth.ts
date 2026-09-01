@@ -30,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
@@ -611,6 +612,49 @@ export function isAllowedAmbientCookieWebSocketOrigin(input: {
   }
 }
 
+export function selectRequestCredential(
+  request: HttpServerRequest.HttpServerRequest,
+  cookieName: string,
+  legacyCookieName: string | undefined,
+  options?: { readonly preferExplicitAuthorization?: boolean },
+) {
+  const cookieToken = request.cookies[cookieName];
+  const bearerToken = parseBearerToken(request);
+  const dpopToken = parseDpopToken(request);
+  const legacyToken = legacyCookieName ? request.cookies[legacyCookieName] : undefined;
+
+  if (options?.preferExplicitAuthorization) {
+    if (bearerToken !== null) {
+      return { token: bearerToken, source: "bearer" } as const;
+    }
+    if (dpopToken !== null) {
+      return { token: dpopToken, source: "dpop" } as const;
+    }
+    if (cookieToken !== undefined) {
+      return { token: cookieToken, source: "cookie" } as const;
+    }
+    if (legacyToken !== undefined) {
+      return { token: legacyToken, source: "legacy-cookie" } as const;
+    }
+    return undefined;
+  }
+
+  if (cookieToken !== undefined) {
+    return { token: cookieToken, source: "cookie" } as const;
+  }
+  if (bearerToken !== null) {
+    return { token: bearerToken, source: "bearer" } as const;
+  }
+  if (dpopToken !== null) {
+    return { token: dpopToken, source: "dpop" } as const;
+  }
+  if (legacyToken !== undefined) {
+    return { token: legacyToken, source: "legacy-cookie" } as const;
+  }
+
+  return undefined;
+}
+
 export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -650,19 +694,20 @@ export const make = Effect.gen(function* () {
     request: HttpServerRequest.HttpServerRequest,
     options?: { readonly preferExplicitAuthorization?: boolean },
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
-    const cookieToken = request.cookies[sessions.cookieName];
-    const bearerToken = parseBearerToken(request);
-    const dpopToken = parseDpopToken(request);
-    const credential = options?.preferExplicitAuthorization
-      ? (bearerToken ?? dpopToken ?? cookieToken)
-      : (cookieToken ?? bearerToken ?? dpopToken);
-    if (!credential) {
+    const credential = selectRequestCredential(
+      request,
+      sessions.cookieName,
+      sessions.legacyCookieName,
+      options,
+    );
+    if (!credential?.token) {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
     }
-    return authenticateToken(credential).pipe(
+    const dpopToken = parseDpopToken(request);
+    return authenticateToken(credential.token).pipe(
       Effect.flatMap((session) => {
         if (session.proofKeyThumbprint) {
-          if (!dpopToken || dpopToken !== credential) {
+          if (!dpopToken || dpopToken !== credential.token) {
             return Effect.fail(
               new ServerAuthInvalidCredentialError({
                 diagnostic: "DPoP-bound access token requires DPoP authorization.",
@@ -1084,4 +1129,7 @@ export const layer = Layer.effect(EnvironmentAuth, make).pipe(
 
 export const storageLayer = Layer.mergeAll(ServerSecretStore.layer, SqlitePersistenceLayer);
 
-export const runtimeLayer = layer.pipe(Layer.provideMerge(storageLayer));
+export const runtimeLayer = layer.pipe(
+  Layer.provideMerge(storageLayer),
+  Layer.provideMerge(ServerEnvironment.identityLayer),
+);
