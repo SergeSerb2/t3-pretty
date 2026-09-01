@@ -9,6 +9,7 @@ import { ChatAttachment, IsoDateTime } from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
+  AppendStreamingProjectionThreadMessage,
   GetProjectionThreadMessageInput,
   ProjectionThreadMessageRepository,
   type ProjectionThreadMessageRepositoryShape,
@@ -96,7 +97,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
   });
 
   const appendStreamingProjectionThreadMessageRow = SqlSchema.void({
-    Request: ProjectionThreadMessage,
+    Request: AppendStreamingProjectionThreadMessage,
     execute: (row) => {
       const nextAttachmentsJson =
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
@@ -208,12 +209,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadMessageRepository.upsert:query")),
     );
 
-  const appendStreamingDelta: ProjectionThreadMessageRepositoryShape["appendStreamingDelta"] = (
-    row,
-  ) =>
+  const appendStreaming: ProjectionThreadMessageRepositoryShape["appendStreaming"] = (row) =>
     appendStreamingProjectionThreadMessageRow(row).pipe(
       Effect.mapError(
-        toPersistenceSqlError("ProjectionThreadMessageRepository.appendStreamingDelta:query"),
+        toPersistenceSqlError("ProjectionThreadMessageRepository.appendStreaming:query"),
       ),
     );
 
@@ -252,7 +251,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
 
   return {
     upsert,
-    appendStreamingDelta,
+    appendStreaming,
     getByMessageId,
     listByThreadId,
     getLatestUserMessageAt,

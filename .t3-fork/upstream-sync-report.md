@@ -2350,3 +2350,241 @@
 - `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts` — Use UNKNOWN_BACKGROUND_SAMPLE_INTERVAL_MS for a known, unconstrained, non-battery host when there are no live subscribers.. Reason: That branch directly conflicts with T3 Pretty's established use of BACKGROUND_SAMPLE_INTERVAL_MS and its fork-specific hot-path performance behavior; both interval choices cannot apply to the same state.
 - `apps/web/src/components/ui/menu.test.tsx` — Delete apps/web/src/components/ui/menu.test.tsx in its entirety as part of removing static presentation snapshots.. Reason: The surviving file has since gained T3 Pretty-specific regression tests for non-modal navigation, submenu flyout pointer events, and long switch-label overflow. No parent replacement provides this coverage, so deleting the whole file would silently weaken fork behavior safeguards.
 - `packages/effect-codex-app-server/src/protocol.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for packages/effect-codex-app-server/src/protocol.ts after 3 attempts
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.38-nightly.20260901.1248`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260901.1245`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 17 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/desktop/src/settings/DesktopClientSettings.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The Home screen's minute clock remains bound to the navigation focus lifecycle, preventing timers from continuing while a frozen screen is covered and immediately resynchronizing time on return.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The inactivity auto-settle boundary remains documented and immediately recalculated after enabling or refocusing the v2 thread list.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — T3 Pretty's behavior that pull-request merges do not automatically settle threads is preserved through the parent's newer implementation, which no longer supplies change-request data or the autoSettleOnMerge option to list partitioning.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — T3 Pretty's deliberate removal of the mobile auto-settle-on-merge control, protecting its behavior that threads do not automatically settle merely because a pull request merges.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Pretty-specific theme color integration in the mobile thread navigation sidebar.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Optimistic presented thread shells, which keep immediately created mobile threads and their thinking state visible instead of reverting to raw entity shells.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — T3 Pretty's pull-request settlement policy: closed pull requests can settle a thread, while merged pull requests remain active.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Sidebar lifecycle/performance behavior that suspends the minute clock while the pane is hidden and immediately resynchronizes it when reopened.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — A cached merged state from a previously linked pull request is ignored after the thread links a different pull request.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pull-request merge state does not automatically settle a Pretty thread, including when the cached pull-request identity matches.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Pinned threads remain pinned cards when their pull request merges instead of moving to the settled shelf.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Inactive pinned threads remain in the pinned card block rather than being implicitly settled.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Persisted pin state continues to take precedence over stale or merge-derived settlement state.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Snooze continues to outrank pinning, so snoozed pinned threads leave the active list until waking while retaining their pin and pin-order metadata.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Non-snoozed pinned threads remain in the dedicated pinned block above the inbox and cannot disappear into the settled shelf.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Client-side pull-request merge heuristics are not restored, preserving Pretty’s behavior that a pull-request merge does not itself auto-settle a thread.
+- `apps/mobile/src/state/use-thread-selection.ts` — Preserved T3 Pretty's extracted `resolveSelectedThreadShell` and `resolveSelectionDetailFallbackRef` architecture rather than reintroducing superseded conversion helpers.
+- `apps/mobile/src/state/use-thread-selection.ts` — Preserved authoritative shell snapshots and stable selection identities, avoiding hot detail-stream updates when a shell is available.
+- `apps/mobile/src/state/use-thread-selection.ts` — Preserved immediate optimistic starting-thread shells and the safeguard that skips missing-thread subscriptions while a local starting overlay can render the thread.
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — Preserved the T3 Pretty ThreadMergedPullRequestReactor integration that supports automatic settlement of merged pull-request threads.
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — Preserved the T3 Pretty ProjectIconReactor integration for generated project icons.
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — Preserved the T3 Pretty ActivityHeadlineReactor integration for generated live-activity headlines.
+- `apps/server/src/git/GitManager.test.ts` — Preserved T3 Pretty's regression coverage proving that an unpublished-branch PR lookup skip is not sticky: after the branch is pushed and remote status is invalidated without bumping the PR-lookup epoch, status performs the provider lookup and finds the PR.
+- `apps/server/src/git/GitManager.ts` — The `pullRequestForBranch` service API and its rich `GitPullRequestBranchObservation`, including merged timestamps and durable `GitBranchHeadAssociation` identity.
+- `apps/server/src/git/GitManager.ts` — Cache separation between status and settlement lookups through `queryWhenLocalBranchMissing` and `selection`.
+- `apps/server/src/git/GitManager.ts` — Durable same-repository and cross-repository PR-head identity in cache keys, including head ref, repository, owner, and cross-repository state.
+- `apps/server/src/git/GitManager.ts` — Explicit missing-branch lookup behavior used to resolve historical or saved PR heads without allowing ordinary unpublished branches to occupy the PR cache.
+- `apps/server/src/git/GitManager.ts` — Prefer-open versus latest-PR selection, automated-review lookup only for open PRs, and `skippedUnpublished` metadata used by Pretty's negative-cache/TTL safeguards.
+- `apps/server/src/git/GitManager.ts` — Durable GitBranchHeadAssociation input remains supported when resolving branch-head context.
+- `apps/server/src/git/GitManager.ts` — Persisted head repository owner/name and cross-repository identity remain authoritative, including explicit null values, preventing deleted or historical PR branches from being attached to an unrelated currently configured fork.
+- `apps/server/src/git/GitManager.ts` — When a durable association is present, headRemoteUrlKey remains null rather than falling back to potentially stale current remote configuration.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Preserved T3 Pretty's per-turn lifecycle grouping, including protection against dropping updates based on completions from a different turn.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Preserved the snapshot compaction behavior that removes only superseded tool updates while retaining identity-less rows and later updates for reused call identities.
+- `apps/server/src/orchestration/Errors.ts` — Preserved `isOrchestrationCommandInvariantError` and `isThreadAlreadyExistsInvariant`, including the exact `thread.create` duplicate-thread detection used to start a new thread when a draft ID already exists.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts` — Preserved T3 Pretty's @effect/vitest effectIt test integration through the existing import near the top of the file.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.ts` — The 72-hour command-receipt retention policy, hourly pruning cadence, and 2,000-receipt batch limit remain intact so pruning interleaves safely with command writes.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.ts` — The exported bounded orchestration command queue and its capacity of 64 remain intact, preserving lossless backpressure and command ordering under bursts.
+- `apps/server/src/orchestration/Layers/OrchestrationReactor.test.ts` — Preserved T3 Pretty's ThreadMergedPullRequestReactor import and test coverage for automatically settling merged pull-request threads.
+- `apps/server/src/orchestration/Layers/OrchestrationReactor.ts` — Preserved T3 Pretty's ThreadMergedPullRequestReactor, which automatically settles merged pull-request threads, including its orchestration startup.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Streaming message events continue to be appended incrementally rather than overwriting previously projected stream content.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Streaming attachments continue to be materialized for projection and copied before repository persistence.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Preserved the test ensuring queued mid-turn messages remain held until the running turn ends and the session becomes ready.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Preserved the accepted-provider-send recovery safeguard: a later active-session bookkeeping failure must not emit provider.turn.start.failed, and skill-loaded activity remains recorded.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Preserved the stale-ready-session regression test that prevents two committed ready events from flushing more than one queued turn.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Preserved default steer delivery behavior, which sends a mid-turn start immediately when queue delivery is not requested.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — T3 Pretty's thread.session-set handling continues to flush queued turn starts.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Queued starts remain protected from stale session events by checking the current projected session and refusing to flush while it is running or starting.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Session-set events still avoid a worker round trip unless the affected thread currently has queued starts, preserving the fork's queue race handling and efficiency.
+- `apps/server/src/orchestration/decider.ts` — Automatic settlement still fails if the thread's branch changed after the command was prepared.
+- `apps/server/src/orchestration/decider.ts` — Automatic settlement still validates branchEventId so a reused branch name cannot hide a changed branch incarnation.
+- `apps/server/src/orchestration/decider.ts` — Commands requiring automatic-settlement eligibility still fail if the thread became pinned or acquired an explicit settled/unsettled lifecycle override.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts` — Preserved T3 Pretty's reliability coverage that streaming deltas concatenate text without replacing the original createdAt timestamp.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts` — Preserved verification that each streaming append advances updatedAt while omitted attachments retain the previously persisted metadata.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.ts` — The fork's slim incremental streaming write behavior remains intact: deltas are appended atomically in SQL, attachments are retained when omitted, the row remains marked as streaming, and only the update timestamp changes on conflict.
+- `apps/server/src/server.test.ts` — Preserved the ToolProgress namespace import used by T3 Pretty orchestration tests.
+- `apps/server/src/server.test.ts` — Preserved the OrchestrationCommandInvariantError import used to test T3 Pretty command-invariant safeguards.
+- `apps/server/src/server.test.ts` — Preserved the transport-ceiling regression test ensuring maximum compact image turns fit both WebSocket and HTTP request limits.
+- `apps/server/src/server.ts` — The ThreadMergedPullRequestReactor remains imported and registered, preserving T3 Pretty's intentional behavior that pull-request merges do not automatically settle threads.
+- `apps/server/src/server.ts` — ProjectIconReactor remains active for T3 Pretty's automatic project-icon generation behavior.
+- `apps/server/src/server.ts` — ActivityHeadlineReactor remains active for T3 Pretty's generated live-activity headlines.
+- `apps/server/src/server.ts` — The global HttpServerRequest.MaxBodySize middleware remains in place, enforcing the shared 128 MiB transport ceiling while bodies are collected, including chunked orchestration requests.
+- `apps/server/src/usage/UsageService.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageScanCache.test.ts` — Preserved provider-aware cache fixtures by deriving each cache entry's provider from its first usage record, with Claude only as the empty-record fallback. This retains T3 Pretty's multi-provider usage coverage, including Grok records.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved provider extensibility through isUsageProviderKind, including T3 Pretty usage integrations such as Cursor and Kimi rather than narrowing decoding to the parent's Claude/Codex/Grok whitelist.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved hard limits on file count and total serialized record count; both primary and newly supported tail records now contribute to the record limit.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved cache-path length validation and own-property-only traversal.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved strict non-negative safe-integer validation for file sizes and finite non-negative validation for modification times.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved exact 10-field serialized record validation, along with existing token, model, session, dedupe-key, and reported-cost corruption safeguards.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved whole-cache rejection at structural limits so an oversized cache cannot be mistaken for a valid partial warm cache.
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/usage/usageTranscriptReader.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/ws.ts` — Preserved live-only tool-progress delivery for the subscribed thread.
+- `apps/server/src/ws.ts` — Preserved the ephemeral flag so tool-progress ticks do not advance the client's persisted-event resume cursor.
+- `apps/server/src/ws.ts` — Preserved direct delivery of the tool-progress registry's already-projected payloads without applying projectActivityEvent.
+- `apps/web/src/components/ChatView.tsx` — T3 Pretty's removal of the obsolete Codex artifact-template attachment import, consistent with replacing the fork attach control with upstream file attachments.
+- `apps/web/src/components/ChatView.tsx` — T3 Pretty's sidebar-compatible age-based effective settlement calculation.
+- `apps/web/src/components/ChatView.tsx` — T3 Pretty's policy that merged pull requests do not automatically settle threads (`autoSettleOnMerge: false`).
+- `apps/web/src/components/ChatView.tsx` — T3 Pretty's change-request-aware Woke-banner suppression and its existing completion/visit timing behavior.
+- `apps/web/src/components/CommandPalette.tsx` — Preserved T3 Pretty's `useLegacySidebarEnabled` import and the legacy-sidebar behavior it supports.
+- `apps/web/src/components/Sidebar.tsx` — Age-based sidebar auto-settlement through sidebarAutoSettleAfterDays and effectiveSettled.
+- `apps/web/src/components/Sidebar.tsx` — Automatic archival of settled threads through sidebarAutoArchiveSettledAfterDays.
+- `apps/web/src/components/Sidebar.tsx` — Change-request-aware settlement and wake-status suppression, with auto-settlement on merge deliberately disabled.
+- `apps/web/src/components/Sidebar.tsx` — Snooze precedence over settlement and pinning, including retention of pin order while snoozed.
+- `apps/web/src/components/Sidebar.tsx` — Pinned-thread protection from automatic settlement and the resulting stable pinned shelf behavior.
+- `apps/web/src/components/Sidebar.tsx` — Dock badge filtering so settled and snoozed unread completions do not count as active inbox requests.
+- `apps/web/src/components/Sidebar.tsx` — Project-scope-safe shelf routing and the complete memo dependency set needed to recompute Pretty's classification correctly.
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — Preserved regression coverage for T3 Pretty's intentional behavior that a retained merged pull request remains visible after switching to main without causing the thread to become effectively settled.
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — Preserved the full orchestration-thread fixture and effectiveSettled(...).toBe(false) compatibility assertion introduced by the fork's no-auto-settle fix.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/SettingsPanels.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/hooks/useThreadActionMenu.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/routes/_chat.pull-requests.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/state/pullRequests.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/connection/layer.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/rpc/session.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/rpc/session.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/threadSettled.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/threadSettled.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/settings.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/settings.ts` — kept the fork side wholesale as a fork-side fallback resolution
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated the parent first-party replacement for merge-based settlement handling by removing changeRequestByKey from buildThreadListV2Items while retaining the already-removed autoSettleOnMerge option.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated the corresponding upstream memo-dependency cleanup for the simplified v2 list-partitioning API.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated upstream's clearer explanation that the clock refreshes immediately because its prior value may be hours old, composed with T3 Pretty's lifecycle-specific details.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Removed reliance on the legacy mobile preference and `autoSettleOnMerge` argument; merged pull requests are not governed by the former configurable auto-settlement path.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Retained immediate clock resynchronization so a stale mount-time timestamp cannot misclassify inactivity when Thread List v2 becomes active.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Kept the current upstream `useProjects` entity hook alongside the fork's specialized presented-thread source.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Added the parent regression case confirming that an active pinned thread remains a pinned card with a zero settled count.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Use the required `input.now` value as the unified second-precise classification clock, removing the old fallback and separate snooze clock.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Classify settled threads from the server-stamped `thread.settledOverride === "settled"` state while retaining environment capability gating.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Remove obsolete client-side settlement inputs and change-request cache/link validation from this classification path.
+- `apps/mobile/src/state/use-thread-selection.ts` — Integrated the parent `linkedPullRequest` metadata, normalized to `null`, when the selected thread must be resolved from the detail fallback.
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — Integrated the parent ThreadSettlementReactor namespace import required by the newest orchestration settlement behavior.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage that branchPullRequest returns null without invoking the provider when a repository has no remotes.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage for looking up a saved tracked branch without changing the currently checked-out branch.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage for resolving the default branch through a non-origin remote.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage for PR lookup after a saved local branch is deleted, including recovery of fork branches from remote-tracking refs.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage that ambiguous deleted-branch remote refs produce a GitManagerError without invoking the provider.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage preventing cached PR reuse after a remote is repointed to a different repository.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage that branchPullRequest shares the status PR cache for the same repository identity.
+- `apps/server/src/git/GitManager.test.ts` — Added coverage that branchPullRequest propagates source-control provider failures.
+- `apps/server/src/git/GitManager.ts` — The parent `branchPullRequest` API for resolving a saved branch without changing the checkout.
+- `apps/server/src/git/GitManager.ts` — The parent `localBranchExists` cache dimension, allowing saved branches that no longer exist locally to be queried rather than classified as unpublished.
+- `apps/server/src/git/GitManager.ts` — The parent `remoteName` cache dimension and corresponding decode path, preventing decisions from being reused across different remote identities.
+- `apps/server/src/git/GitManager.ts` — The parent unpublished-branch condition for existing local branches, composed with Pretty's explicit missing-branch override.
+- `apps/server/src/git/GitManager.ts` — The parent automatic-settlement repository-identity validation intent is retained and documented alongside the expanded cache identity.
+- `apps/server/src/git/GitManager.ts` — resolveBranchHeadContext now accepts an explicit optional remoteName in its details input.
+- `apps/server/src/git/GitManager.ts` — BranchHeadContext now receives targetRemoteUrlKey from the origin repository context, preserving separate head and target repository identities.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Adopted the parent's explicit `\u0000` source representation for the composite-key separator in both key construction and lookup, without changing runtime key semantics.
+- `apps/server/src/orchestration/Errors.ts` — Added `OrchestrationThreadSettleBlockedError` with its typed `ThreadId` field and user-facing resolution guidance.
+- `apps/server/src/orchestration/Errors.ts` — Added the `OrchestrationCommandRejection` schema/type union covering invariant and thread-settle-blocked rejections.
+- `apps/server/src/orchestration/Errors.ts` — Added `isOrchestrationCommandRejection` for runtime rejection detection.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts` — Added the parent TestClock import from effect/testing for the newest orchestration engine tests.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.ts` — Removed the former local `Schema.is(OrchestrationCommandInvariantError)` predicate, using the imported shared `isOrchestrationCommandInvariantError` helper instead, consistent with the parent refactor.
+- `apps/server/src/orchestration/Layers/OrchestrationReactor.test.ts` — Integrated the parent ThreadSettlementReactor namespace import required by the thread-settlement reactor test layer.
+- `apps/server/src/orchestration/Layers/OrchestrationReactor.ts` — Integrated the parent ThreadSettlementReactor import so the already-present upstream service acquisition and startup calls compile and run.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — Replaced the fork-only appendStreamingDelta call with the parent's first-party appendStreaming repository implementation and its updated input contract, where streaming state is intrinsic to the operation.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Integrated the parent regression test verifying that automatic thread settlement stops an existing ready provider session.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Integrated the parent's deterministic Deferred-based synchronization for observing the provider stop effect during automatic settlement.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Integrated assertions that automatic settlement marks the thread settled, transitions its session to stopped, and retains the provider instance identity.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Added thread.settled to the provider reactor's handled intent-event union.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — On thread settlement, the reactor now checks for an active provider session and dispatches a deterministic thread.session.stop command with onlyIfSettled enabled.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — The domain-event stream now enqueues thread.settled events for provider-session cleanup.
+- `apps/server/src/orchestration/decider.ts` — Parent auto-settle commands now reject any existing settledOverride even when the fork-specific onlyIfAutoSettlementEligible flag is not set.
+- `apps/server/src/orchestration/decider.ts` — The conflict no longer performs the old session-status invariant check, allowing the parent's immediately following server-owned eligibility check to report starting or running sessions through OrchestrationThreadSettleBlockedError without duplicate logic.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts` — Adopted the parent repository's appendStreaming API in place of appendStreamingDelta, including its implicit streaming-state behavior.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts` — Integrated parent coverage that omitting attachments preserves them and explicitly passing an empty attachment array clears them.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts` — Integrated the parent's final isStreaming assertion and attachment-update test flow.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.ts` — Replaced the fork-only appendStreamingDelta API with the parent's first-party appendStreaming implementation, as required for a parent-native replacement of the same feature.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.ts` — Integrated the dedicated AppendStreamingProjectionThreadMessage request schema instead of accepting the broader ProjectionThreadMessage schema.
+- `apps/server/src/persistence/Layers/ProjectionThreadMessages.ts` — Integrated the parent's appendStreaming repository member and matching persistence error-operation name.
+- `apps/server/src/server.test.ts` — Added OrchestrationThreadSettleBlockedError alongside the existing orchestration error imports for the parent's settle-blocking tests.
+- `apps/server/src/server.test.ts` — Added the parent's makeLiveToolActivityEvent fixture for constructing typed tool.updated and tool.completed thread activity events.
+- `apps/server/src/server.ts` — Accepted the parent's PullRequestServiceLive consolidation at its earlier shared declaration and removed the stale second declaration near route construction, avoiding a duplicate constant while retaining the same provider-registry, rate-limit, and VCS dependencies.
+- `apps/server/src/usage/usageScanCache.test.ts` — Initialized tailRecords for generated cache entries.
+- `apps/server/src/usage/usageScanCache.test.ts` — Initialized persisted incremental-parser position state through position(), keeping fixtures aligned with the current CachedFile schema and resumable scan-cache behavior.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent reusable decodeRecords helper and its all-or-nothing entry decoding semantics.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated decoding and validation of both primary records and tail records.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated validation of incremental scan position fields, including resume offset, guard length, and guard hash.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated decoding and validation of persisted Codex scan state.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent's behavior of rejecting an entire file entry when either its primary or tail record collection contains a malformed row.
+- `apps/server/src/ws.ts` — Replaced the unbounded Queue-based thread live buffer with makeThreadLiveEventCoalescer.
+- `apps/server/src/ws.ts` — Routed live events through the coalescer's offer API and exposed its managed stream, retaining compatibility with downstream offerAndWait and takeAll synchronization behavior.
+- `apps/web/src/components/ChatView.tsx` — The server-projected `settledOverride === "settled"` state now explicitly suppresses the open-thread Woke banner.
+- `apps/web/src/components/ChatView.tsx` — Server shell settlement overrides continue to participate in the effective settlement calculation rather than being ignored.
+- `apps/web/src/components/ChatView.tsx` — The obsolete `sidebarAutoSettleOnMerge` client-setting lookup remains removed.
+- `apps/web/src/components/ChatView.tsx` — The Woke visibility memo now tracks `activeThreadChangeRequest`, preventing stale visibility when pull-request state changes.
+- `apps/web/src/components/CommandPalette.tsx` — Integrated the parent `writeTextToClipboard` helper import while retaining the shared `useClientSettings` import.
+- `apps/web/src/components/Sidebar.tsx` — Explicitly settled threads now suppress the Woke status through the parent's direct settledOverride guard, composed with Pretty's additional change-request-aware guard.
+- `apps/web/src/components/Sidebar.tsx` — The parent's explicit settled state remains honored by Pretty's effectiveSettled classification while retaining the fork's broader settlement policy.
+- `apps/web/src/components/Sidebar.tsx` — The removed sidebarAutoSettleOnMerge setting is not restored; Pretty continues to pass autoSettleOnMerge: false explicitly.
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — Integrated the parent's clearer retention-focused framing: the composed test explicitly verifies that the merged pull request remains retained after a main checkout.
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — Kept the parent-compatible snapshot and displayed-PR checks, including verification that the retained pull request remains in the merged state.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeAdapter.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/desktop/src/settings/DesktopClientSettings.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/desktop/src/settings/DesktopClientSettings.test.ts after 3 attempts
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Parent discovery and sorting of saved remote connections for per-environment auto-settle controls.. Reason: It exists solely to expose automatic settlement behavior that T3 Pretty intentionally removed.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Parent capability-gated EnvironmentAutoSettleSwitch controls and server updates to sidebarAutoSettleOnMerge, including the default-enabled fallback.. Reason: Allowing these controls to re-enable automatic settlement would directly regress T3 Pretty commit 741e4bc9a's fork-authoritative behavior.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Use raw `useThreadShells` entities in place of T3 Pretty's `usePresentedThreadShells`.. Reason: That would regress the fork's mobile optimistic-thread presentation, including immediately started threads and thinking state.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Remove per-row change-request state tracking and stop passing it into the Thread List v2 partition.. Reason: That would remove T3 Pretty's explicit close-settles / merge-stays-active behavior. Only the obsolete configurable merge-settlement portion is removed.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Keep the Thread List v2 minute interval running while the sidebar pane is hidden.. Reason: The fork deliberately gates this navigator-layout timer on pane visibility to preserve its mobile lifecycle and performance safeguards.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Rename/reframe the linked merged-thread case as placing a persisted settled thread in the settled shelf.. Reason: That parent intent directly conflicts with Pretty's authoritative no-auto-settle-on-pull-request-merge behavior and with the retained assertions that the thread remains an active card.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Remove the regression case that ignores cached pull-request state after a different pull request is linked.. Reason: Pretty relies on pull-request identity matching to prevent stale state from settling the newly linked thread.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Remove the general regression case proving a merged pull request remains active.. Reason: Pretty intentionally removed merge-driven auto-settlement; dropping this test would silently weaken protection for that fork behavior.
+- `apps/mobile/src/features/threads/threadListV2.test.ts` — Replace the pinned-merged and inactive-pinned regression cases with only the simpler active-pinned parent case.. Reason: The parent active-pinned case was integrated, but Pretty's additional merged and inactive pin safeguards must remain covered because pins are authoritative until persistence explicitly unpins them.
+- `apps/mobile/src/features/threads/threadListV2.ts` — Allow a pinned thread carrying the server’s settled marker to flow directly into the settled bucket, as the parent-only branch would do without Pretty’s pin check.. Reason: T3 Pretty’s pinned-thread contract is authoritative: after snooze handling, a pin overrides settlement so pinned work remains visible and ordered above the inbox.
+- `apps/server/src/server.ts` — Importing and registering the parent's ThreadSettlementReactor.. Reason: That reactor is the parent automatic-settlement path at this conflict boundary. Enabling it would regress T3 Pretty's explicit fork behavior from `fix(threads): stop auto-settling when a pull request merges`; the existing ThreadMergedPullRequestReactor preserves Pretty's intended merge handling instead.
+- `apps/server/src/usage/UsageService.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/server/src/usage/UsageService.ts after 3 attempts
+- `apps/server/src/usage/usageScanCache.ts` — Accept serialized record tuples with more than 10 fields by checking row.length &lt; 10.. Reason: T3 Pretty intentionally enforces the exact versioned tuple schema; accepting trailing fields weakens its corruption detection.
+- `apps/server/src/usage/usageScanCache.ts` — Restrict cache entries to the parent's fixed Claude/Codex/Grok provider whitelist.. Reason: That would regress T3 Pretty's additional usage providers, including Cursor and Kimi. The fork's isUsageProviderKind predicate preserves the parent providers while supporting fork integrations.
+- `apps/server/src/usage/usageScanCache.ts` — Accept any numeric file size or mtime, including negative, fractional, infinite, or NaN values.. Reason: T3 Pretty's stricter metadata validation is required for cache and cross-surface reliability.
+- `apps/server/src/usage/usageScanCache.ts` — Traverse without T3 Pretty's file-count, combined record-count, and path-length limits.. Reason: Those limits bound untrusted cache documents and prevent oversized data from being retained as a valid partial warm cache.
+- `apps/server/src/usage/usageTranscriptReader.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/server/src/usage/usageTranscriptReader.test.ts after 3 attempts
+- `apps/server/src/usage/usageTranscriptReader.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/server/src/usage/usageTranscriptReader.ts after 3 attempts
+- `apps/web/src/components/ChatView.tsx` — Retaining the parent-side `CodexArtifactTemplate` import and its older artifact-template attachment path.. Reason: T3 Pretty intentionally removed its fork attach path in favor of upstream file attachments; restoring this import would regress that completed migration.
+- `apps/web/src/components/ChatView.tsx` — Replacing `effectiveSettled` and `sidebarAutoSettleAfterDays` with `settledOverride === "settled"` as the sole active-thread settlement calculation.. Reason: That would remove T3 Pretty's age-based settlement behavior and could reintroduce server-projected merge auto-settlement. The server override is still honored through the composed shell-based calculation.
+- `apps/web/src/components/ChatView.tsx` — Removing `changeRequestAutoSettles` from Woke-banner evaluation and relying only on the projected settled override.. Reason: Pretty requires PR-aware Woke suppression with merge auto-settlement explicitly disabled. The compatible upstream override check was added alongside it instead.
+- `apps/web/src/components/Sidebar.tsx` — Remove the sidebarAutoSettleAfterDays selector and classify only threads whose settledOverride is explicitly "settled".. Reason: That would disable T3 Pretty's established age-based auto-settlement behavior and regress its settled-thread lifecycle.
+- `apps/web/src/components/Sidebar.tsx` — Remove change-request snapshot matching and change-request-aware effective settlement from sidebar classification.. Reason: T3 Pretty uses validated PR snapshots to determine lifecycle state without applying stale or mismatched branch/linked-PR data.
+- `apps/web/src/components/Sidebar.tsx` — Remove the sidebarAutoArchiveSettledAfterDays selector.. Reason: This is required by T3 Pretty's fork-owned automatic archival of settled threads, including its owned default and reliability safeguards.
+- `apps/web/src/components/Sidebar.tsx` — Place explicitly settled threads ahead of pinned threads in shelf precedence.. Reason: T3 Pretty intentionally makes pinning override lifecycle settlement so pinned threads cannot disappear due to automatic or raced settled state.
+- `apps/web/src/components/Sidebar.tsx` — Reduce the partition memo dependency list by removing autoSettleAfterDays and changeRequestSnapshotByKey.. Reason: Those values remain inputs to the preserved Pretty classification; removing them would cause stale sidebar shelves.
+- `apps/web/src/components/Sidebar.tsx` — Replace change-request-aware Woke suppression entirely with only a settledOverride check.. Reason: The explicit parent check was integrated, but removing Pretty's additional changeRequestAutoSettles guard would allow lifecycle-settled change-request rows to show a stale Woke status.
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — The parent narrowed the test to pull-request retention by deleting the effectiveSettled fixture and assertion.. Reason: Applying that deletion would remove T3 Pretty's intentional regression protection from commit 741e4bc9a, which requires a retained merged pull request not to auto-settle its thread. The compatible parent retention intent is still covered in the composed test.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/settings/SettingsPanels.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/hooks/useThreadActionMenu.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/routes/_chat.pull-requests.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/state/pullRequests.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/connection/layer.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/rpc/session.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/rpc/session.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/threadSettled.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/threadSettled.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/settings.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/settings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback

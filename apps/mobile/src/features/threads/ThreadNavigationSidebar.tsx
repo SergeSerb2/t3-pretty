@@ -82,7 +82,6 @@ import {
   buildThreadListV2ListItems,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
-  type ThreadListV2ChangeRequestState,
   type ThreadListV2ListItem,
 } from "./threadListV2";
 
@@ -415,9 +414,7 @@ function ThreadNavigationSidebarPane(
     toggleSettledShelf,
     toggleSnoozedShelf,
   } = useThreadListV2ShelfPreferences();
-  // now ticks per minute so the inactivity auto-settle boundary is actually
-  // crossed while the pane stays open; without a clock dependency the
-  // partition memoizes a frozen "now".
+  // The queued-start and snooze helpers need a clock while the pane stays open.
   const [nowMinute, setNowMinute] = useState(() => new Date().toISOString().slice(0, 16));
   // Snooze wake times are second-precise; a counter bumped exactly at the
   // next wake boundary re-runs the partition with a fresh clock so a woken
@@ -428,9 +425,9 @@ function ThreadNavigationSidebarPane(
     // blur never suspends its timers: gate the clock on pane visibility
     // instead (and re-sync "now" when the pane reopens).
     if (!threadListV2Enabled || !props.visible) return;
-    // Refresh immediately on enable: the mount-time value can be hours old
-    // by the time the beta is switched on, which would misclassify the
-    // inactivity auto-settle boundary until the first tick.
+    // Refresh immediately because the mount-time value can be hours old and
+    // would misclassify the inactivity auto-settle boundary until the first
+    // tick.
     setNowMinute(new Date().toISOString().slice(0, 16));
     const id = setInterval(() => setNowMinute(new Date().toISOString().slice(0, 16)), 60_000);
     return () => clearInterval(id);
@@ -517,8 +514,7 @@ function ThreadNavigationSidebarPane(
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
       settledLimit: settledVisibleCount,
-      now: `${nowMinute}:00.000Z`,
-      snoozeNow: new Date().toISOString(),
+      now: new Date().toISOString(),
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
@@ -948,7 +944,6 @@ function ThreadNavigationSidebarPane(
               onPinThread={pinThread}
               onUnpinThread={unpinThread}
               onMovePinnedThread={movePinnedThread}
-              onChangeRequestState={handleChangeRequestState}
               projectCwd={projectCwdByKey.get(scopeKey) ?? null}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1076,7 +1071,6 @@ function ThreadNavigationSidebarPane(
       arrangedPinnedKeys,
       confirmDeletePendingTask,
       confirmDeleteThread,
-      handleChangeRequestState,
       handleSelectThread,
       handleSwipeableClose,
       handleSwipeableWillOpen,

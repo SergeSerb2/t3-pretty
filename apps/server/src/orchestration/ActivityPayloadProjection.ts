@@ -869,9 +869,6 @@ function toolLifecycleIdentity(activity: OrchestrationThreadActivity): string | 
  * update within the turn — a later update belongs to a subsequent call that
  * reuses the same identity and is still in flight. Rows without a lifecycle
  * identity pass through, matching the clients, which never collapse them.
- * Live `thread.activity-appended` events are untouched: updates still stream
- * in real time and the completion supersedes them on the client as before.
- *
  * Deliberate divergence from client collapse: clients fold only *adjacent*
  * lifecycle rows, so a superseded update separated from its completion by an
  * interleaved parallel call renders as its own row today, and this drop
@@ -898,7 +895,7 @@ function dropSupersededToolUpdatedActivities(
     if (!identity) {
       continue;
     }
-    const key = `${activity.turnId ?? ""}\0${identity}`;
+    const key = `${activity.turnId ?? ""}\u0000${identity}`;
     const indices = completionIndicesByKey.get(key);
     if (indices) {
       indices.push(index);
@@ -918,7 +915,7 @@ function dropSupersededToolUpdatedActivities(
     if (!identity) {
       return true;
     }
-    const indices = completionIndicesByKey.get(`${activity.turnId ?? ""}\0${identity}`);
+    const indices = completionIndicesByKey.get(`${activity.turnId ?? ""}\u0000${identity}`);
     return !indices?.some((completionIndex) => completionIndex > index);
   });
 }
