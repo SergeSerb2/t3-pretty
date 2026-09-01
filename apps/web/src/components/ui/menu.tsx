@@ -10,10 +10,14 @@ import { handleRootMenuOpenChange } from "./menu.logic";
 const MenuCreateHandle = MenuPrimitive.createHandle;
 
 function MenuRoot<Payload>(props: MenuPrimitive.Root.Props<Payload>) {
-  const { onOpenChange, ...rest } = props;
+  const { onOpenChange, modal = false, ...rest } = props;
   return (
     <MenuPrimitive.Root
       {...rest}
+      // Base UI defaults modal to true, which inerts the rest of the document.
+      // Nested flyouts and page chrome (Back, sidebar) then take no clicks, so
+      // a dropdown can trap the desktop UI. Callers that want a true modal pass it.
+      modal={modal}
       onOpenChange={(open, eventDetails) => {
         handleRootMenuOpenChange(open, eventDetails, onOpenChange);
       }}

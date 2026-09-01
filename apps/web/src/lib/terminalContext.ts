@@ -1,7 +1,6 @@
 import { type ThreadId } from "@t3tools/contracts";
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 
-import { stripAttachedFilePathsSuffix } from "../scenery/attachFiles";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -253,15 +252,14 @@ export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMe
   // instruction block last. Strip in reverse so each stage sees its block
   // back at the trailing position.
   const withoutPullRequestSuffix = stripCreatePullRequestSuffix(prompt);
-  const withoutAttachedFilePaths = stripAttachedFilePathsSuffix(withoutPullRequestSuffix);
-  const extractedElement = extractTrailingElementContexts(withoutAttachedFilePaths);
+  const extractedElement = extractTrailingElementContexts(withoutPullRequestSuffix);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,
     // Copy keeps the attached context blocks and the visible "Attached …"
     // summary, but never the agent-only path list or auto-PR instructions —
     // the clipboard should match what the user believes the message says.
-    copyText: withoutAttachedFilePaths,
+    copyText: withoutPullRequestSuffix,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,

@@ -466,6 +466,28 @@ describe("DesktopSavedEnvironments", () => {
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
+  it.effect("rejects registry writes larger than the matching read ceiling", () =>
+    withSavedEnvironments(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
+        const error = yield* savedEnvironments
+          .setRegistry([
+            {
+              ...savedRegistryRecord,
+              label: "x".repeat(DesktopSavedEnvironments.SAVED_ENVIRONMENT_REGISTRY_FILE_MAX_BYTES),
+            },
+          ])
+          .pipe(Effect.flip);
+
+        assert.instanceOf(error, DesktopSavedEnvironments.DesktopSavedEnvironmentsWriteError);
+        assert.equal(error.operation, "encode-registry");
+        assert.equal(error.path, environment.savedEnvironmentRegistryPath);
+        assert.deepEqual(yield* savedEnvironments.getRegistry, []);
+      }),
+    ),
+  );
+
   it.effect("returns false when writing a secret without metadata", () =>
     withSavedEnvironments(
       Effect.gen(function* () {

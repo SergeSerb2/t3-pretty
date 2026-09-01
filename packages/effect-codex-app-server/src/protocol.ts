@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
@@ -34,6 +35,7 @@ export interface CodexAppServerIncomingRequest {
 export interface CodexAppServerPatchedProtocolOptions {
   readonly stdio: Stdio.Stdio;
   readonly terminationError?: Effect.Effect<CodexError.CodexAppServerError>;
+  readonly maximumWireLineBytes?: number;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
   readonly logger?: (event: CodexAppServerProtocolLogEvent) => Effect.Effect<void, never>;
@@ -70,6 +72,115 @@ export interface CodexAppServerPatchedProtocol {
 interface CodexAppServerPendingRequest {
   readonly deferred: Deferred.Deferred<unknown, CodexError.CodexAppServerError>;
   readonly method: string;
+}
+
+/**
+ * A turn can carry eight compact 14M-character image data URLs plus its prompt
+ * and metadata. Match the primary transport's 128 MiB compatibility ceiling:
+ * it is deliberately generous, but still prevents a broken app-server from
+ * growing one unterminated stdout record without bound.
+ */
+export const CODEX_APP_SERVER_MAXIMUM_WIRE_LINE_BYTES = 128 * 1024 * 1024;
+const CODEX_APP_SERVER_TRANSPORT_QUEUE_CAPACITY = 8;
+const CODEX_APP_SERVER_OBSERVER_CAPACITY = 128;
+
+export type CodexAppServerWireLineFrameResult =
+  | { readonly _tag: "Framed"; readonly lines: ReadonlyArray<string> }
+  | {
+      readonly _tag: "Overflow";
+      readonly lines: ReadonlyArray<string>;
+      readonly maximumBytes: number;
+      readonly observedBytes: number;
+    };
+
+/** Incrementally frames raw UTF-8 bytes without joining an incomplete line on every chunk. */
+export function makeCodexAppServerWireLineFramer(
+  configuredMaximumBytes = CODEX_APP_SERVER_MAXIMUM_WIRE_LINE_BYTES,
+) {
+  const maximumBytes =
+    Number.isSafeInteger(configuredMaximumBytes) && configuredMaximumBytes > 0
+      ? Math.min(configuredMaximumBytes, CODEX_APP_SERVER_MAXIMUM_WIRE_LINE_BYTES)
+      : CODEX_APP_SERVER_MAXIMUM_WIRE_LINE_BYTES;
+  const decoder = new TextDecoder();
+  let pendingBuffer = new Uint8Array();
+  let pendingBytes = 0;
+  let overflow: { readonly maximumBytes: number; readonly observedBytes: number } | undefined;
+
+  const clearPending = () => {
+    // A single exceptional line must not pin its maximum-sized backing buffer
+    // for the rest of a long-lived provider session.
+    if (pendingBuffer.byteLength > 1024 * 1024) pendingBuffer = new Uint8Array();
+    pendingBytes = 0;
+  };
+
+  const ensurePendingCapacity = (requiredBytes: number) => {
+    if (pendingBuffer.byteLength >= requiredBytes) return;
+    let capacity = Math.min(maximumBytes, Math.max(64 * 1024, pendingBuffer.byteLength * 2));
+    while (capacity < requiredBytes) capacity = Math.min(maximumBytes, capacity * 2);
+    const next = new Uint8Array(capacity);
+    next.set(pendingBuffer.subarray(0, pendingBytes));
+    pendingBuffer = next;
+  };
+
+  const decodeCompletedLine = (tail: Uint8Array<ArrayBufferLike>): string => {
+    const totalBytes = pendingBytes + tail.byteLength;
+    let bytes: Uint8Array<ArrayBufferLike>;
+    if (pendingBytes === 0) {
+      bytes = tail;
+    } else {
+      ensurePendingCapacity(totalBytes);
+      pendingBuffer.set(tail, pendingBytes);
+      bytes = pendingBuffer.subarray(0, totalBytes);
+    }
+    const content =
+      bytes.byteLength > 0 && bytes[bytes.byteLength - 1] === 0x0d
+        ? bytes.subarray(0, bytes.byteLength - 1)
+        : bytes;
+    const line = decoder.decode(content);
+    clearPending();
+    return line;
+  };
+
+  const overflowResult = (
+    lines: ReadonlyArray<string>,
+    observedBytes: number,
+  ): CodexAppServerWireLineFrameResult => {
+    overflow = { maximumBytes, observedBytes };
+    clearPending();
+    return { _tag: "Overflow", lines, ...overflow };
+  };
+
+  const push = (chunk: Uint8Array<ArrayBufferLike>): CodexAppServerWireLineFrameResult => {
+    if (overflow) return { _tag: "Overflow", lines: [], ...overflow };
+    const lines: string[] = [];
+    let start = 0;
+    for (let index = 0; index < chunk.byteLength; index += 1) {
+      if (chunk[index] !== 0x0a) continue;
+      const segment = chunk.subarray(start, index);
+      const observedBytes = pendingBytes + segment.byteLength;
+      if (observedBytes > maximumBytes) return overflowResult(lines, observedBytes);
+      lines.push(decodeCompletedLine(segment));
+      start = index + 1;
+    }
+
+    const tail = chunk.subarray(start);
+    if (tail.byteLength === 0) return { _tag: "Framed", lines };
+    const observedBytes = pendingBytes + tail.byteLength;
+    if (observedBytes > maximumBytes) return overflowResult(lines, observedBytes);
+    ensurePendingCapacity(observedBytes);
+    pendingBuffer.set(tail, pendingBytes);
+    pendingBytes = observedBytes;
+    return { _tag: "Framed", lines };
+  };
+
+  const finish = (): CodexAppServerWireLineFrameResult => {
+    if (overflow) return { _tag: "Overflow", lines: [], ...overflow };
+    return pendingBytes === 0
+      ? { _tag: "Framed", lines: [] }
+      : { _tag: "Framed", lines: [decodeCompletedLine(new Uint8Array())] };
+  };
+
+  return { push, finish } as const;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -152,13 +263,25 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
   function* (
     options: CodexAppServerPatchedProtocolOptions,
   ): Effect.fn.Return<CodexAppServerPatchedProtocol, never, Scope.Scope> {
-    const outgoing = yield* Queue.unbounded<string, Cause.Done<void>>();
-    const incomingNotifications = yield* Queue.unbounded<CodexAppServerIncomingNotification>();
-    const incomingRequests = yield* Queue.unbounded<CodexAppServerIncomingRequest>();
+    const outgoing = yield* Queue.bounded<string, Cause.Done<void>>(
+      CODEX_APP_SERVER_TRANSPORT_QUEUE_CAPACITY,
+    );
+    // These streams are optional diagnostics. The typed callbacks below are
+    // the authoritative runtime path, so retaining an unbounded duplicate
+    // history when nobody observes `raw.notifications` / `raw.requests`
+    // only leaks memory. Slow observers get a bounded live window instead.
+    const incomingNotifications = yield* PubSub.sliding<CodexAppServerIncomingNotification>(
+      CODEX_APP_SERVER_OBSERVER_CAPACITY,
+    );
+    const incomingRequests = yield* PubSub.sliding<CodexAppServerIncomingRequest>(
+      CODEX_APP_SERVER_OBSERVER_CAPACITY,
+    );
     const pending = yield* Ref.make(new Map<string, CodexAppServerPendingRequest>());
     const nextRequestId = yield* Ref.make(1);
-    const remainder = yield* Ref.make("");
+
     const terminationHandled = yield* Ref.make(false);
+    const terminationReason = yield* Deferred.make<CodexError.CodexAppServerError>();
+    const wireLineFramer = makeCodexAppServerWireLineFramer(options.maximumWireLineBytes);
 
     const logProtocol = (event: CodexAppServerProtocolLogEvent) => {
       if (event.direction === "incoming" && !options.logIncoming) {
@@ -191,8 +314,13 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         return [
           Effect.gen(function* () {
             const error = yield* classify();
-            yield* failAllPending(error);
+            yield* Deferred.succeed(terminationReason, error);
+            // Close the producer before clearing the pending map. A request
+            // racing termination either lands before this point and is failed
+            // by failAllPending, or sees the closed queue and fails with the
+            // same termination reason instead of waiting forever.
             yield* Queue.end(outgoing);
+            yield* failAllPending(error);
             if (options.onTermination) {
               yield* options.onTermination(error);
             }
@@ -214,7 +342,11 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
           stage: "raw",
           payload: encoded,
         });
-        yield* Queue.offer(outgoing, encoded).pipe(Effect.asVoid);
+        const offered = yield* Queue.offer(outgoing, encoded);
+        if (!offered) {
+          const reason = yield* Deferred.await(terminationReason);
+          return yield* reason;
+        }
       });
 
     const removePending = (requestId: string) =>
@@ -270,7 +402,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
     };
 
     const handleRequest = (request: CodexAppServerIncomingRequest) =>
-      Queue.offer(incomingRequests, request).pipe(
+      PubSub.publish(incomingRequests, request).pipe(
         Effect.andThen(
           options.onRequest
             ? options.onRequest(request).pipe(
@@ -292,7 +424,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       );
 
     const handleNotification = (notification: CodexAppServerIncomingNotification) =>
-      Queue.offer(incomingNotifications, notification).pipe(
+      PubSub.publish(incomingNotifications, notification).pipe(
         Effect.andThen(options.onNotification ? options.onNotification(notification) : Effect.void),
         Effect.asVoid,
       );
@@ -351,24 +483,31 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       );
     };
 
+    const handleFramedInput = (
+      framed: CodexAppServerWireLineFrameResult,
+    ): Effect.Effect<void, CodexError.CodexAppServerError> =>
+      Effect.forEach(framed.lines, handleLine, { discard: true }).pipe(
+        Effect.andThen(
+          framed._tag === "Overflow"
+            ? Effect.fail(
+                new CodexError.CodexAppServerWireLineTooLargeError({
+                  maximumBytes: framed.maximumBytes,
+                  observedBytes: framed.observedBytes,
+                }),
+              )
+            : Effect.void,
+        ),
+      );
+
     yield* options.stdio.stdin.pipe(
-      Stream.decodeText(),
-      Stream.runForEach((chunk) =>
-        Ref.modify(remainder, (current) => {
-          const combined = current + chunk;
-          const lines = combined.split("\n");
-          const nextRemainder = lines.pop() ?? "";
-          return [lines.map((line) => line.replace(/\r$/, "")), nextRemainder] as const;
-        }).pipe(Effect.flatMap((lines) => Effect.forEach(lines, handleLine, { discard: true }))),
-      ),
+      Stream.runForEach((chunk) => handleFramedInput(wireLineFramer.push(chunk))),
       Effect.matchEffect({
         onFailure: (error) =>
           handleTermination(() =>
             Effect.succeed(normalizeIncomingError(error, "read-input-stream")),
           ),
         onSuccess: () =>
-          Ref.get(remainder).pipe(
-            Effect.flatMap((line) => (line.trim().length === 0 ? Effect.void : handleLine(line))),
+          handleFramedInput(wireLineFramer.finish()).pipe(
             Effect.matchEffect({
               onFailure: (error) => handleTermination(() => Effect.succeed(error)),
               onSuccess: () =>
@@ -383,7 +522,20 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       Effect.forkScoped,
     );
 
-    yield* Stream.fromQueue(outgoing).pipe(Stream.run(options.stdio.stdout()), Effect.forkScoped);
+    yield* Stream.fromQueue(outgoing).pipe(
+      Stream.run(options.stdio.stdout()),
+      Effect.matchEffect({
+        onFailure: (error) =>
+          handleTermination(() =>
+            Effect.succeed(normalizeIncomingError(error, "write-output-stream")),
+          ),
+        onSuccess: () =>
+          handleTermination(() =>
+            Effect.succeed(new CodexError.CodexAppServerOutputStreamEndedError({})),
+          ),
+      }),
+      Effect.forkScoped,
+    );
 
     const request = (method: string, payload?: unknown) =>
       Effect.gen(function* () {
@@ -412,8 +564,8 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       });
 
     return {
-      incomingNotifications: Stream.fromQueue(incomingNotifications),
-      incomingRequests: Stream.fromQueue(incomingRequests),
+      incomingNotifications: Stream.fromPubSub(incomingNotifications),
+      incomingRequests: Stream.fromPubSub(incomingRequests),
       request,
       notify,
       respond,

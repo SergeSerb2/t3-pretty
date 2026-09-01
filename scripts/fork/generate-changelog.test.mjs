@@ -7,17 +7,54 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  redactCliProxyDiagnostic,
+  resolveCliProxyApiUrl,
+  resolveCliProxyToken,
+} from "./cli-proxy-config.mjs";
+
+import {
   buildChangelogPrompt,
   commitSubjects,
   compareVersions,
+  escapeGitHubWorkflowCommand,
   extractChangelogVersions,
   fallbackReleaseEntry,
   mergeChangelogEntries,
   parseVersionSegments,
   planReleases,
   publishPendingNotes,
+  readResponseTextBounded,
   serializeReleaseEntry,
 } from "./generate-changelog.mjs";
+
+describe("bounded model responses", () => {
+  it("caps response bytes and escapes warning command delimiters", async () => {
+    assert.equal(await readResponseTextBounded(new Response("small"), 5), "small");
+    let failure;
+    try {
+      await readResponseTextBounded(new Response("too-large"), 5);
+    } catch (error) {
+      failure = error;
+    }
+    assert.match(String(failure), /safety limit/u);
+    assert.equal(escapeGitHubWorkflowCommand("bad%\r\n::error::"), "bad%25%0D%0A::error::");
+  });
+
+  it("keeps proxy URLs credential-free and redacts reflected bearer tokens", () => {
+    assert.equal(
+      resolveCliProxyApiUrl("https://proxy.example.test/v1/"),
+      "https://proxy.example.test/v1",
+    );
+    assert.equal(resolveCliProxyApiUrl("http://127.0.0.1:4141/v1"), "http://127.0.0.1:4141/v1");
+    assert.isUndefined(resolveCliProxyApiUrl("http://proxy.example.test/v1"));
+    assert.isUndefined(resolveCliProxyApiUrl("https://user:secret@proxy.example.test/v1"));
+    assert.isUndefined(resolveCliProxyApiUrl("https://proxy.example.test/v1?token=secret"));
+    assert.equal(redactCliProxyDiagnostic("echo bearer-secret", ["bearer-secret"]), "echo ***");
+    assert.equal(resolveCliProxyToken("bearer-secret"), "bearer-secret");
+    assert.isUndefined(resolveCliProxyToken("bearer-secret\n"));
+    assert.isUndefined(resolveCliProxyToken("x".repeat(8193)));
+  });
+});
 
 const releaseWorkflowPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -427,6 +464,9 @@ describe("publishPendingNotes", () => {
           git(originPath, "log", "-1", "--format=%s", "main"),
           "docs(changelog): add release notes through v0.0.35-nightly.2",
         );
+        // The notes push must not start a Buildkite build: that build would
+        // cancel the release still packaging on the triggering commit.
+        assert.include(git(originPath, "log", "-1", "--format=%b", "main"), "[skip ci]");
         assert.equal(
           git(originPath, "show", "main:apps/web/src/changelog/changelogData.ts"),
           next.trim(),
@@ -570,6 +610,7 @@ describe("release workflow wiring", () => {
 
     assert.include(workflow, '"$tag^{commit}~1"');
     assert.include(workflow, '"docs(changelog):"*');
+    assert.include(workflow, '[[ -z "$existing_tag" ]]');
   });
 
   it("skips hosted mint and imported jobs on automated notes commits", () => {

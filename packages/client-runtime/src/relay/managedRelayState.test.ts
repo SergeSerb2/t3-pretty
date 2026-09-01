@@ -1,8 +1,9 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import type {
-  RelayClientDeviceRecord,
-  RelayClientEnvironmentRecord,
-  RelayEnvironmentStatusResponse,
+import { AUTH_CREDENTIAL_MAX_LENGTH, EnvironmentId } from "@t3tools/contracts";
+import {
+  RelayAuthInvalidError,
+  type RelayClientDeviceRecord,
+  type RelayClientEnvironmentRecord,
+  type RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -12,6 +13,7 @@ import * as Stream from "effect/Stream";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { afterEach, vi } from "vite-plus/test";
 
+import { DPOP_UNKNOWN_HINT } from "./errorPresentation.ts";
 import * as ManagedRelay from "./managedRelay.ts";
 import {
   createManagedRelayQueryManager,
@@ -161,6 +163,51 @@ describe("createManagedRelayQueryManager", () => {
 
       expect(error).toBeInstanceOf(ManagedRelaySessionError);
       expect(unlinkEnvironment).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("rejects deregistration when the account changes during its token read", () =>
+    Effect.gen(function* () {
+      let resolveToken!: (token: string) => void;
+      const unlinkEnvironment = vi.fn(() => Effect.succeed({ ok: true }));
+      setManagedRelaySession(registry, {
+        accountId: "account-1",
+        readClerkToken: () =>
+          new Promise<string>((resolve) => {
+            resolveToken = resolve;
+          }),
+      });
+
+      const deregistration = yield* deregisterManagedRelayEnvironment(registry, {
+        accountId: "account-1",
+        environmentId: environment.environmentId,
+      }).pipe(
+        Effect.provideService(ManagedRelay.ManagedRelayClient, createClient({ unlinkEnvironment })),
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      setManagedRelaySession(registry, {
+        accountId: "account-2",
+        readClerkToken: () => Promise.resolve("new-account-token"),
+      });
+      resolveToken("old-account-token");
+
+      expect(yield* Fiber.join(deregistration)).toBeInstanceOf(ManagedRelaySessionError);
+      expect(unlinkEnvironment).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("rejects oversized Clerk session tokens before relay use", () =>
+    Effect.gen(function* () {
+      setManagedRelaySession(registry, {
+        accountId: "account-1",
+        readClerkToken: () => Promise.resolve("t".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
+      });
+
+      const error = yield* waitForManagedRelayClerkToken(registry).pipe(Effect.flip);
+
+      expect(error.message).toContain("invalid");
     }),
   );
 
@@ -419,6 +466,33 @@ describe("createManagedRelayQueryManager", () => {
         error: "Could not get relay environment status.",
         errorTraceId: "trace-status",
       });
+    });
+  });
+
+  it("presents clock skew as one possible cause for snapshot requests from older relays", async () => {
+    const manager = createManager({
+      getEnvironmentStatus: () =>
+        Effect.fail(
+          new ManagedRelay.ManagedRelayRequestFailedError({
+            action: "get relay environment status",
+            cause: new Error("Relay request failed."),
+            relayError: new RelayAuthInvalidError({
+              code: "auth_invalid",
+              reason: "invalid_dpop",
+              traceId: "trace-status",
+            }),
+            traceId: "trace-status",
+          }),
+        ),
+    });
+    setSession();
+    const atom = manager.environmentStatusAtom({ accountId: "account-1", environment });
+
+    registry.get(atom);
+    await vi.waitFor(() => {
+      expect(readManagedRelaySnapshotState(registry.get(atom)).error).toBe(
+        `Relay rejected the DPoP proof. ${DPOP_UNKNOWN_HINT}`,
+      );
     });
   });
 });

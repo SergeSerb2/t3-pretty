@@ -1,5 +1,6 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { skillMentionToken } from "@t3tools/shared/skillTool";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import type {
   EnvironmentId,
   MessageId,
@@ -31,12 +32,14 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   StyleSheet,
   View,
   type ViewStyle,
 } from "react-native";
+import * as Option from "effect/Option";
 import ImageViewing from "react-native-image-viewing";
 import Animated, {
   FadeIn,
@@ -45,29 +48,27 @@ import Animated, {
   FadeOutDown,
   LinearTransition,
 } from "react-native-reanimated";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 
 import { AppText as Text } from "../../components/AppText";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumb,
+  ComposerAttachmentThumbnail,
   ComposerDispatchStatusLabel,
   type ComposerAttachmentPreview,
 } from "../../components/ComposerAttachmentStrip";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
 import {
   composerDispatchStatusLabel,
   shouldKeepLocalComposerSendBusy,
 } from "../../lib/composerDispatchStatus";
 import { COMPOSER_SEND_INDICATOR_MIN_MS } from "../../components/ComposerSendIndicator";
 import { GlassSurface } from "../../components/GlassSurface";
-import {
-  ComposerEditor,
-  type ComposerEditorHandle,
-  type ComposerEditorSelection,
-} from "../../components/ComposerEditor";
+import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
 import {
   ComposerInlineControl,
   ComposerToolbarButton,
@@ -76,7 +77,10 @@ import {
 } from "../../components/ComposerToolbar";
 import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type {
+  DraftComposerAttachment,
+  DraftComposerFileAttachment,
+} from "../../lib/composerImages";
 import {
   buildModelOptions,
   groupByProvider,
@@ -103,6 +107,7 @@ import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 import { buildThreadSettingsPickerModel } from "./thread-settings-picker";
 import { ThreadModelIdentityCaption } from "./ThreadModelIdentityCaption";
 import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
+import { useComposerCommandMenu } from "./use-composer-command-menu";
 import {
   type ExistingThreadSettingsRouteSession,
   threadSettingsSummaryLabel,
@@ -113,6 +118,8 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { usePreparedConnection } from "../../state/session";
+import { useNativeDictation } from "./useNativeDictation";
 
 /**
  * Height of the collapsed composer (pill + model caption below it + vertical
@@ -129,7 +136,7 @@ export const COMPOSER_EXPANDED_CHROME = 156;
 
 export interface ThreadComposerProps {
   readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly placeholder: string;
   readonly contentMaxWidth?: number;
   readonly bottomInset?: number;
@@ -223,8 +230,6 @@ export function ComposerSurface(props: {
    */
   readonly animateLayout?: boolean;
 }) {
-  const cardColor = useThemeColor("--color-card-translucent");
-  const borderColor = useThemeColor("--color-border");
   const shadowColor = useThemeColor("--color-primary-shadow");
   // Drop shadow lives on a wrapper: `overflow: "hidden"` on the surface itself
   // (needed to clip content to the pill shape) would clip the shadow on iOS.
@@ -263,11 +268,7 @@ export function ComposerSurface(props: {
     <Animated.View layout={layout} style={shadowStyle}>
       <GlassSurface
         chrome="none"
-        fallbackStyle={{
-          backgroundColor: cardColor,
-          borderWidth: 1,
-          borderColor,
-        }}
+        fallbackClassName="border border-border bg-card-translucent"
         glassEffectStyle="regular"
         // The composer is a passive material containing interactive controls.
         // Expo GlassView defaults to non-interactive and both layouts share it.
@@ -336,8 +337,6 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
   readonly status: ComposerStatusPillState;
 }) {
   const isReconnecting = props.status.kind !== "unavailable";
-  const indicatorColor = useThemeColor("--color-icon-muted");
-
   return (
     <Animated.View
       key={props.status.kind}
@@ -363,7 +362,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
         className="max-w-full flex-row items-center gap-2 rounded-full bg-card px-3 py-2 shadow-sm active:opacity-70"
       >
         {isReconnecting ? (
-          <ActivityIndicator size="small" color={indicatorColor} />
+          <ActivityIndicator size="small" colorClassName={"accent-icon-muted"} />
         ) : (
           <View className="h-2 w-2 rounded-full bg-red-500" />
         )}
@@ -380,9 +379,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
 
 export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposerProps) {
   const navigation = useNavigation();
-  const { themeAppearance } = useAppearancePreferences();
-  const isDarkMode = themeAppearance === "dark";
-  const foregroundColor = useThemeColor("--color-foreground");
+  const foregroundColor = useUniwindTheme()["--color-foreground"];
   const bodyText = useScaledTextRole("body");
   const fallbackInputRef = useRef<ComposerEditorHandle>(null);
   const inputRef = props.editorRef ?? fallbackInputRef;
@@ -404,14 +401,40 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const [pendingPreviews, setPendingPreviews] = useState<ReadonlyArray<ComposerAttachmentPreview>>(
     [],
   );
+  const preparingImagesRef = useRef(false);
+  const previewFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendStartedAtRef = useRef(0);
+  const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
-  // Opening and presentation count as active so the composer stays expanded
-  // while focus moves between its native editor and the settings picker.
-  const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
+  const [composerSelection, setComposerSelection] = useState(() => ({
+    start: props.draftMessage.length,
+    end: props.draftMessage.length,
+  }));
+  const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
+    setComposerSelection(selection);
+  }, []);
+  const preparedConnection = usePreparedConnection(props.environmentId);
+  const supportsVoiceDictation =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    props.serverConfig?.environment.capabilities.voiceDictation === true;
+  const reportDictationError = useCallback((message: string) => {
+    Alert.alert("Voice dictation", message);
+  }, []);
+  const dictation = useNativeDictation({
+    enabled: supportsVoiceDictation && Option.isSome(preparedConnection) && !isDispatching,
+    prepared: Option.getOrNull(preparedConnection),
+    value: props.draftMessage,
+    cursor: composerSelection.end,
+    onChangeValue: props.onChangeDraftMessage,
+    onChangeCursor: (cursor) => setComposerSelection({ start: cursor, end: cursor }),
+    reportError: reportDictationError,
+  });
+  // Recording can make the native editor resign first responder; keep the
+  // toolbar visible so the Stop control remains reachable.
+  const isExpanded = isFocused || settingsSheetPresentation.isActive || dictation.active;
   const canSend = hasContent;
-  const stripAttachments = useMemo((): ComposerAttachmentPreview[] => {
+  const stripAttachments = useMemo(() => {
     const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
     return [
       ...props.draftAttachments,
@@ -480,6 +503,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const onPressImage = useCallback(
     (uri: string) => {
       wasExpandedBeforePreviewRef.current = isFocused;
+      setPreviewVideo(null);
       setPreviewImageUri(uri);
     },
     [isFocused],
@@ -487,10 +511,35 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
   const closePreview = useCallback(() => {
     setPreviewImageUri(null);
+    setPreviewVideo(null);
     if (wasExpandedBeforePreviewRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+      previewFocusTimerRef.current = setTimeout(() => {
+        previewFocusTimerRef.current = null;
+        if (navigation.isFocused()) inputRef.current?.focus();
+      }, 100);
     }
-  }, [inputRef]);
+  }, [inputRef, navigation]);
+
+  const onPressVideo = useCallback(
+    (attachment: DraftComposerFileAttachment, sourceIdentifier: string) => {
+      wasExpandedBeforePreviewRef.current = isFocused;
+      setPreviewImageUri(null);
+      setPreviewVideo((current) => current ?? { type: "local", attachment, sourceIdentifier });
+    },
+    [isFocused],
+  );
+
+  useEffect(
+    () => () => {
+      if (previewFocusTimerRef.current) {
+        clearTimeout(previewFocusTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const onEditorFocusChange = props.onEditorFocusChange;
   const handleFocus = useCallback(() => {
@@ -544,11 +593,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     environmentLabel: props.environmentLabel,
     threadSyncPhase: props.threadSyncPhase,
   });
-  const toolbarSurface = String(useThemeColor("--color-card"));
-  const backdropSurface = String(useThemeColor("--color-screen"));
-  const toolbarFadeOpaque = themeColorWithAlpha(toolbarSurface, 0.95);
-  const toolbarFadeTransparent = themeColorWithAlpha(toolbarSurface, 0);
-  const backdropGradient = `linear-gradient(to bottom, ${themeColorWithAlpha(backdropSurface, 0)} 0%, ${themeColorWithAlpha(backdropSurface, 0.6)} 55%, ${themeColorWithAlpha(backdropSurface, 0.9)} 100%)`;
   const selectedProviderStatus = useMemo(() => {
     if (!props.serverConfig) return null;
     return (
@@ -558,208 +602,72 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
 
-  // ── Trigger detection ────────────────────────────────────
-  const [composerSelection, setComposerSelection] = useState(() => ({
-    start: props.draftMessage.length,
-    end: props.draftMessage.length,
-  }));
-
-  const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
-    setComposerSelection(selection);
-  }, []);
-  useEffect(() => {
-    const end = props.draftMessage.length;
-    setComposerSelection((selection) => {
-      const start = Math.min(selection.start, end);
-      const selectionEnd = Math.min(selection.end, end);
-      if (start === selection.start && selectionEnd === selection.end) {
-        return selection;
-      }
-      return { start, end: selectionEnd };
-    });
-  }, [props.draftMessage.length]);
-
-  const composerTrigger = useMemo<ComposerTrigger | null>(() => {
-    if (composerSelection.start !== composerSelection.end) {
-      return null;
-    }
-    return detectComposerTrigger(props.draftMessage, composerSelection.end);
-  }, [composerSelection, props.draftMessage]);
-  const pathSearch = useComposerPathSearch({
+  const composerMenu = useComposerCommandMenu({
+    draftMessage: props.draftMessage,
     environmentId: props.environmentId,
-    cwd: composerTrigger?.kind === "path" ? props.projectCwd : null,
-    query: composerTrigger?.kind === "path" ? composerTrigger.query : null,
+    projectCwd: props.projectCwd,
+    selectedProviderStatus,
+    hasThread: true,
+    onChangeDraftMessage: props.onChangeDraftMessage,
+    onUpdateInteractionMode: props.onUpdateInteractionMode,
   });
 
-  const composerMenuItems: ComposerCommandItem[] = useMemo(() => {
-    if (!composerTrigger) return [];
-
-    if (composerTrigger.kind === "slash-command") {
-      const q = composerTrigger.query.toLowerCase();
-      const allBuiltIn = [
-        {
-          id: "cmd:model",
-          type: "slash-command" as const,
-          command: "model",
-          label: "/model",
-          description: "Switch model",
-        },
-        {
-          id: "cmd:plan",
-          type: "slash-command" as const,
-          command: "plan",
-          label: "/plan",
-          description: "Switch to plan mode",
-        },
-        {
-          id: "cmd:default",
-          type: "slash-command" as const,
-          command: "default",
-          label: "/default",
-          description: "Switch to default mode",
-        },
-      ];
-      const builtIn = allBuiltIn.filter((item) => item.command.includes(q));
-
-      const providerCommands: ComposerCommandItem[] = [];
-      for (const cmd of selectedProviderStatus?.slashCommands ?? []) {
-        if (!cmd.name.toLowerCase().includes(q)) continue;
-        providerCommands.push({
-          id: `pcmd:${cmd.name}`,
-          type: "provider-slash-command" as const,
-          command: cmd,
-          label: `/${cmd.name}`,
-          description: cmd.description ?? "",
-        });
-      }
-
-      const skillItems = (selectedProviderStatus?.skills ?? [])
-        .filter((skill) => matchesSlashSkillQuery(skill, q))
-        .map((skill) => ({
-          id: `skill:${skill.name}`,
-          type: "skill" as const,
-          skill,
-          label: `skill:${skill.name}`,
-          description: skill.shortDescription ?? skill.description ?? "",
-        }));
-
-      return [...builtIn, ...providerCommands, ...skillItems];
+  const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
+    if (composerMenu.trigger?.kind !== "path") {
+      return composerMenu.items;
     }
 
-    if (composerTrigger.kind === "skill") {
-      const enabledSkills = (selectedProviderStatus?.skills ?? []).filter((s) => s.enabled);
-      const normalizedQuery = normalizeSearchQuery(composerTrigger.query, {
-        trimLeadingPattern: /^\$+/,
-      });
-
-      if (!normalizedQuery) {
-        return enabledSkills.slice(0, 20).map((skill) => ({
-          id: `skill:${skill.name}`,
-          type: "skill" as const,
-          skill,
-          label: skill.displayName ?? skill.name,
-          description: skill.shortDescription ?? skill.description ?? "",
-        }));
-      }
-
-      const ranked: Array<{
-        item: (typeof enabledSkills)[number];
-        score: number;
-        tieBreaker: string;
-      }> = [];
-      for (const skill of enabledSkills) {
-        const displayLabel = (skill.displayName ?? skill.name).toLowerCase();
-        const scores = [
-          scoreQueryMatch({
-            value: skill.name.toLowerCase(),
-            query: normalizedQuery,
-            exactBase: 0,
-            prefixBase: 2,
-            boundaryBase: 4,
-            includesBase: 6,
-            fuzzyBase: 100,
-            boundaryMarkers: ["-", "_", "/"],
-          }),
-          scoreQueryMatch({
-            value: displayLabel,
-            query: normalizedQuery,
-            exactBase: 1,
-            prefixBase: 3,
-            boundaryBase: 5,
-            includesBase: 7,
-            fuzzyBase: 110,
-          }),
-          scoreQueryMatch({
-            value: skill.shortDescription?.toLowerCase() ?? "",
-            query: normalizedQuery,
-            exactBase: 20,
-            prefixBase: 22,
-            boundaryBase: 24,
-            includesBase: 26,
-          }),
-          scoreQueryMatch({
-            value: skill.description?.toLowerCase() ?? "",
-            query: normalizedQuery,
-            exactBase: 30,
-            prefixBase: 32,
-            boundaryBase: 34,
-            includesBase: 36,
-          }),
-        ].filter((s): s is number => s !== null);
-
-        if (scores.length > 0) {
-          insertRankedSearchResult(
-            ranked,
-            {
-              item: skill,
-              score: Math.min(...scores),
-              tieBreaker: `${displayLabel}\u0000${skill.name}`,
-            },
-            20,
-          );
-        }
-      }
-
-      return ranked.map(({ item: skill }) => ({
-        id: `skill:${skill.name}`,
-        type: "skill" as const,
-        skill,
-        label: skill.displayName ?? skill.name,
-        description: skill.shortDescription ?? skill.description ?? "",
-      }));
+    const apps = props.serverConfig?.settings.apps;
+    if (!apps) {
+      return composerMenu.items;
     }
 
-    if (composerTrigger.kind === "path") {
-      const fileItems = pathSearch.entries.map((entry) => {
-        const parts = entry.path.split("/");
-        return {
-          id: `path:${entry.path}`,
-          type: "path" as const,
-          path: entry.path,
-          kind: entry.kind,
-          label: parts[parts.length - 1] ?? entry.path,
-          description: parts.length > 1 ? parts.slice(0, -1).join("/") : "",
-        };
-      });
-      const apps = props.serverConfig?.settings.apps;
-      const appItems = apps
-        ? attachableAppMatches(apps, composerTrigger.query, 8).map((connection) => ({
-            id: `app:${connection.id}`,
-            type: "app" as const,
-            slug: connection.slug,
-            color: appAvatarColor(connection.catalogId),
-            label: connection.name,
-            description: `@${connection.slug}`,
-          }))
-        : [];
-      return [...fileItems, ...appItems];
-    }
+    const appItems = attachableAppMatches(apps, composerMenu.trigger.query, 8).map(
+      (connection) => ({
+        id: `app:${connection.id}`,
+        type: "app" as const,
+        slug: connection.slug,
+        color: appAvatarColor(connection.catalogId),
+        label: connection.name,
+        description: `@${connection.slug}`,
+      }),
+    );
+    return [...composerMenu.items, ...appItems];
+  }, [composerMenu.items, composerMenu.trigger, props.serverConfig]);
 
-    return [];
-  }, [composerTrigger, pathSearch.entries, props.serverConfig, selectedProviderStatus]);
+  const handleComposerMenuSelect = useCallback(
+    (item: ComposerCommandItem) => {
+      if (item.type !== "app" && item.type !== "skill") {
+        composerMenu.onSelect(item);
+        return;
+      }
 
-  // ── Handle command selection ──────────────────────────────
-  const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
+      const trigger = composerMenu.trigger;
+      if (!trigger) return;
+
+      const replacement =
+        item.type === "app"
+          ? `@${item.slug} `
+          : `$${skillMentionToken(item.skill.name)} `;
+      const result = replaceTextRange(
+        props.draftMessage,
+        trigger.rangeStart,
+        trigger.rangeEnd,
+        replacement,
+      );
+      composerMenu.onSelectionChange({ start: result.cursor, end: result.cursor });
+      props.onChangeDraftMessage(result.text);
+    },
+    [
+      composerMenu.onSelect,
+      composerMenu.onSelectionChange,
+      composerMenu.trigger,
+      props.draftMessage,
+      props.onChangeDraftMessage,
+    ],
+  );
+
+  const { onSendMessage } = props;
 
   const beginPendingPreviews = useCallback(
     (previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>) => {
@@ -769,21 +677,24 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   const handlePickDraftImages = useCallback(async () => {
-    if (isDispatching) {
+    if (isDispatching || preparingImagesRef.current) {
       return;
     }
+    preparingImagesRef.current = true;
     try {
       await props.onPickDraftImages({ onPicked: beginPendingPreviews });
     } finally {
+      preparingImagesRef.current = false;
       setPendingPreviews([]);
     }
   }, [beginPendingPreviews, isDispatching, props.onPickDraftImages]);
 
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
-      if (uris.length === 0 || isDispatching) {
+      if (uris.length === 0 || isDispatching || preparingImagesRef.current) {
         return;
       }
+      preparingImagesRef.current = true;
       beginPendingPreviews(
         uris.map((uri, index) => ({
           id: `pending:${index}:${uri}`,
@@ -793,6 +704,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       try {
         await props.onNativePasteImages(uris);
       } finally {
+        preparingImagesRef.current = false;
         setPendingPreviews([]);
       }
     },
@@ -865,51 +777,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       },
     ],
     [canSend, isDispatching],
-  );
-  const handleCommandSelect = useCallback(
-    (item: ComposerCommandItem) => {
-      if (!composerTrigger) return;
-
-      if (
-        item.type === "slash-command" &&
-        (item.command === "plan" || item.command === "default")
-      ) {
-        const result = replaceTextRange(
-          draftMessage,
-          composerTrigger.rangeStart,
-          composerTrigger.rangeEnd,
-          "",
-        );
-        setComposerSelection({ start: result.cursor, end: result.cursor });
-        onChangeDraftMessage(result.text);
-        onUpdateInteractionMode(item.command);
-        return;
-      }
-
-      let replacement = "";
-      if (item.type === "path") {
-        replacement = `${serializeComposerFileLink(item.path)} `;
-      } else if (item.type === "skill") {
-        replacement = `$${skillMentionToken(item.skill.name)} `;
-      } else if (item.type === "app") {
-        // Bare `@slug`: the server matches it against connected apps.
-        replacement = `@${item.slug} `;
-      } else if (item.type === "slash-command") {
-        replacement = `/${item.command} `;
-      } else if (item.type === "provider-slash-command") {
-        replacement = `/${item.command.name} `;
-      }
-
-      const result = replaceTextRange(
-        draftMessage,
-        composerTrigger.rangeStart,
-        composerTrigger.rangeEnd,
-        replacement,
-      );
-      setComposerSelection({ start: result.cursor, end: result.cursor });
-      onChangeDraftMessage(result.text);
-    },
-    [composerTrigger, draftMessage, onChangeDraftMessage, onUpdateInteractionMode],
   );
 
   // ── Model menu ───────────────────────────────────────────
@@ -1004,6 +871,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const settingsRouteSession = useMemo<ExistingThreadSettingsRouteSession>(
     () => ({
       ownerId: settingsOwnerId,
+      environmentId: props.environmentId,
       providerGroups: threadProviderGroups,
       selectedModel: currentModelSelection,
       onSelectModel: handleSelectModelOption,
@@ -1087,28 +955,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           silently drops experimental_backgroundImage on Android, which left this
           strip fully transparent and the feed text legible through the composer. */}
       <View
+        className="absolute inset-0 bg-linear-to-b from-screen/0 via-screen/60 to-screen/90"
         pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            experimental_backgroundImage: backdropGradient,
-          },
-        ]}
       />
       <Animated.View
         className="relative w-full self-center"
         layout={composerLayoutTransition}
         style={{ maxWidth: props.contentMaxWidth }}
       >
-        {composerTrigger &&
+        {composerMenu.trigger &&
         (composerMenuItems.length > 0 ||
-          (composerTrigger.kind === "path" && pathSearch.isPending)) ? (
+          (composerMenu.trigger.kind === "path" && composerMenu.isLoading)) ? (
           <View className="absolute inset-x-0 bottom-full z-10 mb-2">
             <ComposerCommandPopover
               items={composerMenuItems}
-              triggerKind={composerTrigger.kind}
-              isLoading={pathSearch.isPending}
-              onSelect={handleCommandSelect}
+              triggerKind={composerMenu.trigger.kind}
+              isLoading={composerMenu.isLoading}
+              onSelect={handleComposerMenuSelect}
             />
           </View>
         ) : null}
@@ -1137,6 +1000,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 busy={isSending && props.draftAttachments.length > 0}
                 onRemove={props.onRemoveDraftImage}
                 onPressImage={onPressImage}
+                onPressVideo={onPressVideo}
               />
             </Animated.View>
           ) : null}
@@ -1146,15 +1010,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               ref={inputRef}
               multiline
               value={props.draftMessage}
-              skills={selectedProviderStatus?.skills}
-              selection={composerSelection}
+              skills={selectedProviderStatus?.skills ?? []}
+              selection={composerMenu.selection}
               onChangeText={props.onChangeDraftMessage}
-              onSelectionChange={handleSelectionChange}
+              onSelectionChange={composerMenu.onSelectionChange}
               onPasteImages={handlePasteImages}
               placeholder={props.placeholder}
               onFocus={handleFocus}
               onBlur={handleBlur}
               onSubmit={handleSendPress}
+              editable={!dictation.active}
               scrollEnabled={isExpanded}
               // Android: collapsed single line centers natively (gravity) in
               // a pill-height box matching the send button; iOS keeps insets.
@@ -1166,21 +1031,33 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </View>
           {!isExpanded && stripAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">
-              {stripAttachments.slice(0, 3).map((image) => (
-                <ComposerAttachmentThumb
-                  key={image.id}
-                  previewUri={image.previewUri}
-                  size={30}
-                  borderRadius={8}
-                  backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
-                  preparing={isDispatching || image.preparing === true}
-                  onPress={
-                    isDispatching || image.preparing === true
-                      ? undefined
-                      : () => onPressImage(image.previewUri)
-                  }
-                />
-              ))}
+              {stripAttachments.slice(0, 3).map((attachment) =>
+                attachment.type === "image" ? (
+                  <ComposerAttachmentThumb
+                    key={attachment.id}
+                    previewUri={attachment.previewUri}
+                    size={30}
+                    borderRadius={8}
+                    backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
+                    preparing={isDispatching || attachment.preparing === true}
+                    onPress={
+                      isDispatching || attachment.preparing === true
+                        ? undefined
+                        : () => onPressImage(attachment.previewUri)
+                    }
+                  />
+                ) : (
+                  <ComposerAttachmentThumbnail
+                    key={attachment.id}
+                    attachment={attachment}
+                    size={30}
+                    borderRadius={8}
+                    compact
+                    onPressImage={isDispatching ? undefined : onPressImage}
+                    onPressVideo={isDispatching ? undefined : onPressVideo}
+                  />
+                ),
+              )}
               {stripAttachments.length > 3 ? (
                 <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                   <Text className="text-foreground-muted text-2xs font-t3-bold">
@@ -1204,7 +1081,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canSend && !isDispatching}
+                  disabled={dictation.active || (!canSend && !isDispatching)}
                   loading={isDispatching}
                   onPress={handleSendPress}
                 />
@@ -1229,11 +1106,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           // Toolbar row — matches draft page layout (expanded only)
           <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)}>
             <ComposerToolbarRow paddingBottom={8} paddingHorizontal={0} paddingTop={8}>
-              <ComposerToolbarScroller
-                fadeOpaque={toolbarFadeOpaque}
-                fadeTransparent={toolbarFadeTransparent}
-                contentPaddingRight={8}
-              >
+              <ComposerToolbarScroller contentPaddingRight={8}>
                 <ComposerToolbarButton
                   accessibilityLabel="Add attachment"
                   icon="plus"
@@ -1241,6 +1114,27 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void handlePickDraftImages()}
                   showChevron={false}
                 />
+                {supportsVoiceDictation ? (
+                  <ComposerToolbarButton
+                    accessibilityLabel={
+                      dictation.phase === "recording"
+                        ? "Stop voice dictation"
+                        : dictation.phase === "processing"
+                          ? "Finishing voice dictation"
+                          : "Start voice dictation"
+                    }
+                    icon={dictation.phase === "recording" ? "stop.fill" : "mic.fill"}
+                    variant={dictation.phase === "recording" ? "danger" : "default"}
+                    disabled={
+                      dictation.phase === "processing" ||
+                      (dictation.phase === "idle" &&
+                        (isDispatching || Option.isNone(preparedConnection)))
+                    }
+                    loading={dictation.phase === "processing"}
+                    onPress={() => void dictation.toggle()}
+                    showChevron={false}
+                  />
+                ) : null}
                 <ThreadSettingsPickerPopover
                   accessibilityLabel="Model and reasoning settings"
                   model={settingsPicker}
@@ -1284,7 +1178,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   accessibilityLabel={isDispatching ? (dispatchStatus ?? "Sending") : sendLabel}
                   icon="arrow.up"
                   variant="primary"
-                  disabled={!canSend && !isDispatching}
+                  disabled={dictation.active || (!canSend && !isDispatching)}
                   loading={isDispatching}
                   onPress={handleSendPress}
                   showChevron={false}
@@ -1307,6 +1201,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         ) : null}
       </Animated.View>
 
+      <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />
       <ImageViewing
         images={previewImageUri ? [{ uri: previewImageUri }] : []}
         imageIndex={0}

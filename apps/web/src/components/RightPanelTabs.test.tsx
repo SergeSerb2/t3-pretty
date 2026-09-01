@@ -122,6 +122,27 @@ function renderTabs(
   );
 }
 
+describe("surface shortcut typing contexts", () => {
+  const makeTarget = (matches: string | null) => ({
+    closest(selectors: string) {
+      if (matches === null || !selectors.includes(matches)) return null;
+      return {};
+    },
+  });
+
+  it("treats form fields and every editable region as typing contexts", () => {
+    expect(surfaceShortcutTargetsTypingContext(makeTarget("input"))).toBe(true);
+    expect(surfaceShortcutTargetsTypingContext(makeTarget("textarea"))).toBe(true);
+    expect(surfaceShortcutTargetsTypingContext(makeTarget("select"))).toBe(true);
+    expect(surfaceShortcutTargetsTypingContext(makeTarget("[contenteditable]"))).toBe(true);
+  });
+
+  it("claims letters only outside editable regions", () => {
+    expect(surfaceShortcutTargetsTypingContext(null)).toBe(false);
+    expect(surfaceShortcutTargetsTypingContext(makeTarget(null))).toBe(false);
+  });
+});
+
 describe("RightPanelTabs preview favicon", () => {
   it("prefers a live capture and never asks Google about a private hostname", () => {
     const captured = renderTabs(favicon("data:image/png;base64,AAAA", "http://24x.xf.local/"));

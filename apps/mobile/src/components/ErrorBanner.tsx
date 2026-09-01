@@ -9,9 +9,9 @@ export function ErrorBanner(props: { readonly message: string }) {
       entering={enterFadeDown}
       exiting={exitFade}
       layout={layoutSettle}
-      className="rounded-2xl border border-rose-300/70 bg-rose-100/80 px-3.5 py-3 dark:border-rose-400/28 dark:bg-rose-500/12"
+      className="rounded-2xl border border-adaptive-rose-300-a70-400-a28 bg-adaptive-rose-100-a80-500-a12 px-3.5 py-3"
     >
-      <Text className="font-t3-medium text-sm text-rose-700 dark:text-rose-300">
+      <Text className="font-t3-medium text-sm text-adaptive-rose-700-300">
         {props.message}
       </Text>
     </Animated.View>

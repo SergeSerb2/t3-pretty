@@ -8,6 +8,7 @@ import {
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
   selectRunningSubprocessTerminalIds,
+  terminalBufferAppendSince,
 } from "./terminalSession.ts";
 
 const TARGET = {
@@ -87,6 +88,42 @@ describe("terminal session reducers", () => {
     expect(combineTerminalSessionState(summary, EMPTY_TERMINAL_BUFFER_STATE).status).toBe(
       "running",
     );
+  });
+
+  it("prefers a valid latest timestamp regardless of which stream supplies it", () => {
+    const validTimestamp = "2026-04-02T00:00:00.000Z";
+    const malformedTimestamp = "not-a-timestamp";
+    const summary = applyTerminalMetadataStreamEvent([], {
+      type: "snapshot",
+      terminals: [
+        {
+          threadId: BASE_SNAPSHOT.threadId,
+          terminalId: BASE_SNAPSHOT.terminalId,
+          cwd: BASE_SNAPSHOT.cwd,
+          worktreePath: BASE_SNAPSHOT.worktreePath,
+          status: "running",
+          pid: BASE_SNAPSHOT.pid,
+          exitCode: BASE_SNAPSHOT.exitCode,
+          exitSignal: BASE_SNAPSHOT.exitSignal,
+          updatedAt: validTimestamp,
+          hasRunningSubprocess: false,
+          label: BASE_SNAPSHOT.label,
+        },
+      ],
+    })[0]!;
+
+    expect(
+      combineTerminalSessionState(summary, {
+        ...EMPTY_TERMINAL_BUFFER_STATE,
+        updatedAt: malformedTimestamp,
+      }).updatedAt,
+    ).toBe(validTimestamp);
+    expect(
+      combineTerminalSessionState(
+        { ...summary, updatedAt: malformedTimestamp },
+        { ...EMPTY_TERMINAL_BUFFER_STATE, updatedAt: validTimestamp },
+      ).updatedAt,
+    ).toBe(validTimestamp);
   });
 
   it("does not treat an idle running shell as a running subprocess", () => {
@@ -185,6 +222,26 @@ describe("terminal session reducers", () => {
     expect(state.buffer).toBe("🙂");
   });
 
+  it("counts a surrogate pair split across output chunks as one code point", () => {
+    const append = (state: typeof EMPTY_TERMINAL_BUFFER_STATE, data: string) =>
+      applyTerminalAttachStreamEvent(
+        state,
+        {
+          type: "output",
+          threadId: TARGET.threadId,
+          terminalId: TARGET.terminalId,
+          data,
+        },
+        4,
+      );
+
+    const highSurrogate = append(EMPTY_TERMINAL_BUFFER_STATE, "\ud83d");
+    const pair = append(highSurrogate, "\ude42");
+
+    expect(pair.buffer).toBe("🙂");
+    expect(pair.bufferByteLength).toBe(4);
+  });
+
   it("keeps a long output stream byte-trimmed across chunk appends", () => {
     let state = EMPTY_TERMINAL_BUFFER_STATE;
     // 200 chunks x 6 bytes = 1200 bytes streamed through a 64-byte cap.
@@ -204,6 +261,58 @@ describe("terminal session reducers", () => {
     expect(state.buffer).toBe(`cdef${"abcdef".repeat(10)}`);
     expect(state.bufferByteLength).toBe(64);
     expect(state.version).toBe(200);
+  });
+
+  it("exposes only new output after the retained buffer rolls over", () => {
+    const append = (state: typeof EMPTY_TERMINAL_BUFFER_STATE, data: string) =>
+      applyTerminalAttachStreamEvent(
+        state,
+        {
+          type: "output",
+          threadId: TARGET.threadId,
+          terminalId: TARGET.terminalId,
+          data,
+        },
+        8,
+      );
+
+    const previous = append(EMPTY_TERMINAL_BUFFER_STATE, "abcdefgh");
+    const current = append(previous, "ij");
+
+    expect(current.buffer).toBe("cdefghij");
+    expect(terminalBufferAppendSince(previous, current)).toBe("ij");
+  });
+
+  it("requests a reset when output outruns the retained window or the stream restarts", () => {
+    const previous = applyTerminalAttachStreamEvent(
+      EMPTY_TERMINAL_BUFFER_STATE,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "abcdefgh",
+      },
+      8,
+    );
+    const overrun = applyTerminalAttachStreamEvent(
+      previous,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "ijklmnop",
+      },
+      8,
+    );
+    const restarted = applyTerminalAttachStreamEvent(previous, {
+      type: "restarted",
+      threadId: TARGET.threadId,
+      terminalId: TARGET.terminalId,
+      snapshot: { ...BASE_SNAPSHOT, history: "fresh" },
+    });
+
+    expect(terminalBufferAppendSince(previous, overrun)).toBeNull();
+    expect(terminalBufferAppendSince(previous, restarted)).toBeNull();
   });
 
   it("drops a multi-byte character straddling the trim boundary whole", () => {

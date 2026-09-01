@@ -624,9 +624,24 @@ export const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const crypto = yield* Crypto.Crypto;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
+  const readRepositoryInstructions = (cwd: string, fileName: string) =>
+    Effect.gen(function* () {
+      const root = yield* fileSystem.realPath(cwd);
+      const instructionPath = yield* fileSystem.realPath(path.join(root, fileName));
+      if (!instructionPath.startsWith(`${root}${path.sep}`)) {
+        return "";
+      }
+      const info = yield* fileSystem.stat(instructionPath);
+      if (info.type !== "File" || info.size > FileSystem.Size(20_000)) {
+        return "";
+      }
+      return (yield* fileSystem.readFileString(instructionPath)).trim();
+    }).pipe(Effect.orElseSucceed(() => ""));
 
   const readRecentCommitSubjects = (cwd: string) =>
     gitCore
@@ -645,26 +660,43 @@ export const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => []),
       );
 
-  const resolveStylePolicy = (cwd: string, style: SourceControlWritingStyleSettings) =>
+  const resolveStylePolicy = (cwd: string, settings: SourceControlTextGenerationSettings) =>
     Effect.gen(function* () {
-      switch (style.mode) {
+      switch (settings.style.mode) {
         case "conventional_commits":
           return conventionalCommitsTextGenerationPolicy;
         case "custom":
           return customTextGenerationPolicy(
-            style.customInstructions
+            settings.style.customInstructions
               ? {
-                  commitInstructions: style.customInstructions,
-                  changeRequestInstructions: style.customInstructions,
+                  commitInstructions: settings.style.customInstructions,
+                  changeRequestInstructions: settings.style.customInstructions,
                 }
               : {},
           );
         case "repo_conventions": {
           const subjects = yield* readRecentCommitSubjects(cwd);
-          if (subjects.length === 0) {
+          const agentInstructions = yield* readRepositoryInstructions(cwd, "AGENTS.md");
+          const isClaudeWriter =
+            settings.modelSelection.instanceId === "claudeAgent" ||
+            (yield* providerRegistry.getProviders).some(
+              (provider) =>
+                provider.instanceId === settings.modelSelection.instanceId &&
+                provider.driver === "claudeAgent",
+            );
+          const claudeInstructions = isClaudeWriter
+            ? yield* readRepositoryInstructions(cwd, "CLAUDE.md")
+            : "";
+          const examples = [
+            ...(subjects.length > 0
+              ? [["Recent commit subjects from this repository:", ...subjects].join("\n")]
+              : []),
+            ...(agentInstructions ? [`Local AGENTS.md:\n${agentInstructions}`] : []),
+            ...(claudeInstructions ? [`Local CLAUDE.md:\n${claudeInstructions}`] : []),
+          ].join("\n\n");
+          if (!examples) {
             return repositoryConventionsTextGenerationPolicy;
           }
-          const examples = ["Recent commit subjects from this repository:", ...subjects].join("\n");
           return {
             ...repositoryConventionsTextGenerationPolicy,
             commitInstructions: `${repositoryConventionsTextGenerationPolicy.commitInstructions}\n\n${examples}`,
@@ -794,11 +826,15 @@ export const make = Effect.gen(function* () {
     ) {
       const repositoryNameWithOwner = resolveHeadRepositoryNameWithOwner(pullRequest) ?? "";
 
-      if (repositoryNameWithOwner.length === 0) {
-        yield* gitCore.fetchPullRequestBranch({
+      // Same-repo and Origin CRs (no isCrossRepository) fetch the primary remote
+      // head first. The wrapper still falls back to refs/pull/<n>/head.
+      if (repositoryNameWithOwner.length === 0 || pullRequest.isCrossRepository !== true) {
+        const remoteName = yield* gitCore.resolvePrimaryRemoteName(cwd);
+        yield* gitCore.fetchRemoteBranch({
           cwd,
-          prNumber: pullRequest.number,
-          branch: localBranch,
+          remoteName,
+          remoteBranch: pullRequest.headBranch,
+          localBranch,
         });
         return;
       }
@@ -866,9 +902,6 @@ export const make = Effect.gen(function* () {
           ),
       ),
     );
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-
   const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
   const canonicalizeExistingPath = (value: string) =>
     fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
@@ -1448,15 +1481,17 @@ export const make = Effect.gen(function* () {
    * cannot exist for it and asking the provider is a guaranteed-empty API call.
    *
    * `git push` writes the remote-tracking ref even without `-u` (how most
-   * terminal and agent pushes land), which makes this a safer "did it ever
-   * reach the host" test than looking for upstream config, and the glob spans
-   * every remote so a fork branch still counts. A repository that tracks no
-   * remotes at all cannot answer the question, because then every branch looks
-   * unpublished; it, and any failed probe, keeps the lookup.
+   * terminal and agent pushes land), and configured upstream metadata survives
+   * when a merged change request's remote branch is deleted. Together they
+   * distinguish branches known to have reached a host from genuinely local
+   * branches. The ref glob spans every remote so a fork branch still counts. A
+   * repository that tracks no remotes at all cannot answer the question,
+   * because then every branch looks unpublished; it, and any failed probe,
+   * keeps the lookup.
    */
   const isUnpublishedBranch = Effect.fn("isUnpublishedBranch")(function* (
     cwd: string,
-    headContext: Pick<BranchHeadContext, "headBranch">,
+    headContext: Pick<BranchHeadContext, "headBranch" | "localBranch">,
   ) {
     if (headContext.headBranch.length === 0) {
       return false;
@@ -1471,13 +1506,24 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.map((result) => result.stdout.trim().length > 0));
 
-    return yield* Effect.all(
-      [matchesRef("refs/remotes"), matchesRef(`refs/remotes/*/${headContext.headBranch}`)],
-      { concurrency: "unbounded" },
-    ).pipe(
-      Effect.map(([tracksAnyRemote, tracksThisBranch]) => tracksAnyRemote && !tracksThisBranch),
-      Effect.orElseSucceed(() => false),
-    );
+    return yield* Effect.gen(function* () {
+      const [configuredRemote, configuredMerge] = yield* Effect.all(
+        [
+          gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.remote`),
+          gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.merge`),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (configuredRemote !== null && configuredMerge !== null) {
+        return false;
+      }
+
+      const [tracksAnyRemote, tracksThisBranch] = yield* Effect.all(
+        [matchesRef("refs/remotes"), matchesRef(`refs/remotes/*/${headContext.headBranch}`)],
+        { concurrency: "unbounded" },
+      );
+      return tracksAnyRemote && !tracksThisBranch;
+    }).pipe(Effect.orElseSucceed(() => false));
   });
 
   const findOpenPr = Effect.fn("findOpenPr")(function* (
@@ -1738,7 +1784,7 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      const policy = yield* resolveStylePolicy(input.cwd, input.settings.style);
+      const policy = yield* resolveStylePolicy(input.cwd, input.settings);
 
       const generated = yield* textGeneration
         .generateCommitMessage({
@@ -1924,7 +1970,7 @@ export const make = Effect.gen(function* () {
     });
     const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseBranch);
     const rangeContext = yield* gitCore.readRangeContext(cwd, baseRangeRef);
-    const policy = yield* resolveStylePolicy(cwd, settings.style);
+    const policy = yield* resolveStylePolicy(cwd, settings);
     const changeRequestTemplate =
       settings.style.followChangeRequestTemplates && provider.kind === "github"
         ? Option.getOrUndefined(yield* detectPrTemplate(cwd, baseRangeRef, gitCore.execute))
@@ -2284,10 +2330,13 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd, refresh: true });
-        const localBranch = result.refs.find(
-          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-        );
+        const result = yield* gitCore.listRefs({
+          cwd,
+          query: localPullRequestBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        const localBranch = result.refs.find((branch) => branch.name === localPullRequestBranch);
         if (localBranch) {
           return localBranch;
         }
@@ -2295,8 +2344,14 @@ export const make = Effect.gen(function* () {
           return null;
         }
 
-        for (const branch of result.refs) {
-          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
+        const headResult = yield* gitCore.listRefs({
+          cwd,
+          query: pullRequest.headBranch,
+          refKind: "local",
+          refresh: true,
+        });
+        for (const branch of headResult.refs) {
+          if (branch.name !== pullRequest.headBranch || !branch.worktreePath) {
             continue;
           }
 

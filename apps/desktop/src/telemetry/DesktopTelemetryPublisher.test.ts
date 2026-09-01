@@ -1,4 +1,7 @@
-import { DesktopHostTelemetryMessage } from "@t3tools/contracts";
+import {
+  DESKTOP_ELECTRON_PROCESS_MAX_COUNT,
+  DesktopHostTelemetryMessage,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -100,23 +103,25 @@ describe("DesktopTelemetryPublisher", () => {
       let thermalListener: ((state: ElectronPowerMonitor.ElectronThermalState) => void) | null =
         null;
       let speedLimitListener: ((limit: number) => void) | null = null;
-      const metrics = [
-        {
-          pid: 4_242,
-          type: "Browser",
-          creationTime: 1_000.75,
-          name: "electron",
-          cpu: {
-            percentCPUUsage: 12.5,
-            cumulativeCPUUsage: 3.25,
-            idleWakeupsPerSecond: 7,
-          },
-          memory: {
-            workingSetSize: 2_048,
-            peakWorkingSetSize: 4_096,
-          },
-        } as Electron.ProcessMetric,
-      ];
+      const metrics = Array.from(
+        { length: DESKTOP_ELECTRON_PROCESS_MAX_COUNT + 1 },
+        (_, index) =>
+          ({
+            pid: 4_242 + index,
+            type: "Browser",
+            creationTime: 1_000.75 + index,
+            name: "electron",
+            cpu: {
+              percentCPUUsage: 12.5,
+              cumulativeCPUUsage: 3.25,
+              idleWakeupsPerSecond: 7,
+            },
+            memory: {
+              workingSetSize: 2_048,
+              peakWorkingSetSize: 4_096,
+            },
+          }) as Electron.ProcessMetric,
+      );
       const powerLayer = Layer.succeed(
         ElectronPowerMonitor.ElectronPowerMonitor,
         ElectronPowerMonitor.ElectronPowerMonitor.of({
@@ -183,6 +188,8 @@ describe("DesktopTelemetryPublisher", () => {
         assert.equal(demandedSnapshot.electronProcesses[0]?.creationTimeMs, 1_001);
         assert.equal(demandedSnapshot.electronProcesses[0]?.cpuPercent, 12.5);
         assert.equal(demandedSnapshot.electronProcesses[0]?.workingSetBytes, 2_048 * 1_024);
+        assert.equal(demandedSnapshot.electronProcesses.length, DESKTOP_ELECTRON_PROCESS_MAX_COUNT);
+        assert.equal(demandedSnapshot.electronProcessesTruncated, true);
         assert.equal(metricsReadCount, 1);
         yield* publisher.handleControlForSource("secondary-backend", {
           version: 1,

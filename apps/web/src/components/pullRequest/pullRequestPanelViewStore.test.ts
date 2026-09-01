@@ -41,4 +41,13 @@ describe("pull request panel view store", () => {
     writePullRequestPanelScroll("thread-a:pr-1", "summary", 200);
     expect(readPullRequestPanelView("thread-a:pr-1")).toBe(first);
   });
+
+  it("bounds views from long navigation sessions", () => {
+    for (let index = 0; index < 140; index += 1) {
+      writePullRequestPanelView(`thread-${index}:pr-1`, { tab: "summary" });
+    }
+
+    expect(readPullRequestPanelView("thread-0:pr-1")).toBeUndefined();
+    expect(readPullRequestPanelView("thread-139:pr-1")?.tab).toBe("summary");
+  });
 });

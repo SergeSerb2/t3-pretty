@@ -1,5 +1,6 @@
 import { isElectron } from "~/env";
 import { SURGE_CODE_ACCOUNT_NAME } from "@t3tools/shared/connectBranding";
+import { isWindowsPlatform } from "~/lib/utils";
 
 import { WORLD_SCENERY_THEME_ID } from "../../scenery/worldSceneryTheme";
 
@@ -28,6 +29,9 @@ export interface SettingsSearchItem {
   readonly desktopOnly?: boolean;
   // Its row only renders under the World Scenery theme, same anchor problem.
   readonly sceneryOnly?: boolean;
+  // Its row only renders on Windows desktop, so other desktop platforms must
+  // not expose a result that points to a missing anchor.
+  readonly windowsOnly?: boolean;
 }
 
 /**
@@ -201,6 +205,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "auto-archive-settled-threads",
+    title: "Auto-archive settled threads",
+    to: "/settings/general",
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
@@ -208,6 +217,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
+    to: "/settings/general",
+  },
+  {
+    id: "skills-in-slash-menu",
+    title: "Show skills in slash menu",
     to: "/settings/general",
   },
   {
@@ -229,6 +243,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "add-project-starts-in",
     title: "Add project starts in",
+    to: "/settings/general",
+  },
+  {
+    id: "unpin-confirmation",
+    title: "Unpin confirmation",
     to: "/settings/general",
   },
   {
@@ -349,6 +368,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "browser",
   },
   {
+    id: "agent-computer-control",
+    title: "Agent computer control",
+    to: "/settings/integrations",
+    targetId: "computer-control",
+  },
+  {
     id: "browser-default-viewport",
     title: "Default browser viewport",
     to: "/settings/integrations",
@@ -363,6 +388,12 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "browser-default-appearance",
     title: "Default browser appearance",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-recording-frame-rate",
+    title: "Browser recording frame rate",
     to: "/settings/integrations",
     targetId: "browser",
   },
@@ -411,6 +442,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Remote environments",
     to: "/settings/connections",
+  },
+  {
+    id: "wsl-backend",
+    title: "WSL backend",
+    to: "/settings/connections",
+    desktopOnly: true,
+    windowsOnly: true,
   },
   {
     id: "archive",
@@ -462,6 +500,8 @@ export function searchSettings(
     (item) =>
       (isElectron || item.desktopOnly !== true) &&
       (sceneryActive || item.sceneryOnly !== true) &&
+      (!item.windowsOnly ||
+        isWindowsPlatform(typeof navigator === "undefined" ? "" : navigator.platform)) &&
       normalizeSearchText(item.title).includes(normalizedQuery),
   );
 }

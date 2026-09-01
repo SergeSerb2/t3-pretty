@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import { PROJECT_PATH_MAX_LENGTH } from "./project.ts";
 
 /**
  * Client-side id for the first shell opened on a thread. Ids are uniformly
@@ -7,6 +14,12 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
  * that want "the primary shell" don't hardcode `"term-1"`.
  */
 export const DEFAULT_TERMINAL_ID = "term-1";
+export const TERMINAL_HISTORY_MAX_LENGTH = 1024 * 1024;
+export const TERMINAL_OUTPUT_MAX_LENGTH = 1024 * 1024;
+export const TERMINAL_ERROR_MESSAGE_MAX_LENGTH = 4_096;
+export const TERMINAL_ID_MAX_LENGTH = 128;
+export const TERMINAL_LABEL_MAX_LENGTH = 128;
+export const TERMINAL_WRITE_MAX_LENGTH = 65_536;
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const TerminalColsSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(
@@ -15,7 +28,17 @@ const TerminalColsSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).ch
 const TerminalRowsSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(
   Schema.isLessThanOrEqualTo(500),
 );
-const TerminalIdSchema = TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(128));
+const TerminalThreadIdSchema = TrimmedNonEmptyStringSchema.check(
+  Schema.isMaxLength(ENTITY_ID_MAX_LENGTH),
+);
+const TerminalIdSchema = TrimmedNonEmptyStringSchema.check(
+  Schema.isMaxLength(TERMINAL_ID_MAX_LENGTH),
+);
+const TerminalPathSchema = TrimmedNonEmptyStringSchema.check(
+  Schema.isMaxLength(PROJECT_PATH_MAX_LENGTH),
+);
+const TerminalPidSchema = PositiveInt;
+const TerminalLabelSchema = Schema.String.check(Schema.isMaxLength(TERMINAL_LABEL_MAX_LENGTH));
 const TerminalEnvKeySchema = Schema.String.check(
   Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/),
 ).check(Schema.isMaxLength(128));
@@ -25,7 +48,7 @@ const TerminalEnvSchema = Schema.Record(TerminalEnvKeySchema, TerminalEnvValueSc
 );
 
 export const TerminalThreadInput = Schema.Struct({
-  threadId: TrimmedNonEmptyStringSchema,
+  threadId: TerminalThreadIdSchema,
 });
 export type TerminalThreadInput = typeof TerminalThreadInput.Type;
 
@@ -38,8 +61,8 @@ export type TerminalSessionInput = Schema.Codec.Encoded<typeof TerminalSessionIn
 
 export const TerminalOpenInput = Schema.Struct({
   ...TerminalSessionInput.fields,
-  cwd: TrimmedNonEmptyStringSchema,
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  cwd: TerminalPathSchema,
+  worktreePath: Schema.optional(Schema.NullOr(TerminalPathSchema)),
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
@@ -48,8 +71,8 @@ export type TerminalOpenInput = Schema.Codec.Encoded<typeof TerminalOpenInput>;
 
 export const TerminalAttachInput = Schema.Struct({
   ...TerminalSessionInput.fields,
-  cwd: Schema.optional(TrimmedNonEmptyStringSchema),
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  cwd: Schema.optional(TerminalPathSchema),
+  worktreePath: Schema.optional(Schema.NullOr(TerminalPathSchema)),
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
@@ -59,7 +82,9 @@ export type TerminalAttachInput = Schema.Codec.Encoded<typeof TerminalAttachInpu
 
 export const TerminalWriteInput = Schema.Struct({
   ...TerminalSessionInput.fields,
-  data: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),
+  data: Schema.String.check(Schema.isNonEmpty()).check(
+    Schema.isMaxLength(TERMINAL_WRITE_MAX_LENGTH),
+  ),
 });
 export type TerminalWriteInput = Schema.Codec.Encoded<typeof TerminalWriteInput>;
 
@@ -75,8 +100,8 @@ export type TerminalClearInput = Schema.Codec.Encoded<typeof TerminalClearInput>
 
 export const TerminalRestartInput = Schema.Struct({
   ...TerminalSessionInput.fields,
-  cwd: TrimmedNonEmptyStringSchema,
-  worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  cwd: TerminalPathSchema,
+  worktreePath: Schema.optional(Schema.NullOr(TerminalPathSchema)),
   cols: TerminalColsSchema,
   rows: TerminalRowsSchema,
   env: Schema.optional(TerminalEnvSchema),
@@ -94,35 +119,35 @@ export const TerminalSessionStatus = Schema.Literals(["starting", "running", "ex
 export type TerminalSessionStatus = typeof TerminalSessionStatus.Type;
 
 export const TerminalSessionSnapshot = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
-  terminalId: Schema.String.check(Schema.isNonEmpty()),
-  cwd: Schema.String.check(Schema.isNonEmpty()),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  threadId: TerminalThreadIdSchema,
+  terminalId: TerminalIdSchema,
+  cwd: TerminalPathSchema,
+  worktreePath: Schema.NullOr(TerminalPathSchema),
   status: TerminalSessionStatus,
-  pid: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
-  history: Schema.String,
+  pid: Schema.NullOr(TerminalPidSchema),
+  history: Schema.String.check(Schema.isMaxLength(TERMINAL_HISTORY_MAX_LENGTH)),
   exitCode: Schema.NullOr(Schema.Int),
   exitSignal: Schema.NullOr(Schema.Int),
   /** Server-computed display title (idle shell vs subprocess command). */
-  label: Schema.String.check(Schema.isMaxLength(128)),
-  updatedAt: Schema.String,
-  sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  label: TerminalLabelSchema,
+  updatedAt: IsoDateTime,
+  sequence: Schema.optional(NonNegativeInt),
 });
 export type TerminalSessionSnapshot = typeof TerminalSessionSnapshot.Type;
 
 export const TerminalSummary = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
-  terminalId: Schema.String.check(Schema.isNonEmpty()),
-  cwd: Schema.String.check(Schema.isNonEmpty()),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  threadId: TerminalThreadIdSchema,
+  terminalId: TerminalIdSchema,
+  cwd: TerminalPathSchema,
+  worktreePath: Schema.NullOr(TerminalPathSchema),
   status: TerminalSessionStatus,
-  pid: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+  pid: Schema.NullOr(TerminalPidSchema),
   exitCode: Schema.NullOr(Schema.Int),
   exitSignal: Schema.NullOr(Schema.Int),
   hasRunningSubprocess: Schema.Boolean,
   /** Server-computed display title (idle shell vs subprocess command). */
-  label: Schema.String.check(Schema.isMaxLength(128)),
-  updatedAt: Schema.String,
+  label: TerminalLabelSchema,
+  updatedAt: IsoDateTime,
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
 
@@ -138,8 +163,8 @@ const TerminalMetadataUpsertEvent = Schema.Struct({
 
 const TerminalMetadataRemoveEvent = Schema.Struct({
   type: Schema.Literal("remove"),
-  threadId: Schema.String.check(Schema.isNonEmpty()),
-  terminalId: Schema.String.check(Schema.isNonEmpty()),
+  threadId: TerminalThreadIdSchema,
+  terminalId: TerminalIdSchema,
 });
 
 export const TerminalMetadataStreamEvent = Schema.Union([
@@ -150,9 +175,9 @@ export const TerminalMetadataStreamEvent = Schema.Union([
 export type TerminalMetadataStreamEvent = typeof TerminalMetadataStreamEvent.Type;
 
 const TerminalEventBaseSchema = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
-  terminalId: Schema.String.check(Schema.isNonEmpty()),
-  sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  threadId: TerminalThreadIdSchema,
+  terminalId: TerminalIdSchema,
+  sequence: Schema.optional(NonNegativeInt),
 });
 
 const TerminalStartedEvent = Schema.Struct({
@@ -164,7 +189,7 @@ const TerminalStartedEvent = Schema.Struct({
 const TerminalOutputEvent = Schema.Struct({
   ...TerminalEventBaseSchema.fields,
   type: Schema.Literal("output"),
-  data: Schema.String,
+  data: Schema.String.check(Schema.isMaxLength(TERMINAL_OUTPUT_MAX_LENGTH)),
 });
 
 const TerminalExitedEvent = Schema.Struct({
@@ -182,7 +207,10 @@ const TerminalClosedEvent = Schema.Struct({
 const TerminalErrorEvent = Schema.Struct({
   ...TerminalEventBaseSchema.fields,
   type: Schema.Literal("error"),
-  message: Schema.String.check(Schema.isNonEmpty()),
+  message: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(TERMINAL_ERROR_MESSAGE_MAX_LENGTH),
+  ),
 });
 
 const TerminalClearedEvent = Schema.Struct({
@@ -200,7 +228,7 @@ const TerminalActivityEvent = Schema.Struct({
   ...TerminalEventBaseSchema.fields,
   type: Schema.Literal("activity"),
   hasRunningSubprocess: Schema.Boolean,
-  label: Schema.String.check(Schema.isMaxLength(128)),
+  label: TerminalLabelSchema,
 });
 
 export const TerminalEvent = Schema.Union([
@@ -235,7 +263,7 @@ export type TerminalAttachStreamEvent = typeof TerminalAttachStreamEvent.Type;
 export class TerminalCwdNotFoundError extends Schema.TaggedErrorClass<TerminalCwdNotFoundError>()(
   "TerminalCwdNotFoundError",
   {
-    cwd: Schema.String,
+    cwd: TerminalPathSchema,
   },
 ) {
   override get message() {
@@ -246,7 +274,7 @@ export class TerminalCwdNotFoundError extends Schema.TaggedErrorClass<TerminalCw
 export class TerminalCwdNotDirectoryError extends Schema.TaggedErrorClass<TerminalCwdNotDirectoryError>()(
   "TerminalCwdNotDirectoryError",
   {
-    cwd: Schema.String,
+    cwd: TerminalPathSchema,
   },
 ) {
   override get message() {
@@ -257,7 +285,7 @@ export class TerminalCwdNotDirectoryError extends Schema.TaggedErrorClass<Termin
 export class TerminalCwdStatError extends Schema.TaggedErrorClass<TerminalCwdStatError>()(
   "TerminalCwdStatError",
   {
-    cwd: Schema.String,
+    cwd: TerminalPathSchema,
     cause: Schema.Defect(),
   },
 ) {
@@ -277,8 +305,8 @@ export class TerminalHistoryError extends Schema.TaggedErrorClass<TerminalHistor
   "TerminalHistoryError",
   {
     operation: Schema.Literals(["read", "truncate", "migrate"]),
-    threadId: Schema.String,
-    terminalId: Schema.String,
+    threadId: TerminalThreadIdSchema,
+    terminalId: TerminalIdSchema,
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -290,8 +318,8 @@ export class TerminalHistoryError extends Schema.TaggedErrorClass<TerminalHistor
 export class TerminalSessionLookupError extends Schema.TaggedErrorClass<TerminalSessionLookupError>()(
   "TerminalSessionLookupError",
   {
-    threadId: Schema.String,
-    terminalId: Schema.String,
+    threadId: TerminalThreadIdSchema,
+    terminalId: TerminalIdSchema,
   },
 ) {
   override get message() {
@@ -302,8 +330,8 @@ export class TerminalSessionLookupError extends Schema.TaggedErrorClass<Terminal
 export class TerminalNotRunningError extends Schema.TaggedErrorClass<TerminalNotRunningError>()(
   "TerminalNotRunningError",
   {
-    threadId: Schema.String,
-    terminalId: Schema.String,
+    threadId: TerminalThreadIdSchema,
+    terminalId: TerminalIdSchema,
   },
 ) {
   override get message() {
@@ -314,9 +342,9 @@ export class TerminalNotRunningError extends Schema.TaggedErrorClass<TerminalNot
 export class TerminalWriteError extends Schema.TaggedErrorClass<TerminalWriteError>()(
   "TerminalWriteError",
   {
-    threadId: Schema.String,
-    terminalId: Schema.String,
-    terminalPid: Schema.Number,
+    threadId: TerminalThreadIdSchema,
+    terminalId: TerminalIdSchema,
+    terminalPid: TerminalPidSchema,
     cause: Schema.Defect(),
   },
 ) {
@@ -328,9 +356,9 @@ export class TerminalWriteError extends Schema.TaggedErrorClass<TerminalWriteErr
 export class TerminalResizeError extends Schema.TaggedErrorClass<TerminalResizeError>()(
   "TerminalResizeError",
   {
-    threadId: Schema.String,
-    terminalId: Schema.String,
-    terminalPid: Schema.Number,
+    threadId: TerminalThreadIdSchema,
+    terminalId: TerminalIdSchema,
+    terminalPid: TerminalPidSchema,
     cols: TerminalColsSchema,
     rows: TerminalRowsSchema,
     cause: Schema.Defect(),

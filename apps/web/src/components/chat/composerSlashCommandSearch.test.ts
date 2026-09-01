@@ -2,7 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
-import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import {
+  searchSlashCommandItems,
+  slashCommandItemsForPromptPosition,
+} from "./composerSlashCommandSearch";
 
 describe("searchSlashCommandItems", () => {
   const claudeDriver = ProviderDriverKind.make("claudeAgent");
@@ -106,7 +109,7 @@ describe("searchSlashCommandItems", () => {
           enabled: true,
           shortDescription: "Open and control the in-app browser",
         },
-        label: "skill:browser",
+        label: "/skill:browser",
         description: "Open and control the in-app browser",
       },
     ] satisfies Array<Extract<ComposerCommandItem, { type: "skill" }>>;
@@ -122,23 +125,26 @@ describe("searchSlashCommandItems", () => {
   it("matches skills by display name", () => {
     const items = [
       {
-        id: "skill:claudeAgent:browser",
+        id: "skill:claudeAgent:ask-matt",
         type: "skill",
         provider: claudeDriver,
         skill: {
-          name: "browser",
-          displayName: "Web Navigator",
-          path: "/skills/browser/SKILL.md",
+          name: "ask-matt",
+          displayName: "Ask Matt",
+          path: "/skills/ask-matt/SKILL.md",
           enabled: true,
-          shortDescription: "Open and control the in-app browser",
+          shortDescription: "Find the right skill or workflow",
         },
-        label: "skill:browser",
-        description: "Open and control the in-app browser",
+        label: "/skill:ask-matt",
+        description: "Find the right skill or workflow",
       },
     ] satisfies Array<Extract<ComposerCommandItem, { type: "skill" }>>;
 
-    expect(searchSlashCommandItems(items, "navigator").map((item) => item.id)).toEqual([
-      "skill:claudeAgent:browser",
+    expect(searchSlashCommandItems(items, "ask matt").map((item) => item.id)).toEqual([
+      "skill:claudeAgent:ask-matt",
+    ]);
+    expect(searchSlashCommandItems(items, "/skill:ask-matt").map((item) => item.id)).toEqual([
+      "skill:claudeAgent:ask-matt",
     ]);
   });
 
@@ -153,7 +159,7 @@ describe("searchSlashCommandItems", () => {
           path: "/skills/browser/SKILL.md",
           enabled: true,
         },
-        label: "skill:browser",
+        label: "/skill:browser",
         description: "Open and control the in-app browser",
       },
     ] satisfies Array<Extract<ComposerCommandItem, { type: "skill" }>>;
@@ -161,7 +167,9 @@ describe("searchSlashCommandItems", () => {
     expect(searchSlashCommandItems(items, "/skill:brow").map((item) => item.id)).toEqual([
       "skill:claudeAgent:browser",
     ]);
-    expect(searchSlashCommandItems(items, "/sk")).toEqual([]);
+    expect(searchSlashCommandItems(items, "/sk").map((item) => item.id)).toEqual([
+      "skill:claudeAgent:browser",
+    ]);
     expect(searchSlashCommandItems(items, "/ill")).toEqual([]);
   });
 
@@ -183,12 +191,46 @@ describe("searchSlashCommandItems", () => {
           path: "/skills/unslop/SKILL.md",
           enabled: true,
         },
-        label: "skill:unslop",
+        label: "/skill:unslop",
         description: "Cut AI tells from writing",
       },
     ] satisfies Array<Extract<ComposerCommandItem, { type: "slash-command" | "skill" }>>;
 
     expect(searchSlashCommandItems(items, "").map((item) => item.id)).toEqual([
+      "slash:model",
+      "skill:claudeAgent:unslop",
+    ]);
+  });
+
+  it("hides skills from slash completion after the first message line", () => {
+    const items = [
+      {
+        id: "slash:model",
+        type: "slash-command",
+        command: "model",
+        label: "/model",
+        description: "Switch model",
+      },
+      {
+        id: "skill:claudeAgent:unslop",
+        type: "skill",
+        provider: claudeDriver,
+        skill: {
+          name: "unslop",
+          path: "/skills/unslop/SKILL.md",
+          enabled: true,
+        },
+        label: "/skill:unslop",
+        description: "Cut AI tells from writing",
+      },
+    ] satisfies Array<
+      Extract<ComposerCommandItem, { type: "slash-command" | "provider-slash-command" | "skill" }>
+    >;
+
+    expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
+      "slash:model",
+    ]);
+    expect(slashCommandItemsForPromptPosition(items, true).map((item) => item.id)).toEqual([
       "slash:model",
       "skill:claudeAgent:unslop",
     ]);

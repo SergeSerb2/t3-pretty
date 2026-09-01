@@ -11,6 +11,22 @@ import { uuidv4 } from "./uuid";
 export interface DraftComposerImageAttachment extends UploadChatImageAttachment {
   readonly id: string;
   readonly previewUri: string;
+  readonly uploadedAttachmentId?: string;
+  readonly uploadEnvironmentId?: EnvironmentId;
+}
+
+export function appendComposerImagesWithinLimit(
+  existing: ReadonlyArray<DraftComposerImageAttachment>,
+  incoming: ReadonlyArray<DraftComposerImageAttachment>,
+): {
+  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly rejected: ReadonlyArray<DraftComposerImageAttachment>;
+} {
+  const remainingSlots = Math.max(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS - existing.length);
+  return {
+    attachments: [...existing, ...incoming.slice(0, remainingSlots)],
+    rejected: incoming.slice(remainingSlots),
+  };
 }
 
 /** Wire shape for startTurn: pure uploads without client draft id / previewUri. */
@@ -34,7 +50,7 @@ const COMPOSER_PREVIEW_DIRECTORY = "t3-composer-previews";
  * short file URIs instead of multi-MB data URLs. Returns null when the write
  * fails; callers fall back to the data URL so previews keep working.
  */
-async function writeComposerPreviewFile(input: {
+export async function writeComposerPreviewFile(input: {
   readonly base64: string;
   readonly extension: string;
 }): Promise<string | null> {
@@ -91,10 +107,13 @@ export async function deleteComposerPreviewFiles(uris: ReadonlyArray<string>): P
  * Rebuilds an attachment's wire payload after a persisted draft is loaded.
  * Drafts persist without `dataUrl`; the bytes come back from the app-owned
  * preview file (a `data:` preview URI already is the payload). Returns null
- * when the bytes are gone, so the caller drops the broken attachment.
+ * when the bytes are gone, so the caller drops the broken attachment. Durable
+ * inbox migrations can request a thrown read error so a transient I/O failure
+ * is never mistaken for a permanently missing file.
  */
 export async function resolveComposerAttachmentDataUrl(
   attachment: DraftComposerImageAttachment,
+  options?: { readonly throwOnReadError?: boolean },
 ): Promise<string | null> {
   if (attachment.dataUrl.length > 0) {
     return attachment.dataUrl;
@@ -112,6 +131,7 @@ export async function resolveComposerAttachmentDataUrl(
     return `data:${attachment.mimeType};base64,${base64}`;
   } catch (error) {
     console.warn("Failed to resolve composer attachment bytes", attachment.previewUri, error);
+    if (options?.throwOnReadError === true) throw error;
     return null;
   }
 }
@@ -178,6 +198,12 @@ export async function pickComposerImages(input: {
       selectionLimit: remainingSlots,
       quality: 1,
     });
+  } catch (cause) {
+    console.warn("Failed to open the image library", cause);
+    return {
+      images: [],
+      error: "The photo library could not be opened. Try again.",
+    };
   } finally {
     endHandoff();
   }
@@ -196,26 +222,66 @@ export async function pickComposerImages(input: {
     })),
   );
 
-  const { File } = await import("expo-file-system");
+  let File: (typeof import("expo-file-system"))["File"];
+  try {
+    ({ File } = await import("expo-file-system"));
+  } catch (cause) {
+    console.warn("Failed to load image file support", cause);
+    return {
+      images: [],
+      error: "The selected images could not be read. Try again.",
+    };
+  }
   const nextImages: DraftComposerImageAttachment[] = [];
   let error: string | null = null;
 
   for (const asset of result.assets) {
-    const mimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
-    if (!mimeType.startsWith("image/")) {
+    if (nextImages.length >= remainingSlots) {
+      error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
+      break;
+    }
+    const pickedMimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
+    let mimeType = pickedMimeType;
+    if (
+      asset.type === "video" ||
+      (asset.type !== "image" && !mimeType.startsWith("image/"))
+    ) {
       error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
       continue;
     }
-    if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
-      error = `'${asset.fileName ?? "image"}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
+    let name = asset.fileName?.trim() || "image";
+    if (asset.fileSize != null && asset.fileSize > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+      error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
       continue;
     }
 
     try {
-      const base64 = await new File(asset.uri).base64();
-      const sizeBytes = asset.fileSize ?? estimateBase64ByteSize(base64);
+      const file = new File(asset.uri);
+      if (file.size !== null && file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        error = `'${name}' exceeds the 10 MB attachment limit.`;
+        continue;
+      }
+      const base64 = await file.base64();
+
+      // The bytes read from the app-owned file are authoritative. Correct stale
+      // picker metadata when the payload is JPEG, while retaining original PNG,
+      // GIF, and WebP bytes so transparency and animation survive.
+      if (base64.startsWith("/9j/") && mimeType !== "image/jpeg") {
+        mimeType = "image/jpeg";
+        if (!/\.jpe?g$/i.test(name)) {
+          name = `${name.replace(/\.[^.]+$/, "")}.jpg`;
+        }
+      }
+      if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
+        error = `'${name}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
+        continue;
+      }
+
+      // Picker metadata is advisory and can be stale or wrong. The encoded
+      // bytes are the payload we persist and send, so enforce the limit on it.
+      const sizeBytes = estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${asset.fileName ?? "image"}' exceeds the 10 MB attachment limit.`;
+        error = `'${name}' exceeds the 10 MB attachment limit.`;
         continue;
       }
 
@@ -225,18 +291,19 @@ export async function pickComposerImages(input: {
         base64,
         extension: mimeType.split("/")[1] ?? "png",
       });
+      const dataUrl = `data:${mimeType};base64,${base64}`;
 
       nextImages.push({
         id: uuidv4(),
         type: "image",
-        name: asset.fileName ?? "image",
+        name,
         mimeType,
         sizeBytes,
-        dataUrl: `data:${mimeType};base64,${base64}`,
-        previewUri: previewFileUri ?? asset.uri,
+        dataUrl,
+        previewUri: previewFileUri ?? (mimeType === pickedMimeType ? asset.uri : dataUrl),
       });
     } catch {
-      error = `Failed to read '${asset.fileName ?? "image"}'.`;
+      error = `Failed to read '${name}'.`;
     }
   }
 
@@ -264,66 +331,75 @@ export async function pasteComposerClipboard(input: { readonly existingCount: nu
 
   const remainingSlots = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - input.existingCount;
 
-  if (await clipboard.hasImageAsync()) {
-    if (remainingSlots <= 0) {
+  try {
+    if (await clipboard.hasImageAsync()) {
+      if (remainingSlots <= 0) {
+        return {
+          images: [],
+          text: null,
+          error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+        };
+      }
+      const image = await clipboard.getImageAsync({ format: "png" });
+      if (!image) {
+        return {
+          images: [],
+          text: null,
+          error: "Clipboard image is unavailable.",
+        };
+      }
+
+      const base64 = image.data.split(",")[1] ?? "";
+      const sizeBytes = estimateBase64ByteSize(base64);
+      if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        return {
+          images: [],
+          text: null,
+          error: "Clipboard image exceeds the 10 MB attachment limit.",
+        };
+      }
+
+      const previewFileUri = await writeComposerPreviewFile({ base64, extension: "png" });
+
       return {
-        images: [],
+        images: [
+          {
+            id: uuidv4(),
+            type: "image",
+            name: "pasted-image.png",
+            mimeType: "image/png",
+            sizeBytes,
+            dataUrl: image.data,
+            previewUri: previewFileUri ?? image.data,
+          },
+        ],
         text: null,
-        error: `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+        error: null,
       };
     }
-    const image = await clipboard.getImageAsync({ format: "png" });
-    if (!image) {
+
+    if (await clipboard.hasStringAsync()) {
+      const text = await clipboard.getStringAsync();
       return {
         images: [],
-        text: null,
-        error: "Clipboard image is unavailable.",
+        text: text.length > 0 ? text : null,
+        error: text.length > 0 ? null : "Clipboard is empty.",
       };
     }
 
-    const base64 = image.data.split(",")[1] ?? "";
-    const sizeBytes = estimateBase64ByteSize(base64);
-    if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-      return {
-        images: [],
-        text: null,
-        error: "Clipboard image exceeds the 10 MB attachment limit.",
-      };
-    }
-
-    const previewFileUri = await writeComposerPreviewFile({ base64, extension: "png" });
-
-    return {
-      images: [
-        {
-          id: uuidv4(),
-          type: "image",
-          name: "pasted-image.png",
-          mimeType: "image/png",
-          sizeBytes,
-          dataUrl: image.data,
-          previewUri: previewFileUri ?? image.data,
-        },
-      ],
-      text: null,
-      error: null,
-    };
-  }
-
-  if (await clipboard.hasStringAsync()) {
-    const text = await clipboard.getStringAsync();
     return {
       images: [],
-      text: text.length > 0 ? text : null,
-      error: text.length > 0 ? null : "Clipboard is empty.",
+      text: null,
+      error: "Clipboard does not contain pasteable text or image content.",
+    };
+  } catch (cause) {
+    console.warn("Failed to read the clipboard", cause);
+    return {
+      images: [],
+      text: null,
+      error: "The clipboard could not be read. Try again.",
     };
   }
-
-  return {
-    images: [],
-    text: null,
-    error: "Clipboard does not contain pasteable text or image content.",
-  };
 }
 
 function mimeTypeFromUri(uri: string): string {
@@ -363,24 +439,50 @@ export function isOwnedPastedImageUri(uri: string): boolean {
 export async function convertPastedImagesToAttachments(input: {
   readonly uris: ReadonlyArray<string>;
   readonly existingCount: number;
-}): Promise<ReadonlyArray<DraftComposerImageAttachment>> {
-  const { File } = await import("expo-file-system");
+}): Promise<{
+  readonly images: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly error: string | null;
+}> {
+  let File: (typeof import("expo-file-system"))["File"];
+  try {
+    ({ File } = await import("expo-file-system"));
+  } catch (cause) {
+    console.warn("Failed to load pasted-image file support", cause);
+    return {
+      images: [],
+      error: "Pasted images could not be read. Try again.",
+    };
+  }
   const remainingSlots = PROVIDER_SEND_TURN_MAX_ATTACHMENTS - input.existingCount;
   const results: DraftComposerImageAttachment[] = [];
+  let resultError: string | null = null;
 
-  for (const [index, uri] of input.uris.entries()) {
+  for (const uri of input.uris) {
     const ownedTemporaryFile = isOwnedPastedImageUri(uri);
     try {
-      if (index >= Math.max(0, remainingSlots)) {
+      if (results.length >= Math.max(0, remainingSlots)) {
+        resultError ??= `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
         continue;
       }
       const file = new File(uri);
+      if (file.size !== null && file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        resultError ??= "One pasted image exceeds the 10 MB attachment limit.";
+        continue;
+      }
+      const mimeType = (file.type || mimeTypeFromUri(uri)).toLowerCase();
+      if (!isProviderSendTurnSupportedImageMimeType(mimeType)) {
+        resultError ??= "One pasted image is not a supported GIF, JPEG, PNG, or WebP file.";
+        continue;
+      }
       const base64 = await file.base64();
       const sizeBytes = estimateBase64ByteSize(base64);
       if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        resultError ??=
+          sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+            ? "One pasted image exceeds the 10 MB attachment limit."
+            : "One pasted image could not be read.";
         continue;
       }
-      const mimeType = mimeTypeFromUri(uri);
       // Keep an app-owned copy for the preview: owned temp files are deleted
       // below, and drafts persist without their dataUrl.
       const previewFileUri = await writeComposerPreviewFile({
@@ -397,8 +499,9 @@ export async function convertPastedImagesToAttachments(input: {
         previewUri:
           previewFileUri ?? (ownedTemporaryFile ? `data:${mimeType};base64,${base64}` : uri),
       });
-    } catch (error) {
-      console.warn("Failed to read pasted image", uri, error);
+    } catch (cause) {
+      resultError ??= "One pasted image could not be read.";
+      console.warn("Failed to read pasted image", uri, cause);
     } finally {
       if (ownedTemporaryFile) {
         try {
@@ -413,5 +516,5 @@ export async function convertPastedImagesToAttachments(input: {
     }
   }
 
-  return results;
+  return { images: results, error: resultError };
 }
