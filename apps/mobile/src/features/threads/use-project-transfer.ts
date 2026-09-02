@@ -141,14 +141,12 @@ export function useProjectTransferAction(
       setStage(null);
       if (!arrived) {
         Alert.alert(
-          "Could not open destination thread",
+          "Opening destination thread",
           projectTransferSourceRemains(mode, result.value.sourceRemoved)
-            ? "The destination has the project, but the thread did not appear in time. The source was not removed. Open it from the destination connection."
-            : "The transfer finished, but the destination thread did not appear in time. Open it from the destination connection.",
+            ? "The destination has the project, but the thread is still syncing. The source was not removed."
+            : "The transfer finished. The destination thread is still syncing.",
         );
-        return;
-      }
-      if (projectTransferSourceRemains(mode, result.value.sourceRemoved)) {
+      } else if (projectTransferSourceRemains(mode, result.value.sourceRemoved)) {
         Alert.alert(
           "Copied, but source remains",
           "The destination has the project, but it could not be removed from this machine.",

@@ -176,30 +176,22 @@ export function ProjectTransferDialog() {
             : "The original thread and project are still available on the source.",
       }),
     );
-    const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
-    if (!arrived) {
-      setIsPending(false);
-      setInProgress(false);
-      setStage(null);
-      setError(
-        "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
-      );
-      return;
-    }
+    await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
     try {
       await navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(destinationRef),
       });
     } catch {
+      setIsPending(false);
+      setStage(null);
       setError(
         "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
       );
       return;
-    } finally {
-      setIsPending(false);
-      setInProgress(false);
     }
+    setIsPending(false);
+    setInProgress(false);
     close();
   };
 

@@ -712,7 +712,9 @@ const removeTransferredSource = Effect.fn("ProjectTransfer.removeSource")(functi
     if (!isManagedProjectWorkspace(inspected.workspaceRoot, projectsRoot)) return;
     const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const stillActive = yield* snapshots.getActiveProjectByWorkspaceRoot(inspected.workspaceRoot);
-    if (Option.isSome(stillActive)) return;
+    if (Option.isSome(stillActive) && stillActive.value.id !== inspected.manifest.project.id) {
+      return;
+    }
     const fileSystem = yield* FileSystem.FileSystem;
     yield* fileSystem.remove(inspected.workspaceRoot, { recursive: true, force: true });
   }).pipe(
