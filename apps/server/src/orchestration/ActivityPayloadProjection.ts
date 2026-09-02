@@ -417,6 +417,21 @@ function projectCommandValue(data: Record<string, unknown>): unknown {
   return undefined;
 }
 
+function projectViewedImagePath(data: Record<string, unknown>): string | undefined {
+  const directPath = asTrimmedString(data.imagePath);
+  if (directPath && isWorkspaceImagePreviewPath(directPath)) {
+    return directPath;
+  }
+
+  const toolName = asTrimmedString(data.toolName)?.toLowerCase();
+  if (toolName !== "read" && toolName !== "read file") {
+    return undefined;
+  }
+  const input = asRecord(data.input);
+  const inputPath = asTrimmedString(input?.file_path) ?? asTrimmedString(input?.path);
+  return inputPath && isWorkspaceImagePreviewPath(inputPath) ? inputPath : undefined;
+}
+
 function summarizeToolTextOutput(value: string): string | null {
   const scanEnd = Math.min(value.length, TOOL_TEXT_SCAN_MAX_CHARS);
   let meaningfulLineCount = 0;
@@ -760,6 +775,10 @@ export function projectActivityPayload(
   if (command !== undefined) {
     projectedData.command = command;
   }
+  const imagePath = projectViewedImagePath(data);
+  if (imagePath) {
+    projectedData.imagePath = imagePath;
+  }
 
   const imageFiles: string[] = [];
   if (payload.itemType === "image_generation") {
@@ -783,7 +802,9 @@ export function projectActivityPayload(
   }
 
   const rawOutput =
-    projectRawOutput(data.rawOutput, payload.itemType) ?? projectAcpContent(data.content);
+    projectRawOutput(data.rawOutput, payload.itemType) ??
+    projectAcpContent(data.content) ??
+    (payload.itemType === "command_execution" ? summarizeMcpResult(data.result) : undefined);
   if (rawOutput) {
     projectedData.rawOutput = rawOutput;
   }

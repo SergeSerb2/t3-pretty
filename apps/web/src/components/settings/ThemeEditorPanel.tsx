@@ -309,6 +309,7 @@ export function ThemeEditorPanel({
   const [simpleColorsDirtyByAppearance, setSimpleColorsDirtyByAppearance] = useState<
     Record<ThemeAppearance, boolean>
   >({ light: false, dark: false });
+  const [shouldRegenerateGuidedColors, setShouldRegenerateGuidedColors] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [roleQuery, setRoleQuery] = useState("");
@@ -439,6 +440,10 @@ export function ThemeEditorPanel({
       // regenerate when the guided editor produced it.
       setIsAdvanced(sourceTheme !== null && sourceTheme.managed !== true);
       setSimpleColorsDirtyByAppearance({ light: false, dark: false });
+      // An unmanaged palette needs conversion when the user opts into the
+      // guided editor. Merely revealing Advanced for a managed/default draft
+      // must stay read-only until a color changes.
+      setShouldRegenerateGuidedColors(sourceTheme !== null && sourceTheme.managed !== true);
       setColorsByAppearance(nextColors);
       setSelectedRole(null);
       setUsageCount(null);
@@ -535,6 +540,7 @@ export function ThemeEditorPanel({
           [activeAppearance]: true,
         }));
       }
+      if (isAdvanced) setShouldRegenerateGuidedColors(true);
     },
     [activeAppearance, isAdvanced],
   );
@@ -773,6 +779,7 @@ export function ThemeEditorPanel({
       if (selectedRole && !THEME_EDITOR_SIMPLE_ROLES.includes(selectedRole)) {
         setSelectedRole(null);
       }
+      if (!shouldRegenerateGuidedColors) return;
 
       // Regenerate every appearance the theme will save, not just the visible
       // one, so the palettes shown after toggling match what gets saved.
@@ -792,8 +799,9 @@ export function ThemeEditorPanel({
         }
         return next;
       });
+      setShouldRegenerateGuidedColors(false);
     },
-    [activeAppearance, editingTheme, selectedRole],
+    [activeAppearance, editingTheme, selectedRole, shouldRegenerateGuidedColors],
   );
 
   const handleSubmit = () => {
