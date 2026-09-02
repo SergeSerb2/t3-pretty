@@ -183,11 +183,20 @@ export function ProjectTransferDialog() {
             : "The original thread and project are still available on the source.",
       }),
     );
-    await navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(destinationRef),
-    });
-    setInProgress(false);
+    try {
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(destinationRef),
+      });
+    } catch {
+      setError(
+        "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
+      );
+      return;
+    } finally {
+      setIsPending(false);
+      setInProgress(false);
+    }
     close();
   };
 

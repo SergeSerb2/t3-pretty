@@ -24,7 +24,9 @@ import {
   cancelProjectTransfer,
   isManagedProjectWorkspace,
   prepareProjectTransfer,
+  manifestThreadIds,
   requireMoveSiblingThread,
+  sameThreadIdSet,
   validateProjectTransferUploadToken,
 } from "./ProjectTransfer.ts";
 
@@ -196,5 +198,18 @@ describe("ProjectTransfer", () => {
         shell: { hasPendingApprovals: true },
       }),
     ).toMatchObject({ reason: "thread_busy" });
+  });
+
+  it("treats the inspect-time thread set as a lock for move", () => {
+    const siblingId = ThreadId.make("sibling-thread");
+    const ids = manifestThreadIds({
+      ...manifest,
+      version: 2,
+      additionalThreads: [{ ...manifest.thread, id: siblingId }],
+    });
+    expect(ids).toEqual([manifest.thread.id, siblingId]);
+    expect(sameThreadIdSet(ids, [siblingId, manifest.thread.id])).toBe(true);
+    expect(sameThreadIdSet(ids, [manifest.thread.id])).toBe(false);
+    expect(sameThreadIdSet(ids, [...ids, ThreadId.make("extra-thread")])).toBe(false);
   });
 });

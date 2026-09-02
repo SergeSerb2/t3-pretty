@@ -155,6 +155,23 @@ function isBusy(thread: OrchestrationThread): boolean {
   );
 }
 
+export function manifestThreadIds(manifest: ProjectTransferManifest): ReadonlyArray<ThreadId> {
+  return [manifest.thread.id, ...(manifest.additionalThreads ?? []).map((thread) => thread.id)];
+}
+
+export function sameThreadIdSet(
+  left: ReadonlyArray<ThreadId>,
+  right: ReadonlyArray<ThreadId>,
+): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  if (leftSet.size !== rightSet.size) return false;
+  for (const id of leftSet) {
+    if (!rightSet.has(id)) return false;
+  }
+  return true;
+}
+
 export function requireMoveSiblingThread(input: {
   readonly title: string;
   readonly detail: OrchestrationThread | undefined;
@@ -741,6 +758,16 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
         "The thread changed after the transfer started. Review it and try again.",
       );
     }
+    if (
+      mode === "move" &&
+      (input.expectedThreadIds === undefined ||
+        !sameThreadIdSet(manifestThreadIds(inspected.manifest), input.expectedThreadIds))
+    ) {
+      return yield* transferError(
+        "thread_changed",
+        "The project threads changed after the transfer started. Review it and try again.",
+      );
+    }
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -795,7 +822,18 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
         ),
       );
       if (mode !== "move") return result;
-      const sourceRemoved = yield* removeTransferredSource(inspected).pipe(
+      const latest = yield* inspectTransferSource({
+        threadId: input.threadId,
+        mode,
+      }).pipe(Effect.option);
+      if (
+        Option.isNone(latest) ||
+        input.expectedThreadIds === undefined ||
+        !sameThreadIdSet(manifestThreadIds(latest.value.manifest), input.expectedThreadIds)
+      ) {
+        return { ...result, sourceRemoved: false };
+      }
+      const sourceRemoved = yield* removeTransferredSource(latest.value).pipe(
         Effect.as(true),
         Effect.catch(() =>
           Effect.logError(

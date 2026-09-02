@@ -61,6 +61,9 @@ export const ProjectTransferSendInput = Schema.Struct({
   expectedUpdatedAt: IsoDateTime,
   destinationUrl: TrimmedNonEmptyString,
   mode: Schema.optionalKey(ProjectTransferMode),
+  // Move deletes the whole source project. The client sends the inspect-time
+  // thread ids so send can refuse (or skip delete) if another thread appeared.
+  expectedThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
 });
 export type ProjectTransferSendInput = typeof ProjectTransferSendInput.Type;
 

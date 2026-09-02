@@ -97,6 +97,14 @@ export const transferProjectThread = Effect.fn("ProjectTransfer.transfer")(funct
         expectedUpdatedAt: manifest.thread.updatedAt,
         destinationUrl,
         mode: input.mode,
+        ...(input.mode === "move"
+          ? {
+              expectedThreadIds: [
+                manifest.thread.id,
+                ...(manifest.additionalThreads ?? []).map((thread) => thread.id),
+              ],
+            }
+          : {}),
       }),
     )
     .pipe(
