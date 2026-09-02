@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isProjectTransferThreadBusy } from "./projectTransfer.ts";
+import { isProjectTransferThreadBusy, projectTransferSourceRemains } from "./projectTransfer.ts";
 
 describe("projectTransfer helpers", () => {
   it("treats running turns, sessions, and pending prompts as busy", () => {
@@ -9,5 +9,13 @@ describe("projectTransfer helpers", () => {
     expect(isProjectTransferThreadBusy({ hasPendingApprovals: true })).toBe(true);
     expect(isProjectTransferThreadBusy({ hasPendingUserInput: true })).toBe(true);
     expect(isProjectTransferThreadBusy({ latestTurn: { state: "complete" } })).toBe(false);
+  });
+
+  it("treats a move as incomplete unless sourceRemoved is true", () => {
+    expect(projectTransferSourceRemains("move", true)).toBe(false);
+    expect(projectTransferSourceRemains("move", false)).toBe(true);
+    expect(projectTransferSourceRemains("move", undefined)).toBe(true);
+    expect(projectTransferSourceRemains("copy", undefined)).toBe(false);
+    expect(projectTransferSourceRemains("copy", false)).toBe(false);
   });
 });

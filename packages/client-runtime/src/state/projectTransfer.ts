@@ -41,6 +41,13 @@ export function isProjectTransferThreadBusy(thread: {
   );
 }
 
+export function projectTransferSourceRemains(
+  mode: ProjectTransferMode,
+  sourceRemoved: boolean | undefined,
+): boolean {
+  return mode === "move" && sourceRemoved !== true;
+}
+
 const destinationUnavailable = (detail: string) =>
   new ProjectTransferError({ reason: "destination_unavailable", detail });
 

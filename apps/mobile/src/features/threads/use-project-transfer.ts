@@ -1,6 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isProjectTransferThreadBusy,
+  projectTransferSourceRemains,
   type ProjectTransferStage,
 } from "@t3tools/client-runtime/state/project-transfer";
 import {
@@ -145,7 +146,7 @@ export function useProjectTransferAction(
         );
         return;
       }
-      if (result.value.sourceRemoved === false) {
+      if (projectTransferSourceRemains(mode, result.value.sourceRemoved)) {
         Alert.alert(
           "Copied, but source remains",
           "The destination has the project, but it could not be removed from this machine.",

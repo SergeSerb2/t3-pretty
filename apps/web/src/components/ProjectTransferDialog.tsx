@@ -1,6 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isProjectTransferThreadBusy,
+  projectTransferSourceRemains,
   type ProjectTransferStage,
 } from "@t3tools/client-runtime/state/project-transfer";
 import {
@@ -170,16 +171,17 @@ export function ProjectTransferDialog() {
     const destinationLabel =
       destinations.find((destination) => destination.environmentId === destinationId)?.label ??
       "the selected connection";
+    const sourceRemains = projectTransferSourceRemains(mode, result.value.sourceRemoved);
     toastManager.add(
       stackedThreadToast({
-        type: result.value.sourceRemoved === false ? "warning" : "success",
+        type: sourceRemains ? "warning" : "success",
         title:
           mode === "move"
             ? `Thread moved to ${destinationLabel}`
             : `Thread copied to ${destinationLabel}`,
         description:
           mode === "move"
-            ? result.value.sourceRemoved === false
+            ? sourceRemains
               ? "The copy is on the destination, but the source project could not be removed."
               : "The project now lives on the destination."
             : "The original thread and project are still available on the source.",
