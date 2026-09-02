@@ -157,17 +157,6 @@ export function ProjectTransferDialog() {
 
     setStage("opening");
     const destinationRef = scopeThreadRef(destinationId, result.value.threadId);
-    const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
-    if (!arrived) {
-      setIsPending(false);
-      setInProgress(false);
-      setStage(null);
-      setError(
-        "The destination thread did not appear in time. Open it from the destination connection.",
-      );
-      return;
-    }
-
     const destinationLabel =
       destinations.find((destination) => destination.environmentId === destinationId)?.label ??
       "the selected connection";
@@ -187,6 +176,16 @@ export function ProjectTransferDialog() {
             : "The original thread and project are still available on the source.",
       }),
     );
+    const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
+    if (!arrived) {
+      setIsPending(false);
+      setInProgress(false);
+      setStage(null);
+      setError(
+        "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
+      );
+      return;
+    }
     try {
       await navigate({
         to: "/$environmentId/$threadId",

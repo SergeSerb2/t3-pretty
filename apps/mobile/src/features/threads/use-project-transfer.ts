@@ -142,7 +142,9 @@ export function useProjectTransferAction(
       if (!arrived) {
         Alert.alert(
           "Could not open destination thread",
-          "The transfer finished, but the destination thread did not appear in time. Open it from the destination connection.",
+          projectTransferSourceRemains(mode, result.value.sourceRemoved)
+            ? "The destination has the project, but the thread did not appear in time. The source was not removed. Open it from the destination connection."
+            : "The transfer finished, but the destination thread did not appear in time. Open it from the destination connection.",
         );
         return;
       }
