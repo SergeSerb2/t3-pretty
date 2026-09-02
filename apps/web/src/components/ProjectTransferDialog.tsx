@@ -136,6 +136,7 @@ export function ProjectTransferDialog() {
     setIsPending(true);
     setInProgress(true);
     setError(null);
+    setElapsedSec(0);
     setStage("inspecting");
     const result = await transfer({
       sourceEnvironmentId: threadRef.environmentId,
@@ -213,7 +214,7 @@ export function ProjectTransferDialog() {
       disablePointerDismissal={isPending}
       onOpenChange={(open, eventDetails) => {
         if (!open && isPending) {
-          eventDetails.cancel();
+          eventDetails.cancel?.();
           return;
         }
         if (!open) close();
