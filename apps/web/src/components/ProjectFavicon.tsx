@@ -10,6 +10,26 @@ import { useAssetUrlState } from "../assets/assetUrls";
 import { cn } from "~/lib/utils";
 
 const loadedProjectFaviconSrcs = new Map<string, string>();
+const MAX_LOADED_PROJECT_FAVICONS = 256;
+
+function readLoadedProjectFavicon(cacheKey: string): string | null {
+  const src = loadedProjectFaviconSrcs.get(cacheKey) ?? null;
+  if (src !== null) {
+    loadedProjectFaviconSrcs.delete(cacheKey);
+    loadedProjectFaviconSrcs.set(cacheKey, src);
+  }
+  return src;
+}
+
+function rememberLoadedProjectFavicon(cacheKey: string, src: string): void {
+  loadedProjectFaviconSrcs.delete(cacheKey);
+  loadedProjectFaviconSrcs.set(cacheKey, src);
+  while (loadedProjectFaviconSrcs.size > MAX_LOADED_PROJECT_FAVICONS) {
+    const oldestKey = loadedProjectFaviconSrcs.keys().next().value;
+    if (oldestKey === undefined) break;
+    loadedProjectFaviconSrcs.delete(oldestKey);
+  }
+}
 
 export function ProjectFavicon(input: {
   environmentId: EnvironmentId;
@@ -72,8 +92,8 @@ function ProjectFaviconImage({
   readonly className?: string | undefined;
   readonly fallbackIcon: ComponentType<{ className?: string }>;
 }) {
-  const [displayedSrc, setDisplayedSrc] = useState<string | null>(
-    () => loadedProjectFaviconSrcs.get(cacheKey) ?? null,
+  const [displayedSrc, setDisplayedSrc] = useState<string | null>(() =>
+    readLoadedProjectFavicon(cacheKey),
   );
   const isLoading = displayedSrc !== src;
   const handleLoadError = (failedSrc: string) => {
@@ -102,7 +122,7 @@ function ProjectFaviconImage({
           alt=""
           className="hidden"
           onLoad={() => {
-            loadedProjectFaviconSrcs.set(cacheKey, src);
+            rememberLoadedProjectFavicon(cacheKey, src);
             setDisplayedSrc(src);
           }}
           onError={() => handleLoadError(src)}

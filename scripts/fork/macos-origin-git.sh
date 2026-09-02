@@ -79,6 +79,12 @@ acquire_write_lock() {
   write_lock="$lock"
 }
 
+refresh_store="${HOME}/.local/bin/refresh-origin-git-credentials.sh"
+if [[ -x "$refresh_store" ]]; then
+  env -u FORCE_COLOR -u NO_COLOR "$refresh_store" ||
+    echo "Could not refresh the Origin git credential store; using the current credential." >&2
+fi
+
 write_cli_helpers() {
   local hostName attempt
   for hostName in "${origin_hosts[@]}"; do

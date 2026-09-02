@@ -1,4 +1,3 @@
-import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
@@ -20,6 +19,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  GIT_LIST_BRANCHES_MAX_LIMIT,
   GitCommandError,
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
@@ -37,6 +37,7 @@ import {
   parseRemoteRefWithRemoteNames,
 } from "../git/remoteRefs.ts";
 import { ServerConfig } from "../config.ts";
+import { readFilePrefix } from "../boundedFileRead.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // `git worktree add` checks out the full tree, so on large repositories it can
@@ -51,6 +52,8 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+export const REVIEW_UNTRACKED_MAX_FILES = 32;
+export const REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS = 120_000;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 120_000;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
@@ -69,6 +72,8 @@ const LIST_REFS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const LIST_REFS_REFRESH_FAILURE_COOLDOWN = Duration.seconds(30);
 const STATUS_DEFAULT_BRANCH_CACHE_TTL = Duration.minutes(5);
 const STATUS_ORIGIN_EXISTS_CACHE_TTL = Duration.minutes(5);
+const TRACE2_READ_CHUNK_BYTES = 64 * 1024;
+const TRACE2_LINE_MAX_CHARS = 1024 * 1024;
 const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
   GIT_ASKPASS: "",
@@ -104,8 +109,8 @@ const NON_REPOSITORY_REMOTE_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitRemot
 });
 
 type TraceTailState = {
-  processedChars: number;
   remainder: string;
+  droppingOversizedLine: boolean;
 };
 
 class StatusRemoteRefreshCacheKey extends Data.Class<{
@@ -230,7 +235,10 @@ function paginateBranches(input: {
   totalCount: number;
 } {
   const cursor = input.cursor ?? 0;
-  const limit = input.limit ?? GIT_LIST_BRANCHES_DEFAULT_LIMIT;
+  const limit = Math.min(
+    input.limit ?? GIT_LIST_BRANCHES_DEFAULT_LIMIT,
+    GIT_LIST_BRANCHES_MAX_LIMIT,
+  );
   const totalCount = input.refs.length;
   const refs = input.refs.slice(cursor, cursor + limit);
   const nextCursor = cursor + refs.length < totalCount ? cursor + refs.length : null;
@@ -242,19 +250,30 @@ function paginateBranches(input: {
   };
 }
 
-function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
+function parseWorktreeBranchPaths(stdout: string): {
+  readonly branchPaths: ReadonlyMap<string, string>;
+  readonly prunablePaths: ReadonlyMap<string, string>;
+  readonly lockedPaths: ReadonlyMap<string, string>;
+} {
   const worktreePaths = new Map<string, string>();
+  const prunablePaths = new Map<string, string>();
+  const lockedPaths = new Map<string, string>();
   let currentPath: string | null = null;
   let currentBranch: string | null = null;
   let currentPrunable = false;
+  let currentLocked = false;
 
   const flush = () => {
-    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
-      worktreePaths.set(currentBranch, currentPath);
+    if (currentPath !== null && currentBranch !== null) {
+      (currentPrunable ? prunablePaths : worktreePaths).set(currentBranch, currentPath);
+      if (currentLocked) {
+        lockedPaths.set(currentBranch, currentPath);
+      }
     }
     currentPath = null;
     currentBranch = null;
     currentPrunable = false;
+    currentLocked = false;
   };
 
   for (const field of stdout.split("\0")) {
@@ -266,11 +285,13 @@ function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
       currentBranch = field.slice("branch refs/heads/".length);
     } else if (field === "prunable" || field.startsWith("prunable ")) {
       currentPrunable = true;
+    } else if (field === "locked" || field.startsWith("locked ")) {
+      currentLocked = true;
     }
   }
   flush();
 
-  return worktreePaths;
+  return { branchPaths: worktreePaths, prunablePaths, lockedPaths };
 }
 
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
@@ -288,6 +309,34 @@ export function splitNullSeparatedGitStdoutPaths(
   result: Pick<GitVcsDriver.ExecuteGitResult, "stdout" | "stdoutTruncated">,
 ): string[] {
   return splitNullSeparatedPaths(result.stdout, result.stdoutTruncated);
+}
+
+export function collectBoundedReviewDiffs(
+  results: ReadonlyArray<Pick<GitVcsDriver.ExecuteGitResult, "stdout" | "stdoutTruncated">>,
+): { readonly diff: string; readonly truncated: boolean } {
+  let diff = "";
+  let truncated = false;
+
+  for (const result of results) {
+    const fragment = result.stdout.trim();
+    truncated ||= result.stdoutTruncated;
+    if (fragment.length === 0) continue;
+
+    const separator = diff.length === 0 ? "" : "\n";
+    const remaining = REVIEW_UNTRACKED_AGGREGATE_MAX_CHARS - diff.length - separator.length;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    if (fragment.length > remaining) {
+      diff += `${separator}${fragment.slice(0, remaining)}`;
+      truncated = true;
+      break;
+    }
+    diff += `${separator}${fragment}`;
+  }
+
+  return { diff, truncated };
 }
 
 function sanitizeRemoteName(value: string): string {
@@ -432,6 +481,17 @@ function isUnbornHeadStderr(stderr: string): boolean {
   );
 }
 
+// Matches `git worktree remove` on a path git no longer tracks: "is not a
+// working tree" when the registration is gone, "cannot remove working tree"
+// when older gits fail validation on a registered-but-deleted directory.
+function isMissingWorktreeStderr(stderr: string): boolean {
+  const normalized = stderr.toLowerCase();
+  return (
+    normalized.includes("is not a working tree") ||
+    normalized.includes("cannot remove working tree")
+  );
+}
+
 interface Trace2Monitor {
   readonly env: NodeJS.ProcessEnv;
   readonly flush: Effect.Effect<void, never>;
@@ -464,6 +524,7 @@ function trace2ChildKey(record: Record<string, unknown>): string | null {
 }
 
 const Trace2Record = Schema.Record(Schema.String, Schema.Unknown);
+const decodeTrace2Record = decodeJsonResult(Trace2Record);
 
 const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
   input: Pick<GitVcsDriver.ExecuteGitInput, "operation" | "cwd" | "args">,
@@ -486,10 +547,12 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     prefix: `t3code-git-trace2-${process.pid}-`,
     suffix: ".json",
   });
+  const traceFile = yield* fs.open(traceFilePath, { flag: "r" });
+  const traceDecoder = new TextDecoder();
   const hookStartByChildKey = new Map<string, { hookName: string; startedAtMs: number }>();
   const traceTailState = yield* Ref.make<TraceTailState>({
-    processedChars: 0,
     remainder: "",
+    droppingOversizedLine: false,
   });
 
   const handleTraceLine = Effect.fn("handleTraceLine")(function* (line: string) {
@@ -498,7 +561,7 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
       return;
     }
 
-    const traceRecord = decodeJsonResult(Trace2Record)(trimmedLine);
+    const traceRecord = decodeTrace2Record(trimmedLine);
     if (Result.isFailure(traceRecord)) {
       yield* Effect.logDebug(
         `GitVcsDriver.trace2: failed to parse trace line for ${input.operation} in ${input.cwd} (${input.args.length} arguments)`,
@@ -559,35 +622,45 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     }
   });
 
+  const handleTraceChunk = Effect.fn("handleTraceChunk")(function* (decoded: string) {
+    const lines = yield* Ref.modify(
+      traceTailState,
+      ({ remainder, droppingOversizedLine }): [ReadonlyArray<string>, TraceTailState] => {
+        let chunk = decoded;
+        if (droppingOversizedLine) {
+          const newline = chunk.indexOf("\n");
+          if (newline === -1) {
+            return [[], { remainder: "", droppingOversizedLine: true }];
+          }
+          chunk = chunk.slice(newline + 1);
+          droppingOversizedLine = false;
+        }
+
+        const segments = `${remainder}${chunk}`.split("\n");
+        const nextRemainder = segments.pop() ?? "";
+        const completeLines = segments
+          .map((line) => line.replace(/\r$/, ""))
+          .filter((line) => line.length <= TRACE2_LINE_MAX_CHARS);
+
+        if (nextRemainder.length > TRACE2_LINE_MAX_CHARS) {
+          return [completeLines, { remainder: "", droppingOversizedLine: true }];
+        }
+        return [completeLines, { remainder: nextRemainder, droppingOversizedLine: false }];
+      },
+    );
+    yield* Effect.forEach(lines, handleTraceLine, { discard: true });
+  });
+
+  const readAvailableTraceChunks = Effect.gen(function* () {
+    while (true) {
+      const chunk = yield* traceFile.readAlloc(TRACE2_READ_CHUNK_BYTES);
+      if (Option.isNone(chunk)) return;
+      yield* handleTraceChunk(traceDecoder.decode(chunk.value, { stream: true }));
+    }
+  });
   const deltaMutex = yield* Semaphore.make(1);
   const readTraceDelta = deltaMutex.withPermit(
-    fs.readFileString(traceFilePath).pipe(
-      Effect.flatMap((contents) =>
-        Effect.uninterruptible(
-          Ref.modify(traceTailState, ({ processedChars, remainder }) => {
-            if (contents.length <= processedChars) {
-              return [[], { processedChars, remainder }];
-            }
-
-            const appended = contents.slice(processedChars);
-            const combined = remainder + appended;
-            const lines = combined.split("\n");
-            const nextRemainder = lines.pop() ?? "";
-
-            return [
-              lines.map((line) => line.replace(/\r$/, "")),
-              {
-                processedChars: contents.length,
-                remainder: nextRemainder,
-              },
-            ];
-          }).pipe(
-            Effect.flatMap((lines) => Effect.forEach(lines, handleTraceLine, { discard: true })),
-          ),
-        ),
-      ),
-      Effect.ignore({ log: true }),
-    ),
+    readAvailableTraceChunks.pipe(Effect.ignore({ log: true })),
   );
   const traceFileName = path.basename(traceFilePath);
   yield* Stream.runForEach(fs.watch(traceFilePath), (event) => {
@@ -600,19 +673,24 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
     return readTraceDelta;
   }).pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
 
-  const finalizeTrace2Monitor = Effect.fn("finalizeTrace2Monitor")(function* () {
-    yield* readTraceDelta;
-    const finalLine = yield* Ref.modify(traceTailState, ({ processedChars, remainder }) => [
-      remainder.trim(),
-      {
-        processedChars,
-        remainder: "",
-      },
-    ]);
-    if (finalLine.length > 0) {
-      yield* handleTraceLine(finalLine);
-    }
-  });
+  const finalizeTrace2Monitor = Effect.fn("finalizeTrace2Monitor")(() =>
+    deltaMutex.withPermit(
+      Effect.gen(function* () {
+        yield* readAvailableTraceChunks;
+        yield* handleTraceChunk(traceDecoder.decode());
+        const finalLine = yield* Ref.modify(
+          traceTailState,
+          ({ remainder, droppingOversizedLine }): [string, TraceTailState] => [
+            droppingOversizedLine ? "" : remainder.trim(),
+            { remainder: "", droppingOversizedLine: false },
+          ],
+        );
+        if (finalLine.length > 0 && finalLine.length <= TRACE2_LINE_MAX_CHARS) {
+          yield* handleTraceLine(finalLine);
+        }
+      }).pipe(Effect.ignore({ log: true })),
+    ),
+  );
 
   yield* Effect.addFinalizer(finalizeTrace2Monitor);
 
@@ -1204,6 +1282,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       detail: "Cannot resolve a Git common directory outside a repository.",
     });
   });
+
+  const pruneStaleWorktrees = (
+    operation: string,
+    cwd: string,
+  ): Effect.Effect<GitVcsDriver.ExecuteGitResult, GitCommandError> =>
+    resolveGitCommonDir(cwd).pipe(
+      Effect.flatMap((gitCommonDir) =>
+        executeGit(
+          operation,
+          path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir,
+          ["--git-dir", gitCommonDir, "worktree", "prune"],
+          {
+            timeoutMs: 30_000,
+            allowNonZeroExit: true,
+          },
+        ),
+      ),
+    );
 
   const statusRemoteRefreshFailureCounts = new Map<string, number>();
   const statusRemoteRefreshFailureKey = (cacheKey: StatusRemoteRefreshCacheKey) =>
@@ -1996,6 +2092,55 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.orElseSucceed(() => null),
     );
     if (currentUpstream) {
+      // A branch tracking a differently named ref was cut from it, the way
+      // `git checkout -b feature origin/dev` and our own worktree flow leave
+      // it. That upstream is the branch's base, not its publish target, and
+      // pushing HEAD onto it would write feature commits to a shared branch
+      // (bare `git push` refuses this under push.default=simple). The one
+      // same-repo tracking setup that legitimately differs is a git-mangled
+      // alias such as local `upstream/effect-atom` for my-org/upstream's
+      // `effect-atom`: the branch name ends in the upstream head while the
+      // upstream ref ends in the branch name.
+      const isAliasOfUpstreamHead =
+        branch === currentUpstream.branchName ||
+        (branch.endsWith(`/${currentUpstream.branchName}`) &&
+          currentUpstream.upstreamRef.endsWith(`/${branch}`));
+      if (!isAliasOfUpstreamHead) {
+        const publishRemoteName = yield* resolvePushRemoteName(cwd, branch).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        const remoteName = publishRemoteName ?? currentUpstream.remoteName;
+        const publishBranch = yield* resolvePublishBranchName(cwd, branch);
+        // `-u` retargets the upstream to the published branch, so keep the
+        // base recorded first; base resolution reads gh-merge-base before the
+        // upstream ref.
+        const configuredMergeBase = yield* runGitStdout(
+          "GitVcsDriver.pushCurrentBranch.readMergeBase",
+          cwd,
+          ["config", "--get", `branch.${branch}.gh-merge-base`],
+          true,
+        ).pipe(Effect.map((stdout) => stdout.trim()));
+        if (configuredMergeBase.length === 0) {
+          yield* runGit("GitVcsDriver.pushCurrentBranch.recordMergeBase", cwd, [
+            "config",
+            `branch.${branch}.gh-merge-base`,
+            currentUpstream.branchName,
+          ]);
+        }
+        yield* runGit(
+          "GitVcsDriver.pushCurrentBranch.pushOwnBranch",
+          cwd,
+          ["push", "-u", remoteName, `HEAD:refs/heads/${publishBranch}`],
+          { timeoutMs: null },
+        );
+        return {
+          status: "pushed" as const,
+          branch,
+          upstreamBranch: `${remoteName}/${publishBranch}`,
+          setUpstream: true,
+        };
+      }
+
       yield* runGit(
         "GitVcsDriver.pushCurrentBranch.pushUpstream",
         cwd,
@@ -2128,8 +2273,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { diff: "", truncated: untrackedResult.stdoutTruncated };
     }
 
+    const selectedPaths = untrackedPaths.slice(0, REVIEW_UNTRACKED_MAX_FILES);
+    const pathsTruncated = selectedPaths.length < untrackedPaths.length;
+
     const diffs = yield* Effect.forEach(
-      untrackedPaths,
+      selectedPaths,
       (relativePath) =>
         executeGit(
           "GitVcsDriver.readUntrackedReviewDiffs.diff",
@@ -2155,11 +2303,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 4 },
     );
 
+    const aggregate = collectBoundedReviewDiffs(diffs);
     return {
-      diff: Arr.filterMap(diffs, (result) =>
-        result.stdout.trim().length > 0 ? Result.succeed(result.stdout) : Result.failVoid,
-      ).join("\n"),
-      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+      diff: aggregate.diff,
+      truncated: untrackedResult.stdoutTruncated || pathsTruncated || aggregate.truncated,
     };
   });
 
@@ -2387,13 +2534,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    const bytes = yield* fileSystem
-      .readFile(realTarget)
-      .pipe(
-        Effect.mapError((cause) =>
-          fileError("fs.readFile", `Could not read diff file '${input.newPath}'.`, cause),
-        ),
+    const bytes = yield* readFilePrefix(
+      fileSystem,
+      realTarget,
+      REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES + 1,
+    ).pipe(
+      Effect.mapError((cause) =>
+        fileError("fs.readFile", `Could not read diff file '${input.newPath}'.`, cause),
+      ),
+    );
+    if (bytes.byteLength > REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES) {
+      return yield* fileError(
+        "fs.readFile",
+        `Diff file '${input.newPath}' exceeds the 1 MB expansion limit.`,
       );
+    }
     if (bytes.includes(0)) {
       return yield* fileError("fs.readFile", `Cannot expand binary file '${input.newPath}'.`);
     }
@@ -2520,13 +2675,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       defaultRefResult.exitCode === 0
         ? defaultRefResult.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
         : null;
-    const parsedWorktreeEntries =
+    const parsedWorktreeList =
       worktreeListResult.exitCode === 0
-        ? [...parseWorktreeBranchPaths(worktreeListResult.stdout)].map(
-            ([branchName, worktreePath]) =>
-              [branchName, path.normalize(path.resolve(worktreePath))] as const,
-          )
-        : [];
+        ? parseWorktreeBranchPaths(worktreeListResult.stdout)
+        : {
+            branchPaths: new Map<string, string>(),
+            prunablePaths: new Map<string, string>(),
+            lockedPaths: new Map<string, string>(),
+          };
+    const parsedWorktreeEntries = [...parsedWorktreeList.branchPaths].map(
+      ([branchName, worktreePath]) =>
+        [branchName, path.normalize(path.resolve(worktreePath))] as const,
+    );
     const existingWorktreeEntries = yield* Effect.filter(
       parsedWorktreeEntries,
       ([, worktreePath]) =>
@@ -2537,6 +2697,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: 16 },
     );
     const worktreeMap = new Map(existingWorktreeEntries);
+    // Git keeps counting a branch as checked out in a worktree whose directory is gone, and
+    // refuses to move, fetch into, or re-add that branch until the entry is pruned. Prune where
+    // the stale entry is noticed, so every later write sees what this snapshot reports.
+    // If prune does not actually drop the entry, keep it visible so listRefs does not claim
+    // the branch is free while git still refuses to move it. Locked worktrees are never
+    // prunable — even with a missing directory — so they stay in the snapshot too.
+    for (const [branchName, worktreePath] of parsedWorktreeList.lockedPaths) {
+      worktreeMap.set(branchName, path.normalize(path.resolve(worktreePath)));
+    }
+    if (parsedWorktreeList.prunablePaths.size > 0) {
+      const pruneResult = yield* pruneStaleWorktrees(
+        "GitVcsDriver.listRefs.pruneWorktrees",
+        fetchCwd,
+      );
+      if (pruneResult.exitCode !== 0) {
+        for (const [branchName, worktreePath] of parsedWorktreeList.prunablePaths) {
+          worktreeMap.set(branchName, path.normalize(path.resolve(worktreePath)));
+        }
+      }
+    }
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
 
@@ -2788,10 +2968,35 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       });
     }
 
+    yield* pruneStaleWorktrees("GitVcsDriver.createWorktree.pruneWorktrees", input.cwd);
     yield* executeGit("GitVcsDriver.createWorktree", input.cwd, args, {
       fallbackErrorDetail: "git worktree add failed",
       timeoutMs: WORKTREE_ADD_TIMEOUT_MS,
     });
+
+    // `git worktree add` leaves submodules empty, so a repo that keeps agent
+    // skills, tooling or source in one gets a worktree that is quietly missing
+    // them. Best-effort: the objects are usually already in the parent's
+    // `.git/modules`, but a first-ever clone needs the network, and failing to
+    // populate a submodule must not roll back the caller's thread.
+    const hasSubmodules = yield* fileSystem
+      .exists(path.join(worktreePath, ".gitmodules"))
+      .pipe(Effect.orElseSucceed(() => false));
+    if (hasSubmodules) {
+      yield* runGit("GitVcsDriver.createWorktree.updateSubmodules", worktreePath, [
+        "submodule",
+        "update",
+        "--init",
+        "--recursive",
+      ]).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("worktree submodule checkout failed; submodule paths are empty", {
+            worktreePath,
+            cause,
+          }),
+        ),
+      );
+    }
 
     if (input.newRefName && input.baseRefName) {
       const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));
@@ -2818,6 +3023,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const fetchPullRequestBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchPullRequestBranch"] =
     Effect.fn("fetchPullRequestBranch")(function* (input) {
       const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
+      yield* pruneStaleWorktrees("GitVcsDriver.fetchPullRequestBranch.pruneWorktrees", input.cwd);
       yield* executeGit(
         "GitVcsDriver.fetchPullRequestBranch",
         input.cwd,
@@ -2968,6 +3174,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     const localBranchAlreadyExists = yield* branchExists(input.cwd, input.localBranch);
     const targetRef = `${input.remoteName}/${input.remoteBranch}`;
+    if (localBranchAlreadyExists) {
+      yield* pruneStaleWorktrees("GitVcsDriver.fetchRemoteBranch.pruneWorktrees", input.cwd);
+    }
     yield* runGit(
       "GitVcsDriver.fetchRemoteBranch.materialize",
       input.cwd,
@@ -3004,9 +3213,47 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       args.push("--force");
     }
     args.push(input.path);
-    yield* executeGit("GitVcsDriver.removeWorktree", input.cwd, args, {
+    const result = yield* executeGitWithStableDiagnostics(
+      "GitVcsDriver.removeWorktree",
+      input.cwd,
+      args,
+      { timeoutMs: 15_000, allowNonZeroExit: true },
+    );
+    if (result.exitCode === 0) {
+      return;
+    }
+    // Threads can share a worktree path, and worktrees get removed or pruned
+    // outside the app, so a worktree that is already gone is a no-op rather
+    // than an error. Prune so no stale registration lingers to block a later
+    // `worktree add` at the same path.
+    const alreadyGone =
+      isMissingWorktreeStderr(result.stderr) &&
+      !(yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false)));
+    if (alreadyGone) {
+      yield* pruneWorktrees({ cwd: input.cwd });
+      return;
+    }
+    // Raw stderr stays out of both the wire error and the log (it can carry
+    // secrets); log bounded diagnostics so a genuine failure is visible
+    // server-side.
+    yield* Effect.logWarning(
+      `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
+    );
+    return yield* new GitCommandError({
+      ...gitCommandContext({ operation: "GitVcsDriver.removeWorktree", cwd: input.cwd, args }),
+      detail: "git worktree remove failed",
+      ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+    });
+  });
+
+  const pruneWorktrees: GitVcsDriver.GitVcsDriver["Service"]["pruneWorktrees"] = Effect.fn(
+    "pruneWorktrees",
+  )(function* (input) {
+    yield* executeGit("GitVcsDriver.pruneWorktrees", input.cwd, ["worktree", "prune"], {
       timeoutMs: 15_000,
-      fallbackErrorDetail: "git worktree remove failed",
+      fallbackErrorDetail: "git worktree prune failed",
     });
   });
 
@@ -3215,6 +3462,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       withListRefsInvalidation(input.cwd, fetchRemoteTrackingBranch(input)),
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
+    pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),
     switchRef: (input) => withListRefsInvalidation(input.cwd, switchRef(input)),

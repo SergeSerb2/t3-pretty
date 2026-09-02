@@ -8,6 +8,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "./sidebar";
+import { Tooltip, TooltipTrigger } from "./tooltip";
 import { resolveSidebarState } from "./sidebarState";
 
 function renderSidebarButton(className?: string) {
@@ -48,6 +49,21 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain("[-webkit-app-region:no-drag]");
     expect(html).toContain("size-[var(--workspace-titlebar-control-size)]!");
+    expect(html).toContain("data-animate-ui-icons");
+  });
+
+  it("keeps icon motion opt-in when a tooltip owns the trigger slot", () => {
+    const html = renderToStaticMarkup(
+      <SidebarProvider>
+        <Tooltip>
+          <TooltipTrigger render={<SidebarTrigger />} />
+        </Tooltip>
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain('data-slot="tooltip-trigger"');
+    expect(html).not.toContain('data-slot="sidebar-trigger"');
+    expect(html).toContain("data-animate-ui-icons");
   });
 
   it("uses shared geometry and icon constraints for menu buttons by default", () => {

@@ -40,13 +40,54 @@ export function shouldContinueDesktopUpdateCheckAnimation({
   return isChecking && !prefersReducedMotion;
 }
 
+export function desktopUpdateCheckMotionAfterSpinIteration({
+  isChecking,
+  prefersReducedMotion,
+}: {
+  readonly isChecking: boolean;
+  readonly prefersReducedMotion: boolean;
+}): "idle" | "settle" | "spin" {
+  if (shouldContinueDesktopUpdateCheckAnimation({ isChecking, prefersReducedMotion })) {
+    return "spin";
+  }
+  return prefersReducedMotion ? "idle" : "settle";
+}
+
+export const DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME = "desktop-update-check-settle";
+
+export function isDesktopUpdateCheckSettleAnimationEnd(event: {
+  readonly animationName: string;
+}): boolean {
+  return event.animationName === DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME;
+}
+
+export function shouldClearDesktopUpdateCheckSettle({
+  isChecking,
+  isSettling,
+}: {
+  readonly isChecking: boolean;
+  readonly isSettling: boolean;
+}): boolean {
+  return isSettling && !isChecking;
+}
+
+export function desktopUpdateCheckSpinFrom({
+  fineHover,
+  hovered,
+}: {
+  readonly fineHover: boolean;
+  readonly hovered: boolean;
+}): "0deg" | "90deg" {
+  return fineHover && hovered ? "90deg" : "0deg";
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
       <DownloadIcon className="size-4" />
       <span
         aria-hidden="true"
-        className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-update-foreground ring-2 ring-update-surface"
+        className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-current ring-2 ring-sidebar-control-surface"
       />
     </span>
   );
@@ -93,7 +134,7 @@ function DesktopUpdateDownloadedIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
       <RotateCwIcon className="size-4" />
-      <span className="absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full bg-update-foreground text-background ring-2 ring-background">
+      <span className="absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full bg-foreground text-background ring-2 ring-background">
         <CheckIcon className="size-2" strokeWidth={3} />
       </span>
     </span>
@@ -103,11 +144,15 @@ function DesktopUpdateDownloadedIcon() {
 export function DesktopUpdateStatusIcon({
   downloadPercent,
   isCheckAnimating,
+  isCheckSettling,
+  onCheckAnimationEnd,
   onCheckAnimationIteration,
   status,
 }: {
   readonly downloadPercent?: number | null;
   readonly isCheckAnimating?: boolean;
+  readonly isCheckSettling?: boolean;
+  readonly onCheckAnimationEnd?: AnimationEventHandler<SVGSVGElement>;
   readonly onCheckAnimationIteration?: AnimationEventHandler<SVGSVGElement>;
   readonly status: DesktopUpdateStatusIconState;
 }) {
@@ -119,8 +164,20 @@ export function DesktopUpdateStatusIcon({
 
   return (
     <RefreshCwIcon
-      className={cn("size-4", status === "checking" && isCheckAnimating && "animate-spin")}
-      onAnimationIteration={onCheckAnimationIteration}
+      className={cn(
+        "size-4",
+        isCheckSettling && "animate-desktop-update-check-settle motion-reduce:animate-none",
+        isCheckAnimating && !isCheckSettling && "animate-spin",
+      )}
+      onAnimationEnd={
+        onCheckAnimationEnd
+          ? (event) => {
+              if (!isDesktopUpdateCheckSettleAnimationEnd(event)) return;
+              onCheckAnimationEnd(event);
+            }
+          : undefined
+      }
+      onAnimationIteration={isCheckSettling ? undefined : onCheckAnimationIteration}
     />
   );
 }

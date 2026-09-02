@@ -1,4 +1,14 @@
-import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import {
+  mergePreviewAutomationCallSummaries,
+  summarizePreviewAutomationCall,
+  type PreviewAutomationCallSummary,
+} from "@t3tools/client-runtime/preview-automation-calls";
+import {
+  ApprovalRequestId,
+  isToolLifecycleItemType,
+  ProviderApprovalOption,
+  ProviderRequestKind,
+} from "@t3tools/contracts";
 import { extractGeneratedImagePath } from "@t3tools/shared/imageTool";
 import type {
   OrchestrationLatestTurn,
@@ -11,18 +21,40 @@ import type {
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
   buildToolCallDisplaySections,
+  formatChangedFileDiffText,
+  isRedundantChangedFileOutput,
+  leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
+import {
+  commandDetailRepeatsCommand,
+  extractCommandOutputText,
+  isWorktreeSetupActivity,
+  normalizeCompactToolLabel,
+  omitSupersededLifecycleMarkers,
+  summarizeToolGroup,
+  toolGroupSummaryKind,
+  type ToolGroupSummaryKind,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
+import * as Schema from "effect/Schema";
+
+import { compareTimestamps } from "./time";
 
 export interface PendingApproval {
   readonly requestId: ApprovalRequestId;
-  readonly requestKind: "command" | "file-read" | "file-change";
+  readonly requestKind: ProviderRequestKind;
   readonly createdAt: string;
   readonly detail?: string;
+  readonly appName?: string;
+  readonly options?: ReadonlyArray<ProviderApprovalOption>;
 }
+
+const isProviderRequestKind = Schema.is(ProviderRequestKind);
+const isProviderApprovalOption = Schema.is(ProviderApprovalOption);
 
 export interface PendingUserInput {
   readonly requestId: ApprovalRequestId;
@@ -56,6 +88,7 @@ export interface ThreadFeedActivity {
     | "image"
     | "message"
     | "package"
+    | "pointer"
     | "warning"
     | "wrench"
     | "zap";
@@ -70,21 +103,33 @@ const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 
 type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
 
+type ChangedFileDiffKind = "add" | "delete" | "update";
+
+interface ChangedFileDiff {
+  readonly path: string;
+  readonly kind?: ChangedFileDiffKind;
+  readonly diff?: string;
+}
+
 interface WorkLogEntry {
   id: string;
   createdAt: string;
   turnId: TurnId | null;
   label: string;
   detail?: string;
+  viewedImagePath?: string;
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
+  changedFileDiffs?: ReadonlyArray<ChangedFileDiff>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  /** Present when this row is a browser-automation (preview_*) tool call. */
+  previewAutomation?: PreviewAutomationCallSummary;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -159,6 +204,8 @@ function requestKindFromRequestType(requestType: unknown): PendingApproval["requ
     case "file_change_approval":
     case "apply_patch_approval":
       return "file-change";
+    case "mcp_elicitation_approval":
+      return "mcp-elicitation";
     default:
       return null;
   }
@@ -326,6 +373,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
 
 /** Per-activity work-log derivation; null for rows the work log drops. */
 function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry | null {
+  if (activity.tone !== "error" && isWorktreeSetupActivity(activity.kind)) return null;
   if (activity.kind === "tool.started") return null;
   // Generated live-status headlines feed the web work-live row, never the log.
   if (activity.kind === "turn.headline") return null;
@@ -335,6 +383,7 @@ function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkL
   if (activity.kind === "tool.progress") return null;
   if (activity.kind === "context-window.updated") return null;
   if (activity.summary === "Checkpoint captured") return null;
+  if (isNoContentRuntimeWarning(activity)) return null;
   if (isPlanBoundaryToolActivity(activity)) return null;
   if (isAgentInternalActivity(activity)) return null;
   return toDerivedWorkLogEntry(activity);
@@ -352,6 +401,17 @@ function deriveWorkLogEntries(
     }
   }
   return collapseDerivedWorkLogEntries(entries);
+}
+
+/** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
+ *  commands_changed, ...) as runtime warnings. The suffix comes from
+ *  describeUnknownSdkMessage in the Claude adapter; a row with no displayable
+ *  text carries nothing a user can act on, so it does not render. */
+function isNoContentRuntimeWarning(activity: OrchestrationThreadActivity): boolean {
+  return (
+    activity.kind === "runtime.warning" &&
+    activity.summary.endsWith("(no displayable text content)")
+  );
 }
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {
@@ -413,16 +473,27 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
-  if (
-    !taskDetailAsLabel &&
-    payload &&
-    typeof payload.detail === "string" &&
-    payload.detail.length > 0
-  ) {
+  const viewedImagePath = asTrimmedString(asRecord(payload?.data)?.imagePath);
+  const commandOutput = commandPreview.command ? extractCommandOutputText(payload?.data) : null;
+  const output = commandOutput ? stripTrailingExitCode(commandOutput).output : null;
+  if (!taskDetailAsLabel && output) {
+    entry.detail = output;
+  } else if (!taskDetailAsLabel && typeof payload?.detail === "string") {
     const detail = stripTrailingExitCode(payload.detail).output;
-    if (detail) {
-      entry.detail = detail;
-    }
+    const data = asRecord(payload.data);
+    const repeatsCommand =
+      detail !== null &&
+      commandDetailRepeatsCommand({
+        detail,
+        command: commandPreview.command,
+        rawCommand: commandPreview.rawCommand,
+        toolName: data?.toolName,
+        data,
+      });
+    if (detail && !repeatsCommand) entry.detail = detail;
+  }
+  if (viewedImagePath) {
+    entry.viewedImagePath = viewedImagePath;
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
@@ -433,6 +504,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
+  const changedFileDiffs = extractChangedFileDiffs(payload);
+  if (changedFileDiffs.length > 0) {
+    entry.changedFileDiffs = changedFileDiffs;
+  }
   if (title) {
     entry.toolTitle = title;
   }
@@ -440,6 +515,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     const data = asRecord(payload?.data);
     if (data?.item !== undefined) {
       entry.toolData = data.item;
+    }
+  }
+  if (itemType === "mcp_tool_call" || itemType === "dynamic_tool_call") {
+    const previewAutomation = summarizePreviewAutomationCall({
+      data: payload?.data,
+      title: title ?? activity.summary,
+    });
+    if (previewAutomation) {
+      entry.previewAutomation = previewAutomation;
     }
   }
   if (itemType === "image_generation") {
@@ -531,7 +615,9 @@ function mergeDerivedWorkLogEntries(
   next: DerivedWorkLogEntry,
 ): DerivedWorkLogEntry {
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
+  const changedFileDiffs = mergeChangedFileDiffs(previous.changedFileDiffs, next.changedFileDiffs);
   const detail = next.detail ?? previous.detail;
+  const viewedImagePath = next.viewedImagePath ?? previous.viewedImagePath;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
@@ -540,19 +626,26 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const previewAutomation = mergePreviewAutomationCallSummaries(
+    previous.previewAutomation,
+    next.previewAutomation,
+  );
   return {
     ...previous,
     ...next,
     ...(detail ? { detail } : {}),
+    ...(viewedImagePath ? { viewedImagePath } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(changedFileDiffs && changedFileDiffs.length > 0 ? { changedFileDiffs } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(previewAutomation ? { previewAutomation } : {}),
   };
 }
 
@@ -565,6 +658,29 @@ function mergeChangedFiles(
     return [];
   }
   return [...new Set(merged)];
+}
+
+function mergeChangedFileDiffs(
+  previous: ReadonlyArray<ChangedFileDiff> | undefined,
+  next: ReadonlyArray<ChangedFileDiff> | undefined,
+): ChangedFileDiff[] {
+  if ((next?.length ?? 0) === 0) return [...(previous ?? [])];
+  if ((previous?.length ?? 0) === 0) return [...next!];
+  const byPath = new Map<string, ChangedFileDiff>();
+  for (const file of previous!) {
+    byPath.set(file.path, file);
+  }
+  for (const file of next!) {
+    const existing = byPath.get(file.path);
+    const kind = file.kind ?? existing?.kind;
+    const diff = file.diff ?? existing?.diff;
+    byPath.set(file.path, {
+      path: file.path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return [...byPath.values()];
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
@@ -669,6 +785,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
+  if (entry.previewAutomation) return "pointer";
   if (entry.itemType === "command_execution" || entry.command) return "command";
   if (entry.itemType === "file_change" || (entry.changedFiles?.length ?? 0) > 0) return "edit";
   if (entry.itemType === "web_search") return "globe";
@@ -690,12 +807,23 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
     entry.itemType === "mcp_tool_call" && entry.toolData !== undefined
       ? `MCP call\n${JSON.stringify(entry.toolData, null, 2)}`
       : null;
+  const diffs = entry.changedFileDiffs ?? [];
+  const diffText = formatChangedFileDiffText(diffs);
+  const leftoverPaths = leftoverChangedFilePaths(entry.changedFiles ?? [], diffs);
+  const output = isRedundantChangedFileOutput(entry.detail, entry.changedFiles ?? [])
+    ? null
+    : entry.detail;
   return serializeToolCallDisplaySections(
     buildToolCallDisplaySections({
       leadingText: mcpText,
       command: entry.rawCommand ?? entry.command,
-      output: entry.detail,
-      trailingText: (entry.changedFiles?.length ?? 0) > 0 ? entry.changedFiles!.join("\n") : null,
+      output,
+      diffText,
+      trailingText:
+        leftoverPaths ??
+        (diffText || (entry.changedFiles?.length ?? 0) === 0
+          ? null
+          : entry.changedFiles!.join("\n")),
     }),
   );
 }
@@ -705,7 +833,8 @@ function workEntryHasExpandedBody(entry: WorkLogEntry): boolean {
     (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) ||
     Boolean((entry.rawCommand ?? entry.command)?.trim()) ||
     Boolean(entry.detail?.trim()) ||
-    (entry.changedFiles?.some((path) => path.trim().length > 0) ?? false)
+    (entry.changedFiles?.some((path) => path.trim().length > 0) ?? false) ||
+    (entry.changedFileDiffs?.some((file) => file.diff?.trim()) ?? false)
   );
 }
 
@@ -742,7 +871,26 @@ function capitalizePhrase(value: string): string {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
+function fileChangeKindHeading(
+  workEntry: Pick<WorkLogEntry, "toolTitle" | "label" | "changedFileDiffs" | "changedFiles">,
+): string | null {
+  const current = normalizeCompactToolLabel(workEntry.toolTitle ?? workEntry.label).toLowerCase();
+  if (current !== "file change" && current !== "changed files") {
+    return null;
+  }
+  const diffs = workEntry.changedFileDiffs ?? [];
+  const fileCount = Math.max(diffs.length, workEntry.changedFiles?.length ?? 0);
+  if (fileCount !== 1) return null;
+  const kind = diffs[0]?.kind;
+  if (kind === "add") return "File created";
+  if (kind === "delete") return "File deleted";
+  return null;
+}
+
 function workEntryHeading(workEntry: WorkLogEntry): string {
+  if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
+  const kindHeading = fileChangeKindHeading(workEntry);
+  if (kindHeading) return kindHeading;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -1073,6 +1221,31 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   return changedFiles;
 }
 
+function extractChangedFileDiffs(payload: Record<string, unknown> | null): ChangedFileDiff[] {
+  const files = asRecord(payload?.data)?.files;
+  if (!Array.isArray(files)) {
+    return [];
+  }
+  const diffs: ChangedFileDiff[] = [];
+  for (const file of files) {
+    const record = asRecord(file);
+    const path = asTrimmedString(record?.path);
+    if (!path) continue;
+    const kind =
+      record?.kind === "add" || record?.kind === "delete" || record?.kind === "update"
+        ? record.kind
+        : undefined;
+    const diff = asTrimmedString(record?.diff) ?? undefined;
+    if (!kind && !diff) continue;
+    diffs.push({
+      path,
+      ...(kind ? { kind } : {}),
+      ...(diff ? { diff } : {}),
+    });
+  }
+  return diffs;
+}
+
 function compareActivityLifecycleRank(kind: string): number {
   if (kind.endsWith(".started") || kind === "tool.started") {
     return 0;
@@ -1088,7 +1261,7 @@ function compareActivityLifecycleRank(kind: string): number {
 
 const activityOrder = Order.combineAll<OrchestrationThreadActivity>([
   Order.mapInput(Order.Number, (activity) => activity.sequence ?? Number.MAX_SAFE_INTEGER),
-  Order.mapInput(Order.String, (activity) => activity.createdAt),
+  Order.make((left, right) => compareTimestamps(left.createdAt, right.createdAt)),
   Order.mapInput(Order.Number, (activity) => compareActivityLifecycleRank(activity.kind)),
   Order.mapInput(Order.String, (activity) => activity.id),
 ]);
@@ -1557,13 +1730,14 @@ export function derivePendingApprovals(
         ? (activity.payload as Record<string, unknown>)
         : null;
     const requestId = parseApprovalRequestId(payload?.requestId);
-    const requestKind =
-      payload?.requestKind === "command" ||
-      payload?.requestKind === "file-read" ||
-      payload?.requestKind === "file-change"
-        ? payload.requestKind
-        : requestKindFromRequestType(payload?.requestType);
+    const requestKind = isProviderRequestKind(payload?.requestKind)
+      ? payload.requestKind
+      : requestKindFromRequestType(payload?.requestType);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+    const appName = typeof payload?.appName === "string" ? payload.appName : undefined;
+    const options = Array.isArray(payload?.options)
+      ? payload.options.filter(isProviderApprovalOption)
+      : undefined;
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
       openByRequestId.set(requestId, {
@@ -1571,6 +1745,8 @@ export function derivePendingApprovals(
         requestKind,
         createdAt: activity.createdAt,
         ...(detail ? { detail } : {}),
+        ...(appName ? { appName } : {}),
+        ...(options && options.length > 0 ? { options } : {}),
       });
       continue;
     }
@@ -1831,7 +2007,9 @@ function updateMessageFeedEntryCache(
 
 function toActivityFeedEntry(entry: DerivedWorkLogEntry): RawThreadFeedEntry {
   const summary = workEntryHeading(entry);
-  const detail = workEntryPreview(entry);
+  // Browser-automation rows label themselves; raw provider JSON stays behind
+  // the disclosure instead of trailing the heading.
+  const detail = entry.previewAutomation ? null : workEntryPreview(entry);
   const generatedImagePath =
     entry.itemType === "image_generation"
       ? extractGeneratedImagePath({
@@ -2112,7 +2290,9 @@ function assembleThreadFeed(
   const visibleActivities =
     oldestLoadedMessageCreatedAt === null
       ? activities
-      : activities.filter((entry) => entry.createdAt >= oldestLoadedMessageCreatedAt);
+      : activities.filter(
+          (entry) => compareTimestamps(entry.createdAt, oldestLoadedMessageCreatedAt) >= 0,
+        );
   return groupAdjacentActivities(mergeThreadFeedEntries(messages, visibleActivities));
 }
 

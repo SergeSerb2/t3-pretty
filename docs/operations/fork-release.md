@@ -71,10 +71,17 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    validation (a non-unique or missing `old_text`) is requested once more before the run gives
    up, and every completed file is checkpointed to the `automation/sync-resolution-cache` branch
    even when the run fails, so a rerun resumes where it stopped instead of re-resolving finished
-   files. Modify/delete conflicts resolve
-   through the same contract, presented as one whole-file conflict against an empty deleted side;
-   an empty resolution follows the deletion (the usual outcome when the parent's refactor removes
-   a file the fork only tracked). Its preservation contract treats T3 Pretty and other
+   files. The branch retains at most 256 valid entries and 64 MiB; older entries are best-effort
+   acceleration, not durable release state. A modify/delete conflict where the fork deleted the
+   file resolves deterministically — the deletion is committed fork intent, so it is kept and the
+   parent's changes to the file are recorded as omissions. A modify/delete where the parent
+   deleted the file goes through the model with the parent's deletion evidence, presented as one
+   whole-file conflict against an empty deleted side; an empty resolution follows the deletion.
+   A model refusal is retried once with a much wider (400-line) conflict context; if the model
+   still declines, or CLIProxyAPI stays unreachable through every retry, the file takes the
+   fork-side fallback: the fork side is kept wholesale, and the report and sync pull request
+   record every parent change it omitted so the sync lands instead of blocking for days on the
+   same path. Its preservation contract treats T3 Pretty and other
    fork-specific behavior as
    authoritative, integrates compatible parent improvements around it, and keeps the smallest
    T3 Pretty side when both intents genuinely cannot coexist. One exception: if the parent later
@@ -91,10 +98,16 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    T3 Pretty desktop release note, so an omission cannot exist only in a transient Actions log.
 5. The workflow merges the Origin pull request once Origin reports it mergeable. It does not treat
    merge-when-ready (`--auto`) as success: that flag can return before the change lands, after
-   which deleting the head branch strands an open pull request. Parent CI is
+   which deleting the head branch strands an open pull request. Before treating an Origin merge
+   failure as real, the job checks whether its HEAD already reached `origin/main` — the merge
+   queue can land the pull request after the polling window gives up. Once the merge lands, the
+   remaining steps (branch delete, release dispatch, inline mobile publish) are best-effort and
+   cannot repaint a landed sync as failed. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
-   Release Smoke. Unsafe, binary, oversized, or uncertain resolver results still stop and open an
-   Origin pull request titled `Upstream sync blocked: <tag>` with the failure notes.
+   Release Smoke. Only a run that genuinely cannot land — a git object error, or Origin refusing
+   the merge twice — opens an Origin pull request titled `Upstream sync blocked: <tag>` with the
+   failure notes; cancelled and superseded runs checkpoint their finished resolutions and file
+   nothing.
 6. Every commit merged to `main`, whether from the parent sync or a T3 Pretty pull request,
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the CI run number
@@ -110,8 +123,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    macos-release generates with `--no-push` (baking the notes into the DMG)
    and runs `--publish` only after the artifacts and update feed are live,
    committing and pushing `changelogData.ts` when HEAD is still the `main`
-   tip; the build that push triggers sees the version in the feed and skips
-   packaging instead of publishing it twice. windows-release first reuses the
+   tip. That commit carries `[skip ci]` in its body: Buildkite cancels
+   intermediate `main` builds, so a build for the notes push would only
+   re-read the feed, skip packaging, and cancel the iOS, Linux, relay, and
+   CLI jobs of the release still running on the triggering commit. Packagers
+   that do meet a notes commit at HEAD (a manual retry) still read the feed
+   and skip a version it already lists. windows-release first reuses the
    notes commit from `origin/main` when it covers the same version, so both
    installers ship the same What's New text, and generates locally only as a
    fallback. Both packagers run `--publish` after their uploads, so main
@@ -253,13 +270,14 @@ without pretending that a newer upstream tag was integrated before its sync pull
   - Windows: `self-hosted`, `Windows`, `X64`, `t3code-fork`, `release-only`
 
 For unattended macOS installation, configure `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY`,
-`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `MACOS_PROVISIONING_PROFILE`, `APPLE_TEAM_ID`, and the
-Clerk passkey variables used by the upstream build. Without them, the workflow deliberately marks
-the macOS artifact as unsigned; it can be downloaded manually, but macOS `electron-updater` cannot
-reliably install it. Windows signing is optional for updater mechanics: missing Azure Trusted
-Signing secrets produce an unsigned NSIS installer and skip Authenticode verification. Add the
-existing Azure Trusted Signing secret names before broad distribution if SmartScreen prompts should
-go away.
+`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and `T3CODE_APPLE_TEAM_ID` (legacy fallback:
+`APPLE_TEAM_ID`), plus the Clerk passkey variables used by the upstream build. Missing required
+macOS signing or notarization credentials skips the updater release instead of publishing an
+unsigned macOS artifact. `MACOS_PROVISIONING_PROFILE` is optional; without it, the signed build
+ships without the passkey entitlement. Windows signing remains optional for updater mechanics:
+missing Azure Trusted Signing secrets produce an unsigned NSIS installer and skip Authenticode
+verification. Add the existing Azure Trusted Signing secret names before broad distribution if
+SmartScreen prompts should go away.
 
 ## Machines and expected times
 

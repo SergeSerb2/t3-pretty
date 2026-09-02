@@ -1,6 +1,8 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Sink from "effect/Sink";
@@ -13,6 +15,8 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { ComputerUseToolkitHandlersLive } from "./toolkits/computerUse/handlers.ts";
+import { ComputerUseToolkit } from "./toolkits/computerUse/tools.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -22,6 +26,73 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+
+export const MCP_HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
+const MCP_HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(MCP_HTTP_MAX_REQUEST_BODY_BYTES);
+
+export class McpRequestBodyTooLarge extends Data.TaggedError("McpRequestBodyTooLarge")<{
+  readonly maxBytes: number;
+  readonly observedBytes: number;
+}> {}
+
+export function collectMcpRequestTextWithinByteLimit<E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+  maxBytes = MCP_HTTP_MAX_REQUEST_BODY_BYTES,
+): Effect.Effect<string, E | McpRequestBodyTooLarge, R> {
+  return Effect.gen(function* () {
+    const body = yield* stream.pipe(
+      Stream.runFoldEffect(
+        () => ({ chunks: [] as Array<Uint8Array<ArrayBufferLike>>, bytes: 0 }),
+        (state, chunk) => {
+          const observedBytes = state.bytes + chunk.byteLength;
+          if (observedBytes > maxBytes) {
+            return Effect.fail(new McpRequestBodyTooLarge({ maxBytes, observedBytes }));
+          }
+          state.chunks.push(chunk);
+          return Effect.succeed({ chunks: state.chunks, bytes: observedBytes });
+        },
+      ),
+    );
+    return Buffer.concat(body.chunks, body.bytes).toString("utf8");
+  });
+}
+
+export function mcpDeclaredContentLengthExceedsLimit(
+  contentLength: string | undefined,
+  maxBytes = MCP_HTTP_MAX_REQUEST_BODY_BYTES,
+): boolean {
+  if (contentLength === undefined) return false;
+  const parsed = Number(contentLength);
+  return Number.isFinite(parsed) && parsed > maxBytes;
+}
+
+function withBoundedMcpRequestBody(
+  request: HttpServerRequest.HttpServerRequest,
+): HttpServerRequest.HttpServerRequest {
+  const text = collectMcpRequestTextWithinByteLimit(request.stream);
+  return new Proxy(request, {
+    get(target, property) {
+      if (property === "text") return text;
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+const mcpPayloadTooLargeResponse = HttpServerResponse.jsonUnsafe(
+  {
+    jsonrpc: "2.0",
+    id: null,
+    error: {
+      code: -32600,
+      message: `MCP request body exceeds the ${MCP_HTTP_MAX_REQUEST_BODY_BYTES}-byte limit.`,
+    },
+  },
+  {
+    status: 413,
+    headers: { "cache-control": "no-store" },
+  },
+);
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -34,6 +105,17 @@ const unauthorized = HttpServerResponse.jsonUnsafe(
       "cache-control": "no-store",
       "www-authenticate": "Bearer",
     },
+  },
+);
+
+const forbidden = HttpServerResponse.jsonUnsafe(
+  {
+    error: "mcp_capability_unavailable",
+    message: "This provider-scoped MCP credential does not grant access to this toolkit.",
+  },
+  {
+    status: 403,
+    headers: { "cache-control": "no-store" },
   },
 );
 
@@ -63,38 +145,52 @@ export const normalizeMcpHttpResponse = (
     : response;
 };
 
-const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
-  Effect.map(
-    (registry): McpAuthMiddleware =>
-      Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const authorization = request.headers.authorization;
-        const token =
-          authorization?.startsWith("Bearer ") === true
-            ? authorization.slice("Bearer ".length).trim()
-            : "";
-        const invocation = yield* registry.resolve(token);
-        if (!invocation) {
-          // Without this the only symptom of a dead credential is the agent
-          // quietly losing the whole `t3-code` toolkit for the rest of its
-          // session, with nothing on the server to explain why.
-          yield* Effect.logWarning("rejected MCP request with an unusable credential", {
-            reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
-          });
-          return unauthorized;
-        }
-        return yield* httpEffect.pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.map(normalizeMcpHttpResponse),
-        );
-      }),
-  ),
-  Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
-);
+const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =>
+  McpSessionRegistry.McpSessionRegistry.pipe(
+    Effect.map(
+      (registry): McpAuthMiddleware =>
+        Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          if (mcpDeclaredContentLengthExceedsLimit(request.headers["content-length"])) {
+            return mcpPayloadTooLargeResponse;
+          }
+          const authorization = request.headers.authorization;
+          const token =
+            authorization?.startsWith("Bearer ") === true
+              ? authorization.slice("Bearer ".length).trim()
+              : "";
+          const invocation = yield* registry.resolve(token);
+          if (!invocation) {
+            // Without this the only symptom of a dead credential is the agent
+            // quietly losing the whole `t3-code` toolkit for the rest of its
+            // session, with nothing on the server to explain why.
+            yield* Effect.logWarning("rejected MCP request with an unusable credential", {
+              reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
+            });
+            return unauthorized;
+          }
+          if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
+          const boundedRequest = withBoundedMcpRequestBody(request);
+          return yield* httpEffect.pipe(
+            Effect.provideService(HttpServerRequest.HttpServerRequest, boundedRequest),
+            Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.map(normalizeMcpHttpResponse),
+            Effect.catchDefect((defect) =>
+              defect instanceof McpRequestBodyTooLarge
+                ? Effect.succeed(mcpPayloadTooLargeResponse)
+                : Effect.die(defect),
+            ),
+          );
+        }),
+    ),
+    Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
+  );
 
-const McpAuthMiddlewareLive = HttpRouter.middleware<{
-  provides: McpInvocationContext.McpInvocationContext;
-}>()(makeMcpAuthMiddleware).layer;
+const mcpAuthMiddlewareLive = (capability: McpInvocationContext.McpCapability) =>
+  HttpRouter.middleware<{
+    provides: McpInvocationContext.McpInvocationContext;
+  }>()(makeMcpAuthMiddleware(capability)).layer;
 
 const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
   if (Cause.hasInterrupts(cause) || cause.reasons.some(Cause.isDieReason)) {
@@ -216,11 +312,27 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
-const McpTransportLive = McpServer.layerHttp({
-  name: "T3 Code",
-  version: packageJson.version,
-  path: "/mcp",
-  protocols: [McpProtocol.v2025_06_18],
-}).pipe(Layer.provide(McpAuthMiddlewareLive));
+export const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseToolkit).pipe(
+  Layer.provide(ComputerUseToolkitHandlersLive),
+);
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+const mcpTransportLive = (
+  path: HttpRouter.PathInput,
+  capability: McpInvocationContext.McpCapability,
+) =>
+  McpServer.layerHttp({
+    name: "T3 Code",
+    version: packageJson.version,
+    path,
+    protocols: [McpProtocol.v2025_06_18],
+  }).pipe(Layer.provide(mcpAuthMiddlewareLive(capability)));
+
+const PreviewMcpServerLive = PreviewToolkitRegistrationLive.pipe(
+  Layer.provide(mcpTransportLive("/mcp", "preview")),
+);
+
+const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
+  Layer.provide(mcpTransportLive("/mcp/computer-use", "computer-use")),
+);
+
+export const layer = Layer.mergeAll(PreviewMcpServerLive, ComputerUseMcpServerLive);

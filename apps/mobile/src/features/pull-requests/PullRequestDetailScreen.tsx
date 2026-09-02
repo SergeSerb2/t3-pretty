@@ -53,8 +53,8 @@ import {
   buildResolveConflictsPrompt,
   canRequestPullRequestReviewers,
   composePullRequestDetailView,
-  countFixableFindings,
   groupPullRequestConversation,
+  shouldOfferFixActions,
   pullRequestUrlHost,
   readableFailure,
 } from "./pullRequestDetail.logic";
@@ -277,34 +277,37 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     [detail, environmentId, startHandoff],
   );
 
-  const startFixFindings = useCallback(() => {
-    if (detail === null) return;
-    handoff(
-      buildFixFindingsPrompt({
-        provider: detail.provider,
-        host: pullRequestUrlHost(detail.url) ?? detail.repository,
-        number: detail.number,
-        title: detail.title,
-        url: detail.url,
-        headBranch: detail.headBranch,
-        baseBranch: detail.baseBranch,
-        reviewThreads: detail.reviewThreads,
-        comments: detail.comments,
-        checks: detail.checks,
-        commentsTruncated: detail.commentsTruncated,
-        canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
-      }),
-    );
-  }, [detail, handoff]);
-
-  const findingCount =
-    detail === null
-      ? 0
-      : countFixableFindings({
+  const startFixFindings = useCallback(
+    (continuous: boolean) => {
+      if (detail === null) return;
+      handoff(
+        buildFixFindingsPrompt({
+          provider: detail.provider,
+          host: pullRequestUrlHost(detail.url) ?? detail.repository,
+          number: detail.number,
+          title: detail.title,
+          url: detail.url,
+          headBranch: detail.headBranch,
+          baseBranch: detail.baseBranch,
           reviewThreads: detail.reviewThreads,
           comments: detail.comments,
           checks: detail.checks,
-        });
+          commentsTruncated: detail.commentsTruncated,
+          canResolve: detail.viewerPermissions.resolve && detail.capabilities.review.resolve,
+          continuous,
+        }),
+      );
+    },
+    [detail, handoff],
+  );
+
+  const showFixActions =
+    detail !== null &&
+    shouldOfferFixActions({
+      state: detail.state,
+      reviewThreads: detail.reviewThreads,
+      comments: detail.comments,
+    });
 
   const openOnHost = useCallback(() => {
     if (detail === null) return;
@@ -352,12 +355,19 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       },
     ];
     if (activityQuery.data !== null) {
-      if (findingCount > 0) {
-        items.push({
-          type: "action",
-          title: "Fix all findings",
-          onPress: startFixFindings,
-        });
+      if (showFixActions) {
+        items.push(
+          {
+            type: "action",
+            title: "Fix all findings",
+            onPress: () => startFixFindings(false),
+          },
+          {
+            type: "action",
+            title: "Fix continuously",
+            onPress: () => startFixFindings(true),
+          },
+        );
       }
     } else if (activityQuery.error !== null) {
       items.push({
@@ -424,7 +434,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     can,
     detail,
     environmentId,
-    findingCount,
+    showFixActions,
     handoff,
     startFixFindings,
     navigation,
@@ -703,7 +713,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                         mode: "comment",
                       })
                     }
-                    onFixAll={findingCount > 0 ? startFixFindings : undefined}
+                    onFixAll={showFixActions ? () => startFixFindings(false) : undefined}
+                    onFixContinuously={showFixActions ? () => startFixFindings(true) : undefined}
                     onFixThread={(thread) =>
                       handoff(
                         buildFixFindingPrompt({

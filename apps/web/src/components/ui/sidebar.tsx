@@ -344,6 +344,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       )}
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
+      data-animate-ui-icons
       aria-pressed={isOpen}
       onClick={(event) => {
         onClick?.(event);

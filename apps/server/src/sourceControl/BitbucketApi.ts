@@ -27,6 +27,7 @@ import {
   type NormalizedBitbucketPullRequestRecord,
 } from "./bitbucketPullRequests.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -35,6 +36,10 @@ import { retryAtFromHeader } from "./SourceControlRateLimit.ts";
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
 /** A response body past this is cut short, so one huge diff cannot exhaust the server. */
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const PULL_REQUEST_BODY_MAX_BYTES = 1024 * 1024;
+const REQUEST_BODY_MAX_BYTES = 1024 * 1024;
+/** Includes connection setup, redirects, and consuming the bounded response body. */
+const REQUEST_TIMEOUT = "30 seconds";
 /** Bitbucket redirects a diff once; this leaves room without following a chain forever. */
 const MAX_REDIRECTS = 3;
 
@@ -576,6 +581,21 @@ function originOf(value: string): string | null {
   }
 }
 
+function sanitizedBitbucketRequestCause(cause: unknown): Error {
+  const tag =
+    typeof cause === "object" && cause !== null && "_tag" in cause
+      ? Reflect.get(cause, "_tag")
+      : undefined;
+  return new Error(
+    tag === "TimeoutError"
+      ? "Bitbucket request exceeded its deadline."
+      : "Bitbucket request failed before a valid response was received.",
+  );
+}
+
+const sanitizedBitbucketBodyReadCause = () =>
+  new Error("Bitbucket response body could not be read.");
+
 function responseError(
   operation: BitbucketApiOperation,
   response: HttpClientResponse.HttpClientResponse,
@@ -587,20 +607,21 @@ function responseError(
     const collected = yield* collectUint8StreamText({
       stream: response.stream,
       maxBytes: DEFAULT_MAX_RESPONSE_BYTES,
+      drainAfterTruncation: false,
     }).pipe(
       Effect.mapError(
-        (cause) =>
+        () =>
           new BitbucketResponseBodyReadError({
             operation,
             status: response.status,
-            cause,
+            cause: sanitizedBitbucketBodyReadCause(),
           }),
       ),
     );
     return yield* new BitbucketResponseError({
       operation,
       status: response.status,
-      responseBodyLength: collected.text.length,
+      responseBodyLength: collected.bytes,
       retryAt: retryAtFromHeader(response.headers["retry-after"], now),
     });
   });
@@ -632,16 +653,52 @@ export const make = Effect.gen(function* () {
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
     HttpClientResponse.matchStatus({
       "2xx": (success) =>
-        HttpClientResponse.schemaBodyJson(schema)(success).pipe(
-          Effect.mapError(
-            (cause) =>
-              new BitbucketResponseDecodeError({
-                operation,
-                status: success.status,
-                cause,
-              }),
-          ),
-        ),
+        Effect.gen(function* () {
+          const declaredLength = Number(success.headers["content-length"]);
+          if (Number.isFinite(declaredLength) && declaredLength > DEFAULT_MAX_RESPONSE_BYTES) {
+            yield* releaseHttpClientResponseBody(success);
+            return yield* new BitbucketResponseBodyReadError({
+              operation,
+              status: success.status,
+              cause: new Error("Bitbucket response exceeded the configured body limit."),
+            });
+          }
+          const collected = yield* collectUint8StreamText({
+            stream: success.stream,
+            maxBytes: DEFAULT_MAX_RESPONSE_BYTES,
+            drainAfterTruncation: false,
+          }).pipe(
+            Effect.mapError(
+              () =>
+                new BitbucketResponseBodyReadError({
+                  operation,
+                  status: success.status,
+                  cause: sanitizedBitbucketBodyReadCause(),
+                }),
+            ),
+          );
+          if (collected.truncated) {
+            return yield* new BitbucketResponseBodyReadError({
+              operation,
+              status: success.status,
+              cause: new Error("Bitbucket response exceeded the configured body limit."),
+            });
+          }
+          return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(
+            collected.text,
+          ).pipe(
+            // Parse errors can embed the response value. Keep credentials and server-provided
+            // payloads out of diagnostics while retaining a distinct decode failure.
+            Effect.mapError(
+              () =>
+                new BitbucketResponseDecodeError({
+                  operation,
+                  status: success.status,
+                  cause: new Error("Bitbucket returned malformed or unexpected JSON."),
+                }),
+            ),
+          );
+        }),
       orElse: (failed) => responseError(operation, failed),
     })(response);
 
@@ -651,14 +708,16 @@ export const make = Effect.gen(function* () {
     schema: S,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
     httpClient.execute(withAuth(request.pipe(HttpClientRequest.acceptJson))).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRequestError({
-            operation,
-            cause,
-          }),
-      ),
       Effect.flatMap((response) => decodeResponse(operation, schema, response)),
+      Effect.timeout(REQUEST_TIMEOUT),
+      Effect.mapError((cause) =>
+        isBitbucketApiError(cause)
+          ? cause
+          : new BitbucketRequestError({
+              operation,
+              cause: sanitizedBitbucketRequestCause(cause),
+            }),
+      ),
     );
 
   const resolveRepository = Effect.fn("BitbucketApi.resolveRepository")(function* (input: {
@@ -824,6 +883,17 @@ export const make = Effect.gen(function* () {
     readonly body?: string;
     readonly redirects: number;
   }): Effect.Effect<HttpClientResponse.HttpClientResponse, BitbucketApiError> => {
+    if (
+      input.body !== undefined &&
+      Buffer.byteLength(input.body, "utf8") > REQUEST_BODY_MAX_BYTES
+    ) {
+      return Effect.fail(
+        new BitbucketRequestError({
+          operation: "request",
+          cause: new Error("Bitbucket request body exceeded the configured size limit."),
+        }),
+      );
+    }
     const url = trustedUrl(input.url);
     if (url === null) {
       return Effect.fail(
@@ -845,24 +915,31 @@ export const make = Effect.gen(function* () {
         : base.pipe(HttpClientRequest.bodyText(input.body, "application/json"));
     return httpClient.execute(withAuth(withBody)).pipe(
       Effect.mapError(
-        (cause): BitbucketApiError => new BitbucketRequestError({ operation: "request", cause }),
+        (cause): BitbucketApiError =>
+          new BitbucketRequestError({
+            operation: "request",
+            cause: sanitizedBitbucketRequestCause(cause),
+          }),
       ),
-      Effect.flatMap((response) => {
-        const location = response.headers.location;
-        if (
-          response.status >= 300 &&
-          response.status < 400 &&
-          location !== undefined &&
-          input.redirects < MAX_REDIRECTS
-        ) {
-          return send({
-            ...input,
-            url: new URL(location, url).toString(),
-            redirects: input.redirects + 1,
-          });
-        }
-        return Effect.succeed(response);
-      }),
+      Effect.flatMap((response) =>
+        Effect.gen(function* () {
+          const location = response.headers.location;
+          if (
+            response.status >= 300 &&
+            response.status < 400 &&
+            location !== undefined &&
+            input.redirects < MAX_REDIRECTS
+          ) {
+            yield* releaseHttpClientResponseBody(response);
+            return yield* send({
+              ...input,
+              url: new URL(location, url).toString(),
+              redirects: input.redirects + 1,
+            });
+          }
+          return response;
+        }),
+      ),
     );
   };
 
@@ -876,14 +953,18 @@ export const make = Effect.gen(function* () {
           "2xx": (success) =>
             collectUint8StreamText({
               stream: success.stream,
-              maxBytes: input.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+              maxBytes:
+                input.maxBytes !== undefined && Number.isFinite(input.maxBytes)
+                  ? Math.max(0, Math.min(DEFAULT_MAX_RESPONSE_BYTES, Math.floor(input.maxBytes)))
+                  : DEFAULT_MAX_RESPONSE_BYTES,
+              drainAfterTruncation: false,
             }).pipe(
               Effect.mapError(
-                (cause) =>
+                () =>
                   new BitbucketResponseBodyReadError({
                     operation: "request",
                     status: success.status,
-                    cause,
+                    cause: sanitizedBitbucketBodyReadCause(),
                   }),
               ),
               Effect.map((collected) => ({
@@ -893,6 +974,15 @@ export const make = Effect.gen(function* () {
             ),
           orElse: (failed) => responseError("request", failed),
         })(response),
+      ),
+      Effect.timeout(REQUEST_TIMEOUT),
+      Effect.mapError((cause) =>
+        isBitbucketApiError(cause)
+          ? cause
+          : new BitbucketRequestError({
+              operation: "request",
+              cause: sanitizedBitbucketRequestCause(cause),
+            }),
       ),
     );
 
@@ -965,7 +1055,11 @@ export const make = Effect.gen(function* () {
     createPullRequest: (input) =>
       Effect.gen(function* () {
         const repository = yield* resolveRepository(input);
-        const description = yield* fileSystem.readFileString(input.bodyFile).pipe(
+        const bodyFile = yield* collectUint8StreamText({
+          stream: fileSystem.stream(input.bodyFile),
+          maxBytes: PULL_REQUEST_BODY_MAX_BYTES,
+          drainAfterTruncation: false,
+        }).pipe(
           Effect.mapError(
             (cause) =>
               new BitbucketPullRequestBodyReadError({
@@ -975,6 +1069,14 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
+        if (bodyFile.truncated) {
+          return yield* new BitbucketPullRequestBodyReadError({
+            cwd: input.cwd,
+            bodyFile: input.bodyFile,
+            cause: new Error("Pull request body exceeded the configured size limit."),
+          });
+        }
+        const description = bodyFile.text;
         const sourceOwner = sourceWorkspace(input);
         const body = {
           title: input.title,

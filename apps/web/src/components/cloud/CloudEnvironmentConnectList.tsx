@@ -1,3 +1,4 @@
+import { useAuth } from "@clerk/react";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import {
   type EnvironmentConnectionPresentation,
@@ -12,7 +13,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import * as Option from "effect/Option";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
 import {
@@ -33,6 +34,7 @@ import { toastManager } from "../ui/toast";
 import { presentSavedCloudEnvironmentConnection } from "./cloudEnvironmentConnectionPresentation";
 import { isElectron } from "~/env";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
+import { useCopyTraceId } from "~/hooks/useCopyTraceId";
 
 export interface SavedCloudEnvironmentConnection {
   readonly environmentId: EnvironmentId;
@@ -75,6 +77,7 @@ export function CloudEnvironmentConnectRows({
   readonly hiddenMachineKeys?: ReadonlySet<string>;
   readonly empty?: ReactNode;
 }) {
+  const { userId } = useAuth({ treatPendingAsSignedOut: false });
   const environmentsState = useRelayEnvironmentDiscovery();
   const registerEnvironment = useAtomCommand(environmentCatalog.register, {
     reportFailure: false,
@@ -83,6 +86,7 @@ export function CloudEnvironmentConnectRows({
     reportFailure: false,
   });
   const cloudLinkController = useCloudLinkController();
+  const copyTraceId = useCopyTraceId();
   const connectRelayEnvironment = useCallback(
     (environment: RelayClientEnvironmentRecord) =>
       registerEnvironment(
@@ -98,8 +102,26 @@ export function CloudEnvironmentConnectRows({
   const [connectingEnvironmentId, setConnectingEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
+  const activeConnectRef = useRef<symbol | null>(null);
+  const activeAccountRef = useRef(userId);
+  activeAccountRef.current = userId;
+  const previousAccountRef = useRef(userId);
   const savedById = new Map(
     savedEnvironments.map((environment) => [environment.environmentId, environment]),
+  );
+
+  useEffect(() => {
+    if (previousAccountRef.current === userId) return;
+    previousAccountRef.current = userId;
+    activeConnectRef.current = null;
+    setConnectingEnvironmentId(null);
+  }, [userId]);
+
+  useEffect(
+    () => () => {
+      activeConnectRef.current = null;
+    },
+    [],
   );
 
   useEffect(() => {
@@ -107,20 +129,35 @@ export function CloudEnvironmentConnectRows({
   }, [refreshRelayEnvironments]);
 
   const connectEnvironment = async (environment: RelayClientEnvironmentRecord) => {
+    if (activeConnectRef.current !== null) return;
+    const operation = Symbol("connect-relay-environment");
+    const accountId = userId;
+    activeConnectRef.current = operation;
     setConnectingEnvironmentId(environment.environmentId);
-    const result = await connectRelayEnvironment(environment);
-    if (result._tag === "Success") {
-      const meshReady =
-        !isElectron ||
-        cloudLinkController.managedTunnelActive ||
-        (await cloudLinkController.reconcileCloudState({
-          managedTunnel: true,
-          publish: cloudLinkController.storedPublishAgentActivity,
-        }));
+    const isCurrent = () =>
+      activeConnectRef.current === operation && activeAccountRef.current === accountId;
+    const finishCurrent = () => {
+      if (!isCurrent()) return false;
+      activeConnectRef.current = null;
       setConnectingEnvironmentId(null);
-      if (!meshReady) {
-        return;
-      }
+      return true;
+    };
+    const meshReady =
+      !isElectron ||
+      cloudLinkController.managedTunnelActive ||
+      (await cloudLinkController.reconcileCloudState({
+        managedTunnel: true,
+        publish: cloudLinkController.storedPublishAgentActivity,
+      }));
+    if (!isCurrent()) return;
+    if (!meshReady) {
+      finishCurrent();
+      return;
+    }
+    const result = await connectRelayEnvironment(environment);
+    if (!isCurrent()) return;
+    if (result._tag === "Success") {
+      finishCurrent();
       toastManager.add({
         type: "success",
         title: "Environment added",
@@ -128,7 +165,7 @@ export function CloudEnvironmentConnectRows({
       });
       return;
     }
-    setConnectingEnvironmentId(null);
+    if (!finishCurrent()) return;
     if (isAtomCommandInterrupted(result)) {
       return;
     }
@@ -147,7 +184,7 @@ export function CloudEnvironmentConnectRows({
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,

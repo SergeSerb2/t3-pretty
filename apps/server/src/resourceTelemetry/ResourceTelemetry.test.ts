@@ -164,7 +164,10 @@ describe("ResourceTelemetry", () => {
         }),
       });
       const desktopLayer = DesktopTelemetryReceiver.layerTest({
-        latest: Effect.succeedSome(desktopSnapshot(sampledAtUnixMs)),
+        latest: Effect.succeedSome({
+          ...desktopSnapshot(sampledAtUnixMs),
+          electronProcessesTruncated: true,
+        }),
         setDiagnosticsDemand: (enabled) =>
           Ref.update(demandChanges, (changes) => [...changes, enabled]),
       });
@@ -180,6 +183,7 @@ describe("ResourceTelemetry", () => {
       ).pipe(Effect.provide(telemetryLayer));
 
       expect(Option.isSome(live)).toBe(true);
+      expect(Option.getOrThrow(live).processesTruncated).toBe(true);
       expect(yield* Ref.get(demandChanges)).toEqual([true, false]);
     }),
   );

@@ -2,9 +2,16 @@
 
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
+import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
@@ -13,10 +20,12 @@ import { useThreadPreviewState } from "~/previewStateStore";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
+import { AgentBrowserCursor } from "./AgentBrowserCursor";
 import { previewBridge } from "./previewBridge";
 import {
   clampPreviewMiniPlayerPosition,
   clampPreviewMiniPlayerSize,
+  miniPlayerCursorContent,
   PREVIEW_MINI_PLAYER_DEFAULT_SIZE,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
 } from "./previewMiniPlayerLayout";
@@ -27,6 +36,10 @@ interface DragState {
   readonly pointerY: number;
   readonly playerX: number;
   readonly playerY: number;
+  readonly playerWidth: number;
+  readonly playerHeight: number;
+  readonly parentWidth: number;
+  readonly parentHeight: number;
 }
 
 interface ResizeState {
@@ -37,6 +50,8 @@ interface ResizeState {
   readonly playerY: number;
   readonly width: number;
   readonly height: number;
+  readonly parentWidth: number;
+  readonly parentHeight: number;
 }
 
 interface Props {
@@ -57,13 +72,22 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const snapshot = previewState.sessions[tabId] ?? null;
   const runtimeTabId = previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId);
   const desktopOverlay = previewState.desktopByTabId[tabId] ?? null;
+  const contentScale = useBrowserSurfaceStore(
+    (state) => state.byTabId[runtimeTabId]?.content?.scale ?? 0,
+  );
+  const cursorContent = useMemo(
+    () => miniPlayerCursorContent(contentScale > 0 ? { scale: contentScale } : null),
+    [contentScale],
+  );
   const position = miniPlayer?.tabId === tabId ? miniPlayer.position : null;
+  const positionRef = useRef(position);
+  positionRef.current = position;
   const size =
     miniPlayer?.tabId === tabId && miniPlayer.size
       ? miniPlayer.size
       : PREVIEW_MINI_PLAYER_DEFAULT_SIZE;
   const close = () => {
-    usePreviewMiniPlayerStore.getState().close(threadRef);
+    usePreviewMiniPlayerStore.getState().dismiss(threadRef, tabId);
   };
 
   const openInPanel = () => {
@@ -96,12 +120,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         bottomInset,
       );
       usePreviewMiniPlayerStore.getState().resize(threadRef, tabId, nextSize);
-      if (!position) {
+      const currentPosition = positionRef.current;
+      if (!currentPosition) {
         setDefaultLayoutVersion(`${parent.clientWidth}:${parent.clientHeight}`);
         return;
       }
       const next = clampPreviewMiniPlayerPosition(
-        position,
+        currentPosition,
         { width: parent.clientWidth, height: parent.clientHeight },
         nextSize,
         bottomInset,
@@ -118,7 +143,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
     observer.observe(root);
     observer.observe(parent);
     return () => observer.disconnect();
-  }, [bottomInset, position, tabId, threadRef]);
+  }, [bottomInset, tabId, threadRef]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -133,6 +158,10 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       pointerY: event.clientY,
       playerX: rootRect.left - parentRect.left,
       playerY: rootRect.top - parentRect.top,
+      playerWidth: root.offsetWidth,
+      playerHeight: root.offsetHeight,
+      parentWidth: parent.clientWidth,
+      parentHeight: parent.clientHeight,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -140,9 +169,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    const root = rootRef.current;
-    const parent = root?.offsetParent;
-    if (!drag || drag.pointerId !== event.pointerId || !root || !(parent instanceof HTMLElement)) {
+    if (!drag || drag.pointerId !== event.pointerId || !rootRef.current?.isConnected) {
       return;
     }
     const next = clampPreviewMiniPlayerPosition(
@@ -150,8 +177,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         x: drag.playerX + event.clientX - drag.pointerX,
         y: drag.playerY + event.clientY - drag.pointerY,
       },
-      { width: parent.clientWidth, height: parent.clientHeight },
-      { width: root.offsetWidth, height: root.offsetHeight },
+      { width: drag.parentWidth, height: drag.parentHeight },
+      { width: drag.playerWidth, height: drag.playerHeight },
       bottomInset,
     );
     usePreviewMiniPlayerStore.getState().move(threadRef, tabId, next);
@@ -180,6 +207,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       playerY: rootRect.top - parentRect.top,
       width: root.offsetWidth,
       height: root.offsetHeight,
+      parentWidth: parent.clientWidth,
+      parentHeight: parent.clientHeight,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -188,14 +217,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
 
   const handleResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const resize = resizeRef.current;
-    const root = rootRef.current;
-    const parent = root?.offsetParent;
-    if (
-      !resize ||
-      resize.pointerId !== event.pointerId ||
-      !root ||
-      !(parent instanceof HTMLElement)
-    ) {
+    if (!resize || resize.pointerId !== event.pointerId || !rootRef.current?.isConnected) {
       return;
     }
     const nextSize = clampPreviewMiniPlayerSize(
@@ -203,13 +225,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
         width: resize.width + event.clientX - resize.pointerX,
         height: resize.height + event.clientY - resize.pointerY,
       },
-      { width: parent.clientWidth, height: parent.clientHeight },
+      { width: resize.parentWidth, height: resize.parentHeight },
       bottomInset,
     );
     usePreviewMiniPlayerStore.getState().resize(threadRef, tabId, nextSize);
     const nextPosition = clampPreviewMiniPlayerPosition(
       { x: resize.playerX, y: resize.playerY },
-      { width: parent.clientWidth, height: parent.clientHeight },
+      { width: resize.parentWidth, height: resize.parentHeight },
       nextSize,
       bottomInset,
     );
@@ -329,7 +351,28 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           }
           className="absolute inset-0"
         />
-        <div className="pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80" />
+        <div
+          className={
+            desktopOverlay?.controller === "agent"
+              ? "pointer-events-none absolute inset-0 z-[31] rounded-xl ring-2 ring-inset ring-primary/70"
+              : "pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80"
+          }
+          style={
+            desktopOverlay?.controller === "agent"
+              ? { boxShadow: "0 0 14px 2px var(--color-ring)" }
+              : undefined
+          }
+        />
+        {desktopOverlay ? (
+          <div className="pointer-events-none absolute inset-0 z-[32] overflow-hidden rounded-xl">
+            <AgentBrowserCursor
+              tabId={runtimeTabId}
+              zoomFactor={desktopOverlay.zoomFactor}
+              controller={desktopOverlay.controller}
+              content={cursorContent}
+            />
+          </div>
+        ) : null}
         {!desktopOverlay?.hasWebContents ? (
           <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
             Reconnecting preview…

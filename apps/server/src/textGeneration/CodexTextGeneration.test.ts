@@ -14,6 +14,7 @@ import { CodexSettings, ProviderInstanceId, TextGenerationError } from "@t3tools
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
+import { TEXT_GENERATION_RESULT_MAX_BYTES } from "./TextGenerationUtils.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 const DEFAULT_TEST_MODEL_SELECTION = createModelSelection(
@@ -680,6 +681,32 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
             }
           }),
       ),
+  );
+
+  it.effect("rejects oversized structured output before decoding it", () =>
+    withFakeCodexEnv(
+      {
+        output: "x".repeat(TEXT_GENERATION_RESULT_MAX_BYTES + 1),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* textGeneration
+            .generateBranchName({
+              cwd: process.cwd(),
+              message: "Fix websocket reconnect flake",
+              modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+            })
+            .pipe(Effect.result);
+
+          expect(Result.isFailure(result)).toBe(true);
+          if (Result.isFailure(result)) {
+            expect(result.failure).toBeInstanceOf(TextGenerationError);
+            expect(result.failure.message).toContain(
+              "Codex returned structured output above the one MiB limit",
+            );
+          }
+        }),
+    ),
   );
 
   it.effect("returns typed TextGenerationError when codex exits non-zero", () =>

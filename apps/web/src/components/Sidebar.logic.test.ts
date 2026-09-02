@@ -3,13 +3,16 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import {
   animatePinnedLayoutChanges,
   archiveSelectedThreadEntries,
+  unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
   countThreadsAwaitingUser,
   createThreadJumpHintVisibilityController,
+  filterSidebarProjectScopeItems,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
   resolveAdjacentThreadId,
+  reduceSidebarProjectScopeMenuState,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
@@ -19,9 +22,12 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
-  resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
+  isSettledThreadPastArchiveAge,
+  reserveSettledArchiveAttempts,
+  reserveUndonePastArchiveAgeAttempts,
+  retainSettledAutoArchiveAttempts,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -154,6 +160,19 @@ describe("archiveSelectedThreadEntries", () => {
     });
   });
 
+  it("records success when the archive callback skips onArchived", async () => {
+    const outcome = await archiveSelectedThreadEntries({
+      entries,
+      archive: async () => success,
+    });
+
+    expect(outcome).toEqual({
+      archivedThreadKeys: ["one", "two", "three"],
+      mutationFailure: null,
+      followupFailures: [],
+    });
+  });
+
   it("stops at a mutation failure and retains prior successes", async () => {
     const archive = vi.fn(async (entry: (typeof entries)[number], onArchived: () => void) => {
       if (entry.threadKey === "two") return failure;
@@ -182,6 +201,34 @@ describe("archiveSelectedThreadEntries", () => {
       archivedThreadKeys: ["one", "two", "three"],
       mutationFailure: null,
       followupFailures: [failure],
+    });
+  });
+});
+
+describe("unarchiveSelectedThreadEntries", () => {
+  const entries = [{ threadKey: "one" }, { threadKey: "two" }, { threadKey: "three" }] as const;
+  const success = { _tag: "Success" } as const;
+  const failure = { _tag: "Failure" } as const;
+
+  it("restores every entry after full success", async () => {
+    const outcome = await unarchiveSelectedThreadEntries({
+      entries,
+      unarchive: async () => success,
+    });
+
+    expect(outcome).toEqual({ restored: [...entries], failures: [] });
+  });
+
+  it("continues after a failure and reports it", async () => {
+    const unarchive = vi.fn(async (entry: (typeof entries)[number]) =>
+      entry.threadKey === "two" ? failure : success,
+    );
+    const outcome = await unarchiveSelectedThreadEntries({ entries, unarchive });
+
+    expect(unarchive).toHaveBeenCalledTimes(3);
+    expect(outcome).toEqual({
+      restored: [entries[0], entries[2]],
+      failures: [failure],
     });
   });
 });
@@ -233,44 +280,6 @@ describe("buildMultiSelectThreadContextMenuItems", () => {
     expect(
       buildMultiSelectThreadContextMenuItems({ count: 2, hasRunningThread: true }),
     ).toContainEqual({ id: "archive", label: "Archive (2)", disabled: true });
-  });
-});
-
-describe("resolveSidebarStageBadgeLabel", () => {
-  it("returns Nightly for nightly primary server versions", () => {
-    expect(
-      resolveSidebarStageBadgeLabel({
-        primaryServerVersion: "0.0.28-nightly.20260616.12",
-        fallbackStageLabel: "Alpha",
-      }),
-    ).toBe("Nightly");
-  });
-
-  it("returns the fallback label for stable primary server versions", () => {
-    expect(
-      resolveSidebarStageBadgeLabel({
-        primaryServerVersion: "0.0.27",
-        fallbackStageLabel: "Alpha",
-      }),
-    ).toBe("Alpha");
-  });
-
-  it("returns the fallback label when the primary server version is missing", () => {
-    expect(
-      resolveSidebarStageBadgeLabel({
-        primaryServerVersion: null,
-        fallbackStageLabel: "Dev",
-      }),
-    ).toBe("Dev");
-  });
-
-  it("returns the fallback label for malformed nightly prerelease versions", () => {
-    expect(
-      resolveSidebarStageBadgeLabel({
-        primaryServerVersion: "0.0.28-nightly.20260616",
-        fallbackStageLabel: "Alpha",
-      }),
-    ).toBe("Alpha");
   });
 });
 
@@ -881,6 +890,69 @@ describe("searchSidebarThreadsByTitle", () => {
   });
 });
 
+describe("filterSidebarProjectScopeItems", () => {
+  const items = [
+    { value: "all", label: "All projects" },
+    { value: "alpha", label: "Alpha workspace" },
+    { value: "beta", label: "Beta tools" },
+  ] as const;
+  const filter = (activeScopeKey: string | null, query: string) =>
+    filterSidebarProjectScopeItems({
+      items,
+      activeScopeKey,
+      query,
+      matches: (item, candidate) =>
+        item.label.toLocaleLowerCase().includes(candidate.toLocaleLowerCase()),
+    });
+
+  it("omits the reset row when the sidebar is already unscoped", () => {
+    expect(filter(null, "")).toEqual(items.slice(1));
+  });
+
+  it("shows the reset row first while a project scope is active", () => {
+    expect(filter("alpha", "")).toEqual(items);
+  });
+
+  it("hides the reset row while filtering an active scope", () => {
+    expect(filter("alpha", "all")).toEqual([]);
+  });
+
+  it("returns matching projects in source order and supports no-match results", () => {
+    expect(filter(null, "WORK")).toEqual([items[1]]);
+    expect(filter(null, "missing")).toEqual([]);
+  });
+});
+
+describe("reduceSidebarProjectScopeMenuState", () => {
+  const queriedOpenState = { open: true, query: "alpha" };
+
+  it("clears the query when the combobox closes through onOpenChange", () => {
+    expect(
+      reduceSidebarProjectScopeMenuState(queriedOpenState, {
+        type: "open-changed",
+        open: false,
+      }),
+    ).toEqual({ open: false, query: "" });
+  });
+
+  it("clears the query when project settings closes the combobox", () => {
+    expect(
+      reduceSidebarProjectScopeMenuState(queriedOpenState, {
+        type: "project-settings-opened",
+      }),
+    ).toEqual({ open: false, query: "" });
+  });
+
+  it("keeps the popup open while the query changes", () => {
+    expect(
+      reduceSidebarProjectScopeMenuState(
+        { open: true, query: "" },
+        { type: "query-changed", query: "beta" },
+      ),
+    ).toEqual({ open: true, query: "beta" });
+  });
+});
+
 describe("sortThreadsForSidebar", () => {
   const sortable = (input: { id: string; createdAt: string }) => ({
     id: input.id,
@@ -904,6 +976,33 @@ describe("sortThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+
+  it("surfaces an un-settled thread at the top via its re-entry stamp", () => {
+    const sorted = sortThreadsForSidebar([
+      {
+        id: "old-unsettled",
+        createdAt: "2026-03-09T08:00:00.000Z",
+        unsettledAt: "2026-03-09T13:00:00.000Z",
+      },
+      sortable({ id: "newest", createdAt: "2026-03-09T12:00:00.000Z" }),
+      sortable({ id: "middle", createdAt: "2026-03-09T10:00:00.000Z" }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual(["old-unsettled", "newest", "middle"]);
+  });
+
+  it("ignores a re-entry stamp older than the thread's creation", () => {
+    const sorted = sortThreadsForSidebar([
+      {
+        id: "stale-stamp",
+        createdAt: "2026-03-09T10:00:00.000Z",
+        unsettledAt: "2026-03-09T09:00:00.000Z",
+      },
+      sortable({ id: "newest", createdAt: "2026-03-09T12:00:00.000Z" }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual(["newest", "stale-stamp"]);
   });
 });
 
@@ -1102,6 +1201,102 @@ describe("sortSettledThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("isSettledThreadPastArchiveAge", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (input: { settledAt?: string | null; latestUserMessageAt?: string | null }) => ({
+    settledAt: input.settledAt ?? null,
+    latestUserMessageAt: input.latestUserMessageAt ?? null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("archives a thread settled at least the configured days ago", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-02-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a thread settled more recently than the window", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ settledAt: "2026-03-15T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses last activity for auto-settled threads without a settledAt stamp", () => {
+    expect(
+      isSettledThreadPastArchiveAge(thread({ latestUserMessageAt: "2026-01-01T00:00:00.000Z" }), {
+        nowMs,
+        afterDays: 30,
+      }),
+    ).toBe(true);
+  });
+
+  it("never archives a thread with no resolvable timestamp", () => {
+    expect(isSettledThreadPastArchiveAge(thread({}), { nowMs, afterDays: 30 })).toBe(false);
+  });
+});
+
+describe("retainSettledAutoArchiveAttempts", () => {
+  it("keeps keys still in the settled tail and drops keys that left so undo can retry", () => {
+    expect(
+      retainSettledAutoArchiveAttempts(
+        new Set(["lagging", "unarchived"]),
+        new Set(["lagging", "other"]),
+      ),
+    ).toEqual(new Set(["lagging"]));
+  });
+});
+
+describe("reserveSettledArchiveAttempts", () => {
+  it("skips keys already reserved and claims the rest", () => {
+    const attempted = new Set(["busy"]);
+    expect(reserveSettledArchiveAttempts(attempted, ["busy", "free", "also-free"])).toEqual([
+      "free",
+      "also-free",
+    ]);
+    expect(attempted).toEqual(new Set(["busy", "free", "also-free"]));
+  });
+});
+
+describe("reserveUndonePastArchiveAgeAttempts", () => {
+  const nowMs = Date.parse("2026-03-30T12:00:00.000Z");
+  const thread = (settledAt: string) => ({
+    settledAt,
+    latestUserMessageAt: null,
+    latestTurn: null,
+    updatedAt: "",
+  });
+
+  it("reserves only restored keys already past archive age", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [
+        { threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") },
+        { threadKey: "young", thread: thread("2026-03-15T00:00:00.000Z") },
+      ],
+      { nowMs, afterDays: 30 },
+    );
+    expect(attempted).toEqual(new Set(["old"]));
+  });
+
+  it("reserves nothing when auto-archive is off", () => {
+    const attempted = new Set<string>();
+    reserveUndonePastArchiveAgeAttempts(
+      attempted,
+      [{ threadKey: "old", thread: thread("2026-02-01T00:00:00.000Z") }],
+      { nowMs, afterDays: null },
+    );
+    expect(attempted).toEqual(new Set());
   });
 });
 

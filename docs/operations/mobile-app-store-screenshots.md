@@ -149,7 +149,7 @@ terminal, start it with the same showcase environment and explicit harness port:
 
 Then run the capture from the repository root:
 
-    pnpm screenshots:mobile --skip-build --skip-metro --device iphone-6.9
+    APP_VARIANT=development pnpm screenshots:mobile --skip-build --skip-metro --device iphone-6.9
 
 `pnpm --filter @t3tools/mobile showcase` starts Expo on its normal port, so it is not compatible with
 the harness's `--skip-metro` mode.

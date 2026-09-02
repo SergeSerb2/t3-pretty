@@ -21,4 +21,23 @@ describe("PreviewChromeRow", () => {
 
     expect(markup).toContain('value="https://example.com/dashboard?mode=edit&amp;tab=1#notes"');
   });
+
+  it("keeps the refresh action truthful while a page is loading", () => {
+    const markup = renderToStaticMarkup(
+      <PreviewChromeRow
+        url="https://example.com"
+        loading
+        canGoBack={false}
+        canGoForward={false}
+        refreshDisabled={false}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onRefresh={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Refresh"');
+    expect(markup).not.toContain('aria-label="Stop"');
+  });
 });

@@ -53,7 +53,27 @@ describe("RotatingFileSink", () => {
       received: 0,
       minimum: 1,
     });
-    expect((thrown as Error).message).toBe(`${input.option} must be >= 1 (received 0)`);
+    expect((thrown as Error).message).toBe(
+      `${input.option} must be a safe integer >= 1 (received 0)`,
+    );
+  });
+
+  it.each([
+    { option: "maxBytes" as const, maxBytes: Number.NaN, maxFiles: 1 },
+    { option: "maxBytes" as const, maxBytes: Number.POSITIVE_INFINITY, maxFiles: 1 },
+    { option: "maxFiles" as const, maxBytes: 1, maxFiles: 1.5 },
+  ])("rejects unsafe $option configuration", (input) => {
+    const thrown = captureError(
+      () =>
+        new RotatingFileSink({
+          filePath: "/unused/log.ndjson",
+          maxBytes: input.maxBytes,
+          maxFiles: input.maxFiles,
+        }),
+    );
+
+    expect(thrown).toBeInstanceOf(RotatingFileSinkConfigurationError);
+    expect(thrown).toMatchObject({ option: input.option });
   });
 
   it("preserves directory initialization failures", () => {

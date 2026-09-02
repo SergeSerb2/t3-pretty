@@ -55,6 +55,9 @@ import type { ProviderInstance } from "../ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import type { ProviderSnapshotSource } from "../builtInProviderCatalog.ts";
 
+const PROVIDER_REGISTRY_IO_CONCURRENCY = 8;
+const PROVIDER_REGISTRY_REFRESH_CONCURRENCY = 4;
+
 const loadProviders = (
   providerSources: ReadonlyArray<ProviderSnapshotSource>,
 ): Effect.Effect<ReadonlyArray<ServerProvider>> =>
@@ -65,7 +68,7 @@ const loadProviders = (
         Effect.flatMap((snapshot) => correlateSnapshotWithSource(providerSource, snapshot)),
       ),
     {
-      concurrency: "unbounded",
+      concurrency: PROVIDER_REGISTRY_IO_CONCURRENCY,
     },
   );
 
@@ -111,30 +114,6 @@ export const mergeProviderSnapshot = (
         ...nextProvider,
         models: mergeProviderModels(previousProvider.models, nextProvider.models),
       };
-
-export const mergeProviderSnapshots = (
-  previousProviders: ReadonlyArray<ServerProvider>,
-  nextProviders: ReadonlyArray<ServerProvider>,
-): ReadonlyArray<ServerProvider> => {
-  const mergedProviders = new Map(
-    previousProviders.map((provider) => [snapshotInstanceKey(provider), provider] as const),
-  );
-
-  for (const provider of nextProviders) {
-    mergedProviders.set(
-      snapshotInstanceKey(provider),
-      mergeProviderSnapshot(mergedProviders.get(snapshotInstanceKey(provider)), provider),
-    );
-  }
-
-  return orderProviderSnapshots([...mergedProviders.values()]);
-};
-
-export const selectProvidersByKind = (
-  providers: ReadonlyArray<ServerProvider>,
-  providerKinds: ReadonlySet<ProviderDriverKind>,
-): ReadonlyArray<ServerProvider> =>
-  providers.filter((provider) => providerKinds.has(provider.driver));
 
 export const haveProvidersChanged = (
   previousProviders: ReadonlyArray<ServerProvider>,
@@ -195,7 +174,7 @@ export const ProviderRegistryLive = Layer.effect(
     // Aggregator PubSub — consumers (WS gateway, etc.) subscribe here for
     // coalesced updates across every instance.
     const changesPubSub = yield* Effect.acquireRelease(
-      PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
+      PubSub.sliding<ReadonlyArray<ServerProvider>>(1),
       PubSub.shutdown,
     );
 
@@ -258,7 +237,7 @@ export const ProviderRegistryLive = Layer.effect(
             }),
           );
         }),
-      { concurrency: "unbounded" },
+      { concurrency: PROVIDER_REGISTRY_IO_CONCURRENCY },
     ).pipe(
       Effect.map((providers) =>
         orderProviderSnapshots(
@@ -334,7 +313,7 @@ export const ProviderRegistryLive = Layer.effect(
         nextProviders,
         applyProviderUpdateState,
         {
-          concurrency: "unbounded",
+          concurrency: PROVIDER_REGISTRY_IO_CONCURRENCY,
         },
       );
       const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
@@ -367,7 +346,7 @@ export const ProviderRegistryLive = Layer.effect(
       if (haveProvidersChanged(previousProviders, providers)) {
         if (options?.persist !== false) {
           yield* Effect.forEach(providersToPersist, persistProvider, {
-            concurrency: "unbounded",
+            concurrency: PROVIDER_REGISTRY_IO_CONCURRENCY,
             discard: true,
           });
         }
@@ -442,7 +421,7 @@ export const ProviderRegistryLive = Layer.effect(
     const refreshAll = Effect.fn("refreshAll")(function* () {
       const sources = yield* getLiveSources;
       return yield* Effect.forEach(sources, (source) => refreshOneSource(source), {
-        concurrency: "unbounded",
+        concurrency: PROVIDER_REGISTRY_REFRESH_CONCURRENCY,
         discard: true,
       }).pipe(Effect.andThen(Ref.get(providersRef)));
     });
@@ -567,7 +546,7 @@ export const ProviderRegistryLive = Layer.effect(
                 Effect.flatMap(syncProvider),
               );
             }).pipe(Effect.ignoreCause({ log: true })),
-          { concurrency: "unbounded", discard: true },
+          { concurrency: PROVIDER_REGISTRY_IO_CONCURRENCY, discard: true },
         );
         yield* upsertProviders(unavailableProviders, {
           persist: false,
@@ -692,6 +671,11 @@ export const ProviderRegistryLive = Layer.effect(
       setProviderMaintenanceActionState,
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
+      },
+      get subscribeChanges() {
+        return PubSub.subscribe(changesPubSub).pipe(
+          Effect.map((subscription) => Stream.fromSubscription(subscription)),
+        );
       },
     } satisfies ProviderRegistryShape;
   }),

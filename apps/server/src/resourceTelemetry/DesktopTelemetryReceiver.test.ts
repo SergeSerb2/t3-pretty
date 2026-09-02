@@ -18,6 +18,7 @@ import {
   recordDesktopTelemetrySampleHealth,
   requireDesktopTelemetryWriteProgress,
   resolveDesktopTelemetrySnapshotStaleAfterMs,
+  scanNdjsonLineByteLimit,
   writeAllToFileDescriptor,
 } from "./DesktopTelemetryReceiver.ts";
 
@@ -37,6 +38,22 @@ describe("DesktopTelemetryReceiver", () => {
     expect(resolveDesktopTelemetrySnapshotStaleAfterMs(30_000, 120_000)).toBe(150_000);
     expect(resolveDesktopTelemetrySnapshotStaleAfterMs(60_000, 600_000)).toBe(630_000);
     expect(resolveDesktopTelemetrySnapshotStaleAfterMs(1_000, 1_000)).toBe(90_000);
+  });
+
+  it("tracks NDJSON record bytes across chunks and resets at line feeds", () => {
+    const encoder = new TextEncoder();
+    expect(scanNdjsonLineByteLimit(3, encoder.encode("ab\n123"), 5)).toEqual({
+      trailingBytes: 3,
+      exceeded: false,
+    });
+    expect(scanNdjsonLineByteLimit(3, encoder.encode("abc"), 5)).toEqual({
+      trailingBytes: 6,
+      exceeded: true,
+    });
+    expect(scanNdjsonLineByteLimit(0, encoder.encode("ok\n123456"), 5)).toEqual({
+      trailingBytes: 6,
+      exceeded: true,
+    });
   });
 
   it.effect("publishes the latest sample timestamp while health remains healthy", () =>

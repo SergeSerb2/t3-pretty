@@ -1,5 +1,10 @@
 import type { DesktopSshPasswordPromptRequest } from "@t3tools/contracts";
-import { DesktopSshPasswordPromptResolutionInputSchema } from "@t3tools/contracts";
+import {
+  DESKTOP_SSH_DESTINATION_MAX_LENGTH,
+  DESKTOP_SSH_PROMPT_MAX_LENGTH,
+  DESKTOP_SSH_USERNAME_MAX_LENGTH,
+  DesktopSshPasswordPromptResolutionInputSchema,
+} from "@t3tools/contracts";
 import type { SshPasswordRequest } from "@t3tools/ssh/auth";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -16,6 +21,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { SSH_PASSWORD_PROMPT_CHANNEL } from "../ipc/channels.ts";
 
 const DEFAULT_SSH_PASSWORD_PROMPT_TIMEOUT_MS = 3 * 60 * 1000;
+const DEFAULT_SSH_PASSWORD_PROMPT_MAX_PENDING = 16;
 
 type DesktopSshPasswordPromptResolutionInput =
   typeof DesktopSshPasswordPromptResolutionInputSchema.Type;
@@ -129,6 +135,18 @@ export class DesktopSshPromptServiceStoppedError extends Schema.TaggedErrorClass
   }
 }
 
+export class DesktopSshPromptCapacityError extends Schema.TaggedErrorClass<DesktopSshPromptCapacityError>()(
+  "DesktopSshPromptCapacityError",
+  {
+    destination: Schema.String,
+    limit: Schema.Int,
+  },
+) {
+  override get message(): string {
+    return "Too many SSH authentication prompts are already pending.";
+  }
+}
+
 export class DesktopSshPromptInvalidRequestIdError extends Schema.TaggedErrorClass<DesktopSshPromptInvalidRequestIdError>()(
   "DesktopSshPromptInvalidRequestIdError",
   {
@@ -158,7 +176,8 @@ export type DesktopSshPasswordPromptRequestError =
   | DesktopSshPromptTimedOutError
   | DesktopSshPromptCancelledError
   | DesktopSshPromptWindowClosedError
-  | DesktopSshPromptServiceStoppedError;
+  | DesktopSshPromptServiceStoppedError
+  | DesktopSshPromptCapacityError;
 
 export type DesktopSshPasswordPromptResolveError =
   | DesktopSshPromptInvalidRequestIdError
@@ -200,6 +219,7 @@ interface PendingSshPasswordPrompt {
 
 export interface DesktopSshPasswordPromptsOptions {
   readonly passwordPromptTimeoutMs?: number;
+  readonly maxPendingPrompts?: number;
 }
 
 const removePending = (
@@ -230,6 +250,13 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
   const pendingRef = yield* Ref.make(new Map<string, PendingSshPasswordPrompt>());
   const passwordPromptTimeoutMs =
     options.passwordPromptTimeoutMs ?? DEFAULT_SSH_PASSWORD_PROMPT_TIMEOUT_MS;
+  const configuredMaxPendingPrompts = options.maxPendingPrompts;
+  const maxPendingPrompts =
+    configuredMaxPendingPrompts !== undefined &&
+    Number.isFinite(configuredMaxPendingPrompts) &&
+    configuredMaxPendingPrompts >= 1
+      ? Math.trunc(configuredMaxPendingPrompts)
+      : DEFAULT_SSH_PASSWORD_PROMPT_MAX_PENDING;
 
   const cancelPending = () =>
     Ref.getAndSet(pendingRef, new Map()).pipe(
@@ -283,10 +310,13 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
   const request: DesktopSshPasswordPrompts["Service"]["request"] = Effect.fn(
     "desktop.sshPasswordPrompts.request",
   )(function* (input) {
+    const destination = input.destination.slice(0, DESKTOP_SSH_DESTINATION_MAX_LENGTH);
+    const username = input.username?.slice(0, DESKTOP_SSH_USERNAME_MAX_LENGTH) ?? null;
+    const prompt = input.prompt.slice(0, DESKTOP_SSH_PROMPT_MAX_LENGTH);
     const window = yield* electronWindow.main;
     if (Option.isNone(window)) {
       return yield* new DesktopSshPromptWindowUnavailableError({
-        destination: input.destination,
+        destination,
         requestId: null,
         stage: "before-request",
       });
@@ -297,14 +327,14 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
       catch: (cause) =>
         new DesktopSshPromptPresentationError({
           requestId: null,
-          destination: input.destination,
+          destination,
           operation: "check-window-before-request",
           cause,
         }),
     });
     if (unavailableBeforeRequest) {
       return yield* new DesktopSshPromptWindowUnavailableError({
-        destination: input.destination,
+        destination,
         requestId: null,
         stage: "before-request",
       });
@@ -314,7 +344,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
       Effect.mapError(
         (cause) =>
           new DesktopSshPromptRequestIdGenerationError({
-            destination: input.destination,
+            destination,
             cause,
           }),
       ),
@@ -325,18 +355,27 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
     );
     const promptRequest: DesktopSshPasswordPromptRequest = {
       requestId,
-      destination: input.destination,
-      username: input.username,
-      prompt: input.prompt,
+      destination,
+      username,
+      prompt,
       expiresAt,
     };
     const deferred = yield* Deferred.make<string, DesktopSshPasswordPromptRequestError>();
     const pending: PendingSshPasswordPrompt = {
       requestId,
-      destination: input.destination,
+      destination,
       deferred,
     };
-    yield* Ref.update(pendingRef, (entries) => new Map(entries).set(requestId, pending));
+    const registered = yield* Ref.modify(pendingRef, (entries) => {
+      if (entries.size >= maxPendingPrompts) return [false, entries] as const;
+      return [true, new Map(entries).set(requestId, pending)] as const;
+    });
+    if (!registered) {
+      return yield* new DesktopSshPromptCapacityError({
+        destination,
+        limit: maxPendingPrompts,
+      });
+    }
 
     const context = yield* Effect.context();
     const runFork = Effect.runForkWith(context);
@@ -352,7 +391,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
                   pending,
                   new DesktopSshPromptWindowClosedError({
                     requestId,
-                    destination: input.destination,
+                    destination,
                   }),
                 ),
             }),
@@ -369,7 +408,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
         catch: (cause) =>
           new DesktopSshPromptPresentationError({
             requestId,
-            destination: input.destination,
+            destination,
             operation,
             cause,
           }),
@@ -387,7 +426,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
             Effect.fail(
               new DesktopSshPromptTimedOutError({
                 requestId,
-                destination: input.destination,
+                destination,
               }),
             ),
           onSome: Effect.succeed,
@@ -416,7 +455,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
       );
       if (unavailableBeforePresentation) {
         return yield* new DesktopSshPromptWindowUnavailableError({
-          destination: input.destination,
+          destination,
           requestId,
           stage: "before-presentation",
         });
@@ -435,7 +474,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
         );
         if (unavailableAfterSend) {
           return yield* new DesktopSshPromptWindowUnavailableError({
-            destination: input.destination,
+            destination,
             requestId,
             stage: "after-send",
           });
@@ -452,7 +491,7 @@ export const make = Effect.fn("desktop.sshPasswordPrompts.make")(function* (
         );
         if (unavailableAfterRestore) {
           return yield* new DesktopSshPromptWindowUnavailableError({
-            destination: input.destination,
+            destination,
             requestId,
             stage: "after-restore",
           });

@@ -87,12 +87,14 @@ export function toManagedProjectFaviconPath(fileName: string, revision: string):
   if (!isWorkspaceImagePreviewPath(base)) return null;
 
   const extensionIndex = base.lastIndexOf(".");
+  const extension = base.slice(extensionIndex).toLowerCase();
+  const maxStemLength =
+    MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH - revision.length - 1 - extension.length;
   const stem = base
     .slice(0, extensionIndex)
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH);
-  const extension = base.slice(extensionIndex).toLowerCase();
+    .slice(0, maxStemLength);
   const safeStem = stem.length > 0 ? stem : "icon";
   const managed = `${MANAGED_PROJECT_FAVICON_PREFIX}${revision}-${safeStem}${extension}`;
   return parseManagedProjectFaviconPath(managed) ? managed : null;

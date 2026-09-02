@@ -33,10 +33,13 @@ import { vcsEnvironment } from "./vcs";
 
 const PROJECT_PATH_SEARCH_DEBOUNCE_MS = 120;
 const COMPOSER_PATH_SEARCH_LIMIT = 80;
+const PROJECT_SEARCH_QUERY_MAX_LENGTH = 256;
 const PROJECT_CONTENT_SEARCH_DEBOUNCE_MS = 120;
 const PROJECT_CONTENT_SEARCH_LIMIT = 500;
 const THREAD_SEARCH_DEBOUNCE_MS = 200;
+const THREAD_SEARCH_QUERY_MAX_LENGTH = 200;
 const VCS_REF_LIST_LIMIT = 100;
+const VCS_REF_QUERY_MAX_LENGTH = 256;
 const EMPTY_REFS: ReadonlyArray<VcsRef> = [];
 const EMPTY_CONTENT_MATCHES: ReadonlyArray<ProjectContentMatch> = [];
 const INITIAL_BRANCH_CURSORS = [undefined] as const;
@@ -45,6 +48,10 @@ const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
 }).pipe(Atom.withLabel("web:thread-search:empty"));
+
+export function normalizeBoundedSearchQuery(query: string, maxLength: number): string {
+  return query.trim().slice(0, maxLength);
+}
 
 const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
   getSearchAtom: (environmentId, query) =>
@@ -85,7 +92,7 @@ export function useThreadSearch(
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isPending: boolean;
 } {
-  const normalizedQuery = query.trim();
+  const normalizedQuery = normalizeBoundedSearchQuery(query, THREAD_SEARCH_QUERY_MAX_LENGTH);
   const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
   const canSearch = environmentIds.length > 0 && normalizedQuery.length >= 2;
   const settledQuery = canSearch && normalizedQuery === debouncedQuery ? debouncedQuery : null;
@@ -117,7 +124,7 @@ export function useThreadDetail(
 }
 
 export function useBranches(target: VcsRefTarget) {
-  const query = target.query?.trim() ?? "";
+  const query = normalizeBoundedSearchQuery(target.query ?? "", VCS_REF_QUERY_MAX_LENGTH);
   return useEnvironmentQuery(
     target.environmentId !== null && target.cwd !== null
       ? vcsEnvironment.listRefs({
@@ -133,7 +140,7 @@ export function useBranches(target: VcsRefTarget) {
 }
 
 export function usePaginatedBranches(target: VcsRefTarget) {
-  const query = target.query?.trim() ?? "";
+  const query = normalizeBoundedSearchQuery(target.query ?? "", VCS_REF_QUERY_MAX_LENGTH);
   const targetKey =
     target.environmentId !== null && target.cwd !== null
       ? JSON.stringify([target.environmentId, target.cwd, query])
@@ -263,13 +270,17 @@ export function useProjectPathSearch(
     () => ({
       environmentId: target.environmentId,
       cwd: target.cwd,
-      query: target.query == null ? null : target.query.trim(),
+      query:
+        target.query == null
+          ? null
+          : normalizeBoundedSearchQuery(target.query, PROJECT_SEARCH_QUERY_MAX_LENGTH),
       kind: target.kind,
       imageOnly: target.imageOnly,
     }),
     [target.cwd, target.environmentId, target.imageOnly, target.kind, target.query],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const targetIsSettled = areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget);
   const result = useEnvironmentQuery(
     debouncedTarget.environmentId !== null &&
       debouncedTarget.cwd !== null &&
@@ -289,10 +300,12 @@ export function useProjectPathSearch(
   );
 
   return {
-    entries: result.data?.entries ?? [],
-    error: result.error,
-    isPending:
-      !areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending,
+    // A debounced atom still exposes the preceding target's cached result. Do
+    // not leave those paths selectable while the user is typing or switching
+    // workspaces; the next target has not produced them.
+    entries: targetIsSettled ? (result.data?.entries ?? []) : [],
+    error: targetIsSettled ? result.error : null,
+    isPending: !targetIsSettled || result.isPending,
     searchedQuery: debouncedTarget.query ?? "",
     refresh: result.refresh,
   };
@@ -314,7 +327,7 @@ interface ProjectContentSearchTarget {
 export function useProjectContentSearch(target: ProjectContentSearchTarget) {
   // Whitespace is significant in content queries; trimming is only used to
   // decide whether the input is blank.
-  const query = target.query;
+  const query = target.query.slice(0, PROJECT_SEARCH_QUERY_MAX_LENGTH);
   const hasQuery = query.trim().length > 0;
   const debouncedQuery = useDebouncedValue(query, PROJECT_CONTENT_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(

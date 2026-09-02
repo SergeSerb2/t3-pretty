@@ -80,6 +80,24 @@ function makeHandle(input: {
 }
 
 describe("CloudManagedEndpointRuntime", () => {
+  it("bounds relay output lines across chunks while preserving later lines", () => {
+    let state: ManagedEndpointRuntime.RelayOutputLineState = {
+      trailingBytes: 0,
+      truncated: false,
+    };
+    const output: Uint8Array[] = [];
+    for (const chunk of [Buffer.from("abc"), Buffer.from("def\nok\n")]) {
+      const [next, emitted] = ManagedEndpointRuntime.boundRelayOutputChunk(state, chunk, 5);
+      state = next;
+      output.push(...emitted);
+    }
+
+    expect(Buffer.concat(output).toString("utf8")).toBe(
+      `abcde${ManagedEndpointRuntime.RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER}\nok\n`,
+    );
+    expect(state).toEqual({ trailingBytes: 0, truncated: false });
+  });
+
   it("classifies Cloudflare connection and warning output", () => {
     expect(
       ManagedEndpointRuntime.classifyRelayClientOutput(

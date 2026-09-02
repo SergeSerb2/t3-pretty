@@ -11,12 +11,40 @@ import { fallbackPhoto, getSceneryPool, useSceneryStore } from "./sceneryStore";
 import { preloadWallpaper } from "./sceneryWallpaper";
 import { wallpaperURL } from "./unsplash";
 
+const MAX_PENDING_SCENERY_PRIMES = 256;
+const pendingThreadKeys = new Set<string>();
+let stopWaitingForHydration: (() => void) | null = null;
+
+function rememberPendingThread(threadKey: string): void {
+  pendingThreadKeys.delete(threadKey);
+  pendingThreadKeys.add(threadKey);
+  while (pendingThreadKeys.size > MAX_PENDING_SCENERY_PRIMES) {
+    const oldest = pendingThreadKeys.values().next().value;
+    if (oldest === undefined) return;
+    pendingThreadKeys.delete(oldest);
+  }
+}
+
 export function primeSceneryForThread(threadKey: string): void {
   const persist = useSceneryStore.persist;
   if (persist?.hasHydrated?.() === false) {
-    persist.onFinishHydration?.(() => primeSceneryForThread(threadKey));
+    rememberPendingThread(threadKey);
+    if (stopWaitingForHydration === null) {
+      stopWaitingForHydration =
+        persist.onFinishHydration?.(() => {
+          stopWaitingForHydration?.();
+          stopWaitingForHydration = null;
+          const pending = [...pendingThreadKeys];
+          pendingThreadKeys.clear();
+          for (const pendingThreadKey of pending) {
+            primeSceneryForThread(pendingThreadKey);
+          }
+        }) ?? (() => undefined);
+    }
     return;
   }
+
+  pendingThreadKeys.delete(threadKey);
 
   const photoSetId = usePhotoSetStore.getState().photoSetId;
   void loadSeedPhotos(photoSetId).then(() => {

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   pictureInPicturePressed: false,
   miniPlayerTabId: null as string | null,
   openMiniPlayer: vi.fn(),
+  undismissMiniPlayer: vi.fn(),
   closeMiniPlayer: vi.fn(),
   closeRightPanel: vi.fn(),
   openPictureInPicture: vi.fn(async (_tabId: string): Promise<void> => undefined),
@@ -149,6 +150,7 @@ vi.mock("~/state/use-atom-command", () => ({
 
 vi.mock("~/browser/browserRecording", () => ({
   findActiveBrowserRecordingRuntimeTabId: vi.fn(() => null),
+  isBrowserRecordingStartCancelledError: vi.fn(() => false),
   startBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
   useActiveBrowserRecordingTabIds: () => new Set(),
@@ -176,6 +178,7 @@ vi.mock("~/previewMiniPlayerStore", () => {
     {
       getState: () => ({
         open: mocks.openMiniPlayer,
+        undismiss: mocks.undismissMiniPlayer,
         close: mocks.closeMiniPlayer,
       }),
     },
@@ -331,6 +334,7 @@ describe("PreviewView navigation", () => {
     mocks.pictureInPicturePressed = false;
     mocks.miniPlayerTabId = null;
     mocks.openMiniPlayer.mockClear();
+    mocks.undismissMiniPlayer.mockClear();
     mocks.closeMiniPlayer.mockClear();
     mocks.closeRightPanel.mockClear();
     mocks.openPictureInPicture.mockClear();
@@ -478,6 +482,7 @@ describe("PreviewView navigation", () => {
     renderToStaticMarkup(<PreviewView {...props} />);
     expect(mocks.pictureInPicturePressed).toBe(false);
     mocks.togglePictureInPicture?.();
+    expect(mocks.undismissMiniPlayer).toHaveBeenCalledWith(props.threadRef, "tab-1");
     expect(mocks.openMiniPlayer).toHaveBeenCalledWith(props.threadRef, "tab-1");
     expect(mocks.closeRightPanel).toHaveBeenCalledWith(props.threadRef);
 

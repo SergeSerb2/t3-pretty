@@ -3,9 +3,11 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
+
+import { RELAY_DETAIL_MAX_LENGTH } from "@t3tools/contracts/relay";
 
 import * as RelayDb from "../db.ts";
 import { relayDeliveryAttempts } from "../persistence/schema.ts";
@@ -13,7 +15,7 @@ import { relayDeliveryAttempts } from "../persistence/schema.ts";
 export class DeliveryAttemptRecordPersistenceError extends Schema.TaggedErrorClass<DeliveryAttemptRecordPersistenceError>()(
   "DeliveryAttemptRecordPersistenceError",
   {
-    operation: Schema.Literals(["record", "claim-source-job", "complete-source-job"]),
+    operation: Schema.Literals(["record", "claim-source-job", "complete-source-job", "prune"]),
     sourceJobId: Schema.NullOr(Schema.String),
     userId: Schema.NullOr(Schema.String),
     environmentId: Schema.NullOr(Schema.String),
@@ -64,10 +66,25 @@ export class DeliveryAttempts extends Context.Service<
     readonly completeSourceJob: (
       input: DeliveryAttemptCompletionInput,
     ) => Effect.Effect<void, DeliveryAttemptRecordPersistenceError>;
+    readonly pruneBefore: (input: {
+      readonly createdBefore: string;
+    }) => Effect.Effect<void, DeliveryAttemptRecordPersistenceError>;
   }
 >()("t3code-relay/agentActivity/DeliveryAttempts") {}
 
-const SOURCE_JOB_CLAIM_LEASE_MINUTES = 10;
+// The delivery queue retries five times at 30-second intervals. Keep the
+// claim shorter than that retry window so an interrupted worker gets another
+// chance before the signed job's ten-minute expiry and the dead-letter handoff.
+const SOURCE_JOB_CLAIM_LEASE_MINUTES = 2;
+const APNS_ID_MAX_LENGTH = 128;
+
+function boundedApnsId(value: string | null | undefined): string | null {
+  return value?.slice(0, APNS_ID_MAX_LENGTH) ?? null;
+}
+
+function boundedDiagnostic(value: string | null | undefined): string | null {
+  return value?.slice(0, RELAY_DETAIL_MAX_LENGTH) ?? null;
+}
 
 function insertValues(
   input: DeliveryAttemptInput,
@@ -85,9 +102,13 @@ function insertValues(
     sourceJobId: input.sourceJobId ?? null,
     tokenSuffix: input.token?.slice(-8) ?? null,
     apnsStatus: input.apnsStatus ?? null,
-    apnsReason: input.apnsReason ?? null,
-    apnsId: input.apnsId ?? null,
-    transportError: input.transportError ?? null,
+    apnsReason: boundedDiagnostic(input.apnsReason),
+    // APNs normally returns a UUID here, but response headers are still an
+    // external boundary. Keep diagnostics within the backing varchar so an
+    // oversized header cannot turn an otherwise completed delivery into a
+    // persistence failure.
+    apnsId: boundedApnsId(input.apnsId),
+    transportError: boundedDiagnostic(input.transportError),
   };
 }
 
@@ -225,9 +246,9 @@ export const make = Effect.gen(function* () {
         .set({
           createdAt: completedAt,
           apnsStatus: input.apnsStatus ?? null,
-          apnsReason: input.apnsReason ?? null,
-          apnsId: input.apnsId ?? null,
-          transportError: input.transportError ?? null,
+          apnsReason: boundedDiagnostic(input.apnsReason),
+          apnsId: boundedApnsId(input.apnsId),
+          transportError: boundedDiagnostic(input.transportError),
         })
         .where(eq(relayDeliveryAttempts.sourceJobId, input.sourceJobId))
         .pipe(
@@ -236,6 +257,26 @@ export const make = Effect.gen(function* () {
               new DeliveryAttemptRecordPersistenceError({
                 operation: "complete-source-job",
                 sourceJobId: input.sourceJobId,
+                userId: null,
+                environmentId: null,
+                threadId: null,
+                deviceId: null,
+                kind: null,
+                cause,
+              }),
+          ),
+        );
+    }),
+    pruneBefore: Effect.fn("relay.delivery_attempts.prune_before")(function* (input) {
+      yield* db
+        .delete(relayDeliveryAttempts)
+        .where(lt(relayDeliveryAttempts.createdAt, input.createdBefore))
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new DeliveryAttemptRecordPersistenceError({
+                operation: "prune",
+                sourceJobId: null,
                 userId: null,
                 environmentId: null,
                 threadId: null,

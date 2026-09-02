@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 
 import {
+  GITHUB_API_QUOTA_HOST_CAPACITY,
   createGitHubApiQuota,
   gitHubApiHostFromArgs,
   gitHubApiQuotaCooldown,
@@ -86,4 +87,16 @@ describe("createGitHubApiQuota", () => {
       quota.blockedUntil("github.com", 1_000 + Duration.toMillis(GITHUB_API_QUOTA_COOLDOWN_BASE)),
     ).toBeNull();
   });
+});
+
+it("bounds retained one-off host cooldowns and normalizes host keys", () => {
+  const quota = createGitHubApiQuota();
+  for (let index = 0; index <= GITHUB_API_QUOTA_HOST_CAPACITY; index += 1) {
+    quota.noteRateLimit(`GITHUB-${index}.EXAMPLE.COM`, 0);
+  }
+
+  expect(quota.blockedUntil("github-0.example.com", 1)).toBeNull();
+  expect(
+    quota.blockedUntil(`github-${GITHUB_API_QUOTA_HOST_CAPACITY}.example.com`, 1),
+  ).not.toBeNull();
 });

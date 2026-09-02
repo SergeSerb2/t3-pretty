@@ -4,17 +4,41 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import * as PreviewManager from "../../preview/Manager.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
+import { forkParked } from "../../serverActivation.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ThreadDeletionReactor,
   type ThreadDeletionReactorShape,
 } from "../Services/ThreadDeletionReactor.ts";
-import { forkParked } from "../../serverActivation.ts";
 
 type ThreadDeletedEvent = Extract<OrchestrationEvent, { type: "thread.deleted" }>;
+
+export function runThreadDeletionCleanup<R1, E1, R2, E2, R3, E3>(
+  event: ThreadDeletedEvent,
+  handlers: {
+    readonly stopProviderSession: (
+      threadId: ThreadDeletedEvent["payload"]["threadId"],
+    ) => Effect.Effect<void, E1, R1>;
+    readonly closeThreadTerminals: (
+      threadId: ThreadDeletedEvent["payload"]["threadId"],
+    ) => Effect.Effect<void, E2, R2>;
+    readonly closeThreadPreviews: (
+      threadId: ThreadDeletedEvent["payload"]["threadId"],
+    ) => Effect.Effect<void, E3, R3>;
+  },
+): Effect.Effect<void, E1 | E2 | E3, R1 | R2 | R3> {
+  return Effect.gen(function* () {
+    const { threadId } = event.payload;
+    yield* handlers.stopProviderSession(threadId);
+    yield* handlers.closeThreadTerminals(threadId);
+    yield* handlers.closeThreadPreviews(threadId);
+  });
+}
 
 export const logCleanupCauseUnlessInterrupted = <R, E>({
   effect,
@@ -41,6 +65,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
   const terminalManager = yield* TerminalManager.TerminalManager;
+  const previewManager = yield* PreviewManager.PreviewManager;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -56,12 +81,21 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
+  const closeThreadPreviews = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
+    logCleanupCauseUnlessInterrupted({
+      effect: previewManager.close({ threadId }),
+      message: "thread deletion cleanup skipped preview close",
+      threadId,
+    });
+
   const processThreadDeleted = Effect.fn("processThreadDeleted")(function* (
     event: ThreadDeletedEvent,
   ) {
-    const { threadId } = event.payload;
-    yield* stopProviderSession(threadId);
-    yield* closeThreadTerminals(threadId);
+    yield* runThreadDeletionCleanup(event, {
+      stopProviderSession,
+      closeThreadTerminals,
+      closeThreadPreviews,
+    });
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>
@@ -80,20 +114,43 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processThreadDeletedSafely);
 
+  // Highest event sequence the subscriber has handed to the worker. Waiting
+  // through a successful thread.created sequence covers every deletion that
+  // was ahead of that create in the engine queue; the worker drain then covers
+  // the in-flight cleanup.
+  const seenSequence = yield* SubscriptionRef.make(0);
+  const noteSeen = (sequence: number) =>
+    SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
+
   const start: ThreadDeletionReactorShape["start"] = Effect.fn("start")(function* () {
     yield* forkParked(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-        if (event.type !== "thread.deleted") {
-          return Effect.void;
-        }
-        return worker.enqueue(event);
-      }),
+      Stream.runForEach(
+        orchestrationEngine.streamDomainEvents.pipe(
+          // Events that landed before the subscription are not replayed, so
+          // start the watermark at the current head instead of zero.
+          Stream.onStart(orchestrationEngine.latestSequence.pipe(Effect.flatMap(noteSeen))),
+        ),
+        (event) =>
+          (event.type === "thread.deleted" ? worker.enqueue(event) : Effect.void).pipe(
+            Effect.andThen(noteSeen(event.sequence)),
+          ),
+      ),
     );
+  });
+
+  const drainThrough: ThreadDeletionReactorShape["drainThrough"] = Effect.fn(
+    "ThreadDeletionReactor.drainThrough",
+  )(function* (target) {
+    yield* SubscriptionRef.changes(seenSequence).pipe(
+      Stream.filter((seen) => seen >= target),
+      Stream.runHead,
+    );
+    yield* worker.drain;
   });
 
   return {
     start,
-    drain: worker.drain,
+    drainThrough,
   } satisfies ThreadDeletionReactorShape;
 });
 

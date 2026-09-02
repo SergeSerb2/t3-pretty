@@ -94,13 +94,14 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
     }
 
     let current = root;
+    let path = "";
     for (let index = 0; index < parts.length; index += 1) {
       const part = parts[index];
       if (!part) {
         continue;
       }
 
-      const path = parts.slice(0, index + 1).join("/");
+      path = path.length === 0 ? part : `${path}/${part}`;
       const isLeaf = index === parts.length - 1;
       const kind = isLeaf ? entry.kind : "directory";
       let child = current.children.get(part);
@@ -172,11 +173,12 @@ function flattenNode(
   const isSearching = searchTokens.length > 0;
   const matches = isSearching && nodeMatchesSearch(node, searchTokens);
   let descendantMatches = false;
-  const childOutput: VisibleFileTreeNode[] = [];
+  const outputStart = output.length;
+  output.push({ node, depth });
 
   if (node.kind === "directory" && (expanded.has(node.path) || isSearching)) {
     for (const child of node.children) {
-      if (flattenNode(childOutput, child, depth + 1, expanded, searchTokens)) {
+      if (flattenNode(output, child, depth + 1, expanded, searchTokens)) {
         descendantMatches = true;
       }
     }
@@ -184,11 +186,10 @@ function flattenNode(
 
   const visible = !isSearching || matches || descendantMatches;
   if (!visible) {
+    output.length = outputStart;
     return false;
   }
 
-  output.push({ node, depth });
-  output.push(...childOutput);
   return matches || descendantMatches;
 }
 

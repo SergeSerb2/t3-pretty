@@ -8,6 +8,10 @@
  */
 import {
   DEFAULT_TERMINAL_ID,
+  TERMINAL_ERROR_MESSAGE_MAX_LENGTH,
+  TERMINAL_HISTORY_MAX_LENGTH,
+  TERMINAL_LABEL_MAX_LENGTH,
+  TERMINAL_OUTPUT_MAX_LENGTH,
   TerminalCwdError,
   TerminalCwdNotDirectoryError,
   TerminalCwdNotFoundError,
@@ -48,9 +52,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+import * as KeyedLock from "../KeyedLock.ts";
 import * as ServerConfig from "../config.ts";
 import {
   increment,
@@ -81,9 +85,9 @@ const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
 const DEFAULT_OPEN_COLS = 120;
 const DEFAULT_OPEN_ROWS = 30;
+const TERMINAL_SESSION_WORK_CONCURRENCY = 8;
 const TERMINAL_ENV_BLOCKLIST = new Set(["PORT", "ELECTRON_RENDERER_PORT", "ELECTRON_RUN_AS_NODE"]);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-const MAX_TERMINAL_LABEL_LENGTH = 128;
 
 class TerminalSubprocessCheckError extends Schema.TaggedErrorClass<TerminalSubprocessCheckError>()(
   "TerminalSubprocessCheckError",
@@ -300,8 +304,30 @@ interface TerminalManagerState {
 }
 
 function truncateTerminalWireLabel(value: string): string {
-  if (value.length <= MAX_TERMINAL_LABEL_LENGTH) return value;
-  return value.slice(0, MAX_TERMINAL_LABEL_LENGTH);
+  if (value.length <= TERMINAL_LABEL_MAX_LENGTH) return value;
+  return value.slice(0, TERMINAL_LABEL_MAX_LENGTH);
+}
+
+function splitTerminalWireOutput(data: string): ReadonlyArray<string> {
+  if (data.length <= TERMINAL_OUTPUT_MAX_LENGTH) return [data];
+
+  const chunks: Array<string> = [];
+  let start = 0;
+  while (start < data.length) {
+    let end = Math.min(start + TERMINAL_OUTPUT_MAX_LENGTH, data.length);
+    if (
+      end < data.length &&
+      data.charCodeAt(end - 1) >= 0xd800 &&
+      data.charCodeAt(end - 1) <= 0xdbff &&
+      data.charCodeAt(end) >= 0xdc00 &&
+      data.charCodeAt(end) <= 0xdfff
+    ) {
+      end -= 1;
+    }
+    chunks.push(data.slice(start, end));
+    start = end;
+  }
+  return chunks;
 }
 
 function normalizeChildCommandName(raw: string, platform: NodeJS.Platform): string | null {
@@ -786,14 +812,30 @@ const windowsProcessTableSnapshot = Effect.fn("terminal.windowsProcessTableSnaps
 
 function capHistory(history: string, maxLines: number): string {
   if (history.length === 0) return history;
-  const hasTrailingNewline = history.endsWith("\n");
-  const lines = history.split("\n");
-  if (hasTrailingNewline) {
-    lines.pop();
+  let lineStart = 0;
+  let remainingLines = maxLines;
+  let cursor = history.endsWith("\n") ? history.length - 2 : history.length - 1;
+  while (cursor >= 0) {
+    if (history.charCodeAt(cursor) === 0x0a) {
+      remainingLines -= 1;
+      if (remainingLines === 0) {
+        lineStart = cursor + 1;
+        break;
+      }
+    }
+    cursor -= 1;
   }
-  if (lines.length <= maxLines) return history;
-  const capped = lines.slice(lines.length - maxLines).join("\n");
-  return hasTrailingNewline ? `${capped}\n` : capped;
+
+  let lengthStart = Math.max(0, history.length - TERMINAL_HISTORY_MAX_LENGTH);
+  if (
+    lengthStart > 0 &&
+    history.charCodeAt(lengthStart) >= 0xdc00 &&
+    history.charCodeAt(lengthStart) <= 0xdfff
+  ) {
+    lengthStart += 1;
+  }
+  const start = Math.max(lineStart, lengthStart);
+  return start === 0 ? history : history.slice(start);
 }
 
 function isCsiFinalByte(codePoint: number): boolean {
@@ -1194,7 +1236,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     sessions: new Map(),
     killFibers: new Map(),
   });
-  const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+  const threadLocks = yield* KeyedLock.make;
   const terminalEventListeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const workerScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(workerScope, Exit.void));
@@ -1223,29 +1265,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     f: (state: TerminalManagerState) => readonly [A, TerminalManagerState],
   ) => SynchronizedRef.modify(managerStateRef, f);
 
-  const getThreadSemaphore = (threadId: string) =>
-    SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-      const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-        current.get(threadId),
-      );
-      return Option.match(existing, {
-        onNone: () =>
-          Semaphore.make(1).pipe(
-            Effect.map((semaphore) => {
-              const next = new Map(current);
-              next.set(threadId, semaphore);
-              return [semaphore, next] as const;
-            }),
-          ),
-        onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
-      });
-    });
-
-  const withThreadLock = <A, E, R>(
-    threadId: string,
-    effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+  const withThreadLock = threadLocks.withLock;
 
   const clearKillFiber = Effect.fn("terminal.clearKillFiber")(function* (
     process: PtyAdapter.PtyProcess | null,
@@ -1414,6 +1434,35 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     yield* flushPersist(threadId, terminalId);
   });
 
+  const readHistoryTail = Effect.fn("terminal.readHistoryTail")(function* (
+    filePath: string,
+    operation: "read" | "migrate",
+    threadId: string,
+    terminalId: string,
+  ) {
+    const maximumReadBytes = BigInt(TERMINAL_HISTORY_MAX_LENGTH * 4);
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const handle = yield* fileSystem.open(filePath, { flag: "r" });
+        const info = yield* handle.stat;
+        const bytesToRead = info.size > maximumReadBytes ? maximumReadBytes : info.size;
+        const start = info.size - bytesToRead;
+        if (start > 0) {
+          yield* handle.seek(start, "start");
+        }
+        const bytes = yield* handle.readAlloc(bytesToRead);
+        return Option.match(bytes, {
+          onNone: () => "",
+          onSome: (value) => new TextDecoder().decode(value),
+        });
+      }),
+    ).pipe(
+      Effect.mapError(
+        (cause) => new TerminalHistoryError({ operation, threadId, terminalId, cause }),
+      ),
+    );
+  });
+
   const readHistory = Effect.fn("terminal.readHistory")(function* (
     threadId: string,
     terminalId: string,
@@ -1428,13 +1477,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           ),
         )
     ) {
-      const raw = yield* fileSystem
-        .readFileString(nextPath)
-        .pipe(
-          Effect.mapError(
-            (cause) => new TerminalHistoryError({ operation: "read", threadId, terminalId, cause }),
-          ),
-        );
+      const raw = yield* readHistoryTail(nextPath, "read", threadId, terminalId);
       const capped = capHistory(raw, historyLineLimit);
       if (capped !== raw) {
         yield* fileSystem
@@ -1467,14 +1510,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return "";
     }
 
-    const raw = yield* fileSystem
-      .readFileString(legacyPath)
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new TerminalHistoryError({ operation: "migrate", threadId, terminalId, cause }),
-        ),
-      );
+    const raw = yield* readHistoryTail(legacyPath, "migrate", threadId, terminalId);
     const capped = capHistory(raw, historyLineLimit);
     yield* fileSystem
       .writeFileString(nextPath, capped)
@@ -1875,10 +1911,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
             const processPid = ptyProcess.pid;
             const unsubscribeData = ptyProcess.onData((data) => {
-              if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
-                return;
+              let startDrain = false;
+              for (const chunk of splitTerminalWireOutput(data)) {
+                startDrain =
+                  enqueueProcessEvent(session, processPid, { type: "output", data: chunk }) ||
+                  startDrain;
               }
-              runFork(drainProcessEvents(session, processPid));
+              if (startDrain) runFork(drainProcessEvents(session, processPid));
             });
             const unsubscribeExit = ptyProcess.onExit((event) => {
               if (!enqueueProcessEvent(session, processPid, { type: "exit", event })) {
@@ -1943,7 +1982,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
       yield* evictInactiveSessionsIfNeeded();
 
-      const message = error.message;
+      const message =
+        error.message.slice(0, TERMINAL_ERROR_MESSAGE_MAX_LENGTH) || "Failed to start terminal.";
       yield* publishEvent({
         type: "error",
         threadId: session.threadId,
@@ -2090,7 +2130,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     });
 
     yield* Effect.forEach(runningSessions, checkSubprocessActivity, {
-      concurrency: "unbounded",
+      concurrency: TERMINAL_SESSION_WORK_CONCURRENCY,
       discard: true,
     });
   });
@@ -2136,7 +2176,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
 
       yield* Effect.forEach(sessions, cleanupSession, {
-        concurrency: "unbounded",
+        concurrency: TERMINAL_SESSION_WORK_CONCURRENCY,
         discard: true,
       });
     }).pipe(Effect.ignoreCause({ log: true })),

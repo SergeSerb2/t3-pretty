@@ -12,6 +12,7 @@ import {
   KeyboardStickyView,
   useKeyboardState,
 } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import {
@@ -66,11 +67,11 @@ import {
   type TerminalMenuSession,
 } from "./terminalMenu";
 import { cacheTerminalGridSize, getCachedTerminalGridSize } from "./terminalUiState";
+import { SHOWCASE_ENABLED } from "../showcase/showcaseEnabled";
 
 const DEFAULT_TERMINAL_COLS = 80;
 const DEFAULT_TERMINAL_ROWS = 24;
 const TERMINAL_ACCESSORY_HEIGHT = 52;
-const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
 type PendingModifier = "ctrl" | "meta";
 type HostPlatform = "mac" | "linux" | "windows" | "unknown";
@@ -160,6 +161,7 @@ type ThreadTerminalRouteScreenProps = StaticScreenProps<{
 
 export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps) {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const resizeTerminal = useAtomCommand(terminalEnvironment.resize, "terminal resize");
   const clearTerminal = useAtomCommand(terminalEnvironment.clear, "terminal clear");
@@ -504,9 +506,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     isVisible: state.isVisible,
   }));
   const isAccessoryVisible = keyboardState.isVisible && !isAccessoryDismissed;
-  const terminalBottomInset =
-    (keyboardState.isVisible ? keyboardState.height : 0) +
-    (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0);
+  const terminalBottomInset = keyboardState.isVisible
+    ? keyboardState.height + (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0)
+    : insets.bottom;
 
   useEffect(() => {
     const keyboardWillShow = KeyboardEvents.addListener("keyboardWillShow", () => {
@@ -1289,7 +1291,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                 accessibilityRole="button"
                 onPress={handleShowKeyboard}
                 style={({ pressed }) => ({
-                  bottom: 16,
+                  bottom: Math.max(insets.bottom, 16),
                   borderRadius: 28,
                   opacity: pressed ? 0.72 : 1,
                   position: "absolute",

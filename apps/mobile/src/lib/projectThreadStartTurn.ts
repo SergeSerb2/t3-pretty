@@ -10,10 +10,15 @@ import {
 } from "@t3tools/contracts";
 
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
-import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
+import { toUploadChatImageAttachments, type DraftComposerAttachment } from "./composerImages";
+import type { UploadedMobileAttachment } from "./attachmentUpload";
 
 export function deriveThreadTitleFromPrompt(value: string): string {
+  if (parseNativeResumeCommand(value)?._tag === "Resume") {
+    return NATIVE_RESUME_THREAD_TITLE;
+  }
   // The auto-PR instruction block is agent-facing; a title derived from the
   // prompt should reflect only what the user typed.
   const trimmed = stripCreatePullRequestSuffix(value).trim();
@@ -33,7 +38,8 @@ export interface ProjectThreadStartTurnSpec {
   readonly messageId: string;
   readonly createdAt: string;
   readonly text: string;
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly uploadedAttachments?: ReadonlyArray<UploadedMobileAttachment>;
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
@@ -61,7 +67,11 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
       messageId: MessageId.make(spec.messageId),
       role: "user" as const,
       text: spec.text,
-      attachments: toUploadChatImageAttachments(spec.attachments),
+      attachments:
+        spec.uploadedAttachments ??
+        toUploadChatImageAttachments(
+          spec.attachments.filter((attachment) => attachment.type === "image"),
+        ),
     },
     modelSelection: spec.modelSelection,
     titleSeed: title,

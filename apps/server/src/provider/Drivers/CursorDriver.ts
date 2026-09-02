@@ -3,7 +3,8 @@
  *
  * Cursor exposes an ACP-based CLI. Model catalog and capability refreshes
  * happen during the managed provider status check via Cursor's
- * `list_available_models` extension method.
+ * `list_available_models` extension method, merged with `cursor-agent --list-models`
+ * so CLI-only SKUs still appear in the picker.
  *
  * Text generation is supported via the ACP runtime — `makeCursorTextGeneration`
  * drives `runtime.prompt` with a structured-output schema and collects the
@@ -11,7 +12,7 @@
  *
  * @module provider/Drivers/CursorDriver
  */
-import { CursorSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
+import { CursorSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -38,7 +39,7 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
+import { withInstanceIdentity } from "./instanceIdentity.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
   makeProviderMaintenanceCapabilities,
@@ -75,22 +76,6 @@ export type CursorDriverEnv =
   | ServerConfig
   | ServerSettingsService;
 
-const withInstanceIdentity =
-  (input: {
-    readonly instanceId: ProviderInstance["instanceId"];
-    readonly displayName: string | undefined;
-    readonly accentColor: string | undefined;
-    readonly continuationGroupKey: string;
-  }) =>
-  (snapshot: ServerProviderDraft): ServerProvider => ({
-    ...snapshot,
-    instanceId: input.instanceId,
-    driver: DRIVER_KIND,
-    ...(input.displayName ? { displayName: input.displayName } : {}),
-    ...(input.accentColor ? { accentColor: input.accentColor } : {}),
-    continuation: { groupKey: input.continuationGroupKey },
-  });
-
 export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
   driverKind: DRIVER_KIND,
   metadata: {
@@ -103,8 +88,6 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
@@ -115,6 +98,7 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
       });
       const stampIdentity = withInstanceIdentity({
         instanceId,
+        driverKind: DRIVER_KIND,
         displayName,
         accentColor,
         continuationGroupKey: continuationIdentity.continuationKey,
@@ -136,8 +120,6 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
       );
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
@@ -149,8 +131,9 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         initialSnapshot: (settings) =>
           buildInitialCursorProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
         checkProvider,
-        // Model catalog and capabilities come exclusively from Cursor's
-        // list_available_models extension method during provider checks.
+        // Model catalog and capabilities come from Cursor's
+        // list_available_models extension method during provider checks,
+        // merged with `cursor-agent --list-models`.
         enrichSnapshot: ({ settings, snapshot: currentSnapshot, publishSnapshot }) =>
           enrichCursorSnapshot({
             settings: settings.provider,

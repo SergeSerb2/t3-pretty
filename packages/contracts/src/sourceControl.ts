@@ -2,6 +2,9 @@ import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
+export const SOURCE_CONTROL_DISCOVERY_VCS_MAX_COUNT = 16;
+export const SOURCE_CONTROL_DISCOVERY_PROVIDER_MAX_COUNT = 16;
+
 export const SourceControlProviderKind = Schema.Literals([
   "github",
   "gitlab",
@@ -156,8 +159,12 @@ export const SourceControlProviderDiscoveryItem = Schema.Struct({
 export type SourceControlProviderDiscoveryItem = typeof SourceControlProviderDiscoveryItem.Type;
 
 export const SourceControlDiscoveryResult = Schema.Struct({
-  versionControlSystems: Schema.Array(VcsDiscoveryItem),
-  sourceControlProviders: Schema.Array(SourceControlProviderDiscoveryItem),
+  versionControlSystems: Schema.Array(VcsDiscoveryItem).check(
+    Schema.isMaxLength(SOURCE_CONTROL_DISCOVERY_VCS_MAX_COUNT),
+  ),
+  sourceControlProviders: Schema.Array(SourceControlProviderDiscoveryItem).check(
+    Schema.isMaxLength(SOURCE_CONTROL_DISCOVERY_PROVIDER_MAX_COUNT),
+  ),
 });
 export type SourceControlDiscoveryResult = typeof SourceControlDiscoveryResult.Type;
 

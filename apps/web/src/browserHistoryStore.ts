@@ -8,7 +8,7 @@ import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { readPreparedConnection } from "~/state/session";
 
 import { isLocalLoopbackHost, normalizeHostname } from "./browser/browserTargetResolver";
-import { resolveStorage } from "./lib/storage";
+import { resolveLocalStorage } from "./lib/storage";
 
 export type BrowserHistoryEntry = { url: string; lastVisitedAt: number; title?: string };
 
@@ -142,6 +142,7 @@ const BROWSER_HISTORY_STORAGE_KEY = "t3code:browser-history:v1";
 
 const PENDING_MAX_PER_THREAD = 10;
 const PENDING_MAX_THREADS = 20;
+const THREAD_PROJECT_MAX_ENTRIES = 100;
 
 type PendingVisit = { url: string; at: number; environmentHostname: string | null };
 type PendingTitle = { url: string; title: string; environmentHostname: string | null | undefined };
@@ -181,6 +182,17 @@ function addPendingByThread<T>(
     if (oldestKey !== undefined && oldestKey !== threadKey) delete next[oldestKey];
   }
   return next;
+}
+
+function upsertThreadProjectKey(
+  projectKeyByThreadKey: Record<string, string>,
+  threadKey: string,
+  projectKey: string,
+): Record<string, string> {
+  const next = { ...projectKeyByThreadKey };
+  delete next[threadKey];
+  next[threadKey] = projectKey;
+  return Object.fromEntries(Object.entries(next).slice(-THREAD_PROJECT_MAX_ENTRIES));
 }
 
 export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()(
@@ -258,7 +270,11 @@ export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()(
         delete nextPendingVisits[threadKey];
         delete nextPendingTitles[threadKey];
         set({
-          projectKeyByThreadKey: { ...state.projectKeyByThreadKey, [threadKey]: projectKey },
+          projectKeyByThreadKey: upsertThreadProjectKey(
+            state.projectKeyByThreadKey,
+            threadKey,
+            projectKey,
+          ),
           pendingVisitsByThreadKey: nextPendingVisits,
           pendingTitlesByThreadKey: nextPendingTitles,
         });
@@ -279,9 +295,7 @@ export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()(
     {
       name: BROWSER_HISTORY_STORAGE_KEY,
       version: 1,
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-      ),
+      storage: createJSONStorage(resolveLocalStorage),
       partialize: (state) => ({
         byProjectKey: state.byProjectKey,
         projectKeyByThreadKey: state.projectKeyByThreadKey,
@@ -319,8 +333,28 @@ function migratePersistedThreadProjectKeys(
         (entry): entry is [string, string] =>
           typeof entry[1] === "string" && entry[1] in byProjectKey,
       )
-      .slice(-100),
+      .slice(-THREAD_PROJECT_MAX_ENTRIES),
   );
+}
+
+export function removeThreadBrowserHistoryState(ref: ScopedThreadRef): void {
+  const threadKey = scopedThreadKey(ref);
+  const state = useBrowserHistoryStore.getState();
+  if (
+    !(threadKey in state.projectKeyByThreadKey) &&
+    !(threadKey in state.pendingVisitsByThreadKey) &&
+    !(threadKey in state.pendingTitlesByThreadKey)
+  ) {
+    return;
+  }
+  const { [threadKey]: _project, ...projectKeyByThreadKey } = state.projectKeyByThreadKey;
+  const { [threadKey]: _visits, ...pendingVisitsByThreadKey } = state.pendingVisitsByThreadKey;
+  const { [threadKey]: _titles, ...pendingTitlesByThreadKey } = state.pendingTitlesByThreadKey;
+  useBrowserHistoryStore.setState({
+    projectKeyByThreadKey,
+    pendingVisitsByThreadKey,
+    pendingTitlesByThreadKey,
+  });
 }
 
 export function recordVisitForThread(ref: ScopedThreadRef, url: string, at?: number): void {

@@ -1059,14 +1059,16 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
 
 /* Sticky PR section headings pin over their own body. The rule above clears
    nested bg-background so plates don't double-frost; these headings still
-   have to hide the rows they cover. Opaque sidebar chrome, no extra blur —
-   the panel already frosts the photo, and a second backdrop-filter would
-   resample on every scroll. */
+   have to hide the rows they cover. They wear the panel's own frost rather
+   than an opaque slab, which read as a white bar sawn across the glass. The
+   strip is one heading tall, so the backdrop resample on scroll stays cheap. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   [data-right-panel]
   [data-pull-request-summary-heading].bg-background {
-  background-color: var(--sidebar);
+  background-color: var(--scenery-chrome-fill);
   background-image: none;
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
 }
 
 /* User bubbles and code blocks ride translucent plates instead of opaque
@@ -1135,6 +1137,12 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-pull-requests-panel] {
+    background-color: var(--scenery-chrome-fill-solid);
+  }
+
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-right-panel]
+    [data-pull-request-summary-heading].bg-background {
     background-color: var(--scenery-chrome-fill-solid);
   }
 

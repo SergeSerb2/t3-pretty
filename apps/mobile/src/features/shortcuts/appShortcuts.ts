@@ -1,6 +1,11 @@
 import type { Action } from "expo-quick-actions";
 import type { NavigationState } from "@react-navigation/native";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  EnvironmentId,
+  ThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 
 import type { RecentThreadShortcut } from "../../persistence/imperative";
 
@@ -18,6 +23,28 @@ const SHORTCUT_ICON = "shortcut_icon";
 // Matches only the thread deep-link shape shortcuts are allowed to carry:
 // exactly two non-empty segments, no nested paths, queries, or fragments.
 const THREAD_SHORTCUT_HREF_PATTERN = /^\/threads\/[^/?#]+\/[^/?#]+$/;
+const ENCODED_ENTITY_ID_MAX_LENGTH = ENTITY_ID_MAX_LENGTH * 6;
+const THREAD_SHORTCUT_HREF_MAX_LENGTH = "/threads//".length + ENCODED_ENTITY_ID_MAX_LENGTH * 2;
+
+export function normalizeRecentThreadShortcuts(
+  current: ReadonlyArray<RecentThreadShortcut>,
+): ReadonlyArray<RecentThreadShortcut> {
+  const unique: RecentThreadShortcut[] = [];
+  const seen = new Set<string>();
+  let changed = false;
+
+  for (const thread of current) {
+    const key = JSON.stringify([thread.environmentId, thread.threadId]);
+    if (seen.has(key) || unique.length >= MAX_RECENT_THREAD_SHORTCUTS) {
+      changed = true;
+      continue;
+    }
+    seen.add(key);
+    unique.push(thread);
+  }
+
+  return changed ? unique : current;
+}
 
 function threadShortcutHref(thread: RecentThreadShortcut): string {
   return `/threads/${encodeURIComponent(thread.environmentId)}/${encodeURIComponent(thread.threadId)}`;
@@ -84,7 +111,40 @@ export function shortcutHref(action: Action): string | null {
     return null;
   }
 
-  return href === NEW_TASK_SHORTCUT_HREF || THREAD_SHORTCUT_HREF_PATTERN.test(href) ? href : null;
+  if (href === NEW_TASK_SHORTCUT_HREF) {
+    return href;
+  }
+  if (href.length > THREAD_SHORTCUT_HREF_MAX_LENGTH || !THREAD_SHORTCUT_HREF_PATTERN.test(href)) {
+    return null;
+  }
+
+  const [, , encodedEnvironmentId, encodedThreadId] = href.split("/");
+  try {
+    if (
+      !encodedEnvironmentId ||
+      encodedEnvironmentId.length > ENCODED_ENTITY_ID_MAX_LENGTH ||
+      !encodedThreadId ||
+      encodedThreadId.length > ENCODED_ENTITY_ID_MAX_LENGTH
+    ) {
+      return null;
+    }
+    const environmentId = decodeURIComponent(encodedEnvironmentId);
+    const threadId = decodeURIComponent(encodedThreadId);
+    if (
+      environmentId.length === 0 ||
+      environmentId.length > ENTITY_ID_MAX_LENGTH ||
+      threadId.length === 0 ||
+      threadId.length > ENTITY_ID_MAX_LENGTH
+    ) {
+      return null;
+    }
+    return `/threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`;
+  } catch {
+    // Launcher entries survive app updates and can contain malformed legacy
+    // percent-encoding. Reject them before React Navigation attempts to parse
+    // the path and throws during a native shortcut callback.
+    return null;
+  }
 }
 
 /**
@@ -98,18 +158,19 @@ export function withRecentThreadShortcut(
   current: ReadonlyArray<RecentThreadShortcut>,
   opened: RecentThreadShortcut,
 ): ReadonlyArray<RecentThreadShortcut> {
-  const existing = current.find(
+  const normalized = normalizeRecentThreadShortcuts(current);
+  const existing = normalized.find(
     (thread) =>
       thread.environmentId === opened.environmentId && thread.threadId === opened.threadId,
   );
   const title = opened.title.trim().length > 0 ? opened.title : (existing?.title ?? opened.title);
-  if (current[0] === existing && existing !== undefined && existing.title === title) {
-    return current;
+  if (normalized[0] === existing && existing !== undefined && existing.title === title) {
+    return normalized;
   }
 
   return [
     { environmentId: opened.environmentId, threadId: opened.threadId, title },
-    ...current.filter((thread) => thread !== existing),
+    ...normalized.filter((thread) => thread !== existing),
   ].slice(0, MAX_RECENT_THREAD_SHORTCUTS);
 }
 
@@ -122,7 +183,7 @@ export function buildShortcutActions(recents: ReadonlyArray<RecentThreadShortcut
       icon: SHORTCUT_ICON,
       params: { href: NEW_TASK_SHORTCUT_HREF },
     },
-    ...recents.slice(0, MAX_RECENT_THREAD_SHORTCUTS).map(
+    ...normalizeRecentThreadShortcuts(recents).map(
       (thread): Action => ({
         // The encoded href doubles as the launcher id: URI-encoding makes the
         // env/thread join unambiguous (a plain `-` join lets different pairs

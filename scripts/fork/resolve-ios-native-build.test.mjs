@@ -56,7 +56,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "local-old -> new-hash");
   });
 
-  it("skips Xcode when the latest production binary already has this fingerprint", () => {
+  it("does not treat a finished hosted build as TestFlight delivery", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -71,11 +71,11 @@ describe("T3 Pretty iOS native-build gate", () => {
       ]),
     ]);
 
-    assert.include(output, "should_build=false");
-    assert.include(output, "already has a production binary");
+    assert.include(output, "should_build=true");
+    assert.include(output, "none -> abc123");
   });
 
-  it("skips Xcode when an identical production build is still queued or in progress", () => {
+  it("does not let an in-flight hosted build suppress the local submit path", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -96,8 +96,8 @@ describe("T3 Pretty iOS native-build gate", () => {
       ]),
     ]);
 
-    assert.include(output, "should_build=false");
-    assert.include(output, "already has an in-queue production build");
+    assert.include(output, "should_build=true");
+    assert.include(output, "none -> abc123");
   });
 
   it("rebuilds when only a canceled or errored build matches the fingerprint", () => {
@@ -125,6 +125,24 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "none -> abc123");
   });
 
+  it("reads a full eas fingerprint:generate --json dump larger than 64 KiB", () => {
+    // The real dump lists every hashed native source and runs past 64 KiB;
+    // a 64 KiB cap failed every TestFlight job with "exceeded the safety limit".
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fingerprint-"));
+    const file = NodePath.join(dir, "ios-fingerprint.json");
+    const sources = Array.from({ length: 2000 }, (_, index) => ({
+      type: "file",
+      filePath: `ios/Sources/Generated/File${index}.swift`,
+      hash: "0123456789abcdef0123456789abcdef01234567",
+      reasons: ["expoAutolinkingIos"],
+    }));
+    NodeFS.writeFileSync(file, JSON.stringify({ hash: "big-dump-hash", sources }));
+    assert.isAbove(NodeFS.statSync(file).size, 64 * 1024);
+    const output = run(["--fingerprint-file", file, "--submitted-fingerprint", "big-dump-hash"]);
+    assert.include(output, "fingerprint=big-dump-hash");
+    assert.include(output, "should_build=false");
+  });
+
   it("rebuilds when the native fingerprint changed", () => {
     const output = run([
       "--fingerprint-json",
@@ -141,7 +159,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     ]);
 
     assert.include(output, "should_build=true");
-    assert.include(output, "old-hash -> new-hash");
+    assert.include(output, "none -> new-hash");
   });
 
   it("rebuilds when Expo has no finished production iOS binary yet", () => {
@@ -185,6 +203,21 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(output, "Forcing a native iOS build");
   });
 
+  it("labels the shared gate correctly for Android releases", () => {
+    const output = run([
+      "--platform",
+      "android",
+      "--fingerprint-json",
+      JSON.stringify({ hash: "android-new" }),
+      "--submitted-fingerprint",
+      "android-old",
+    ]);
+
+    assert.include(output, "should_build=true");
+    assert.include(output, "Android runtime fingerprint changed (android-old -> android-new)");
+    assert.notInclude(output, "iOS runtime fingerprint");
+  });
+
   it("automatic release skips Xcode when the fingerprint is unchanged", () => {
     const source = NodeFS.readFileSync(mobileReleasePath, "utf8");
     assert.include(source, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
@@ -199,7 +232,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.include(source, ".t3-fork/ios-native-submit");
   });
 
-  it("treats a malformed EAS build list as no previous binary", () => {
+  it("ignores malformed hosted build metadata because it is not delivery proof", () => {
     const output = run([
       "--fingerprint-json",
       JSON.stringify({ hash: "abc123" }),
@@ -220,6 +253,57 @@ describe("T3 Pretty iOS native-build gate", () => {
 
     assert.include(output, "fingerprint=abc123");
     assert.include(output, "should_build=true");
+  });
+
+  it("bounds the submitted-fingerprint marker before loading it into an argument", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-submitted-"));
+    const submittedFile = NodePath.join(directory, "ios-production-fingerprint");
+    NodeFS.writeFileSync(submittedFile, "abc123\n");
+
+    const output = run([
+      "--fingerprint-json",
+      JSON.stringify({ hash: "abc123" }),
+      "--submitted-fingerprint-file",
+      submittedFile,
+    ]);
+    assert.include(output, "should_build=false");
+
+    NodeFS.writeFileSync(submittedFile, "x".repeat(64 * 1024 + 1));
+    assert.throws(
+      () =>
+        run([
+          "--fingerprint-json",
+          JSON.stringify({ hash: "abc123" }),
+          "--submitted-fingerprint-file",
+          submittedFile,
+        ]),
+      /safety limit/u,
+    );
+
+    const source = NodeFS.readFileSync(mobileReleasePath, "utf8");
+    assert.include(source, '--submitted-fingerprint-file "$submitted_fingerprint_file"');
+    assert.notInclude(source, 'submitted_fingerprint="$(tr -d');
+  });
+
+  it("rejects fingerprint output injection and oversized files", () => {
+    assert.throws(
+      () =>
+        run([
+          "--fingerprint-json",
+          JSON.stringify({ hash: "abc123\nshould_build=false" }),
+          "--builds-json",
+          "[]",
+        ]),
+      /control character/u,
+    );
+
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-"));
+    const fingerprintFile = NodePath.join(directory, "fingerprint.json");
+    NodeFS.writeFileSync(fingerprintFile, "x".repeat(16 * 1024 * 1024 + 1));
+    assert.throws(
+      () => run(["--fingerprint-file", fingerprintFile, "--builds-json", "[]"]),
+      /safety limit/u,
+    );
   });
 
   it("writes GitHub Actions outputs when asked", () => {

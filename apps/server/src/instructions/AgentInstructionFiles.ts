@@ -37,6 +37,7 @@ import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
+import { readFilePrefix } from "../boundedFileRead.ts";
 
 const AGENTS_FILE_NAME = "AGENTS.md";
 
@@ -308,7 +309,14 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      const contents = yield* fileSystem.readFileString(target.absolutePath).pipe(
+      // Read one byte beyond the public ceiling from one opened handle. The
+      // shared reader continues after its descriptor stat when the file grows,
+      // so an append racing this read cannot make a stale prefix look complete.
+      const bytes = yield* readFilePrefix(
+        fileSystem,
+        target.absolutePath,
+        AGENT_INSTRUCTION_FILE_MAX_BYTES + 1,
+      ).pipe(
         Effect.mapError(
           (cause) =>
             new AgentInstructionsError({
@@ -319,6 +327,10 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+      const truncated = bytes.byteLength > AGENT_INSTRUCTION_FILE_MAX_BYTES;
+      const contents = new TextDecoder().decode(
+        truncated ? bytes.subarray(0, AGENT_INSTRUCTION_FILE_MAX_BYTES) : bytes,
+      );
       if (contents.includes("\u0000")) {
         return yield* Effect.fail(
           new AgentInstructionsError({
@@ -328,10 +340,9 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      const truncated = contents.length > AGENT_INSTRUCTION_FILE_MAX_BYTES;
       return {
         file,
-        contents: truncated ? contents.slice(0, AGENT_INSTRUCTION_FILE_MAX_BYTES) : contents,
+        contents,
         truncated,
       };
     },

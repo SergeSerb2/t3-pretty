@@ -11,7 +11,7 @@ import { usageConnectionPlan } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId, StorageInventory } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentPresentations } from "./presentation";
@@ -87,14 +87,25 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
   return statuses;
 }).pipe(Atom.withLabel("mobile-storage-inventory"));
 
+const inactiveStorageInventoriesAtom = Atom.make<readonly EnvironmentStorageStatus[]>([]).pipe(
+  Atom.withLabel("mobile-storage-inventory:inactive"),
+);
+
 export interface StorageInventoryView {
   readonly environments: readonly EnvironmentStorageStatus[];
   readonly isPending: boolean;
   readonly refresh: () => void;
 }
 
-export function useStorageInventories(): StorageInventoryView {
-  const environments = useAtomValue(storageInventoriesAtom);
+export function useStorageInventories(enabled = true): StorageInventoryView {
+  const observedEnvironments = useAtomValue(
+    enabled ? storageInventoriesAtom : inactiveStorageInventoriesAtom,
+  );
+  const retainedEnvironmentsRef = useRef(observedEnvironments);
+  if (enabled) {
+    retainedEnvironmentsRef.current = observedEnvironments;
+  }
+  const environments = enabled ? observedEnvironments : retainedEnvironmentsRef.current;
 
   const refresh = useCallback(() => {
     for (const environment of environments) {

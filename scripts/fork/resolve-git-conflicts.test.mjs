@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -8,12 +9,18 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   applyResolutionEdits,
   buildConflictPrompt,
+  buildValidationRetryPrompt,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
+  isForkDeletionConflict,
+  MAX_VALIDATION_ATTEMPTS,
   prepareConflictPrompt,
+  pruneResolutionCache,
   readCachedResolution,
+  readResponseTextBounded,
   readReusedSyncReport,
+  readTextFileBounded,
   resolutionCacheKey,
   writeCachedResolution,
 } from "./resolve-git-conflicts.mjs";
@@ -36,6 +43,58 @@ const mobileReleasePath = NodePath.resolve(
 );
 
 describe("T3 Pretty upstream conflict resolver", () => {
+  it("bounds model response and cached-file reads", async () => {
+    assert.equal(await readResponseTextBounded(new Response("small"), 5), "small");
+    let responseFailure;
+    try {
+      await readResponseTextBounded(new Response("too-large"), 5);
+    } catch (error) {
+      responseFailure = error;
+    }
+    assert.match(String(responseFailure), /safety limit/u);
+
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-bounds-"));
+    const path = NodePath.join(directory, "entry.json");
+    NodeFS.writeFileSync(path, "123456");
+    assert.throws(() => readTextFileBounded(path, 5, path), /safety limit/u);
+  });
+
+  it("bounds the aggregate resolution cache and removes non-cache entries", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-prune-"));
+    try {
+      const keys = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
+      for (const [index, key] of keys.entries()) {
+        const path = NodePath.join(directory, `${key}.json`);
+        NodeFS.writeFileSync(path, "12345");
+        NodeFS.utimesSync(path, index + 1, index + 1);
+      }
+      NodeFS.writeFileSync(NodePath.join(directory, "unexpected.json"), "ignored");
+
+      assert.deepEqual(pruneResolutionCache({ cacheDir: directory, maxEntries: 2, maxBytes: 10 }), {
+        kept: 2,
+        removed: 2,
+        bytes: 10,
+      });
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, `${keys[0]}.json`)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[1]}.json`)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[2]}.json`)));
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, "unexpected.json")));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to prune a broad temporary-directory root", () => {
+    assert.throws(() => pruneResolutionCache({ cacheDir: NodeOS.tmpdir() }), /broad or protected/u);
+  });
+
+  it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, '["diff", "--name-only", "--diff-filter=U", "-z"]');
+    assert.include(resolver, '["ls-files", "-u", "-z"]');
+    assert.include(resolver, '["ls-files", "-u", "-z", "--", path]');
+  });
+
   it("makes fork preservation, compatible parent integration, and omission reporting explicit", () => {
     const prompt = buildConflictPrompt({
       path: "apps/web/src/components/Sidebar.tsx",
@@ -211,18 +270,140 @@ ${Array.from({ length: 40 }, (_, index) => `filler line ${index}`).join("\n")}
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "<<<<<<< OURS (T3 Pretty main");
     assert.include(resolver, 'git(["rm", "-q", "--", path])');
-    assert.include(resolver, 'git(["ls-files", "-u", "--", path])');
+    assert.include(resolver, 'git(["ls-files", "-u", "-z", "--", path])');
     assert.include(resolver, "parentDeletionEvidence");
   });
 
-  it("resolves every resolvable file before reporting the ones that failed", () => {
+  it("keeps every fork deletion deterministically without a model request", () => {
+    // Fork deleted (no stage 2), parent modified (stage 3): established fork
+    // intent, resolved deterministically. Any path qualifies — a hardcoded
+    // list only ever covered the files someone already noticed blocking runs.
+    assert.isTrue(
+      isForkDeletionConflict(
+        "apps/server/src/provider/opencodeRuntime.inventory.test.ts",
+        new Set([1, 3]),
+      ),
+    );
+    assert.isTrue(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 3])));
+    // Both sides survive, or the parent deleted: not a fork deletion.
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2, 3])));
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2])));
+    // Stage-3-only is "added by them" (file/directory or rename conflict on a
+    // path the fork never had), never a fork deletion.
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([3])));
+    // Merging origin/main into a reused sync branch puts the fork on THEIRS;
+    // the rule must follow the fork side or it inverts on that merge.
+    assert.isTrue(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 2]), "theirs"));
+    assert.isFalse(isForkDeletionConflict("apps/anything/else.ts", new Set([1, 3]), "theirs"));
+
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    assert.include(resolver, "isForkDeletionConflict(path)");
+    assert.include(resolver, "kept T3 Pretty's deletion of");
+  });
+
+  it("falls back to the fork side instead of failing when no model resolution is available", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // A declined or repeatedly invalid file must not stop the run: later
-    // files still resolve and checkpoint, so the next run only faces the
-    // paths that failed this one.
-    assert.include(resolver, "leaving ${path} unresolved this run");
+    // A declined, invalid, or unreachable model must not stop the run: the
+    // file keeps the fork side wholesale, the omission lands in the durable
+    // report, and only a path whose fallback itself fails can fail the run.
+    assert.include(resolver, "fork-side fallback for ${oneLine(path)}");
+    assert.include(resolver, "the fork-side fallback then failed");
+    assert.include(resolver, "leaving ${oneLine(path)} unresolved this run");
     assert.include(resolver, "could not be resolved this run");
+    // A missing token fails fast into the fallback instead of retrying 401s.
+    assert.include(resolver, "CLI_PROXY_API_KEY is unavailable");
+  });
+
+  it("lands a conflicted merge with zero model access: fork deletions and fork-side fallbacks", () => {
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-fallback-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "base\n");
+      NodeFS.writeFileSync(NodePath.join(dir, "deleted.txt"), "base\n");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "theirs\n");
+      NodeFS.writeFileSync(NodePath.join(dir, "deleted.txt"), "theirs\n");
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(dir, "kept.txt"), "ours\n");
+      git("rm", "-q", "deleted.txt");
+      git("commit", "-aqm", "fork changes");
+      let merged = true;
+      try {
+        git("merge", "theirs");
+      } catch {
+        merged = false;
+      }
+      assert.isFalse(merged, "the merge must conflict for this test to mean anything");
+
+      // No CLI_PROXY_API_KEY: the resolver must still land every conflict —
+      // the fork deletion deterministically, the content conflict through
+      // the fork-side fallback — and exit 0.
+      const env = {
+        ...process.env,
+        SYNC_RESOLUTION_CACHE_DIR: NodePath.join(dir, "cache"),
+        UPSTREAM_TAG: "v0.0.0-nightly.test",
+        PREVIOUS_UPSTREAM_TAG: "",
+        REUSED_SYNC_RESOLUTION: "false",
+      };
+      delete env.CLI_PROXY_API_KEY;
+      const output = NodeChildProcess.execFileSync(process.execPath, [resolverPath], {
+        cwd: dir,
+        encoding: "utf8",
+        env,
+      });
+
+      assert.include(output, "kept T3 Pretty's deletion of deleted.txt");
+      assert.include(output, "fork-side fallback for kept.txt");
+      assert.equal(NodeFS.readFileSync(NodePath.join(dir, "kept.txt"), "utf8"), "ours\n");
+      assert.isFalse(NodeFS.existsSync(NodePath.join(dir, "deleted.txt")));
+      assert.equal(git("diff", "--name-only", "--diff-filter=U"), "");
+      const report = NodeFS.readFileSync(
+        NodePath.join(dir, ".t3-fork/upstream-sync-report.md"),
+        "utf8",
+      );
+      assert.include(report, "took the fork-side fallback");
+      assert.include(report, "kept T3 Pretty's intentional deletion of this file");
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("summarizes fork-side fallbacks in the durable report", () => {
+    const report = formatSyncReport({
+      upstreamTag: "v0.0.37-nightly.20260830.1227",
+      previousUpstreamTag: "v0.0.37-nightly.20260830.1226",
+      model: "gpt-5.6-sol",
+      reasoningEffort: "xhigh",
+      protectedWorkflowPaths: [],
+      resolutions: [
+        {
+          path: "apps/web/src/cloud/linkEnvironment.ts",
+          deterministic: true,
+          fallback: true,
+          forkChangesPreserved: ["kept the fork side wholesale as a fork-side fallback resolution"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [
+            {
+              change: "every parent change at this file's conflict boundaries (fork-side fallback)",
+              reason: "CLIProxyAPI did not produce a completed response after 3 attempts",
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.include(report, "1 file(s) took the fork-side fallback");
+    assert.include(report, "fork-side fallback");
+    assert.include(report, "did not produce a completed response");
+    assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
   });
 
   it("still refuses files large enough to risk local conflict processing", () => {
@@ -288,7 +469,7 @@ ${">".repeat(7)} theirs
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "run-upstream-sync.sh");
     assert.include(pipeline, 'build.source != "schedule"');
-    assert.include(mobileRelease, "does not change mobile-relevant paths");
+    assert.include(mobileRelease, "mobile path filter");
     assert.include(mobileRelease, "apps/mobile");
     assert.include(mobileRelease, '"$MODE" == "update" || "$MODE" == "release"');
     assert.include(mobileRelease, '"$MODE" != "build" && "$MODE" != "release"');
@@ -314,14 +495,28 @@ ${">".repeat(7)} theirs
     assert.include(script, 'export PREVIOUS_UPSTREAM_TAG="$current_tag"');
   });
 
-  it("backfills upstream-only objects from the upstream promisor, not the fork", () => {
+  it("removes upstream workflows before restoring the fork-owned directory", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+    const remove = script.indexOf("git rm -r -f --ignore-unmatch -- .github/workflows");
+    const restore = script.indexOf(
+      "git restore --source=origin/main --staged --worktree -- .github/workflows",
+    );
+
+    assert.isAtLeast(remove, 0);
+    assert.isAbove(restore, remove);
+  });
+
+  it("fetches upstream objects eagerly instead of registering a second promisor", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
-    // The sparse checkout is a blob:none partial clone; blobs a nightly adds
-    // under .repos/ exist only upstream, and the fork promisor answers
-    // "not our ref" for them, killing the merge before it starts.
-    assert.include(script, "git config remote.upstream.promisor true");
-    assert.include(script, "git config remote.upstream.partialclonefilter blob:none");
+    // The checkout is a blob:none partial clone of the fork remote; upstream
+    // tags are fetched with --no-filter so a merge never lazily backfills an
+    // upstream-only object through the fork promisor ("not our ref"). A
+    // registered upstream promisor would inherit the blob:none filter and
+    // recreate the missing-blob state, so leftover registrations are unset.
+    assert.include(script, "git config --unset-all remote.upstream.promisor");
+    assert.include(script, "git config --unset-all remote.upstream.partialclonefilter");
+    assert.include(script, "--no-tags --no-filter --force upstream");
   });
 
   it("checks upstream every four hours and supports an explicit retry", () => {
@@ -359,10 +554,18 @@ ${">".repeat(7)} theirs
     // Only the workflow's own metadata file is whitespace-checked. Resolver
     // output is model-composed content; a blank line at EOF must not fail an
     // otherwise complete merge after all conflicts resolved.
-    assert.include(script, "resolver_paths+=(");
+    assert.include(script, "lockfile_conflicted=true");
+    assert.notInclude(script, "resolver_paths");
     assert.include(script, "git diff --check --cached -- .t3-fork/upstream-nightly");
-    assert.notInclude(script, '"${resolver_paths[@]}" \\');
     assert.notInclude(script, "          git diff --check --cached\n");
+  });
+
+  it("keeps Origin pull request bodies bounded while retaining the durable report", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, "write_sync_pr_body");
+    assert.include(script, "The complete conflict-resolution audit");
+    assert.notInclude(script, "cat .t3-fork/upstream-sync-report.md");
   });
 
   it("refuses to reuse a legacy resolution branch without its durable report", () => {
@@ -454,7 +657,7 @@ ${">".repeat(7)} theirs
     assert.include(resolver, 'git(["checkout", "--ours", "--", path])');
 
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
-    assert.include(script, 'grep -qx "pnpm-lock.yaml"');
+    assert.include(script, '[[ "$lockfile_conflicted" == "true" ]]');
     assert.include(script, "corepack pnpm install --lockfile-only --no-frozen-lockfile");
     assert.include(script, "git add pnpm-lock.yaml");
   });
@@ -481,7 +684,7 @@ ${">".repeat(7)} theirs
       ],
     });
 
-    assert.include(report, "generated lockfiles resolved deterministically");
+    assert.include(report, "conflicts resolved deterministically");
     assert.notInclude(report, "`gpt-5.6-sol` with `xhigh` reasoning");
     assert.include(report, "AI-splicing");
     assert.include(report, "fork-only dependency entries");
@@ -490,11 +693,12 @@ ${">".repeat(7)} theirs
   it("retries transient resolver failures instead of aborting the whole sync", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // Network errors, 429, 5xx, and unparseable/incomplete responses retry;
-    // the last attempt drops to high effort so one long-think cannot 502.
+    // Network errors, 408, 429, 5xx, and unparseable/incomplete responses
+    // retry; the last attempt drops to high effort so one long-think cannot
+    // 502.
     assert.include(resolver, "const maxAttempts = 3");
     assert.include(resolver, 'attempt < maxAttempts ? REASONING_EFFORT : "high"');
-    assert.include(resolver, "status !== 0 && status !== 429 && status < 500");
+    assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
     assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
     assert.include(resolver, "did not produce a completed response");
     // Non-transient HTTP failures (auth, bad request) still throw immediately.
@@ -580,9 +784,22 @@ ${">".repeat(7)} theirs
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
     // A non-unique or missing old_text is a sampling defect, not a hard
-    // failure: one fresh request usually validates (seen on nightly 1093).
+    // failure: bounded fresh requests usually validate (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
+    assert.equal(MAX_VALIDATION_ATTEMPTS, 3);
+
+    const retryPrompt = buildValidationRetryPrompt(
+      "original prompt",
+      new Error("old_text matching 2 locations"),
+    );
+    assert.include(retryPrompt, "The previous response failed validation");
+    assert.include(retryPrompt, "old_text matching 2 locations");
+    assert.include(retryPrompt, "Discard the previous edits");
+    assert.include(retryPrompt, "only from the current conflict context");
+    assert.include(retryPrompt, "Copy every old_text byte-for-byte");
+    assert.include(retryPrompt, "include enough unchanged surrounding lines");
+    assert.equal(buildValidationRetryPrompt("original prompt", undefined), "original prompt");
   });
 
   it("keeps every conflict context byte-exact against the working file", () => {
@@ -716,6 +933,44 @@ ${">".repeat(7)} theirs
           resolution: { edits: [{ ...edit, old_text: "absent\n" }] },
         }),
       /does not appear in the working file/u,
+    );
+  });
+
+  it("ignores surplus no-op edits without weakening conflict coverage", () => {
+    const conflictBlock = `${"<".repeat(7)} ours
+ours
+${"|".repeat(7)} base
+base
+${"=".repeat(7)}
+theirs
+${">".repeat(7)} theirs
+`;
+    const conflicts = [{ index: 0, start: 0, end: conflictBlock.length }];
+    const resolved = applyResolutionEdits({
+      path: "f.ts",
+      source: conflictBlock,
+      conflicts,
+      resolution: {
+        edits: [
+          { old_text: "", new_text: "unused", summary: "empty" },
+          { old_text: "ours", new_text: "ours", summary: "no-op" },
+          { old_text: conflictBlock, new_text: "resolved\n", summary: "resolution" },
+        ],
+      },
+    });
+    assert.equal(resolved, "resolved\n");
+
+    assert.throws(
+      () =>
+        applyResolutionEdits({
+          path: "f.ts",
+          source: conflictBlock,
+          conflicts,
+          resolution: {
+            edits: [{ old_text: "ours", new_text: "ours", summary: "no-op" }],
+          },
+        }),
+      /no edit for conflict 0/u,
     );
   });
 });

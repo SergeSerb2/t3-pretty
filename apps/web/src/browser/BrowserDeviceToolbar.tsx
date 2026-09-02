@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS, resolvePreviewViewport } from "@t3tools/shared/previewViewport";
 import { Link2, Unlink2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -50,6 +50,15 @@ export function BrowserDeviceToolbar({
   onChange,
 }: Props) {
   const [pending, setPending] = useState(false);
+  const mountedRef = useRef(false);
+  const operationVersionRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      operationVersionRef.current += 1;
+    };
+  }, []);
   const [customSize, setCustomSize] = useState<{
     readonly width: string;
     readonly height: string;
@@ -75,13 +84,21 @@ export function BrowserDeviceToolbar({
     customWidth * customHeight <= PREVIEW_VIEWPORT_MAX_AREA;
 
   const apply = (next: PreviewViewportSetting, nextAspectRatio = aspectRatio) => {
+    const operationVersion = ++operationVersionRef.current;
+    const isCurrentOperation = () =>
+      mountedRef.current && operationVersionRef.current === operationVersion;
     setPending(true);
-    void commitViewportAndAspectRatio(next, nextAspectRatio, onChange, onAspectRatioChange).then(
+    void commitViewportAndAspectRatio(next, nextAspectRatio, onChange, (committedAspectRatio) => {
+      if (isCurrentOperation()) onAspectRatioChange(committedAspectRatio);
+    }).then(
       () => {
+        if (!isCurrentOperation()) return;
         setPending(false);
         setCustomSize(null);
       },
-      () => setPending(false),
+      () => {
+        if (isCurrentOperation()) setPending(false);
+      },
     );
   };
 

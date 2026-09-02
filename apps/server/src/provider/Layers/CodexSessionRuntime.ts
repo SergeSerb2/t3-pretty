@@ -2,19 +2,30 @@ import {
   ApprovalRequestId,
   DEFAULT_MODEL,
   EventId,
+  normalizeProviderSessionError,
   ProviderDriverKind,
   ProviderItemId,
   type ProviderInstanceId,
   type ProviderApprovalDecision,
+  type ProviderApprovalOption,
   type ProviderEvent,
   type ProviderInteractionMode,
   type ProviderRequestKind,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
+  PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
   RuntimeMode,
   ThreadId,
   TurnId,
+  type UserInputQuestion,
 } from "@t3tools/contracts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { normalizeModelSlug } from "@t3tools/shared/model";
@@ -37,6 +48,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
+import {
+  T3_CODE_COMPUTER_MCP_SERVER_NAME,
+  T3_CODE_MCP_SERVER_NAME,
+} from "../../mcp/McpProviderSession.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
@@ -52,6 +67,8 @@ const BENIGN_ERROR_LOG_SNIPPETS = [
   "state db record_discrepancy: find_thread_path_by_id_str_in_subdir, falling_back",
 ];
 const CODEX_APP_SERVER_FORCE_KILL_AFTER = "2 seconds" as const;
+export const CODEX_STDERR_FRAGMENT_MAX_CHARS = 64 * 1024;
+const CODEX_SESSION_EVENT_QUEUE_CAPACITY = 512;
 const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "not found",
   "missing thread",
@@ -77,6 +94,70 @@ const CodexUserInputAnswerObject = Schema.Struct({
 });
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 const isCodexUserInputAnswerObject = Schema.is(CodexUserInputAnswerObject);
+const NullableMcpElicitationString = Schema.NullOr(Schema.String);
+const McpElicitationMetadata = Schema.Struct({
+  app: Schema.optionalKey(NullableMcpElicitationString),
+  app_name: Schema.optionalKey(NullableMcpElicitationString),
+  appName: Schema.optionalKey(NullableMcpElicitationString),
+  connector_name: Schema.optionalKey(NullableMcpElicitationString),
+  connectorName: Schema.optionalKey(NullableMcpElicitationString),
+  allowPersistentApproval: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+  persist: Schema.optionalKey(
+    Schema.NullOr(Schema.Union([Schema.String, Schema.Array(Schema.String)])),
+  ),
+  target: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        app: Schema.optionalKey(NullableMcpElicitationString),
+        name: Schema.optionalKey(NullableMcpElicitationString),
+      }),
+    ),
+  ),
+  tool_params: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        app: Schema.optionalKey(NullableMcpElicitationString),
+        app_name: Schema.optionalKey(NullableMcpElicitationString),
+      }),
+    ),
+  ),
+});
+const McpElicitationFormField = Schema.Struct({
+  type: Schema.optionalKey(NullableMcpElicitationString),
+  title: Schema.optionalKey(NullableMcpElicitationString),
+  description: Schema.optionalKey(NullableMcpElicitationString),
+  default: Schema.optionalKey(Schema.Unknown),
+  enum: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+  enumNames: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+  oneOf: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Array(
+        Schema.Struct({
+          const: Schema.String,
+          title: Schema.optionalKey(NullableMcpElicitationString),
+        }),
+      ),
+    ),
+  ),
+});
+const McpElicitationForm = Schema.Struct({
+  properties: Schema.optionalKey(Schema.Record(Schema.String, McpElicitationFormField)),
+  required: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+});
+const isMcpElicitationMetadata = Schema.is(McpElicitationMetadata);
+const isMcpElicitationForm = Schema.is(McpElicitationForm);
+
+export function splitCodexStderrChunk(
+  current: string,
+  chunk: string,
+): readonly [ReadonlyArray<string>, string] {
+  const lines = `${current}${chunk}`.split("\n");
+  const remainder = (lines.pop() ?? "").slice(0, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+  return [
+    lines.map((line) => line.replace(/\r$/, "").slice(0, CODEX_STDERR_FRAGMENT_MAX_CHARS)),
+    remainder,
+  ];
+}
 
 // TODO: Verify `packages/effect-codex-app-server/scripts/generate.ts` so the generated
 // `V2TurnStartParams` schema includes `collaborationMode` directly.
@@ -88,6 +169,12 @@ const CodexTurnStartParamsWithCollaborationMode = EffectCodexSchema.V2TurnStartP
 const decodeCodexTurnStartParamsWithCollaborationMode = Schema.decodeUnknownEffect(
   CodexTurnStartParamsWithCollaborationMode,
 );
+const CodexChildResumeMetadata = Schema.Struct({
+  thread: Schema.Struct({ id: Schema.String }),
+  model: Schema.String,
+  reasoningEffort: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+const decodeCodexChildResumeMetadata = Schema.decodeUnknownEffect(CodexChildResumeMetadata);
 
 export type CodexTurnStartParamsWithCollaborationMode =
   typeof CodexTurnStartParamsWithCollaborationMode.Type;
@@ -111,6 +198,8 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
+  readonly browserToolsAvailable?: boolean;
+  readonly computerToolsAvailable?: boolean;
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -237,6 +326,172 @@ interface PendingUserInput {
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
+type McpElicitationPersistenceDecision = Extract<
+  ProviderApprovalDecision,
+  "acceptForSession" | "acceptAlways"
+>;
+
+function mcpElicitationPersistenceDecision(
+  value: string,
+): McpElicitationPersistenceDecision | null {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("session")) return "acceptForSession";
+  if (
+    normalized.includes("always") ||
+    normalized.includes("permanent") ||
+    normalized.includes("forever") ||
+    normalized.includes("persistent")
+  ) {
+    return "acceptAlways";
+  }
+  return null;
+}
+
+function mcpElicitationFormFields(payload: EffectCodexSchema.McpServerElicitationRequestParams) {
+  if (payload.mode === "url" || !isMcpElicitationForm(payload.requestedSchema)) {
+    return undefined;
+  }
+  return payload.requestedSchema;
+}
+
+function mcpElicitationFieldOptions(field: typeof McpElicitationFormField.Type) {
+  if (field.oneOf) {
+    return field.oneOf.map((option) => ({ value: option.const, label: option.title }));
+  }
+  return (field.enum ?? []).map((value, index) => ({
+    value,
+    label: field.enumNames?.[index],
+  }));
+}
+
+function isMcpElicitationPersistenceField(
+  key: string,
+  field: typeof McpElicitationFormField.Type,
+): boolean {
+  return (
+    mcpElicitationPersistenceDecision(key) !== null ||
+    key.toLowerCase() === "persist" ||
+    mcpElicitationPersistenceDecision(field.title ?? "") !== null ||
+    mcpElicitationPersistenceDecision(field.description ?? "") !== null
+  );
+}
+
+/** Returns the app and approval choices advertised by an MCP elicitation. */
+export function describeMcpElicitation(
+  payload: EffectCodexSchema.McpServerElicitationRequestParams,
+): { readonly appName: string; readonly options: ReadonlyArray<ProviderApprovalOption> } {
+  const metadata = isMcpElicitationMetadata(payload._meta) ? payload._meta : undefined;
+  const appName =
+    metadata?.app_name ??
+    metadata?.appName ??
+    metadata?.app ??
+    metadata?.target?.app ??
+    metadata?.target?.name ??
+    metadata?.tool_params?.app_name ??
+    metadata?.tool_params?.app ??
+    payload.message.match(/^Allow ChatGPT to use (.+?)\?$/i)?.[1] ??
+    metadata?.connector_name ??
+    metadata?.connectorName ??
+    payload.serverName;
+  const persistenceOptions = new Map<McpElicitationPersistenceDecision, string>();
+  const persist = metadata?.persist;
+  for (const value of typeof persist === "string" ? [persist] : (persist ?? [])) {
+    const decision = mcpElicitationPersistenceDecision(value);
+    if (decision) persistenceOptions.set(decision, "");
+  }
+  if (metadata?.allowPersistentApproval) {
+    persistenceOptions.set("acceptAlways", "");
+  }
+
+  const form = mcpElicitationFormFields(payload);
+  for (const [key, field] of Object.entries(form?.properties ?? {})) {
+    for (const option of mcpElicitationFieldOptions(field)) {
+      const decision = mcpElicitationPersistenceDecision(option.value);
+      if (decision) persistenceOptions.set(decision, option.label ?? "");
+    }
+    if (field.type === "boolean" && isMcpElicitationPersistenceField(key, field)) {
+      persistenceOptions.set("acceptAlways", field.title ?? "");
+    }
+  }
+
+  return {
+    appName,
+    options: [
+      { decision: "cancel", label: "Cancel" },
+      { decision: "decline", label: "Decline" },
+      ...(persistenceOptions.has("acceptForSession") &&
+      toMcpElicitationResponse(payload, "acceptForSession").action === "accept"
+        ? [
+            {
+              decision: "acceptForSession" as const,
+              label: persistenceOptions.get("acceptForSession") || "Always allow this session",
+            },
+          ]
+        : []),
+      ...(persistenceOptions.has("acceptAlways") &&
+      toMcpElicitationResponse(payload, "acceptAlways").action === "accept"
+        ? [
+            {
+              decision: "acceptAlways" as const,
+              label: persistenceOptions.get("acceptAlways") || "Always allow",
+            },
+          ]
+        : []),
+      { decision: "accept", label: "Approve" },
+    ],
+  };
+}
+
+/** Converts a T3 approval decision into the MCP elicitation wire response. */
+export function toMcpElicitationResponse(
+  payload: EffectCodexSchema.McpServerElicitationRequestParams,
+  decision: ProviderApprovalDecision,
+): EffectCodexSchema.McpServerElicitationRequestResponse {
+  if (decision === "decline" || decision === "cancel") {
+    return { action: decision };
+  }
+
+  if (payload.mode === "url") {
+    return { action: "decline" };
+  }
+
+  const persist =
+    decision === "acceptForSession"
+      ? "session"
+      : decision === "acceptAlways"
+        ? "always"
+        : undefined;
+  const form = mcpElicitationFormFields(payload);
+  const content: Record<string, unknown> = {};
+
+  for (const [key, field] of Object.entries(form?.properties ?? {})) {
+    const options = mcpElicitationFieldOptions(field);
+    const chosenOption = options.find((option) =>
+      persist
+        ? mcpElicitationPersistenceDecision(option.value) === decision
+        : /once|accept|approve|allow/i.test(option.value) &&
+          mcpElicitationPersistenceDecision(option.value) === null,
+    );
+    if (chosenOption) {
+      content[key] = chosenOption.value;
+    } else if (field.type === "boolean" && isMcpElicitationPersistenceField(key, field)) {
+      content[key] = decision === "acceptAlways";
+    } else if (field.default !== undefined && field.default !== null) {
+      content[key] = field.default;
+    }
+  }
+
+  if (form?.required?.some((key) => !Object.hasOwn(content, key))) {
+    return { action: "decline" };
+  }
+
+  return {
+    action: "accept",
+    ...(persist ? { _meta: { persist } } : {}),
+    ...(form ? { content } : {}),
+  };
+}
+
 type CodexServerNotification = {
   readonly [M in CodexRpc.ServerNotificationMethod]: {
     readonly method: M;
@@ -350,6 +605,7 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly browserToolsAvailable?: boolean;
+  readonly computerToolsAvailable?: boolean;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -364,7 +620,8 @@ function buildCodexCollaborationMode(input: {
       developer_instructions: buildCodexDeveloperInstructions(
         input.interactionMode,
         { model, reasoningEffort },
-        input.browserToolsAvailable ?? true,
+        input.browserToolsAvailable ?? false,
+        input.computerToolsAvailable ?? false,
       ),
     },
   };
@@ -382,8 +639,10 @@ export function buildTurnStartParams(input: {
   readonly serviceTier?: CodexServiceTier;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
-  /** Defaults to true so callers that predate the agent-access gate are unchanged. */
+  /** Browser instructions are omitted unless the session explicitly attached preview tools. */
   readonly browserToolsAvailable?: boolean;
+  /** Computer instructions are omitted unless the session explicitly attached native tools. */
+  readonly computerToolsAvailable?: boolean;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -404,7 +663,8 @@ export function buildTurnStartParams(input: {
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    browserToolsAvailable: input.browserToolsAvailable ?? true,
+    browserToolsAvailable: input.browserToolsAvailable ?? false,
+    computerToolsAvailable: input.computerToolsAvailable ?? false,
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -518,7 +778,9 @@ function readNotificationThreadId(notification: CodexServerNotification): string
     case "thread/unarchived":
     case "thread/closed":
     case "thread/name/updated":
+    case "thread/settings/updated":
     case "thread/tokenUsage/updated":
+    case "model/rerouted":
     case "turn/started":
     case "hook/started":
     case "turn/completed":
@@ -691,6 +953,35 @@ interface CollabChildAgentState {
   readonly spawnTurnId: TurnId | undefined;
 }
 
+interface CollabChildMetadataState {
+  readonly model: string | undefined;
+  readonly effort: string | undefined;
+  readonly lookupStarted: boolean;
+  readonly closed: boolean;
+}
+
+function collabChildIdentity(
+  child: CollabChildAgentState,
+  metadata: CollabChildMetadataState | undefined,
+) {
+  return {
+    agentThreadId: child.agentThreadId,
+    ...(child.nickname ? { nickname: child.nickname } : {}),
+    ...(child.role ? { role: child.role } : {}),
+    ...(child.agentPath ? { agentPath: child.agentPath } : {}),
+    ...(metadata?.model ? { model: metadata.model } : {}),
+    ...(metadata?.effort ? { effort: metadata.effort } : {}),
+  };
+}
+
+function nonEmptyMetadataValue(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function readThreadSpawnSource(thread: { readonly source: unknown }):
   | {
       nickname: string | undefined;
@@ -745,6 +1036,24 @@ function rememberCollabReceiverTurns(
   }
 }
 
+export function isTerminalCodexChildNotification(notification: {
+  readonly method: string;
+  readonly params?: unknown;
+}): boolean {
+  if (notification.method === "thread/closed") {
+    return true;
+  }
+  if (notification.method !== "error") {
+    return false;
+  }
+  const params = notification.params;
+  return (
+    typeof params !== "object" ||
+    params === null ||
+    (params as { readonly willRetry?: unknown }).willRetry !== true
+  );
+}
+
 function shouldSuppressChildConversationNotification(
   method: CodexRpc.ServerNotificationMethod,
 ): boolean {
@@ -756,7 +1065,9 @@ function shouldSuppressChildConversationNotification(
     method === "thread/closed" ||
     method === "thread/compacted" ||
     method === "thread/name/updated" ||
+    method === "thread/settings/updated" ||
     method === "thread/tokenUsage/updated" ||
+    method === "model/rerouted" ||
     method === "turn/started" ||
     method === "turn/completed" ||
     method === "turn/plan/updated" ||
@@ -787,6 +1098,8 @@ const CHILD_AGENT_EVENT_METHODS: ReadonlySet<string> = new Set([
   "turn/completed",
   "thread/status/changed",
   "thread/tokenUsage/updated",
+  "thread/settings/updated",
+  "model/rerouted",
   "item/started",
   "item/completed",
   "thread/closed",
@@ -805,7 +1118,6 @@ const CHILD_CHATTER_METHODS: ReadonlySet<string> = new Set([
   "turn/plan/updated",
   "turn/diff/updated",
   "thread/name/updated",
-  "thread/settings/updated",
   "rawResponseItem/completed",
   // Child-owned thread lifecycle: the parent adapter maps these onto the
   // PARENT thread (archived/compacted state), so a child compacting would
@@ -848,6 +1160,84 @@ function toCodexUserInputAnswer(
     return Effect.succeed({ answers: value.answers });
   }
   return Effect.fail(new CodexSessionRuntimeInvalidUserInputAnswersError({ questionId }));
+}
+
+type CodexRuntimeUserInputQuestion =
+  | EffectCodexSchema.ServerRequest__ToolRequestUserInputQuestion
+  | EffectCodexSchema.ToolRequestUserInputParams__ToolRequestUserInputQuestion;
+
+function boundedCodexUserInputText(value: string, maximumLength: number): string | undefined {
+  if (value.length > maximumLength) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Validates provider questions before the request enters the pending map. The
+ * canonical ids stay byte-for-byte compatible with Codex's answer keys; a
+ * request that cannot cross the client contract is rejected instead of being
+ * truncated into an answer the provider cannot correlate.
+ */
+export function normalizeCodexUserInputQuestions(
+  questions: ReadonlyArray<CodexRuntimeUserInputQuestion>,
+): ReadonlyArray<UserInputQuestion> | undefined {
+  if (questions.length === 0 || questions.length > PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS) {
+    return undefined;
+  }
+
+  const normalized: Array<UserInputQuestion> = [];
+  const ids = new Set<string>();
+  let totalChars = 0;
+
+  for (const question of questions) {
+    const id = boundedCodexUserInputText(question.id, PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH);
+    const header = boundedCodexUserInputText(
+      question.header,
+      PROVIDER_RUNTIME_USER_INPUT_HEADER_MAX_LENGTH,
+    );
+    const prompt = boundedCodexUserInputText(
+      question.question,
+      PROVIDER_RUNTIME_USER_INPUT_QUESTION_MAX_LENGTH,
+    );
+    if (!id || id !== question.id || !header || !prompt || ids.has(id)) {
+      return undefined;
+    }
+
+    const providerOptions = question.options ?? [];
+    if (providerOptions.length > PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS) {
+      return undefined;
+    }
+    const options: Array<UserInputQuestion["options"][number]> = [];
+    for (const option of providerOptions) {
+      const label = boundedCodexUserInputText(
+        option.label,
+        PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH,
+      );
+      const description = boundedCodexUserInputText(
+        option.description,
+        PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
+      );
+      if (!label || !description) {
+        return undefined;
+      }
+      totalChars += label.length + description.length;
+      if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
+        return undefined;
+      }
+      options.push({ label, description });
+    }
+
+    totalChars += id.length + header.length + prompt.length;
+    if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
+      return undefined;
+    }
+    ids.add(id);
+    normalized.push({ id, header, question: prompt, options, multiSelect: false });
+  }
+
+  return normalized;
 }
 
 function toCodexUserInputAnswers(
@@ -907,12 +1297,13 @@ export const makeCodexSessionRuntime = (
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const runtimeScope = yield* Scope.Scope;
     const crypto = yield* Crypto.Crypto;
-    const events = yield* Queue.unbounded<ProviderEvent>();
+    const events = yield* Queue.bounded<ProviderEvent>(CODEX_SESSION_EVENT_QUEUE_CAPACITY);
     const pendingApprovalsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingApproval>());
     const approvalCorrelationsRef = yield* Ref.make(new Map<string, ApprovalCorrelation>());
     const pendingUserInputsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingUserInput>());
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const collabChildAgentsRef = yield* Ref.make(new Map<string, CollabChildAgentState>());
+    const collabChildMetadataRef = yield* Ref.make(new Map<string, CollabChildMetadataState>());
     /** Child provider-thread id → its currently running provider turn id. */
     const collabChildLiveTurnsRef = yield* Ref.make(new Map<string, string>());
     const suppressMemoryConsolidationNotification = makeMemoryConsolidationNotificationFilter();
@@ -960,7 +1351,9 @@ export const makeCodexSessionRuntime = (
     const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
       Effect.provide(clientContext),
     );
-    const serverNotifications = yield* Queue.unbounded<CodexServerNotification>();
+    const serverNotifications = yield* Queue.bounded<CodexServerNotification>(
+      CODEX_SESSION_EVENT_QUEUE_CAPACITY,
+    );
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = (purpose: CodexErrors.CodexAppServerIdentifierPurpose) =>
       crypto.randomUUIDv4.pipe(
@@ -1008,6 +1401,133 @@ export const makeCodexSessionRuntime = (
         message,
       });
 
+    const updateCollabChildMetadata = (
+      agentThreadId: string,
+      update: { readonly model?: string; readonly effort?: string },
+      overwriteKnown: boolean,
+    ) =>
+      Ref.modify(collabChildMetadataRef, (current) => {
+        const previous = current.get(agentThreadId) ?? {
+          model: undefined,
+          effort: undefined,
+          lookupStarted: false,
+          closed: false,
+        };
+        const model =
+          update.model && (overwriteKnown || !previous.model) ? update.model : previous.model;
+        const effort =
+          update.effort && (overwriteKnown || !previous.effort) ? update.effort : previous.effort;
+        const changed = model !== previous.model || effort !== previous.effort;
+        if (!changed) {
+          return [false, current] as const;
+        }
+        const next = new Map(current);
+        next.set(agentThreadId, { ...previous, model, effort });
+        return [true, next] as const;
+      });
+
+    const markCollabChildClosed = (agentThreadId: string) =>
+      Ref.update(collabChildMetadataRef, (current) => {
+        const previous = current.get(agentThreadId) ?? {
+          model: undefined,
+          effort: undefined,
+          lookupStarted: false,
+          closed: false,
+        };
+        if (previous.closed) {
+          return current;
+        }
+        const next = new Map(current);
+        next.set(agentThreadId, { ...previous, closed: true });
+        return next;
+      });
+
+    const markCollabChildOpen = (agentThreadId: string) =>
+      Ref.update(collabChildMetadataRef, (current) => {
+        const previous = current.get(agentThreadId);
+        if (!previous?.closed) {
+          return current;
+        }
+        const next = new Map(current);
+        next.set(agentThreadId, { ...previous, closed: false });
+        return next;
+      });
+
+    const emitCollabChildMetadataUpdated = Effect.fn(
+      "CodexSessionRuntime.emitCollabChildMetadataUpdated",
+    )(function* (agentThreadId: string) {
+      const child = (yield* Ref.get(collabChildAgentsRef)).get(agentThreadId);
+      const metadata = (yield* Ref.get(collabChildMetadataRef)).get(agentThreadId);
+      if (!child || metadata?.closed) {
+        return;
+      }
+      yield* emitEvent({
+        kind: "notification",
+        threadId: options.threadId,
+        ...(child.spawnTurnId ? { turnId: child.spawnTurnId } : {}),
+        method: "collabAgent/metadataUpdated",
+        payload: collabChildIdentity(child, metadata),
+      });
+    });
+
+    const startCollabChildMetadataLookup = Effect.fn(
+      "CodexSessionRuntime.startCollabChildMetadataLookup",
+    )(function* (agentThreadId: string) {
+      const shouldStart = yield* Ref.modify(collabChildMetadataRef, (current) => {
+        const previous = current.get(agentThreadId) ?? {
+          model: undefined,
+          effort: undefined,
+          lookupStarted: false,
+          closed: false,
+        };
+        if (previous.lookupStarted || previous.closed) {
+          return [false, current] as const;
+        }
+        const next = new Map(current);
+        next.set(agentThreadId, { ...previous, lookupStarted: true });
+        return [true, next] as const;
+      });
+      if (!shouldStart) {
+        return;
+      }
+
+      // The child is already loaded. This rejoins it without starting a turn,
+      // and excludeTurns avoids loading or replaying its history.
+      yield* client.raw
+        .request("thread/resume", { threadId: agentThreadId, excludeTurns: true })
+        .pipe(
+          Effect.flatMap(decodeCodexChildResumeMetadata),
+          Effect.timeout("5 seconds"),
+          Effect.flatMap((response) =>
+            Effect.gen(function* () {
+              if (response.thread.id !== agentThreadId) {
+                return;
+              }
+              const child = (yield* Ref.get(collabChildAgentsRef)).get(agentThreadId);
+              const metadata = (yield* Ref.get(collabChildMetadataRef)).get(agentThreadId);
+              if (!child || metadata?.closed) {
+                return;
+              }
+              const model = nonEmptyMetadataValue(response.model);
+              const effort = nonEmptyMetadataValue(response.reasoningEffort);
+              const changed = yield* updateCollabChildMetadata(
+                agentThreadId,
+                {
+                  ...(model ? { model } : {}),
+                  ...(effort ? { effort } : {}),
+                },
+                false,
+              );
+              if (changed) {
+                yield* emitCollabChildMetadataUpdated(agentThreadId);
+              }
+            }),
+          ),
+          Effect.catch(() => Effect.void),
+          Effect.forkIn(runtimeScope),
+        );
+    });
+
     const settlePendingApprovals = (decision: ProviderApprovalDecision) =>
       Ref.get(pendingApprovalsRef).pipe(
         Effect.flatMap((pendingApprovals) =>
@@ -1032,6 +1552,13 @@ export const makeCodexSessionRuntime = (
         ),
       );
 
+    const forgetCollabChildAgent = (agentThreadId: string) =>
+      Ref.update(collabChildAgentsRef, (current) => {
+        const next = new Map(current);
+        next.delete(agentThreadId);
+        return next;
+      });
+
     /**
      * Registers v2 collab children and re-emits their notifications as
      * synthetic `collabAgent/*` events for the adapter's task.* synthesis.
@@ -1046,6 +1573,10 @@ export const makeCodexSessionRuntime = (
           const thread = notification.params.thread;
           const spawn = readThreadSpawnSource(thread);
           if (!spawn) {
+            return false;
+          }
+          const rootProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+          if (thread.id === rootProviderThreadId) {
             return false;
           }
           // Merge with any subAgentActivity registration that got here
@@ -1074,20 +1605,19 @@ export const makeCodexSessionRuntime = (
             next.set(thread.id, state);
             return next;
           });
+          const metadata = (yield* Ref.get(collabChildMetadataRef)).get(thread.id);
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,
             method: "collabAgent/started",
             ...(state.spawnTurnId ? { turnId: state.spawnTurnId } : {}),
             payload: {
-              agentThreadId: state.agentThreadId,
-              ...(state.nickname ? { nickname: state.nickname } : {}),
-              ...(state.role ? { role: state.role } : {}),
-              ...(state.agentPath ? { agentPath: state.agentPath } : {}),
+              ...collabChildIdentity(state, metadata),
               ...(state.depth !== undefined ? { depth: state.depth } : {}),
               ...(state.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
             },
           });
+          yield* startCollabChildMetadataLookup(thread.id);
           return true;
         }
 
@@ -1137,17 +1667,22 @@ export const makeCodexSessionRuntime = (
             return next;
           });
           const registeredChild = (yield* Ref.get(collabChildAgentsRef)).get(item.agentThreadId);
+          const metadata = (yield* Ref.get(collabChildMetadataRef)).get(item.agentThreadId);
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,
             method: "collabAgent/activity",
             ...(registeredChild?.spawnTurnId ? { turnId: registeredChild.spawnTurnId } : {}),
             payload: {
-              agentThreadId: item.agentThreadId,
-              agentPath: item.agentPath,
+              ...(registeredChild
+                ? collabChildIdentity(registeredChild, metadata)
+                : { agentThreadId: item.agentThreadId, agentPath: item.agentPath }),
               activityKind: item.kind,
             },
           });
+          if (item.kind === "started") {
+            yield* startCollabChildMetadataLookup(item.agentThreadId);
+          }
           return true;
         }
 
@@ -1163,19 +1698,45 @@ export const makeCodexSessionRuntime = (
         if (providerConversationId === interceptRootId) {
           return false;
         }
+
+        if (
+          interceptRootId !== undefined &&
+          (notification.method === "thread/settings/updated" ||
+            notification.method === "model/rerouted")
+        ) {
+          const model = nonEmptyMetadataValue(
+            notification.method === "thread/settings/updated"
+              ? notification.params.threadSettings.model
+              : notification.params.toModel,
+          );
+          const effort =
+            notification.method === "thread/settings/updated"
+              ? nonEmptyMetadataValue(notification.params.threadSettings.effort)
+              : undefined;
+          const changed = yield* updateCollabChildMetadata(
+            providerConversationId,
+            {
+              ...(model ? { model } : {}),
+              ...(effort ? { effort } : {}),
+            },
+            true,
+          );
+          if (changed && (yield* Ref.get(collabChildAgentsRef)).has(providerConversationId)) {
+            yield* emitCollabChildMetadataUpdated(providerConversationId);
+          }
+          return true;
+        }
+
         const children = yield* Ref.get(collabChildAgentsRef);
         const child = children.get(providerConversationId);
         if (!child) {
           return false;
         }
-        const childIdentity = {
-          agentThreadId: child.agentThreadId,
-          ...(child.nickname ? { nickname: child.nickname } : {}),
-          ...(child.role ? { role: child.role } : {}),
-          ...(child.agentPath ? { agentPath: child.agentPath } : {}),
-        };
+        const metadata = (yield* Ref.get(collabChildMetadataRef)).get(child.agentThreadId);
+        const childIdentity = collabChildIdentity(child, metadata);
         switch (notification.method) {
           case "turn/started": {
+            yield* markCollabChildOpen(child.agentThreadId);
             const childTurnId =
               typeof (notification.params as { turn?: { id?: unknown } }).turn?.id === "string"
                 ? ((notification.params as { turn: { id: string } }).turn.id as string)
@@ -1259,6 +1820,7 @@ export const makeCodexSessionRuntime = (
               next.delete(child.agentThreadId);
               return next;
             });
+            yield* markCollabChildClosed(child.agentThreadId);
             yield* emitEvent({
               kind: "notification",
               threadId: options.threadId,
@@ -1266,6 +1828,7 @@ export const makeCodexSessionRuntime = (
               method: "collabAgent/closed",
               payload: childIdentity,
             });
+            yield* forgetCollabChildAgent(child.agentThreadId);
             return true;
           case "error": {
             // A child error must surface as a failed agent, not vanish into
@@ -1295,6 +1858,7 @@ export const makeCodexSessionRuntime = (
                 status: { type: "systemError" },
               },
             });
+            yield* forgetCollabChildAgent(child.agentThreadId);
             return true;
           }
           default:
@@ -1328,6 +1892,13 @@ export const makeCodexSessionRuntime = (
         // become synthetic collabAgent events (review finding). The
         // suppressor still covers UNREGISTERED children.
         if (yield* interceptCollabChildNotification(notification)) {
+          const providerConversationId = readNotificationThreadId(notification);
+          if (
+            providerConversationId !== undefined &&
+            isTerminalCodexChildNotification(notification)
+          ) {
+            collabReceiverTurns.delete(providerConversationId);
+          }
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
           return;
         }
@@ -1382,6 +1953,9 @@ export const makeCodexSessionRuntime = (
                 next.delete(foreignThreadId);
                 return next;
               });
+              if (notification.method === "thread/closed") {
+                collabReceiverTurns.delete(foreignThreadId);
+              }
             }
           }
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
@@ -1493,7 +2067,7 @@ export const makeCodexSessionRuntime = (
           const willRetry = payload.willRetry;
           return updateSession(sessionRef, {
             status: willRetry ? "running" : "error",
-            ...(errorMessage ? { lastError: errorMessage } : {}),
+            ...(errorMessage ? { lastError: normalizeProviderSessionError(errorMessage) } : {}),
           });
         }),
       ),
@@ -1550,7 +2124,7 @@ export const makeCodexSessionRuntime = (
           ),
         );
         return {
-          decision: resolved,
+          decision: resolved === "acceptAlways" ? "acceptForSession" : resolved,
         } satisfies EffectCodexSchema.CommandExecutionRequestApprovalResponse;
       }),
     );
@@ -1608,13 +2182,83 @@ export const makeCodexSessionRuntime = (
           ),
         );
         return {
-          decision: resolved,
+          decision: resolved === "acceptAlways" ? "acceptForSession" : resolved,
         } satisfies EffectCodexSchema.FileChangeRequestApprovalResponse;
+      }),
+    );
+
+    yield* client.handleServerRequest("mcpServer/elicitation/request", (payload) =>
+      Effect.gen(function* () {
+        if (toMcpElicitationResponse(payload, "accept").action !== "accept") {
+          yield* Effect.logWarning("Declined an unsupported MCP elicitation.", {
+            serverName: payload.serverName,
+            mode: payload.mode,
+          });
+          return {
+            action: "decline",
+          } satisfies EffectCodexSchema.McpServerElicitationRequestResponse;
+        }
+
+        const requestId = ApprovalRequestId.make(yield* randomUUIDv4("mcp-elicitation-request"));
+        const turnId = payload.turnId
+          ? TurnId.make(payload.turnId)
+          : (yield* Ref.get(sessionRef)).activeTurnId;
+        const jsonRpcId = payload.mode === "url" ? payload.elicitationId : requestId;
+        const decision = yield* Deferred.make<ProviderApprovalDecision>();
+
+        yield* Ref.update(pendingApprovalsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            requestId,
+            jsonRpcId,
+            requestKind: "mcp-elicitation",
+            turnId,
+            itemId: undefined,
+            decision,
+          });
+          return next;
+        });
+        yield* Ref.update(approvalCorrelationsRef, (current) => {
+          const next = new Map(current);
+          next.set(jsonRpcId, {
+            requestId,
+            requestKind: "mcp-elicitation",
+            turnId,
+            itemId: undefined,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "mcpServer/elicitation/request",
+          requestId,
+          requestKind: "mcp-elicitation",
+          ...(turnId ? { turnId } : {}),
+          payload,
+        });
+
+        const resolved = yield* Deferred.await(decision).pipe(
+          Effect.ensuring(
+            Ref.update(pendingApprovalsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+        return toMcpElicitationResponse(payload, resolved);
       }),
     );
 
     yield* client.handleServerRequest("item/tool/requestUserInput", (payload) =>
       Effect.gen(function* () {
+        if (!normalizeCodexUserInputQuestions(payload.questions)) {
+          return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+            "Codex user-input request exceeds the canonical client limits.",
+          );
+        }
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4("user-input-request"));
         const turnId = TurnId.make(payload.turnId);
         const itemId = ProviderItemId.make(payload.itemId);
@@ -1692,10 +2336,8 @@ export const makeCodexSessionRuntime = (
       Stream.decodeText(),
       Stream.runForEach((chunk) =>
         Ref.modify(stderrRemainderRef, (current) => {
-          const combined = current + chunk;
-          const lines = combined.split("\n");
-          const remainder = lines.pop() ?? "";
-          return [lines.map((line) => line.replace(/\r$/, "")), remainder] as const;
+          const [lines, remainder] = splitCodexStderrChunk(current, chunk);
+          return [lines, remainder] as const;
         }).pipe(
           Effect.flatMap((lines) =>
             Effect.forEach(
@@ -1838,7 +2480,12 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs, "t3-code"),
+            browserToolsAvailable:
+              options.browserToolsAvailable ??
+              hasConfiguredMcpServer(options.appServerArgs, T3_CODE_MCP_SERVER_NAME),
+            computerToolsAvailable:
+              options.computerToolsAvailable ??
+              hasConfiguredMcpServer(options.appServerArgs, T3_CODE_COMPUTER_MCP_SERVER_NAME),
           });
           // A send that lands while a turn is running is a steer: inject into
           // the active turn instead of letting Codex queue a follow-up turn.

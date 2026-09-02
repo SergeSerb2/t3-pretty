@@ -1,6 +1,6 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 
-import { SerializedAsyncQueue } from "./serialized-async-queue";
+import { LatestOnlyAsyncQueue, SerializedAsyncQueue } from "./serialized-async-queue";
 
 function deferred() {
   let resolve!: () => void;
@@ -41,5 +41,44 @@ describe("SerializedAsyncQueue", () => {
 
     await expect(first).rejects.toThrow("failed");
     await expect(second).resolves.toBe("recovered");
+  });
+});
+
+describe("LatestOnlyAsyncQueue", () => {
+  it("coalesces pending snapshots behind an in-flight operation", async () => {
+    const firstGate = deferred();
+    const started: number[] = [];
+    const completed: number[] = [];
+    const queue = new LatestOnlyAsyncQueue<number>(async (value) => {
+      started.push(value);
+      if (value === 1) {
+        await firstGate.promise;
+      }
+      completed.push(value);
+    });
+
+    queue.enqueue(1);
+    queue.enqueue(2);
+    queue.enqueue(3);
+    await Promise.resolve();
+    expect(started).toEqual([1]);
+
+    firstGate.resolve();
+    await vi.waitFor(() => expect(completed).toEqual([1, 3]));
+    expect(started).toEqual([1, 3]);
+  });
+
+  it("continues after an operation rejects", async () => {
+    const failures: unknown[] = [];
+    const completed: number[] = [];
+    const queue = new LatestOnlyAsyncQueue<number>(async (value) => {
+      if (value === 1) throw new Error("failed");
+      completed.push(value);
+    }, failures.push.bind(failures));
+
+    queue.enqueue(1);
+    await vi.waitFor(() => expect(failures).toHaveLength(1));
+    queue.enqueue(2);
+    await vi.waitFor(() => expect(completed).toEqual([2]));
   });
 });

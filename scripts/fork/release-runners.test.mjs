@@ -14,6 +14,10 @@ const mobileRelease = NodeFS.readFileSync(
   NodePath.resolve(here, "publish-mobile-release.sh"),
   "utf8",
 );
+const androidRelease = NodeFS.readFileSync(
+  NodePath.resolve(here, "publish-android-release.sh"),
+  "utf8",
+);
 const pipeline = NodeFS.readFileSync(
   NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
   "utf8",
@@ -129,6 +133,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(pipeline, "key: publish-cli");
     assert.include(pipeline, "CLI tarball");
     assert.include(pipeline, "depends_on: macos-dmg");
+    assert.match(pipeline, /key: publish-cli[\s\S]*?build\.source != "schedule"/u);
     const publishCli = NodeFS.readFileSync(NodePath.resolve(here, "publish-cli.sh"), "utf8");
     assert.include(publishCli, "cli.ts pack");
     assert.include(publishCli, "bash scripts/fork/ensure-linux-node.sh");
@@ -142,6 +147,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "T3CODE_BUILD_FLAVOR=internal");
     assert.include(publishCli, "latest-mac.yml");
     assert.include(publishCli, "https://vite.plus");
+    const secretsHelper = NodeFS.readFileSync(
+      NodePath.resolve(here, "load-buildkite-secrets.sh"),
+      "utf8",
+    );
+    assert.include(secretsHelper, ".local/share/vite-plus/bin");
     const installCli = NodeFS.readFileSync(NodePath.resolve(here, "install-cli.sh"), "utf8");
     assert.include(installCli, "https://github.com/SergeSerb2/t3-pretty/releases/latest/download");
     assert.include(installCli, "turn on T3 Connect");
@@ -154,16 +164,19 @@ describe("T3 Pretty release runner placement", () => {
 
   it("pins macos-release packaging steps to os=macos agents", () => {
     // m1-linux-t3code-fork shares the macos-release queue as a review-only
-    // agent; DMG/iOS/relay/sync must never be assigned to a Linux box.
-    // upstream-sync, macos-dmg, ios-mobile, deploy-relay — reviews stay
-    // queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 5);
+    // agent; DMG/mobile/relay/sync must never be assigned to a Linux box.
+    // upstream-sync, macos-dmg, three mobile jobs, deploy-relay — reviews
+    // stay queue-wide.
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 7);
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
-    assert.include(pipeline, 'concurrency_group: "t3-pretty/ios-mobile"');
+    assert.equal(
+      (pipeline.match(/concurrency_group: "t3-pretty\/apple-signing"/g) || []).length,
+      2,
+    );
     assert.include(pipeline, "priority: 20");
     assert.notInclude(pipeline, "interruptible:");
     assert.include(pipeline, "timeout_in_minutes: 30");
@@ -184,6 +197,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
     assert.include(mobileRelease, "Xcode-beta.app");
+    assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
+    assert.include(mobileRelease, "brew install cocoapods");
+    assert.include(mobileRelease, "brew install fastlane");
     assert.include(mobileRelease, "security-eas-local-keychain");
     assert.include(mobileRelease, "origin-forge.mjs merge-pr");
     assert.include(mobileRelease, "did not write should_build");
@@ -252,6 +268,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(macosAgent, "macos-review-only-hook.sh");
     assert.include(macosAgent, "T3_PRETTY_REVIEW_ONLY");
     assert.include(macosAgent, "GIT_CONFIG_GLOBAL");
+    assert.include(macosAgent, "HOMEBREW_NO_ASK");
+    assert.include(macosAgent, "HOMEBREW_NO_AUTO_UPDATE");
     assert.include(macosAgent, "persist-ios-native-submit-hook.sh");
     assert.include(macosAgent, "refresh-origin-git-credentials.sh");
     const persistHook = NodeFS.readFileSync(
@@ -264,6 +282,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(persistHook, 'grep -q "helpers_ready" "$src/macos-origin-git.sh"');
     assert.include(persistHook, "origin_cli_helper_ready");
     assert.include(persistHook, "macos-review-only-hook.sh");
+    assert.include(persistHook, "refresh-origin-git-credentials.sh");
+    assert.include(persistHook, 'mkdir -p "$HOME/.local/bin"');
     assert.include(
       persistHook,
       'grep -q "refresh_macos_agent_hooks" "$src/persist-ios-native-submit-hook.sh"',
@@ -282,6 +302,56 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(dmg, "process.stdin.on");
     assert.include(dmg, "git fetch --force --tags origin");
     assert.include(dmg, "resolve-fork-release.mjs --print version");
+  });
+
+  it("automates Internal Android and keeps public closed testing explicit", () => {
+    assert.include(pipeline, "key: android-mobile");
+    assert.include(pipeline, "key: public-android-mobile");
+    assert.equal(
+      (pipeline.match(/concurrency_group: "t3-pretty\/android-signing"/g) || []).length,
+      2,
+    );
+    assert.match(
+      pipeline,
+      /key: android-mobile[\s\S]*?build\.branch == "main" && build\.source != "schedule"/u,
+    );
+    assert.match(
+      pipeline,
+      /key: public-android-mobile[\s\S]*?build\.env\("T3CODE_PUBLIC_ANDROID_RELEASE"\) == "1"/u,
+    );
+    assert.match(
+      pipeline,
+      /key: public-android-mobile[\s\S]*?T3CODE_BUILD_FLAVOR: public[\s\S]*?T3CODE_RELAY_URL: https:\/\/relay\.t3\.codes/u,
+    );
+    assert.equal(
+      (pipeline.match(/command: bash scripts\/fork\/publish-android-release\.sh/g) || []).length,
+      2,
+    );
+
+    assert.include(androidRelease, "T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED");
+    assert.include(androidRelease, "delivery is wired but inactive");
+    assert.include(androidRelease, 'flavor="${T3CODE_ANDROID_RELEASE_FLAVOR:-internal}"');
+    assert.include(androidRelease, 'export T3CODE_BUILD_FLAVOR="$flavor"');
+    assert.include(androidRelease, 'export T3CODE_RELAY_URL="https://relay.t3.codes"');
+    assert.include(androidRelease, 'eas env:pull production --path "$tmp/eas.env"');
+    assert.include(androidRelease, "Public EAS production identity does not match");
+    assert.include(androidRelease, "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    assert.include(androidRelease, "EXPO_PUBLIC_T3CODE_BUILD_FLAVOR");
+    assert.include(androidRelease, "VITE_T3CODE_RELAY_URL");
+    assert.include(androidRelease, "Internal EAS production identity does not match");
+    assert.include(androidRelease, "must target Google Play internal testing");
+    assert.include(androidRelease, "--platform android");
+    assert.include(androidRelease, "--profile production");
+    assert.include(androidRelease, "--wait");
+    assert.include(androidRelease, '--id "$build_id"');
+    assert.notInclude(androidRelease, "--latest");
+    assert.include(androidRelease, ".t3-fork/android-${flavor}-production-fingerprint");
+    assert.include(androidRelease, "A newer Origin main exists");
+    assert.include(androidRelease, "Google Play internal testing");
+    assert.include(androidRelease, "scripts/lib/brand-assets.ts");
+    assert.include(androidRelease, "scripts/lib/public-config.ts");
+    assert.include(androidRelease, "origin-forge.mjs merge-pr");
+    assert.notInclude(androidRelease, "serviceAccountKeyPath");
   });
 
   it("packages a Linux x64 AppImage on linux-small without fetching Origin", () => {
@@ -329,6 +399,71 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(linux, "checkout-origin.sh");
     assert.notInclude(linux, "CURSOR_API_KEY");
     assert.notInclude(pipeline, "\n    secrets:");
+  });
+
+  it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {
+    const windows = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
+    const windowsAgent = NodeFS.readFileSync(
+      NodePath.resolve(here, "setup-buildkite-windows-agent.ps1"),
+      "utf8",
+    );
+    const windowsGit = NodeFS.readFileSync(
+      NodePath.resolve(here, "windows-origin-git.ps1"),
+      "utf8",
+    );
+
+    assert.match(pipeline, /Windows NSIS[\s\S]*powershell -NoProfile -NonInteractive/u);
+    assert.include(windows, '$env:CI = "true"');
+    assert.include(windows, '$env:GIT_TERMINAL_PROMPT = "0"');
+    assert.include(windows, '$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"');
+    assert.include(windows, '$env:CARGO_HOME = Join-Path $root ".cache\\t3-pretty-release\\cargo"');
+    assert.notInclude(windows, '$env:CARGO_HOME = "C:\\buildkite-agent\\cargo"');
+    assert.include(windows, "New-Item -ItemType Directory -Force -Path $env:CARGO_HOME");
+    assert.include(windows, "$env:RUSTUP_TOOLCHAIN = $rustToolchain");
+    assert.include(
+      windows,
+      '$rustToolchainBin = Join-Path $env:RUSTUP_HOME "toolchains\\$rustToolchain\\bin"',
+    );
+    assert.notInclude(windows, '$cargoBin = Join-Path $env:CARGO_HOME "bin"');
+    assert.include(windows, '$env:Path = "$rustToolchainBin;$env:Path"');
+    assert.notInclude(windows, "rust-wrappers");
+    assert.notInclude(windows, 'Join-Path $rustWrapperBin "$tool.cmd"');
+    assert.notInclude(windows, "Set-Content -Path (Join-Path $rustWrapperBin");
+    assert.notInclude(windows, "Copy-Item $bootstrapRustup");
+    assert.notInclude(windows, '"rustc.exe"');
+    assert.include(windows, "function Test-RustTool");
+    assert.match(windows, /function Test-RustTool[\s\S]*?catch \{\s*return \$false/u);
+    assert.include(windows, 'Test-RustTool "cargo"');
+    assert.include(windows, 'Test-RustTool "rustc"');
+    assert.match(windows, /function Test-RustTool[\s\S]*?& \$name --version/u);
+    assert.include(windows, "& $bootstrapRustup toolchain uninstall");
+    assert.match(windows, /try \{\s*& \$bootstrapRustup toolchain uninstall[\s\S]*?catch \{/u);
+    assert.include(windows, "& $bootstrapRustup toolchain install");
+    assert.notInclude(windows, "rustup default stable");
+    assert.include(windows, "corepack pnpm");
+    assert.include(windows, "Invoke-Pnpm install");
+    assert.include(windows, "Invoke-Pnpm run dist:desktop:artifact");
+    assert.include(
+      windows,
+      '$buildkiteAgent = "C:\\buildkite-agent\\service\\buildkite-agent.exe"',
+    );
+    assert.include(windows, "& $buildkiteAgent artifact upload");
+    assert.include(windows, "& $buildkiteAgent secret get CLOUDFLARE_API_TOKEN");
+    assert.notInclude(windows, "Get-Command buildkite-agent");
+    assert.notInclude(windows, "Test-OfficialVp");
+    assert.notInclude(windows, "https://vite.plus/ps1");
+    assert.include(windowsAgent, '"3.137.2"');
+    assert.include(windowsAgent, "buildkite/agent/v$agentVersion/install.ps1");
+    assert.include(windowsAgent, '"C:\\buildkite-agent\\service"');
+    assert.include(windowsAgent, "$serviceAgentVersion.Contains($agentVersion)");
+    assert.include(windowsAgent, 'AppParameters "start --config `"$cfg`""');
+    assert.include(windowsAgent, "AppExit Default Restart");
+    assert.include(windowsAgent, "sc.exe failure $serviceName");
+    assert.include(windowsAgent, '$service.WaitForStatus("Running"');
+    assert.include(windowsAgent, "Check $agentLog");
+    assert.notInclude(windowsAgent, "Get-Process -Name buildkite-agent");
+    assert.include(windowsAgent, "core.longpaths true");
+    assert.notInclude(windowsGit, "core.longpaths true");
   });
 
   it("deploys the relay on macos-release with baked public IDs", () => {

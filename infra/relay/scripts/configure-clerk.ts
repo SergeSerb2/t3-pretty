@@ -4,6 +4,16 @@ import { createClerkClient } from "@clerk/backend";
 
 export const DESKTOP_CLERK_ALLOWED_ORIGINS = ["t3code://app", "t3code-dev://app"] as const;
 
+export function resolveClerkSecretKey(raw: string | undefined): string | undefined {
+  const secretKey = raw?.trim();
+  if (!secretKey || Buffer.byteLength(secretKey, "utf8") > 8192) return undefined;
+  for (const character of secretKey) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) return undefined;
+  }
+  return secretKey;
+}
+
 export interface ClerkInstanceClient {
   readonly instance: {
     readonly get: () => Promise<{ readonly allowedOrigins: ReadonlyArray<string> | null }>;
@@ -36,9 +46,9 @@ export async function reconcileClerkAllowedOrigins(
 }
 
 async function main(): Promise<void> {
-  const secretKey = process.env.CLERK_SECRET_KEY?.trim();
+  const secretKey = resolveClerkSecretKey(process.env.CLERK_SECRET_KEY);
   if (!secretKey) {
-    throw new Error("CLERK_SECRET_KEY is required to configure Clerk desktop origins.");
+    throw new Error("CLERK_SECRET_KEY is missing or outside its safety boundary.");
   }
 
   const result = await reconcileClerkAllowedOrigins(createClerkClient({ secretKey }));

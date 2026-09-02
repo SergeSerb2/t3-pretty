@@ -1,5 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createPullRequestEnvironmentAtoms } from "@t3tools/client-runtime/state/pull-requests";
+import {
+  createLinkedPullRequestDetailAtomFamily,
+  createPullRequestEnvironmentAtoms,
+} from "@t3tools/client-runtime/state/pull-requests";
 import {
   isSettledAtomQueryInterrupt,
   readAtomQueryResult,
@@ -22,6 +25,10 @@ import {
 import { useRetryInterruptedQuery } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
+export const linkedPullRequestDetailAtom =
+  createLinkedPullRequestDetailAtomFamily(connectionAtomRuntime);
+
+const MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS = 5 * 60_000;
 
 export interface EnvironmentQueryTarget<Input> {
   readonly environmentId: EnvironmentId;
@@ -69,7 +76,10 @@ function createMergedEnvironmentQuery<Input, A>(
         if (isSettledAtomQueryInterrupt(result)) retryTargets.push(target);
       }
       return { values, error, isPending, retryTargets };
-    }).pipe(Atom.withLabel(`${label}:${key}`)),
+    }).pipe(
+      Atom.setIdleTTL(MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS),
+      Atom.withLabel(`${label}:${key}`),
+    ),
   );
   const empty = Atom.make<MergedEnvironmentQueryView<A, Input>>({
     values: [],

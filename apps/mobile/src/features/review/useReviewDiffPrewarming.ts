@@ -10,6 +10,7 @@ interface IdleDeadlineLike {
 }
 
 type IdleCallback = (deadline: IdleDeadlineLike) => void;
+const MAX_PREWARMED_REVIEW_SECTIONS = 2;
 
 export const REVIEW_DIFF_PREWARM_MAX_SECTIONS = 4;
 export const REVIEW_DIFF_PREWARM_MAX_CHARACTERS = 1_000_000;
@@ -73,7 +74,7 @@ export function prewarmReviewDiffSection(input: {
   getCachedNativeReviewDiffData({ parsedDiff, comments: [] });
 }
 
-/** Warms one cached section per idle period, after navigation animations finish. */
+/** Warms nearby cached sections one per idle period, after navigation animations finish. */
 export function useReviewDiffPrewarming(input: {
   readonly enabled?: boolean;
   readonly threadKey: string | null;

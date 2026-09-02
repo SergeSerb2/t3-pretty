@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -44,6 +45,7 @@ export type AcpIncomingNotification =
 export interface AcpPatchedProtocolOptions {
   readonly stdio: Stdio.Stdio;
   readonly terminationError?: Effect.Effect<AcpError.AcpError>;
+  readonly maximumWireLineBytes?: number;
   readonly serverRequestMethods: ReadonlySet<string>;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
@@ -71,23 +73,145 @@ interface AcpPendingRequest {
   readonly method: string;
 }
 
+/**
+ * ACP prompts can carry eight base64-encoded 10 MiB images plus text and
+ * metadata. Match the primary transport's 128 MiB compatibility ceiling while
+ * preventing a broken provider from growing one unterminated stdout record
+ * without bound.
+ */
+export const ACP_MAXIMUM_WIRE_LINE_BYTES = 128 * 1024 * 1024;
+const ACP_TRANSPORT_QUEUE_CAPACITY = 8;
+const ACP_NOTIFICATION_OBSERVER_CAPACITY = 128;
+
+export type AcpWireLineFrameResult =
+  | { readonly _tag: "Framed"; readonly lines: ReadonlyArray<string> }
+  | {
+      readonly _tag: "Overflow";
+      readonly lines: ReadonlyArray<string>;
+      readonly maximumBytes: number;
+      readonly observedBytes: number;
+    };
+
+/** Incrementally frames raw UTF-8 bytes without joining an incomplete line on every chunk. */
+export function makeAcpWireLineFramer(configuredMaximumBytes = ACP_MAXIMUM_WIRE_LINE_BYTES) {
+  const maximumBytes =
+    Number.isSafeInteger(configuredMaximumBytes) && configuredMaximumBytes > 0
+      ? Math.min(configuredMaximumBytes, ACP_MAXIMUM_WIRE_LINE_BYTES)
+      : ACP_MAXIMUM_WIRE_LINE_BYTES;
+  const decoder = new TextDecoder();
+  let pendingBuffer = new Uint8Array();
+  let pendingBytes = 0;
+  let overflow: { readonly maximumBytes: number; readonly observedBytes: number } | undefined;
+
+  const clearPending = () => {
+    // A single exceptional line must not pin its maximum-sized backing buffer
+    // for the rest of a long-lived provider session.
+    if (pendingBuffer.byteLength > 1024 * 1024) pendingBuffer = new Uint8Array();
+    pendingBytes = 0;
+  };
+
+  const ensurePendingCapacity = (requiredBytes: number) => {
+    if (pendingBuffer.byteLength >= requiredBytes) return;
+    let capacity = Math.min(maximumBytes, Math.max(64 * 1024, pendingBuffer.byteLength * 2));
+    while (capacity < requiredBytes) capacity = Math.min(maximumBytes, capacity * 2);
+    const next = new Uint8Array(capacity);
+    next.set(pendingBuffer.subarray(0, pendingBytes));
+    pendingBuffer = next;
+  };
+
+  const decodeCompletedLine = (tail: Uint8Array<ArrayBufferLike>): string => {
+    const totalBytes = pendingBytes + tail.byteLength;
+    let bytes: Uint8Array<ArrayBufferLike>;
+    if (pendingBytes === 0) {
+      bytes = tail;
+    } else {
+      ensurePendingCapacity(totalBytes);
+      pendingBuffer.set(tail, pendingBytes);
+      bytes = pendingBuffer.subarray(0, totalBytes);
+    }
+    const content =
+      bytes.byteLength > 0 && bytes[bytes.byteLength - 1] === 0x0d
+        ? bytes.subarray(0, bytes.byteLength - 1)
+        : bytes;
+    const line = decoder.decode(content);
+    clearPending();
+    return line;
+  };
+
+  const overflowResult = (
+    lines: ReadonlyArray<string>,
+    observedBytes: number,
+  ): AcpWireLineFrameResult => {
+    overflow = { maximumBytes, observedBytes };
+    clearPending();
+    return { _tag: "Overflow", lines, ...overflow };
+  };
+
+  const push = (chunk: Uint8Array<ArrayBufferLike>): AcpWireLineFrameResult => {
+    if (overflow) return { _tag: "Overflow", lines: [], ...overflow };
+    const lines: string[] = [];
+    let start = 0;
+    for (let index = 0; index < chunk.byteLength; index += 1) {
+      if (chunk[index] !== 0x0a) continue;
+      const segment = chunk.subarray(start, index);
+      const observedBytes = pendingBytes + segment.byteLength;
+      if (observedBytes > maximumBytes) return overflowResult(lines, observedBytes);
+      lines.push(decodeCompletedLine(segment));
+      start = index + 1;
+    }
+
+    const tail = chunk.subarray(start);
+    if (tail.byteLength === 0) return { _tag: "Framed", lines };
+    const observedBytes = pendingBytes + tail.byteLength;
+    if (observedBytes > maximumBytes) return overflowResult(lines, observedBytes);
+    ensurePendingCapacity(observedBytes);
+    pendingBuffer.set(tail, pendingBytes);
+    pendingBytes = observedBytes;
+    return { _tag: "Framed", lines };
+  };
+
+  const finish = (): AcpWireLineFrameResult => {
+    if (overflow) return { _tag: "Overflow", lines: [], ...overflow };
+    return pendingBytes === 0
+      ? { _tag: "Framed", lines: [] }
+      : { _tag: "Framed", lines: [decodeCompletedLine(new Uint8Array())] };
+  };
+
+  return { push, finish } as const;
+}
+
 const decodeSessionUpdate = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
 const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.ElicitationCompleteNotification,
 );
 const parserFactory = RpcSerialization.ndJsonRpc();
+const MAX_BUFFERED_RAW_NOTIFICATIONS = 32;
 
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
 ): Effect.fn.Return<AcpPatchedProtocol, never, Scope.Scope> {
   const parser = parserFactory.makeUnsafe();
-  const serverQueue = yield* Queue.unbounded<RpcMessage.FromClientEncoded>();
-  const clientQueue = yield* Queue.unbounded<RpcMessage.FromServerEncoded>();
-  const notificationQueue = yield* Queue.unbounded<AcpIncomingNotification>();
-  const disconnects = yield* Queue.unbounded<number>();
-  const outgoing = yield* Queue.unbounded<string | Uint8Array, Cause.Done<void>>();
+  const wireLineFramer = makeAcpWireLineFramer(options.maximumWireLineBytes);
+  const wireEncoder = new TextEncoder();
+  const serverQueue = yield* Queue.bounded<RpcMessage.FromClientEncoded>(
+    ACP_TRANSPORT_QUEUE_CAPACITY,
+  );
+  const clientQueue = yield* Queue.bounded<RpcMessage.FromServerEncoded>(
+    ACP_TRANSPORT_QUEUE_CAPACITY,
+  );
+  // Notifications are dispatched through the typed callback below; this live
+  // stream is an optional raw observer. A queue retained every notification
+  // forever in the normal no-observer server path.
+  const notificationPubSub = yield* PubSub.sliding<AcpIncomingNotification>(
+    Math.min(ACP_NOTIFICATION_OBSERVER_CAPACITY, MAX_BUFFERED_RAW_NOTIFICATIONS),
+  );
+  const disconnects = yield* Queue.bounded<number>(1);
+  const outgoing = yield* Queue.bounded<string | Uint8Array, Cause.Done<void>>(
+    ACP_TRANSPORT_QUEUE_CAPACITY,
+  );
   const nextRequestId = yield* Ref.make(1);
   const terminationHandled = yield* Ref.make(false);
+  const terminationReason = yield* Deferred.make<AcpError.AcpError>();
   const extPending = yield* Ref.make(new Map<string, AcpPendingRequest>());
 
   const logProtocol = (event: AcpProtocolLogEvent) => {
@@ -132,7 +256,11 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         payload: typeof encoded === "string" ? encoded : new TextDecoder().decode(encoded),
       });
 
-      yield* Queue.offer(outgoing, encoded).pipe(Effect.asVoid);
+      const offered = yield* Queue.offer(outgoing, encoded);
+      if (!offered) {
+        const reason = yield* Deferred.await(terminationReason);
+        return yield* reason;
+      }
     }
   });
 
@@ -178,7 +306,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     );
 
   const dispatchNotification = (notification: AcpIncomingNotification) =>
-    Queue.offer(notificationQueue, notification).pipe(
+    PubSub.publish(notificationPubSub, notification).pipe(
       Effect.andThen(
         options.onNotification
           ? options.onNotification(notification).pipe(Effect.catch(() => Effect.void))
@@ -198,7 +326,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       }),
     }).pipe(Effect.asVoid);
 
-  const handleTermination = (classify: () => Effect.Effect<AcpError.AcpError | undefined>) =>
+  const handleTermination = (classify: () => Effect.Effect<AcpError.AcpError>) =>
     Ref.modify(terminationHandled, (handled) => {
       if (handled) {
         return [Effect.void, true] as const;
@@ -207,9 +335,11 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         Effect.gen(function* () {
           yield* Queue.offer(disconnects, 0);
           const error = yield* classify();
-          if (!error) {
-            return;
-          }
+          yield* Deferred.succeed(terminationReason, error);
+          // Close the producer before clearing the pending map. A request
+          // racing termination either lands before this point and is failed,
+          // or sees the closed queue and fails with the same reason.
+          yield* Queue.end(outgoing);
           yield* failAllExtPending(error);
           yield* emitClientProtocolError(error);
           if (options.onTermination) {
@@ -406,54 +536,80 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     }
   };
 
-  yield* options.stdio.stdin.pipe(
-    Stream.runForEach((data) =>
-      logProtocol({
-        direction: "incoming",
-        stage: "raw",
-        payload: typeof data === "string" ? data : new TextDecoder().decode(data),
-      }).pipe(
-        Effect.flatMap(() =>
-          Effect.try({
-            try: () =>
-              parser.decode(data) as ReadonlyArray<
-                RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded
-              >,
-            catch: (cause) =>
-              new AcpError.AcpProtocolParseError({
-                operation: "decode-wire-message",
-                cause,
+  const handleLine = (line: string): Effect.Effect<void, AcpError.AcpError> =>
+    (options.logIncoming
+      ? logProtocol({
+          direction: "incoming",
+          stage: "raw",
+          payload: line,
+        })
+      : Effect.void
+    ).pipe(
+      Effect.flatMap(() =>
+        Effect.try({
+          // The Effect NDJSON parser emits only newline-terminated records.
+          // Framing first keeps its own partial-record buffer empty.
+          try: () =>
+            parser.decode(`${line}\n`) as ReadonlyArray<
+              RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded
+            >,
+          catch: (cause) =>
+            new AcpError.AcpProtocolParseError({
+              operation: "decode-wire-message",
+              cause,
+            }),
+        }),
+      ),
+      Effect.tap((messages) =>
+        logProtocol({
+          direction: "incoming",
+          stage: "decoded",
+          payload: messages,
+        }),
+      ),
+      Effect.tapErrorTag("AcpProtocolParseError", (error) =>
+        logProtocol({
+          direction: "incoming",
+          stage: "decode_failed",
+          payload: {
+            operation: error.operation,
+            ...(error.method === undefined ? {} : { method: error.method }),
+            ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
+            ...(error.issueCount === undefined ? {} : { issueCount: error.issueCount }),
+            ...(error.issueKinds === undefined ? {} : { issueKinds: error.issueKinds }),
+            ...(error.maximumPathDepth === undefined
+              ? {}
+              : { maximumPathDepth: error.maximumPathDepth }),
+          },
+        }),
+      ),
+      Effect.flatMap((messages) =>
+        Effect.forEach(messages, routeDecodedMessage, {
+          discard: true,
+        }),
+      ),
+    );
+
+  const handleFramedInput = (
+    framed: AcpWireLineFrameResult,
+  ): Effect.Effect<void, AcpError.AcpError> =>
+    Effect.forEach(framed.lines, handleLine, { discard: true }).pipe(
+      Effect.andThen(
+        framed._tag === "Overflow"
+          ? Effect.fail(
+              new AcpError.AcpWireLineTooLargeError({
+                maximumBytes: framed.maximumBytes,
+                observedBytes: framed.observedBytes,
               }),
-          }),
-        ),
-        Effect.tap((messages) =>
-          logProtocol({
-            direction: "incoming",
-            stage: "decoded",
-            payload: messages,
-          }),
-        ),
-        Effect.tapErrorTag("AcpProtocolParseError", (error) =>
-          logProtocol({
-            direction: "incoming",
-            stage: "decode_failed",
-            payload: {
-              operation: error.operation,
-              ...(error.method === undefined ? {} : { method: error.method }),
-              ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
-              ...(error.issueCount === undefined ? {} : { issueCount: error.issueCount }),
-              ...(error.issueKinds === undefined ? {} : { issueKinds: error.issueKinds }),
-              ...(error.maximumPathDepth === undefined
-                ? {}
-                : { maximumPathDepth: error.maximumPathDepth }),
-            },
-          }),
-        ),
-        Effect.flatMap((messages) =>
-          Effect.forEach(messages, routeDecodedMessage, {
-            discard: true,
-          }),
-        ),
+            )
+          : Effect.void,
+      ),
+    );
+
+  yield* options.stdio.stdin.pipe(
+    Stream.runForEach((chunk) =>
+      handleFramedInput(
+        wireLineFramer.push(typeof chunk === "string" ? wireEncoder.encode(chunk) : chunk),
       ),
     ),
     Effect.matchEffect({
@@ -467,15 +623,38 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         return handleTermination(() => Effect.succeed(normalized));
       },
       onSuccess: () =>
-        handleTermination(
-          () =>
-            options.terminationError ?? Effect.succeed(new AcpError.AcpInputStreamEndedError({})),
+        handleFramedInput(wireLineFramer.finish()).pipe(
+          Effect.matchEffect({
+            onFailure: (error) => handleTermination(() => Effect.succeed(error)),
+            onSuccess: () =>
+              handleTermination(
+                () =>
+                  options.terminationError ??
+                  Effect.succeed(new AcpError.AcpInputStreamEndedError({})),
+              ),
+          }),
         ),
     }),
     Effect.forkScoped,
   );
 
-  yield* Stream.fromQueue(outgoing).pipe(Stream.run(options.stdio.stdout()), Effect.forkScoped);
+  yield* Stream.fromQueue(outgoing).pipe(
+    Stream.run(options.stdio.stdout()),
+    Effect.matchEffect({
+      onFailure: (error) =>
+        handleTermination(() =>
+          Effect.succeed(
+            new AcpError.AcpTransportError({
+              operation: "write-output-stream",
+              cause: error,
+            }),
+          ),
+        ),
+      onSuccess: () =>
+        handleTermination(() => Effect.succeed(new AcpError.AcpOutputStreamEndedError({}))),
+    }),
+    Effect.forkScoped,
+  );
 
   const clientProtocol = RpcClient.Protocol.of({
     run: (_clientId, f) =>
@@ -553,7 +732,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     clientProtocol,
     serverProtocol,
     get incoming() {
-      return Stream.fromQueue(notificationQueue);
+      return Stream.fromPubSub(notificationPubSub);
     },
     request: sendRequest,
     notify: sendNotification,

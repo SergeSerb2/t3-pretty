@@ -11,7 +11,11 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { type ClientCacheKind, MobileDatabase } from "../persistence/mobile-database";
-import { make, THREAD_SNAPSHOT_CACHE_MAX_ENTRIES } from "./environment-cache-store";
+import {
+  make,
+  THREAD_SNAPSHOT_CACHE_MAX_ENTRIES,
+  VCS_REFS_CACHE_MAX_ENTRIES,
+} from "./environment-cache-store";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const REFS: VcsListRefsResult = {
@@ -86,9 +90,9 @@ function makeDatabase() {
         values.delete(id);
         updatedAt.delete(id);
       }),
-    pruneThreadCache: (environmentId, keep) =>
+    pruneCacheKind: (environmentId, kind, keep) =>
       Effect.sync(() => {
-        const prefix = `${environmentId}:thread:`;
+        const prefix = `${environmentId}:${kind}:`;
         const ids = [...values.keys()].filter((key) => key.startsWith(prefix));
         // Same ordering as the SQLite query: updated_at DESC, cache_key ASC.
         ids.sort((left, right) => {
@@ -129,6 +133,29 @@ describe("mobile SQLite environment cache store", () => {
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
 
       expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.some(REFS));
+    }),
+  );
+
+  it.effect("evicts the oldest VCS ref snapshots beyond the per-environment bound", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const otherEnvironmentId = EnvironmentId.make("environment-2");
+
+      yield* store.saveVcsRefs(otherEnvironmentId, "/other-repo", REFS);
+      for (let index = 1; index <= VCS_REFS_CACHE_MAX_ENTRIES + 1; index += 1) {
+        yield* store.saveVcsRefs(ENVIRONMENT_ID, `/repo-${index}`, REFS);
+      }
+
+      expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-1")).toEqual(Option.none());
+      for (let index = 2; index <= VCS_REFS_CACHE_MAX_ENTRIES + 1; index += 1) {
+        expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, `/repo-${index}`)).toEqual(
+          Option.some(REFS),
+        );
+      }
+      expect(yield* store.loadVcsRefs(otherEnvironmentId, "/other-repo")).toEqual(
+        Option.some(REFS),
+      );
     }),
   );
 

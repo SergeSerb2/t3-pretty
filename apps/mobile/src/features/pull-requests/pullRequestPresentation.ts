@@ -201,6 +201,14 @@ export function pullRequestLabelColor(color: string | null): string | null {
 }
 
 export function formatDiffStat(additions: number, deletions: number): string | null {
+  if (
+    !Number.isSafeInteger(additions) ||
+    additions < 0 ||
+    !Number.isSafeInteger(deletions) ||
+    deletions < 0
+  ) {
+    return null;
+  }
   if (additions === 0 && deletions === 0) return null;
   return `+${additions.toLocaleString()} −${deletions.toLocaleString()}`;
 }

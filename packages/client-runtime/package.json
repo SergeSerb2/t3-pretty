@@ -19,6 +19,10 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
+    "./preview-automation-calls": {
+      "types": "./src/previewAutomationCalls.ts",
+      "default": "./src/previewAutomationCalls.ts"
+    },
     "./errors": {
       "types": "./src/errors/index.ts",
       "default": "./src/errors/index.ts"
@@ -59,9 +63,21 @@
       "types": "./src/state/assets.ts",
       "default": "./src/state/assets.ts"
     },
+    "./state/attachments": {
+      "types": "./src/state/attachments.ts",
+      "default": "./src/state/attachments.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"
+    },
+    "./state/dictation": {
+      "types": "./src/state/dictation.ts",
+      "default": "./src/state/dictation.ts"
+    },
+    "./state/read-aloud": {
+      "types": "./src/state/readAloud.ts",
+      "default": "./src/state/readAloud.ts"
     },
     "./state/entities": {
       "types": "./src/state/entities.ts",
@@ -94,6 +110,10 @@
     "./state/projects": {
       "types": "./src/state/projects.ts",
       "default": "./src/state/projects.ts"
+    },
+    "./state/project-transfer": {
+      "types": "./src/state/projectTransfer.ts",
+      "default": "./src/state/projectTransfer.ts"
     },
     "./state/pull-requests": {
       "types": "./src/state/pullRequests.ts",

@@ -14,6 +14,7 @@ import {
 
 import {
   sanitizeAgentActivityAggregateState,
+  sanitizeApnsLiveActivityAlert,
   sanitizeApnsNotificationPayload,
 } from "./agentActivityPayloads.ts";
 import {
@@ -21,14 +22,14 @@ import {
   makeApnsDeliveryJobPayload,
   signApnsDeliveryJob,
   type ApnsDeliveryJobPayload,
-  type SignedApnsDeliveryJob,
+  SignedApnsDeliveryJob,
 } from "./apnsDeliveryJobs.ts";
 import * as RelayConfiguration from "../Config.ts";
 
 export class ApnsDeliveryQueueSendError extends Schema.TaggedErrorClass<ApnsDeliveryQueueSendError>()(
   "ApnsDeliveryQueueSendError",
   {
-    operation: Schema.Literals(["generate-job-id", "send"]),
+    operation: Schema.Literals(["generate-job-id", "validate-job", "send"]),
     jobId: Schema.NullOr(Schema.String),
     kind: RelayDeliveryKindSchema,
     userId: Schema.String,
@@ -77,6 +78,8 @@ export class ApnsDeliveryQueue extends Context.Service<
   }
 >()("t3code-relay/agentActivity/ApnsDeliveryQueue") {}
 
+const validateSignedApnsDeliveryJob = Schema.decodeUnknownEffect(SignedApnsDeliveryJob);
+
 export const make = Effect.gen(function* () {
   const sender = yield* ApnsDeliveryQueueSender;
   const crypto = yield* Crypto.Crypto;
@@ -108,14 +111,29 @@ export const make = Effect.gen(function* () {
           ...input,
           aggregate:
             input.aggregate === null ? null : sanitizeAgentActivityAggregateState(input.aggregate),
+          alert: input.alert ? sanitizeApnsLiveActivityAlert(input.alert) : input.alert,
           jobId,
           createdAt: DateTime.formatIso(now),
           expiresAt: expiresAtForJob(now.epochMilliseconds),
         });
-        const signed = signApnsDeliveryJob({
-          secret: config.apnsDeliveryJobSigningSecret,
-          payload,
-        });
+        const signed = yield* validateSignedApnsDeliveryJob(
+          signApnsDeliveryJob({
+            secret: config.apnsDeliveryJobSigningSecret,
+            payload,
+          }),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ApnsDeliveryQueueSendError({
+                operation: "validate-job",
+                jobId,
+                kind: input.kind,
+                userId: input.userId,
+                deviceId: input.deviceId,
+                cause,
+              }),
+          ),
+        );
         yield* sender.send(signed).pipe(
           Effect.mapError(
             (cause) =>
@@ -176,10 +194,24 @@ export const make = Effect.gen(function* () {
           createdAt: DateTime.formatIso(now),
           expiresAt: expiresAtForJob(now.epochMilliseconds),
         });
-        const signed = signApnsDeliveryJob({
-          secret: config.apnsDeliveryJobSigningSecret,
-          payload,
-        });
+        const signed = yield* validateSignedApnsDeliveryJob(
+          signApnsDeliveryJob({
+            secret: config.apnsDeliveryJobSigningSecret,
+            payload,
+          }),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ApnsDeliveryQueueSendError({
+                operation: "validate-job",
+                jobId,
+                kind: "push_notification",
+                userId: input.userId,
+                deviceId: input.deviceId,
+                cause,
+              }),
+          ),
+        );
         yield* sender.send(signed).pipe(
           Effect.mapError(
             (cause) =>

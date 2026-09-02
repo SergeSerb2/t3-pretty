@@ -16,7 +16,16 @@ export function deepMerge<T extends Record<string, unknown>>(current: T, patch: 
     if (value === undefined) continue;
 
     const existing = next[key];
-    next[key] = P.isObject(existing) && P.isObject(value) ? deepMerge(existing, value) : value;
+    const merged = P.isObject(existing) && P.isObject(value) ? deepMerge(existing, value) : value;
+    // `next["__proto__"] = value` invokes Object.prototype's legacy setter.
+    // Defining an own data property keeps JSON-derived keys inert and gives
+    // every record key the same merge semantics.
+    Object.defineProperty(next, key, {
+      configurable: true,
+      enumerable: true,
+      value: merged,
+      writable: true,
+    });
   }
 
   return next as T;

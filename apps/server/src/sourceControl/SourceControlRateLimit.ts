@@ -12,6 +12,8 @@ import {
 
 const FALLBACK_COOLDOWN = Duration.seconds(30);
 const MAX_FALLBACK_COOLDOWN = Duration.minutes(15);
+export const SOURCE_CONTROL_RATE_LIMIT_CAPACITY = 512;
+const SOURCE_CONTROL_HOST_MAX_LENGTH = 253;
 
 interface RateLimitKey {
   readonly provider: SourceControlProviderKind;
@@ -59,8 +61,27 @@ export class SourceControlRateLimit extends Context.Service<
   }
 >()("t3/sourceControl/SourceControlRateLimit") {}
 
+function normalizedHost(host: string): string {
+  return host.trim().toLowerCase().slice(0, SOURCE_CONTROL_HOST_MAX_LENGTH);
+}
+
 function normalizedKey(key: RateLimitKey): string {
-  return `${key.provider}\0${key.host.trim().toLowerCase()}`;
+  return `${key.provider}\0${normalizedHost(key.host)}`;
+}
+
+function setBoundedEntry(
+  current: ReadonlyMap<string, RateLimitEntry>,
+  key: string,
+  entry: RateLimitEntry,
+): ReadonlyMap<string, RateLimitEntry> {
+  const next = new Map(current);
+  next.delete(key);
+  if (next.size >= SOURCE_CONTROL_RATE_LIMIT_CAPACITY) {
+    const oldest = next.keys().next().value;
+    if (oldest !== undefined) next.delete(oldest);
+  }
+  next.set(key, entry);
+  return next;
 }
 
 function fallbackCooldownMs(attempt: number): number {
@@ -93,7 +114,7 @@ export const make = Effect.gen(function* () {
     if (entry !== undefined && entry.retryAt > now && options?.allowPaused !== true) {
       return yield* new SourceControlRateLimitPausedError({
         provider: input.provider,
-        host: input.host.trim().toLowerCase(),
+        host: normalizedHost(input.host),
         retryAt: entry.retryAt,
       });
     }
@@ -116,9 +137,7 @@ export const make = Effect.gen(function* () {
             ? input.retryAt
             : previous.retryAt;
         if (retryAt === previous.retryAt) return current;
-        const next = new Map(current);
-        next.set(key, { ...previous, retryAt });
-        return next;
+        return setBoundedEntry(current, key, { ...previous, retryAt });
       }
 
       const attempt = (previous?.attempt ?? 0) + 1;
@@ -130,13 +149,11 @@ export const make = Effect.gen(function* () {
         previous !== undefined && previous.retryAt > now
           ? Math.max(previous.retryAt, proposedRetryAt)
           : proposedRetryAt;
-      const next = new Map(current);
-      next.set(key, {
+      return setBoundedEntry(current, key, {
         attempt,
         generation: Math.max(previous?.generation ?? 0, input.lease) + 1,
         retryAt,
       });
-      return next;
     });
   });
 
@@ -150,9 +167,11 @@ export const make = Effect.gen(function* () {
       if (previous === undefined || previous.generation !== input.lease || previous.retryAt > now) {
         return current;
       }
-      const next = new Map(current);
-      next.set(key, { attempt: 0, generation: previous.generation, retryAt: 0 });
-      return next;
+      return setBoundedEntry(current, key, {
+        attempt: 0,
+        generation: previous.generation,
+        retryAt: 0,
+      });
     });
   });
 

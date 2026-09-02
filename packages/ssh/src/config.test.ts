@@ -8,6 +8,7 @@ import {
   discoverSshHosts,
   parseKnownHostsHostnames,
   resolveSshConfigIncludePattern,
+  SSH_DISCOVERED_HOST_MAX_COUNT,
 } from "./config.ts";
 
 function makeTempHomeDir() {
@@ -124,6 +125,18 @@ describe("ssh config", () => {
       );
     }),
   );
+
+  it("bounds known-host discovery and ignores oversized host fields", () => {
+    const entries = Array.from(
+      { length: 4_100 },
+      (_, index) => `host-${String(index)}.example.com ssh-ed25519 AAAA`,
+    );
+    entries.unshift(`${"a".repeat(1_025)} ssh-ed25519 AAAA`);
+
+    const hosts = parseKnownHostsHostnames(entries.join("\n"));
+    assert.equal(hosts.length, SSH_DISCOVERED_HOST_MAX_COUNT);
+    assert.notInclude(hosts, "a".repeat(1_025));
+  });
 
   it.effect("expands tilde-prefixed ssh config include patterns", () =>
     Effect.gen(function* () {

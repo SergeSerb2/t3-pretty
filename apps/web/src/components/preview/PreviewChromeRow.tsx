@@ -96,6 +96,11 @@ export function PreviewChromeRow({
     const node = inputRef.current;
     if (!node) return;
     node.focus();
+    queueMicrotask(() => {
+      if (inputRef.current === node && document.activeElement === node) {
+        node.select();
+      }
+    });
   }, [focusUrlNonce]);
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
@@ -156,14 +161,14 @@ export function PreviewChromeRow({
                   size="icon-xs"
                   onClick={refreshDisabled ? NOOP : onRefresh}
                   disabled={refreshDisabled}
-                  aria-label={loading ? "Stop" : "Refresh"}
+                  aria-label="Refresh"
                   type="button"
                 />
               }
             >
               <RotateCw className={cn(loading && "animate-spin")} />
             </TooltipTrigger>
-            <TooltipPopup>{loading ? "Loading…" : "Refresh"}</TooltipPopup>
+            <TooltipPopup>Refresh</TooltipPopup>
           </Tooltip>
         </div>
 

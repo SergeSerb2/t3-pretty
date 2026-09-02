@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { writeFileStringAtomically } from "./atomicWrite.ts";
+import { readTextWithinLimit } from "./boundedFileRead.ts";
 import type * as ServerConfig from "./config.ts";
 import { formatHostForUrl, isWildcardHost } from "./startupAccess.ts";
 
@@ -37,6 +38,7 @@ export class ServerRuntimeStateError extends Schema.TaggedErrorClass<ServerRunti
 const decodePersistedServerRuntimeState = Schema.decodeUnknownEffect(
   Schema.fromJsonString(PersistedServerRuntimeState),
 );
+const SERVER_RUNTIME_STATE_MAX_BYTES = 64 * 1024;
 
 const runtimeOriginForConfig = (
   config: Pick<ServerConfig.ServerConfig["Service"], "host">,
@@ -104,12 +106,28 @@ export const clearPersistedServerRuntimeState = (path: string) =>
     );
   });
 
+/**
+ * Report whether the pid recorded in a persisted runtime state is still
+ * running. Signal 0 delivers nothing; it only reports whether the pid exists.
+ * EPERM means it exists but belongs to another user, which still counts as
+ * alive.
+ */
+export const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+};
+
 export const readPersistedServerRuntimeState = (path: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const raw = yield* fs.readFileString(path).pipe(
-      Effect.matchEffect({
-        onFailure: (cause) =>
+    const raw = yield* readTextWithinLimit(fs, path, SERVER_RUNTIME_STATE_MAX_BYTES).pipe(
+      Effect.map(Option.some),
+      Effect.catchTags({
+        PlatformError: (cause) =>
           cause.reason._tag === "NotFound"
             ? Effect.succeed(Option.none<string>())
             : Effect.fail(
@@ -119,7 +137,14 @@ export const readPersistedServerRuntimeState = (path: string) =>
                   cause,
                 }),
               ),
-        onSuccess: (contents) => Effect.succeed(Option.some(contents)),
+        FileSizeLimitExceededError: (cause) =>
+          Effect.fail(
+            new ServerRuntimeStateError({
+              operation: "read",
+              statePath: path,
+              cause,
+            }),
+          ),
       }),
     );
     if (Option.isNone(raw)) {
