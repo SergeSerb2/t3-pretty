@@ -295,7 +295,7 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
     }
   }
   const manifest: ProjectTransferManifest = {
-    version: mode === "move" ? 2 : 1,
+    version: additionalThreads.length > 0 ? 2 : 1,
     sourceEnvironmentId,
     project,
     thread: stripThreadForTransfer(thread),
@@ -705,15 +705,21 @@ const removeTransferredSource = Effect.fn("ProjectTransfer.removeSource")(functi
     projectId: inspected.manifest.project.id,
     force: true,
   });
-  const config = yield* ServerConfig.ServerConfig;
-  const path = yield* Path.Path;
-  const projectsRoot = path.join(config.baseDir, "projects");
-  if (!isManagedProjectWorkspace(inspected.workspaceRoot, projectsRoot)) return;
-  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const stillActive = yield* snapshots.getActiveProjectByWorkspaceRoot(inspected.workspaceRoot);
-  if (Option.isSome(stillActive)) return;
-  const fileSystem = yield* FileSystem.FileSystem;
-  yield* fileSystem.remove(inspected.workspaceRoot, { recursive: true, force: true });
+  yield* Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const path = yield* Path.Path;
+    const projectsRoot = path.join(config.baseDir, "projects");
+    if (!isManagedProjectWorkspace(inspected.workspaceRoot, projectsRoot)) return;
+    const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const stillActive = yield* snapshots.getActiveProjectByWorkspaceRoot(inspected.workspaceRoot);
+    if (Option.isSome(stillActive)) return;
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem.remove(inspected.workspaceRoot, { recursive: true, force: true });
+  }).pipe(
+    Effect.catch(() =>
+      Effect.logError("Transferred source workspace could not be deleted from disk."),
+    ),
+  );
 });
 
 function validDestinationUrl(value: string): URL | null {

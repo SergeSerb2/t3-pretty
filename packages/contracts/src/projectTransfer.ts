@@ -19,9 +19,10 @@ export const ProjectTransferMode = Schema.Literals(["copy", "move"]);
 export type ProjectTransferMode = typeof ProjectTransferMode.Type;
 
 export const ProjectTransferManifest = Schema.Struct({
-  // v1 = copy this thread. v2 = move the whole project (additionalThreads may
-  // be empty when the project only has one thread). Older destinations only
-  // accept v1, so a move cannot delete the source after a partial import.
+  // v1 = this thread only. v2 = move with sibling threads. Older destinations
+  // only accept v1, so a multi-thread move cannot delete the source after a
+  // partial import. Single-thread moves stay on v1 so those destinations can
+  // complete them.
   version: Schema.Literals([1, 2]),
   sourceEnvironmentId: EnvironmentId,
   project: OrchestrationProject,
