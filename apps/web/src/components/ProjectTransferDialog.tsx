@@ -176,7 +176,15 @@ export function ProjectTransferDialog() {
             : "The original thread and project are still available on the source.",
       }),
     );
-    await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
+    const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
+    if (!arrived) {
+      setIsPending(false);
+      setStage(null);
+      setError(
+        "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
+      );
+      return;
+    }
     try {
       await navigate({
         to: "/$environmentId/$threadId",
@@ -184,6 +192,7 @@ export function ProjectTransferDialog() {
       });
     } catch {
       setIsPending(false);
+      setInProgress(false);
       setStage(null);
       setError(
         "The destination thread is ready, but it could not be opened. Open it from the destination connection.",
