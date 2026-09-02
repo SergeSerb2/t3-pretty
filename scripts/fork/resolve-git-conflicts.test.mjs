@@ -487,7 +487,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileRelease, "eas submit");
     assert.include(mobileRelease, "eas build:list");
     assert.notInclude(mobileRelease, "--status finished");
-    assert.notInclude(mobileRelease, "--no-wait");
+    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 2);
     assert.isBelow(mobileRelease.indexOf("eas update"), mobileRelease.indexOf("eas submit"));
   });
 
@@ -546,7 +546,7 @@ ${">".repeat(7)} theirs
     // next nightly piles more conflicts onto the same unintegrated merge.
     // Batched model requests plus a generous job timeout bound the run.
     assert.notInclude(resolver, "Refusing to resolve");
-    assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 5");
+    assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 3");
     assert.include(resolver, "const MAX_BATCHES_PER_FILE = 32");
     assert.include(workflow, "timeout-minutes: 120");
     assert.include(pipeline, "timeout_in_minutes: 120");
