@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { ThreadId } from "./baseSchemas.ts";
 import {
+  PROVIDER_SESSION_ERROR_MAX_LENGTH,
   ProviderEvent,
   ProviderSendTurnInput,
   ProviderSession,
@@ -11,6 +12,10 @@ import {
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
+import {
+  THREAD_TURN_START_PATH_MAX_LENGTH,
+  THREAD_TURN_START_TITLE_MAX_LENGTH,
+} from "./orchestration.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
@@ -117,6 +122,25 @@ describe("ProviderSessionStartInput", () => {
     expect(parsed.provider).toBe("ollama");
     expect(parsed.providerInstanceId).toBe("ollama_local");
     expect(parsed.modelSelection?.instanceId).toBe("ollama_local");
+  });
+
+  it("rejects oversized session paths and titles", () => {
+    expect(() =>
+      decodeProviderSessionStartInput({
+        threadId: "thread-1",
+        provider: "codex",
+        cwd: `/${"x".repeat(THREAD_TURN_START_PATH_MAX_LENGTH)}`,
+        runtimeMode: "full-access",
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeProviderSessionStartInput({
+        threadId: "thread-1",
+        provider: "codex",
+        title: "x".repeat(THREAD_TURN_START_TITLE_MAX_LENGTH + 1),
+        runtimeMode: "full-access",
+      }),
+    ).toThrow();
   });
 });
 
@@ -238,6 +262,20 @@ describe("providerInstanceId routing key (slice-2 invariant)", () => {
 
     expect(session.provider).toBe("ollama");
     expect(session.providerInstanceId).toBe("ollama_local");
+  });
+
+  it("rejects oversized provider session errors", () => {
+    expect(() =>
+      decodeProviderSession({
+        provider: "codex",
+        status: "error",
+        runtimeMode: "full-access",
+        threadId: "thread-1",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+        lastError: "x".repeat(PROVIDER_SESSION_ERROR_MAX_LENGTH + 1),
+      }),
+    ).toThrow();
   });
 
   it("decodes a ProviderEvent carrying both legacy provider and new instance routing", () => {

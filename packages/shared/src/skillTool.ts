@@ -6,9 +6,21 @@
  * `name` field is too common to treat as a skill id.
  */
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  try {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readProperty(record: Record<string, unknown>, key: string): unknown {
+  try {
+    return Reflect.get(record, key);
+  } catch {
+    return undefined;
+  }
 }
 
 function asTrimmedString(value: unknown): string | undefined {
@@ -38,7 +50,7 @@ export function skillNameFromToolInput(input: unknown): string | undefined {
     return undefined;
   }
   for (const key of ["skill", "skill_name", "skillName", "skillId"]) {
-    const value = asTrimmedString(record[key]);
+    const value = asTrimmedString(readProperty(record, key));
     if (value) {
       return value;
     }

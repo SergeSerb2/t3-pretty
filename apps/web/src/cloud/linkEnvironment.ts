@@ -19,13 +19,12 @@ import {
   type RelayClientDeviceRecord,
   type RelayClientEnvironmentRecord,
   type RelayEnvironmentLinkResponse,
-  type RelayProtectedError as RelayProtectedErrorType,
   type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
 import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay, relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 
 import {
@@ -152,50 +151,6 @@ const isEnvironmentCloudApiError = Schema.is(
   ]),
 );
 
-function relayProtectedErrorMessage(error: RelayProtectedErrorType): string {
-  switch (error._tag) {
-    case "RelayAuthInvalidError":
-      switch (error.reason) {
-        case "missing_bearer":
-        case "invalid_bearer":
-          return "Relay rejected the cloud session token.";
-        case "invalid_dpop":
-          return "Relay rejected the DPoP proof.";
-        case "not_authorized":
-          return "Relay rejected the authenticated request.";
-      }
-    case "RelayEnvironmentLinkProofExpiredError":
-      return "Relay rejected an expired environment link proof.";
-    case "RelayEnvironmentLinkProofInvalidError":
-      return `Relay rejected the environment link proof (${error.reason}).`;
-    case "RelayEnvironmentConnectNotAuthorizedError":
-      // "Not authorized" covers non-auth causes too; surface the reason so a
-      // missing link doesn't read as a credential problem.
-      if (error.reason === "environment_link_not_found") {
-        return "Relay has no active link for this environment. The environment server may not have re-established its link yet.";
-      }
-      return error.reason
-        ? `Relay rejected the environment connection request (${error.reason}).`
-        : "Relay rejected the environment connection request.";
-    case "RelayEnvironmentEndpointUnavailableError":
-      return `Relay could not reach the environment endpoint (${error.reason}).`;
-    case "RelayEnvironmentEndpointTimedOutError":
-      return "Relay timed out while contacting the environment endpoint.";
-    case "RelayEnvironmentLinkFailedError":
-      return `Relay could not link the environment (${error.reason}).`;
-    case "RelayEnvironmentLinkUnavailableError":
-      return `Relay cannot provision the managed endpoint (${error.reason}).`;
-    case "RelayEnvironmentLinkLimitExceededError":
-      return `Relay refused the link: this account already has its maximum of ${error.maxTunnels} managed tunnels. Unlink an environment to free one up.`;
-    case "RelayAgentActivityPublishProofExpiredError":
-      return "Relay rejected an expired agent activity publish proof.";
-    case "RelayAgentActivityPublishProofInvalidError":
-      return `Relay rejected the agent activity publish proof (${error.reason}).`;
-    case "RelayInternalError":
-      return `Relay encountered an internal error (${error.reason}).`;
-  }
-}
-
 function decodedRelayClientError(message: string) {
   return (cause: ManagedRelay.ManagedRelayClientError) => {
     const relayError =
@@ -210,14 +165,25 @@ function decodedRelayClientError(message: string) {
   };
 }
 
-function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
-  if (isEnvironmentCloudApiError(cause)) {
-    return cause;
+const MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES = 64;
+
+export function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
+  const seen = new Set<object>();
+  let current = cause;
+  for (let inspected = 0; inspected < MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES; inspected += 1) {
+    if (isEnvironmentCloudApiError(current)) {
+      return current;
+    }
+    if (typeof current !== "object" || current === null || seen.has(current)) {
+      return null;
+    }
+    seen.add(current);
+    if (!("cause" in current)) {
+      return null;
+    }
+    current = current.cause;
   }
-  if (typeof cause !== "object" || cause === null) {
-    return null;
-  }
-  return "cause" in cause ? findEnvironmentCloudApiError(cause.cause) : null;
+  return null;
 }
 
 const environmentApiError = (message: string) => (cause: unknown) => {

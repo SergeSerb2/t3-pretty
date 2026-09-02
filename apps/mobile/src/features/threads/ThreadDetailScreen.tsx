@@ -1,4 +1,5 @@
 import { skillMentionToken } from "@t3tools/shared/skillTool";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
@@ -240,7 +241,7 @@ function useStreamingHaptics(
     }
 
     lastStreamHapticAtRef.current = now;
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
   }, [enabled, threadId, feed]);
 }
 
@@ -676,7 +677,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   }, []);
 
   const handleScrollToEnd = useCallback(() => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     void scrollMessageToEnd({ animated: true, closeKeyboard: false }).catch(() => {
       freeze.set(false);
     });
@@ -751,6 +752,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             onListReady={pinFollowedFeedToEnd}
             skills={selectedProviderSkills}
             loadEarlier={props.loadEarlier ?? null}
+            readAloudEnabled={
+              T3CODE_BUILD_FLAVOR === "internal" &&
+              props.serverConfig?.environment.capabilities.readAloud === true
+            }
           />
         </View>
       ) : (

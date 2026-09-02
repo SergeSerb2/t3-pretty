@@ -12,7 +12,7 @@ import Animated, {
 import type { ComponentProps } from "react";
 
 import { AppText as Text } from "../../../../components/AppText";
-import { useThemeColor } from "../../../../lib/useThemeColor";
+import { useUniwindTheme } from "../../../../lib/useUniwindTheme";
 
 type SymbolName = ComponentProps<typeof SymbolView>["name"];
 
@@ -39,10 +39,9 @@ export function FontSizeSliderRow(props: {
   readonly iconMin?: SymbolName;
   readonly iconMax?: SymbolName;
 }) {
-  const icon = useThemeColor("--color-icon");
-  const iconMuted = String(useThemeColor("--color-icon-muted"));
-  const trackColor = String(useThemeColor("--color-secondary-border"));
-  const fillColor = String(useThemeColor("--color-primary"));
+  const theme = useUniwindTheme();
+  const trackColor = theme["--color-secondary-border"];
+  const fillColor = theme["--color-primary"];
 
   const latest = useRef(props);
   latest.current = props;
@@ -144,7 +143,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.icon}
           size={22}
-          tintColor={icon}
+          tintColorClassName={"accent-icon"}
           type="monochrome"
           weight="regular"
         />
@@ -155,7 +154,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMin ?? "textformat.size.smaller"}
           size={15}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />
@@ -207,7 +206,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMax ?? "textformat.size.larger"}
           size={22}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />

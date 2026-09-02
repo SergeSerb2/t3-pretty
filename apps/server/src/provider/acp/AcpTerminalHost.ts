@@ -9,6 +9,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as Crypto from "effect/Crypto";
+import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -153,11 +154,15 @@ export function resolveAcpTerminalCwd(
   return isPathInsideRoot(root, resolved, platform) ? resolved : undefined;
 }
 
+class AcpTerminalRealpathError extends Data.TaggedError("AcpTerminalRealpathError")<{
+  readonly cause: unknown;
+}> {}
+
 function realpathOrUndefined(target: string): Effect.Effect<string | undefined> {
   return Effect.tryPromise({
     try: () => NodeFSP.realpath(target),
-    catch: () => new Error("realpath failed"),
-  }).pipe(Effect.catch(() => Effect.succeed<string | undefined>(undefined)));
+    catch: (cause) => new AcpTerminalRealpathError({ cause }),
+  }).pipe(Effect.orElseSucceed(() => undefined));
 }
 
 export const confineAcpTerminalCwd = (

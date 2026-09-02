@@ -6,7 +6,7 @@ import {
   type ProviderApprovalDecision,
   type UserInputQuestion,
 } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { threadEnvironment } from "../state/threads";
 import { scopedRequestKey } from "../lib/scopedEntities";
@@ -24,27 +24,53 @@ import { useSelectedThreadDetail } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
 import { useAtomCommand } from "./use-atom-command";
 
-const userInputDraftsByRequestKeyAtom = Atom.make<
-  Record<string, Record<string, PendingUserInputDraftAnswer>>
->({}).pipe(Atom.keepAlive, Atom.withLabel("mobile:user-input-drafts"));
+type UserInputDraftsByRequestKey = Record<string, Record<string, PendingUserInputDraftAnswer>>;
+
+const MAX_USER_INPUT_DRAFT_REQUESTS = 32;
+const userInputDraftsByRequestKeyAtom = Atom.make<UserInputDraftsByRequestKey>({}).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("mobile:user-input-drafts"),
+);
+
+function updateUserInputDraft(
+  requestKey: string,
+  update: (
+    current: Record<string, PendingUserInputDraftAnswer>,
+  ) => Record<string, PendingUserInputDraftAnswer>,
+): void {
+  const current = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
+  const next: UserInputDraftsByRequestKey = { ...current };
+  delete next[requestKey];
+  next[requestKey] = update(current[requestKey] ?? {});
+  while (Object.keys(next).length > MAX_USER_INPUT_DRAFT_REQUESTS) {
+    const oldestRequestKey = Object.keys(next)[0];
+    if (oldestRequestKey === undefined) {
+      break;
+    }
+    delete next[oldestRequestKey];
+  }
+  appAtomRegistry.set(userInputDraftsByRequestKeyAtom, next);
+}
+
+function clearUserInputDraft(requestKey: string): void {
+  const current = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
+  if (current[requestKey] === undefined) {
+    return;
+  }
+  const next = { ...current };
+  delete next[requestKey];
+  appAtomRegistry.set(userInputDraftsByRequestKeyAtom, next);
+}
 
 function setUserInputDraftOption(
   requestKey: string,
   question: UserInputQuestion,
   label: string,
 ): void {
-  const current = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
-  appAtomRegistry.set(userInputDraftsByRequestKeyAtom, {
+  updateUserInputDraft(requestKey, (current) => ({
     ...current,
-    [requestKey]: {
-      ...current[requestKey],
-      [question.id]: togglePendingUserInputOptionSelection(
-        question,
-        current[requestKey]?.[question.id],
-        label,
-      ),
-    },
-  });
+    [question.id]: togglePendingUserInputOptionSelection(question, current[question.id], label),
+  }));
 }
 
 function setUserInputDraftCustomAnswer(
@@ -52,17 +78,10 @@ function setUserInputDraftCustomAnswer(
   questionId: string,
   customAnswer: string,
 ): void {
-  const current = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
-  appAtomRegistry.set(userInputDraftsByRequestKeyAtom, {
+  updateUserInputDraft(requestKey, (current) => ({
     ...current,
-    [requestKey]: {
-      ...current[requestKey],
-      [questionId]: setPendingUserInputCustomAnswer(
-        current[requestKey]?.[questionId],
-        customAnswer,
-      ),
-    },
-  });
+    [questionId]: setPendingUserInputCustomAnswer(current[questionId], customAnswer),
+  }));
 }
 
 export function useSelectedThreadRequests() {
@@ -160,6 +179,10 @@ export function useSelectedThreadRequests() {
       return;
     }
 
+    const requestKey = scopedRequestKey(
+      selectedThreadShell.environmentId,
+      activePendingUserInput.requestId,
+    );
     setRespondingUserInputId(activePendingUserInput.requestId);
     const result = await respondToUserInput({
       environmentId: selectedThreadShell.environmentId,
@@ -169,6 +192,9 @@ export function useSelectedThreadRequests() {
         answers: activePendingUserInputAnswers,
       },
     });
+    if (AsyncResult.isSuccess(result)) {
+      clearUserInputDraft(requestKey);
+    }
     setRespondingUserInputId((current) =>
       current === activePendingUserInput.requestId ? null : current,
     );

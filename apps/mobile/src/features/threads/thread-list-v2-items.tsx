@@ -3,11 +3,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import {
-  canSnooze,
-  resolveSnoozePresets,
-  type ChangeRequestSettleSource,
-} from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
 import type { MenuAction } from "@react-native-menu/menu";
 import {
   memo,
@@ -38,7 +34,7 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import { HOME_HORIZONTAL_INSET } from "../../lib/layoutMetrics";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
 import {
@@ -82,11 +78,11 @@ const MONO_FONT = Platform.select({
 const STATUS_LABEL_BY_STATUS: Partial<
   Record<ThreadListV2Status, { label: string; className: string }>
 > = {
-  approval: { label: "Approval", className: "text-amber-700 dark:text-amber-300" },
-  input: { label: "Input", className: "text-indigo-600 dark:text-indigo-300" },
-  working: { label: "Working", className: "text-sky-600 dark:text-sky-400" },
-  monitoring: { label: "Monitoring", className: "text-sky-600 dark:text-sky-400" },
-  failed: { label: "Failed", className: "text-red-700 dark:text-red-300" },
+  approval: { label: "Approval", className: "text-adaptive-amber-700-300" },
+  input: { label: "Input", className: "text-adaptive-indigo-600-300" },
+  working: { label: "Working", className: "text-adaptive-sky-600-400" },
+  monitoring: { label: "Monitoring", className: "text-adaptive-sky-600-400" },
+  failed: { label: "Failed", className: "text-adaptive-red-700-300" },
 };
 
 function threadTimeLabel(thread: EnvironmentThreadShell): string {
@@ -220,7 +216,6 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
   readonly label: string;
   readonly pane?: "screen" | "sidebar";
 }) {
-  const borderColor = useThemeColor("--color-border");
   return (
     <View
       className={cn(
@@ -229,7 +224,7 @@ export const ThreadListV2SectionDivider = memo(function ThreadListV2SectionDivid
       )}
     >
       <Text className="text-xs font-t3-medium text-foreground-tertiary">{props.label}</Text>
-      <View className="h-px flex-1" style={{ backgroundColor: borderColor }} />
+      <View className="h-px flex-1 bg-border" />
     </View>
   );
 });
@@ -245,20 +240,19 @@ const SNOOZE_ACCENT_DARK = "#60a5fa";
 const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
   readonly kind: "snoozed" | "settled";
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
   readonly sceneryChrome?: boolean;
 }) {
   const { themeAppearance: colorScheme } = useAppearancePreferences();
-  const mutedColor = useThemeColor("--color-foreground-muted");
-  const tertiaryColor = useThemeColor("--color-foreground-tertiary");
+  const theme = useUniwindTheme();
   const snoozed = props.kind === "snoozed";
   const sceneryChrome = props.sceneryChrome === true;
   const sidebarPane = props.pane === "sidebar";
   const snoozeTint = colorScheme === "dark" ? SNOOZE_ACCENT_DARK : SNOOZE_ACCENT_LIGHT;
-  const iconTint = snoozed ? snoozeTint : tertiaryColor;
-  const chevronTint = snoozed ? snoozeTint : mutedColor;
+  const iconTint = snoozed ? snoozeTint : theme["--color-foreground-tertiary"];
   const label = snoozed ? "Snoozed" : "Settled";
   const noun = snoozed ? "snoozed" : "settled";
   return (
@@ -268,8 +262,9 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
       }
       accessibilityLabel={props.count === 1 ? `1 ${noun} thread` : `${props.count} ${noun} threads`}
       accessibilityRole="button"
-      accessibilityState={{ expanded: props.expanded }}
+      accessibilityState={{ disabled: props.disabled, expanded: props.expanded }}
       className="w-full"
+      disabled={props.disabled}
       onPress={props.onToggle}
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
@@ -302,7 +297,7 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
         <Text
           className={cn(
             "text-xs font-t3-medium tabular-nums",
-            snoozed ? "text-blue-600 dark:text-blue-400" : "text-foreground-tertiary",
+            snoozed ? "text-adaptive-blue-600-400" : "text-foreground-tertiary",
           )}
         >
           {props.count}
@@ -310,7 +305,8 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
         <SymbolView
           name={props.expanded ? "chevron.up" : "chevron.down"}
           size={10}
-          tintColor={chevronTint}
+          tintColor={snoozed ? snoozeTint : undefined}
+          tintColorClassName={snoozed ? undefined : "accent-foreground-muted"}
           type="monochrome"
         />
       </View>
@@ -320,6 +316,7 @@ const ThreadListV2ShelfHeader = memo(function ThreadListV2ShelfHeader(props: {
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(props: {
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
@@ -330,6 +327,7 @@ export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedS
 
 export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledShelfHeader(props: {
   readonly count: number;
+  readonly disabled?: boolean;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly pane?: "screen" | "sidebar";
@@ -365,10 +363,11 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
 }) {
   const { pendingTask, onSelectPendingTask, onDeletePendingTask } = props;
-  const drawerColor = useThemeColor("--color-drawer");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  const theme = useUniwindTheme();
+  const drawerColor = theme["--color-drawer"];
+  const pressedBackgroundColor = theme["--color-subtle"];
+  const chromeFill = theme["--color-chrome-glass"];
+  const chromeBorder = theme["--color-chrome-glass-border"];
   const sidebarPane = props.pane === "sidebar";
   const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
   const projectTitle =
@@ -537,12 +536,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly canMovePinnedDown?: boolean;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
-  /** Reports this row's live PR (state + last activity) for the partition's
-      merge and close rules. Mirrors web's onChangeRequestState. */
-  readonly onChangeRequestState?: (
-    threadKey: string,
-    changeRequest: ChangeRequestSettleSource | null,
-  ) => void;
   readonly projectCwd?: string | null;
   readonly searchMatch?: EnvironmentThreadSearchMatch;
   readonly searchQuery?: string;
@@ -566,34 +559,25 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onPinThread,
     onUnpinThread,
     onMovePinnedThread,
-    onChangeRequestState,
   } = props;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
 
   const pr = useThreadPr(thread, props.projectCwd ?? props.project?.workspaceRoot ?? null);
-  const prState = pr?.state ?? null;
-  const prUpdatedAt = pr?.updatedAt ?? null;
-  const threadKey = `${thread.environmentId}:${thread.id}`;
-  useEffect(() => {
-    onChangeRequestState?.(
-      threadKey,
-      prState === null ? null : { state: prState, updatedAt: prUpdatedAt },
-    );
-  }, [onChangeRequestState, prState, prUpdatedAt, threadKey]);
 
   const departure = useThreadDepartureAnimation(threadKey, {
     snoozed: snoozedRow,
     settled: props.settled === true,
   });
 
-  const screenColor = useThemeColor("--color-screen");
-  const drawerColor = useThemeColor("--color-drawer");
-  const pressedBackgroundColor = useThemeColor("--color-subtle");
-  const selectedBackgroundColor = useThemeColor("--color-user-bubble");
-  const pinTintColor = useThemeColor("--color-foreground-muted");
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  const theme = useUniwindTheme();
+  const screenColor = theme["--color-screen"];
+  const drawerColor = theme["--color-drawer"];
+  const pressedBackgroundColor = theme["--color-subtle"];
+  const selectedBackgroundColor = theme["--color-user-bubble"];
+  const pinTintColor = theme["--color-foreground-muted"];
+  const chromeFill = theme["--color-chrome-glass"];
+  const chromeBorder = theme["--color-chrome-glass-border"];
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
   const sceneryChrome = props.sceneryChrome === true && !sidebarPane;
@@ -627,9 +611,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
 
-  // Swipe: the v2 primary action is the lifecycle transition. Every settled
-  // row can un-settle — explicit settles clear the override, auto-settled
-  // rows get pinned active until real activity clears the pin.
+  // Swipe: the v2 primary action is the lifecycle transition. Un-settling a
+  // settled row keeps it active until new activity clears the user override.
   const canUnsettle = variant === "slim";
   const [snoozeGateTick, bumpSnoozeGateTick] = useState(0);
   const snoozeGateExpiryMs = props.snoozeSupported
@@ -887,7 +870,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {props.projectTitle ?? props.project?.title ?? ""}
         </Text>
         {pinnedRow ? (
-          <SymbolView name="pin" size={11} tintColor={pinTintColor} type="monochrome" />
+          <SymbolView
+            name="pin"
+            size={11}
+            tintColorClassName={"accent-foreground-muted"}
+            type="monochrome"
+          />
         ) : null}
         <Text
           className={cn(
@@ -923,9 +911,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           <Text
             className={cn(
               "flex-1 text-xs",
-              selected
-                ? "text-user-bubble-foreground-muted"
-                : "text-red-600/80 dark:text-red-400/80",
+              selected ? "text-user-bubble-foreground-muted" : "text-adaptive-red-600-a80-400-a80",
             )}
             numberOfLines={1}
           >
@@ -1023,7 +1009,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           selected
             ? "text-user-bubble-foreground-muted"
             : snoozedRow
-              ? "text-blue-600 dark:text-blue-400"
+              ? "text-adaptive-blue-600-400"
               : "text-foreground-tertiary",
         )}
         style={{ fontFamily: MONO_FONT }}

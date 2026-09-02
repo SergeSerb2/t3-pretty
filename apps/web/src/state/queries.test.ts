@@ -1,7 +1,13 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { areProjectPathSearchTargetsEqual } from "./queries";
+import { areProjectPathSearchTargetsEqual, normalizeBoundedSearchQuery } from "./queries";
+
+describe("normalizeBoundedSearchQuery", () => {
+  it("trims and caps queries before they reach bounded RPC contracts", () => {
+    expect(normalizeBoundedSearchQuery(`  ${"a".repeat(300)}  `, 256)).toBe("a".repeat(256));
+  });
+});
 
 describe("areProjectPathSearchTargetsEqual", () => {
   const target = {

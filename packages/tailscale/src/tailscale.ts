@@ -11,6 +11,8 @@ export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 export const TAILSCALE_STATUS_TIMEOUT = Duration.millis(1_500);
 export const TAILSCALE_SERVE_TIMEOUT = Duration.seconds(10);
 export const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
+const TAILSCALE_STATUS_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
+const TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024;
 
 // tailscale is a real executable everywhere (`tailscale.exe` on Windows), so
 // it is always spawned directly rather than through cmd.exe shell mode.
@@ -145,16 +147,47 @@ export interface TailscaleStatus {
   readonly tailnetIpv4Addresses: readonly string[];
 }
 
-const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
-    ),
-  );
+interface CollectedTailscaleOutput {
+  readonly text: string;
+  readonly bytesSeen: number;
+  readonly truncated: boolean;
+}
 
-const collectStderr = collectStdout;
+const collectBoundedOutput = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
+  maxBytes: number,
+): Effect.Effect<CollectedTailscaleOutput, E> =>
+  stream.pipe(
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], retainedBytes: 0, bytesSeen: 0 }),
+      (state, chunk) => {
+        const remainingBytes = maxBytes - state.retainedBytes;
+        if (remainingBytes > 0) {
+          state.chunks.push(
+            chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk,
+          );
+        }
+        return {
+          chunks: state.chunks,
+          retainedBytes: Math.min(maxBytes, state.retainedBytes + chunk.byteLength),
+          bytesSeen: state.bytesSeen + chunk.byteLength,
+        };
+      },
+    ),
+    Effect.map((state) => {
+      const retained = new Uint8Array(state.retainedBytes);
+      let offset = 0;
+      for (const chunk of state.chunks) {
+        retained.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return {
+        text: new TextDecoder("utf-8").decode(retained),
+        bytesSeen: state.bytesSeen,
+        truncated: state.bytesSeen > state.retainedBytes,
+      };
+    }),
+  );
 
 const decodeTailscaleStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleStatusJson));
 
@@ -239,8 +272,8 @@ export const readTailscaleStatus = Effect.gen(function* () {
     );
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
-        collectStdout(child.stdout),
-        collectStderr(child.stderr),
+        collectBoundedOutput(child.stdout, TAILSCALE_STATUS_OUTPUT_MAX_BYTES),
+        collectBoundedOutput(child.stderr, TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES),
         child.exitCode.pipe(Effect.map(Number)),
       ],
       { concurrency: "unbounded" },
@@ -251,14 +284,20 @@ export const readTailscaleStatus = Effect.gen(function* () {
       return yield* new TailscaleCommandExitError({
         ...commandContext,
         exitCode,
-        stdoutLength: stdout.length,
-        stderrLength: stderr.length,
-        ...(stderrDiagnosticOf(stderr) !== undefined
-          ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
+        stdoutLength: stdout.bytesSeen,
+        stderrLength: stderr.bytesSeen,
+        ...(stderrDiagnosticOf(stderr.text) !== undefined
+          ? { stderrDiagnostic: stderrDiagnosticOf(stderr.text) }
           : {}),
       });
     }
-    return yield* parseTailscaleStatus(stdout);
+    if (stdout.truncated) {
+      return yield* new TailscaleCommandOutputError({
+        ...commandContext,
+        cause: new Error("tailscale status output exceeded its byte limit"),
+      });
+    }
+    return yield* parseTailscaleStatus(stdout.text);
   }).pipe(
     Effect.scoped,
     Effect.timeout(TAILSCALE_STATUS_TIMEOUT),
@@ -309,8 +348,12 @@ const runTailscaleCommand = (
           Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),
         ),
       );
-      const [stderr, exitCode] = yield* Effect.all(
-        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
+      const [stderr, , exitCode] = yield* Effect.all(
+        [
+          collectBoundedOutput(child.stderr, TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES),
+          Stream.runDrain(child.stdout),
+          child.exitCode.pipe(Effect.map(Number)),
+        ],
         { concurrency: "unbounded" },
       ).pipe(
         Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
@@ -319,9 +362,9 @@ const runTailscaleCommand = (
         return yield* new TailscaleCommandExitError({
           ...commandContext,
           exitCode,
-          stderrLength: stderr.length,
-          ...(stderrDiagnosticOf(stderr) !== undefined
-            ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
+          stderrLength: stderr.bytesSeen,
+          ...(stderrDiagnosticOf(stderr.text) !== undefined
+            ? { stderrDiagnostic: stderrDiagnosticOf(stderr.text) }
             : {}),
         });
       }

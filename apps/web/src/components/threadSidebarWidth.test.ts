@@ -74,3 +74,4 @@ describe("thread sidebar width", () => {
     );
   });
 });
+

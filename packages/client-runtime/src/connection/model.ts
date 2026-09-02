@@ -1,17 +1,35 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+export const CONNECTION_ENVIRONMENT_ID_MAX_LENGTH = 512;
+export const CONNECTION_ID_MAX_LENGTH = 512;
+export const CONNECTION_LABEL_MAX_LENGTH = 2_048;
+export const CONNECTION_URL_MAX_LENGTH = 8_192;
+export const CONNECTION_SECRET_MAX_LENGTH = 64 * 1024;
+export const CONNECTION_ERROR_DETAIL_MAX_LENGTH = 8_192;
+export const CONNECTION_ERROR_TRACE_ID_MAX_LENGTH = 256;
+
+export const ConnectionEnvironmentId = EnvironmentId.check(
+  Schema.isMaxLength(CONNECTION_ENVIRONMENT_ID_MAX_LENGTH),
+);
+export const ConnectionId = Schema.String.check(Schema.isMaxLength(CONNECTION_ID_MAX_LENGTH));
+export const ConnectionLabel = Schema.String.check(Schema.isMaxLength(CONNECTION_LABEL_MAX_LENGTH));
+export const ConnectionUrl = Schema.String.check(Schema.isMaxLength(CONNECTION_URL_MAX_LENGTH));
+export const ConnectionSecret = Schema.String.check(
+  Schema.isMaxLength(CONNECTION_SECRET_MAX_LENGTH),
+);
+
 const ConnectionTargetBase = {
-  environmentId: EnvironmentId,
-  label: Schema.String,
+  environmentId: ConnectionEnvironmentId,
+  label: ConnectionLabel,
 };
 
 export class PrimaryConnectionTarget extends Schema.TaggedClass<PrimaryConnectionTarget>()(
   "PrimaryConnectionTarget",
   {
     ...ConnectionTargetBase,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
+    httpBaseUrl: ConnectionUrl,
+    wsBaseUrl: ConnectionUrl,
   },
 ) {}
 
@@ -19,7 +37,7 @@ export class BearerConnectionTarget extends Schema.TaggedClass<BearerConnectionT
   "BearerConnectionTarget",
   {
     ...ConnectionTargetBase,
-    connectionId: Schema.String,
+    connectionId: ConnectionId,
   },
 ) {}
 
@@ -34,7 +52,7 @@ export class SshConnectionTarget extends Schema.TaggedClass<SshConnectionTarget>
   "SshConnectionTarget",
   {
     ...ConnectionTargetBase,
-    connectionId: Schema.String,
+    connectionId: ConnectionId,
   },
 ) {}
 
@@ -75,14 +93,40 @@ export const ConnectionBlockedReason = Schema.Literals([
 ]);
 export type ConnectionBlockedReason = typeof ConnectionBlockedReason.Type;
 
+const ConnectionErrorDetail = Schema.String.check(
+  Schema.isMaxLength(CONNECTION_ERROR_DETAIL_MAX_LENGTH),
+);
+const ConnectionErrorTraceId = Schema.String.check(
+  Schema.isMaxLength(CONNECTION_ERROR_TRACE_ID_MAX_LENGTH),
+);
+
+const boundedConnectionErrorFields = (props: {
+  readonly detail: string;
+  readonly traceId?: string;
+}) => ({
+  detail: props.detail.slice(0, CONNECTION_ERROR_DETAIL_MAX_LENGTH),
+  ...(props.traceId === undefined
+    ? {}
+    : { traceId: props.traceId.slice(0, CONNECTION_ERROR_TRACE_ID_MAX_LENGTH) }),
+});
+
 export class ConnectionTransientError extends Schema.TaggedErrorClass<ConnectionTransientError>()(
   "ConnectionTransientError",
   {
     reason: ConnectionTransientReason,
-    detail: Schema.String,
-    traceId: Schema.optionalKey(Schema.String),
+    detail: ConnectionErrorDetail,
+    traceId: Schema.optionalKey(ConnectionErrorTraceId),
   },
 ) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: {
+    readonly reason: ConnectionTransientReason;
+    readonly detail: string;
+    readonly traceId?: string;
+  }) {
+    super({ reason: props.reason, ...boundedConnectionErrorFields(props) });
+  }
+
   override get message(): string {
     return this.detail;
   }
@@ -92,10 +136,19 @@ export class ConnectionBlockedError extends Schema.TaggedErrorClass<ConnectionBl
   "ConnectionBlockedError",
   {
     reason: ConnectionBlockedReason,
-    detail: Schema.String,
-    traceId: Schema.optionalKey(Schema.String),
+    detail: ConnectionErrorDetail,
+    traceId: Schema.optionalKey(ConnectionErrorTraceId),
   },
 ) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: {
+    readonly reason: ConnectionBlockedReason;
+    readonly detail: string;
+    readonly traceId?: string;
+  }) {
+    super({ reason: props.reason, ...boundedConnectionErrorFields(props) });
+  }
+
   override get message(): string {
     return this.detail;
   }

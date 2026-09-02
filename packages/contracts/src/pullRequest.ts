@@ -830,6 +830,12 @@ export type PullRequestActionInput = typeof PullRequestActionInput.Type;
 // service rejects a body that is only whitespace.
 const CommentBody = Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536));
 
+/**
+ * One review can become one large host request (GitHub) or one sequential host mutation per
+ * comment (GitLab and Bitbucket). Keep both the wire payload and that mutation fan-out finite.
+ */
+export const PULL_REQUEST_REVIEW_MAX_COMMENTS = 100;
+
 export const PullRequestCommentInput = Schema.Struct({
   ...PullRequestRef.fields,
   body: CommentBody,
@@ -914,7 +920,9 @@ export const PullRequestSubmitReviewInput = Schema.Struct({
   verdict: PullRequestReviewVerdict,
   /** The review's own words. May be empty, which is how an approval with no remarks is sent. */
   body: Schema.String.check(Schema.isMaxLength(65_536)),
-  comments: Schema.Array(PullRequestReviewCommentDraft),
+  comments: Schema.Array(PullRequestReviewCommentDraft).check(
+    Schema.isMaxLength(PULL_REQUEST_REVIEW_MAX_COMMENTS),
+  ),
 });
 export type PullRequestSubmitReviewInput = typeof PullRequestSubmitReviewInput.Type;
 

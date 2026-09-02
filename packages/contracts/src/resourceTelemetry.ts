@@ -4,6 +4,20 @@ import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchema
 import { HostPowerSnapshot } from "./background.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 2 as const;
+export const RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT = 256;
+export const RESOURCE_MONITOR_PROCESS_MAX_COUNT = 20_000;
+export const RESOURCE_MONITOR_HISTORY_CHUNK_MAX_SNAPSHOTS = 32;
+export const RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS = 3_600;
+export const RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES = 20_000;
+export const RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH = 1_024;
+export const RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH = 16 * 1_024;
+export const RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH = 256;
+export const RESOURCE_MONITOR_REQUEST_ID_MAX_LENGTH = 128;
+export const RESOURCE_MONITOR_ERROR_CODE_MAX_LENGTH = 128;
+export const RESOURCE_MONITOR_ERROR_MESSAGE_MAX_LENGTH = 4_096;
+const ResourceMonitorRequestId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(RESOURCE_MONITOR_REQUEST_ID_MAX_LENGTH),
+);
 
 export const ResourceTelemetryIoSemantics = Schema.Literals([
   "storage",
@@ -48,6 +62,10 @@ export const ResourceMonitorExternalProcess = Schema.Struct({
 });
 export type ResourceMonitorExternalProcess = typeof ResourceMonitorExternalProcess.Type;
 
+const ResourceMonitorExternalProcesses = Schema.Array(ResourceMonitorExternalProcess).check(
+  Schema.isMaxLength(RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT),
+);
+
 export const ResourceMonitorCapabilities = Schema.Struct({
   cumulativeCpuTime: Schema.Boolean,
   currentCpuPercent: Schema.Boolean,
@@ -64,10 +82,10 @@ export const ResourceMonitorProcessSample = Schema.Struct({
   ppid: NonNegativeInt,
   startTimeMs: NonNegativeInt,
   runTimeMs: NonNegativeInt,
-  name: Schema.String,
-  command: Schema.String,
-  status: Schema.String,
-  cpuPercent: Schema.Number,
+  name: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH)),
+  command: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH)),
+  status: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH)),
+  cpuPercent: Schema.Finite,
   cpuTimeMs: NonNegativeInt,
   residentBytes: NonNegativeInt,
   virtualBytes: NonNegativeInt,
@@ -82,14 +100,14 @@ export const ResourceMonitorConfigureCommand = Schema.Struct({
   type: Schema.Literal("configure"),
   rootPid: PositiveInt,
   sampleIntervalMs: NonNegativeInt,
-  externalProcesses: Schema.Array(ResourceMonitorExternalProcess),
+  externalProcesses: ResourceMonitorExternalProcesses,
 });
 export type ResourceMonitorConfigureCommand = typeof ResourceMonitorConfigureCommand.Type;
 
 export const ResourceMonitorSetExternalProcessesCommand = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("setExternalProcesses"),
-  processes: Schema.Array(ResourceMonitorExternalProcess),
+  processes: ResourceMonitorExternalProcesses,
 });
 export type ResourceMonitorSetExternalProcessesCommand =
   typeof ResourceMonitorSetExternalProcessesCommand.Type;
@@ -97,7 +115,7 @@ export type ResourceMonitorSetExternalProcessesCommand =
 export const ResourceMonitorSampleNowCommand = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("sampleNow"),
-  requestId: TrimmedNonEmptyString,
+  requestId: ResourceMonitorRequestId,
 });
 export type ResourceMonitorSampleNowCommand = typeof ResourceMonitorSampleNowCommand.Type;
 
@@ -119,7 +137,7 @@ export type ResourceMonitorSetStreamingCommand = typeof ResourceMonitorSetStream
 export const ResourceMonitorReadHistoryCommand = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("readHistory"),
-  requestId: TrimmedNonEmptyString,
+  requestId: ResourceMonitorRequestId,
   windowMs: NonNegativeInt,
 });
 export type ResourceMonitorReadHistoryCommand = typeof ResourceMonitorReadHistoryCommand.Type;
@@ -144,10 +162,10 @@ export type ResourceMonitorCommand = typeof ResourceMonitorCommand.Type;
 export const ResourceMonitorHelloEvent = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("hello"),
-  sidecarVersion: TrimmedNonEmptyString,
+  sidecarVersion: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
   sidecarPid: PositiveInt,
-  platform: TrimmedNonEmptyString,
-  arch: TrimmedNonEmptyString,
+  platform: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  arch: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
   capabilities: ResourceMonitorCapabilities,
 });
 export type ResourceMonitorHelloEvent = typeof ResourceMonitorHelloEvent.Type;
@@ -161,26 +179,32 @@ export const ResourceMonitorSnapshotEvent = Schema.Struct({
   scannedProcessCount: NonNegativeInt,
   retainedProcessCount: NonNegativeInt,
   inaccessibleProcessCount: NonNegativeInt,
-  requestId: Schema.optionalKey(TrimmedNonEmptyString),
-  externalProcesses: Schema.optionalKey(Schema.Array(ResourceMonitorExternalProcess)),
-  processes: Schema.Array(ResourceMonitorProcessSample),
+  requestId: Schema.optionalKey(ResourceMonitorRequestId),
+  externalProcesses: Schema.optionalKey(ResourceMonitorExternalProcesses),
+  processes: Schema.Array(ResourceMonitorProcessSample).check(
+    Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_MAX_COUNT),
+  ),
 });
 export type ResourceMonitorSnapshotEvent = typeof ResourceMonitorSnapshotEvent.Type;
 
 export const ResourceMonitorHistoryChunkEvent = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("historyChunk"),
-  requestId: TrimmedNonEmptyString,
+  requestId: ResourceMonitorRequestId,
   done: Schema.Boolean,
-  snapshots: Schema.Array(ResourceMonitorSnapshotEvent),
+  snapshots: Schema.Array(ResourceMonitorSnapshotEvent).check(
+    Schema.isMaxLength(RESOURCE_MONITOR_HISTORY_CHUNK_MAX_SNAPSHOTS),
+  ),
 });
 export type ResourceMonitorHistoryChunkEvent = typeof ResourceMonitorHistoryChunkEvent.Type;
 
 export const ResourceMonitorErrorEvent = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("error"),
-  code: TrimmedNonEmptyString,
-  message: TrimmedNonEmptyString,
+  code: TrimmedNonEmptyString.check(Schema.isMaxLength(RESOURCE_MONITOR_ERROR_CODE_MAX_LENGTH)),
+  message: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(RESOURCE_MONITOR_ERROR_MESSAGE_MAX_LENGTH),
+  ),
   recoverable: Schema.Boolean,
 });
 export type ResourceMonitorErrorEvent = typeof ResourceMonitorErrorEvent.Type;
@@ -206,15 +230,25 @@ export const DesktopElectronProcessType = Schema.Literals([
 ]);
 export type DesktopElectronProcessType = typeof DesktopElectronProcessType.Type;
 
+export const DESKTOP_ELECTRON_PROCESS_MAX_COUNT = 256;
+export const DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH = 512;
+export const DesktopSpeedLimitPercent = Schema.Finite.check(
+  Schema.isBetween({ minimum: 0, maximum: 100 }),
+);
+
 export const DesktopElectronProcessMetric = Schema.Struct({
   pid: PositiveInt,
   creationTimeMs: NonNegativeInt,
   type: DesktopElectronProcessType,
-  name: Schema.optionalKey(Schema.String),
-  serviceName: Schema.optionalKey(Schema.String),
-  cpuPercent: Schema.Number,
-  cumulativeCpuSeconds: Schema.optionalKey(Schema.Number),
-  idleWakeupsPerSecond: Schema.Number,
+  name: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH)),
+  ),
+  serviceName: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH)),
+  ),
+  cpuPercent: Schema.Finite,
+  cumulativeCpuSeconds: Schema.optionalKey(Schema.Finite),
+  idleWakeupsPerSecond: Schema.Finite,
   workingSetBytes: NonNegativeInt,
   peakWorkingSetBytes: NonNegativeInt,
 });
@@ -232,8 +266,11 @@ export const DesktopHostTelemetrySnapshot = Schema.Struct({
   sampledAtUnixMs: NonNegativeInt,
   electronPid: PositiveInt,
   power: DesktopHostPowerSnapshot,
-  speedLimitPercent: Schema.OptionFromNullOr(Schema.Number),
-  electronProcesses: Schema.Array(DesktopElectronProcessMetric),
+  speedLimitPercent: Schema.OptionFromNullOr(DesktopSpeedLimitPercent),
+  electronProcessesTruncated: Schema.optionalKey(Schema.Boolean),
+  electronProcesses: Schema.Array(DesktopElectronProcessMetric).check(
+    Schema.isMaxLength(DESKTOP_ELECTRON_PROCESS_MAX_COUNT),
+  ),
 });
 export type DesktopHostTelemetrySnapshot = typeof DesktopHostTelemetrySnapshot.Type;
 
@@ -272,28 +309,42 @@ export const DesktopTelemetryControlMessage = Schema.Union([
 ]);
 export type DesktopTelemetryControlMessage = typeof DesktopTelemetryControlMessage.Type;
 
+export const RESOURCE_TELEMETRY_SNAPSHOT_PROCESS_MAX_COUNT =
+  RESOURCE_MONITOR_PROCESS_MAX_COUNT + DESKTOP_ELECTRON_PROCESS_MAX_COUNT;
+export const RESOURCE_TELEMETRY_HISTORY_BUCKET_MAX_COUNT = 3_600;
+export const RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT = 512;
+export const RESOURCE_ATTRIBUTION_ENTRY_MAX_COUNT = 256;
+export const RESOURCE_ATTRIBUTION_LABEL_MAX_LENGTH = 128;
+export const RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH = 4_096;
+
+const FiniteNonNegativeNumber = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+
 export const ResourceTelemetryProcess = Schema.Struct({
   identity: ResourceTelemetryProcessIdentity,
   ppid: NonNegativeInt,
-  childPids: Schema.Array(PositiveInt),
+  childPids: Schema.Array(PositiveInt).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_SNAPSHOT_PROCESS_MAX_COUNT),
+  ),
   depth: NonNegativeInt,
-  name: Schema.String,
-  command: Schema.String,
-  status: Schema.String,
+  name: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH)),
+  command: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH)),
+  status: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH)),
   category: ResourceTelemetryProcessCategory,
   electronType: Schema.optionalKey(DesktopElectronProcessType),
-  electronServiceName: Schema.optionalKey(Schema.String),
-  cpuPercent: Schema.Number,
+  electronServiceName: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH)),
+  ),
+  cpuPercent: FiniteNonNegativeNumber,
   cpuTimeMs: NonNegativeInt,
   residentBytes: NonNegativeInt,
   peakResidentBytes: NonNegativeInt,
   virtualBytes: NonNegativeInt,
   ioReadBytes: NonNegativeInt,
   ioWriteBytes: NonNegativeInt,
-  ioReadBytesPerSecond: Schema.Number,
-  ioWriteBytesPerSecond: Schema.Number,
+  ioReadBytesPerSecond: FiniteNonNegativeNumber,
+  ioWriteBytesPerSecond: FiniteNonNegativeNumber,
   ioSemantics: ResourceTelemetryIoSemantics,
-  idleWakeupsPerSecond: Schema.optionalKey(Schema.Number),
+  idleWakeupsPerSecond: Schema.optionalKey(FiniteNonNegativeNumber),
   runTimeMs: NonNegativeInt,
   firstSeenAt: Schema.DateTimeUtc,
   lastSeenAt: Schema.DateTimeUtc,
@@ -302,14 +353,14 @@ export type ResourceTelemetryProcess = typeof ResourceTelemetryProcess.Type;
 
 export const ResourceTelemetryAggregate = Schema.Struct({
   processCount: NonNegativeInt,
-  currentCpuPercent: Schema.Number,
+  currentCpuPercent: FiniteNonNegativeNumber,
   cpuTimeMs: NonNegativeInt,
   currentRssBytes: NonNegativeInt,
   peakRssBytes: NonNegativeInt,
   ioReadBytes: NonNegativeInt,
   ioWriteBytes: NonNegativeInt,
-  ioReadBytesPerSecond: Schema.Number,
-  ioWriteBytesPerSecond: Schema.Number,
+  ioReadBytesPerSecond: FiniteNonNegativeNumber,
+  ioWriteBytesPerSecond: FiniteNonNegativeNumber,
   processStarts: NonNegativeInt,
   processExits: NonNegativeInt,
 });
@@ -326,14 +377,16 @@ export type ResourceTelemetryGroups = typeof ResourceTelemetryGroups.Type;
 export const ResourceTelemetrySourceHealth = Schema.Struct({
   status: ResourceTelemetrySourceStatus,
   lastSampleAt: Schema.Option(Schema.DateTimeUtc),
-  lastError: Schema.Option(TrimmedNonEmptyString),
+  lastError: Schema.Option(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH)),
+  ),
 });
 export type ResourceTelemetrySourceHealth = typeof ResourceTelemetrySourceHealth.Type;
 
 export const ResourceTelemetryHealth = Schema.Struct({
   native: ResourceTelemetrySourceHealth,
   desktop: ResourceTelemetrySourceHealth,
-  sidecarVersion: Schema.Option(TrimmedNonEmptyString),
+  sidecarVersion: Schema.Option(TrimmedNonEmptyString.check(Schema.isMaxLength(128))),
   sidecarPid: Schema.Option(PositiveInt),
   restartCount: NonNegativeInt,
   collectionDurationMicros: NonNegativeInt,
@@ -344,8 +397,8 @@ export const ResourceTelemetryHealth = Schema.Struct({
 export type ResourceTelemetryHealth = typeof ResourceTelemetryHealth.Type;
 
 export const ResourceAttributionEntry = Schema.Struct({
-  component: TrimmedNonEmptyString,
-  operation: TrimmedNonEmptyString,
+  component: TrimmedNonEmptyString.check(Schema.isMaxLength(RESOURCE_ATTRIBUTION_LABEL_MAX_LENGTH)),
+  operation: TrimmedNonEmptyString.check(Schema.isMaxLength(RESOURCE_ATTRIBUTION_LABEL_MAX_LENGTH)),
   logicalReadBytes: NonNegativeInt,
   logicalWriteBytes: NonNegativeInt,
   count: NonNegativeInt,
@@ -355,17 +408,23 @@ export type ResourceAttributionEntry = typeof ResourceAttributionEntry.Type;
 
 export const ResourceAttributionSnapshot = Schema.Struct({
   readAt: Schema.DateTimeUtc,
-  entries: Schema.Array(ResourceAttributionEntry),
+  entries: Schema.Array(ResourceAttributionEntry).check(
+    Schema.isMaxLength(RESOURCE_ATTRIBUTION_ENTRY_MAX_COUNT),
+  ),
+  entriesTruncated: Schema.optionalKey(Schema.Boolean),
 });
 export type ResourceAttributionSnapshot = typeof ResourceAttributionSnapshot.Type;
 
 export const ResourceTelemetrySnapshot = Schema.Struct({
   readAt: Schema.DateTimeUtc,
   sampleIntervalMs: NonNegativeInt,
-  processes: Schema.Array(ResourceTelemetryProcess),
+  processes: Schema.Array(ResourceTelemetryProcess).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_SNAPSHOT_PROCESS_MAX_COUNT),
+  ),
+  processesTruncated: Schema.optionalKey(Schema.Boolean),
   groups: ResourceTelemetryGroups,
   power: HostPowerSnapshot,
-  speedLimitPercent: Schema.Option(Schema.Number),
+  speedLimitPercent: Schema.Option(DesktopSpeedLimitPercent),
   attribution: ResourceAttributionSnapshot,
   health: ResourceTelemetryHealth,
 });
@@ -380,8 +439,8 @@ export type ResourceTelemetryHistoryInput = typeof ResourceTelemetryHistoryInput
 export const ResourceTelemetryHistoryBucket = Schema.Struct({
   startedAt: Schema.DateTimeUtc,
   endedAt: Schema.DateTimeUtc,
-  avgCpuPercent: Schema.Number,
-  maxCpuPercent: Schema.Number,
+  avgCpuPercent: FiniteNonNegativeNumber,
+  maxCpuPercent: FiniteNonNegativeNumber,
   maxRssBytes: NonNegativeInt,
   ioReadBytes: NonNegativeInt,
   ioWriteBytes: NonNegativeInt,
@@ -393,14 +452,14 @@ export const ResourceTelemetryProcessSummary = Schema.Struct({
   identity: ResourceTelemetryProcessIdentity,
   ppid: NonNegativeInt,
   depth: NonNegativeInt,
-  name: Schema.String,
-  command: Schema.String,
+  name: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH)),
+  command: Schema.String.check(Schema.isMaxLength(RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH)),
   category: ResourceTelemetryProcessCategory,
   firstSeenAt: Schema.DateTimeUtc,
   lastSeenAt: Schema.DateTimeUtc,
-  currentCpuPercent: Schema.Number,
-  avgCpuPercent: Schema.Number,
-  maxCpuPercent: Schema.Number,
+  currentCpuPercent: FiniteNonNegativeNumber,
+  avgCpuPercent: FiniteNonNegativeNumber,
+  maxCpuPercent: FiniteNonNegativeNumber,
   cpuTimeMs: NonNegativeInt,
   currentRssBytes: NonNegativeInt,
   peakRssBytes: NonNegativeInt,
@@ -417,8 +476,13 @@ export const ResourceTelemetryHistory = Schema.Struct({
   bucketMs: NonNegativeInt,
   sampleIntervalMs: NonNegativeInt,
   retainedSampleCount: NonNegativeInt,
-  buckets: Schema.Array(ResourceTelemetryHistoryBucket),
-  topProcesses: Schema.Array(ResourceTelemetryProcessSummary),
+  buckets: Schema.Array(ResourceTelemetryHistoryBucket).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_HISTORY_BUCKET_MAX_COUNT),
+  ),
+  topProcesses: Schema.Array(ResourceTelemetryProcessSummary).check(
+    Schema.isMaxLength(RESOURCE_TELEMETRY_HISTORY_TOP_PROCESS_MAX_COUNT),
+  ),
+  topProcessesTruncated: Schema.optionalKey(Schema.Boolean),
   health: ResourceTelemetryHealth,
 });
 export type ResourceTelemetryHistory = typeof ResourceTelemetryHistory.Type;

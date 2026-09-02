@@ -24,6 +24,16 @@ import { hiddenToastActionProps, stackedThreadToast, toastManager } from "./ui/t
 import { useAtomCommand } from "../state/use-atom-command";
 
 const seenProviderUpdateNotificationKeys = new Set<string>();
+const MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS = 128;
+
+function rememberSeenProviderUpdateNotificationKey(key: string): void {
+  seenProviderUpdateNotificationKeys.delete(key);
+  seenProviderUpdateNotificationKeys.add(key);
+  if (seenProviderUpdateNotificationKeys.size > MAX_SEEN_PROVIDER_UPDATE_NOTIFICATION_KEYS) {
+    const oldestKey = seenProviderUpdateNotificationKeys.values().next().value;
+    if (oldestKey !== undefined) seenProviderUpdateNotificationKeys.delete(oldestKey);
+  }
+}
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
@@ -192,7 +202,7 @@ export function ProviderUpdatePrimaryNotification() {
       return;
     }
 
-    seenProviderUpdateNotificationKeys.add(notificationKey);
+    rememberSeenProviderUpdateNotificationKey(notificationKey);
 
     const initialView = getProviderUpdateInitialToastView({ updateProviders, oneClickProviders });
 

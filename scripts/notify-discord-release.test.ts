@@ -7,6 +7,7 @@ import {
   buildDiscordReleaseAnnouncement,
   isDiscordReleaseAnnouncementError,
   postDiscordWebhook,
+  redactDiscordWebhookCause,
 } from "./notify-discord-release.ts";
 
 const latestAnnouncement = {
@@ -95,7 +96,7 @@ it("builds a latest Discord announcement for stable subscribers", () => {
   });
 });
 
-it.effect("preserves webhook request context and the full client cause chain", () => {
+it.effect("preserves request context without retaining the secret webhook URL", () => {
   const payload = buildDiscordReleaseAnnouncement(latestAnnouncement);
   const requestCause = new Error("request encoder unavailable");
   let clientError: HttpClientError.HttpClientError | undefined;
@@ -132,9 +133,14 @@ it.effect("preserves webhook request context and the full client cause chain", (
     assert.equal(error.embedCount, 1);
     assert.equal(error.allowedRoleMentionCount, 1);
     assert.equal(error.hasRoleMentionSyntax, true);
-    assert.equal(error.cause, clientError);
-    assert.equal((error.cause as HttpClientError.HttpClientError).cause, requestCause);
+    assert.notEqual(error.cause, clientError);
+    assert.equal(
+      (error.cause as Error).message,
+      "Discord webhook failed (HttpClientError/EncodeError).",
+    );
     assert.ok(!error.message.includes(requestCause.message));
+    assert.ok(!(error.cause as Error).message.includes(webhookUrl.href));
+    assert.ok(!(error.cause as Error).message.includes("secret-token"));
     assert.equal(isDiscordReleaseAnnouncementError(error), true);
   });
 });
@@ -164,11 +170,21 @@ it.effect("preserves a non-success response error with structured status context
     assert.equal(error.webhookOrigin, webhookUrl.origin);
     assert.equal(error.webhookPathnameSegmentCount, 4);
     assert.equal(error.status, 400);
-    if (!HttpClientError.isHttpClientError(error.cause)) {
-      assert.fail("Expected HttpClientError cause");
-    }
-    assert.equal(error.cause.reason._tag, "StatusCodeError");
-    assert.ok(!error.message.includes(error.cause.message));
+    assert.equal(
+      (error.cause as Error).message,
+      "Discord webhook failed (HttpClientError/StatusCodeError).",
+    );
+    assert.ok(!error.message.includes((error.cause as Error).message));
+    assert.ok(!(error.cause as Error).message.includes("secret-token"));
     assert.equal(isDiscordReleaseAnnouncementError(error), true);
   });
+});
+
+it("redacts arbitrary error messages instead of preserving secret-bearing text", () => {
+  const error = redactDiscordWebhookCause(
+    new Error("POST https://discord.com/api/webhooks/123456/secret-token failed"),
+  );
+
+  assert.equal(error.message, "Discord webhook failed.");
+  assert.ok(!error.message.includes("secret-token"));
 });

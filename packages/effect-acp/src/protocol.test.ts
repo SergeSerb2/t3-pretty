@@ -3,8 +3,11 @@ import * as AcpError from "./errors.ts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Sink from "effect/Sink";
+import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import * as Ref from "effect/Ref";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -68,6 +71,43 @@ const makeHandle = (env?: Record<string, string>) =>
   });
 
 it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
+  it.effect("frames split UTF-8 and CRLF records without repeated line joins", () =>
+    Effect.sync(() => {
+      const framer = AcpProtocol.makeAcpWireLineFramer(32);
+      const lines: string[] = [];
+      for (const byte of encoder.encode('{"value":"🧪"}\r\n')) {
+        const framed = framer.push(Uint8Array.of(byte));
+        assert.equal(framed._tag, "Framed");
+        lines.push(...framed.lines);
+      }
+      assert.deepEqual(lines, ['{"value":"🧪"}']);
+      assert.deepEqual(framer.finish(), { _tag: "Framed", lines: [] });
+    }),
+  );
+
+  it.effect("accepts the exact wire-line ceiling and reports the first overflow byte", () =>
+    Effect.sync(() => {
+      const exact = AcpProtocol.makeAcpWireLineFramer(8);
+      assert.deepEqual(exact.push(encoder.encode("1234")), { _tag: "Framed", lines: [] });
+      assert.deepEqual(exact.push(encoder.encode("5678\n")), {
+        _tag: "Framed",
+        lines: ["12345678"],
+      });
+
+      const overflow = AcpProtocol.makeAcpWireLineFramer(8);
+      assert.deepEqual(overflow.push(encoder.encode("12345678")), {
+        _tag: "Framed",
+        lines: [],
+      });
+      assert.deepEqual(overflow.push(encoder.encode("9")), {
+        _tag: "Overflow",
+        lines: [],
+        maximumBytes: 8,
+        observedBytes: 9,
+      });
+    }),
+  );
+
   it.effect(
     "emits exact JSON-RPC notifications and decodes inbound session/update and elicitation completion",
     () =>
@@ -133,6 +173,41 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         assert.equal(update?._tag, "SessionUpdate");
         assert.equal(completion?._tag, "ElicitationComplete");
       }),
+  );
+
+  it.effect("keeps only recent raw notifications after their callbacks run", () =>
+    Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const handled = yield* Deferred.make<void>();
+      let handledCount = 0;
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+        onNotification: () =>
+          Effect.sync(() => ++handledCount).pipe(
+            Effect.flatMap((count) =>
+              count === 64 ? Deferred.succeed(handled, undefined).pipe(Effect.asVoid) : Effect.void,
+            ),
+          ),
+      });
+
+      const messages = Array.from({ length: 64 }, (_, index) =>
+        encodeUnknownJsonString({
+          jsonrpc: "2.0",
+          method: "x/performance",
+          params: { index },
+        }),
+      );
+      yield* Queue.offer(input, encoder.encode(`${messages.join("\n")}\n`));
+      yield* Deferred.await(handled);
+
+      const retained = yield* transport.incoming.pipe(Stream.take(32), Stream.runCollect);
+
+      assert.equal(handledCount, 64);
+      assert.equal(retained.length, 32);
+      assert.deepEqual(retained[0]?.params, { index: 32 });
+      assert.deepEqual(retained[31]?.params, { index: 63 });
+    }),
   );
 
   it.effect("keeps invalid core notification values only in the schema cause", () =>
@@ -247,6 +322,80 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         },
       });
       assert.notInclude(encodeUnknownJsonString(event), secret);
+    }),
+  );
+
+  it.effect("terminates and fails pending requests when a wire line overflows", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const termination = yield* Deferred.make<AcpError.AcpError>();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        maximumWireLineBytes: 8,
+        serverRequestMethods: new Set(),
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+
+      const pending = yield* transport
+        .request("x/test", { hello: "world" })
+        .pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+      yield* Queue.offer(input, encoder.encode("1234"));
+      yield* Queue.offer(input, encoder.encode("56789"));
+
+      const terminationError = yield* Deferred.await(termination);
+      assert.instanceOf(terminationError, AcpError.AcpWireLineTooLargeError);
+      assert.deepInclude(terminationError, {
+        maximumBytes: 8,
+        observedBytes: 9,
+      });
+      const pendingResult = yield* Effect.result(Fiber.join(pending));
+      assert.equal(pendingResult._tag, "Failure");
+      if (pendingResult._tag === "Failure") {
+        assert.strictEqual(pendingResult.failure, terminationError);
+      }
+      assert.strictEqual(
+        yield* transport.notify("session/cancel", { sessionId: "session-1" }).pipe(Effect.flip),
+        terminationError,
+      );
+    }),
+  );
+
+  it.effect("terminates and fails pending requests when the stdout writer fails", () =>
+    Effect.gen(function* () {
+      const inMemory = yield* makeInMemoryStdio();
+      const outputFailure = PlatformError.systemError({
+        _tag: "Unknown",
+        module: "FileSystem",
+        method: "write",
+        cause: new Error("private stdout failure"),
+      });
+      const stdio = Stdio.make({
+        args: inMemory.stdio.args,
+        stdin: inMemory.stdio.stdin,
+        stdout: () => Sink.forEach(() => Effect.fail(outputFailure)),
+        stderr: inMemory.stdio.stderr,
+      });
+      const termination = yield* Deferred.make<AcpError.AcpError>();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+
+      const pending = yield* transport
+        .request("x/test", { hello: "world" })
+        .pipe(Effect.forkScoped);
+      const terminationError = yield* Deferred.await(termination);
+      assert.instanceOf(terminationError, AcpError.AcpTransportError);
+      assert.equal(terminationError.operation, "write-output-stream");
+      assert.strictEqual(terminationError.cause, outputFailure);
+
+      const pendingResult = yield* Effect.result(Fiber.join(pending));
+      assert.equal(pendingResult._tag, "Failure");
+      if (pendingResult._tag === "Failure") {
+        assert.strictEqual(pendingResult.failure, terminationError);
+      }
     }),
   );
 

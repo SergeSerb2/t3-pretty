@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 import {
   DEFAULT_LINUX_PASSWORD_STORE,
   normalizeLinuxPasswordStorePreference,
@@ -56,6 +57,7 @@ export interface DesktopSettingsChange {
 }
 
 export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
+const DESKTOP_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 const MIN_MAIN_WINDOW_SIZE = {
   width: 840,
   height: 620,
@@ -381,7 +383,7 @@ function readSettings(
 ): Effect.Effect<DesktopSettings> {
   const defaultSettings = resolveDefaultDesktopSettings(appVersion);
 
-  return fileSystem.readFileString(settingsPath).pipe(
+  return readFileStringWithinLimit(fileSystem, settingsPath, DESKTOP_SETTINGS_FILE_MAX_BYTES).pipe(
     Effect.option,
     Effect.flatMap(
       Option.match({
@@ -428,26 +430,28 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
         }),
     ),
   );
-  yield* input.fileSystem.writeFileString(tempPath, `${encoded}\n`).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopSettingsWriteError({
-          operation: "write-temporary-file",
-          path: tempPath,
-          cause,
-        }),
-    ),
-  );
-  yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopSettingsWriteError({
-          operation: "replace-settings-file",
-          path: input.settingsPath,
-          cause,
-        }),
-    ),
-  );
+  yield* Effect.gen(function* () {
+    yield* input.fileSystem.writeFileString(tempPath, `${encoded}\n`).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopSettingsWriteError({
+            operation: "write-temporary-file",
+            path: tempPath,
+            cause,
+          }),
+      ),
+    );
+    yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopSettingsWriteError({
+            operation: "replace-settings-file",
+            path: input.settingsPath,
+            cause,
+          }),
+      ),
+    );
+  }).pipe(Effect.ensuring(input.fileSystem.remove(tempPath, { force: true }).pipe(Effect.ignore)));
 });
 
 export const make = Effect.gen(function* () {

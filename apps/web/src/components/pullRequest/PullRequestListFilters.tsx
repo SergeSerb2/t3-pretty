@@ -322,7 +322,12 @@ export function PullRequestFiltersMenu({
     (project) => project.id === projectId && project.environmentId === projectEnvironmentId,
   );
   return (
-    <Menu>
+    <Menu
+      // Nested flyouts portal outside this root. Modal mode inerts the rest of
+      // the document, so those popups look open but swallow no clicks — and
+      // every control that would leave the Pull Requests page is inert too.
+      modal={false}
+    >
       <MenuTrigger
         render={
           <Button

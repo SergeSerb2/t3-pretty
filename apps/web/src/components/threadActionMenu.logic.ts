@@ -18,6 +18,7 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "transfer"
   | "copy"
   | "copy-conversation"
   | "copy-path"
@@ -48,6 +49,7 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly projectTransfer: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -141,6 +143,16 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail" },
+    ...(state.supports.projectTransfer
+      ? [
+          {
+            id: "transfer" as const,
+            label: "Move to connection…",
+            icon: "arrow-right-left",
+            disabled: state.isRunning,
+          },
+        ]
+      : []),
   ];
 
   const copy: ContextMenuItem<ThreadActionMenuId> = {

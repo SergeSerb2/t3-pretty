@@ -6,7 +6,7 @@
  */
 import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@t3tools/contracts";
 import { CheckIcon, MessageSquareIcon, XCircleIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -58,8 +58,12 @@ export function PullRequestReviewBar({
   onSubmitted: () => void;
 }) {
   const [pending, setPending] = useState(false);
-  const comments = usePendingReviewComments(reference);
-  const reviewKey = pullRequestReviewKey(reference);
+  const mountedRef = useRef(false);
+  const pendingTargetsRef = useRef(new Set<string>());
+  const comments = usePendingReviewComments(environmentId, reference);
+  const reviewKey = pullRequestReviewKey(environmentId, reference);
+  const activeReviewKeyRef = useRef(reviewKey);
+  activeReviewKeyRef.current = reviewKey;
   // The panel stays mounted while the selected pull request changes. Keeping summaries beside
   // the keyed line-comment drafts makes the selected pull request's body correct on the first
   // render, before an effect could reset state left behind by the previous one.
@@ -72,38 +76,60 @@ export function PullRequestReviewBar({
     reportFailure: false,
   });
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPending(pendingTargetsRef.current.has(reviewKey));
+  }, [reviewKey]);
+
   const offered = VERDICTS.filter((verdict) => verdicts.includes(verdict.value));
   if (offered.length === 0) return null;
 
   const submit = async (verdict: (typeof VERDICTS)[number]) => {
-    if (pending) return;
+    if (pendingTargetsRef.current.has(reviewKey)) return;
+    pendingTargetsRef.current.add(reviewKey);
     const submittedBody = body;
     const submittedComments = comments;
     setPending(true);
-    const result = await submitReview({
-      environmentId,
-      input: {
-        ...reference,
-        verdict: verdict.value,
-        body: submittedBody,
-        comments: submittedComments,
-      },
-    });
-    setPending(false);
-    if (result._tag === "Failure") {
-      // The draft is kept: whatever went wrong, retyping the review is not the answer.
-      toastManager.add({ type: "error", title: "The review could not be submitted" });
-      return;
+    try {
+      const result = await submitReview({
+        environmentId,
+        input: {
+          ...reference,
+          verdict: verdict.value,
+          body: submittedBody,
+          comments: submittedComments,
+        },
+      });
+      if (result._tag === "Failure") {
+        // The draft is kept: whatever went wrong, retyping the review is not the answer.
+        toastManager.add({ type: "error", title: "The review could not be submitted" });
+        return;
+      }
+      // More remarks may have been added while the host was accepting this snapshot. Leave those,
+      // and any summary revised in the meantime, ready for the next review.
+      removeComments(
+        reviewKey,
+        submittedComments.map((comment) => comment.id),
+      );
+      clearSummary(reviewKey, submittedBody);
+      toastManager.add({ type: "success", title: verdict.sent });
+      if (mountedRef.current && activeReviewKeyRef.current === reviewKey) onSubmitted();
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "The review could not be submitted",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      pendingTargetsRef.current.delete(reviewKey);
+      if (mountedRef.current && activeReviewKeyRef.current === reviewKey) setPending(false);
     }
-    // More remarks may have been added while the host was accepting this snapshot. Leave those,
-    // and any summary revised in the meantime, ready for the next review.
-    removeComments(
-      reviewKey,
-      submittedComments.map((comment) => comment.id),
-    );
-    clearSummary(reviewKey, submittedBody);
-    toastManager.add({ type: "success", title: verdict.sent });
-    onSubmitted();
   };
 
   // An approval needs no words; anything else does, unless it carries line comments instead.

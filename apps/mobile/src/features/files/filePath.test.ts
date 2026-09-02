@@ -4,8 +4,20 @@ import {
   isBrowserPreviewFile,
   isImagePreviewFile,
   isSvgImagePreviewFile,
+  normalizeMobileFileRoutePath,
   resolveWorkspaceRelativeFilePath,
 } from "./filePath";
+
+describe("normalizeMobileFileRoutePath", () => {
+  it("normalizes bounded route segments without materializing oversized paths", () => {
+    expect(normalizeMobileFileRoutePath(["src", ".", "features", "..", "main.ts"])).toBe(
+      "src/main.ts",
+    );
+    expect(normalizeMobileFileRoutePath(["..", "outside.ts"])).toBeNull();
+    expect(normalizeMobileFileRoutePath("x".repeat(513))).toBeNull();
+    expect(normalizeMobileFileRoutePath(["x".repeat(256), "y".repeat(256)])).toBeNull();
+  });
+});
 
 describe("resolveWorkspaceRelativeFilePath", () => {
   it("keeps normalized workspace-relative paths", () => {

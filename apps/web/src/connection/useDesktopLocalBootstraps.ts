@@ -1,7 +1,10 @@
 import type { DesktopEnvironmentBootstrap } from "@t3tools/contracts";
 import { useSyncExternalStore } from "react";
 
-import { readDesktopSecondaryBootstraps } from "./desktopLocal";
+import {
+  readDesktopSecondaryBootstraps,
+  subscribeDesktopSecondaryBootstraps,
+} from "./desktopLocal";
 
 const DESKTOP_LOCAL_BOOTSTRAP_POLL_MS = 2_000;
 const EMPTY_DESKTOP_LOCAL_BOOTSTRAPS: ReadonlyArray<DesktopEnvironmentBootstrap> = [];
@@ -12,6 +15,9 @@ interface DesktopLocalBootstrapsStoreOptions {
   readonly read: () => ReadonlyArray<DesktopEnvironmentBootstrap>;
   readonly isVisible: () => boolean;
   readonly subscribeVisibility: (listener: () => void) => () => void;
+  readonly subscribeSource?: (
+    listener: (bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => void,
+  ) => () => void;
   readonly pollIntervalMs?: number;
   readonly setInterval?: (listener: () => void, delay: number) => PollInterval;
   readonly clearInterval?: (interval: PollInterval) => void;
@@ -62,6 +68,18 @@ export function createDesktopLocalBootstrapsStore(
   let initialized = false;
   let pollInterval: PollInterval | null = null;
   let unsubscribeVisibility: (() => void) | null = null;
+  let unsubscribeSource: (() => void) | null = null;
+
+  const updateSnapshot = (next: ReadonlyArray<DesktopEnvironmentBootstrap>) => {
+    initialized = true;
+    if (isSameTopology(snapshot, next)) {
+      return;
+    }
+    snapshot = next;
+    for (const listener of listeners) {
+      listener();
+    }
+  };
 
   const getSnapshot = () => {
     if (initialized) {
@@ -84,14 +102,7 @@ export function createDesktopLocalBootstrapsStore(
     } catch {
       return;
     }
-    initialized = true;
-    if (isSameTopology(snapshot, next)) {
-      return;
-    }
-    snapshot = next;
-    for (const listener of listeners) {
-      listener();
-    }
+    updateSnapshot(next);
   };
 
   const stopPolling = () => {
@@ -120,6 +131,7 @@ export function createDesktopLocalBootstrapsStore(
       const isFirstSubscriber = listeners.size === 0;
       listeners.add(listener);
       if (isFirstSubscriber) {
+        unsubscribeSource = options.subscribeSource?.(updateSnapshot) ?? null;
         unsubscribeVisibility = options.subscribeVisibility(syncPolling);
         syncPolling();
       }
@@ -132,6 +144,8 @@ export function createDesktopLocalBootstrapsStore(
         stopPolling();
         unsubscribeVisibility?.();
         unsubscribeVisibility = null;
+        unsubscribeSource?.();
+        unsubscribeSource = null;
       };
     },
   };
@@ -139,6 +153,7 @@ export function createDesktopLocalBootstrapsStore(
 
 const desktopLocalBootstrapsStore = createDesktopLocalBootstrapsStore({
   read: readDesktopSecondaryBootstraps,
+  subscribeSource: subscribeDesktopSecondaryBootstraps,
   isVisible: () => typeof document === "undefined" || document.visibilityState === "visible",
   subscribeVisibility: (listener) => {
     if (typeof document === "undefined") {

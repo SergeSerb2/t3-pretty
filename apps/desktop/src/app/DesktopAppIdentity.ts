@@ -7,11 +7,13 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
+const APP_PACKAGE_METADATA_MAX_BYTES = 1024 * 1024;
 
 const AppPackageMetadata = Schema.Struct({
   t3codeCommitHash: Schema.optional(Schema.String),
@@ -53,16 +55,20 @@ export const resolveUserDataPath = Effect.gen(function* () {
     environment.appDataDirectory,
     environment.legacyUserDataDirName,
   );
-  const legacyPathExists = yield* fileSystem.exists(legacyPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopUserDataPathResolutionError({
-          legacyPath,
-          cause,
-        }),
+  const legacyPathInfo = yield* fileSystem.stat(legacyPath).pipe(
+    Effect.map(Option.some),
+    Effect.catchTag("PlatformError", (cause) =>
+      cause.reason._tag === "NotFound"
+        ? Effect.succeed(Option.none<FileSystem.File.Info>())
+        : Effect.fail(
+            new DesktopUserDataPathResolutionError({
+              legacyPath,
+              cause,
+            }),
+          ),
     ),
   );
-  return legacyPathExists
+  return Option.exists(legacyPathInfo, (info) => info.type === "Directory")
     ? legacyPath
     : environment.path.join(environment.appDataDirectory, environment.userDataDirName);
 }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
@@ -76,7 +82,11 @@ export const make = Effect.gen(function* () {
 
   const resolveEmbeddedCommitHash = Effect.gen(function* () {
     const packageJsonPath = environment.path.join(environment.appRoot, "package.json");
-    const raw = yield* fileSystem.readFileString(packageJsonPath).pipe(Effect.option);
+    const raw = yield* readFileStringWithinLimit(
+      fileSystem,
+      packageJsonPath,
+      APP_PACKAGE_METADATA_MAX_BYTES,
+    ).pipe(Effect.option);
     return yield* Option.match(raw, {
       onNone: () => Effect.succeed(Option.none<string>()),
       onSome: (value) =>

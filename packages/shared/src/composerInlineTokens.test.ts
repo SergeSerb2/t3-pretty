@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { PROJECT_PATH_MAX_LENGTH } from "@t3tools/contracts";
+
 import { collectComposerInlineTokens } from "./composerInlineTokens.ts";
 
 describe("collectComposerInlineTokens", () => {
@@ -149,5 +151,21 @@ describe("collectComposerInlineTokens", () => {
     const started = performance.now();
     expect(collectComposerInlineTokens(" [[".repeat(40_000))).toEqual([]);
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("stays fast on repeated unterminated quoted mentions", () => {
+    const started = performance.now();
+    expect(collectComposerInlineTokens(' @"'.repeat(40_000))).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("bounds bare and quoted mention paths at the project-path contract", () => {
+    const path = "a".repeat(PROJECT_PATH_MAX_LENGTH);
+    expect(collectComposerInlineTokens(`@${path} `)).toHaveLength(1);
+    expect(collectComposerInlineTokens(`@"${path}" `)).toHaveLength(1);
+
+    const oversizedPath = `${path}a`;
+    expect(collectComposerInlineTokens(`@${oversizedPath} `)).toEqual([]);
+    expect(collectComposerInlineTokens(`@"${oversizedPath}" `)).toEqual([]);
   });
 });

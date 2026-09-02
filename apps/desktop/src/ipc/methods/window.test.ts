@@ -135,6 +135,22 @@ describe("getLocalEnvironmentBootstraps", () => {
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(DesktopBackendPool.layerTest([stoppedInstance])));
   });
+
+  it.effect("caps local bootstraps before desktop IPC encoding", () => {
+    const instances: DesktopBackendManager.DesktopBackendInstance[] = Array.from(
+      { length: 65 },
+      (_, index) => ({
+        ...defaultWslInstance,
+        id: DesktopBackendManager.BackendInstanceId(`wsl:test-${index}`),
+      }),
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* getLocalEnvironmentBootstraps.handler(undefined);
+      if (!Array.isArray(result)) throw new TypeError("Expected a bootstrap array.");
+      assert.equal(result.length, 64);
+    }).pipe(Effect.provide(DesktopBackendPool.layerTest(instances)));
+  });
 });
 
 describe("getWindowFullscreenState", () => {

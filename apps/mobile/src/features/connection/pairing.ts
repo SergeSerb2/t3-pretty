@@ -1,4 +1,9 @@
-import { readHostedPairingRequest } from "@t3tools/shared/remote";
+import {
+  readHostedPairingRequest,
+  REMOTE_PAIRING_HOST_MAX_LENGTH,
+  REMOTE_PAIRING_TOKEN_MAX_LENGTH,
+  REMOTE_PAIRING_URL_MAX_LENGTH,
+} from "@t3tools/shared/remote";
 import * as Schema from "effect/Schema";
 
 const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
@@ -28,6 +33,12 @@ export class PairingQrPayloadEmptyError extends Schema.TaggedErrorClass<PairingQ
 }
 
 export function buildPairingUrl(host: string, code: string): string {
+  if (
+    host.length > REMOTE_PAIRING_HOST_MAX_LENGTH ||
+    code.length > REMOTE_PAIRING_TOKEN_MAX_LENGTH
+  ) {
+    return "";
+  }
   const h = host.trim();
   const c = code.trim();
   if (!h) return "";
@@ -43,6 +54,9 @@ export function buildPairingUrl(host: string, code: string): string {
 }
 
 export function parsePairingUrl(url: string): { host: string; code: string } {
+  if (url.length > REMOTE_PAIRING_URL_MAX_LENGTH) {
+    return { host: "", code: "" };
+  }
   const trimmed = url.trim();
   if (!trimmed) return { host: "", code: "" };
 
@@ -71,6 +85,9 @@ export function parsePairingUrl(url: string): { host: string; code: string } {
 }
 
 export function extractPairingUrlFromQrPayload(payload: string): string {
+  if (payload.length > REMOTE_PAIRING_URL_MAX_LENGTH) {
+    throw new RangeError("Scanned QR code contained an oversized pairing URL.");
+  }
   const trimmed = payload.trim();
   if (!trimmed) {
     throw new PairingQrPayloadEmptyError({});

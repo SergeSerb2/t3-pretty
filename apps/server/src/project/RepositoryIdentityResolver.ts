@@ -1,4 +1,14 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import {
+  REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH,
+  REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH,
+  REPOSITORY_IDENTITY_NAME_MAX_LENGTH,
+  REPOSITORY_IDENTITY_OWNER_MAX_LENGTH,
+  REPOSITORY_IDENTITY_PATH_MAX_LENGTH,
+  REPOSITORY_IDENTITY_REMOTE_MAX_COUNT,
+  REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH,
+  REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH,
+  type RepositoryIdentity,
+} from "@t3tools/contracts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   normalizeGitRemoteUrl,
@@ -45,8 +55,17 @@ function parseRemoteUrls(stdout: string): Map<string, RemoteUrls> {
     const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", rawRemoteUrl = "", direction = ""] = match;
-    if (remoteName.length === 0 || rawRemoteUrl.length === 0) continue;
+    if (
+      remoteName.length === 0 ||
+      remoteName.length > REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH ||
+      rawRemoteUrl.length === 0 ||
+      rawRemoteUrl.length > REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH
+    ) {
+      continue;
+    }
+    if (!remotes.has(remoteName) && remotes.size >= REPOSITORY_IDENTITY_REMOTE_MAX_COUNT) continue;
     const remoteUrl = redactGitRemoteUrlCredentials(rawRemoteUrl);
+    if (remoteUrl.length > REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH) continue;
     const existing = remotes.get(remoteName) ?? {};
     // A remote can have several push URLs (one `(push)` line each); git treats
     // the first as the primary target, so later lines must not overwrite it.
@@ -236,8 +255,14 @@ function buildRepositoryIdentity(input: {
   readonly remoteUrl: string;
   readonly fallbackProviderUrl?: string | undefined;
   readonly rootPath: string;
-}): RepositoryIdentity {
+}): RepositoryIdentity | null {
   const canonicalKey = normalizeGitRemoteUrl(input.groupingRemoteUrl);
+  if (
+    canonicalKey.length === 0 ||
+    canonicalKey.length > REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH
+  ) {
+    return null;
+  }
   // A promoted push URL can use an unclassifiable host (e.g. an SSH alias);
   // fall back to the fetch URL's recognized provider in that case.
   const displayUrlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
@@ -253,8 +278,23 @@ function buildRepositoryIdentity(input: {
         : (displayUrlProvider ?? fallbackProvider);
   const repositoryPathSegments = deriveDisplayRepositoryPathSegments(input.remoteUrl);
   const repositoryPath = repositoryPathSegments.join("/");
-  const owner = repositoryPathSegments.length >= 2 ? repositoryPathSegments[0] : undefined;
-  const repositoryName = repositoryPathSegments.at(-1);
+  const ownerCandidate = repositoryPathSegments.length >= 2 ? repositoryPathSegments[0] : undefined;
+  const repositoryNameCandidate = repositoryPathSegments.at(-1);
+  const owner =
+    ownerCandidate !== undefined && ownerCandidate.length <= REPOSITORY_IDENTITY_OWNER_MAX_LENGTH
+      ? ownerCandidate
+      : undefined;
+  const repositoryName =
+    repositoryNameCandidate !== undefined &&
+    repositoryNameCandidate.length <= REPOSITORY_IDENTITY_NAME_MAX_LENGTH
+      ? repositoryNameCandidate
+      : undefined;
+  const rootPath =
+    input.rootPath.length <= REPOSITORY_IDENTITY_PATH_MAX_LENGTH ? input.rootPath : undefined;
+  const displayName =
+    repositoryPath.length <= REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH
+      ? repositoryPath
+      : undefined;
 
   return {
     canonicalKey,
@@ -263,8 +303,8 @@ function buildRepositoryIdentity(input: {
       remoteName: input.remoteName,
       remoteUrl: input.remoteUrl,
     },
-    rootPath: input.rootPath,
-    ...(repositoryPath ? { displayName: repositoryPath } : {}),
+    ...(rootPath ? { rootPath } : {}),
+    ...(displayName ? { displayName } : {}),
     ...(sourceControlProvider ? { provider: sourceControlProvider.kind } : {}),
     ...(owner ? { owner } : {}),
     ...(repositoryName ? { name: repositoryName } : {}),
@@ -274,7 +314,6 @@ function buildRepositoryIdentity(input: {
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
     const processRunner = yield* ProcessRunner.ProcessRunner;
-    let cacheKey = cwd;
 
     // git is a real executable on every platform — no cmd.exe shell mode, which
     // would split paths containing spaces during cmd's re-tokenization.
@@ -286,15 +325,11 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       })
       .pipe(Effect.option);
     if (topLevelResult._tag === "None" || topLevelResult.value.code !== 0) {
-      return cacheKey;
+      return null;
     }
 
     const candidate = topLevelResult.value.stdout.trim();
-    if (candidate.length > 0) {
-      cacheKey = candidate;
-    }
-
-    return cacheKey;
+    return candidate.length > 0 ? candidate : null;
   },
 );
 
@@ -332,6 +367,22 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
 ) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
+
+  const repositoryRootCache = yield* Cache.makeWith<string, string | null>(
+    (cwd) =>
+      resolveRepositoryIdentityCacheKey(cwd).pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+      ),
+    {
+      capacity: cacheCapacity,
+      timeToLive: Exit.match({
+        onSuccess: (value) =>
+          value === null ? Duration.zero : (options.positiveCacheTtl ?? DEFAULT_POSITIVE_CACHE_TTL),
+        onFailure: () => Duration.zero,
+      }),
+    },
+  );
 
   const repositoryIdentityCache = yield* Cache.makeWith<string, RepositoryIdentity | null>(
     (cacheKey) =>
@@ -339,7 +390,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
       ),
     {
-      capacity: options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY,
+      capacity: cacheCapacity,
       timeToLive: Exit.match({
         onSuccess: (value) =>
           value === null
@@ -353,9 +404,8 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const resolve: RepositoryIdentityResolver["Service"]["resolve"] = Effect.fn(
     "RepositoryIdentityResolver.resolve",
   )(function* (cwd) {
-    const cacheKey = yield* resolveRepositoryIdentityCacheKey(cwd).pipe(
-      Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-    );
+    const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
+    if (cacheKey === null) return null;
     return yield* Cache.get(repositoryIdentityCache, cacheKey);
   });
 

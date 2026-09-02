@@ -19,6 +19,7 @@ import type {
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
+import { FILESYSTEM_BROWSE_MAX_ENTRIES } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
 import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
@@ -195,8 +196,32 @@ export const make = Effect.gen(function* () {
       const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
       const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
 
-      const dirents = yield* Effect.tryPromise({
-        try: () => NodeFSP.readdir(parentPath, { withFileTypes: true }),
+      const showHidden = endsWithSeparator || prefix.startsWith(".");
+      const lowerPrefix = prefix.toLowerCase();
+      const browseResult = yield* Effect.tryPromise({
+        try: async () => {
+          const directory = await NodeFSP.opendir(parentPath);
+          const entries: Array<{ readonly name: string; readonly fullPath: string }> = [];
+          let truncated = false;
+          for await (const dirent of directory) {
+            if (
+              !dirent.isDirectory() ||
+              !dirent.name.toLowerCase().startsWith(lowerPrefix) ||
+              (!showHidden && dirent.name.startsWith("."))
+            ) {
+              continue;
+            }
+            if (entries.length >= FILESYSTEM_BROWSE_MAX_ENTRIES) {
+              truncated = true;
+              break;
+            }
+            entries.push({
+              name: dirent.name,
+              fullPath: path.join(parentPath, dirent.name),
+            });
+          }
+          return { entries, truncated };
+        },
         catch: (cause) =>
           new WorkspaceEntriesReadDirectoryError({
             cwd: input.cwd,
@@ -210,29 +235,16 @@ export const make = Effect.gen(function* () {
             const code = (error.cause as NodeJS.ErrnoException | undefined)?.code;
             return code === "EACCES" || code === "EPERM";
           },
-          () => Effect.succeed([]),
+          () => Effect.succeed({ entries: [], truncated: false }),
         ),
       );
 
-      const showHidden = endsWithSeparator || prefix.startsWith(".");
-      const lowerPrefix = prefix.toLowerCase();
-      const entries: Array<{ readonly name: string; readonly fullPath: string }> = [];
-      for (const dirent of dirents) {
-        if (
-          dirent.isDirectory() &&
-          dirent.name.toLowerCase().startsWith(lowerPrefix) &&
-          (showHidden || !dirent.name.startsWith("."))
-        ) {
-          entries.push({
-            name: dirent.name,
-            fullPath: path.join(parentPath, dirent.name),
-          });
-        }
-      }
-
       return {
         parentPath,
-        entries: entries.toSorted((left, right) => left.name.localeCompare(right.name)),
+        entries: browseResult.entries.toSorted((left, right) =>
+          left.name.localeCompare(right.name),
+        ),
+        truncated: browseResult.truncated,
       };
     },
   );

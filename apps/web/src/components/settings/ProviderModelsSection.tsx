@@ -10,7 +10,7 @@ import {
   StarIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ProviderDriverKind,
   type ProviderInstanceId,
@@ -72,6 +72,22 @@ interface ProviderModelsSectionProps {
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
 }
 
+interface ModelListScrollWork {
+  frameId: number | null;
+  observer: MutationObserver | null;
+  timeoutId: number | null;
+}
+
+function cancelModelListScrollWork(work: ModelListScrollWork): void {
+  if (work.frameId !== null) {
+    window.cancelAnimationFrame(work.frameId);
+  }
+  work.observer?.disconnect();
+  if (work.timeoutId !== null) {
+    window.clearTimeout(work.timeoutId);
+  }
+}
+
 /**
  * Shared "Models" section rendered on both the built-in default and custom
  * provider-instance cards. Owns its own input + error local state so two
@@ -99,6 +115,18 @@ export function ProviderModelsSection({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const scrollWorkRef = useRef<ModelListScrollWork | null>(null);
+
+  useEffect(
+    () => () => {
+      if (scrollWorkRef.current !== null) {
+        cancelModelListScrollWork(scrollWorkRef.current);
+        scrollWorkRef.current = null;
+      }
+    },
+    [],
+  );
+
   const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
   const orderedModels = useMemo(() => {
@@ -138,14 +166,34 @@ export function ProviderModelsSection({
     // common case where the parent updates synchronously.
     const el = listRef.current;
     if (!el) return;
+    if (scrollWorkRef.current !== null) {
+      cancelModelListScrollWork(scrollWorkRef.current);
+      scrollWorkRef.current = null;
+    }
     const scrollToEnd = () => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    requestAnimationFrame(scrollToEnd);
+    const work: ModelListScrollWork = {
+      frameId: null,
+      observer: null,
+      timeoutId: null,
+    };
+    const finish = () => {
+      cancelModelListScrollWork(work);
+      if (scrollWorkRef.current === work) {
+        scrollWorkRef.current = null;
+      }
+    };
+    work.frameId = window.requestAnimationFrame(() => {
+      work.frameId = null;
+      scrollToEnd();
+    });
     const observer = new MutationObserver(() => {
       scrollToEnd();
-      observer.disconnect();
+      finish();
     });
+    work.observer = observer;
     observer.observe(el, { childList: true, subtree: true });
-    setTimeout(() => observer.disconnect(), 2_000);
+    work.timeoutId = window.setTimeout(finish, 2_000);
+    scrollWorkRef.current = work;
   };
 
   const handleRemove = (slug: string) => {
@@ -184,12 +232,15 @@ export function ProviderModelsSection({
   };
 
   return (
-    <div>
+    <div className="lg:flex lg:h-full lg:min-h-0 lg:flex-col">
       <div className="text-xs font-medium text-foreground">Models</div>
       <div className="mt-1 text-xs text-muted-foreground">
         {models.length} model{models.length === 1 ? "" : "s"} available.
       </div>
-      <div ref={listRef} className="mt-2 max-h-40 overflow-y-auto pb-1">
+      <div
+        ref={listRef}
+        className="mt-2 max-h-40 overflow-y-auto pb-1 lg:min-h-0 lg:max-h-none lg:flex-1"
+      >
         {orderedModels.map((model, index) => {
           const caps = model.capabilities;
           const capLabels: string[] = [];

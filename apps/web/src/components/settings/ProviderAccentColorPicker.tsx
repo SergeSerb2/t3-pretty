@@ -1,7 +1,7 @@
 "use client";
 
 import { PipetteIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 
 import { ColorSelector } from "../color-selector";
 import { Button } from "../ui/button";
@@ -85,14 +85,22 @@ function ProviderCustomColorPanel(props: {
   readonly onCommit: (value: string) => void;
 }) {
   const { onCommit } = props;
-  const initialHsv = useMemo(() => hexToHsv(props.value), [props.value]);
-  const [hsv, setHsv] = useState(initialHsv);
+  const [hsv, setHsv] = useState(() => hexToHsv(props.value));
   const currentColor = hsvToHex(hsv.h, hsv.s, hsv.v);
+  const [hexDraft, setHexDraft] = useState(currentColor);
+
+  useEffect(() => {
+    const nextHsv = hexToHsv(props.value);
+    setHsv(nextHsv);
+    setHexDraft(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v));
+  }, [props.value]);
 
   const commitHsv = useCallback(
     (nextHsv: typeof hsv) => {
+      const nextColor = hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v);
       setHsv(nextHsv);
-      onCommit(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v));
+      setHexDraft(nextColor);
+      onCommit(nextColor);
     },
     [onCommit],
   );
@@ -162,15 +170,18 @@ function ProviderCustomColorPanel(props: {
           />
         </div>
         <input
-          value={currentColor}
+          value={hexDraft}
           onChange={(event) => {
             const nextColor = event.currentTarget.value;
+            setHexDraft(nextColor);
             if (!/^#[\da-f]{6}$/i.test(nextColor)) return;
             setHsv(hexToHsv(nextColor));
             props.onCommit(nextColor);
           }}
+          onBlur={() => setHexDraft(currentColor)}
           className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs text-foreground outline-none transition-colors focus:border-ring"
           aria-label="Custom hex accent color"
+          maxLength={7}
           spellCheck={false}
         />
       </div>

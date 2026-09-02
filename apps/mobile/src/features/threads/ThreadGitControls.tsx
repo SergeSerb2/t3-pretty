@@ -15,7 +15,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Alert } from "react-native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { presentActionListMenu } from "../../components/AppMenuHost";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useOpenNativePullRequest } from "../pull-requests/useOpenNativePullRequest";
 import {
   resolveThreadHeaderPrPresentation,
@@ -176,6 +176,7 @@ function presentPullRequestMenu(
 
 function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const navigation = useNavigation();
+  const actionPendingRef = useRef(false);
   const environmentId = props.environmentId;
   const threadId = props.threadId;
   const { gitStatus, gitOperationLabel, onPull, onRunAction } = props;
@@ -258,16 +259,22 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   );
 
   const runQuickAction = useCallback(async () => {
-    if (quickAction.kind === "open_pr") {
-      await openExistingPr();
-      return;
-    }
-    if (quickAction.kind === "run_pull") {
-      await onPull();
-      return;
-    }
-    if (quickAction.kind === "run_action" && quickAction.action) {
-      await runActionWithPrompt({ action: quickAction.action });
+    if (quickAction.disabled || actionPendingRef.current) return;
+    actionPendingRef.current = true;
+    try {
+      if (quickAction.kind === "open_pr") {
+        await openExistingPr();
+        return;
+      }
+      if (quickAction.kind === "run_pull") {
+        await onPull();
+        return;
+      }
+      if (quickAction.kind === "run_action" && quickAction.action) {
+        await runActionWithPrompt({ action: quickAction.action });
+      }
+    } finally {
+      actionPendingRef.current = false;
     }
   }, [onPull, openExistingPr, quickAction, runActionWithPrompt]);
 

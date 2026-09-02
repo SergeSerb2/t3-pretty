@@ -14,10 +14,21 @@ export class NotificationNavigationError extends Schema.TaggedErrorClass<Notific
   }
 }
 
+export function shouldConsumeLastAgentNotificationResponse(
+  response: NotificationResponse,
+  latestLiveResponseId: string | null,
+): boolean {
+  return (
+    latestLiveResponseId === null ||
+    response.notification.request.identifier === latestLiveResponseId
+  );
+}
+
 export async function consumeLastAgentNotificationResponse(input: {
   readonly getLastResponse: () => Promise<NotificationResponse | null>;
   readonly clearLastResponse: () => Promise<void>;
-  readonly handleResponse: (response: NotificationResponse) => void;
+  /** Return false when the navigation owner disappeared before consumption. */
+  readonly handleResponse: (response: NotificationResponse) => boolean | void;
 }): Promise<void> {
   let response: NotificationResponse | null;
   try {
@@ -32,7 +43,9 @@ export async function consumeLastAgentNotificationResponse(input: {
   }
 
   try {
-    input.handleResponse(response);
+    if (input.handleResponse(response) === false) {
+      return;
+    }
   } catch (cause) {
     console.error(
       new NotificationNavigationError({

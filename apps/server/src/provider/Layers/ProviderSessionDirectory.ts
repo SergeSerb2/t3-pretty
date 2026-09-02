@@ -174,10 +174,8 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
     repository.list().pipe(
       Effect.mapError(toPersistenceError("ProviderSessionDirectory.listBindings:list")),
       Effect.flatMap((rows) =>
-        Effect.forEach(
-          rows,
-          (row) => toRuntimeBinding(row, "ProviderSessionDirectory.listBindings"),
-          { concurrency: "unbounded" },
+        Effect.forEach(rows, (row) =>
+          toRuntimeBinding(row, "ProviderSessionDirectory.listBindings"),
         ),
       ),
     );

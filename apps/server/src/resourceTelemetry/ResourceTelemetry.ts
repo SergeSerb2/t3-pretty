@@ -1,12 +1,13 @@
-import type {
-  DesktopHostTelemetrySnapshot,
-  HostPowerSnapshot,
-  ResourceMonitorSnapshotEvent,
-  ResourceTelemetryHealth,
-  ResourceTelemetryHistoryInput,
-  ResourceTelemetryProcessIdentity,
-  ResourceTelemetryRetryResult,
-  ResourceTelemetrySnapshot,
+import {
+  RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH,
+  type DesktopHostTelemetrySnapshot,
+  type HostPowerSnapshot,
+  type ResourceMonitorSnapshotEvent,
+  type ResourceTelemetryHealth,
+  type ResourceTelemetryHistoryInput,
+  type ResourceTelemetryProcessIdentity,
+  type ResourceTelemetryRetryResult,
+  type ResourceTelemetrySnapshot,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -104,6 +105,29 @@ function unknownPower(updatedAt: DateTime.Utc): HostPowerSnapshot {
   };
 }
 
+function boundedHealthError(error: Option.Option<string>): Option.Option<string> {
+  return Option.flatMap(error, (message) => {
+    const bounded = message.trim().slice(0, RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH).trim();
+    return bounded.length === 0 ? Option.none() : Option.some(bounded);
+  });
+}
+
+function processesTruncated(
+  nativeSnapshot: Option.Option<ResourceMonitorSnapshotEvent>,
+  desktopSnapshot: Option.Option<DesktopHostTelemetrySnapshot>,
+): boolean {
+  return (
+    Option.match(nativeSnapshot, {
+      onNone: () => false,
+      onSome: (snapshot) => snapshot.retainedProcessCount > snapshot.processes.length,
+    }) ||
+    Option.match(desktopSnapshot, {
+      onNone: () => false,
+      onSome: (snapshot) => snapshot.electronProcessesTruncated === true,
+    })
+  );
+}
+
 function buildHealth(input: {
   readonly native: NativeTelemetryClient.NativeTelemetryClientHealth;
   readonly desktop: DesktopTelemetryReceiver.DesktopTelemetryReceiverHealth;
@@ -113,12 +137,12 @@ function buildHealth(input: {
     native: {
       status: input.native.status,
       lastSampleAt: input.native.lastSampleAt,
-      lastError: input.native.lastError,
+      lastError: boundedHealthError(input.native.lastError),
     },
     desktop: {
       status: input.desktop.status,
       lastSampleAt: input.desktop.lastSampleAt,
-      lastError: input.desktop.lastError,
+      lastError: boundedHealthError(input.desktop.lastError),
     },
     sidecarVersion: Option.map(input.native.hello, (hello) => hello.sidecarVersion),
     sidecarPid: Option.map(input.native.hello, (hello) => hello.sidecarPid),
@@ -184,6 +208,7 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
     readAt: initialReadAt,
     sampleIntervalMs: initialNativeHealth.sampleIntervalMs,
     processes: initialMerge.processes,
+    ...(processesTruncated(Option.none(), initialDesktop) ? { processesTruncated: true } : {}),
     groups: initialMerge.groups,
     power: Option.match(initialDesktop, {
       onNone: () => unknownPower(initialReadAt),
@@ -297,6 +322,9 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
           readAt,
           sampleIntervalMs: nativeHealth.sampleIntervalMs,
           processes: merged.processes,
+          ...(processesTruncated(nativeSnapshot, desktopSnapshot)
+            ? { processesTruncated: true }
+            : {}),
           groups: merged.groups,
           power: Option.match(desktopSnapshot, {
             onNone: () => unknownPower(readAt),

@@ -32,12 +32,7 @@ import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import { Command, Flag, GlobalFlag } from "effect/unstable/cli";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
@@ -46,6 +41,8 @@ import {
   type PersistedServerRuntimeState,
   readPersistedServerRuntimeState,
 } from "../serverRuntimeState.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import {
   buildPairingUrl,
   formatHostForUrl,
@@ -59,6 +56,10 @@ import { resolveCliCommand } from "./invocation.ts";
 
 const WELL_KNOWN_ENVIRONMENT_PATH = "/.well-known/t3/environment";
 const PAIR_PROBE_TIMEOUT = Duration.millis(2_500);
+const PAIR_PROBE_RESPONSE_MAX_BYTES = 64 * 1024;
+const decodeEnvironmentDescriptorJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(ExecutionEnvironmentDescriptor),
+);
 // Tailscale provisions an HTTPS certificate on the first request to a fresh
 // serve mapping, which can take a few seconds.
 const TAILSCALE_PROBE_ATTEMPTS = 5;
@@ -213,8 +214,7 @@ const probeEnvironmentDescriptor = (
     const client = yield* HttpClient.HttpClient;
     const request = HttpClientRequest.get(new URL(WELL_KNOWN_ENVIRONMENT_PATH, baseUrl).toString());
     const response = yield* client.execute(request).pipe(
-      Effect.timeout(PAIR_PROBE_TIMEOUT),
-      // Transport failure or timeout: nothing (reachable) is listening there.
+      // Transport failure: nothing (reachable) is listening there.
       Effect.mapError(() => ({ _tag: "unreachable" }) as const),
     );
     // Bad-gateway family means a proxy (Tailscale Serve) answered for a
@@ -222,16 +222,38 @@ const probeEnvironmentDescriptor = (
     // it as unreachable lets `t3 pair --tailscale` repair its own mapping
     // after the server's port changed.
     if (response.status === 502 || response.status === 503 || response.status === 504) {
+      yield* releaseHttpClientResponseBody(response);
       return { _tag: "unreachable" } as const;
     }
     // Anything else that answered HTTP but not with a valid descriptor is
     // some other service.
-    const descriptor = yield* HttpClientResponse.filterStatusOk(response).pipe(
-      Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)),
-      Effect.mapError(() => ({ _tag: "not-a-t3-server" }) as const),
-    );
+    if (response.status < 200 || response.status >= 300) {
+      yield* releaseHttpClientResponseBody(response);
+      return { _tag: "not-a-t3-server" } as const;
+    }
+    const descriptor = yield* Effect.gen(function* () {
+      const declaredLength = Number(response.headers["content-length"]);
+      if (Number.isFinite(declaredLength) && declaredLength > PAIR_PROBE_RESPONSE_MAX_BYTES) {
+        yield* releaseHttpClientResponseBody(response);
+        return yield* Effect.fail({ _tag: "not-a-t3-server" } as const);
+      }
+      const collected = yield* collectUint8StreamText({
+        stream: response.stream,
+        maxBytes: PAIR_PROBE_RESPONSE_MAX_BYTES,
+        drainAfterTruncation: false,
+      });
+      if (collected.truncated) {
+        return yield* Effect.fail({ _tag: "not-a-t3-server" } as const);
+      }
+      return yield* decodeEnvironmentDescriptorJson(collected.text);
+    }).pipe(Effect.mapError(() => ({ _tag: "not-a-t3-server" }) as const));
     return { _tag: "descriptor", descriptor } as const;
-  }).pipe(Effect.catch((outcome) => Effect.succeed(outcome)));
+  }).pipe(
+    // The deadline covers response-body consumption as well as connection setup.
+    Effect.timeout(PAIR_PROBE_TIMEOUT),
+    Effect.catchTag("TimeoutError", () => Effect.succeed({ _tag: "unreachable" } as const)),
+    Effect.catch((outcome) => Effect.succeed(outcome)),
+  );
 
 // signal 0 delivers nothing; it only reports whether the pid exists. EPERM
 // means it exists but belongs to another user, which still counts as alive.

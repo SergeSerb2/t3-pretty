@@ -157,10 +157,21 @@ export const make = Effect.gen(function* () {
               }),
             ),
             Effect.catchCause((cause) =>
-              Effect.logDebug(
-                "Could not load initial server configuration over HTTP; using WebSocket compatibility fallback.",
-                { cause: Cause.pretty(cause) },
-              ).pipe(Effect.andThen(websocketConfig)),
+              Cause.hasInterrupts(cause)
+                ? Effect.failCause(
+                    Cause.map(
+                      cause,
+                      () =>
+                        new ConnectionTransientErrorClass({
+                          reason: "transport",
+                          detail: `${connection.label} initial HTTP configuration request was interrupted.`,
+                        }),
+                    ),
+                  )
+                : Effect.logDebug(
+                    "Could not load initial server configuration over HTTP; using WebSocket compatibility fallback.",
+                    { cause: Cause.pretty(cause) },
+                  ).pipe(Effect.andThen(websocketConfig)),
             ),
           )
         : websocketConfig

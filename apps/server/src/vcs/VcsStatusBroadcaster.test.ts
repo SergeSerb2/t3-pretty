@@ -142,6 +142,23 @@ function makeBackgroundPolicyLayer(shouldRunScopeWork: (scope: BackgroundScope) 
 }
 
 describe("VcsStatusBroadcaster", () => {
+  it("bounds cached repositories and refreshes recency on update", () => {
+    let cache = new Map<string, number>();
+    for (let index = 0; index <= VcsStatusBroadcaster.VCS_STATUS_CACHE_MAX_ENTRIES; index += 1) {
+      cache = VcsStatusBroadcaster.upsertBoundedVcsStatusCache(cache, `/repo-${index}`, index);
+    }
+
+    assert.equal(cache.size, VcsStatusBroadcaster.VCS_STATUS_CACHE_MAX_ENTRIES);
+    assert.isFalse(cache.has("/repo-0"));
+
+    cache = VcsStatusBroadcaster.upsertBoundedVcsStatusCache(cache, "/repo-1", -1);
+    cache = VcsStatusBroadcaster.upsertBoundedVcsStatusCache(cache, "/repo-new", 999);
+
+    assert.equal(cache.get("/repo-1"), -1);
+    assert.isFalse(cache.has("/repo-2"));
+    assert.equal(cache.get("/repo-new"), 999);
+  });
+
   it.effect("reuses the cached VCS status across repeated reads", () => {
     const state = {
       currentLocalStatus: baseLocalStatus,

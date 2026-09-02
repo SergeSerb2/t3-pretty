@@ -34,7 +34,11 @@ export function createEnvironmentProjectAtoms(input: {
       if (projects.length === 0) {
         return EMPTY_PROJECT_INDEX;
       }
-      return new Map(projects.map((project) => [project.id, project] as const));
+      const index = new Map<ProjectId, OrchestrationProjectShell>();
+      for (const project of projects) {
+        index.set(project.id, project);
+      }
+      return index;
     }).pipe(Atom.withLabel(`environment-project-index:${environmentId}`)),
   );
 
@@ -72,7 +76,9 @@ export function createEnvironmentProjectAtoms(input: {
   const projectRefsAtom = Atom.make((get) => {
     const refs: ScopedProjectRef[] = [];
     for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
-      refs.push(...get(environmentProjectRefsAtom(environmentId)));
+      for (const ref of get(environmentProjectRefsAtom(environmentId))) {
+        refs.push(ref);
+      }
     }
     if (projectRefsEqual(previousProjectRefs, refs)) {
       return previousProjectRefs;
@@ -83,10 +89,13 @@ export function createEnvironmentProjectAtoms(input: {
 
   let previousProjects: ReadonlyArray<EnvironmentProject> = [];
   const projectsAtom = Atom.make((get) => {
-    const next = get(projectRefsAtom).flatMap((ref) => {
+    const next: EnvironmentProject[] = [];
+    for (const ref of get(projectRefsAtom)) {
       const project = get(projectAtomFamily(projectKey(ref)));
-      return project === null ? [] : [project];
-    });
+      if (project !== null) {
+        next.push(project);
+      }
+    }
     if (arrayElementsEqual(previousProjects, next)) {
       return previousProjects;
     }

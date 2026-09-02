@@ -159,6 +159,7 @@ export const EMPTY_VCS_ACTION_STATE = Object.freeze<VcsActionState>({
 
 const nowMs = (): number => DateTime.toEpochMillis(DateTime.nowUnsafe());
 let nextLocalActionId = 0;
+export const VCS_ACTION_COMMAND_CACHE_MAX_ENTRIES = 256;
 const decodeVcsActionTargetKey = Schema.decodeUnknownSync(
   Schema.Tuple([EnvironmentId, Schema.String]),
 );
@@ -422,6 +423,8 @@ export function createVcsActionManager<R, E>(
       ]);
     const existing = runStackedActionCommands.get(commandKey);
     if (existing !== undefined) {
+      runStackedActionCommands.delete(commandKey);
+      runStackedActionCommands.set(commandKey, existing);
       return existing;
     }
     const target = targetKey === null ? null : parseVcsActionTargetKey(targetKey);
@@ -506,6 +509,12 @@ export function createVcsActionManager<R, E>(
         );
       },
     });
+    if (runStackedActionCommands.size >= VCS_ACTION_COMMAND_CACHE_MAX_ENTRIES) {
+      const oldestKey = runStackedActionCommands.keys().next().value;
+      if (oldestKey !== undefined) {
+        runStackedActionCommands.delete(oldestKey);
+      }
+    }
     runStackedActionCommands.set(commandKey, command);
     return command;
   };

@@ -66,6 +66,15 @@ export function clearReviewCommentTarget() {
   emitChange();
 }
 
+export function clearReviewCommentTargetIfCurrent(target: ReviewCommentTarget): boolean {
+  if (currentTarget !== target) {
+    return false;
+  }
+
+  clearReviewCommentTarget();
+  return true;
+}
+
 export function useReviewCommentTarget(): ReviewCommentTarget | null {
   return useSyncExternalStore(
     subscribeReviewCommentTarget,

@@ -122,8 +122,15 @@ export function useActiveBrowserRecordingTabIds(): ReadonlySet<string> {
 const activeRecordings = new Map<string, ActiveRecording>();
 let unsubscribeFrames: (() => void) | null = null;
 
+const publishActiveRecordingTabIds = (): void => {
+  appAtomRegistry.set(activeBrowserRecordingTabIdsAtom, {
+    tabIds: new Set(activeRecordings.keys()),
+  });
+};
+
 export const BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS = 5_000;
 export const BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS = 5_000;
+export const BROWSER_RECORDING_STOP_TIMEOUT_MS = 5_000;
 
 export function readActiveBrowserRecordingTabIds(threadRef?: ScopedThreadRef): ReadonlySet<string> {
   const tabIds = new Set<string>();
@@ -241,24 +248,45 @@ const drawFrame = (frame: DesktopPreviewRecordingFrame): void => {
 
 const stopMediaRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
   if (!recorder || recorder.state === "inactive") return;
-  const stopped = new Promise<void>((resolve) =>
-    recorder.addEventListener("stop", () => resolve(), { once: true }),
-  );
-  recorder.stop();
-  await stopped;
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      recorder.removeEventListener("stop", onStop);
+      recorder.removeEventListener("error", onError);
+      if (error === undefined) resolve();
+      else reject(error);
+    };
+    const onStop = () => finish();
+    const onError = () => finish(new Error("MediaRecorder failed while stopping."));
+    const timeoutId = setTimeout(
+      () => finish(new Error("MediaRecorder did not stop before the cleanup deadline.")),
+      BROWSER_RECORDING_STOP_TIMEOUT_MS,
+    );
+    recorder.addEventListener("stop", onStop);
+    recorder.addEventListener("error", onError);
+    try {
+      recorder.stop();
+    } catch (error) {
+      finish(error);
+    }
+  });
 };
 
 const clearActiveRecording = (recording: ActiveRecording): void => {
   if (activeRecordings.get(recording.tabId) !== recording) return;
   recording.settleFirstFrameSize("cancelled");
+  for (const track of recording.recorder?.stream.getTracks() ?? []) {
+    track.stop();
+  }
   activeRecordings.delete(recording.tabId);
   if (activeRecordings.size === 0) {
     unsubscribeFrames?.();
     unsubscribeFrames = null;
   }
-  appAtomRegistry.set(activeBrowserRecordingTabIdsAtom, {
-    tabIds: new Set(activeRecordings.keys()),
-  });
+  publishActiveRecordingTabIds();
 };
 
 const cleanupFailedRecordingStart = async (
@@ -405,6 +433,7 @@ export async function startBrowserRecording(
     lifecycle: { phase: "starting" },
   };
   activeRecordings.set(tabId, recording);
+  publishActiveRecordingTabIds();
   try {
     try {
       unsubscribeFrames ??= bridge.recording.onFrame(drawFrame);
@@ -515,9 +544,6 @@ export async function startBrowserRecording(
     if (recording.lifecycle.phase === "starting") {
       recording.lifecycle = { phase: "recording" };
     }
-    appAtomRegistry.set(activeBrowserRecordingTabIdsAtom, {
-      tabIds: new Set(activeRecordings.keys()),
-    });
     return startedAt;
   } finally {
     settleStartup?.();

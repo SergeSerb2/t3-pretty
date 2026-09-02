@@ -1,24 +1,30 @@
 import { SymbolView } from "../components/AppSymbol";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { videoMimeType } from "@t3tools/shared/video";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
-import { useThemeColor } from "../lib/useThemeColor";
 
 import { AppText as Text } from "./AppText";
+import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
+import { VideoAttachmentTile } from "./VideoAttachmentTile";
+import { loadLocalVideoPreview } from "../lib/localVideoPreview";
 
-export interface ComposerAttachmentPreview {
-  readonly id: string;
-  readonly previewUri: string;
-  /** True while the image is still being read or the message is sending. */
+export type ComposerAttachmentPreview = DraftComposerAttachment & {
+  /** True while the attachment is still being read or the message is sending. */
   readonly preparing?: boolean;
-}
+};
 
 export interface ComposerAttachmentStripProps {
-  /** Attachment images to display. */
+  /** Attachments to display. */
   readonly attachments: ReadonlyArray<ComposerAttachmentPreview>;
-  /** Called when the user taps the remove button on an image. */
+  /** Called when the user removes an attachment. */
   readonly onRemove: (imageId: string) => void;
   /** Called when the user taps on an image thumbnail to preview it. */
   readonly onPressImage?: (previewUri: string) => void;
+  readonly onPressVideo?: (
+    attachment: DraftComposerFileAttachment,
+    sourceIdentifier: string,
+  ) => void;
   /** Image thumbnail size in points.  Defaults to 72. */
   readonly imageSize?: number;
   /** Border radius of each image thumbnail.  Defaults to 16. */
@@ -32,12 +38,173 @@ export interface ComposerAttachmentStripProps {
 const OVERLAY_ENTER = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const OVERLAY_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
+export function ComposerAttachmentThumbnail(props: {
+  readonly attachment: DraftComposerAttachment;
+  readonly size: number;
+  readonly borderRadius: number;
+  readonly compact?: boolean;
+  readonly preparing?: boolean;
+  readonly onPressImage?: (previewUri: string) => void;
+  readonly onPressVideo?: (
+    attachment: DraftComposerFileAttachment,
+    sourceIdentifier: string,
+  ) => void;
+}) {
+  const { attachment } = props;
+  const preparing = props.preparing === true;
+  const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
+  if (attachment.type === "image") {
+    return (
+      <ComposerAttachmentThumb
+        previewUri={attachment.previewUri}
+        size={props.size}
+        borderRadius={props.borderRadius}
+        preparing={preparing}
+        onPress={
+          props.onPressImage && !preparing
+            ? () => props.onPressImage?.(attachment.previewUri)
+            : undefined
+        }
+      />
+    );
+  }
+
+  const onPressVideo = props.onPressVideo;
+  const content =
+    onPressVideo && videoMimeType(attachment) !== null ? (
+      <ComposerVideoAttachment
+        {...props}
+        attachment={attachment}
+        preparing={preparing}
+        onPressVideo={onPressVideo}
+      />
+    ) : (
+      <View
+        accessible={!preparing}
+        accessibilityLabel={`File attachment, ${attachment.name}`}
+        className={
+          props.compact
+            ? "items-center justify-center bg-subtle"
+            : "items-center justify-center gap-1 bg-subtle px-2"
+        }
+        style={style}
+      >
+        <SymbolView
+          name="doc.text"
+          size={props.compact ? 15 : 22}
+          tintColor="#a3a3a3"
+          type="monochrome"
+        />
+        {!props.compact ? (
+          <Text className="w-full text-center text-2xs text-foreground" numberOfLines={1}>
+            {attachment.name}
+          </Text>
+        ) : null}
+      </View>
+    );
+
+  if (!preparing) {
+    return content;
+  }
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={`Preparing file attachment, ${attachment.name}`}
+      pointerEvents="none"
+      style={style}
+    >
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {content}
+      </View>
+      <Animated.View
+        entering={OVERLAY_ENTER}
+        exiting={OVERLAY_EXIT}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="absolute inset-0 bg-black/45"
+        style={{ borderRadius: props.borderRadius }}
+      />
+    </View>
+  );
+}
+
+function ComposerVideoAttachment(props: {
+  readonly attachment: DraftComposerFileAttachment;
+  readonly size: number;
+  readonly borderRadius: number;
+  readonly compact?: boolean;
+  readonly preparing?: boolean;
+  readonly onPressVideo: (
+    attachment: DraftComposerFileAttachment,
+    sourceIdentifier: string,
+  ) => void;
+}) {
+  const { attachment } = props;
+  const sourceIdentifier = `draft:${attachment.id}`;
+  const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
+  const shareRef = useRef<AbortController | null>(null);
+  const [sharing, setSharing] = useState(false);
+  useEffect(
+    () => () => {
+      shareRef.current?.abort();
+      shareRef.current = null;
+    },
+    [],
+  );
+
+  const onShare = () => {
+    if (shareRef.current || props.preparing === true) return;
+    const controller = new AbortController();
+    shareRef.current = controller;
+    setSharing(true);
+    void (async () => {
+      const preview = await loadLocalVideoPreview(attachment, controller.signal);
+      if (!preview) return;
+      try {
+        await preview.share(controller.signal, sourceIdentifier);
+      } finally {
+        preview.dispose();
+      }
+    })()
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          Alert.alert(
+            "Could not share video",
+            error instanceof Error ? error.message : "Try again.",
+          );
+        }
+      })
+      .finally(() => {
+        if (shareRef.current === controller) {
+          shareRef.current = null;
+          setSharing(false);
+        }
+      });
+  };
+
+  return (
+    <VideoAttachmentTile
+      name={attachment.name}
+      sourceIdentifier={sourceIdentifier}
+      thumbnailSource={attachment}
+      compact={props.compact}
+      onPress={() => props.onPressVideo(attachment, sourceIdentifier)}
+      onShare={onShare}
+      disabled={sharing || props.preparing === true}
+      style={style}
+    />
+  );
+}
+
 /**
- * A horizontally-scrollable strip of image attachment thumbnails with remove
- * buttons.  Used by both the thread composer and the new-task draft screen.
+ * Attachment thumbnails used by the thread composer and the new-task draft screen.
  */
 export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
-  const subtleBg = useThemeColor("--color-subtle");
   const size = props.imageSize ?? 72;
   const radius = props.imageBorderRadius ?? 16;
   const removeButtonPlacement = props.removeButtonPlacement ?? "overlay";
@@ -56,28 +223,24 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
       className="grow-0"
     >
       <View className="flex-row gap-2.5">
-        {props.attachments.map((image) => {
-          const preparing = busy || image.preparing === true;
+        {props.attachments.map((attachment) => {
+          const preparing = busy || attachment.preparing === true;
           return (
             <View
-              key={image.id}
+              key={attachment.id}
               className="relative"
               style={{
                 paddingTop: removeButtonGutter,
                 paddingRight: removeButtonGutter,
               }}
             >
-              <ComposerAttachmentThumb
-                previewUri={image.previewUri}
+              <ComposerAttachmentThumbnail
+                attachment={attachment}
                 size={size}
                 borderRadius={radius}
-                backgroundColor={typeof subtleBg === "string" ? subtleBg : "#e5e5ea"}
                 preparing={preparing}
-                onPress={
-                  props.onPressImage && !preparing
-                    ? () => props.onPressImage!(image.previewUri)
-                    : undefined
-                }
+                onPressImage={props.onPressImage}
+                onPressVideo={props.onPressVideo}
               />
               {preparing ? null : (
                 <Pressable
@@ -88,7 +251,8 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
                   }}
                   hitSlop={6}
                   accessibilityLabel="Remove attachment"
-                  onPress={() => props.onRemove(image.id)}
+                  accessibilityRole="button"
+                  onPress={() => props.onRemove(attachment.id)}
                 >
                   <SymbolView
                     name="xmark"
@@ -111,19 +275,29 @@ export function ComposerAttachmentThumb(props: {
   readonly previewUri: string;
   readonly size: number;
   readonly borderRadius: number;
-  readonly backgroundColor: string;
   readonly preparing?: boolean;
   readonly onPress?: () => void;
 }) {
+  const accessibilityLabel = props.preparing
+    ? "Preparing image attachment"
+    : props.onPress
+      ? "Preview image attachment"
+      : "Image attachment";
   const image = (
-    <View style={{ width: props.size, height: props.size }}>
+    <View
+      accessible={!props.onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={!props.onPress ? "image" : undefined}
+      style={{ width: props.size, height: props.size }}
+    >
       <Image
+        accessible={false}
         source={{ uri: props.previewUri }}
+        className="bg-subtle"
         style={{
           width: props.size,
           height: props.size,
           borderRadius: props.borderRadius,
-          backgroundColor: props.backgroundColor,
         }}
         resizeMode="cover"
       />
@@ -145,7 +319,15 @@ export function ComposerAttachmentThumb(props: {
     return image;
   }
 
-  return <Pressable onPress={props.onPress}>{image}</Pressable>;
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={props.onPress}
+    >
+      {image}
+    </Pressable>
+  );
 }
 
 export function ComposerDispatchStatusLabel(props: { readonly label: string }) {

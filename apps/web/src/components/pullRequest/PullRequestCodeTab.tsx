@@ -231,7 +231,12 @@ export function PullRequestCodeTab({
     range: SelectedLineRange;
   } | null>(null);
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
-  const [threadPending, setThreadPending] = useState(false);
+  const [threadPendingTargets, setThreadPendingTargets] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const threadPendingTargetsRef = useRef(new Set<string>());
+  const activeReferenceKeyRef = useRef("");
+  const mountedRef = useRef(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
   // Closed by default so the review form does not permanently eat vertical space below the
   // diff; opened on demand as a floating overlay instead.
@@ -245,11 +250,21 @@ export function PullRequestCodeTab({
   }>({ key: "", cursor: null, slices: NO_SLICES });
   const parseCache = useRef(new Map<string, RenderablePatch>());
 
-  const referenceKey = pullRequestReviewKey(reference);
+  const referenceKey = pullRequestReviewKey(environmentId, reference);
+  const threadPending = threadPendingTargets.has(referenceKey);
+  activeReferenceKeyRef.current = referenceKey;
   const commit = selectedCommitOid;
   // One commit's own changes and the whole change are two different diffs, paged separately, so
   // everything below is keyed by both.
   const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
   // survive the switch and attach its comment to whichever one is on screen when it is sent.
   useEffect(() => {
@@ -333,7 +348,7 @@ export function PullRequestCodeTab({
     refreshFirstDiffPage();
   }, [refreshToken, scopeKey, refreshFirstDiffPage]);
   const reviewKey = referenceKey;
-  const pendingComments = usePendingReviewComments(reference);
+  const pendingComments = usePendingReviewComments(environmentId, reference);
   const addComment = usePullRequestReviewStore((store) => store.addComment);
   const removeComment = usePullRequestReviewStore((store) => store.removeComment);
   const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
@@ -379,22 +394,28 @@ export function PullRequestCodeTab({
   // Every slice is parsed on its own and the result held, so a slice arriving costs one parse
   // rather than one per slice already on screen. Its cache key carries the theme, which is what
   // the tokenizer caches against, so a theme change is still a fresh parse.
-  const parsedSlices = useMemo(
-    () =>
-      loadedSlices.map((slice) => {
-        // The patch's own hash is part of the key: a refreshed page reuses its cursor, and a
-        // key of position alone would keep handing back the parse of the patch it replaced.
-        const cacheKey = `pull-request:${scopeKey}:${resolvedTheme}:${slice.cursor ?? "first"}:${fnv1a32(slice.patch)}`;
-        const cached = parseCache.current.get(cacheKey);
-        if (cached) return cached;
-        const parsed = getRenderablePatch(slice.patch, cacheKey, {
-          compactPartialHunkOffsets: true,
-        });
-        if (parsed) parseCache.current.set(cacheKey, parsed);
-        return parsed;
-      }),
-    [loadedSlices, resolvedTheme, scopeKey],
-  );
+  const parsedSlices = useMemo(() => {
+    const currentCacheKeys = new Set<string>();
+    const parsed = loadedSlices.map((slice) => {
+      // The patch's own hash is part of the key: a refreshed page reuses its cursor, and a
+      // key of position alone would keep handing back the parse of the patch it replaced.
+      const cacheKey = `pull-request:${scopeKey}:${resolvedTheme}:${slice.cursor ?? "first"}:${fnv1a32(slice.patch)}`;
+      currentCacheKeys.add(cacheKey);
+      const cached = parseCache.current.get(cacheKey);
+      if (cached) return cached;
+      const parsed = getRenderablePatch(slice.patch, cacheKey, {
+        compactPartialHunkOffsets: true,
+      });
+      if (parsed) parseCache.current.set(cacheKey, parsed);
+      return parsed;
+    });
+    // A refresh can replace a slice without changing its cursor, while a theme change gives
+    // every slice a new render. Keep only the parses the current view can still reuse.
+    for (const cacheKey of parseCache.current.keys()) {
+      if (!currentCacheKeys.has(cacheKey)) parseCache.current.delete(cacheKey);
+    }
+    return parsed;
+  }, [loadedSlices, resolvedTheme, scopeKey]);
   // Ordered within a slice rather than across them: ordering the accumulated set would let a late
   // slice push a file the reader is part way through further down the page.
   const files = useMemo(
@@ -777,18 +798,40 @@ export function PullRequestCodeTab({
 
   const runThreadCommand = useCallback(
     async (label: string, run: () => Promise<{ readonly _tag: string }>): Promise<boolean> => {
-      if (threadPending) return false;
-      setThreadPending(true);
-      const result = await run();
-      setThreadPending(false);
-      if (result._tag === "Failure") {
-        toastManager.add({ type: "error", title: label });
+      if (threadPendingTargetsRef.current.has(referenceKey)) return false;
+      threadPendingTargetsRef.current.add(referenceKey);
+      setThreadPendingTargets((current) => new Set(current).add(referenceKey));
+      try {
+        const result = await run();
+        if (!mountedRef.current || activeReferenceKeyRef.current !== referenceKey) return false;
+        if (result._tag === "Failure") {
+          toastManager.add({ type: "error", title: label });
+          return false;
+        }
+        onRefresh();
+        return true;
+      } catch (error) {
+        if (mountedRef.current && activeReferenceKeyRef.current === referenceKey) {
+          toastManager.add({
+            type: "error",
+            title: label,
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          });
+        }
         return false;
+      } finally {
+        threadPendingTargetsRef.current.delete(referenceKey);
+        if (mountedRef.current) {
+          setThreadPendingTargets((current) => {
+            if (!current.has(referenceKey)) return current;
+            const next = new Set(current);
+            next.delete(referenceKey);
+            return next;
+          });
+        }
       }
-      onRefresh();
-      return true;
     },
-    [onRefresh, threadPending],
+    [onRefresh, referenceKey],
   );
 
   // A conversation is the same card wired to the same commands whether it sits on its line or
@@ -799,7 +842,13 @@ export function PullRequestCodeTab({
         // Named with the pull request too: a thread's id is the host's own, and two pull requests
         // can hand out the same one — which would leave one card's open editor standing over the
         // other's conversation.
-        key={`${reference.projectId}#${reference.number}:${thread.id}`}
+        key={JSON.stringify([
+          environmentId,
+          reference.projectId,
+          reference.repository,
+          reference.number,
+          thread.id,
+        ])}
         thread={thread}
         workspaceRoot={detail.workspaceRoot}
         canReply={review.reply}
@@ -915,13 +964,20 @@ export function PullRequestCodeTab({
               setSelectedLines(null);
             }}
             onComment={(body) => {
-              addComment(reviewKey, {
+              const added = addComment(reviewKey, {
                 id: nextPendingReviewCommentId(),
                 path: draft.path,
                 ...(draft.oldPath === null ? {} : { oldPath: draft.oldPath }),
                 position: draft.position,
                 body,
               });
+              if (!added) {
+                toastManager.add({
+                  type: "error",
+                  title: "Submit or remove a review comment before adding another",
+                });
+                return;
+              }
               setDraft(null);
               setSelectedLines(null);
             }}

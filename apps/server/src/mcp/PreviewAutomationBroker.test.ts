@@ -24,6 +24,20 @@ import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
 const makeBroker = PreviewAutomationBroker.make.pipe(Effect.provide(NodeServices.layer));
 
+it("bounds JSON payloads without throwing on unserializable values", () => {
+  expect(PreviewAutomationBroker.validatePreviewAutomationJsonPayload({ value: "ok" }, 32)).toBe(
+    "valid",
+  );
+  expect(
+    PreviewAutomationBroker.validatePreviewAutomationJsonPayload({ value: "too long" }, 8),
+  ).toBe("too-large");
+  const cyclic: { self?: unknown } = {};
+  cyclic.self = cyclic;
+  expect(PreviewAutomationBroker.validatePreviewAutomationJsonPayload(cyclic, 32)).toBe(
+    "malformed",
+  );
+});
+
 const scope = {
   environmentId: EnvironmentId.make("environment-1"),
   threadId: ThreadId.make("thread-1"),
@@ -568,6 +582,57 @@ it.effect("never routes a provider session to a host from another environment", 
       expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
         "matching",
       );
+    }),
+  ),
+);
+
+it.effect("keeps equal client ids independent across environments", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const secondEnvironmentId = EnvironmentId.make("environment-2");
+      const firstRequests = requestsFrom(
+        yield* broker.connect(makeHost({ clientId: "shared-client" })),
+      );
+      const secondRequests = requestsFrom(
+        yield* broker.connect(
+          makeHost({ clientId: "shared-client", environmentId: secondEnvironmentId }),
+        ),
+      );
+      yield* Stream.runForEach(firstRequests, (request) =>
+        broker.respond({
+          clientId: "shared-client",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result: "first-environment",
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Stream.runForEach(secondRequests, (request) =>
+        broker.respond({
+          clientId: "shared-client",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: true,
+          result: "second-environment",
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+
+      expect(yield* broker.invoke<string>({ scope, operation: "status", input: {} })).toBe(
+        "first-environment",
+      );
+      expect(
+        yield* broker.invoke<string>({
+          scope: {
+            ...scope,
+            environmentId: secondEnvironmentId,
+            providerSessionId: "provider-session-2",
+          },
+          operation: "status",
+          input: {},
+        }),
+      ).toBe("second-environment");
     }),
   ),
 );

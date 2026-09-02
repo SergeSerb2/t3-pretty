@@ -1,26 +1,53 @@
-import { type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
+import { TERMINAL_WRITE_MAX_LENGTH, type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
+  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
+import { request, subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
   EMPTY_TERMINAL_BUFFER_STATE,
 } from "./terminalSession.ts";
 
+export const TERMINAL_STATE_IDLE_TTL_MS = 60_000;
+
+export function splitTerminalWriteData(data: string): ReadonlyArray<string> {
+  if (data.length <= TERMINAL_WRITE_MAX_LENGTH) return [data];
+  const chunks: string[] = [];
+  for (let start = 0; start < data.length; ) {
+    let end = Math.min(start + TERMINAL_WRITE_MAX_LENGTH, data.length);
+    const trailing = data.charCodeAt(end - 1);
+    const following = data.charCodeAt(end);
+    if (
+      end < data.length &&
+      trailing >= 0xd800 &&
+      trailing <= 0xdbff &&
+      following >= 0xdc00 &&
+      following <= 0xdfff
+    ) {
+      end -= 1;
+    }
+    chunks.push(data.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
 export function createTerminalEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   const lifecycleScheduler = createAtomCommandScheduler();
   const resizeScheduler = createAtomCommandScheduler();
+  const writeScheduler = createAtomCommandScheduler();
   const terminalThreadKey = ({
     environmentId,
     input,
@@ -39,6 +66,7 @@ export function createTerminalEnvironmentAtoms<R, E>(
   return {
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
+      idleTtlMs: TERMINAL_STATE_IDLE_TTL_MS,
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
         subscribe(WS_METHODS.terminalAttach, input).pipe(
           Stream.scan(EMPTY_TERMINAL_BUFFER_STATE, applyTerminalAttachStreamEvent),
@@ -47,9 +75,11 @@ export function createTerminalEnvironmentAtoms<R, E>(
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",
       tag: WS_METHODS.subscribeTerminalEvents,
+      idleTtlMs: TERMINAL_STATE_IDLE_TTL_MS,
     }),
     metadata: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:metadata",
+      idleTtlMs: TERMINAL_STATE_IDLE_TTL_MS,
       subscribe: (_input: null) =>
         subscribe(WS_METHODS.subscribeTerminalMetadata, {}).pipe(
           Stream.scan([] as ReadonlyArray<TerminalSummary>, applyTerminalMetadataStreamEvent),
@@ -61,9 +91,16 @@ export function createTerminalEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
-    write: createEnvironmentRpcCommand(runtime, {
+    write: createEnvironmentCommand(runtime, {
       label: "environment-data:terminal:write",
-      tag: WS_METHODS.terminalWrite,
+      scheduler: writeScheduler,
+      concurrency: { mode: "serial", key: terminalSessionKey },
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalWrite>) =>
+        Effect.forEach(
+          splitTerminalWriteData(input.data),
+          (data) => request(WS_METHODS.terminalWrite, { ...input, data }),
+          { discard: true },
+        ),
     }),
     resize: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:resize",

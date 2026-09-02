@@ -11,6 +11,9 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "../apps/mobile/app-identity.ts";
+import { loadRepoEnv, resolveBuildFlavor } from "./lib/public-config.ts";
+
 import showcaseConfig, {
   type ShowcaseAppearance,
   type ShowcaseAndroidDevice,
@@ -33,8 +36,20 @@ import {
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
-const ANDROID_PACKAGE = "com.t3tools.t3code";
-const APP_SCHEME = "t3code";
+const SHOWCASE_REPO_ENV = loadRepoEnv({
+  baseEnv: {
+    ...NodeProcess.env,
+    APP_VARIANT: NodeProcess.env.APP_VARIANT ?? "production",
+  },
+});
+const SHOWCASE_APP_VARIANT = resolveMobileAppVariant(SHOWCASE_REPO_ENV.APP_VARIANT);
+const SHOWCASE_APP_IDENTITY = resolveMobileAppIdentity(
+  SHOWCASE_APP_VARIANT,
+  resolveBuildFlavor(SHOWCASE_REPO_ENV),
+);
+const ANDROID_PACKAGE = SHOWCASE_APP_IDENTITY.androidPackage;
+const IOS_BUNDLE_IDENTIFIER = SHOWCASE_APP_IDENTITY.iosBundleIdentifier;
+const APP_SCHEME = SHOWCASE_APP_IDENTITY.scheme;
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
@@ -58,9 +73,9 @@ export function resolveAndroidSdkRoot(
 
 const ANDROID_SDK_ROOT = resolveAndroidSdkRoot(NodeProcess.env);
 const MOBILE_BUILD_ENV = {
-  ...NodeProcess.env,
+  ...SHOWCASE_REPO_ENV,
   ANDROID_HOME: ANDROID_SDK_ROOT,
-  APP_VARIANT: "production",
+  APP_VARIANT: SHOWCASE_APP_VARIANT,
   EXPO_NO_GIT_STATUS: "1",
   // Lets the capture build require full screen on iPad so the app can rotate
   // itself to landscape (see app.config.ts).
@@ -882,7 +897,13 @@ async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
 
 async function iosAppContainer(udid: string): Promise<string> {
   return (
-    await commandOutput("xcrun", ["simctl", "get_app_container", udid, ANDROID_PACKAGE, "data"])
+    await commandOutput("xcrun", [
+      "simctl",
+      "get_app_container",
+      udid,
+      IOS_BUNDLE_IDENTIFIER,
+      "data",
+    ])
   ).trim();
 }
 
@@ -929,7 +950,7 @@ async function captureIos(
   }
   await normalizeIosSimulator(capture.appearance, simulator.udid);
   if (appPath) {
-    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, ANDROID_PACKAGE]).catch(
+    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, IOS_BUNDLE_IDENTIFIER]).catch(
       () => undefined,
     );
     await runCommand("xcrun", ["simctl", "install", simulator.udid, appPath]);
@@ -946,7 +967,7 @@ async function captureIos(
       simulator.udid,
       "defaults",
       "write",
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       key,
       "-bool",
       value,
@@ -970,7 +991,7 @@ async function captureIos(
       "launch",
       ...(terminateRunningProcess ? ["--terminate-running-process"] : []),
       simulator.udid,
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       "--initialUrl",
       metroUrl,
       "--showcasePairingUrl",

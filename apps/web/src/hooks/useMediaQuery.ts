@@ -54,26 +54,30 @@ function getServerSnapshot(): boolean {
   return false;
 }
 
-const mediaQueryListeners = new Map<
-  string,
-  { readonly media: MediaQueryList; readonly listeners: Set<() => void>; matches: boolean }
->();
+interface MediaQueryEntry {
+  readonly media: MediaQueryList;
+  readonly listeners: Set<() => void>;
+  readonly onChange: () => void;
+  matches: boolean;
+}
+
+const mediaQueryListeners = new Map<string, MediaQueryEntry>();
 
 export function getMediaQueryEntry(mediaQuery: string) {
   const existing = mediaQueryListeners.get(mediaQuery);
   if (existing) return existing;
   const media = window.matchMedia(mediaQuery);
-  const entry = {
+  const entry: MediaQueryEntry = {
     media,
     listeners: new Set<() => void>(),
     matches: media.matches,
+    onChange: () => {
+      entry.matches = media.matches;
+      for (const listener of entry.listeners) {
+        listener();
+      }
+    },
   };
-  media.addEventListener("change", () => {
-    entry.matches = media.matches;
-    for (const listener of entry.listeners) {
-      listener();
-    }
-  });
   mediaQueryListeners.set(mediaQuery, entry);
   return entry;
 }
@@ -92,9 +96,18 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
     (callback: () => void) => {
       if (typeof window === "undefined") return () => {};
       const entry = getMediaQueryEntry(mediaQuery);
+      if (entry.listeners.size === 0) {
+        entry.matches = entry.media.matches;
+        entry.media.addEventListener("change", entry.onChange);
+      }
       entry.listeners.add(callback);
       return () => {
         entry.listeners.delete(callback);
+        if (entry.listeners.size !== 0) return;
+        entry.media.removeEventListener("change", entry.onChange);
+        if (mediaQueryListeners.get(mediaQuery) === entry) {
+          mediaQueryListeners.delete(mediaQuery);
+        }
       };
     },
     [mediaQuery],
@@ -102,7 +115,7 @@ export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string
 
   const getSnapshot = useCallback(() => {
     if (typeof window === "undefined") return false;
-    return getMediaQueryEntry(mediaQuery).matches;
+    return mediaQueryListeners.get(mediaQuery)?.matches ?? window.matchMedia(mediaQuery).matches;
   }, [mediaQuery]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

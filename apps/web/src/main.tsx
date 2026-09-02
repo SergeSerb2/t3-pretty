@@ -26,11 +26,6 @@ const ElectronClerkRoot = React.lazy(async () => {
   const { passkeys } = await import("@clerk/electron/passkeys");
   const { ClerkProvider: ElectronClerkProvider } = await import("@clerk/electron/react");
 
-  // First Clerk UI build containing https://github.com/clerk/javascript/pull/9500.
-  const electronClerkUI = {
-    __internal_clerkUIVersion: "1.30.5-canary.v20260819050620",
-  };
-
   function ElectronClerkProviderRoot({
     children,
     publishableKey,
@@ -40,7 +35,6 @@ const ElectronClerkRoot = React.lazy(async () => {
   }) {
     return (
       <ElectronClerkProvider
-        {...electronClerkUI}
         appearance={clerkAppearance}
         publishableKey={publishableKey}
         passkeys={passkeys}

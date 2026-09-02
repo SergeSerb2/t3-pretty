@@ -151,4 +151,24 @@ Done.`),
     expect(diagnostic.length).toBeLessThanOrEqual(2_048);
     expect(diagnostic.endsWith("\n... and 2 more issue(s)")).toBe(true);
   });
+
+  it("caps traversal across adversarially wide schema causes", () => {
+    const decode = decodeJsonResult(Schema.Struct({ token: Schema.Number }));
+    const decoded = decode('{"token":"not-a-number"}');
+    expect(Result.isFailure(decoded)).toBe(true);
+    if (Result.isSuccess(decoded)) {
+      return;
+    }
+    const reason = decoded.failure.reasons[0];
+    expect(reason).toBeDefined();
+    if (reason === undefined) {
+      return;
+    }
+
+    const cause = Cause.fromReasons(Array.from({ length: 10_000 }, () => reason));
+    const diagnostic = formatSchemaError(cause);
+    expect(diagnostic.length).toBeLessThanOrEqual(2_048);
+    expect(diagnostic.match(/Invalid type/g)?.length).toBeLessThanOrEqual(8);
+    expect(diagnostic).toContain("... and more issue(s)");
+  });
 });

@@ -5,9 +5,13 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-const API_URL = (
-  process.env.CLI_PROXY_API_URL ?? "https://cli-proxy-api-production-1615.up.railway.app/v1"
-).replace(/\/$/u, "");
+import {
+  redactCliProxyDiagnostic,
+  resolveCliProxyApiUrl,
+  resolveCliProxyToken,
+} from "./cli-proxy-config.mjs";
+
+const API_URL = resolveCliProxyApiUrl(process.env.CLI_PROXY_API_URL);
 const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
 // Changelog prose needs far less reasoning than conflict resolution, so the
 // default effort is lower than the resolver's xhigh.
@@ -38,10 +42,13 @@ const MODEL_TIME_BUDGET_MS = Number.parseInt(
 );
 
 function git(args, options = {}) {
+  const env = { ...process.env, ...options.env };
+  delete env.CLI_PROXY_API_KEY;
   return NodeChildProcess.execFileSync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
     ...options,
+    env,
   }).trim();
 }
 
@@ -261,7 +268,34 @@ function extractResponseText(response) {
   throw new Error("CLIProxyAPI response did not contain output text");
 }
 
+export async function readResponseTextBounded(response, maxBytes) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const bytes = new Uint8Array(maxBytes);
+  let length = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (length + value.byteLength > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`CLIProxyAPI response exceeded the ${maxBytes}-byte safety limit`);
+      }
+      bytes.set(value, length);
+      length += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+}
+
 async function callChangelogModel({ prompt, token }) {
+  if (!API_URL) {
+    throw new Error(
+      "CLI_PROXY_API_URL must be a bounded credential-free HTTPS URL or a loopback HTTP URL.",
+    );
+  }
   const response = await fetch(`${API_URL}/responses`, {
     method: "POST",
     headers: {
@@ -285,10 +319,16 @@ async function callChangelogModel({ prompt, token }) {
     }),
   });
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`CLIProxyAPI request failed with ${response.status}: ${body.slice(0, 500)}`);
+    const body = await readResponseTextBounded(response, MAX_MODEL_ERROR_BYTES).catch(
+      (error) => `[unavailable: ${error instanceof Error ? error.message : String(error)}]`,
+    );
+    const diagnostic = redactCliProxyDiagnostic(body, [token]);
+    throw new Error(
+      `CLIProxyAPI request failed with ${response.status}: ${diagnostic.slice(0, 500)}`,
+    );
   }
-  const payload = await response.json();
+  const responseText = await readResponseTextBounded(response, MAX_MODEL_RESPONSE_BYTES);
+  const payload = JSON.parse(responseText);
   const parsed = JSON.parse(extractResponseText(payload));
   if (!Array.isArray(parsed.releases)) {
     throw new Error("CLIProxyAPI response did not contain a releases list");
@@ -547,8 +587,13 @@ async function generateEntries({ contexts, token, warn }) {
   return entries;
 }
 
+export function escapeGitHubWorkflowCommand(message) {
+  return message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+}
+
 function warn(message) {
-  process.stdout.write(`::warning::${message}\n`);
+  const escaped = escapeGitHubWorkflowCommand(message);
+  process.stdout.write(`::warning::${escaped}\n`);
 }
 
 /** Commit the working-tree notes and push them to main. Only a run sitting
@@ -596,6 +641,12 @@ function publishNotes({ baseSha, newest, entries }) {
     "commit",
     "-m",
     `docs(changelog): add release notes through v${newest}`,
+    // The packaging step pushes this while the rest of its own build (iOS,
+    // Linux, relay, CLI) is still running. Buildkite cancels intermediate
+    // main builds, so a build for this commit would only re-read the feed,
+    // skip packaging, and kill the release in flight. Skip it outright.
+    "-m",
+    "Pushed by the packaging step of the build that shipped this version. [skip ci]",
   ]);
 
   try {

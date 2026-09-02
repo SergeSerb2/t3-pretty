@@ -6,12 +6,14 @@
 
 import {
   ApprovalRequestId,
+  ENTITY_ID_MAX_LENGTH,
   type CursorSettings,
   type ProviderOptionSelection,
   EventId,
   type ProviderApprovalDecision,
   type ProviderInteractionMode,
   type ProviderRuntimeEvent,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderSession,
   type ProviderUserInputAnswers,
   ProviderDriverKind,
@@ -28,19 +30,16 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
-import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { readFilePrefix } from "../../boundedFileRead.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
@@ -62,6 +61,7 @@ import {
 import {
   type AcpSessionMode,
   type AcpSessionModeState,
+  fingerprintAcpPlanUpdate,
   parsePermissionRequest,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
@@ -75,20 +75,16 @@ import {
   extractTodosAsPlan,
 } from "../acp/CursorAcpExtension.ts";
 import { type CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import * as KeyedLock from "../../KeyedLock.ts";
 import { resolveCursorAcpBaseModelId } from "./CursorProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
-const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("cursor");
+const CURSOR_RUNTIME_EVENT_BUFFER_CAPACITY = 512;
 const CURSOR_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
 const ACP_APPROVAL_MODE_ALIASES = ["ask"];
-
-function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
-  const result = encodeUnknownJsonStringExit(input);
-  return Exit.isSuccess(result) ? result.value : undefined;
-}
 
 export interface CursorAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
@@ -174,7 +170,8 @@ function parseCursorResume(raw: unknown): { sessionId: string } | undefined {
   if (!isRecord(raw)) return undefined;
   if (raw.schemaVersion !== CURSOR_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
-  return { sessionId: raw.sessionId.trim() };
+  const sessionId = raw.sessionId.trim();
+  return sessionId.length <= ENTITY_ID_MAX_LENGTH ? { sessionId } : undefined;
 }
 
 function normalizeModeSearchText(mode: AcpSessionMode): string {
@@ -333,8 +330,10 @@ export function makeCursorAdapter(
     const makeAcpNativeLoggers = yield* makeAcpNativeLoggerFactory();
 
     const sessions = new Map<ThreadId, CursorSessionContext>();
-    const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
-    const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    const threadLocks = yield* KeyedLock.make;
+    const runtimeEventPubSub = yield* PubSub.bounded<ProviderRuntimeEvent>(
+      CURSOR_RUNTIME_EVENT_BUFFER_CAPACITY,
+    );
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -364,26 +363,7 @@ export function makeCursorAdapter(
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
       PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
 
-    const getThreadSemaphore = (threadId: string) =>
-      SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-        const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-          current.get(threadId),
-        );
-        return Option.match(existing, {
-          onNone: () =>
-            Semaphore.make(1).pipe(
-              Effect.map((semaphore) => {
-                const next = new Map(current);
-                next.set(threadId, semaphore);
-                return [semaphore, next] as const;
-              }),
-            ),
-          onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
-        });
-      });
-
-    const withThreadLock = <A, E, R>(threadId: string, effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+    const withThreadLock = threadLocks.withLock;
 
     const logNative = (
       threadId: ThreadId,
@@ -425,7 +405,7 @@ export function makeCursorAdapter(
       method: string,
     ) =>
       Effect.gen(function* () {
-        const fingerprint = `${ctx.activeTurnId ?? "no-turn"}:${encodeJsonStringForDiagnostics(payload) ?? "[unserializable payload]"}`;
+        const fingerprint = `${ctx.activeTurnId ?? "no-turn"}:${fingerprintAcpPlanUpdate(payload)}`;
         if (ctx.lastPlanFingerprint === fingerprint) {
           return;
         }
@@ -512,7 +492,8 @@ export function makeCursorAdapter(
           );
           let ctx!: CursorSessionContext;
 
-          const resumeSessionId = parseCursorResume(input.resumeCursor)?.sessionId;
+          const resumeSessionId =
+            input.nativeSessionId ?? parseCursorResume(input.resumeCursor)?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
@@ -581,23 +562,28 @@ export function makeCursorAdapter(
                   const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
                   const runtimeRequestId = RuntimeRequestId.make(requestId);
                   const answers = yield* Deferred.make<ProviderUserInputAnswers>();
-                  pendingUserInputs.set(requestId, { answers });
-                  yield* offerRuntimeEvent({
-                    type: "user-input.requested",
-                    ...(yield* makeEventStamp()),
-                    provider: PROVIDER,
-                    threadId: input.threadId,
-                    turnId: ctx?.activeTurnId,
-                    requestId: runtimeRequestId,
-                    payload: { questions: extractAskQuestions(params) },
-                    raw: {
-                      source: "acp.cursor.extension",
-                      method: "cursor/ask_question",
-                      payload: params,
-                    },
-                  });
-                  const resolved = yield* Deferred.await(answers);
-                  pendingUserInputs.delete(requestId);
+                  const resolved = yield* Effect.acquireUseRelease(
+                    Effect.sync(() => pendingUserInputs.set(requestId, { answers })),
+                    () =>
+                      Effect.gen(function* () {
+                        yield* offerRuntimeEvent({
+                          type: "user-input.requested",
+                          ...(yield* makeEventStamp()),
+                          provider: PROVIDER,
+                          threadId: input.threadId,
+                          turnId: ctx?.activeTurnId,
+                          requestId: runtimeRequestId,
+                          payload: { questions: extractAskQuestions(params) },
+                          raw: {
+                            source: "acp.cursor.extension",
+                            method: "cursor/ask_question",
+                            payload: params,
+                          },
+                        });
+                        return yield* Deferred.await(answers);
+                      }),
+                    () => Effect.sync(() => pendingUserInputs.delete(requestId)),
+                  );
                   yield* offerRuntimeEvent({
                     type: "user-input.resolved",
                     ...(yield* makeEventStamp()),
@@ -685,30 +671,36 @@ export function makeCursorAdapter(
                   const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
                   const runtimeRequestId = RuntimeRequestId.make(requestId);
                   const decision = yield* Deferred.make<ProviderApprovalDecision>();
-                  pendingApprovals.set(requestId, {
-                    decision,
-                    kind: permissionRequest.kind,
-                  });
-                  yield* offerRuntimeEvent(
-                    makeAcpRequestOpenedEvent({
-                      stamp: yield* makeEventStamp(),
-                      provider: PROVIDER,
-                      threadId: input.threadId,
-                      turnId: ctx?.activeTurnId,
-                      requestId: runtimeRequestId,
-                      permissionRequest,
-                      detail:
-                        permissionRequest.detail ??
-                        encodeJsonStringForDiagnostics(params)?.slice(0, 2000) ??
-                        "[unserializable params]",
-                      args: params,
-                      source: "acp.jsonrpc",
-                      method: "session/request_permission",
-                      rawPayload: params,
-                    }),
+                  const resolved = yield* Effect.acquireUseRelease(
+                    Effect.sync(() =>
+                      pendingApprovals.set(requestId, {
+                        decision,
+                        kind: permissionRequest.kind,
+                      }),
+                    ),
+                    () =>
+                      Effect.gen(function* () {
+                        yield* offerRuntimeEvent(
+                          makeAcpRequestOpenedEvent({
+                            stamp: yield* makeEventStamp(),
+                            provider: PROVIDER,
+                            threadId: input.threadId,
+                            turnId: ctx?.activeTurnId,
+                            requestId: runtimeRequestId,
+                            permissionRequest,
+                            detail:
+                              permissionRequest.detail ??
+                              "ACP permission request without a provider description.",
+                            args: params,
+                            source: "acp.jsonrpc",
+                            method: "session/request_permission",
+                            rawPayload: params,
+                          }),
+                        );
+                        return yield* Deferred.await(decision);
+                      }),
+                    () => Effect.sync(() => pendingApprovals.delete(requestId)),
                   );
-                  const resolved = yield* Deferred.await(decision);
-                  pendingApprovals.delete(requestId);
                   yield* offerRuntimeEvent(
                     makeAcpRequestResolvedEvent({
                       stamp: yield* makeEventStamp(),
@@ -971,6 +963,11 @@ export function makeCursorAdapter(
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
+              // Cursor ingests images only. Generic files reach the agent
+              // through the path line ProviderService puts in the prompt.
+              if (attachment.type !== "image") {
+                continue;
+              }
               const attachmentPath = resolveAttachmentPath({
                 attachmentsDir: serverConfig.attachmentsDir,
                 attachment,
@@ -982,7 +979,11 @@ export function makeCursorAdapter(
                   detail: `Invalid attachment id '${attachment.id}'.`,
                 });
               }
-              const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+              const bytes = yield* readFilePrefix(
+                fileSystem,
+                attachmentPath,
+                PROVIDER_SEND_TURN_MAX_IMAGE_BYTES + 1,
+              ).pipe(
                 Effect.mapError(
                   (cause) =>
                     new ProviderAdapterRequestError({
@@ -993,6 +994,13 @@ export function makeCursorAdapter(
                     }),
                 ),
               );
+              if (bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+                return yield* new ProviderAdapterRequestError({
+                  provider: PROVIDER,
+                  method: "session/prompt",
+                  detail: "Attachment file exceeds the 10 MiB image limit.",
+                });
+              }
               promptParts.push({
                 type: "image",
                 data: Buffer.from(bytes).toString("base64"),

@@ -9,6 +9,11 @@ export interface FileBreadcrumb {
   readonly kind: "project" | "directory" | "file";
 }
 
+// Matches ProjectReadFileInput's relative-path ceiling. Route input reaches
+// this boundary before RPC schema encoding, so keep the intermediate join
+// bounded as well as the final path.
+const MOBILE_FILE_ROUTE_PATH_MAX_LENGTH = 512;
+
 function isWindowsAbsolutePath(value: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 }
@@ -59,6 +64,32 @@ function normalizeRelativePath(value: string): string | null {
     segments.push(segment);
   }
   return segments.length > 0 ? segments.join("/") : null;
+}
+
+export function normalizeMobileFileRoutePath(
+  value: string | ReadonlyArray<string> | undefined,
+): string | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const segments = typeof value === "string" ? [value] : value;
+  let pathLength = Math.max(0, segments.length - 1);
+  for (const segment of segments) {
+    pathLength += segment.length;
+    if (pathLength > MOBILE_FILE_ROUTE_PATH_MAX_LENGTH) {
+      return null;
+    }
+  }
+
+  const path = segments.join("/");
+  if (path.trim().length === 0) {
+    return null;
+  }
+  const normalized = normalizeRelativePath(path);
+  return normalized !== null && normalized.length <= MOBILE_FILE_ROUTE_PATH_MAX_LENGTH
+    ? normalized
+    : null;
 }
 
 export function resolveWorkspaceRelativeFilePath(

@@ -95,6 +95,7 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
     `img-src 'self' ${input.scheme}: blob: data: http: https:`,
+    `media-src 'self' ${input.scheme}: blob:`,
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
@@ -255,7 +256,7 @@ async function proxyRequest(
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
-  const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
+  const targetUrl = resolveProxyTargetUrl(requestUrl, targetOrigin);
   const headers = new Headers(request.headers);
   const headersToRemove: string[] = [];
   for (const name of headers.keys()) {
@@ -278,6 +279,7 @@ async function proxyRequest(
   const init: RequestInit = {
     method: request.method,
     headers,
+    signal: request.signal,
   };
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = request.body;
@@ -290,12 +292,24 @@ async function proxyRequest(
   return withContentSecurityPolicy(response, contentSecurityPolicy);
 }
 
+export function resolveProxyTargetUrl(requestUrl: URL, targetOrigin: URL): URL {
+  const targetUrl = new URL(targetOrigin);
+  // Assign URL components rather than resolving a path-shaped string. A
+  // renderer path beginning with `//` is a network-path reference to the URL
+  // constructor and would otherwise replace the configured backend host.
+  targetUrl.pathname = requestUrl.pathname;
+  targetUrl.search = requestUrl.search;
+  targetUrl.hash = "";
+  return targetUrl;
+}
+
 const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
 
 async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
 
   for (const delayMs of TRANSIENT_FETCH_RETRY_DELAYS_MS) {
+    init.signal?.throwIfAborted();
     if (delayMs > 0) {
       await NodeTimersPromises.setTimeout(delayMs);
     }
@@ -303,6 +317,7 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
     try {
       return await Electron.net.fetch(url, init);
     } catch (error) {
+      if (init.signal?.aborted) throw error;
       lastError = error;
     }
   }

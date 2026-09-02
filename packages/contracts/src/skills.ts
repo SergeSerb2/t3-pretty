@@ -22,20 +22,52 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
+export const SKILL_DOCUMENT_MAX_BYTES = 1024 * 1024;
+export const SKILL_FRONTMATTER_READ_MAX_BYTES = 256 * 1024;
+export const SKILL_ID_MAX_LENGTH = 4_096;
+export const SKILL_NAME_MAX_LENGTH = 512;
+export const SKILL_DESCRIPTION_MAX_LENGTH = 8_192;
+export const SKILL_SOURCE_REPO_MAX_LENGTH = 512;
+export const SKILL_SOURCE_PATH_MAX_LENGTH = 4_096;
+export const SKILL_SETTINGS_MAX_ENABLED = 1_024;
+export const SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES = 64;
+export const SKILL_STATE_MAX_ITEMS = 4_096;
+
+const SkillName = TrimmedNonEmptyString.check(Schema.isMaxLength(SKILL_NAME_MAX_LENGTH));
+const SkillDescription = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SKILL_DESCRIPTION_MAX_LENGTH),
+);
+const SkillSourceRepo = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SKILL_SOURCE_REPO_MAX_LENGTH),
+);
+const SkillSourcePath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SKILL_SOURCE_PATH_MAX_LENGTH),
+);
+
 /**
  * Stable skill identifier: `"<owner>/<repo>:<skill dir relative to repo root>"`,
  * e.g. `"mattpocock/skills:skills/engineering/tdd"`. The id doubles as the
  * install location inside the server's skill store, so it round-trips
  * through reinstalls and marketplace refreshes.
  */
-export const SkillId = TrimmedNonEmptyString;
+export const SkillId = TrimmedNonEmptyString.check(Schema.isMaxLength(SKILL_ID_MAX_LENGTH));
 export type SkillId = typeof SkillId.Type;
 
 /** A GitHub repository browsable as a skill marketplace ("owner/repo"). */
 export const SkillMarketplaceSource = Schema.Struct({
-  repo: TrimmedNonEmptyString,
+  repo: SkillSourceRepo,
 });
 export type SkillMarketplaceSource = typeof SkillMarketplaceSource.Type;
+
+export const EnabledSkillIds = Schema.Array(SkillId).check(
+  Schema.isMaxLength(SKILL_SETTINGS_MAX_ENABLED),
+);
+export type EnabledSkillIds = typeof EnabledSkillIds.Type;
+
+export const SkillMarketplaceSources = Schema.Array(SkillMarketplaceSource).check(
+  Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+);
+export type SkillMarketplaceSources = typeof SkillMarketplaceSources.Type;
 
 export const DEFAULT_SKILL_MARKETPLACE_SOURCES: ReadonlyArray<SkillMarketplaceSource> = [
   { repo: "mattpocock/skills" },
@@ -45,8 +77,8 @@ export const DEFAULT_SKILL_MARKETPLACE_SOURCES: ReadonlyArray<SkillMarketplaceSo
 export const SkillsSettings = Schema.Struct({
   // Skills enabled for every thread in this environment; per-thread picks
   // union on top of these.
-  enabledSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  marketplaceSources: Schema.Array(SkillMarketplaceSource).pipe(
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  marketplaceSources: SkillMarketplaceSources.pipe(
     Schema.withDecodingDefault(Effect.succeed([...DEFAULT_SKILL_MARKETPLACE_SOURCES])),
   ),
 });
@@ -55,35 +87,35 @@ export type SkillsSettings = typeof SkillsSettings.Type;
 /** A skill installed into the server's central store. */
 export const InstalledSkill = Schema.Struct({
   id: SkillId,
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
-  sourceRepo: TrimmedNonEmptyString,
-  sourcePath: TrimmedNonEmptyString,
-  installedAt: IsoDateTime,
+  name: SkillName,
+  description: Schema.optional(SkillDescription),
+  sourceRepo: SkillSourceRepo,
+  sourcePath: SkillSourcePath,
+  installedAt: IsoDateTime.check(Schema.isMaxLength(128)),
 });
 export type InstalledSkill = typeof InstalledSkill.Type;
 
 /** A skill browsable in a marketplace source. */
 export const MarketplaceSkill = Schema.Struct({
   id: SkillId,
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
+  name: SkillName,
+  description: Schema.optional(SkillDescription),
   // Directory containing SKILL.md, relative to the repository root.
-  sourcePath: TrimmedNonEmptyString,
+  sourcePath: SkillSourcePath,
   installed: Schema.Boolean,
 });
 export type MarketplaceSkill = typeof MarketplaceSkill.Type;
 
 export const SkillMarketplaceListing = Schema.Struct({
-  repo: TrimmedNonEmptyString,
-  fetchedAt: IsoDateTime,
-  skills: Schema.Array(MarketplaceSkill),
+  repo: SkillSourceRepo,
+  fetchedAt: IsoDateTime.check(Schema.isMaxLength(128)),
+  skills: Schema.Array(MarketplaceSkill).check(Schema.isMaxLength(SKILL_STATE_MAX_ITEMS)),
 });
 export type SkillMarketplaceListing = typeof SkillMarketplaceListing.Type;
 
 /** Full skills registry snapshot returned by state-mutating RPCs. */
 export const SkillsState = Schema.Struct({
-  installedSkills: Schema.Array(InstalledSkill),
+  installedSkills: Schema.Array(InstalledSkill).check(Schema.isMaxLength(SKILL_STATE_MAX_ITEMS)),
 });
 export type SkillsState = typeof SkillsState.Type;
 
@@ -92,7 +124,7 @@ export type SkillsState = typeof SkillsState.Type;
  * (`host:<origin>:<dir>` or `host:<origin>:<instanceId>:<dir>`). Clients send
  * this back on uninstall; they never send a filesystem path.
  */
-export const HostSkillId = TrimmedNonEmptyString;
+export const HostSkillId = TrimmedNonEmptyString.check(Schema.isMaxLength(SKILL_ID_MAX_LENGTH));
 export type HostSkillId = typeof HostSkillId.Type;
 
 /**
@@ -102,14 +134,14 @@ export type HostSkillId = typeof HostSkillId.Type;
  */
 export const HostSkill = Schema.Struct({
   id: HostSkillId,
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
+  name: SkillName,
+  description: Schema.optional(SkillDescription),
   /** Absolute path to the skill document, for display and snapshot dedupe. */
-  path: TrimmedNonEmptyString,
+  path: SkillSourcePath,
   /** Home-abbreviated skill directory, e.g. `~/.claude/skills/grill-me`. */
-  displayPath: TrimmedNonEmptyString,
+  displayPath: SkillSourcePath,
   /** Provider or shared-root label, e.g. "Claude Code", "Codex", "Shared". */
-  origin: TrimmedNonEmptyString,
+  origin: SkillName,
   /**
    * False when the skill folder is still on disk but hidden from provider CLIs.
    * Default on: these skills already live in a CLI home, unlike T3-store skills
@@ -122,7 +154,7 @@ export const HostSkill = Schema.Struct({
 export type HostSkill = typeof HostSkill.Type;
 
 export const HostSkillsState = Schema.Struct({
-  skills: Schema.Array(HostSkill),
+  skills: Schema.Array(HostSkill).check(Schema.isMaxLength(SKILL_STATE_MAX_ITEMS)),
 });
 export type HostSkillsState = typeof HostSkillsState.Type;
 
@@ -142,7 +174,7 @@ export type SkillsOperation = typeof SkillsOperation.Type;
 export class SkillsError extends Schema.TaggedErrorClass<SkillsError>()("SkillsError", {
   operation: SkillsOperation,
   skillId: Schema.optional(SkillId),
-  sourceRepo: Schema.optional(TrimmedNonEmptyString),
-  message: TrimmedNonEmptyString,
+  sourceRepo: Schema.optional(SkillSourceRepo),
+  message: SkillDescription,
   cause: Schema.optional(Schema.Defect()),
 }) {}

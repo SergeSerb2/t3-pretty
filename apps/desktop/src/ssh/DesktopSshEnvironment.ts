@@ -110,6 +110,9 @@ export function toSshPasswordPromptError(
     case "DesktopSshPromptServiceStoppedError":
       message = "SSH password prompt service stopped.";
       break;
+    case "DesktopSshPromptCapacityError":
+      message = "Too many SSH authentication prompts are already pending. Try again shortly.";
+      break;
     default:
       return unexpectedPasswordPromptError(cause);
   }

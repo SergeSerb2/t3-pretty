@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { type PreviewEvent, ThreadId } from "@t3tools/contracts";
+import { PREVIEW_SESSIONS_MAX_PER_THREAD, type PreviewEvent, ThreadId } from "@t3tools/contracts";
 import { PreviewUrlNormalizationError } from "@t3tools/shared/preview";
 import { Effect, PubSub } from "effect";
 import { expect } from "vite-plus/test";
@@ -64,6 +64,24 @@ it.layer(PreviewManager.layer)("PreviewManager", (it) => {
       const manager = yield* PreviewManager.PreviewManager;
       const snapshot = yield* manager.open({ threadId });
       expect(snapshot.navStatus._tag).toBe("Idle");
+    }),
+  );
+
+  it.effect("rejects tabs beyond the per-thread session ceiling", () =>
+    Effect.gen(function* () {
+      const threadId = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+      for (let index = 0; index < PREVIEW_SESSIONS_MAX_PER_THREAD; index += 1) {
+        yield* manager.open({ threadId });
+      }
+
+      const error = yield* manager.open({ threadId }).pipe(Effect.flip);
+      expect(error).toMatchObject({
+        _tag: "PreviewSessionLimitError",
+        scope: "thread",
+        limit: PREVIEW_SESSIONS_MAX_PER_THREAD,
+      });
+      yield* manager.close({ threadId });
     }),
   );
 

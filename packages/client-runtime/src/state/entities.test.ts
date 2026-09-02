@@ -18,6 +18,8 @@ import {
   parseProjectKey,
   parseProjectRefCollectionKey,
   parseThreadKey,
+  projectKey,
+  threadKey,
 } from "./entities.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 import { EMPTY_ENVIRONMENT_THREAD_STATE, type EnvironmentThreadState } from "./threads.ts";
@@ -34,6 +36,34 @@ const THREAD_ID = ThreadId.make("thread-1");
 const OTHER_THREAD_ID = ThreadId.make("thread-2");
 
 describe("scoped entity keys", () => {
+  it("round-trips scoped entity IDs containing the old delimiter", () => {
+    const projectRef = {
+      environmentId: EnvironmentId.make("environment\u0000part"),
+      projectId: ProjectId.make("project\u0000part"),
+    };
+    const threadRef = {
+      environmentId: projectRef.environmentId,
+      threadId: ThreadId.make("thread\u0000part"),
+    };
+
+    expect(parseProjectKey(projectKey(projectRef))).toEqual(projectRef);
+    expect(parseThreadKey(threadKey(threadRef))).toEqual(threadRef);
+  });
+
+  it("does not collide when scoped entity IDs contain delimiters", () => {
+    expect(
+      projectKey({
+        environmentId: EnvironmentId.make("environment\u0000project"),
+        projectId: ProjectId.make("tail"),
+      }),
+    ).not.toBe(
+      projectKey({
+        environmentId: EnvironmentId.make("environment"),
+        projectId: ProjectId.make("project\u0000tail"),
+      }),
+    );
+  });
+
   it("preserves an invalid project key as structured error data", () => {
     const key = "missing-project-key-separator";
     let error: unknown;

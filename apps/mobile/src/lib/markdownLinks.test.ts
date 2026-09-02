@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
+import {
+  MARKDOWN_LINK_HREF_MAX_LENGTH,
+  resolveMarkdownLinkPresentation,
+} from "@t3tools/mobile-markdown-text/links";
 
 describe("resolveMarkdownLinkPresentation", () => {
   it("extracts external link hosts", () => {
@@ -50,6 +53,24 @@ describe("resolveMarkdownLinkPresentation", () => {
     });
   });
 
+  it.each(["md", "html", "xml"])("recognizes a bare spaced .%s filename", (extension) => {
+    expect(
+      resolveMarkdownLinkPresentation(`Updated%20cutover%20checklist.${extension}`),
+    ).toMatchObject({
+      kind: "file",
+      path: `Updated cutover checklist.${extension}`,
+      label: `Updated cutover checklist.${extension}`,
+    });
+  });
+
+  it("recognizes spaced relative paths", () => {
+    expect(resolveMarkdownLinkPresentation("docs/My%20Folder/checklist.xml")).toMatchObject({
+      kind: "file",
+      path: "docs/My Folder/checklist.xml",
+      label: "checklist.xml",
+    });
+  });
+
   it("extracts line fragments from relative file links", () => {
     expect(resolveMarkdownLinkPresentation("src/main.ts#L18C2")).toMatchObject({
       kind: "file",
@@ -84,5 +105,13 @@ describe("resolveMarkdownLinkPresentation", () => {
       kind: "link",
       href: null,
     });
+  });
+
+  it("rejects oversized destinations before URL parsing or percent decoding", () => {
+    expect(
+      resolveMarkdownLinkPresentation(
+        `https://example.com/${"a".repeat(MARKDOWN_LINK_HREF_MAX_LENGTH)}`,
+      ),
+    ).toEqual({ kind: "link", href: null });
   });
 });

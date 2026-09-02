@@ -120,25 +120,30 @@ function extractXcodeSearch() {
   return match[0].replaceAll("/Applications", '"$apps"');
 }
 
-function installFakeXcode(applicationsDir, appName, runnable) {
+function installFakeXcode(applicationsDir, appName, runnable, beta = false, build = "16A242d") {
   const developerDir = NodePath.join(applicationsDir, appName, "Contents", "Developer");
   NodeFS.mkdirSync(NodePath.join(developerDir, "usr", "bin"), { recursive: true });
+  if (beta) {
+    const resources = NodePath.join(developerDir, "..", "Resources");
+    NodeFS.mkdirSync(resources, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(resources, "BetaVersion.plist"), "beta\n");
+  }
   NodeFS.writeFileSync(
     NodePath.join(developerDir, "usr", "bin", "xcodebuild"),
     runnable
-      ? "#!/bin/bash\necho 'Xcode 27.0'\nexit 0\n"
+      ? `#!/bin/bash\necho 'Xcode 26.0'\necho 'Build version ${build}'\nexit 0\n`
       : "#!/bin/bash\necho 'this Xcode is not compatible with this macOS' >&2\nexit 1\n",
     { mode: 0o755 },
   );
   return developerDir;
 }
 
-function runIsFullXcode(fn, developerDir) {
+function runIsFullXcode(fn, developerDir, env = {}) {
   try {
     NodeChildProcess.execFileSync(
       "bash",
       ["-c", `${fn}\nis_full_xcode "$1"`, "is_full_xcode", developerDir],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      { encoding: "utf8", env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] },
     );
     return true;
   } catch {
@@ -292,39 +297,49 @@ describe("iOS publish Xcode selection", () => {
     );
   });
 
-  it("rejects Command Line Tools and a leftover Xcode whose xcodebuild cannot run", () => {
+  it("accepts the current beta but rejects stale Xcode installs and Command Line Tools", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-"));
     try {
       const fn = extractIsFullXcode();
       const broken = installFakeXcode(root, "Xcode.app", false);
-      const working = installFakeXcode(root, "Xcode-beta.app", true);
+      const working = installFakeXcode(root, "Xcode-stable.app", true);
+      const currentBeta = installFakeXcode(root, "Xcode-beta.app", true, false, "27A5252f");
+      const staleBeta = installFakeXcode(root, "Stale.app", true, true);
+      const renamedBeta = installFakeXcode(root, "Renamed.app", true, true, "27A5252f");
       const clt = installFakeXcode(root, "CommandLineTools", true);
 
       assert.isFalse(runIsFullXcode(fn, ""));
       assert.isFalse(runIsFullXcode(fn, broken));
       assert.isFalse(runIsFullXcode(fn, clt));
+      assert.isTrue(runIsFullXcode(fn, currentBeta));
+      assert.isFalse(runIsFullXcode(fn, staleBeta));
+      assert.isTrue(runIsFullXcode(fn, renamedBeta));
+      assert.isTrue(runIsFullXcode(fn, staleBeta, { T3CODE_ACCEPTED_XCODE_BETA_BUILD: "16A242d" }));
       assert.isTrue(runIsFullXcode(fn, working));
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("falls through to Xcode-beta.app when Xcode.app cannot run", () => {
+  it("uses the current beta and falls back to EAS cloud for an older beta", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-xcode-search-"));
     try {
       const apps = NodePath.join(root, "Applications");
       NodeFS.mkdirSync(apps);
-      const broken = installFakeXcode(apps, "Xcode.app", false);
-      const working = installFakeXcode(apps, "Xcode-beta.app", true);
+      installFakeXcode(apps, "Xcode.app", false);
+      const beta = installFakeXcode(apps, "Xcode-beta.app", true, false, "27A5252f");
 
-      assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), working);
+      assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), beta);
       assert.equal(
         selectDeveloperDir({
           apps,
-          env: { DEVELOPER_DIR: broken },
+          env: { DEVELOPER_DIR: beta },
         }),
-        working,
+        beta,
       );
+
+      installFakeXcode(apps, "Xcode-beta.app", true, false, "27A5209h");
+      assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), "");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
@@ -336,11 +351,52 @@ describe("iOS publish Xcode selection", () => {
       const apps = NodePath.join(root, "Applications");
       NodeFS.mkdirSync(apps);
       const stable = installFakeXcode(apps, "Xcode.app", true);
-      installFakeXcode(apps, "Xcode-beta.app", true);
+      installFakeXcode(apps, "Xcode-beta.app", true, false, "27A5252f");
 
       assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), stable);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("iOS fingerprint recording", () => {
+  it("retries the bookkeeping branch push once", () => {
+    const snippet = mobileRelease.match(
+      /branch="automation\/ios-fingerprint-[^\n]+\n[\s\S]*?origin-forge\.mjs setup-ci/,
+    )?.[0];
+    assert.ok(snippet, "fingerprint branch push missing");
+
+    const run = (failures) => {
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-push-"));
+      const log = NodePath.join(directory, "calls.log");
+      try {
+        const script = [
+          "set -e",
+          "git_attempts=0",
+          `git() { git_attempts=$((git_attempts + 1)); printf 'push\\n' >> "$TEST_LOG"; (( git_attempts > FAILURES )); }`,
+          "sleep() { :; }",
+          `node() { printf 'setup-ci\\n' >> "$TEST_LOG"; }`,
+          "fingerprint=fe8118329f9969e50fad032c7ea3c536e6ea6967",
+          snippet,
+        ].join("\n");
+        const result = NodeChildProcess.spawnSync("bash", ["-c", script], {
+          encoding: "utf8",
+          env: { ...process.env, FAILURES: String(failures), TEST_LOG: log },
+        });
+        return { result, calls: NodeFS.readFileSync(log, "utf8").trim().split("\n") };
+      } finally {
+        NodeFS.rmSync(directory, { recursive: true, force: true });
+      }
+    };
+
+    const recovered = run(1);
+    assert.equal(recovered.result.status, 0);
+    assert.deepEqual(recovered.calls, ["push", "push", "setup-ci"]);
+    assert.include(recovered.result.stdout, "Fingerprint branch push failed; retrying once.");
+
+    const failed = run(2);
+    assert.notEqual(failed.result.status, 0);
+    assert.deepEqual(failed.calls, ["push", "push"]);
   });
 });

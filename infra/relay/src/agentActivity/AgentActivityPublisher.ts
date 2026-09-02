@@ -1,14 +1,16 @@
-import type {
-  RelayAgentActivityAggregateState,
-  RelayAgentActivityState,
-  RelayDeliveryResult,
-  RelayPublishResponse,
+import {
+  RELAY_DEVICE_MAX_COUNT,
+  type RelayAgentActivityAggregateState,
+  type RelayAgentActivityState,
+  type RelayDeliveryResult,
+  type RelayPublishResponse,
 } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 
 import {
   isExpiredAgentActivityState,
@@ -160,22 +162,33 @@ export const make = Effect.gen(function* () {
         environmentPublicKey: input.environmentPublicKey,
       });
       const now = yield* DateTime.now;
-      const deliveriesByUser = yield* Effect.forEach(
+      const deliveryDiagnostics = yield* Ref.make<ReadonlyArray<RelayDeliveryResult>>([]);
+      yield* Effect.forEach(
         deliveryUsers,
         (deliveryUser) =>
           publishForDeliveryUser({
             deliveryUser,
             state: input.state,
             nowMs: now.epochMilliseconds,
-          }),
-        { concurrency: 4 },
+          }).pipe(
+            Effect.flatMap((results) =>
+              Ref.update(deliveryDiagnostics, (current) => {
+                if (current.length >= RELAY_DEVICE_MAX_COUNT) {
+                  return current;
+                }
+                const remaining = RELAY_DEVICE_MAX_COUNT - current.length;
+                const next = results
+                  .filter((delivery): delivery is RelayDeliveryResult => delivery !== null)
+                  .slice(0, remaining);
+                return next.length === 0 ? current : [...current, ...next];
+              }),
+            ),
+          ),
+        { concurrency: 4, discard: true },
       );
-      const deliveries = deliveriesByUser.flat();
       return {
         ok: true,
-        deliveries: deliveries.filter(
-          (delivery): delivery is RelayDeliveryResult => delivery !== null,
-        ),
+        deliveries: yield* Ref.get(deliveryDiagnostics),
       };
     }),
   });

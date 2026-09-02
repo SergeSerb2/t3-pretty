@@ -9,9 +9,17 @@ import sharp from "sharp";
 
 import {
   ATTACHMENT_FEED_PREVIEW_HEIGHT,
+  ATTACHMENT_FEED_PREVIEW_MAX_PENDING_JOBS,
   ATTACHMENT_FEED_PREVIEW_WIDTH,
+  canStartAttachmentPreviewJob,
   resolveAttachmentFeedPreview,
 } from "./AttachmentPreview.ts";
+
+it("bounds pending attachment preview work", () => {
+  expect(canStartAttachmentPreviewJob(ATTACHMENT_FEED_PREVIEW_MAX_PENDING_JOBS - 1)).toBe(true);
+  expect(canStartAttachmentPreviewJob(ATTACHMENT_FEED_PREVIEW_MAX_PENDING_JOBS)).toBe(false);
+  expect(canStartAttachmentPreviewJob(Number.POSITIVE_INFINITY)).toBe(false);
+});
 
 it.effect("creates and reuses a bounded WebP feed preview", () =>
   Effect.acquireUseRelease(

@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
@@ -93,6 +94,7 @@ const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
 const LOGIN_SHELL_TIMEOUT = Duration.seconds(5);
 const LAUNCHCTL_TIMEOUT = Duration.seconds(2);
 const PROCESS_TERMINATE_GRACE = Duration.seconds(1);
+const SHELL_ENVIRONMENT_OUTPUT_MAX_BYTES = 256 * 1024;
 
 const trimNonEmpty = (value: string | null | undefined): Option.Option<string> =>
   Option.fromNullishOr(value).pipe(
@@ -151,6 +153,9 @@ const pathComparisonKey = (entry: string, platform: NodeJS.Platform) => {
   return platform === "win32" ? normalized.toLowerCase() : normalized;
 };
 
+const sanitizePathEntry = (entry: string, platform: NodeJS.Platform) =>
+  platform === "win32" ? entry.replaceAll('"', "") : entry;
+
 const mergePaths = (
   platform: NodeJS.Platform,
   values: ReadonlyArray<Option.Option<string>>,
@@ -163,14 +168,14 @@ const mergePaths = (
     if (Option.isNone(value)) continue;
 
     for (const entry of value.value.split(delimiter)) {
-      const trimmed = entry.trim();
-      if (trimmed.length === 0) continue;
+      const sanitized = sanitizePathEntry(entry.trim(), platform);
+      if (sanitized.length === 0) continue;
 
-      const key = pathComparisonKey(trimmed, platform);
+      const key = pathComparisonKey(sanitized, platform);
       if (key.length === 0 || seen.has(key)) continue;
 
       seen.add(key);
-      entries.push(trimmed);
+      entries.push(sanitized);
     }
   }
 
@@ -279,6 +284,32 @@ const extractEnvironment = (output: string, names: ReadonlyArray<string>): Envir
   return environment;
 };
 
+const collectBoundedText = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  stream.pipe(
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], byteLength: 0 }),
+      (state, chunk) => {
+        const remainingBytes = SHELL_ENVIRONMENT_OUTPUT_MAX_BYTES - state.byteLength;
+        if (remainingBytes <= 0) return state;
+        const retained = chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk;
+        state.chunks.push(retained);
+        return {
+          chunks: state.chunks,
+          byteLength: state.byteLength + retained.byteLength,
+        };
+      },
+    ),
+    Effect.map((state) => {
+      const bytes = new Uint8Array(state.byteLength);
+      let offset = 0;
+      for (const chunk of state.chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return new TextDecoder().decode(bytes);
+    }),
+  );
+
 const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(function* (input: {
   readonly probe: DesktopShellEnvironmentProbe;
   readonly command: string;
@@ -287,33 +318,42 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
   readonly shell?: boolean;
 }): Effect.fn.Return<string, never, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const output = yield* spawner
-    .string(
-      ChildProcess.make(input.command, input.args, {
-        shell: input.shell ?? false,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        killSignal: "SIGTERM",
-        forceKillAfter: PROCESS_TERMINATE_GRACE,
-      }),
-    )
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new DesktopShellEnvironmentCommandError({
-            probe: input.probe,
-            executable: executableName(input.command),
-            argumentCount: input.args.length,
-            cause,
-          }),
+  const output = yield* Effect.scoped(
+    spawner
+      .spawn(
+        ChildProcess.make(input.command, input.args, {
+          shell: input.shell ?? false,
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          killSignal: "SIGTERM",
+          forceKillAfter: PROCESS_TERMINATE_GRACE,
+        }),
+      )
+      .pipe(
+        Effect.flatMap((handle) =>
+          Effect.all(
+            [collectBoundedText(handle.stdout), Stream.runDrain(handle.stderr), handle.exitCode],
+            { concurrency: "unbounded" },
+          ).pipe(Effect.map(([stdout]) => stdout)),
+        ),
       ),
-      Effect.catchTags({
-        DesktopShellEnvironmentCommandError: (error) =>
-          logShellEnvironmentCommandError(error).pipe(Effect.as("")),
-      }),
-      Effect.timeoutOption(input.timeout),
-    );
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new DesktopShellEnvironmentCommandError({
+          probe: input.probe,
+          executable: executableName(input.command),
+          argumentCount: input.args.length,
+          cause,
+        }),
+    ),
+    Effect.catchTags({
+      DesktopShellEnvironmentCommandError: (error) =>
+        logShellEnvironmentCommandError(error).pipe(Effect.as("")),
+    }),
+    Effect.timeoutOption(input.timeout),
+  );
   if (Option.isSome(output)) {
     return output.value;
   }

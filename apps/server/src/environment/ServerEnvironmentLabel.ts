@@ -1,10 +1,14 @@
+import { ENVIRONMENT_LABEL_MAX_LENGTH } from "@t3tools/contracts";
 import { HostProcessHostname, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ProcessRunner from "../processRunner.ts";
+
+const MACHINE_INFO_MAX_BYTES = 64 * 1024;
 
 interface ResolveServerEnvironmentLabelInput {
   readonly cwdBaseName: string;
@@ -45,7 +49,10 @@ export class ServerEnvironmentLabelCommandError extends Schema.TaggedErrorClass<
 
 function normalizeLabel(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : null;
+  if (!trimmed || trimmed.length === 0) return null;
+  if (trimmed.length <= ENVIRONMENT_LABEL_MAX_LENGTH) return trimmed;
+  const bounded = trimmed.slice(0, ENVIRONMENT_LABEL_MAX_LENGTH);
+  return /[\uD800-\uDBFF]$/.test(bounded) ? bounded.slice(0, -1) : bounded;
 }
 
 function parseMachineInfoValue(raw: string, key: string): string | null {
@@ -80,7 +87,7 @@ const readLinuxMachineInfo = Effect.fn("readLinuxMachineInfo")(function* () {
     ),
     Effect.flatMap((exists) =>
       exists
-        ? fileSystem.readFileString(machineInfoPath).pipe(
+        ? readTextWithinLimit(fileSystem, machineInfoPath, MACHINE_INFO_MAX_BYTES).pipe(
             Effect.mapError(
               (cause) =>
                 new ServerEnvironmentLabelFileError({
@@ -116,6 +123,8 @@ const runFriendlyLabelCommand = Effect.fn("runFriendlyLabelCommand")(function* (
     .run({
       command: input.command,
       args: input.args,
+      maxOutputBytes: ENVIRONMENT_LABEL_MAX_LENGTH * 4,
+      outputMode: "truncate",
       timeoutBehavior: "timedOutResult",
     })
     .pipe(

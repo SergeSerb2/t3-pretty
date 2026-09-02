@@ -53,6 +53,18 @@ function formatDuration(value: number): string {
   return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2)} s`;
 }
 
+function PartialDataNotice({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 bg-amber-500/6 px-4 py-2.5 text-[11px] leading-relaxed text-amber-800 sm:px-5 dark:text-amber-200"
+    >
+      <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
   const units = ["KB", "MB", "GB"] as const;
@@ -1110,6 +1122,11 @@ export function DiagnosticsSettingsPanel() {
           </div>
         ) : null}
         <ProcessResourceHistoryChart buckets={resourceData?.buckets ?? []} />
+        {resourceData?.topProcessesTruncated === true ? (
+          <PartialDataNotice>
+            The process ranking is partial; additional processes were omitted from this table.
+          </PartialDataNotice>
+        ) : null}
         <ProcessResourceHistoryTable
           processes={resourceData?.topProcesses ?? []}
           emptyLabel={
@@ -1192,7 +1209,7 @@ export function DiagnosticsSettingsPanel() {
                 <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
                 <span>
                   {traceDiagnosticsPartialFailure
-                    ? `Some trace files could not be read, so diagnostics may be incomplete. ${traceDiagnosticsError.message}`
+                    ? `Diagnostics may be incomplete. ${traceDiagnosticsError.message}`
                     : traceDiagnosticsError.message}
                 </span>
               </div>

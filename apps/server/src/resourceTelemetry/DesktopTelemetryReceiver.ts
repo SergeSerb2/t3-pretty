@@ -34,6 +34,7 @@ const STALE_GRACE_MS = 30_000;
 const DEFAULT_HOST_POWER_ACTIVE_INTERVAL_MS = 30_000;
 const DEFAULT_HOST_POWER_IDLE_INTERVAL_MS = 120_000;
 const STALE_CHECK_INTERVAL = Duration.seconds(30);
+export const DESKTOP_TELEMETRY_RECORD_MAX_BYTES = 4 * 1024 * 1024;
 
 export class DesktopTelemetryDescriptorUnavailable extends Schema.TaggedErrorClass<DesktopTelemetryDescriptorUnavailable>()(
   "DesktopTelemetryDescriptorUnavailable",
@@ -92,6 +93,18 @@ export class DesktopTelemetryStreamClosed extends Schema.TaggedErrorClass<Deskto
   }
 }
 
+export class DesktopTelemetryRecordTooLarge extends Schema.TaggedErrorClass<DesktopTelemetryRecordTooLarge>()(
+  "DesktopTelemetryRecordTooLarge",
+  {
+    fd: Schema.Number,
+    maxBytes: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return `Desktop telemetry record on fd ${this.fd} exceeded ${this.maxBytes} bytes.`;
+  }
+}
+
 export class DesktopTelemetryStale extends Schema.TaggedErrorClass<DesktopTelemetryStale>()(
   "DesktopTelemetryStale",
   {
@@ -109,7 +122,8 @@ export type DesktopTelemetryReceiverError =
   | DesktopTelemetryProtocolMismatch
   | DesktopTelemetryDecodeFailed
   | DesktopTelemetryStreamFailed
-  | DesktopTelemetryStreamClosed;
+  | DesktopTelemetryStreamClosed
+  | DesktopTelemetryRecordTooLarge;
 
 export class DesktopTelemetryControlFailed extends Schema.TaggedErrorClass<DesktopTelemetryControlFailed>()(
   "DesktopTelemetryControlFailed",
@@ -182,6 +196,31 @@ const isDescriptorUnavailable = Schema.is(DesktopTelemetryDescriptorUnavailable)
 const isProtocolMismatch = Schema.is(DesktopTelemetryProtocolMismatch);
 const isDecodeFailed = Schema.is(DesktopTelemetryDecodeFailed);
 const isStreamFailed = Schema.is(DesktopTelemetryStreamFailed);
+const isRecordTooLarge = Schema.is(DesktopTelemetryRecordTooLarge);
+
+export interface NdjsonLineByteScan {
+  readonly trailingBytes: number;
+  readonly exceeded: boolean;
+}
+
+export function scanNdjsonLineByteLimit(
+  previousTrailingBytes: number,
+  chunk: Uint8Array,
+  maxBytes: number,
+): NdjsonLineByteScan {
+  let trailingBytes = previousTrailingBytes;
+  for (const byte of chunk) {
+    if (byte === 0x0a || byte === 0x0d) {
+      trailingBytes = 0;
+      continue;
+    }
+    trailingBytes += 1;
+    if (trailingBytes > maxBytes) {
+      return { trailingBytes, exceeded: true };
+    }
+  }
+  return { trailingBytes, exceeded: false };
+}
 
 export function isDesktopTelemetryContactStale(
   lastContactAtMs: Option.Option<number>,
@@ -231,7 +270,8 @@ function normalizeReceiverError(error: unknown): DesktopTelemetryReceiverError {
     isDescriptorUnavailable(error) ||
     isProtocolMismatch(error) ||
     isDecodeFailed(error) ||
-    isStreamFailed(error)
+    isStreamFailed(error) ||
+    isRecordTooLarge(error)
   ) {
     return error;
   }
@@ -457,6 +497,24 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         closeOnDone: true,
         onError: (cause) => new DesktopTelemetryStreamFailed({ fd, cause }),
       }).pipe(
+        Stream.mapAccumEffect(
+          () => 0,
+          (trailingBytes, chunk) => {
+            const scanned = scanNdjsonLineByteLimit(
+              trailingBytes,
+              chunk,
+              DESKTOP_TELEMETRY_RECORD_MAX_BYTES,
+            );
+            return scanned.exceeded
+              ? Effect.fail(
+                  new DesktopTelemetryRecordTooLarge({
+                    fd,
+                    maxBytes: DESKTOP_TELEMETRY_RECORD_MAX_BYTES,
+                  }),
+                )
+              : Effect.succeed([scanned.trailingBytes, [chunk]] as const);
+          },
+        ),
         Stream.pipeThroughChannel(Ndjson.decode({ ignoreEmptyLines: true })),
         Stream.mapEffect(
           (

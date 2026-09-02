@@ -12,10 +12,17 @@ const MAX_SCHEMA_DIAGNOSTIC_ISSUES = 8;
 const MAX_SCHEMA_DIAGNOSTIC_PATH_SEGMENTS = 16;
 const MAX_SCHEMA_DIAGNOSTIC_PATH_SEGMENT_LENGTH = 64;
 const MAX_SCHEMA_DIAGNOSTIC_LENGTH = 2_048;
+const MAX_SCHEMA_DIAGNOSTIC_TRAVERSAL_NODES = 256;
+const MAX_SCHEMA_DIAGNOSTIC_CAUSE_REASONS = 64;
 
 interface SchemaDiagnosticIssue {
   readonly message: string;
   readonly path: ReadonlyArray<PropertyKey>;
+}
+
+interface SchemaDiagnosticTraversal {
+  visited: number;
+  truncated: boolean;
 }
 
 // Schema's default formatter includes actual values. These diagnostics cross
@@ -74,28 +81,57 @@ function collectSchemaDiagnosticIssues(
   issue: SchemaIssue.Issue,
   path: ReadonlyArray<PropertyKey>,
   diagnostics: Array<SchemaDiagnosticIssue>,
+  traversal: SchemaDiagnosticTraversal,
 ): number {
+  if (traversal.visited >= MAX_SCHEMA_DIAGNOSTIC_TRAVERSAL_NODES) {
+    traversal.truncated = true;
+    return 0;
+  }
+  traversal.visited += 1;
+
   switch (issue._tag) {
     case "Encoding":
-      return collectSchemaDiagnosticIssues(issue.issue, path, diagnostics);
+      return collectSchemaDiagnosticIssues(issue.issue, path, diagnostics, traversal);
     case "Filter":
       if (issue.issue._tag !== "InvalidValue") {
-        return collectSchemaDiagnosticIssues(issue.issue, path, diagnostics);
+        return collectSchemaDiagnosticIssues(issue.issue, path, diagnostics, traversal);
       }
       break;
-    case "Pointer":
-      return collectSchemaDiagnosticIssues(issue.issue, [...path, ...issue.path], diagnostics);
-    case "Composite":
-      return issue.issues.reduce(
-        (count, issue) => count + collectSchemaDiagnosticIssues(issue, path, diagnostics),
-        0,
-      );
+    case "Pointer": {
+      const remainingPathSegments = MAX_SCHEMA_DIAGNOSTIC_PATH_SEGMENTS + 1 - path.length;
+      const nextPath =
+        remainingPathSegments <= 0
+          ? path
+          : [...path, ...issue.path.slice(0, remainingPathSegments)];
+      return collectSchemaDiagnosticIssues(issue.issue, nextPath, diagnostics, traversal);
+    }
+    case "Composite": {
+      let count = 0;
+      for (let index = 0; index < issue.issues.length; index += 1) {
+        if (traversal.visited >= MAX_SCHEMA_DIAGNOSTIC_TRAVERSAL_NODES) {
+          traversal.truncated = true;
+          break;
+        }
+        count += collectSchemaDiagnosticIssues(issue.issues[index]!, path, diagnostics, traversal);
+      }
+      return count;
+    }
     case "AnyOf":
       if (issue.issues.length > 0) {
-        return issue.issues.reduce(
-          (count, issue) => count + collectSchemaDiagnosticIssues(issue, path, diagnostics),
-          0,
-        );
+        let count = 0;
+        for (let index = 0; index < issue.issues.length; index += 1) {
+          if (traversal.visited >= MAX_SCHEMA_DIAGNOSTIC_TRAVERSAL_NODES) {
+            traversal.truncated = true;
+            break;
+          }
+          count += collectSchemaDiagnosticIssues(
+            issue.issues[index]!,
+            path,
+            diagnostics,
+            traversal,
+          );
+        }
+        return count;
       }
       break;
   }
@@ -134,17 +170,22 @@ export const decodeUnknownJsonResult = <S extends Schema.Codec<unknown, unknown,
 
 export const formatSchemaError = (cause: Cause.Cause<Schema.SchemaError>) => {
   const issues: Array<SchemaDiagnosticIssue> = [];
+  const traversal: SchemaDiagnosticTraversal = { visited: 0, truncated: false };
   let issueCount = 0;
   let failureCount = 0;
   let defectCount = 0;
   let interruptionCount = 0;
 
-  for (const reason of cause.reasons) {
+  const retainedReasons = cause.reasons.slice(0, MAX_SCHEMA_DIAGNOSTIC_CAUSE_REASONS);
+  if (retainedReasons.length < cause.reasons.length) {
+    traversal.truncated = true;
+  }
+  for (const reason of retainedReasons) {
     switch (reason._tag) {
       case "Fail":
         failureCount += 1;
         if (Schema.isSchemaError(reason.error)) {
-          issueCount += collectSchemaDiagnosticIssues(reason.error.issue, [], issues);
+          issueCount += collectSchemaDiagnosticIssues(reason.error.issue, [], issues, traversal);
         }
         break;
       case "Die":
@@ -162,10 +203,12 @@ export const formatSchemaError = (cause: Cause.Cause<Schema.SchemaError>) => {
 
   const omittedIssueCount = issueCount - issues.length;
   const formatted = issues.map(formatDiagnosticIssue).join("\n");
-  if (omittedIssueCount === 0) {
+  if (omittedIssueCount === 0 && !traversal.truncated) {
     return truncateDiagnostic(formatted, MAX_SCHEMA_DIAGNOSTIC_LENGTH);
   }
-  const suffix = `\n... and ${omittedIssueCount} more issue(s)`;
+  const suffix = traversal.truncated
+    ? "\n... and more issue(s)"
+    : `\n... and ${omittedIssueCount} more issue(s)`;
   return truncateDiagnostic(formatted, MAX_SCHEMA_DIAGNOSTIC_LENGTH - suffix.length) + suffix;
 };
 

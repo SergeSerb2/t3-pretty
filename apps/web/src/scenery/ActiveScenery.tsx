@@ -201,7 +201,7 @@ export default function ActiveScenery() {
       // assignment just because the server wrote it first.
       if (serverScenery) {
         const bound = photoFromAssignment(serverScenery);
-        if (pool.some((entry) => entry.id === bound.id)) {
+        if (bound && pool.some((entry) => entry.id === bound.id)) {
           return bound;
         }
       }

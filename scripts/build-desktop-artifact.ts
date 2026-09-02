@@ -2,6 +2,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Node's typed junction API avoids Windows symlink privileges while keeping the probe isolated.
 
 import * as NodeFSP from "node:fs/promises";
+import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 
 import {
@@ -569,6 +570,8 @@ const WindowsPackagedPayloadValidationReason = Schema.Literals([
   "sidecar-invalid",
   "unpacked-native-missing",
   "resource-monitor-missing",
+  "wsl-runtime-missing",
+  "wsl-runtime-invalid",
   "file-limit-exceeded",
 ]);
 
@@ -592,6 +595,12 @@ export class WindowsPackagedPayloadValidationError extends Schema.TaggedErrorCla
     }
     if (this.reason === "resource-monitor-missing") {
       return "Windows packaged payload is missing the resource monitor executable.";
+    }
+    if (this.reason === "wsl-runtime-missing") {
+      return "Windows packaged payload is missing the WSL runtime archive or SHA-256 sidecar.";
+    }
+    if (this.reason === "wsl-runtime-invalid") {
+      return "Windows packaged payload contains an invalid WSL runtime archive.";
     }
     if (this.reason === "sidecar-invalid") {
       return "Windows packaged payload contains an invalid server.asar sidecar.";
@@ -630,21 +639,18 @@ export class LinuxIconResizeError extends Schema.TaggedErrorClass<LinuxIconResiz
   }
 }
 
-const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
-    ),
-  );
-
 const COMMAND_OUTPUT_TAIL_LENGTH = 20_000;
 
 function appendOutputTail(acc: string, chunk: string): string {
   const next = acc + chunk;
   return next.length > COMMAND_OUTPUT_TAIL_LENGTH ? next.slice(-COMMAND_OUTPUT_TAIL_LENGTH) : next;
 }
+
+const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold(() => "", appendOutputTail),
+  );
 
 function formatOutputSection(label: string, output: string): string | undefined {
   const trimmed = output.trim();
@@ -809,6 +815,8 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // staging inputs out of app.asar; they are emitted once at resources/.
   "!apps/desktop/prod-resources/windows-server",
   "!apps/desktop/prod-resources/windows-server/**/*",
+  "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
+  "!apps/desktop/prod-resources/wsl-runtime.tar.gz.sha256",
   // Source maps have no runtime consumer in the packaged app (no
   // source-map-support, --enable-source-maps, or Sentry).
   "!**/*.map",
@@ -832,13 +840,18 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/prod-resources/dmg",
   "!apps/desktop/prod-resources/dmg/**/*",
 ] as const;
+// Windows terminal helpers cannot run on macOS and slow signing and notarization.
+export const MAC_FILE_EXCLUSIONS = [
+  "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
+  "!**/node_modules/node-pty/third_party/conpty/**/*",
+] as const;
 // Windows ships the server tree (bundle + node_modules) as a separate
 // resources/server.asar sidecar instead of loose files: the NSIS installer
 // then extracts a handful of large archives instead of thousands of small
 // files, which dominates install (and update) time. The Windows primary runs
 // the server from inside server.asar via the asar-aware ELECTRON_RUN_AS_NODE
-// runtime; the WSL backend cannot read asar archives, so enabling WSL lazily
-// extracts the sidecar to a version-keyed directory (see DesktopWslServerTree).
+// runtime. WSL normally uses the dedicated compressed Linux runtime below;
+// DesktopWslServerTree can still materialize this sidecar as a fallback.
 export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
 // dlopen/spawn need real files, so native modules, shared libraries, and
 // helper executables live in the server.asar.unpacked sibling (the standard
@@ -898,6 +911,53 @@ export const WINDOWS_SERVER_EXTRA_RESOURCES = [
     to: ".",
     filter: [WINDOWS_SERVER_ASAR_RESOURCE, `${WINDOWS_SERVER_ASAR_RESOURCE}.unpacked/**/*`],
   },
+] as const;
+export const WSL_RUNTIME_ARCHIVE_NAME = "wsl-runtime.tar.gz";
+export const WSL_RUNTIME_ARCHIVE_HASH_NAME = `${WSL_RUNTIME_ARCHIVE_NAME}.sha256`;
+export const WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE = {
+  from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_NAME}`,
+  to: WSL_RUNTIME_ARCHIVE_NAME,
+} as const;
+export const WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE = {
+  from: `apps/desktop/prod-resources/${WSL_RUNTIME_ARCHIVE_HASH_NAME}`,
+  to: WSL_RUNTIME_ARCHIVE_HASH_NAME,
+} as const;
+export const WSL_RUNTIME_ARCHIVE_CONTENT_ROOTS = ["apps/server/dist", "node_modules"] as const;
+
+// The WSL runtime uses only the Linux half of the shared Windows/WSL sidecar.
+// Keep build/install metadata and target-native packages that cannot run in
+// WSL out of the compressed archive.
+export const WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES = [
+  "node_modules/@anthropic-ai/claude-agent-sdk-",
+  "node_modules/.bin",
+  "node_modules/.pnpm",
+  "node_modules/.modules.yaml",
+  "node_modules/.pnpm-workspace-state-v1.json",
+  "node_modules/node-pty/prebuilds/darwin-",
+  "node_modules/node-pty/prebuilds/win32-",
+  "node_modules/node-pty/build",
+  "node_modules/node-pty/third_party/conpty",
+  "node_modules/@ff-labs/fff-bin-win32-",
+  "node_modules/@yuuang/ffi-rs-win32-",
+  "node_modules/@msgpackr-extract/msgpackr-extract-win32-",
+] as const;
+// WSL runs the same CPU arch as the Windows host; universal is mac-only.
+export const resolveWslPrebuildArch = (arch: typeof BuildArch.Type): "x64" | "arm64" | undefined =>
+  arch === "x64" ? "x64" : arch === "arm64" ? "arm64" : undefined;
+
+// A packaged WSL runtime is only usable when a Linux pty.node is bundled with
+// it, so this one predicate decides both whether the archive is built and
+// whether the packaging config ships it. Without it the build would produce an
+// archive that can never pass the install script's payload check, and every
+// launch would extract a few hundred MB from /mnt/c only to throw it away.
+export const bundlesWslRuntime = (input: {
+  readonly arch: typeof BuildArch.Type;
+  readonly prebuildPath: string | undefined;
+}): boolean => input.prebuildPath !== undefined && resolveWslPrebuildArch(input.arch) !== undefined;
+
+export const WSL_RUNTIME_EXTRA_RESOURCES = [
+  WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE,
+  WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE,
 ] as const;
 export const DESKTOP_EXTRA_RESOURCES = [
   {
@@ -1150,6 +1210,19 @@ export function resolveFffNativeDependencies(
   );
 }
 
+export function resolveMacStageDependencies(input: {
+  readonly serverDependencies: Record<string, string>;
+  readonly desktopDependencies: Record<string, string>;
+  readonly arch: typeof BuildArch.Type;
+  readonly fffNodeVersion: string;
+}) {
+  return {
+    ...selectCliRuntimeExternalDependencies(input.serverDependencies),
+    ...input.desktopDependencies,
+    ...resolveFffNativeDependencies("mac", input.arch, input.fffNodeVersion),
+  };
+}
+
 export interface ClerkPasskeyNativeArtifact {
   readonly packageName: string;
   readonly binaryFileName: string;
@@ -1289,6 +1362,98 @@ const AzureTrustedSigningOptionsConfig = Config.all({
     Config.withDefault("http://timestamp.acs.microsoft.com"),
   ),
 });
+
+export interface AzureTrustedSigningOptions {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampDigest: "SHA256" | "SHA384" | "SHA512";
+  readonly timestampRfc3161: string;
+}
+
+function resolveTrustedSigningText(value: string, field: string, maxBytes: number): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Buffer.byteLength(normalized, "utf8") > maxBytes ||
+    [...normalized].some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f);
+    })
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} is outside its safety boundary.`);
+  }
+  return normalized;
+}
+
+function resolveTrustedSigningUrl(
+  value: string,
+  field: string,
+  allowedProtocols: ReadonlySet<string>,
+): string {
+  const normalized = resolveTrustedSigningText(value, field, 4096);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  if (
+    !allowedProtocols.has(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(`Azure Trusted Signing ${field} must be a credential-free URL.`);
+  }
+  return parsed.toString();
+}
+
+function resolveTrustedSigningDigest(
+  value: string,
+  field: string,
+): AzureTrustedSigningOptions["fileDigest"] {
+  const normalized = resolveTrustedSigningText(value, field, 16).toUpperCase();
+  if (normalized !== "SHA256" && normalized !== "SHA384" && normalized !== "SHA512") {
+    throw new Error(`Azure Trusted Signing ${field} is unsupported.`);
+  }
+  return normalized;
+}
+
+export function resolveAzureTrustedSigningOptions(input: {
+  readonly publisherName: string;
+  readonly endpoint: string;
+  readonly certificateProfileName: string;
+  readonly codeSigningAccountName: string;
+  readonly fileDigest: string;
+  readonly timestampDigest: string;
+  readonly timestampRfc3161: string;
+}): AzureTrustedSigningOptions {
+  return {
+    publisherName: resolveTrustedSigningText(input.publisherName, "publisher name", 1024),
+    endpoint: resolveTrustedSigningUrl(input.endpoint, "endpoint", new Set(["https:"])),
+    certificateProfileName: resolveTrustedSigningText(
+      input.certificateProfileName,
+      "certificate profile name",
+      256,
+    ),
+    codeSigningAccountName: resolveTrustedSigningText(
+      input.codeSigningAccountName,
+      "account name",
+      256,
+    ),
+    fileDigest: resolveTrustedSigningDigest(input.fileDigest, "file digest"),
+    timestampDigest: resolveTrustedSigningDigest(input.timestampDigest, "timestamp digest"),
+    timestampRfc3161: resolveTrustedSigningUrl(
+      input.timestampRfc3161,
+      "timestamp URL",
+      new Set(["http:", "https:"]),
+    ),
+  };
+}
 
 const BuildEnvConfig = Config.all({
   platform: Config.schema(BuildPlatform, "T3CODE_DESKTOP_PLATFORM").pipe(Config.option),
@@ -2086,20 +2251,34 @@ export function resolveDesktopRuntimeDependencies(
 }
 
 export function resolveGenericUpdateFeedUrl(raw: string): string | undefined {
+  if (Buffer.byteLength(raw, "utf8") > 4096) return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const code = trimmed.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return undefined;
+  }
 
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return undefined;
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return undefined;
+    }
+    // Channel manifests are resolved relative to this directory. Query and
+    // fragment state cannot authenticate those relative requests and would be
+    // exposed in packaged updater metadata, so only a public directory URL is
+    // accepted here.
+    if (!parsed.pathname.endsWith("/")) parsed.pathname = `${parsed.pathname}/`;
+    return parsed.toString();
   } catch {
     return undefined;
   }
-
-  // electron-updater resolves channel files with `new URL(file, baseUrl)`. A
-  // base without a trailing slash replaces the last path segment, so
-  // `.../releases/latest/download` + `nightly.yml` would miss `/download/`.
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
@@ -2149,6 +2328,10 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+}
+
+function isDesktopPreviewVersion(version: string): boolean {
+  return /-pr\./.test(version);
 }
 
 export function resolveDesktopWebAssetBrand(
@@ -2225,15 +2408,30 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         readonly provisioningProfilePath: string;
       }
     | undefined,
-  buildFlavor: T3CodeBuildFlavor = "public",
+  // T3 Pretty's build flavor already occupies this positional slot. Also
+  // accept the parent's WSL-only call shape so both exported APIs remain
+  // compatible.
+  buildFlavorOrWslRuntimeBundled: T3CodeBuildFlavor | boolean = "public",
+  // Windows only, and false when no Linux node-pty prebuild was bundled: the
+  // sidecar staging skips the archive in that case, and listing a resource
+  // whose source file was never written fails the electron-builder step.
+  configuredWslRuntimeBundled = false,
 ) {
+  const buildFlavor: T3CodeBuildFlavor =
+    typeof buildFlavorOrWslRuntimeBundled === "boolean"
+      ? "public"
+      : buildFlavorOrWslRuntimeBundled;
+  const wslRuntimeBundled =
+    typeof buildFlavorOrWslRuntimeBundled === "boolean"
+      ? buildFlavorOrWslRuntimeBundled
+      : configuredWslRuntimeBundled;
   const productName = resolveDesktopProductName(version, buildFlavor);
   const buildConfig: Record<string, unknown> = {
     appId: buildFlavor === "internal" ? INTERNAL_DESKTOP_APP_ID : PUBLIC_DESKTOP_APP_ID,
     productName,
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
-    files: [...DESKTOP_FILE_EXCLUSIONS],
+    files: [...DESKTOP_FILE_EXCLUSIONS, ...(platform === "mac" ? MAC_FILE_EXCLUSIONS : [])],
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -2244,22 +2442,27 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
+      ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-  if (publishConfig) {
-    buildConfig.publish = [publishConfig];
-  } else if (mockUpdates) {
-    buildConfig.publish = [
-      {
-        provider: "generic",
-        url: resolveMockUpdateServerUrl(mockUpdateServerPort),
-      },
-    ];
+  if (!isDesktopPreviewVersion(version)) {
+    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
+    if (publishConfig) {
+      buildConfig.publish = [publishConfig];
+    } else if (mockUpdates) {
+      buildConfig.publish = [
+        {
+          provider: "generic",
+          url: resolveMockUpdateServerUrl(mockUpdateServerPort),
+        },
+      ];
+    }
   }
 
   if (platform === "mac") {
+    const path = yield* Path.Path;
+    const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
@@ -2272,6 +2475,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           schemes: ["t3code", "t3code-dev"],
         },
       ],
+      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -2350,7 +2554,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       verifyUpdateCodeSignature: signed,
     };
     if (signed) {
-      winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;
+      winConfig.azureSignOptions = resolveAzureTrustedSigningOptions(
+        yield* AzureTrustedSigningOptionsConfig,
+      );
     }
     buildConfig.win = winConfig;
   }
@@ -2402,8 +2608,7 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
     return;
   }
 
-  // WSL runs the same CPU arch as the Windows host; universal is mac-only.
-  const linuxArch = input.arch === "x64" ? "x64" : input.arch === "arm64" ? "arm64" : undefined;
+  const linuxArch = resolveWslPrebuildArch(input.arch);
   if (linuxArch === undefined) {
     yield* Effect.logWarning(
       `[desktop-artifact] No WSL node-pty prebuild mapping for arch "${input.arch}"; skipping WSL backend bundling.`,
@@ -2446,6 +2651,56 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
 
   yield* Effect.log(
     `[desktop-artifact] Staged WSL node-pty prebuild (linux-${linuxArch}, node-pty ${nodePtyVersion}).`,
+  );
+});
+
+// tar reads an `-f` target containing a colon as `host:path` and tries to reach
+// it over rsh, so handing it a Windows drive path (C:\...\wsl-runtime.tar.gz)
+// makes Git for Windows' GNU tar fail with "Cannot connect to C: resolve
+// failed". The staged source tree and the archive both live under the build's
+// stage root, so the target is always expressible relative to tar's cwd.
+export const wslRuntimeArchiveTarTarget = (relativeArchivePath: string): string =>
+  relativeArchivePath.replaceAll("\\", "/");
+
+// `archivePath` is relative to the cwd tar runs in; see wslRuntimeArchiveTarTarget.
+export const buildWslRuntimeArchiveArgs = (
+  archivePath: string = WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE.from,
+): ReadonlyArray<string> => [
+  "-czf",
+  archivePath,
+  ...WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES.map((prefix) => `--exclude=${prefix}*`),
+  ...WSL_RUNTIME_ARCHIVE_CONTENT_ROOTS,
+];
+
+export const parseWslRuntimeArchiveMembers = (listing: string): ReadonlyArray<string> =>
+  listing
+    .split(/\r?\n/)
+    .map((member) => member.replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter((member) => member.length > 0);
+
+export const stageWslRuntimeArchive = Effect.fn("stageWslRuntimeArchive")(function* (input: {
+  readonly sourceDir: string;
+  readonly archivePath: string;
+  readonly hashPath: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.makeDirectory(path.dirname(input.archivePath), { recursive: true });
+  const tarTarget = wslRuntimeArchiveTarTarget(path.relative(input.sourceDir, input.archivePath));
+  yield* runCommand(
+    ChildProcess.make("tar", buildWslRuntimeArchiveArgs(tarTarget), {
+      cwd: input.sourceDir,
+    }),
+    { label: "tar WSL runtime", verbose: false },
+  );
+  const hash = NodeCrypto.createHash("sha256");
+  yield* fs
+    .stream(input.archivePath)
+    .pipe(Stream.runForEach((chunk) => Effect.sync(() => hash.update(chunk))));
+  const digest = hash.digest("hex");
+  yield* fs.writeFileString(input.hashPath, `${digest}\n`);
+  yield* Effect.log(
+    `[desktop-artifact] Staged compressed WSL runtime at ${input.archivePath} (${digest}).`,
   );
 });
 
@@ -2492,6 +2747,8 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   readonly overrides: Record<string, string>;
   readonly wslPrebuildPath: string | undefined;
   readonly asarPath: string;
+  readonly wslRuntimeArchivePath: string;
+  readonly wslRuntimeArchiveHashPath: string;
   readonly verbose: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
@@ -2557,6 +2814,16 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
     arch: input.arch,
     prebuildPath: input.wslPrebuildPath,
   });
+  // Skip the archive entirely rather than shipping one the install script must
+  // extract and reject on every launch. The desktop app treats a missing
+  // archive as "no WSL-local runtime" and goes straight to the mounted tree.
+  if (bundlesWslRuntime({ arch: input.arch, prebuildPath: input.wslPrebuildPath })) {
+    yield* stageWslRuntimeArchive({
+      sourceDir: serverStageDir,
+      archivePath: input.wslRuntimeArchivePath,
+      hashPath: input.wslRuntimeArchiveHashPath,
+    });
+  }
 
   yield* Effect.log("[desktop-artifact] Packing server.asar...");
   yield* fs.makeDirectory(path.dirname(input.asarPath), { recursive: true });
@@ -2702,6 +2969,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly stageDistDir: string;
   readonly appExecutableName: string;
   readonly targetArch: typeof BuildArch.Type;
+  readonly expectWslRuntime?: boolean;
   readonly fileLimit?: number;
   readonly verbose?: boolean;
 }) {
@@ -2799,6 +3067,99 @@ export const validateWindowsPackagedPayload = Effect.fn(
       packagedAppDir,
       missingFiles: ["resource-monitor/t3-resource-monitor.exe"],
     });
+  }
+
+  const wslArchivePath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_NAME);
+  const wslArchiveHashPath = path.join(resourcesDir, WSL_RUNTIME_ARCHIVE_HASH_NAME);
+  const [hasWslArchive, hasWslArchiveHash] = yield* Effect.all([
+    isFile(wslArchivePath),
+    isFile(wslArchiveHashPath),
+  ]);
+  if (input.expectWslRuntime === true && (!hasWslArchive || !hasWslArchiveHash)) {
+    return yield* new WindowsPackagedPayloadValidationError({
+      reason: "wsl-runtime-missing",
+      packagedAppDir,
+      missingFiles: [
+        ...(hasWslArchive ? [] : [WSL_RUNTIME_ARCHIVE_NAME]),
+        ...(hasWslArchiveHash ? [] : [WSL_RUNTIME_ARCHIVE_HASH_NAME]),
+      ],
+    });
+  }
+  if (hasWslArchive !== hasWslArchiveHash) {
+    return yield* new WindowsPackagedPayloadValidationError({
+      reason: "wsl-runtime-missing",
+      packagedAppDir,
+      missingFiles: [hasWslArchive ? WSL_RUNTIME_ARCHIVE_HASH_NAME : WSL_RUNTIME_ARCHIVE_NAME],
+    });
+  }
+  if (hasWslArchive && hasWslArchiveHash) {
+    const invalidWslRuntime = (cause: unknown) =>
+      new WindowsPackagedPayloadValidationError({
+        reason: "wsl-runtime-invalid",
+        packagedAppDir,
+        cause,
+      });
+    const recordedHash = yield* fs
+      .readFileString(wslArchiveHashPath)
+      .pipe(Effect.mapError(invalidWslRuntime));
+    const expectedHash = recordedHash.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expectedHash)) {
+      return yield* invalidWslRuntime(new Error("invalid WSL runtime SHA-256 sidecar"));
+    }
+    const archiveHash = NodeCrypto.createHash("sha256");
+    yield* fs.stream(wslArchivePath).pipe(
+      Stream.runForEach((chunk) => Effect.sync(() => archiveHash.update(chunk))),
+      Effect.mapError(invalidWslRuntime),
+    );
+    const actualHash = archiveHash.digest("hex");
+    if (actualHash !== expectedHash) {
+      return yield* invalidWslRuntime(
+        new Error(`WSL runtime SHA-256 mismatch: expected ${expectedHash}, got ${actualHash}`),
+      );
+    }
+
+    const listing = yield* spawnAndCollectOutput(
+      ChildProcess.make("tar", ["-tzf", WSL_RUNTIME_ARCHIVE_NAME], {
+        cwd: resourcesDir,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    ).pipe(Effect.mapError(invalidWslRuntime));
+    if (listing.exitCode !== 0) {
+      return yield* invalidWslRuntime(
+        new Error(`tar could not list WSL runtime archive: ${listing.stderr.trim()}`),
+      );
+    }
+    const members = parseWslRuntimeArchiveMembers(listing.stdout);
+    const forbiddenMember = members.find((member) =>
+      WSL_RUNTIME_ARCHIVE_EXCLUDED_PREFIXES.some((prefix) => member.startsWith(prefix)),
+    );
+    if (forbiddenMember !== undefined) {
+      return yield* invalidWslRuntime(
+        new Error(`WSL runtime archive contains forbidden member ${forbiddenMember}`),
+      );
+    }
+    const wslArch = resolveWslPrebuildArch(input.targetArch);
+    const requiredMembers = [
+      "apps/server/dist/bin.mjs",
+      "node_modules/node-pty/package.json",
+      ...(wslArch === undefined
+        ? []
+        : [
+            `node_modules/node-pty/prebuilds/linux-${wslArch}/pty.node`,
+            `node_modules/node-pty/prebuilds/linux-${wslArch}/t3code-wsl-node-pty.json`,
+          ]),
+    ];
+    const missingMembers = requiredMembers.filter((member) => !members.includes(member));
+    if (missingMembers.length > 0) {
+      return yield* new WindowsPackagedPayloadValidationError({
+        reason: "wsl-runtime-invalid",
+        packagedAppDir,
+        missingFiles: missingMembers,
+        cause: new Error("WSL runtime archive is incomplete"),
+      });
+    }
   }
 
   const fileCount = yield* countPayloadFiles(packagedAppDir);
@@ -3100,21 +3461,28 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   // Windows splits dependencies per process: app.asar carries only the
   // desktop main-process runtime deps, while the server bundle's deps live in
-  // the server.asar sidecar (see stageWindowsServerSidecar). macOS and Linux
-  // keep a single tree, but only the server runtime-externals (natives the
-  // bundled bin.mjs still loads from disk) plus desktop runtime deps.
+  // the server.asar sidecar (see stageWindowsServerSidecar). macOS uses the
+  // parent stage resolver to add only packages external to its merged app.asar.
+  // Linux likewise keeps only server runtime externals plus desktop runtime deps.
   const stageDependencies =
     options.platform === "win"
       ? { ...resolvedDesktopRuntimeDependencies }
-      : {
-          ...resolvedServerRuntimeExternalDependencies,
-          ...resolvedDesktopRuntimeDependencies,
-          ...resolveFffNativeDependencies(
-            options.platform,
-            options.arch,
-            serverPackageJson.dependencies["@ff-labs/fff-node"],
-          ),
-        };
+      : options.platform === "mac"
+        ? resolveMacStageDependencies({
+            serverDependencies: resolvedServerDependencies,
+            desktopDependencies: resolvedDesktopRuntimeDependencies,
+            arch: options.arch,
+            fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+          })
+        : {
+            ...resolvedServerRuntimeExternalDependencies,
+            ...resolvedDesktopRuntimeDependencies,
+            ...resolveFffNativeDependencies(
+              options.platform,
+              options.arch,
+              serverPackageJson.dependencies["@ff-labs/fff-node"],
+            ),
+          };
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
     stageDependencies,
@@ -3147,6 +3515,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           }
         : undefined,
       buildFlavor,
+      bundlesWslRuntime({ arch: options.arch, prebuildPath: options.wslPrebuild }),
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3201,6 +3570,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       overrides: resolvedOverrides,
       wslPrebuildPath: options.wslPrebuild,
       asarPath: windowsServerAsarPath,
+      wslRuntimeArchivePath: path.join(stageAppDir, WSL_RUNTIME_ARCHIVE_EXTRA_RESOURCE.from),
+      wslRuntimeArchiveHashPath: path.join(
+        stageAppDir,
+        WSL_RUNTIME_ARCHIVE_HASH_EXTRA_RESOURCE.from,
+      ),
+
       verbose: options.verbose,
     });
   }
@@ -3236,10 +3611,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     buildEnv.GYP_MSVS_VERSION = buildEnv.GYP_MSVS_VERSION ?? "2022";
   }
   if (options.verbose) {
-    buildEnv.DEBUG =
-      buildEnv.DEBUG === undefined
-        ? "electron-builder,electron-builder:*"
-        : `${buildEnv.DEBUG},electron-builder,electron-builder:*`;
+    const debugNamespaces = [
+      "electron-builder",
+      "electron-builder:*",
+      ...(options.platform === "mac" ? ["electron-osx-sign*", "electron-notarize*"] : []),
+    ];
+    buildEnv.DEBUG = [buildEnv.DEBUG, ...debugNamespaces].filter(Boolean).join(",");
   }
 
   yield* Effect.log(
@@ -3297,6 +3674,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       stageDistDir,
       appExecutableName: `${resolveDesktopProductName(appVersion, buildFlavor)}.exe`,
       targetArch: options.arch,
+      expectWslRuntime: bundlesWslRuntime({
+        arch: options.arch,
+        prebuildPath: options.wslPrebuild,
+      }),
       verbose: options.verbose,
     });
   }

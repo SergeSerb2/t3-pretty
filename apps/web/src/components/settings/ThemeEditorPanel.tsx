@@ -50,6 +50,7 @@ import {
   showThemeInspectorHover,
   type ThemeElementInspection,
 } from "./themeInspector";
+import { shouldCloseThemeEditorOnKeyDown } from "./themeEditorKeyboard";
 
 const THEME_EDITOR_SIMPLE_ROLES: ReadonlyArray<ThemeColorRole> = ["canvas", "accent"];
 
@@ -321,6 +322,13 @@ export function ThemeEditorPanel({
   // Null keeps the responsive default size; a value is a corner-grip resize.
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
   const resizeStartRef = useRef<{
     pointerX: number;
@@ -332,6 +340,34 @@ export function ThemeEditorPanel({
     width: number;
     height: number;
   } | null>(null);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!shouldCloseThemeEditorOnKeyDown(event)) return;
+      event.preventDefault();
+      onOpenChangeRef.current(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      // This panel intentionally is non-modal, so do not steal focus from an
+      // app control the user moved to while it was open. Restore only when
+      // removing the focused panel left the document body focused.
+      const returnFocus = returnFocusRef.current;
+      if (
+        document.activeElement === document.body &&
+        returnFocus !== null &&
+        returnFocus !== document.body &&
+        returnFocus.isConnected
+      ) {
+        try {
+          returnFocus.focus({ preventScroll: true });
+        } catch {
+          // A host control can become unfocusable while remaining connected.
+        }
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     // A panel sized wider than the window can no longer be clamped back into
@@ -972,20 +1008,6 @@ export function ThemeEditorPanel({
     </div>
   );
 
-  const renderSidebarArtworkToggle = () => (
-    <label className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3">
-      <span className="text-sm font-medium">Sidebar artwork</span>
-      <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>Show T3 Pretty environment artwork</span>
-        <Switch
-          aria-label="Allow sidebar artwork with this theme"
-          checked={sidebarArtwork}
-          onCheckedChange={(checked) => setSidebarArtwork(Boolean(checked))}
-        />
-      </span>
-    </label>
-  );
-
   const renderColorsHeader = () => (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-3">
       <div>
@@ -1178,6 +1200,7 @@ export function ThemeEditorPanel({
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}
         onPointerUp={endDrag}
+        onLostPointerCapture={endDrag}
       >
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <h2 className="shrink-0 truncate text-sm font-medium">
@@ -1284,6 +1307,7 @@ export function ThemeEditorPanel({
             onPointerDown={handleResizePointerDown}
             onPointerMove={handleResizePointerMove}
             onPointerUp={endResize}
+            onLostPointerCapture={endResize}
           >
             <svg
               className="size-2.5"

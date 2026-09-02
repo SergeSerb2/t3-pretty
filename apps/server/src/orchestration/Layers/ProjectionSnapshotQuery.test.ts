@@ -29,6 +29,7 @@ import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import * as ToolProgress from "../ToolProgress.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { encodeThreadDetailPageCursor } from "../threadDetailCursor.ts";
+import { projectThreadDetailSnapshot } from "../ActivityPayloadProjection.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
@@ -94,6 +95,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           interaction_mode,
           branch,
           worktree_path,
+          linked_pull_request_json,
           latest_turn_id,
           latest_user_message_at,
           pending_approval_count,
@@ -114,6 +116,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'default',
           NULL,
           NULL,
+          '{"projectId":"project-1","repository":"pingdotgg/t3code","number":42,"url":"https://github.com/pingdotgg/t3code/pull/42"}',
           'turn-1',
           '2026-02-24T00:00:04.000Z',
           1,
@@ -316,6 +319,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          linkedPullRequest: {
+            projectId: asProjectId("project-1"),
+            repository: "pingdotgg/t3code",
+            number: 42,
+            url: "https://github.com/pingdotgg/t3code/pull/42",
+          },
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -333,6 +342,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
@@ -437,6 +447,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          linkedPullRequest: {
+            projectId: asProjectId("project-1"),
+            repository: "pingdotgg/t3code",
+            number: 42,
+            url: "https://github.com/pingdotgg/t3code/pull/42",
+          },
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -454,6 +470,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
@@ -483,6 +500,77 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value, snapshot.threads[0]);
+      }
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          created_at
+        )
+        VALUES
+          (
+            'activity-task-started',
+            'thread-1',
+            'turn-1',
+            'info',
+            'task.started',
+            'Ship the query filter',
+            '{"taskId":"task-1","detail":"Ship the query filter"}',
+            '2026-02-24T00:00:06.100Z'
+          ),
+          (
+            'activity-malformed-tool',
+            'thread-1',
+            'turn-1',
+            'info',
+            'tool.completed',
+            'Malformed tool output',
+            'not-json',
+            '2026-02-24T00:00:06.200Z'
+          )
+      `;
+
+      const detailWithoutActivities = yield* snapshotQuery.getThreadDetailById(
+        ThreadId.make("thread-1"),
+        { activityKinds: [] },
+      );
+      assert.equal(detailWithoutActivities._tag, "Some");
+      if (detailWithoutActivities._tag === "Some") {
+        assert.deepEqual(detailWithoutActivities.value.activities, []);
+        assert.deepEqual(detailWithoutActivities.value.messages, snapshot.threads[0]?.messages);
+        assert.deepEqual(
+          detailWithoutActivities.value.proposedPlans,
+          snapshot.threads[0]?.proposedPlans,
+        );
+        assert.deepEqual(
+          detailWithoutActivities.value.checkpoints,
+          snapshot.threads[0]?.checkpoints,
+        );
+      }
+
+      const detailWithTaskActivities = yield* snapshotQuery.getThreadDetailById(
+        ThreadId.make("thread-1"),
+        { activityKinds: ["task.started", "task.progress"] },
+      );
+      assert.equal(detailWithTaskActivities._tag, "Some");
+      if (detailWithTaskActivities._tag === "Some") {
+        assert.deepEqual(detailWithTaskActivities.value.activities, [
+          {
+            id: asEventId("activity-task-started"),
+            tone: "info",
+            kind: "task.started",
+            summary: "Ship the query filter",
+            payload: { taskId: "task-1", detail: "Ship the query filter" },
+            turnId: asTurnId("turn-1"),
+            createdAt: "2026-02-24T00:00:06.100Z",
+          },
+        ]);
       }
     }),
   );
@@ -640,17 +728,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadIsCrossRepository: null,
         },
         {
-          threadId: ThreadId.make("eligible-worktree"),
-          branch: "feature/worktree",
-          cwd: "/tmp/project-worktree",
-          branchObservedAt: "2026-08-10T00:00:03.800Z",
-          branchEventId: EventId.make("event-eligible-worktree-branch"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
-        },
-        {
           threadId: ThreadId.make("eligible-stopped"),
           branch: "feature/stopped",
           cwd: "/tmp/project-active",
@@ -661,7 +738,28 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branchHeadOwner: null,
           branchHeadIsCrossRepository: null,
         },
+        {
+          threadId: ThreadId.make("eligible-worktree"),
+          branch: "feature/worktree",
+          cwd: "/tmp/project-worktree",
+          branchObservedAt: "2026-08-10T00:00:03.800Z",
+          branchEventId: EventId.make("event-eligible-worktree-branch"),
+          branchHeadRef: null,
+          branchHeadRepository: null,
+          branchHeadOwner: null,
+          branchHeadIsCrossRepository: null,
+        },
       ]);
+
+      const firstPage = yield* snapshotQuery.listMergedPullRequestCandidates({ limit: 2 });
+      assert.deepEqual(firstPage, candidates.slice(0, 2));
+      const lastFirstPageCandidate = firstPage.at(-1);
+      assert.ok(lastFirstPageCandidate);
+      const secondPage = yield* snapshotQuery.listMergedPullRequestCandidates({
+        afterThreadId: lastFirstPageCandidate.threadId,
+        limit: 2,
+      });
+      assert.deepEqual(secondPage, candidates.slice(2));
     }),
   );
 
@@ -2830,9 +2928,84 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
           'thread-w',
           'turn-5',
           'tool',
-          'tool.completed',
+          CASE
+            WHEN sequence = 2 THEN 'tool.updated'
+            WHEN sequence IN (3, 70) THEN 'context-window.updated'
+            ELSE 'tool.completed'
+          END,
           'ran tool',
-          printf('{"sequence":%d}', sequence),
+          CASE
+            WHEN sequence IN (2, 80) THEN json_object(
+              'itemType', 'command_execution',
+              'toolCallId', 'cross-batch-call',
+              'title', CASE WHEN sequence = 80 THEN 'Build completed' ELSE 'Build' END,
+              'status', 'completed',
+              'data', json_object(
+                'toolCallId', 'cross-batch-call',
+                'item', json_object(
+                  'command', 'vp test run',
+                  'aggregatedOutput', printf(
+                    'command output%s%s',
+                    char(10),
+                    replace(hex(zeroblob(8192)), '00', 'x')
+                  )
+                ),
+                'rawOutput', printf(
+                  'raw output%s%s',
+                  char(10),
+                  replace(hex(zeroblob(8192)), '00', 'y')
+                ),
+                'files', json_array(json_object('path', 'apps/server/src/snapshot.ts'))
+              )
+            )
+            WHEN sequence = 10 THEN json_object(
+              'itemType', 'mcp_tool_call',
+              'status', 'completed',
+              'data', json_object(
+                'item', json_object(
+                  'type', 'mcpToolCall',
+                  'id', 'mcp-item-10',
+                  'tool', 'fetch_pr',
+                  'server', 'github',
+                  'status', 'completed',
+                  'arguments', json_object('pr', 42),
+                  'result', json_object(
+                    'content', json_array(json_object(
+                      'type', 'text',
+                      'text', printf(
+                        'PR body line one%s%s',
+                        char(10),
+                        replace(hex(zeroblob(8192)), '00', 'z')
+                      )
+                    ))
+                  ),
+                  '_meta', json_object('raw', replace(hex(zeroblob(8192)), '00', 'q'))
+                )
+              )
+            )
+            WHEN sequence = 11 THEN json_object(
+              'itemType', 'command_execution',
+              'status', 'completed',
+              'data', json_object(
+                'item', json_object(
+                  'status', 'failed',
+                  'command', 'vp test run',
+                  'aggregatedOutput', printf(
+                    'failed command%s%s',
+                    char(10),
+                    replace(hex(zeroblob(8192)), '00', 'w')
+                  )
+                ),
+                'rawOutput', json_object('stdout', 'failed output'),
+                'files', json_array(json_object('path', 'apps/server/src/failed.ts'))
+              )
+            )
+            WHEN sequence IN (3, 70) THEN json_object(
+              'usedTokens', sequence * 100,
+              'modelContextWindow', 100000
+            )
+            ELSE json_object('sequence', sequence)
+          END,
           sequence,
           '2026-03-01T00:04:00.000Z'
         FROM activity_rows
@@ -2910,12 +3083,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       const detailWithPinnedRequests = yield* snapshotQuery.getThreadDetailById(threadW);
       assert.equal(detailWithPinnedRequests._tag, "Some");
       if (detailWithPinnedRequests._tag === "Some") {
-        const ids = detailWithPinnedRequests.value.activities.map((activity) => activity.id);
+        const ids = new Set(
+          detailWithPinnedRequests.value.activities.map((activity) => activity.id),
+        );
         assert.equal(detailWithPinnedRequests.value.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
       }
 
       const windowWithPinnedRequests = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
@@ -2923,12 +3098,67 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       });
       assert.equal(windowWithPinnedRequests._tag, "Some");
       if (windowWithPinnedRequests._tag === "Some") {
-        const ids = windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id);
+        const ids = new Set(
+          windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id),
+        );
         assert.equal(windowWithPinnedRequests.value.thread.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
+      }
+
+      const fullSnapshot = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(fullSnapshot._tag, "Some");
+      if (
+        detailWithPinnedRequests._tag === "Some" &&
+        fullSnapshot._tag === "Some" &&
+        windowWithPinnedRequests._tag === "Some"
+      ) {
+        const projectedFullSnapshot = projectThreadDetailSnapshot(fullSnapshot.value);
+        const projectedRawBaseline = projectThreadDetailSnapshot({
+          snapshotSequence: fullSnapshot.value.snapshotSequence,
+          thread: detailWithPinnedRequests.value,
+        });
+        assert.deepStrictEqual(projectedFullSnapshot, projectedRawBaseline);
+
+        const rawActivitiesById = new Map(
+          detailWithPinnedRequests.value.activities.map((activity) => [activity.id, activity]),
+        );
+        const projectedWindowSnapshot = projectThreadDetailSnapshot(windowWithPinnedRequests.value);
+        const projectedWindowBaseline = projectThreadDetailSnapshot({
+          ...windowWithPinnedRequests.value,
+          thread: {
+            ...windowWithPinnedRequests.value.thread,
+            activities: windowWithPinnedRequests.value.thread.activities.map(
+              (activity) => rawActivitiesById.get(activity.id) ?? activity,
+            ),
+          },
+        });
+        assert.deepStrictEqual(projectedWindowSnapshot, projectedWindowBaseline);
+
+        const projectedIds = new Set(
+          projectedFullSnapshot.thread.activities.map((activity) => activity.id),
+        );
+        assert.equal(projectedIds.has(asEventId("activity-0002")), false);
+        assert.equal(projectedIds.has(asEventId("activity-0003")), false);
+        assert.equal(projectedIds.has(asEventId("activity-0070")), true);
+
+        const failedCommand = projectedFullSnapshot.thread.activities.find(
+          (activity) => activity.id === asEventId("activity-0011"),
+        );
+        assert.deepStrictEqual(failedCommand?.payload, {
+          itemType: "command_execution",
+          status: "failed",
+          data: {
+            item: {
+              command: "vp test run",
+              aggregatedOutput: "failed command",
+            },
+            files: [{ path: "apps/server/src/failed.ts" }],
+            rawOutput: { content: "failed output" },
+          },
+        });
       }
     }),
   );

@@ -306,6 +306,15 @@ interface BufferedNotificationHandler<A> {
   readonly pending: Array<A>;
 }
 
+export const ACP_BUFFERED_NOTIFICATION_CAPACITY = 256;
+
+function bufferNotification<A>(registration: BufferedNotificationHandler<A>, notification: A) {
+  if (registration.pending.length === ACP_BUFFERED_NOTIFICATION_CAPACITY) {
+    registration.pending.shift();
+  }
+  registration.pending.push(notification);
+}
+
 export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
   stdio: Stdio.Stdio,
   options: AcpClientOptions = {},
@@ -360,14 +369,14 @@ export const make = Effect.fn("effect-acp/AcpClient.make")(function* (
     switch (notification._tag) {
       case "SessionUpdate": {
         if (notificationHandlers.sessionUpdate.handlers.length === 0) {
-          notificationHandlers.sessionUpdate.pending.push(notification.params);
+          bufferNotification(notificationHandlers.sessionUpdate, notification.params);
           return Effect.void;
         }
         return runNotificationHandlers(notificationHandlers.sessionUpdate, notification.params);
       }
       case "ElicitationComplete": {
         if (notificationHandlers.elicitationComplete.handlers.length === 0) {
-          notificationHandlers.elicitationComplete.pending.push(notification.params);
+          bufferNotification(notificationHandlers.elicitationComplete, notification.params);
           return Effect.void;
         }
         return runNotificationHandlers(

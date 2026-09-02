@@ -23,6 +23,7 @@ function makeInput(overrides: Partial<QuitHoldKeyInput>): QuitHoldKeyInput {
 
 function makeHarness(options?: {
   enabled?: boolean;
+  isActive?: () => boolean;
   platform?: NodeJS.Platform;
   isEnabled?: () => Promise<boolean>;
 }) {
@@ -31,6 +32,7 @@ function makeHarness(options?: {
   const handler = makeQuitHoldHandler({
     platform: options?.platform ?? "darwin",
     isEnabled: options?.isEnabled ?? (() => Promise.resolve(options?.enabled ?? true)),
+    ...(options?.isActive === undefined ? {} : { isActive: options.isActive }),
     notify: (state) => notifications.push(state),
     quit,
   });
@@ -154,6 +156,27 @@ describe("makeQuitHoldHandler", () => {
     await harness.holdFor(QUIT_HOLD_DURATION_MS + 200);
     await harness.send(makeInput({ type: "keyUp" }));
     expect(harness.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not quit after the owning window is no longer active", async () => {
+    let active = true;
+    let resolveEnabled: ((enabled: boolean) => void) | undefined;
+    const harness = makeHarness({
+      isActive: () => active,
+      isEnabled: () =>
+        new Promise((resolve) => {
+          resolveEnabled = resolve;
+        }),
+    });
+    await harness.send(makeInput({}));
+    active = false;
+
+    resolveEnabled?.(false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(harness.quit).not.toHaveBeenCalled();
+    expect(harness.notifications).toEqual(["down", "up"]);
   });
 
   it("quits on a quick double tap, even when the first release was never seen", async () => {

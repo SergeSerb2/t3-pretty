@@ -14,6 +14,7 @@ import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  environmentRpcKey,
 } from "./runtime.ts";
 
 const EMPTY_GLOBALLY_ENABLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
@@ -114,7 +115,7 @@ export function createSkillAtoms<R, E>(
       // Per repo: refreshing one source must not swallow a refresh of another.
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) => `${environmentId}:${input.repo ?? ""}`,
+        key: environmentRpcKey,
       },
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => {

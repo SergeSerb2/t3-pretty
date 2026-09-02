@@ -1,4 +1,6 @@
 import {
+  DESKTOP_ELECTRON_PROCESS_MAX_COUNT,
+  DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH,
   DesktopHostTelemetryMessage,
   type DesktopHostTelemetrySnapshot,
   type DesktopTelemetryControlMessage,
@@ -72,6 +74,11 @@ function booleanState(value: boolean): HostPowerSnapshot["onBattery"] {
   return value ? "true" : "false";
 }
 
+const finiteOrZero = (value: number): number => (Number.isFinite(value) ? value : 0);
+
+const speedLimitPercent = (value: number): Option.Option<number> =>
+  Number.isFinite(value) ? Option.some(Math.max(0, Math.min(100, value))) : Option.none();
+
 function idleState(value: ElectronPowerMonitor.ElectronIdleState): HostPowerSnapshot["idle"] {
   switch (value) {
     case "active":
@@ -107,7 +114,7 @@ function updatePowerState(state: PowerState, event: PowerEvent): PowerState {
     case "thermal":
       return { ...state, thermalState: event.value };
     case "speedLimit":
-      return { ...state, speedLimitPercent: Option.some(event.value) };
+      return { ...state, speedLimitPercent: speedLimitPercent(event.value) };
   }
 }
 
@@ -154,7 +161,10 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     active: DEFAULT_HOST_POWER_ACTIVE_INTERVAL,
     idle: DEFAULT_HOST_POWER_IDLE_INTERVAL,
   });
-  const powerEvents = yield* Queue.unbounded<PowerEvent>();
+  // Electron can deliver power/thermal bursts while a metrics sample is still
+  // running. The reducer and subsequent polling recover current state, so keep
+  // a generous recent window instead of retaining an unlimited event backlog.
+  const powerEvents = yield* Queue.sliding<PowerEvent>(32);
   const sampleTriggers = yield* Queue.sliding<void>(1);
   const diagnosticsDemandSources = yield* Ref.make<ReadonlySet<string>>(new Set());
   const latest = yield* Ref.make(Option.none<DesktopHostTelemetrySnapshot>());
@@ -243,7 +253,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
         power: {
           source: "electron-main",
           idle: observedPower.idle,
-          idleSeconds,
+          idleSeconds: Math.max(0, finiteOrZero(idleSeconds)),
           locked: observedPower.locked,
           suspended: observedPower.suspended,
           onBattery: observedPower.onBattery,
@@ -253,19 +263,35 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           updatedAt: sampledAt,
         },
         speedLimitPercent: observedPower.speedLimitPercent,
-        electronProcesses: metrics.map((metric) => ({
+        ...(metrics.length > DESKTOP_ELECTRON_PROCESS_MAX_COUNT
+          ? { electronProcessesTruncated: true }
+          : {}),
+        electronProcesses: metrics.slice(0, DESKTOP_ELECTRON_PROCESS_MAX_COUNT).map((metric) => ({
           pid: metric.pid,
-          creationTimeMs: Math.max(0, Math.round(metric.creationTime)),
+          creationTimeMs: Math.max(0, Math.round(finiteOrZero(metric.creationTime))),
           type: metric.type,
-          ...(metric.name === undefined ? {} : { name: metric.name }),
-          ...(metric.serviceName === undefined ? {} : { serviceName: metric.serviceName }),
-          cpuPercent: metric.cpu.percentCPUUsage,
-          ...(metric.cpu.cumulativeCPUUsage === undefined
+          ...(metric.name === undefined
+            ? {}
+            : { name: metric.name.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH) }),
+          ...(metric.serviceName === undefined
+            ? {}
+            : {
+                serviceName: metric.serviceName.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH),
+              }),
+          cpuPercent: finiteOrZero(metric.cpu.percentCPUUsage),
+          ...(metric.cpu.cumulativeCPUUsage === undefined ||
+          !Number.isFinite(metric.cpu.cumulativeCPUUsage)
             ? {}
             : { cumulativeCpuSeconds: metric.cpu.cumulativeCPUUsage }),
-          idleWakeupsPerSecond: metric.cpu.idleWakeupsPerSecond,
-          workingSetBytes: Math.max(0, Math.round(metric.memory.workingSetSize * 1024)),
-          peakWorkingSetBytes: Math.max(0, Math.round(metric.memory.peakWorkingSetSize * 1024)),
+          idleWakeupsPerSecond: finiteOrZero(metric.cpu.idleWakeupsPerSecond),
+          workingSetBytes: Math.max(
+            0,
+            Math.round(finiteOrZero(metric.memory.workingSetSize) * 1024),
+          ),
+          peakWorkingSetBytes: Math.max(
+            0,
+            Math.round(finiteOrZero(metric.memory.peakWorkingSetSize) * 1024),
+          ),
         })),
       };
 

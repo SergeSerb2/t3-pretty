@@ -349,16 +349,14 @@ it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
         const cause = PlatformError.systemError({
           _tag: "PermissionDenied",
           module: "FileSystem",
-          method: "readFileString",
+          method: "open",
           pathOrDescriptor: sourcePath,
         });
         const resolver = yield* makeResolverWithFileSystem(
           FileSystem.FileSystem.of({
             ...fileSystem,
-            readFileString: (filePath, options) =>
-              filePath === sourcePath
-                ? Effect.fail(cause)
-                : fileSystem.readFileString(filePath, options),
+            open: (filePath, options) =>
+              filePath === sourcePath ? Effect.fail(cause) : fileSystem.open(filePath, options),
           }),
         );
 
