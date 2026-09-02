@@ -37,6 +37,10 @@ const syncScriptPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "./run-upstream-sync.sh",
 );
+const currentSyncFallbackPath = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "./current-sync-fallback.awk",
+);
 const mobileReleasePath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "./publish-mobile-release.sh",
@@ -566,6 +570,55 @@ ${">".repeat(7)} theirs
     assert.include(script, "write_sync_pr_body");
     assert.include(script, "The complete conflict-resolution audit");
     assert.notInclude(script, "cat .t3-fork/upstream-sync-report.md");
+    assert.include(script, "current_sync_used_fallback");
+    assert.include(script, "current-sync-fallback.awk");
+    assert.notInclude(script, 'grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md');
+  });
+
+  it("checks fallbacks only in the current nightly report section", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-fallback-"),
+    );
+    const reportPath = NodePath.join(temporaryDirectory, "upstream-sync-report.md");
+    const currentTag = "v0.0.39-nightly.20260902.1260";
+    const check = (report) => {
+      NodeFS.writeFileSync(reportPath, report);
+      return NodeChildProcess.spawnSync(
+        "awk",
+        ["-v", `tag=${currentTag}`, "-f", currentSyncFallbackPath, reportPath],
+        { encoding: "utf8" },
+      ).status;
+    };
+
+    try {
+      assert.equal(
+        check(`# T3 Pretty upstream integration report
+- Parent nightly: \`v0.0.38-nightly.20260901.1248\`
+- 1 file took the fork-side fallback
+- Parent nightly: \`${currentTag}\`
+- None. The resolver did not omit any parent change.
+`),
+        1,
+      );
+      assert.equal(
+        check(`# T3 Pretty upstream integration report
+- Parent nightly: \`${currentTag}\`
+- None. The resolver did not omit any parent change.
+- Parent nightly: \`v0.0.38-nightly.20260901.1248\`
+- 1 file took the fork-side fallback
+`),
+        1,
+      );
+      assert.equal(
+        check(`# T3 Pretty upstream integration report
+- Parent nightly: \`${currentTag}\` (reconciled)\r
+- 1 file took the fork-side fallback
+`),
+        0,
+      );
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true });
+    }
   });
 
   it("refuses to reuse a legacy resolution branch without its durable report", () => {

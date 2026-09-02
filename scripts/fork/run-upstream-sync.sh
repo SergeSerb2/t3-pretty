@@ -549,12 +549,18 @@ push_sync_branch
 
 retry node scripts/fork/origin-forge.mjs setup-ci
 pr_body_path="${CACHE_ROOT}/t3-pretty-upstream-sync.md"
+current_sync_used_fallback() {
+  [[ -f .t3-fork/upstream-sync-report.md ]] || return 1
+  awk -v tag="$UPSTREAM_TAG" \
+    -f scripts/fork/current-sync-fallback.awk \
+    .t3-fork/upstream-sync-report.md 2>/dev/null
+}
 write_sync_pr_body() {
   printf '%s\n\n' \
     'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
     'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
   printf 'The complete conflict-resolution audit for `%s` is committed in `.t3-fork/upstream-sync-report.md`.\n' "$UPSTREAM_TAG"
-  if grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md 2>/dev/null; then
+  if current_sync_used_fallback; then
     printf '\n%s\n' 'Some conflicted files took the deterministic fork-side fallback because no model resolution was available; the committed report lists every parent change it omitted.'
   fi
 }
@@ -637,7 +643,7 @@ fi
 # especially when the cause is a config failure like a missing
 # CLI_PROXY_API_KEY, where every conflicted file quietly kept the fork
 # side. Annotate the build and file a per-tag notice PR at the report.
-if grep -q "fork-side fallback" .t3-fork/upstream-sync-report.md 2>/dev/null; then
+if current_sync_used_fallback; then
   fallback_note="The sync for $UPSTREAM_TAG landed, but some conflicted files took the deterministic fork-side fallback because no model resolution was available. Review .t3-fork/upstream-sync-report.md on main for every omitted parent change, and check CLI_PROXY_API_KEY if every file fell back."
   if command -v buildkite-agent >/dev/null; then
     buildkite-agent annotate --style warning --context upstream-sync-fallback "$fallback_note" || true
