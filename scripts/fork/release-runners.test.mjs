@@ -1,5 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -12,6 +13,11 @@ const desktopWorkflow = NodeFS.readFileSync(
 );
 const mobileRelease = NodeFS.readFileSync(
   NodePath.resolve(here, "publish-mobile-release.sh"),
+  "utf8",
+);
+const macosRelease = NodeFS.readFileSync(NodePath.resolve(here, "build-macos-dmg.sh"), "utf8");
+const appleSigningLock = NodeFS.readFileSync(
+  NodePath.resolve(here, "apple-signing-lock.sh"),
   "utf8",
 );
 const androidRelease = NodeFS.readFileSync(
@@ -227,10 +233,15 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(mobileRelease, "--github-output");
     assert.include(mobileRelease, "APPLE_TEAM_ID:-78A5P57U23");
     assert.include(mobileRelease, "load_secret CURSOR_API_KEY 0");
-    assert.include(mobileRelease, 'lockdir="/tmp/t3-pretty-ios-mobile.lock"');
-    assert.include(mobileRelease, 'mkdir "$lockdir"');
-    assert.include(mobileRelease, "Removing stale ios-mobile lock");
-    assert.include(mobileRelease, "Timed out waiting for another ios-mobile publish");
+    assert.include(appleSigningLock, "/tmp/t3-pretty-ios-mobile.lock");
+    assert.include(appleSigningLock, 'mkdir "$apple_signing_lockdir"');
+    assert.include(appleSigningLock, "Removing stale Apple signing lock");
+    assert.include(appleSigningLock, "Timed out waiting for Apple signing");
+    for (const release of [mobileRelease, macosRelease]) {
+      assert.include(release, 'source "$root/scripts/fork/apple-signing-lock.sh"');
+      assert.include(release, "apple_signing_lock_acquire");
+      assert.include(release, "apple_signing_lock_release");
+    }
     assert.include(mobileRelease, ".cache/t3-pretty-release/ios-native-submit");
     assert.include(mobileRelease, "origin/main already records a macos-release TestFlight submit");
     assert.include(mobileRelease, "Runner already submitted a TestFlight IPA");
@@ -580,5 +591,66 @@ describe("macos review-only pre-command hook", () => {
     const refused = run({ T3_PRETTY_REVIEW_ONLY: "1", BUILDKITE_STEP_KEY: "macos-dmg" });
     assert.equal(refused.status, 1);
     assert.include(refused.stderr, "review-only");
+  });
+});
+
+describe("Apple signing host lock", () => {
+  const helper = NodePath.resolve(here, "apple-signing-lock.sh");
+
+  it("blocks a second signer and permits it after release", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-apple-signing-lock-"));
+    const lockdir = NodePath.join(root, "lock");
+    try {
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          `set -euo pipefail
+source "$1"
+apple_signing_lockdir="$2"
+apple_signing_lock_acquire
+if (apple_signing_lock_acquire 2>/dev/null); then
+  echo "second signer unexpectedly acquired the lock" >&2
+  exit 1
+fi
+printf 'not the current process start\n' > "$apple_signing_lockdir/started-at"
+if apple_signing_lock_holder_alive; then
+  echo "reused pid unexpectedly preserved the stale lock" >&2
+  exit 1
+fi
+apple_signing_lock_release
+apple_signing_lock_acquire
+apple_signing_lock_release
+
+mkdir "$apple_signing_lockdir"
+printf 'invalid\n' > "$apple_signing_lockdir/pid"
+if ! apple_signing_lock_holder_alive; then
+  echo "new lock was stolen before its owner metadata settled" >&2
+  exit 1
+fi
+touch -t 200001010000 "$apple_signing_lockdir"
+if apple_signing_lock_holder_alive; then
+  echo "stale malformed lock was treated as live" >&2
+  exit 1
+fi
+rm -f "$apple_signing_lockdir/pid"
+rmdir "$apple_signing_lockdir"`,
+          "apple-signing-lock-test",
+          helper,
+          lockdir,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            T3CODE_APPLE_SIGNING_LOCK_TIMEOUT_SECONDS: "0",
+            T3CODE_APPLE_SIGNING_LOCK_POLL_SECONDS: "0",
+          },
+        },
+      );
+      assert.isFalse(NodeFS.existsSync(lockdir));
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

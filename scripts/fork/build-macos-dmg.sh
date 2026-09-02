@@ -5,6 +5,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+# shellcheck source=apple-signing-lock.sh
+source "$root/scripts/fork/apple-signing-lock.sh"
 
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
@@ -125,14 +127,21 @@ fi
 vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
 node scripts/update-release-package-versions.ts "$version"
 
-tmp="${TMPDIR:-/tmp}/t3-macos-release-$$"
-mkdir -p "$tmp"
+tmp=""
 cleanup() {
-  security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
-  security delete-keychain "$tmp/fork-release.keychain-db" >/dev/null 2>&1 || true
-  rm -rf "$tmp"
+  if [[ "$apple_signing_lock_held" == "1" ]]; then
+    security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${tmp:-}" ]]; then
+    security delete-keychain "$tmp/fork-release.keychain-db" >/dev/null 2>&1 || true
+    rm -rf "$tmp"
+  fi
+  apple_signing_lock_release
 }
 trap cleanup EXIT
+apple_signing_lock_acquire
+tmp="${TMPDIR:-/tmp}/t3-macos-release-$$"
+mkdir -p "$tmp"
 
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
 printf '%s' "$APPLE_API_KEY" > "$key_path"

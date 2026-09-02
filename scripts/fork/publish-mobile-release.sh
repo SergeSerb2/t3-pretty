@@ -25,6 +25,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+# shellcheck source=apple-signing-lock.sh
+source "$root/scripts/fork/apple-signing-lock.sh"
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 export APP_VARIANT="${APP_VARIANT:-production}"
@@ -209,22 +211,6 @@ native_submit_recorded() {
   return 1
 }
 
-ios_lock_holder_alive() {
-  local pid cmd other
-  if [[ -f "$lockdir/pid" ]]; then
-    pid="$(tr -d '[:space:]' < "$lockdir/pid" || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-      cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-      case "$cmd" in
-        *publish-mobile-release.sh* | *"/eas "* | *eas\ build* | *xcodebuild*) return 0 ;;
-      esac
-    fi
-  fi
-  other="$(pgrep -f 'scripts/fork/publish-mobile-release.sh' || true)"
-  other="$(printf '%s\n' "$other" | grep -v "^${$}$" || true)"
-  [[ -n "$other" ]]
-}
-
 # Upstream sync already has the merged tree. Re-checking out BUILDKITE_COMMIT
 # would reset to the scheduled starting SHA and publish a stale OTA.
 if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
@@ -291,22 +277,6 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" && "$MODE" != "build" && "$FO
   esac
 fi
 
-lockdir="/tmp/t3-pretty-ios-mobile.lock"
-lock_wait_deadline=$((SECONDS + 900))
-while ! mkdir "$lockdir" 2>/dev/null; do
-  if ios_lock_holder_alive; then
-    if (( SECONDS >= lock_wait_deadline )); then
-      echo "Timed out waiting for another ios-mobile publish on this Mac." >&2
-      exit 1
-    fi
-    echo "Waiting for another ios-mobile publish on this Mac..."
-    sleep 10
-    continue
-  fi
-  echo "Removing stale ios-mobile lock at $lockdir"
-  rm -rf "$lockdir"
-done
-printf '%s\n' "$$" > "$lockdir/pid"
 tmp=""
 eas_json="$root/apps/mobile/eas.json"
 eas_json_bak=""
@@ -317,9 +287,10 @@ cleanup() {
   if [[ -n "${tmp:-}" ]]; then
     rm -rf "$tmp"
   fi
-  rm -rf "$lockdir"
+  apple_signing_lock_release
 }
 trap cleanup EXIT
+apple_signing_lock_acquire
 
 if ! load_secret EXPO_TOKEN; then
   echo "EXPO_TOKEN is required to publish OTA that installed TestFlight binaries poll." >&2
