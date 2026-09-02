@@ -920,12 +920,13 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-h
 
 /* Composer: upstream's own glass shell (chat-composer-glass-shell and the
    floating pills) reads these vars; at the stock 80% fill it looks solid
-   over the wash. Scoped to the chat column so it wins over the inline
-   root-level value the Settings "Glass opacity" slider writes — that slider
-   keeps governing every other theme. */
+   over the wash. 42% matches the sidebar/header chrome plate so the chat
+   box reads as the same frosted glass. Scoped to the chat column so it
+   wins over the inline root-level value the Settings "Glass opacity"
+   slider writes — that slider keeps governing every other theme. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   main[data-slot="sidebar-inset"] {
-  --glass-opacity: 52%;
+  --glass-opacity: 42%;
   --glass-blur: 16px;
   --glass-saturation: 1;
 }
