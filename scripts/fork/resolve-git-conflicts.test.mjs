@@ -546,7 +546,7 @@ ${">".repeat(7)} theirs
     // next nightly piles more conflicts onto the same unintegrated merge.
     // Batched model requests plus a generous job timeout bound the run.
     assert.notInclude(resolver, "Refusing to resolve");
-    assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 3");
+    assert.include(resolver, "const MAX_CONFLICTS_PER_REQUEST = 1");
     assert.include(resolver, "const MAX_BATCHES_PER_FILE = 32");
     assert.include(workflow, "timeout-minutes: 120");
     assert.include(pipeline, "timeout_in_minutes: 120");

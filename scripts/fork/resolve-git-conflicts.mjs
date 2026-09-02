@@ -22,11 +22,13 @@ const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 // once reasons and generates for so long that the proxy 502s (seen on
 // 2026-08-14 nightlies 1089-1090). Five medium-sized conflicts in
 // ThreadFeed.tsx still crossed the proxy's five-minute response boundary on
-// nightly 1261, so keep batches small enough to finish reliably.
+// nightly 1261, and three still hit the same boundary. Resolve one conflict
+// per request; the file-level checkpoint and job deadline bound the extra
+// calls without risking another all-or-nothing fallback.
 // The job timeout, not a conflict ceiling, bounds a backlog run: refusing
 // above a fixed count only guaranteed the next nightly arrived with even
 // more conflicts piled onto the same unintegrated merge.
-const MAX_CONFLICTS_PER_REQUEST = 3;
+const MAX_CONFLICTS_PER_REQUEST = 1;
 const MAX_BATCHES_PER_FILE = 32;
 export const MAX_VALIDATION_ATTEMPTS = 3;
 const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
