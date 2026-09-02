@@ -178,7 +178,8 @@ export function ProjectTransferDialog() {
       }),
     );
     const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
-    if (!arrived) {
+    const sourceGone = mode === "move" && result.value.sourceRemoved === true;
+    if (!arrived && !sourceGone) {
       setIsPending(false);
       setInProgress(false);
       setStage(null);

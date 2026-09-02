@@ -139,7 +139,8 @@ export function useProjectTransferAction(
       setIsPending(false);
       setPendingMode(null);
       setStage(null);
-      if (!arrived) {
+      const sourceGone = mode === "move" && result.value.sourceRemoved === true;
+      if (!arrived && !sourceGone) {
         Alert.alert(
           "Could not open destination thread",
           projectTransferSourceRemains(mode, result.value.sourceRemoved)
@@ -148,7 +149,12 @@ export function useProjectTransferAction(
         );
         return;
       }
-      if (projectTransferSourceRemains(mode, result.value.sourceRemoved)) {
+      if (!arrived) {
+        Alert.alert(
+          "Opening destination thread",
+          "The transfer finished. The destination thread is still syncing.",
+        );
+      } else if (projectTransferSourceRemains(mode, result.value.sourceRemoved)) {
         Alert.alert(
           "Copied, but source remains",
           "The destination has the project, but it could not be removed from this machine.",
