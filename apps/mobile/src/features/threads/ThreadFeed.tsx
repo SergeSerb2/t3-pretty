@@ -57,14 +57,12 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withRepeat,
   withSequence,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { MOTION_TIMING } from "../../lib/motion";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
@@ -121,6 +119,7 @@ import {
 } from "../../lib/threadActivity";
 import {
   shouldShowThreadFeedLoadingOverlay,
+  scheduleThreadLoadingVisibility,
   THREAD_FEED_LIST_READY_FALLBACK_MS,
   type ThreadContentPresentation,
 } from "./threadContentPresentation";
@@ -196,14 +195,10 @@ function isFreshTimestamp(input: string): boolean {
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
 }
 
-// The loading placeholder enters only after a beat: a cached thread resolves
+// The loading placeholder mounts only after a beat: a cached thread resolves
 // well inside the delay, so fast switches never flash "Loading messages".
-// Empty copy has no delay so a loading→empty handoff can crossfade instead
-// of stacking another wait.
 const FEED_PLACEHOLDER_ENTER_DELAY_MS = 220;
-const FEED_PLACEHOLDER_ENTER = FadeIn.delay(FEED_PLACEHOLDER_ENTER_DELAY_MS)
-  .duration(200)
-  .reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_ENTER = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 const FEED_PLACEHOLDER_SWAP = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 const FEED_PLACEHOLDER_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
@@ -1483,9 +1478,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow() {
   return (
     <View className="mb-4 px-1.5 py-1">
       <View>
-        <Text className="font-t3-medium text-xs text-adaptive-neutral-600-400">
-          Thinking
-        </Text>
+        <Text className="font-t3-medium text-xs text-adaptive-neutral-600-400">Thinking</Text>
         <Animated.View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -1495,7 +1488,6 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow() {
           <Text className="font-t3-medium text-xs text-foreground">Thinking</Text>
         </Animated.View>
       </View>
-
     </View>
   );
 });
@@ -2138,11 +2130,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     const timeout = setTimeout(markListReady, THREAD_FEED_LIST_READY_FALLBACK_MS);
     return () => clearTimeout(timeout);
   }, [listReadyForCurrentMount, markListReady, isFeedEmpty]);
-  const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
+  const loadingOverlayRequested = shouldShowThreadFeedLoadingOverlay({
     contentPresentationKind: props.contentPresentation.kind,
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
+  const [loadingOverlayVisible, setLoadingOverlayVisible] = useState(false);
+  useEffect(
+    () =>
+      scheduleThreadLoadingVisibility(
+        loadingOverlayRequested,
+        FEED_PLACEHOLDER_ENTER_DELAY_MS,
+        setLoadingOverlayVisible,
+      ),
+    [loadingOverlayRequested],
+  );
+  const showLoadingOverlay = loadingOverlayRequested && loadingOverlayVisible;
   const feedPlaceholder = showLoadingOverlay
     ? {
         title: "Loading messages",
@@ -2165,7 +2168,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const feedOpacity = useSharedValue(1);
   useEffect(() => {
     feedOpacity.value = showLoadingOverlay
-      ? withDelay(FEED_PLACEHOLDER_ENTER_DELAY_MS, withTiming(0, MOTION_TIMING))
+      ? withTiming(0, MOTION_TIMING)
       : withTiming(1, MOTION_TIMING);
   }, [feedOpacity, showLoadingOverlay]);
   const feedContainerStyle = useAnimatedStyle(() => ({ opacity: feedOpacity.value }));

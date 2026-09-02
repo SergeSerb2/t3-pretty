@@ -1,7 +1,6 @@
 import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -86,7 +85,7 @@ import {
 } from "./ThreadComposer";
 import { ThreadFeed } from "./ThreadFeed";
 import { resolveThreadFeedEndOffset } from "./thread-feed-end-scroll";
-import type { ThreadContentPresentation } from "./threadContentPresentation";
+import { threadLoadingPhase, type ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 
 // KeyboardStickyView memos its animated style against `style` identity.
@@ -116,8 +115,6 @@ export interface ThreadDetailScreenProps {
   readonly draftMessage: string;
   readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
   readonly connectionStateLabel: EnvironmentConnectionPhase;
-  /** Message sync status for the selected thread (drives the composer status pill). */
-  readonly threadSyncStatus?: EnvironmentThreadStatus;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
   readonly activeThreadBusy: boolean;
@@ -320,22 +317,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     sceneryCreditHeight: 0,
   });
   const contentPresentationKind = props.contentPresentation.kind;
-  // The raw sync status enters "synchronizing" on every full fetch, cached or
-  // not. Whether messages are already on screen decides the pill label: no
-  // data yet → "Loading messages", cached data reconciling → "Syncing".
-  const threadSyncPhase = (() => {
-    switch (props.threadSyncStatus) {
-      case "empty":
-      case "cached":
-      case "synchronizing":
-        if (contentPresentationKind === "ready") {
-          return "syncing" as const;
-        }
-        return contentPresentationKind === "loading" ? ("loading" as const) : null;
-      default:
-        return null;
-    }
-  })();
+  // Transport reconciliation can restart after the conversation is already
+  // present. Only describe content as loading while there is nothing to show.
+  const threadSyncPhase = threadLoadingPhase(props.contentPresentation);
   const selectedThreadFeed = props.selectedThreadFeed;
   const composerChrome = composerExpanded ? COMPOSER_EXPANDED_CHROME : COMPOSER_COLLAPSED_CHROME;
   const composerOverlapHeight = composerChrome + composerBottomInset;

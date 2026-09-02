@@ -810,7 +810,6 @@ function ThreadRouteContent(
           draftMessage={composer.draftMessage}
           draftAttachments={composer.draftAttachments}
           connectionStateLabel={routeConnectionState}
-          threadSyncStatus={selectedThreadDetailState.status}
           loadEarlier={loadEarlierTurns}
           activeThreadBusy={composer.activeThreadBusy}
           environmentId={selectedThread.environmentId}

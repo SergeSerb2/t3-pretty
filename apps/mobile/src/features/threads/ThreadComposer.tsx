@@ -120,6 +120,7 @@ import {
 } from "./use-thread-settings-sheet-presentation";
 import { usePreparedConnection } from "../../state/session";
 import { useNativeDictation } from "./useNativeDictation";
+import { scheduleThreadLoadingVisibility } from "./threadContentPresentation";
 
 /**
  * Height of the collapsed composer (pill + model caption below it + vertical
@@ -191,6 +192,7 @@ export interface ThreadComposerProps {
 // letting the keyboard-synced slide be the only motion looks native there.
 const COMPOSER_LAYOUT_TRANSITION =
   Platform.OS === "android" ? undefined : LinearTransition.duration(220);
+const COMPOSER_SYNC_STATUS_DELAY_MS = 300;
 
 const COMPOSER_EXPANDED_SURFACE_STYLE: ViewStyle = {
   borderRadius: 20,
@@ -341,15 +343,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
     <Animated.View
       key={props.status.kind}
       className="absolute inset-x-0 bottom-full items-center pb-2"
-      // Sync pills wait a beat before appearing: a cached thread finishes
-      // syncing inside the delay, so fast thread switches never flash a
-      // "Loading messages..." pill. Connection problems still show instantly.
-      // Keyed on kind so a syncing → error swap remounts without the delay.
-      entering={
-        props.status.kind === "syncing"
-          ? FadeInDown.delay(300).duration(180)
-          : FadeInDown.duration(180)
-      }
+      entering={FadeInDown.duration(180)}
       exiting={FadeOutDown.duration(140)}
       pointerEvents="box-none"
     >
@@ -593,6 +587,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     environmentLabel: props.environmentLabel,
     threadSyncPhase: props.threadSyncPhase,
   });
+  const syncStatusRequested = connectionStatus?.kind === "syncing";
+  const [syncStatusVisible, setSyncStatusVisible] = useState(false);
+  useEffect(
+    () =>
+      scheduleThreadLoadingVisibility(
+        syncStatusRequested,
+        COMPOSER_SYNC_STATUS_DELAY_MS,
+        setSyncStatusVisible,
+      ),
+    [syncStatusRequested],
+  );
+  const visibleConnectionStatus =
+    syncStatusRequested && !syncStatusVisible ? null : connectionStatus;
   const selectedProviderStatus = useMemo(() => {
     if (!props.serverConfig) return null;
     return (
@@ -646,9 +653,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       if (!trigger) return;
 
       const replacement =
-        item.type === "app"
-          ? `@${item.slug} `
-          : `$${skillMentionToken(item.skill.name)} `;
+        item.type === "app" ? `@${item.slug} ` : `$${skillMentionToken(item.skill.name)} `;
       const result = replaceTextRange(
         props.draftMessage,
         trigger.rangeStart,
@@ -976,9 +981,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </View>
         ) : null}
 
-        {connectionStatus ? (
+        {visibleConnectionStatus ? (
           <ComposerConnectionStatusPill
-            status={connectionStatus}
+            status={visibleConnectionStatus}
             onPress={props.onReconnectEnvironment}
           />
         ) : null}
@@ -1031,33 +1036,35 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </View>
           {!isExpanded && stripAttachments.length > 0 ? (
             <View className="flex-row gap-1 pl-1">
-              {stripAttachments.slice(0, 3).map((attachment) =>
-                attachment.type === "image" ? (
-                  <ComposerAttachmentThumb
-                    key={attachment.id}
-                    previewUri={attachment.previewUri}
-                    size={30}
-                    borderRadius={8}
-                    backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
-                    preparing={isDispatching || attachment.preparing === true}
-                    onPress={
-                      isDispatching || attachment.preparing === true
-                        ? undefined
-                        : () => onPressImage(attachment.previewUri)
-                    }
-                  />
-                ) : (
-                  <ComposerAttachmentThumbnail
-                    key={attachment.id}
-                    attachment={attachment}
-                    size={30}
-                    borderRadius={8}
-                    compact
-                    onPressImage={isDispatching ? undefined : onPressImage}
-                    onPressVideo={isDispatching ? undefined : onPressVideo}
-                  />
-                ),
-              )}
+              {stripAttachments
+                .slice(0, 3)
+                .map((attachment) =>
+                  attachment.type === "image" ? (
+                    <ComposerAttachmentThumb
+                      key={attachment.id}
+                      previewUri={attachment.previewUri}
+                      size={30}
+                      borderRadius={8}
+                      backgroundColor={isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}
+                      preparing={isDispatching || attachment.preparing === true}
+                      onPress={
+                        isDispatching || attachment.preparing === true
+                          ? undefined
+                          : () => onPressImage(attachment.previewUri)
+                      }
+                    />
+                  ) : (
+                    <ComposerAttachmentThumbnail
+                      key={attachment.id}
+                      attachment={attachment}
+                      size={30}
+                      borderRadius={8}
+                      compact
+                      onPressImage={isDispatching ? undefined : onPressImage}
+                      onPressVideo={isDispatching ? undefined : onPressVideo}
+                    />
+                  ),
+                )}
               {stripAttachments.length > 3 ? (
                 <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                   <Text className="text-foreground-muted text-2xs font-t3-bold">
