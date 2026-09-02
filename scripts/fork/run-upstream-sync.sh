@@ -474,6 +474,57 @@ if ! git diff --cached --quiet; then
   git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
 fi
 
+validate_sync_tree() {
+  if ! retry vp i --frozen-lockfile; then
+    SYNC_FAIL_REASON="The merged sync tree could not install from its frozen lockfile."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck; then
+    SYNC_FAIL_REASON="The merged sync tree failed shared contract typechecks."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter @t3tools/web build; then
+    SYNC_FAIL_REASON="The merged sync tree failed the production web build."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter @t3tools/desktop typecheck; then
+    SYNC_FAIL_REASON="The merged sync tree failed the desktop typecheck."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter t3 build:bundle; then
+    SYNC_FAIL_REASON="The merged sync tree failed the bundled server build."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter t3code-relay typecheck; then
+    SYNC_FAIL_REASON="The merged sync tree failed the relay typecheck."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+
+  local mobile_export_dir
+  mobile_export_dir="$(mktemp -d "${TMPDIR:-/tmp}/t3-mobile-export.XXXXXX")"
+  if ! (
+    cd apps/mobile
+    T3CODE_BUILD_FLAVOR=internal EXPO_NO_DOTENV=1 APP_VARIANT=production \
+      vp exec expo export --platform ios --output-dir "$mobile_export_dir"
+  ); then
+    rm -rf "$mobile_export_dir"
+    SYNC_FAIL_REASON="The merged sync tree failed the production mobile bundle."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  rm -rf "$mobile_export_dir"
+}
+
+# Do not publish or merge a resolver-composed tree until the actual web,
+# desktop/server, mobile, and relay release inputs build together.
+validate_sync_tree || exit 1
+
 push_sync_branch() {
   origin_git fetch origin "refs/heads/$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" 2>/dev/null || true
   remote_head="$(git rev-parse -q --verify "origin/$SYNC_BRANCH" 2>/dev/null || true)"

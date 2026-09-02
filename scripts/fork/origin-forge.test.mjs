@@ -596,6 +596,18 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(syncScript, "git merge --abort");
     assert.include(syncScript, "refs/heads/automation/upstream-*");
     assert.include(syncScript, "same_first_parent_line");
+    assert.include(syncScript, "validate_sync_tree || exit 1");
+    assert.include(syncScript, "vp i --frozen-lockfile");
+    assert.include(syncScript, "--filter @t3tools/contracts");
+    assert.include(syncScript, "--filter @t3tools/client-runtime");
+    assert.include(syncScript, "--filter @t3tools/web");
+    assert.include(syncScript, "--filter t3 build:bundle");
+    assert.include(syncScript, "--filter t3code-relay typecheck");
+    assert.include(syncScript, "expo export --platform ios");
+    assert.isBelow(
+      syncScript.indexOf("validate_sync_tree || exit 1"),
+      syncScript.indexOf("\npush_sync_branch\n"),
+    );
     assert.include(sync, 'GIT_TERMINAL_PROMPT: "0"');
     const preparePath = sync.slice(
       sync.indexOf("Prepare macOS runner PATH"),
@@ -745,6 +757,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(reviewStep.slice(0, 900), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, 'version: "0.35.1"');
+    assert.include(pipeline, 'cache: "/cache/bkcache/mise"');
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");

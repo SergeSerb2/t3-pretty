@@ -2960,24 +2960,17 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_unchanged_frame", 42);
         yield* manager.startRecording("tab_unchanged_frame");
 
-        expect(frames.map((frame) => frame.data)).toEqual([unchanged.toString("base64")]);
+        expect(frames.map((frame) => frame.data)).toEqual([unchanged]);
 
         yield* TestClock.adjust(100);
 
         expect(capturePage).toHaveBeenCalledTimes(2);
-        expect(frames.map((frame) => frame.data)).toEqual([
-          unchanged.toString("base64"),
-          unchanged.toString("base64"),
-        ]);
+        expect(frames.map((frame) => frame.data)).toEqual([unchanged, unchanged]);
 
         yield* TestClock.adjust(100);
 
         expect(capturePage).toHaveBeenCalledTimes(3);
-        expect(frames.map((frame) => frame.data)).toEqual([
-          unchanged.toString("base64"),
-          unchanged.toString("base64"),
-          unchanged.toString("base64"),
-        ]);
+        expect(frames.map((frame) => frame.data)).toEqual([unchanged, unchanged, unchanged]);
         yield* manager.stopRecording("tab_unchanged_frame");
       }),
     ),

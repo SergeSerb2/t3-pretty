@@ -11,6 +11,7 @@ import {
   getMobileThemePreviewColors,
   getMobileThemeVariables,
   isBoringMobileTheme,
+  MOBILE_THEME_IDS,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
   resolveMobileThemeIds,

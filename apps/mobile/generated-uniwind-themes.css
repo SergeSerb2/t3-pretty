@@ -164,6 +164,8 @@
       --color-header-border: #efbdeb;
       --color-glass-surface: rgba(255, 255, 255, 0.74);
       --color-glass-tint: rgba(255, 255, 255, 0.22);
+      --color-chrome-glass: rgba(255, 255, 255, 0.52);
+      --color-chrome-glass-border: rgba(238, 225, 237, 0.85);
       --color-status-bar: #fdf7fd;
       --color-md-body: #501854;
       --color-md-strong: #501854;
@@ -289,6 +291,8 @@
       --color-header-border: #27242c;
       --color-glass-surface: rgba(16, 10, 14, 0.74);
       --color-glass-tint: rgba(16, 10, 14, 0.22);
+      --color-chrome-glass: rgba(16, 10, 14, 0.52);
+      --color-chrome-glass-border: rgba(39, 36, 44, 0.85);
       --color-status-bar: #1f1a24;
       --color-md-body: #f9f8fb;
       --color-md-strong: #f9f8fb;
@@ -414,6 +418,8 @@
       --color-header-border: #d5e6dd;
       --color-glass-surface: rgba(231, 233, 232, 0.74);
       --color-glass-tint: rgba(231, 233, 232, 0.22);
+      --color-chrome-glass: rgba(231, 233, 232, 0.52);
+      --color-chrome-glass-border: rgba(203, 213, 209, 0.85);
       --color-status-bar: #f3f7f4;
       --color-md-body: #241523;
       --color-md-strong: #241523;
@@ -539,6 +545,8 @@
       --color-header-border: #36654c;
       --color-glass-surface: rgba(68, 77, 73, 0.74);
       --color-glass-tint: rgba(68, 77, 73, 0.22);
+      --color-chrome-glass: rgba(68, 77, 73, 0.52);
+      --color-chrome-glass-border: rgba(65, 95, 79, 0.85);
       --color-status-bar: #1b2821;
       --color-md-body: #fffaff;
       --color-md-strong: #fffaff;
@@ -664,6 +672,8 @@
       --color-header-border: #d8e4ee;
       --color-glass-surface: rgba(232, 233, 235, 0.74);
       --color-glass-tint: rgba(232, 233, 235, 0.22);
+      --color-chrome-glass: rgba(232, 233, 235, 0.52);
+      --color-chrome-glass-border: rgba(205, 212, 220, 0.85);
       --color-status-bar: #f5f7f8;
       --color-md-body: #241523;
       --color-md-strong: #241523;
@@ -789,6 +799,8 @@
       --color-header-border: #36566f;
       --color-glass-surface: rgba(65, 72, 81, 0.74);
       --color-glass-tint: rgba(65, 72, 81, 0.22);
+      --color-chrome-glass: rgba(65, 72, 81, 0.52);
+      --color-chrome-glass-border: rgba(64, 85, 103, 0.85);
       --color-status-bar: #17212b;
       --color-md-body: #fffaff;
       --color-md-strong: #fffaff;
@@ -914,6 +926,8 @@
       --color-header-border: #eee0d9;
       --color-glass-surface: rgba(236, 233, 233, 0.74);
       --color-glass-tint: rgba(236, 233, 233, 0.22);
+      --color-chrome-glass: rgba(236, 233, 233, 0.52);
+      --color-chrome-glass-border: rgba(221, 210, 206, 0.85);
       --color-status-bar: #f9f7f5;
       --color-md-body: #241523;
       --color-md-strong: #241523;
@@ -1039,6 +1053,8 @@
       --color-header-border: #6e4934;
       --color-glass-surface: rgba(79, 69, 67, 0.74);
       --color-glass-tint: rgba(79, 69, 67, 0.22);
+      --color-chrome-glass: rgba(79, 69, 67, 0.52);
+      --color-chrome-glass-border: rgba(102, 76, 63, 0.85);
       --color-status-bar: #291e1a;
       --color-md-body: #fffaff;
       --color-md-strong: #fffaff;
@@ -1164,6 +1180,8 @@
       --color-header-border: #e5e0f0;
       --color-glass-surface: rgba(235, 233, 237, 0.74);
       --color-glass-tint: rgba(235, 233, 237, 0.22);
+      --color-chrome-glass: rgba(235, 233, 237, 0.52);
+      --color-chrome-glass-border: rgba(214, 209, 222, 0.85);
       --color-status-bar: #f8f7f9;
       --color-md-body: #241523;
       --color-md-strong: #241523;
@@ -1289,6 +1307,8 @@
       --color-header-border: #4a3c70;
       --color-glass-surface: rgba(69, 66, 80, 0.74);
       --color-glass-tint: rgba(69, 66, 80, 0.22);
+      --color-chrome-glass: rgba(69, 66, 80, 0.52);
+      --color-chrome-glass-border: rgba(77, 67, 102, 0.85);
       --color-status-bar: #1d1929;
       --color-md-body: #fffaff;
       --color-md-strong: #fffaff;

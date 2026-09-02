@@ -23,14 +23,11 @@ import {
   type UsageProviderKind,
 } from "@t3tools/contracts";
 
-import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
-import type { CodexScanState, UsageRecord } from "./usageTranscripts.ts";
+import type { UsageRecord } from "./usageTranscripts.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
 // entries would keep serving double-counted records forever.
-// v3: entries carry the parse position and reducer state so a grown file
-// re-parses only its appended bytes instead of starting over.
-export const USAGE_SCAN_CACHE_VERSION = 3 as const;
+export const USAGE_SCAN_CACHE_VERSION = 2 as const;
 
 /** Hard hydration limits for the persisted cache trust boundary. */
 export const USAGE_SCAN_CACHE_MAX_FILES = 100_000;
@@ -46,15 +43,7 @@ export interface CachedFile {
   readonly size: number;
   readonly mtimeMs: number;
   readonly provider: UsageProviderKind;
-  /** Records from newline-terminated lines, up to `position.resumeOffset`. */
   readonly records: readonly UsageRecord[];
-  /**
-   * Records from a trailing segment the writer had not newline-terminated at
-   * parse time. Kept apart from `records` because an incremental parse
-   * re-reads that segment and would otherwise double count it.
-   */
-  readonly tailRecords: readonly UsageRecord[];
-  readonly position: TranscriptParsePosition;
 }
 
 export type ScanCache = Map<string, CachedFile>;
@@ -82,14 +71,6 @@ interface SerializedFile {
   readonly m: number;
   readonly p: UsageProviderKind;
   readonly r: readonly SerializedRecord[];
-  /** Tail records; see `CachedFile.tailRecords`. */
-  readonly t: readonly SerializedRecord[];
-  /** Parse position: resume offset, guard length, guard hash. */
-  readonly o: number;
-  readonly gl: number;
-  readonly gh: number;
-  /** Codex reducer state at `o`; `null` for stateless providers. */
-  readonly cs: CodexScanState | null;
 }
 
 interface SerializedCache {
@@ -115,31 +96,24 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     return next;
   };
 
-  const serializeRecord = (record: UsageRecord): SerializedRecord => [
-    record.timestampMs,
-    intern(models, modelIndex, record.model),
-    intern(sessions, sessionIndex, record.sessionId),
-    record.totals.uncachedInputTokens,
-    record.totals.cachedInputTokens,
-    record.totals.cacheCreationTokens,
-    record.totals.outputTokens,
-    record.totals.reasoningTokens,
-    record.dedupeKey,
-    record.reportedCostUsd,
-  ];
-
   const files: Record<string, SerializedFile> = {};
   for (const [path, entry] of cache) {
     files[path] = {
       s: entry.size,
       m: entry.mtimeMs,
       p: entry.provider,
-      r: entry.records.map(serializeRecord),
-      t: entry.tailRecords.map(serializeRecord),
-      o: entry.position.resumeOffset,
-      gl: entry.position.guardLength,
-      gh: entry.position.guardHash,
-      cs: entry.position.codexState,
+      r: entry.records.map((record) => [
+        record.timestampMs,
+        intern(models, modelIndex, record.model),
+        intern(sessions, sessionIndex, record.sessionId),
+        record.totals.uncachedInputTokens,
+        record.totals.cachedInputTokens,
+        record.totals.cacheCreationTokens,
+        record.totals.outputTokens,
+        record.totals.reasoningTokens,
+        record.dedupeKey,
+        record.reportedCostUsd,
+      ]),
     };
   }
 
@@ -293,81 +267,18 @@ export function decodeScanCache(
       continue;
     }
     if (!isUsageProviderKind(entry.p)) continue;
-    if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
-    recordCount += entry.r.length + entry.t.length;
+    if (!isRecordArray(entry.r)) continue;
+    recordCount += entry.r.length;
     if (recordCount > maxRecords) return new Map();
-    // Position fields feed byte offsets and a Buffer allocation in the reader,
-    // so anything outside their real ranges must reject the entry: a bogus
-    // guard length would otherwise fail every parse of the file, silently
-    // dropping its usage instead of costing the documented cold re-parse.
-    if (
-      typeof entry.o !== "number" ||
-      !Number.isSafeInteger(entry.o) ||
-      entry.o < 0 ||
-      typeof entry.gl !== "number" ||
-      !Number.isSafeInteger(entry.gl) ||
-      entry.gl < 0 ||
-      entry.gl > GUARD_LENGTH ||
-      entry.gl > entry.o ||
-      typeof entry.gh !== "number" ||
-      !Number.isFinite(entry.gh)
-    ) {
-      continue;
-    }
-    const codexState = decodeCodexState(entry.cs);
-    if (codexState === undefined) continue;
 
     const provider: UsageProviderKind = entry.p;
     const records = decodeRecords(entry.r, provider);
-    const tailRecords = decodeRecords(entry.t, provider);
-    if (records === null || tailRecords === null) continue;
+    if (records === null) continue;
 
-    cache.set(path, {
-      size: entry.s,
-      mtimeMs: entry.m,
-      provider,
-      records,
-      tailRecords,
-      position: {
-        resumeOffset: entry.o,
-        guardLength: entry.gl,
-        guardHash: entry.gh,
-        codexState,
-      },
-    });
+    cache.set(path, { size: entry.s, mtimeMs: entry.m, provider, records });
   }
 
   return cache;
-}
-
-/**
- * Validates a persisted Codex reducer state. Returns `undefined` for a corrupt
- * value, which disqualifies the entry: resuming with a bad state would attach
- * appended usage to the wrong model or replay fork-copied history.
- */
-function decodeCodexState(value: unknown): CodexScanState | null | undefined {
-  if (value === null) return null;
-  if (typeof value !== "object") return undefined;
-  const state = value as Partial<CodexScanState>;
-  if (
-    typeof state.model !== "string" ||
-    typeof state.sessionId !== "string" ||
-    (state.lastUsageSignature !== null && typeof state.lastUsageSignature !== "string") ||
-    typeof state.sawSessionMeta !== "boolean" ||
-    typeof state.suppressingForkCopies !== "boolean" ||
-    typeof state.forkCopyAnchorMs !== "number" ||
-    !Number.isFinite(state.forkCopyAnchorMs)
-  ) {
-    return undefined;
-  }
-  return {
-    model: state.model,
-    sessionId: state.sessionId,
-    lastUsageSignature: state.lastUsageSignature ?? null,
-    sawSessionMeta: state.sawSessionMeta,
-    suppressingForkCopies: state.suppressingForkCopies,
-    forkCopyAnchorMs: state.forkCopyAnchorMs,
-  };
 }
 
 export interface PruneOptions {

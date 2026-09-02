@@ -21,7 +21,11 @@ describe("fetchEnvironmentThreadSnapshot", () => {
         label: target.label,
         httpBaseUrl: "https://environment.example.test/base",
         socketUrl: "wss://environment.example.test/ws",
-        httpAuthorization: { _tag: "Dpop", accessToken: "access-token" },
+        httpAuthorization: {
+          _tag: "Dpop",
+          accessToken: "access-token",
+          expiresAtEpochMs: 60_000,
+        },
         target,
       };
       let proofUrl: string | null = null;

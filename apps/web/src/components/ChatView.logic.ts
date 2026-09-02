@@ -46,6 +46,17 @@ export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export function shoulderTabReserve(overlay: HTMLElement): number {
+  if (overlay.querySelector(".chat-composer-tasks-tab")) return 0;
+  const tab = overlay.querySelector<HTMLElement>(".chat-composer-shoulder-tab");
+  const surface = overlay.querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]');
+  if (!tab || !surface) return 0;
+  return Math.max(
+    0,
+    Math.round(surface.getBoundingClientRect().top - tab.getBoundingClientRect().top),
+  );
+}
+
 export interface QueuedComposerMessage {
   readonly id: MessageId;
   readonly text: string;

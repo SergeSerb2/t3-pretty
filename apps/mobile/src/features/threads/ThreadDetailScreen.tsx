@@ -30,7 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import { GlassView } from "expo-glass-effect";
 import {
   AppState,
   Keyboard,
@@ -64,6 +64,7 @@ import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import type {
   PendingApproval,
   PendingUserInput,
@@ -770,11 +771,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 entering={FadeInDown.duration(160)}
                 exiting={FadeOut.duration(100)}
               >
-                {isLiquidGlassSupported ? (
-                  <LiquidGlassView
+                {NATIVE_LIQUID_GLASS_SUPPORTED ? (
+                  <GlassView
                     colorScheme={isDarkMode ? "dark" : "light"}
-                    effect="regular"
-                    interactive
+                    glassEffectStyle="regular"
+                    isInteractive
                     // Interactive glass can render larger than the requested
                     // box (minimum touch size), so center the pill instead of
                     // relying on it filling the glass exactly.
@@ -794,7 +795,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
                       onPress={handleScrollToEnd}
                     />
-                  </LiquidGlassView>
+                  </GlassView>
                 ) : (
                   <ControlPill
                     accessibilityLabel="Scroll to end"

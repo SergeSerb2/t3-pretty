@@ -143,8 +143,18 @@ export const ServerProviderSkill = Schema.Struct({
   enabled: Schema.Boolean,
   displayName: Schema.optional(ServerProviderLabel),
   shortDescription: Schema.optional(ServerProviderText),
+  userInvocationOnly: Schema.optional(Schema.Boolean),
+  userInvocable: Schema.optional(Schema.Boolean),
 });
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
+
+export const ServerProviderWorkspaceSnapshot = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  checkedAt: IsoDateTime,
+  slashCommands: Schema.Array(ServerProviderSlashCommand),
+  skills: Schema.Array(ServerProviderSkill),
+});
+export type ServerProviderWorkspaceSnapshot = typeof ServerProviderWorkspaceSnapshot.Type;
 
 /**
  * Availability of a configured provider instance from the runtime's POV.
@@ -246,6 +256,7 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill)
     .check(Schema.isMaxLength(SKILL_STATE_MAX_ITEMS))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 });
@@ -756,6 +767,7 @@ export const ServerSelfUpdateOutcome = Schema.Struct({
   id: TrimmedNonEmptyString,
   fromVersion: TrimmedNonEmptyString,
   targetVersion: TrimmedNonEmptyString,
+  continueRunningThreads: Schema.optionalKey(Schema.Boolean),
   status: Schema.Literals(["committed", "rolled-back", "failed"]),
   reason: Schema.optionalKey(TrimmedNonEmptyString),
 });
@@ -838,8 +850,15 @@ export const ServerSelfUpdateResult = Schema.Struct({
   method: ServerSelfUpdateMethod,
   /** Launcher-generated correlation ID. Absent when talking to older servers. */
   updateId: Schema.optionalKey(TrimmedNonEmptyString),
+  /** Desktop preparation token. Present only for the desktop-app method. */
+  desktopUpdateToken: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ServerSelfUpdateResult = typeof ServerSelfUpdateResult.Type;
+
+export const DesktopUpdateCommitInput = Schema.Struct({
+  requestId: TrimmedNonEmptyString,
+});
+export type DesktopUpdateCommitInput = typeof DesktopUpdateCommitInput.Type;
 
 export const ServerSelfUpdateProgressStage = Schema.Literals(["downloading", "installing"]);
 export type ServerSelfUpdateProgressStage = typeof ServerSelfUpdateProgressStage.Type;

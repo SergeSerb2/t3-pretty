@@ -1,6 +1,6 @@
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import type { MenuAction, MenuComponentProps } from "@react-native-menu/menu";
 import { BlurView } from "expo-blur";
+import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appBlurTargetRef } from "../lib/appBlurTarget";
 import { useThemeColor } from "../lib/useThemeColor";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 import { cn } from "../lib/cn";
 import { flattenMenuActions } from "./anchored-menu.logic";
 import { type AppSymbolName, SymbolView } from "./AppSymbol";
@@ -337,9 +338,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               <SymbolView
                 name={action.image as AppSymbolName}
                 size={15}
-                tintColorClassName={
-                  destructive ? "accent-danger-foreground" : "accent-icon"
-                }
+                tintColorClassName={destructive ? "accent-danger-foreground" : "accent-icon"}
                 type="monochrome"
               />
             ) : null}
@@ -372,16 +371,16 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
         onAccessibilityEscape={close}
         style={menuFrameStyle}
       >
-        {Platform.OS === "ios" && isLiquidGlassSupported ? (
+        {Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED ? (
           <View style={{ backgroundColor: chromeFill, flexGrow: 1 }}>
-            <LiquidGlassView
+            <GlassView
               colorScheme={isDarkMode ? "dark" : "light"}
-              effect="regular"
-              interactive={false}
+              glassEffectStyle="regular"
+              isInteractive={false}
               style={{ flexGrow: 1, overflow: "hidden" }}
             >
               {menuBody}
-            </LiquidGlassView>
+            </GlassView>
           </View>
         ) : (
           <>

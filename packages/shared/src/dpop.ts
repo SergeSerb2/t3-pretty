@@ -156,7 +156,7 @@ export function verifyDpopProof(input: {
     return { ok: false, code: "missing_proof", reason: "Missing DPoP proof." };
   }
   if (input.proof.length > DPOP_PROOF_MAX_LENGTH) {
-    return { ok: false, reason: "Invalid DPoP proof." };
+    return { ok: false, code: "invalid_proof", reason: "Invalid DPoP proof." };
   }
 
   const parts = input.proof.split(".");
@@ -187,7 +187,11 @@ export function verifyDpopProof(input: {
     }
     if (input.expectedAccessToken) {
       if (input.expectedAccessToken.length > DPOP_ACCESS_TOKEN_MAX_LENGTH) {
-        return { ok: false, reason: "Invalid DPoP access token." };
+        return {
+          ok: false,
+          code: "access_token_hash_mismatch",
+          reason: "Invalid DPoP access token.",
+        };
       }
       const expectedAth = computeDpopAccessTokenHash(input.expectedAccessToken);
       if (payload.value.ath !== expectedAth) {

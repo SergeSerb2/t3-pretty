@@ -70,6 +70,9 @@ steps:
     timeout_in_minutes: 30
     agents:
       queue: linux-small
+    # Persist mise/buildkite-gha between hosted jobs so every release does not
+    # consume the anonymous GitHub API allowance reinstalling the importer.
+    cache: "/cache/bkcache/mise"
     plugins:
       - github-actions#v0.13.0:
           # Plugin and runtime releases are independent. Do not follow a

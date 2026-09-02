@@ -19,6 +19,7 @@ import type { ConnectionCatalogEntry } from "./catalog.ts";
 import * as Connectivity from "./connectivity.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
+  DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
   type ConnectionAttemptError,
   type ConnectionTarget,
   ConnectionTransientError,
@@ -109,6 +110,7 @@ type MonitorOutcome =
 type MonitorEvent =
   | { readonly _tag: "Signal"; readonly signal: SupervisorSignal }
   | { readonly _tag: "Closed"; readonly error: ConnectionTransientError }
+  | { readonly _tag: "AuthorizationRefreshDue" }
   | { readonly _tag: "ProbeSettled"; readonly exit: Exit.Exit<void, ConnectionAttemptError> }
   | { readonly _tag: "ReplacementDue" }
   | {
@@ -503,6 +505,21 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     attemptScope: Scope.Scope,
     replacementGeneration: number,
   ): Effect.fn.Return<MonitorOutcome, TracedAttemptFailure> {
+    const authorization = active.lease.prepared.httpAuthorization;
+    const authorizationRefresh =
+      authorization?._tag === "Dpop"
+        ? Clock.currentTimeMillis.pipe(
+            Effect.flatMap((now) =>
+              Effect.sleep(
+                Math.max(
+                  0,
+                  authorization.expiresAtEpochMs - now - DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
+                ),
+              ),
+            ),
+            Effect.as<MonitorEvent>({ _tag: "AuthorizationRefreshDue" }),
+          )
+        : Effect.never;
     // Mutable holder (rather than closed-over lets) so the loop below sees the
     // fibers started by the helper effects.
     const inflight: {
@@ -622,6 +639,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
                 (error): Effect.Effect<MonitorEvent> => Effect.succeed({ _tag: "Closed", error }),
               ),
             ),
+        authorizationRefresh,
         probeFiber === null
           ? Effect.never
           : Fiber.await(probeFiber).pipe(
@@ -649,6 +667,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         return yield* release;
       }
       switch (event._tag) {
+        case "AuthorizationRefreshDue":
+          yield* Effect.logDebug(
+            "Refreshing the environment connection before its DPoP token expires.",
+          );
+          return yield* release;
         case "Closed": {
           if (inflight.replacement !== null) {
             yield* stopProbe;

@@ -259,7 +259,6 @@ export function ShimmeringWorkContent(props: {
     </View>
   );
 }
-}
 
 function stripShellWrapper(value: string): string {
   const trimmed = value.trim();

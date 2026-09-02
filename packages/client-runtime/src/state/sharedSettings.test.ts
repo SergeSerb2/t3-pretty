@@ -36,7 +36,10 @@ describe("pickSharedServerSettings", () => {
 });
 
 describe("findSharedSettingsMismatches", () => {
-  const primarySettings = { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 7 };
+  const primarySettings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    sidebarAutoSettleAfterDays: 7,
+  };
 
   it("lists connected environments whose shared settings differ", () => {
     const mismatches = findSharedSettingsMismatches({

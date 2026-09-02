@@ -7,7 +7,7 @@ import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated
 import { AppText as Text } from "./AppText";
 import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
-import { loadLocalVideoPreview } from "../lib/localVideoPreview";
+import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 
 export type ComposerAttachmentPreview = DraftComposerAttachment & {
   /** True while the attachment is still being read or the message is sending. */
@@ -114,10 +114,7 @@ export function ComposerAttachmentThumbnail(props: {
       pointerEvents="none"
       style={style}
     >
-      <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {content}
       </View>
       <Animated.View
@@ -163,7 +160,7 @@ function ComposerVideoAttachment(props: {
     shareRef.current = controller;
     setSharing(true);
     void (async () => {
-      const preview = await loadLocalVideoPreview(attachment, controller.signal);
+      const preview = await loadLocalAttachmentPreview(attachment, controller.signal);
       if (!preview) return;
       try {
         await preview.share(controller.signal, sourceIdentifier);

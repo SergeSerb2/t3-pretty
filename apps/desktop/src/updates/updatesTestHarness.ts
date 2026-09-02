@@ -131,7 +131,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     stop: () => options.stopBackend ?? Effect.void,
     currentConfig: Effect.succeed(Option.none()),
     snapshot: Effect.succeed({
-      desiredRunning: false,
+      desiredRunning: true,
       ready: false,
       activePid: Option.none(),
       restartAttempt: 0,

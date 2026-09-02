@@ -573,9 +573,7 @@ export const make = Effect.gen(function* () {
         { concurrency: "unbounded" },
       );
       if (message !== undefined) {
-        yield* updateState((current) =>
-          reduceDesktopUpdateStateOnInstallFailure(current, message),
-        );
+        yield* updateState((current) => reduceDesktopUpdateStateOnInstallFailure(current, message));
       }
       yield* Effect.forEach(
         restartExits,
@@ -679,7 +677,6 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: Duration.seconds(5) }),
             { concurrency: "unbounded" },
           );
-          yield* electronWindow.destroyAll;
           yield* electronUpdater.quitAndInstall({
             isSilent: true,
             isForceRunAfter: true,

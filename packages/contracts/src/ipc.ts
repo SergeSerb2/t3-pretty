@@ -95,7 +95,7 @@ import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import type { ClientSettings } from "./settings.ts";
+import type { ClientSettings, QuitConfirmationMode } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -105,6 +105,10 @@ import type {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import type {
+  DesktopAppActivationRequest,
+  DesktopAppActivationResponse,
+} from "./desktopAppActivation.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -123,6 +127,10 @@ export interface ContextMenuItem<T extends string = string> {
   activateOnClick?: boolean;
   children?: readonly ContextMenuItem<T>[];
 }
+
+export type QuitShortcutHintEvent =
+  | { readonly state: "down"; readonly mode: Exclude<QuitConfirmationMode, "direct"> }
+  | { readonly state: "up" };
 
 export interface ContextMenuItemSchemaType {
   readonly id: string;
@@ -246,6 +254,7 @@ export interface DesktopUpdateState {
   availableVersion: string | null;
   downloadedVersion: string | null;
   releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote>;
+  omittedReleaseCount: number;
   downloadPercent: number | null;
   checkedAt: string | null;
   message: string | null;
@@ -256,11 +265,13 @@ export interface DesktopUpdateState {
 export interface DesktopUpdateReleaseNote {
   version: string;
   items: ReadonlyArray<string>;
+  totalItems: number;
 }
 
 export const DesktopUpdateReleaseNoteSchema = Schema.Struct({
   version: Schema.String.check(Schema.isMaxLength(128)),
   items: Schema.Array(Schema.String.check(Schema.isMaxLength(220))).check(Schema.isMaxLength(8)),
+  totalItems: Schema.Number,
 });
 
 export const DesktopUpdateStateSchema = Schema.Struct({
@@ -274,6 +285,7 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   availableVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
   downloadedVersion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
   releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema).check(Schema.isMaxLength(6)),
+  omittedReleaseCount: Schema.Number,
   downloadPercent: Schema.NullOr(Schema.Number),
   checkedAt: Schema.NullOr(Schema.String.check(Schema.isMaxLength(128))),
   message: Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192))),
@@ -1373,12 +1385,8 @@ export interface DesktopBridge {
    */
   probeRemoteEditors?: () => Promise<readonly EditorId[]>;
   onMenuAction: (listener: (action: string) => void) => () => void;
-  /**
-   * Hold-to-quit hint pushes: "down" when the quit shortcut is first pressed,
-   * "up" when it is released before the hold completes. Optional: older
-   * desktop builds never emit it.
-   */
-  onQuitShortcut?: (listener: (state: "down" | "up") => void) => () => void;
+  /** Quit-confirmation hint pushes. Optional: older desktop builds never emit them. */
+  onQuitShortcut?: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   /**
@@ -1405,6 +1413,12 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  /** Present when the desktop shell accepts `t3 app` activation requests. */
+  appActivation?: {
+    setReady: (ready: boolean) => Promise<void>;
+    complete: (response: DesktopAppActivationResponse) => Promise<void>;
+    onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
+  };
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.

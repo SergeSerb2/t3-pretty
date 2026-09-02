@@ -55,6 +55,14 @@ export interface PullRequestFilterOption<Value extends string> {
   readonly unavailable?: string | undefined;
 }
 
+export function PullRequestFilterOptionIcon<Value extends string>({
+  option,
+}: {
+  option: PullRequestFilterOption<Value>;
+}) {
+  return <option.Icon aria-hidden className="size-3.5" />;
+}
+
 export interface PullRequestExpectedHost {
   readonly host: string;
   readonly kind: SourceControlProviderKind;

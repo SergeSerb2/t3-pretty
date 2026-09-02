@@ -4,7 +4,6 @@ import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as HttpApiError from "effect/unstable/httpapi/HttpApiError";
 import { sha256 } from "@noble/hashes/sha2";
 import { lt } from "drizzle-orm";
 
@@ -64,7 +63,7 @@ export class DpopProofReplay extends Context.Service<
       readonly expectedThumbprint?: string;
       readonly expectedAccessToken?: string;
       readonly now: DateTime.DateTime;
-    }) => Effect.Effect<string, HttpApiError.Unauthorized>;
+    }) => Effect.Effect<string, DpopProofRejected>;
     readonly verifyAndConsume: (input: {
       readonly proof: string | undefined;
       readonly method: string;

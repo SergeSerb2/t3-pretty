@@ -25,7 +25,14 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  findSharedSettingsMismatches,
+  pickSharedServerSettings,
+  splitSharedServerPatch,
+} from "@t3tools/client-runtime/state/shared-settings";
 import { subscribeBrowserClientSettings } from "~/clientPersistenceStorage";
+import { toastManager } from "~/components/ui/toast";
+import { isHostedStaticApp } from "~/hostedPairing";
 import { ensureLocalApi } from "~/localApi";
 import {
   getThemeDefinition,
@@ -36,7 +43,11 @@ import {
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
-import { usePrimaryEnvironment } from "~/state/environments";
+import {
+  type EnvironmentPresentation,
+  useEnvironments,
+  usePrimaryEnvironment,
+} from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -444,6 +455,30 @@ export function usePrimarySettings<T = UnifiedSettings>(
   return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
+export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
+  "This setting is saved on a server, and the hosted app is not anchored to one. Change it from the desktop app or from the server's own address.";
+
+export function usePrimarySettingsAvailable(): boolean {
+  const primaryEnvironment = usePrimaryEnvironment();
+  return primaryEnvironment !== null || !isHostedStaticApp();
+}
+
+function supportsSharedSettings(environment: EnvironmentPresentation): boolean {
+  return (
+    environment.connection.phase === "connected" &&
+    environment.serverConfig?.environment.capabilities.threadAutoSettlement === true
+  );
+}
+
+function useConnectedEnvironmentIds(): ReadonlyArray<EnvironmentId> {
+  const { environments } = useEnvironments();
+  return useMemo(
+    () =>
+      environments.filter(supportsSharedSettings).map((environment) => environment.environmentId),
+    [environments],
+  );
+}
+
 /**
  * Returns an updater that routes each key to the correct backing store.
  *
@@ -455,26 +490,88 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     serverEnvironment.updateSettings,
     "server settings update",
   );
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const updateSettings = useCallback(
     (patch: UnifiedSettingsPatch) => {
       const { serverPatch, clientPatch } = splitPatch(patch);
 
       if (Object.keys(serverPatch).length > 0) {
-        if (environmentId) {
+        const { sharedPatch, localPatch } = splitSharedServerPatch(serverPatch);
+        const hasLocalPatch = Object.keys(localPatch).length > 0;
+        const hasSharedPatch = Object.keys(sharedPatch).length > 0;
+        const sharedTargets = new Set(connectedEnvironmentIds);
+        if (environmentId) sharedTargets.add(environmentId);
+
+        if ((hasLocalPatch && !environmentId) || (hasSharedPatch && sharedTargets.size === 0)) {
+          toastManager.add({
+            type: "warning",
+            title: "Setting not saved",
+            description: PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+          });
+        }
+        if (environmentId && hasLocalPatch) {
           void persistServerSettings({
             environmentId,
-            input: { patch: serverPatch },
+            input: { patch: localPatch },
           });
+        }
+        if (hasSharedPatch) {
+          for (const targetId of sharedTargets) {
+            void persistServerSettings({
+              environmentId: targetId,
+              input: { patch: sharedPatch },
+            });
+          }
         }
       }
       if (Object.keys(clientPatch).length > 0) {
         persistClientSettingsPatch(clientPatch);
       }
     },
-    [environmentId, persistServerSettings],
+    [connectedEnvironmentIds, environmentId, persistServerSettings],
   );
 
   return updateSettings;
+}
+
+export function useSharedSettingsSync() {
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  const primarySettings =
+    primaryEnvironment !== null && supportsSharedSettings(primaryEnvironment)
+      ? (primaryEnvironment.serverConfig?.settings ?? null)
+      : null;
+  const { environments } = useEnvironments();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+  const mismatches = useMemo(
+    () =>
+      findSharedSettingsMismatches({
+        primaryEnvironmentId,
+        primarySettings,
+        environments: environments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+          connected: supportsSharedSettings(environment),
+          settings: environment.serverConfig?.settings ?? null,
+        })),
+      }),
+    [environments, primaryEnvironmentId, primarySettings],
+  );
+  const applyToAll = useCallback(() => {
+    if (primarySettings === null) return;
+    const patch = pickSharedServerSettings(primarySettings);
+    for (const mismatch of mismatches) {
+      void persistServerSettings({
+        environmentId: mismatch.environmentId,
+        input: { patch },
+      });
+    }
+  }, [mismatches, persistServerSettings, primarySettings]);
+
+  return { mismatches, applyToAll };
 }
 
 export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {

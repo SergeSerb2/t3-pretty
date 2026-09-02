@@ -34,6 +34,11 @@ export class BrowserRecordingConflictError extends Schema.TaggedErrorClass<Brows
   }
 }
 
+export class BrowserRecordingStartCancelledError extends Schema.TaggedErrorClass<BrowserRecordingStartCancelledError>()(
+  "BrowserRecordingStartCancelledError",
+  { tabId: Schema.String },
+) {}
+
 export class BrowserRecordingCanvasUnavailableError extends Schema.TaggedErrorClass<BrowserRecordingCanvasUnavailableError>()(
   "BrowserRecordingCanvasUnavailableError",
   {
@@ -72,6 +77,7 @@ export class BrowserRecordingOperationError extends Schema.TaggedErrorClass<Brow
 }
 
 const isBrowserRecordingOperationError = Schema.is(BrowserRecordingOperationError);
+export const isBrowserRecordingStartCancelledError = Schema.is(BrowserRecordingStartCancelledError);
 
 type BrowserRecordingLifecycle =
   | { readonly phase: "starting" }

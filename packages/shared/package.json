@@ -279,6 +279,10 @@
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
     },
+    "./desktopAppControl": {
+      "types": "./src/desktopAppControl.ts",
+      "import": "./src/desktopAppControl.ts"
+    },
     "./skillFrontmatter": {
       "types": "./src/skillFrontmatter.ts",
       "import": "./src/skillFrontmatter.ts"

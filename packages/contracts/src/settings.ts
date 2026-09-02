@@ -38,6 +38,22 @@ export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"])
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
+export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
+export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
+export const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
+
+const LegacyConfirmQuit = Schema.Boolean.pipe(
+  Schema.decodeTo(
+    QuitConfirmationMode,
+    SchemaTransformation.transform({
+      decode: (confirmQuit): QuitConfirmationMode => (confirmQuit ? "hold" : "direct"),
+      encode: (mode) => mode === "hold",
+    }),
+  ),
+);
+
+const QuitConfirmationModeSetting = Schema.Union([QuitConfirmationMode, LegacyConfirmQuit]);
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -231,12 +247,17 @@ export const ClientSettingsSchema = Schema.Struct({
   browserAutoShowFloatingPreview: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW)),
   ),
-  // Desktop-only: require holding the quit shortcut (Cmd/Ctrl+Q) before the
-  // app quits; a quick tap only shows a hint. Browser clients ignore it.
-  confirmQuit: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Desktop-only. Boolean values from older settings files decode to their
+  // equivalent mode and encode back as the canonical string value.
+  confirmQuit: QuitConfirmationModeSetting.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_QUIT_CONFIRMATION_MODE)),
+  ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadUnpin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   dismissedProviderUpdateNotificationKeys: DismissedProviderUpdateNotificationKeys.pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -290,6 +311,7 @@ export const ClientSettingsSchema = Schema.Struct({
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   showSkillsInSlashMenu: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Legacy sidebar (the original per-project tree). Deliberately a fresh key
   // (was `sidebarV2Enabled` + `sidebarV2ConfiguredByUser`): decoding drops the
@@ -722,6 +744,10 @@ export const ServerSettings = Schema.Struct({
    * between a desktop window and a phone attached to the same server.
    */
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+  ),
+  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
    * Whether agents receive the host's macOS screen, mouse, and keyboard tools.
    * Opt-in because these tools act outside the project and browser sandboxes.
@@ -967,6 +993,8 @@ export const ServerSettingsPatch = Schema.Struct({
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   enableComputerUse: Schema.optionalKey(Schema.Boolean),
   autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
   generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
@@ -1039,10 +1067,11 @@ export const ClientSettingsPatch = Schema.Struct({
   browserDefaultAppearance: Schema.optionalKey(PreviewAppearancePreference),
   browserRecordingFrameRate: Schema.optionalKey(BrowserRecordingFrameRate),
   browserAutoShowFloatingPreview: Schema.optionalKey(Schema.Boolean),
-  confirmQuit: Schema.optionalKey(Schema.Boolean),
+  confirmQuit: Schema.optionalKey(QuitConfirmationMode),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),
+  continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
@@ -1059,6 +1088,7 @@ export const ClientSettingsPatch = Schema.Struct({
   favoriteSkillIds: Schema.optionalKey(ClientSettingsFavoriteSkillIds),
   providerModelPreferences: Schema.optionalKey(ClientSettingsProviderModelPreferences),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
+  contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   showSkillsInSlashMenu: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
