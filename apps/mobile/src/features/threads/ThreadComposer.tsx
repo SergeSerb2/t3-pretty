@@ -220,6 +220,11 @@ const COMPOSER_COLLAPSED_EDITOR_STYLE: ViewStyle = {
   height: 36,
 };
 
+const COMPOSER_ATTACHMENT_ENTERING =
+  Platform.OS === "android"
+    ? FadeIn.duration(160)
+    : FadeIn.delay(COMPOSER_TRANSITION_DURATION_MS).duration(160).reduceMotion(ReduceMotion.System);
+
 export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
@@ -989,10 +994,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           style={isExpanded ? COMPOSER_EXPANDED_SURFACE_STYLE : COMPOSER_COLLAPSED_SURFACE_STYLE}
         >
           {/* Attachment strip — inside the card, above the text input */}
-          {isExpanded ? (
+          {isExpanded && stripAttachments.length > 0 ? (
             <Animated.View
-              className={props.draftAttachments.length > 0 ? "pb-2.5" : undefined}
-              entering={FadeIn.duration(160)}
+              className="pb-2.5"
+              entering={COMPOSER_ATTACHMENT_ENTERING}
               exiting={FadeOut.duration(120)}
             >
               <ComposerAttachmentStrip

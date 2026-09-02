@@ -20,6 +20,37 @@ import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
 import { compareIsoDateTimes } from "../../lib/threadSort";
 
+const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
+const bitbucketRepositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export function pullRequestCheckoutCommand(
+  provider: SourceControlProviderKind,
+  number: number,
+  headBranch: string,
+  headRepositoryNameWithOwner?: string | null,
+): string | null {
+  switch (provider) {
+    case "github":
+      return `gh pr checkout ${number}`;
+    case "gitlab":
+      return `glab mr checkout ${number}`;
+    case "azure-devops":
+      return `az repos pr checkout --id ${number}`;
+    case "bitbucket": {
+      if (
+        !headRepositoryNameWithOwner ||
+        !bitbucketRepositoryName.test(headRepositoryNameWithOwner) ||
+        !safeShellArgument.test(headBranch)
+      ) {
+        return null;
+      }
+      return `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git t3code-pr-${number}`;
+    }
+    case "unknown":
+      return null;
+  }
+}
+
 /** Activity changes only when the same host resource reports a newer revision. */
 export function shouldRefreshPullRequestActivity(
   previous: { readonly key: string; readonly updatedAt: string } | null,

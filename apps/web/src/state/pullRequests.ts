@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  createLinkedPullRequestDetailAtomFamily,
+  createLinkedPullRequestSummaryAtomFamily,
   createPullRequestEnvironmentAtoms,
 } from "@t3tools/client-runtime/state/pull-requests";
 import {
@@ -26,7 +26,7 @@ import { useRetryInterruptedQuery } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
 export const linkedPullRequestDetailAtom =
-  createLinkedPullRequestDetailAtomFamily(connectionAtomRuntime);
+  createLinkedPullRequestSummaryAtomFamily(connectionAtomRuntime);
 
 const MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS = 5 * 60_000;
 

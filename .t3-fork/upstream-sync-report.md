@@ -2904,3 +2904,173 @@
 - `packages/shared/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `packages/shared/src/model.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `patches/@legendapp__list@3.3.5.patch` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.39-nightly.20260902.1257`
+- Previously integrated parent nightly: `v0.0.39-nightly.20260902.1253`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 35 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/Drivers/OpenCodeDriver.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/OpenCodeServerOwner.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/provider/opencodeRuntime.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — T3 Pretty's expanded and collapsed editor sizing, including its pill/card composer geometry and custom surface presentation.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — T3 Pretty's GlassSurface composition, animated shadow wrapper, Reduce Transparency fallback, and Android keyboard-synchronized layout behavior.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The fork's stripAttachments pipeline, sending/preparation state, image and video preview handlers, collapsed thumbnails, and onPickDraftImages-based composer API.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The fork's host-routed native dictation architecture remains intact rather than being replaced by stale merge-base voiceInput and ComposerDictationDraftContent code.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Preserved the regression test ensuring `/resume` native session identifiers are replaced with the privacy-safe `Resumed native session` title.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Preserved the test proving fork-selected per-thread skill IDs are carried into `bootstrap.createThread.enabledSkillIds`.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Preserved the Expo Crypto mock needed by the fork's mobile create-thread test path.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Native provider resume commands continue to receive the dedicated native-resume thread title.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — The fork's agent-facing auto-PR instruction suffix remains excluded from user-facing thread titles.
+- `apps/mobile/src/lib/threadActivity.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/threadActivity.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — The integration harness continues to mock generateProjectIcon, preserving T3 Pretty's generated project-icon behavior and allowing its orchestration/reactor tests to initialize correctly.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Enabled skills are materialized before provider session startup, including handoff-wide reload behavior, and their prelude/recording effects remain available to the turn.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Global and per-thread subagent policy is resolved and supplied to every newly started or restarted provider session.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Native provider sessions can still be resumed in new threads through the nativeSessionId start-session parameter.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Existing-session reuse retains T3 Pretty's model-change activity notice and returns handoff replay/finalization and prepared-skills state.
+- `apps/server/src/persistence/Migrations.ts` — The fork's immutable migration IDs 41–49 remain assigned to orchestration event timestamps, branch heads, World Scenery, canvas, activity compaction, skills, tool-activity cleanup, subagent policy, and BM25 search indexing.
+- `apps/server/src/persistence/Migrations.ts` — The previously integrated parent migrations for client connections, linked pull requests, and unsettled-thread state remain at the fork-established IDs 50–52, avoiding migration-history renumbering and preserving PR/thread behavior.
+- `apps/server/src/provider/Layers/ProviderAdapterRegistry.test.ts` — The fork's removal of the unused OpenCode provider remains intact: the test imports, driver union, adapters, and fake instances continue to include only Codex, Claude Agent, and Cursor.
+- `apps/server/src/provider/Layers/ProviderAdapterRegistry.test.ts` — The ProviderInstanceRegistry-based test setup and its instance routing, continuation identity, and metadata coverage remain unchanged.
+- `apps/server/src/provider/Layers/ProviderRegistry.test.ts` — Preserved T3 Pretty's explicit removal of the unused OpenCode provider by not restoring OpenCode-specific registry snapshot tests.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — The provider registry remains provider-agnostic following T3 Pretty's explicit removal of the unused OpenCode provider; OpenCode-specific probe-status and metadata fallback helpers are not restored.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Missing non-custom provider models continue to be retained across partial or empty snapshots for supported providers, preserving T3 Pretty's cross-surface reliability behavior.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Existing model capability backfilling remains intact when a newer snapshot lacks capability descriptors.
+- `apps/server/src/provider/Layers/ProviderService.test.ts` — Preserved the HostProcessPlatform import used by T3 Pretty's platform-aware provider and MCP behavior, including safeguards around native computer controls and hiding unsupported computer tools off macOS.
+- `apps/server/src/pullRequest/PullRequestService.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/server.test.ts` — Preserved T3 Pretty's skills-aware thread bootstrap contract by keeping enabledSkillIds: [] on bootstrap.createThread.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Preserved T3 Pretty's normalized pull-request summary boundary, including exclusion of detail-only timestamp fields such as updatedAt and mergedAt that could otherwise regress autosettle and listing consumers.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Change requests produced from GitHub summaries retain a mergedAt field initialized to Option.none() when no merge evidence is available.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Decoded pull-request lists preserve their mergedAt values, protecting T3 Pretty’s merge-evidence-based settlement behavior.
+- `apps/server/src/textGeneration/TextGeneration.ts` — Live-activity headline generation input and result contracts, including command and detail context used to generate Pretty's live-status headlines.
+- `apps/server/src/textGeneration/TextGeneration.ts` — Project-icon generation input and result contracts used by T3 Pretty's generated project imagery.
+- `apps/server/src/textGeneration/TextGeneration.ts` — The unsupportedProjectIconGeneration helper, which gives non-image-capable providers a consistent typed TextGenerationError implementation.
+- `apps/server/src/ws.ts` — T3 Pretty's authoritative desktop updater lifecycle remains unchanged: the WebSocket server does not re-expose the removed serverCommitDesktopUpdate RPC or bypass the fork's update flow.
+- `apps/web/src/components/ChatView.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/CommandPalette.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/GitActionsControl.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/LegacySidebar.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ServerUpdateAction.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ThreadTerminalDrawer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ChatComposer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ComposerPrimaryActions.test.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.test.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/providerIconUtils.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/files/fileSaveCoordinator.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/SettingsPanels.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/lib/contextWindow.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/promptStashStore.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/routes/__root.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/versionSkew.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/versionSkew.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/package.json` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/authorization/service.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/connection/supervisor.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/server.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/server.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/settings.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/settings.ts` — kept the fork side wholesale as a fork-side fallback resolution
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The expanded attachment strip is now mounted only when there are attachments to display, avoiding an empty animated container.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The parent attachment entrance timing is integrated: Android fades immediately, while other platforms wait for the composer layout transition before fading in.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The attachment entrance animation honors the system reduced-motion preference through ReduceMotion.System.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — Once the non-empty guard succeeds, attachment bottom spacing is applied directly rather than conditionally recalculated.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Integrated parent coverage for ordinary prompt title normalization and the empty-prompt `New thread` fallback.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Integrated parent assistant-citation coverage, including readable citation-derived titles, optional citation comments, matching bootstrap titles, and preservation of the serialized citation in the outgoing message.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Integrated the parent contract identifiers, assistant-citation serializer, and composer-image upload mock required by the new tests.
+- `apps/mobile/src/lib/projectThreadStartTurn.ts` — Assistant citation markup is converted to plain text before deriving a thread title.
+- `apps/server/integration/OrchestrationEngineHarness.integration.ts` — Updated the mock cast from the legacy TextGenerationShape alias to the parent's TextGeneration["Service"] API type.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Added detached provider workspace snapshot refreshes for threads with an effective working directory.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Workspace snapshots refresh after successful new or restarted provider session startup.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — Workspace snapshots also refresh when an existing compatible provider session is reused.
+- `apps/server/src/persistence/Migrations.ts` — Added the parent ClearAutomaticProjectModelDefaults migration and manifest entry.
+- `apps/server/src/persistence/Migrations.ts` — Adapted the parent's migration ID 44 to the next available fork ID 53 while retaining its upstream migration module and behavior.
+- `apps/server/src/provider/Layers/ProviderAdapterRegistry.test.ts` — Removed stale commentary describing the registry primarily as a driver-kind/default-instance facade.
+- `apps/server/src/provider/Layers/ProviderAdapterRegistry.test.ts` — Removed the legacy listProviders assertion in accordance with the parent's instance-oriented ProviderAdapterRegistry test/API cleanup.
+- `apps/server/src/provider/Layers/ProviderRegistry.test.ts` — Added the parent regression test verifying that a refreshed Claude Agent snapshot authoritatively removes custom models no longer reported.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Added `upsertProviderWorkspaceSnapshot`, which replaces the snapshot for the same working directory, records scoped slash commands and skills, and bounds retained workspace snapshots to 16 per provider.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Provider snapshot merging now accepts new workspace snapshots and carries previous workspace snapshots forward when a new snapshot omits the field.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Custom models removed from settings are no longer resurrected from an earlier provider snapshot, while non-custom missing models retain T3 Pretty's reliability behavior.
+- `apps/server/src/provider/Layers/ProviderService.test.ts` — Integrated the parent's expandAssistantCitationsForProvider and serializeAssistantCitation helpers for provider assistant-citation behavior and tests.
+- `apps/server/src/server.test.ts` — Integrated the parent request layout in which prepareWorktree is a direct sibling of createThread under bootstrap, avoiding duplicated command metadata and a nested bootstrap object.
+- `apps/server/src/server.test.ts` — Retained the upstream local-base fallback test behavior and its prepareWorktree inputs, including startFromOrigin: true.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Adopted the parent's pullRequestSummary helper in both listOpenPullRequests and getPullRequest, removing duplicated destructuring and keeping summary conversion consistent.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Raw GitHub summary updatedAt timestamps are converted into Option-wrapped Effect DateTime values.
+- `apps/server/src/sourceControl/GitHubSourceControlProvider.ts` — Already-decoded updatedAt values are adapted through the updated summary mapper and then restored without losing their normalized representation.
+- `apps/server/src/textGeneration/TextGeneration.ts` — Removed the legacy Promise-based TextGenerationService interface so the Effect-based Context.Service definition remains the canonical service API.
+- `apps/server/src/textGeneration/TextGeneration.ts` — Removed the deprecated TextGenerationShape compatibility alias as done by the parent nightly.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Drivers/OpenCodeDriver.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeAdapter.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeProvider.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/Layers/OpenCodeProvider.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/OpenCodeServerOwner.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/provider/opencodeRuntime.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The merge-base ComposerDictationDraftContent wrapper, compact ComposerAttachmentButton callbacks, and voiceInput-specific attachment handlers present on the parent side of the conflict.. Reason: These are not new nightly behavior; they predate the parent delta and were already replaced by T3 Pretty's host-routed native dictation and stripAttachments architecture. Restoring them would reference removed props and symbols and regress fork-specific composer behavior. The actual nightly changes at this boundary were adapted to the fork implementation.
+- `apps/mobile/src/features/threads/ThreadComposer.tsx` — The merge-base AnimatedGlassSurface declaration retained on the parent side.. Reason: T3 Pretty superseded it with an animated shadow/layout wrapper around GlassSurface so overflow clipping does not clip the iOS shadow and Reduce Transparency can use the fork's solid fallback. Restoring the now-unused declaration would add no parent behavior and could violate unused-symbol checks.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/thread-work-log.tsx after 3 attempts
+- `apps/mobile/src/lib/threadActivity.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/threadActivity.test.ts after 3 attempts
+- `apps/mobile/src/lib/threadActivity.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/threadActivity.ts after 3 attempts
+- `apps/server/src/provider/Layers/ProviderRegistry.test.ts` — OpenCode successful-refresh test asserting that stale plugin models are dropped.. Reason: T3 Pretty deliberately removed the unused OpenCode provider, so restoring provider-specific coverage would regress that fork cleanup.
+- `apps/server/src/provider/Layers/ProviderRegistry.test.ts` — OpenCode failed-refresh test asserting preservation of stale models, slash commands, and skills.. Reason: The tested OpenCode integration no longer exists in T3 Pretty and its provider-specific test was intentionally deleted.
+- `apps/server/src/provider/Layers/ProviderRegistry.test.ts` — OpenCode inventory classification test covering pending, logout, uninstall, authoritative reconnect, and subsequent refresh failure states.. Reason: The tested OpenCode lifecycle is obsolete after T3 Pretty's intentional removal of the unused provider.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — Provider-aware model retention that gives OpenCode successful, disabled, or missing-CLI snapshots authority to remove previously known models.. Reason: T3 Pretty explicitly removed the unused OpenCode provider and changed this registry to generic retention behavior. Restoring an OpenCode-only decision path would regress that fork change.
+- `apps/server/src/provider/Layers/ProviderRegistry.ts` — OpenCode-only fallback that retains previous slash commands and skills during pending initial probes or installed-provider probe failures, including its helper functions and provider-aware merge call.. Reason: This behavior belongs to the removed OpenCode integration. The compatible upstream workspace-snapshot behavior is integrated independently without reintroducing dead provider-specific logic.
+- `apps/server/src/pullRequest/PullRequestService.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/server/src/pullRequest/PullRequestService.ts after 3 attempts
+- `apps/server/src/ws.ts` — Reintroduce serverCommitDesktopUpdate and route it through serverUpdate.commitDesktopUpdate(input.requestId).. Reason: OURS intentionally removed this RPC handler. Restoring it would alter T3 Pretty's fork-specific desktop updater lifecycle and externally expose a commit operation the fork no longer supports at this boundary.
+- `apps/web/src/components/ChatView.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/CommandPalette.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/GitActionsControl.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/LegacySidebar.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ServerUpdateAction.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ThreadTerminalDrawer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ChatComposer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ComposerPrimaryActions.test.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.test.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/providerIconUtils.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/files/fileSaveCoordinator.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/settings/SettingsPanels.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/sidebar/SidebarChrome.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/lib/contextWindow.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/promptStashStore.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/routes/__root.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/versionSkew.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/versionSkew.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/authorization/service.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/connection/supervisor.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/server.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/server.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/settings.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/settings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned

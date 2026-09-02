@@ -8,6 +8,7 @@ import {
   type RuntimeMode,
   type SkillId,
 } from "@t3tools/contracts";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
 import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
@@ -19,9 +20,9 @@ export function deriveThreadTitleFromPrompt(value: string): string {
   if (parseNativeResumeCommand(value)?._tag === "Resume") {
     return NATIVE_RESUME_THREAD_TITLE;
   }
-  // The auto-PR instruction block is agent-facing; a title derived from the
-  // prompt should reflect only what the user typed.
-  const trimmed = stripCreatePullRequestSuffix(value).trim();
+  // Agent-facing instructions and citation markup should not leak into a
+  // title intended to reflect what the user typed.
+  const trimmed = assistantCitationsToPlainText(stripCreatePullRequestSuffix(value)).trim();
   if (trimmed.length === 0) {
     return "New thread";
   }

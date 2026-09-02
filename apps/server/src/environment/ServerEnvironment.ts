@@ -238,7 +238,10 @@ export const make = Effect.gen(function* () {
       projectTransfer: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
-        ? { serverSelfUpdateProgress: true }
+        ? {
+            serverSelfUpdateProgress: true,
+            serverUpdateThreadContinuation: true,
+          }
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
     },
