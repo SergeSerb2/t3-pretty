@@ -1601,8 +1601,15 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:transfer-thread",
-      searchTerms: ["move thread", "transfer project", "connection", "t3 connect", "surge connect"],
-      title: "Move current thread to connection…",
+      searchTerms: [
+        "copy thread",
+        "move thread",
+        "transfer project",
+        "connection",
+        "t3 connect",
+        "surge connect",
+      ],
+      title: "Copy or move current thread to connection…",
       description: activeThread.title,
       icon: <ArrowRightLeftIcon className={ITEM_ICON_CLASS} />,
       disabled:

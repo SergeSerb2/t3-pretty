@@ -20,6 +20,7 @@ import * as ServerConfig from "../config.ts";
 import {
   PROJECT_TRANSFER_UPLOAD_ROUTE_PREFIX,
   cancelProjectTransfer,
+  isManagedProjectWorkspace,
   prepareProjectTransfer,
   validateProjectTransferUploadToken,
 } from "./ProjectTransfer.ts";
@@ -108,6 +109,28 @@ describe("ProjectTransfer", () => {
 
       yield* TestClock.adjust("61 minutes");
       expect(yield* validateProjectTransferUploadToken(token)).toBeNull();
+      yield* cancelProjectTransfer({ transferId: prepared.transferId });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it("only treats children of the managed projects folder as deletable", () => {
+    expect(isManagedProjectWorkspace("/t3/projects/Aerospace-Lingo", "/t3/projects")).toBe(true);
+    expect(isManagedProjectWorkspace("/t3/projects/Aerospace-Lingo/nested", "/t3/projects")).toBe(
+      true,
+    );
+    expect(isManagedProjectWorkspace("/t3/projects", "/t3/projects")).toBe(false);
+    expect(isManagedProjectWorkspace("/t3/projects-other/Aerospace-Lingo", "/t3/projects")).toBe(
+      false,
+    );
+    expect(isManagedProjectWorkspace("/Users/me/src/Aerospace-Lingo", "/t3/projects")).toBe(false);
+  });
+
+  it.effect("prepares a whole-project move manifest", () =>
+    Effect.gen(function* () {
+      const prepared = yield* prepareProjectTransfer({
+        manifest: { ...manifest, version: 2, additionalThreads: [] },
+      });
+      expect(prepared.destinationPath).toContain("Aerospace-Lingo");
       yield* cancelProjectTransfer({ transferId: prepared.transferId });
     }).pipe(Effect.provide(testLayer)),
   );

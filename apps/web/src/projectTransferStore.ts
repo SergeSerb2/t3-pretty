@@ -3,14 +3,18 @@ import { create } from "zustand";
 
 interface ProjectTransferState {
   readonly threadRef: ScopedThreadRef | null;
+  readonly inProgress: boolean;
   readonly open: (threadRef: ScopedThreadRef) => void;
   readonly close: () => void;
+  readonly setInProgress: (inProgress: boolean) => void;
 }
 
 export const useProjectTransferStore = create<ProjectTransferState>()((set) => ({
   threadRef: null,
-  open: (threadRef) => set({ threadRef }),
-  close: () => set({ threadRef: null }),
+  inProgress: false,
+  open: (threadRef) => set({ threadRef, inProgress: false }),
+  close: () => set({ threadRef: null, inProgress: false }),
+  setInProgress: (inProgress) => set({ inProgress }),
 }));
 
 export function openProjectTransferDialog(threadRef: ScopedThreadRef): void {

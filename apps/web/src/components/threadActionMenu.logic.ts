@@ -147,7 +147,7 @@ export function buildThreadActionMenuItems(
       ? [
           {
             id: "transfer" as const,
-            label: "Move to connection…",
+            label: "Copy or move to connection…",
             icon: "arrow-right-left",
             disabled: state.isRunning,
           },

@@ -1532,6 +1532,14 @@ const ProjectTransferImportCommand = Schema.Struct({
   commandId: CommandId,
   project: OrchestrationProject,
   thread: OrchestrationThread,
+  additionalThreads: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        thread: OrchestrationThread,
+        sourceThreadId: ThreadId,
+      }),
+    ),
+  ),
   sourceEnvironmentId: EnvironmentId,
   sourceThreadId: ThreadId,
   includesGitMetadata: Schema.Boolean,

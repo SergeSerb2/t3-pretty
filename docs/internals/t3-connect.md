@@ -317,11 +317,19 @@ environments. The client asks the source for an immutable manifest, asks the des
 one-hour signed upload URL, then tells the source server to stream a compressed workspace archive
 to that URL. Project bytes never pass through the browser or mobile process.
 
+**Copy** (manifest v1) transfers one thread. **Move** (manifest v2) includes every non-deleted
+thread in the project. Older destinations only accept v1, so a move cannot delete the source after
+a partial import.
+
 The destination reserves a unique directory below its projects root, extracts into staging, and
-commits `project.created` plus `thread.transferred` in one database transaction after extraction
-succeeds. The imported thread gets new project, thread, message, activity, plan, and turn IDs.
-Provider sessions and checkpoints are not portable; the first destination turn uses the bounded
-provider-handoff transcript instead. The source remains authoritative for its original copy.
+commits `project.created` plus one `thread.transferred` event per imported thread in one command
+after extraction succeeds. Imported threads get new project, thread, message, activity, plan, and
+turn IDs. Provider sessions and checkpoints are not portable; the first destination turn uses the
+bounded provider-handoff transcript instead.
+
+After a successful move, the source force-deletes the T3 project. The workspace directory is
+removed only when it is a child of that environment's managed projects folder and no other active
+project still uses the path. Copy leaves the source unchanged.
 
 Archives omit dependencies, build outputs, T3 state, attachments, and file-form `.git` worktree
 pointers. A real `.git` directory is retained. The compressed body is capped at 96 MB, upload URLs

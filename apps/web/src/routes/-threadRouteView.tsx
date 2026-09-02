@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import ChatView from "../components/ChatView";
 import {
@@ -15,10 +15,13 @@ import {
 } from "../composerDraftStore";
 import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
+import { useProjectTransferStore } from "../projectTransferStore";
 import {
+  MISSING_THREAD_REDIRECT_GRACE_MS,
   buildThreadRouteParams,
   resolveThreadRouteRef,
   resolveThreadRouteRenderState,
+  shouldRedirectMissingThreadRoute,
 } from "../threadRoutes";
 import { resolveThreadSyncPhase } from "../threadSync";
 import {
@@ -116,6 +119,8 @@ export function ThreadRouteView() {
   });
   const serverThreadStarted = threadHasStarted(serverThreadDetail);
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
+  const transferInProgress = useProjectTransferStore((state) => state.inProgress);
+  const missingSinceMsRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!draftId || !inferredThreadRef || draftSession?.promotedTo) {
@@ -155,13 +160,49 @@ export function ThreadRouteView() {
 
   useEffect(() => {
     if (!routeThreadRef || !bootstrapComplete) {
+      missingSinceMsRef.current = null;
+      return;
+    }
+    if (renderState !== "missing" || !environmentHasAnyThreads) {
+      missingSinceMsRef.current = null;
       return;
     }
 
-    if (renderState === "missing" && environmentHasAnyThreads) {
+    const now = Date.now();
+    missingSinceMsRef.current ??= now;
+    const missingForMs = now - missingSinceMsRef.current;
+    const threadDeleted = serverThreadStatus === "deleted";
+    if (
+      shouldRedirectMissingThreadRoute({
+        renderState,
+        environmentHasAnyThreads,
+        transferInProgress,
+        threadDeleted,
+        missingForMs,
+      })
+    ) {
       void navigate({ to: "/", replace: true });
+      return;
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, routeThreadRef]);
+    if (transferInProgress || threadDeleted) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => {
+        void navigate({ to: "/", replace: true });
+      },
+      Math.max(0, MISSING_THREAD_REDIRECT_GRACE_MS - missingForMs),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [
+    bootstrapComplete,
+    environmentHasAnyThreads,
+    navigate,
+    renderState,
+    routeThreadRef,
+    serverThreadStatus,
+    transferInProgress,
+  ]);
 
   useEffect(() => {
     if (!routeThreadRef || !serverThreadStarted || !draftThread) {

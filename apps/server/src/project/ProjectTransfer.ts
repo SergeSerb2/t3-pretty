@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
+import * as NodePath from "node:path";
 
 import {
   CommandId,
@@ -16,6 +17,7 @@ import {
   type OrchestrationThread,
   type ProjectTransferInspectInput,
   type ProjectTransferManifest,
+  type ProjectTransferMode,
   type ProjectTransferPrepareInput,
   type ProjectTransferSendInput,
 } from "@t3tools/contracts";
@@ -99,6 +101,34 @@ type ProjectTransferErrorReason =
 const transferError = (reason: ProjectTransferErrorReason, detail: string) =>
   new ProjectTransferError({ reason, detail });
 
+export function isManagedProjectWorkspace(workspaceRoot: string, projectsRoot: string): boolean {
+  const resolvedRoot = NodePath.resolve(projectsRoot);
+  const resolvedWorkspace = NodePath.resolve(workspaceRoot);
+  const prefix = resolvedRoot.endsWith(NodePath.sep) ? resolvedRoot : resolvedRoot + NodePath.sep;
+  return resolvedWorkspace.startsWith(prefix);
+}
+
+function transferMode(mode: ProjectTransferMode | undefined): ProjectTransferMode {
+  return mode ?? "copy";
+}
+
+function stripThreadForTransfer(thread: OrchestrationThread): OrchestrationThread {
+  return {
+    ...thread,
+    messages: thread.messages.map((message) => ({
+      ...message,
+      attachments: [],
+      streaming: false,
+    })),
+    checkpoints: [],
+    session: null,
+  };
+}
+
+function countAttachments(thread: OrchestrationThread): number {
+  return thread.messages.reduce((count, message) => count + (message.attachments?.length ?? 0), 0);
+}
+
 const runProcess = (input: ProcessRunner.ProcessRunInput) =>
   Effect.flatMap(ProcessRunner.ProcessRunner, (runner) => runner.run(input)).pipe(
     Effect.provide(ProcessRunner.layer),
@@ -171,30 +201,56 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
   }
   const gitStat = yield* fileSystem.stat(path.join(workspaceRoot, ".git")).pipe(Effect.option);
   const includesGitMetadata = Option.isSome(gitStat) && gitStat.value.type === "Directory";
-  const skippedAttachmentCount = thread.messages.reduce(
-    (count, message) => count + (message.attachments?.length ?? 0),
-    0,
-  );
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const sourceEnvironmentId = yield* environment.getEnvironmentId;
   const project: OrchestrationProject = {
     ...projectShell,
     deletedAt: null,
   };
+  const mode = transferMode(input.mode);
+  const additionalThreads: OrchestrationThread[] = [];
+  let skippedAttachmentCount = countAttachments(thread);
+  if (mode === "move") {
+    const snapshot = yield* snapshots
+      .getCommandReadModel()
+      .pipe(
+        Effect.mapError(() =>
+          transferError("workspace_not_found", "Could not list the other threads in this project."),
+        ),
+      );
+    for (const sibling of snapshot.threads) {
+      if (
+        sibling.projectId !== thread.projectId ||
+        sibling.id === thread.id ||
+        sibling.deletedAt !== null
+      ) {
+        continue;
+      }
+      const siblingDetail = Option.getOrUndefined(yield* snapshots.getThreadDetailById(sibling.id));
+      if (!siblingDetail) continue;
+      if (isBusy(siblingDetail)) {
+        return yield* transferError(
+          "thread_busy",
+          `Wait for "${siblingDetail.title}" to finish before moving this project.`,
+        );
+      }
+      const siblingShell = Option.getOrUndefined(yield* snapshots.getThreadShellById(sibling.id));
+      if (siblingShell?.hasPendingApprovals || siblingShell?.hasPendingUserInput) {
+        return yield* transferError(
+          "thread_busy",
+          `Resolve the pending approval or question on "${siblingDetail.title}" before moving this project.`,
+        );
+      }
+      skippedAttachmentCount += countAttachments(siblingDetail);
+      additionalThreads.push(stripThreadForTransfer(siblingDetail));
+    }
+  }
   const manifest: ProjectTransferManifest = {
-    version: 1,
+    version: mode === "move" ? 2 : 1,
     sourceEnvironmentId,
     project,
-    thread: {
-      ...thread,
-      messages: thread.messages.map((message) => ({
-        ...message,
-        attachments: [],
-        streaming: false,
-      })),
-      checkpoints: [],
-      session: null,
-    },
+    thread: stripThreadForTransfer(thread),
+    ...(additionalThreads.length > 0 ? { additionalThreads } : {}),
     includesGitMetadata,
     skippedAttachmentCount,
   };
@@ -523,11 +579,32 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
           importedAt,
           modelSelection,
         );
+        const additionalThreads = yield* Effect.forEach(
+          pending.manifest.additionalThreads ?? [],
+          (sourceThread) =>
+            Effect.gen(function* () {
+              const destinationThreadId = ThreadId.make(NodeCrypto.randomUUID());
+              const destinationModel = yield* destinationModelSelection(
+                sourceThread.modelSelection,
+              );
+              return {
+                thread: remapTransferredThread(
+                  { ...pending.manifest, thread: sourceThread },
+                  projectId,
+                  destinationThreadId,
+                  importedAt,
+                  destinationModel,
+                ),
+                sourceThreadId: sourceThread.id,
+              };
+            }),
+        );
         yield* engine.dispatch({
           type: "project.transfer.import",
           commandId: CommandId.make(NodeCrypto.randomUUID()),
           project,
           thread,
+          ...(additionalThreads.length > 0 ? { additionalThreads } : {}),
           sourceEnvironmentId: pending.manifest.sourceEnvironmentId,
           sourceThreadId: pending.manifest.thread.id,
           includesGitMetadata: pending.manifest.includesGitMetadata,
@@ -568,6 +645,28 @@ export const receiveProjectTransfer = Effect.fn("ProjectTransfer.receive")(funct
   );
 });
 
+const removeTransferredSource = Effect.fn("ProjectTransfer.removeSource")(function* (inspected: {
+  readonly manifest: ProjectTransferManifest;
+  readonly workspaceRoot: string;
+}) {
+  const engine = yield* OrchestrationEngine.OrchestrationEngineService;
+  yield* engine.dispatch({
+    type: "project.delete",
+    commandId: CommandId.make(NodeCrypto.randomUUID()),
+    projectId: inspected.manifest.project.id,
+    force: true,
+  });
+  const config = yield* ServerConfig.ServerConfig;
+  const path = yield* Path.Path;
+  const projectsRoot = path.join(config.baseDir, "projects");
+  if (!isManagedProjectWorkspace(inspected.workspaceRoot, projectsRoot)) return;
+  const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const stillActive = yield* snapshots.getActiveProjectByWorkspaceRoot(inspected.workspaceRoot);
+  if (Option.isSome(stillActive)) return;
+  const fileSystem = yield* FileSystem.FileSystem;
+  yield* fileSystem.remove(inspected.workspaceRoot, { recursive: true, force: true });
+});
+
 function validDestinationUrl(value: string): URL | null {
   try {
     const url = new URL(value);
@@ -593,7 +692,11 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
         "The destination did not provide a valid secure transfer URL.",
       );
     }
-    const inspected = yield* inspectTransferSource({ threadId: input.threadId }).pipe(
+    const mode = transferMode(input.mode);
+    const inspected = yield* inspectTransferSource({
+      threadId: input.threadId,
+      mode,
+    }).pipe(
       Effect.mapError((cause) =>
         isProjectTransferError(cause)
           ? cause
@@ -654,11 +757,21 @@ export const sendProjectTransfer = Effect.fn("ProjectTransfer.send")(function* (
             : `The destination rejected the transfer (${response.status}).`,
         );
       }
-      return yield* HttpClientResponse.schemaBodyJson(ProjectTransferResult)(response).pipe(
+      const result = yield* HttpClientResponse.schemaBodyJson(ProjectTransferResult)(response).pipe(
         Effect.mapError(() =>
           transferError("upload_failed", "The destination returned an invalid transfer result."),
         ),
       );
+      if (mode !== "move") return result;
+      const sourceRemoved = yield* removeTransferredSource(inspected).pipe(
+        Effect.as(true),
+        Effect.catch(() =>
+          Effect.logError(
+            "Project transfer copied, but the source project could not be removed.",
+          ).pipe(Effect.as(false)),
+        ),
+      );
+      return { ...result, sourceRemoved };
     }).pipe(
       Effect.mapError((cause) =>
         isProjectTransferError(cause)

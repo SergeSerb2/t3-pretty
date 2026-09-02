@@ -15,11 +15,18 @@ import { OrchestrationProject, OrchestrationThread } from "./orchestration.ts";
 export const PROJECT_TRANSFER_MAX_ARCHIVE_BYTES = 96 * 1024 * 1024;
 export const PROJECT_TRANSFER_UPLOAD_URL_TTL_MS = 60 * 60_000;
 
+export const ProjectTransferMode = Schema.Literals(["copy", "move"]);
+export type ProjectTransferMode = typeof ProjectTransferMode.Type;
+
 export const ProjectTransferManifest = Schema.Struct({
-  version: Schema.Literal(1),
+  // v1 = copy this thread. v2 = move the whole project (additionalThreads may
+  // be empty when the project only has one thread). Older destinations only
+  // accept v1, so a move cannot delete the source after a partial import.
+  version: Schema.Literals([1, 2]),
   sourceEnvironmentId: EnvironmentId,
   project: OrchestrationProject,
   thread: OrchestrationThread,
+  additionalThreads: Schema.optionalKey(Schema.Array(OrchestrationThread)),
   includesGitMetadata: Schema.Boolean,
   skippedAttachmentCount: NonNegativeInt,
 });
@@ -27,6 +34,7 @@ export type ProjectTransferManifest = typeof ProjectTransferManifest.Type;
 
 export const ProjectTransferInspectInput = Schema.Struct({
   threadId: ThreadId,
+  mode: Schema.optionalKey(ProjectTransferMode),
 });
 export type ProjectTransferInspectInput = typeof ProjectTransferInspectInput.Type;
 
@@ -52,6 +60,7 @@ export const ProjectTransferSendInput = Schema.Struct({
   threadId: ThreadId,
   expectedUpdatedAt: IsoDateTime,
   destinationUrl: TrimmedNonEmptyString,
+  mode: Schema.optionalKey(ProjectTransferMode),
 });
 export type ProjectTransferSendInput = typeof ProjectTransferSendInput.Type;
 
@@ -59,6 +68,7 @@ export const ProjectTransferResult = Schema.Struct({
   projectId: ProjectId,
   threadId: ThreadId,
   workspaceRoot: TrimmedNonEmptyString,
+  sourceRemoved: Schema.optionalKey(Schema.Boolean),
 });
 export type ProjectTransferResult = typeof ProjectTransferResult.Type;
 

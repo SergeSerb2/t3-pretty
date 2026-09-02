@@ -10,6 +10,7 @@ import {
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
+  shouldRedirectMissingThreadRoute,
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
@@ -160,6 +161,23 @@ describe("threadRoutes", () => {
         draftThreadExists: false,
       }),
     ).toBe("missing");
+  });
+
+  it("holds the missing-thread redirect until a just-imported thread can appear", () => {
+    const missing = {
+      renderState: "missing" as const,
+      environmentHasAnyThreads: true,
+      transferInProgress: false,
+      threadDeleted: false,
+      missingForMs: 0,
+      graceMs: 100,
+    };
+    expect(shouldRedirectMissingThreadRoute(missing)).toBe(false);
+    expect(shouldRedirectMissingThreadRoute({ ...missing, missingForMs: 100 })).toBe(true);
+    expect(shouldRedirectMissingThreadRoute({ ...missing, transferInProgress: true })).toBe(false);
+    expect(
+      shouldRedirectMissingThreadRoute({ ...missing, threadDeleted: true, missingForMs: 0 }),
+    ).toBe(true);
   });
 
   it("redirects deleted shell-only threads", () => {

@@ -2,6 +2,7 @@ import {
   ProjectTransferError,
   WS_METHODS,
   type EnvironmentId,
+  type ProjectTransferMode,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -15,10 +16,29 @@ import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { request } from "../rpc/client.ts";
 import { createRuntimeCommand } from "./runtime.ts";
 
+export type ProjectTransferStage = "inspecting" | "preparing" | "copying";
+
 export interface ProjectTransferCommandInput {
   readonly sourceEnvironmentId: EnvironmentId;
   readonly destinationEnvironmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  readonly mode: ProjectTransferMode;
+  readonly onStage?: (stage: ProjectTransferStage) => void;
+}
+
+export function isProjectTransferThreadBusy(thread: {
+  readonly latestTurn?: { readonly state?: string } | null;
+  readonly session?: { readonly status?: string } | null;
+  readonly hasPendingApprovals?: boolean;
+  readonly hasPendingUserInput?: boolean;
+}): boolean {
+  return (
+    thread.latestTurn?.state === "running" ||
+    thread.session?.status === "starting" ||
+    thread.session?.status === "running" ||
+    thread.hasPendingApprovals === true ||
+    thread.hasPendingUserInput === true
+  );
 }
 
 const destinationUnavailable = (detail: string) =>
@@ -39,10 +59,15 @@ export const transferProjectThread = Effect.fn("ProjectTransfer.transfer")(funct
     return yield* destinationUnavailable("The destination must be a managed connection.");
   }
 
+  input.onStage?.("inspecting");
   const { manifest } = yield* environments.run(
     input.sourceEnvironmentId,
-    request(WS_METHODS.projectTransfersInspect, { threadId: input.threadId }),
+    request(WS_METHODS.projectTransfersInspect, {
+      threadId: input.threadId,
+      mode: input.mode,
+    }),
   );
+  input.onStage?.("preparing");
   const preparedConnection = yield* environments.run(
     input.destinationEnvironmentId,
     Effect.gen(function* () {
@@ -63,6 +88,7 @@ export const transferProjectThread = Effect.fn("ProjectTransfer.transfer")(funct
     prepared.relativeUrl,
   );
 
+  input.onStage?.("copying");
   return yield* environments
     .run(
       input.sourceEnvironmentId,
@@ -70,6 +96,7 @@ export const transferProjectThread = Effect.fn("ProjectTransfer.transfer")(funct
         threadId: input.threadId,
         expectedUpdatedAt: manifest.thread.updatedAt,
         destinationUrl,
+        mode: input.mode,
       }),
     )
     .pipe(
@@ -88,7 +115,7 @@ export const createProjectTransferCommand = <R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) =>
   createRuntimeCommand(runtime, {
-    label: "project-transfer:copy-thread",
+    label: "project-transfer:thread",
     concurrency: {
       mode: "singleFlight",
       key: (input: ProjectTransferCommandInput) => `${input.sourceEnvironmentId}:${input.threadId}`,
