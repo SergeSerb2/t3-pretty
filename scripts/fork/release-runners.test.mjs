@@ -209,6 +209,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "eas build");
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
+    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 2);
     assert.include(mobileRelease, "Xcode-beta.app");
     assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
     assert.include(mobileRelease, "brew install cocoapods");

@@ -8,9 +8,11 @@
 # Installed TestFlight binaries already poll the fork Expo Updates URL baked
 # into the IPA. Default release is that JS channel (`eas update`). A new IPA
 # is only compiled when the native fingerprint changed, or a maintainer set
-# T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
-# uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. Local builds use stable Xcode;
+# T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit queues that IPA for
+# TestFlight through App Store Connect; it does not submit the app for App
+# Store review. EAS owns the remote retry after accepting the submission, so
+# Buildkite does not wait on that queue while holding the Apple signing slot.
+# Local builds use stable Xcode;
 # beta toolchains can fall out of App Store Connect support without warning,
 # so the existing EAS cloud path handles IPA builds while this Mac is on beta.
 #
@@ -556,6 +558,7 @@ NODE
       --platform ios \
       --profile production \
       --id "$build_id" \
+      --no-wait \
       --non-interactive
   )
   record_local_native_submit "$commit"
@@ -621,6 +624,7 @@ else
       --platform ios \
       --profile production \
       --path "$ipa_path" \
+      --no-wait \
       --non-interactive
   )
   record_local_native_submit "$commit"
