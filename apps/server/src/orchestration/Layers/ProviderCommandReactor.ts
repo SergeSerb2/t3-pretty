@@ -19,6 +19,7 @@ import {
   type RuntimeMode,
   type TurnId,
 } from "@t3tools/contracts";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import { extractSkillMentions, skillLoadIdKey, skillLoadNameKey } from "@t3tools/shared/skillTool";
 import * as Cache from "effect/Cache";
@@ -211,7 +212,7 @@ function formatThreadTitleSection(message: ThreadTitleMessage): string | undefin
   if (message.role === "system") {
     return undefined;
   }
-  const text = message.text.trim();
+  const text = assistantCitationsToPlainText(message.text).trim();
   const attachmentSummary = (message.attachments ?? [])
     .map((attachment) => attachment.name)
     .join(", ");
@@ -1091,6 +1092,11 @@ const make = Effect.gen(function* () {
             reloadAll: isProviderHandoff,
           })
         : { prelude: undefined, recordLoaded: Effect.void };
+    const refreshWorkspaceSnapshot = effectiveCwd
+      ? providerRegistry
+          .refreshWorkspaceSnapshot({ instanceId: desiredInstanceId, cwd: effectiveCwd })
+          .pipe(Effect.forkDetach)
+      : Effect.void;
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
@@ -1101,20 +1107,22 @@ const make = Effect.gen(function* () {
         modelSelection: desiredModelSelection,
       }).pipe(
         Effect.flatMap((subagentPolicy) =>
-          providerService.startSession(threadId, {
-            threadId,
-            ...(preferredProvider ? { provider: preferredProvider } : {}),
-            providerInstanceId: desiredInstanceId,
-            ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-            ...(thread.title ? { title: thread.title } : {}),
-            modelSelection: desiredModelSelection,
-            ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
-            ...(input?.nativeSessionId !== undefined
-              ? { nativeSessionId: input.nativeSessionId }
-              : {}),
-            runtimeMode: desiredRuntimeMode,
-            ...(subagentPolicy !== undefined ? { subagentPolicy } : {}),
-          }),
+          providerService
+            .startSession(threadId, {
+              threadId,
+              ...(preferredProvider ? { provider: preferredProvider } : {}),
+              providerInstanceId: desiredInstanceId,
+              ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+              ...(thread.title ? { title: thread.title } : {}),
+              modelSelection: desiredModelSelection,
+              ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+              ...(input?.nativeSessionId !== undefined
+                ? { nativeSessionId: input.nativeSessionId }
+                : {}),
+              runtimeMode: desiredRuntimeMode,
+              ...(subagentPolicy !== undefined ? { subagentPolicy } : {}),
+            })
+            .pipe(Effect.tap(() => refreshWorkspaceSnapshot)),
         ),
       );
 
@@ -1174,6 +1182,7 @@ const make = Effect.gen(function* () {
         !shouldRestartForModelChange &&
         !shouldRestartForModelSelectionChange
       ) {
+        yield* refreshWorkspaceSnapshot;
         if (!isProviderHandoff) {
           yield* appendModelChangedNotice({ isHandoff: false });
         }
@@ -1710,7 +1719,7 @@ const make = Effect.gen(function* () {
           projects: project ? [project] : [],
         }) ?? process.cwd();
       const generationInput = {
-        messageText: message.text,
+        messageText: assistantCitationsToPlainText(message.text),
         ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };

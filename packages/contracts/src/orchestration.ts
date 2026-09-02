@@ -1038,6 +1038,8 @@ export const ProjectCreateCommand = Schema.Struct({
   title: OrchestrationTitle,
   workspaceRoot: OrchestrationPath,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
+  // Retained for older clients that sent an automatic create-time seed. The
+  // server ignores it; explicit project defaults use project.meta.update.
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   createdAt: IsoDateTime,
 });
