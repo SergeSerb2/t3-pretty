@@ -111,11 +111,13 @@ export function ProjectTransferDialog() {
 
   useEffect(() => {
     setError(null);
-    setIsPending(false);
-    setStage(null);
     setElapsedSec(0);
     setMode("copy");
-    setInProgress(false);
+    if (threadRef === null) {
+      setIsPending(false);
+      setStage(null);
+      setInProgress(false);
+    }
   }, [setInProgress, threadRef]);
 
   useEffect(() => {

@@ -50,6 +50,7 @@ export function useProjectTransferAction(
   const transfer = useAtomCommand(projectTransfer, { reportFailure: false });
   const [isPending, setIsPending] = useState(false);
   const [stage, setStage] = useState<ProjectTransferStage | "opening" | null>(null);
+  const [pendingMode, setPendingMode] = useState<ProjectTransferMode | null>(null);
   const supported =
     threadRef !== null &&
     serverConfigs.get(threadRef.environmentId)?.environment.capabilities.projectTransfer === true;
@@ -107,6 +108,7 @@ export function useProjectTransferAction(
         return;
       }
       setIsPending(true);
+      setPendingMode(mode);
       setStage("inspecting");
       const result = await transfer({
         sourceEnvironmentId: threadRef.environmentId,
@@ -117,6 +119,7 @@ export function useProjectTransferAction(
       });
       if (result._tag === "Failure") {
         setIsPending(false);
+        setPendingMode(null);
         setStage(null);
         if (!isAtomCommandInterrupted(result)) {
           const failure = squashAtomCommandFailure(result);
@@ -133,6 +136,7 @@ export function useProjectTransferAction(
         () => appAtomRegistry.get(environmentThreadShells.threadShellAtom(destinationRef)) !== null,
       );
       setIsPending(false);
+      setPendingMode(null);
       setStage(null);
       if (!arrived) {
         Alert.alert(
@@ -200,7 +204,15 @@ export function useProjectTransferAction(
   }, [destinations, isPending, run, siblingThreads.length, sourceBusy, threadRef]);
 
   const pendingLabel =
-    stage === "opening" ? "Opening on destination…" : stage ? STAGE_LABEL[stage] : "Transferring…";
+    stage === "opening"
+      ? "Opening on destination…"
+      : stage === "copying"
+        ? pendingMode === "move"
+          ? "Moving files…"
+          : "Copying files…"
+        : stage
+          ? STAGE_LABEL[stage]
+          : "Transferring…";
 
   return { supported, isPending, pendingLabel, present };
 }
