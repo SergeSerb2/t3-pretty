@@ -154,7 +154,16 @@ export function ProjectTransferDialog() {
 
     setStage("opening");
     const destinationRef = scopeThreadRef(destinationId, result.value.threadId);
-    await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
+    const arrived = await waitForDestinationThread(() => readThreadShell(destinationRef) !== null);
+    if (!arrived) {
+      setIsPending(false);
+      setInProgress(false);
+      setStage(null);
+      setError(
+        "The destination thread did not appear in time. Open it from the destination connection.",
+      );
+      return;
+    }
 
     const destinationLabel =
       destinations.find((destination) => destination.environmentId === destinationId)?.label ??

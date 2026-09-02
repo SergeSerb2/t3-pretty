@@ -86,11 +86,19 @@ export function useProjectTransferAction(
         thread.id !== sourceThread.id,
     );
   }, [sourceThread, threadRef, threadShells]);
+  const sourceBusy = sourceThread !== null && isProjectTransferThreadBusy(sourceThread);
   const siblingBusy = siblingThreads.some(isProjectTransferThreadBusy);
 
   const run = useCallback(
     async (destinationEnvironmentId: EnvironmentId, mode: ProjectTransferMode) => {
       if (threadRef === null || isPending) return;
+      if (sourceBusy) {
+        Alert.alert(
+          "Thread is busy",
+          "Wait for the current turn to finish before transferring this thread.",
+        );
+        return;
+      }
       if (mode === "move" && siblingBusy) {
         Alert.alert(
           "Project is busy",
@@ -121,11 +129,18 @@ export function useProjectTransferAction(
       }
       setStage("opening");
       const destinationRef = scopeThreadRef(destinationEnvironmentId, result.value.threadId);
-      await waitForDestinationThread(
+      const arrived = await waitForDestinationThread(
         () => appAtomRegistry.get(environmentThreadShells.threadShellAtom(destinationRef)) !== null,
       );
       setIsPending(false);
       setStage(null);
+      if (!arrived) {
+        Alert.alert(
+          "Could not open destination thread",
+          "The transfer finished, but the destination thread did not appear in time. Open it from the destination connection.",
+        );
+        return;
+      }
       if (result.value.sourceRemoved === false) {
         Alert.alert(
           "Copied, but source remains",
@@ -134,11 +149,18 @@ export function useProjectTransferAction(
       }
       onTransferred(destinationEnvironmentId, result.value.threadId);
     },
-    [isPending, onTransferred, siblingBusy, threadRef, transfer],
+    [isPending, onTransferred, siblingBusy, sourceBusy, threadRef, transfer],
   );
 
   const present = useCallback(() => {
     if (threadRef === null || isPending) return;
+    if (sourceBusy) {
+      Alert.alert(
+        "Thread is busy",
+        "Wait for the current turn to finish before transferring this thread.",
+      );
+      return;
+    }
     if (destinations.length === 0) {
       Alert.alert(
         "No destination available",
@@ -175,7 +197,7 @@ export function useProjectTransferAction(
         },
       })),
     });
-  }, [destinations, isPending, run, siblingThreads.length, threadRef]);
+  }, [destinations, isPending, run, siblingThreads.length, sourceBusy, threadRef]);
 
   const pendingLabel =
     stage === "opening" ? "Opening on destination…" : stage ? STAGE_LABEL[stage] : "Transferring…";

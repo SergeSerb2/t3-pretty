@@ -12,7 +12,7 @@ interface ProjectTransferState {
 export const useProjectTransferStore = create<ProjectTransferState>()((set) => ({
   threadRef: null,
   inProgress: false,
-  open: (threadRef) => set({ threadRef, inProgress: false }),
+  open: (threadRef) => set((state) => (state.inProgress ? {} : { threadRef, inProgress: false })),
   close: () => set({ threadRef: null, inProgress: false }),
   setInProgress: (inProgress) => set({ inProgress }),
 }));
