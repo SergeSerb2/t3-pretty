@@ -3074,3 +3074,33 @@
 - `packages/contracts/src/settings.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `packages/contracts/src/settings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.39-nightly.20260902.1260`
+- Previously integrated parent nightly: `v0.0.39-nightly.20260902.1257`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — T3 Pretty's one-shot and continuous PR Fix mode state remains intact through `fixAllMode`.
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — T3 Pretty's `handoffInFlightRef` safeguard remains intact so overlapping PR Fix handoffs cannot start duplicate checkout work.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — New custom models still receive T3 Pretty's smooth scrolling presentation after being added.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — The fork's cross-surface lifecycle-hardening intent is preserved: scrolling no longer leaves MutationObserver, requestAnimationFrame, or timeout work that could survive an unmount or subsequent add.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — Existing T3 Pretty provider-model behavior—normalization, validation, filtering, favorites, hidden models, and ordering—remains unchanged.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Adopted the parent's `PullRequestCopyableCode` implementation for head-branch copying, including standardized copy feedback and accessible labels.
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Removed the obsolete component-local branch clipboard state and callback.
+- `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx` — Kept checkout-command copying in the parent's already-integrated `PullRequestCopyableCode` control in the metadata row rather than restoring the older duplicate inline tooltip/button implementation.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — Adopted the parent's exact newly-added-model targeting through scrollToSlugRef and the displayModels effect, including CSS.escape-safe row selection.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — Integrated clearing the filter before adding so the pending model row can render and be scrolled into view.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — Integrated the parent's cancelAdd state-reset handler.
+- `apps/web/src/components/settings/ProviderModelsSection.tsx` — Integrated the parent's simplified icon imports and removed obsolete observer/timer cleanup infrastructure.
+
+## Parent changes intentionally omitted
+
+- None. The resolver did not omit any parent change to protect T3 Pretty.
