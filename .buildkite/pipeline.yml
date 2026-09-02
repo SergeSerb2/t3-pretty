@@ -70,6 +70,11 @@ steps:
     timeout_in_minutes: 30
     agents:
       queue: linux-small
+    env:
+      # The runtime is pinned below. Avoid mise's GitHub attestation API lookup,
+      # which shares the hosted worker's tiny anonymous rate limit and makes a
+      # cold importer fail before its persistent cache can be populated.
+      MISE_GITHUB_ATTESTATIONS: "false"
     # Persist mise/buildkite-gha between hosted jobs so every release does not
     # consume the anonymous GitHub API allowance reinstalling the importer.
     cache: "/cache/bkcache/mise"

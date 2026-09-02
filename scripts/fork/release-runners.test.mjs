@@ -47,8 +47,15 @@ describe("T3 Pretty release runner placement", () => {
   it("keeps imported desktop CI on hosted Linux without GitHub actions", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
+    const importer = pipeline.slice(
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+      pipeline.indexOf(":git: Upstream Sync"),
+    );
 
     assert.include(desktopWorkflow, "T3CODE_BUILD_FLAVOR: internal");
+    assert.include(importer, 'MISE_GITHUB_ATTESTATIONS: "false"');
+    assert.include(importer, 'version: "0.35.1"');
+    assert.include(importer, 'cache: "/cache/bkcache/mise"');
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");

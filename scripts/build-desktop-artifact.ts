@@ -2796,6 +2796,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "linux") {
+    // The staged Linux native dependencies are N-API packages: pnpm either
+    // installs their platform prebuild or builds it once for this host. An
+    // Electron ABI rebuild is unnecessary and breaks on Electron 43's V8
+    // headers with the GCC 11 compiler provided by the Jammy release worker.
+    buildConfig.npmRebuild = false;
     buildConfig.linux = {
       target: [target],
       executableName: "t3code",
