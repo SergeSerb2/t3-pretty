@@ -756,7 +756,8 @@ describe("Origin release and blocked-sync helpers", () => {
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 900), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
-    assert.include(pipeline, 'version: "0.35.1"');
+    assert.include(pipeline, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
+    assert.notInclude(pipeline, 'version: "0.35.1"');
     assert.include(pipeline, 'cache: "/cache/bkcache/mise"');
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");

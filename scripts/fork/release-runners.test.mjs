@@ -53,8 +53,8 @@ describe("T3 Pretty release runner placement", () => {
     );
 
     assert.include(desktopWorkflow, "T3CODE_BUILD_FLAVOR: internal");
-    assert.include(importer, 'MISE_GITHUB_ATTESTATIONS: "false"');
-    assert.include(importer, 'version: "0.35.1"');
+    assert.include(importer, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
+    assert.notInclude(importer, 'version: "0.35.1"');
     assert.include(importer, 'cache: "/cache/bkcache/mise"');
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");

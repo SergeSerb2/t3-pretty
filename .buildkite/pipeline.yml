@@ -70,19 +70,14 @@ steps:
     timeout_in_minutes: 30
     agents:
       queue: linux-small
-    env:
-      # The runtime is pinned below. Avoid mise's GitHub attestation API lookup,
-      # which shares the hosted worker's tiny anonymous rate limit and makes a
-      # cold importer fail before its persistent cache can be populated.
-      MISE_GITHUB_ATTESTATIONS: "false"
     # Persist mise/buildkite-gha between hosted jobs so every release does not
     # consume the anonymous GitHub API allowance reinstalling the importer.
     cache: "/cache/bkcache/mise"
     plugins:
       - github-actions#v0.13.0:
-          # Plugin and runtime releases are independent. Do not follow a
-          # newly tagged runtime before its release binaries exist.
-          version: "0.35.1"
+          # Exact commit tagged v0.35.1. Source mode avoids mise's flaky
+          # GitHub release-asset/attestation lookup on cold hosted workers.
+          source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"
           workflows:
             - .github/workflows/fork-release.yml
           runners:
