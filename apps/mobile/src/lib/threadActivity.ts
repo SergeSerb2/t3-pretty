@@ -26,7 +26,17 @@ import {
   leftoverChangedFilePaths,
   serializeToolCallDisplaySections,
 } from "@t3tools/shared/shellCommandFormat";
-import { isWorktreeSetupActivity } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  commandDetailRepeatsCommand,
+  extractCommandOutputText,
+  isWorktreeSetupActivity,
+  normalizeCompactToolLabel,
+  omitSupersededLifecycleMarkers,
+  summarizeToolGroup,
+  toolGroupSummaryKind,
+  type ToolGroupSummaryKind,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -107,6 +117,7 @@ interface WorkLogEntry {
   turnId: TurnId | null;
   label: string;
   detail?: string;
+  viewedImagePath?: string;
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
@@ -462,16 +473,27 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
-  if (
-    !taskDetailAsLabel &&
-    payload &&
-    typeof payload.detail === "string" &&
-    payload.detail.length > 0
-  ) {
+  const viewedImagePath = asTrimmedString(asRecord(payload?.data)?.imagePath);
+  const commandOutput = commandPreview.command ? extractCommandOutputText(payload?.data) : null;
+  const output = commandOutput ? stripTrailingExitCode(commandOutput).output : null;
+  if (!taskDetailAsLabel && output) {
+    entry.detail = output;
+  } else if (!taskDetailAsLabel && typeof payload?.detail === "string") {
     const detail = stripTrailingExitCode(payload.detail).output;
-    if (detail) {
-      entry.detail = detail;
-    }
+    const data = asRecord(payload.data);
+    const repeatsCommand =
+      detail !== null &&
+      commandDetailRepeatsCommand({
+        detail,
+        command: commandPreview.command,
+        rawCommand: commandPreview.rawCommand,
+        toolName: data?.toolName,
+        data,
+      });
+    if (detail && !repeatsCommand) entry.detail = detail;
+  }
+  if (viewedImagePath) {
+    entry.viewedImagePath = viewedImagePath;
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
@@ -595,6 +617,7 @@ function mergeDerivedWorkLogEntries(
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
   const changedFileDiffs = mergeChangedFileDiffs(previous.changedFileDiffs, next.changedFileDiffs);
   const detail = next.detail ?? previous.detail;
+  const viewedImagePath = next.viewedImagePath ?? previous.viewedImagePath;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
@@ -611,6 +634,7 @@ function mergeDerivedWorkLogEntries(
     ...previous,
     ...next,
     ...(detail ? { detail } : {}),
+    ...(viewedImagePath ? { viewedImagePath } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),

@@ -2588,3 +2588,319 @@
 - `packages/client-runtime/src/state/threadSettled.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `packages/contracts/src/settings.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
 - `packages/contracts/src/settings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.39-nightly.20260902.1253`
+- Previously integrated parent nightly: `v0.0.38-nightly.20260901.1248`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 69 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/server/src/provider/Drivers/OpenCodeDriver.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/web/src/observability/clientTracing.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/desktop/src/app/DesktopApp.ts` — Preserved T3 Pretty's behavior of opening the main window immediately after requesting primary backend startup when not in WSL-only mode.
+- `apps/desktop/src/app/DesktopApp.ts` — Preserved non-fatal handling and warning logging when the main window cannot be opened before backend readiness.
+- `apps/desktop/src/app/DesktopApp.ts` — Kept WSL-only startup behavior unchanged: the connecting splash remains in use and the early main-window path remains skipped.
+- `apps/desktop/src/electron/ElectronProtocol.ts` — Preserved T3 Pretty's `codeCache: true` privilege for both production and development desktop schemes, retaining V8 code-cache support for disk-served renderer assets.
+- `apps/desktop/src/ipc/channels.ts` — T3 Pretty window active-state IPC signaling used by desktop lifecycle and macOS-feel behavior.
+- `apps/desktop/src/ipc/channels.ts` — T3 Pretty window-interaction IPC signaling used by custom window presentation and motion behavior.
+- `apps/desktop/src/ipc/channels.ts` — T3 Pretty dock-attention IPC control.
+- `apps/desktop/src/preview/Manager.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/desktop/src/preview/Manager.ts` — Bounded accessibility-tree depth, node count, total bytes, and per-node bytes, including the fork's truncation safeguards.
+- `apps/desktop/src/preview/Manager.ts` — The generalized 12 FPS, JPEG-quality-80 recording/PiP pipeline, 1600-pixel encode bound, and screencast-health grace period.
+- `apps/desktop/src/preview/Manager.ts` — Cross-provider watchable browser activity through the shared CDP screencast and capturePage fallback used by both recording and picture-in-picture consumers.
+- `apps/desktop/src/preview/Manager.ts` — Transient capturePage failures remain recoverable and do not tear down recording or picture-in-picture while a hidden guest warms its compositor.
+- `apps/desktop/src/preview/Manager.ts` — Source-scoped background-throttling leases follow guest replacement, avoid resurrecting released sessions, and restore the exact prior setting rather than forcing a new value.
+- `apps/desktop/src/preview/Manager.ts` — The picture-in-picture frame cache remains typed from `DesktopPreviewRecordingFrame["data"]`, preserving compatibility with the fork's contracts.
+- `apps/desktop/src/preview/Manager.ts` — Pretty's active frame-capture source model remains intact, including screencast delivery, bounded capturePage fallback, sourceState ownership, throttling restoration, and idle-control cleanup.
+- `apps/desktop/src/preview/Manager.ts` — Adding a recording or picture-in-picture consumer preserves the existing session object and all fork-specific timing/source state rather than replacing it with the parent's older nullable-scope session shape.
+- `apps/desktop/src/preview/Manager.ts` — Pretty's recording-frame delivery remains active because the upstream recording flow still starts and stops the existing "recording" frame-capture consumer.
+- `apps/desktop/src/preview/Manager.ts` — Preserved T3 Pretty's removal of PreviewRecordingSourceSizeUnavailableError from the manager error union.
+- `apps/desktop/src/preview/Manager.ts` — Preserved all existing T3 Pretty preview automation and recording behavior surrounding the error union.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — T3 Pretty’s updater identity and GitHub generic-feed regression coverage remain intact outside the conflict, including the SergeSerb2/t3-pretty release URL and disabled multi-range downloads.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — The fork’s core failed-install recovery intent is retained through the parent’s first-party replacement tests: quitting state is cleared and backends are restarted after installer failure.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — The 30-minute automatic-update polling interval introduced for T3 Pretty's desktop efficiency work remains authoritative instead of reverting to the parent's 4-minute cadence.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — The fork's update-install in-flight safeguard remains available alongside the new parent action-completion channel.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Install attempts snapshot each backend's desiredRunning state before shutdown and recovery restarts only instances that were intended to be running.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Recovery retains per-backend DesktopUpdateInstallRecoveryError diagnostics, including the affected backend instance ID.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — All desktop windows are explicitly destroyed before quitAndInstall, preserving T3 Pretty's desktop lifecycle behavior.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Interrupted installs recover stopped backends and clear quitting state through the same ownership-safe recovery path rather than merely releasing the install action.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — T3 Pretty's failed-install recovery intent remains protected: updater install errors are routed through the parent's native recovery implementation rather than leaving the install action or desktop quitting state stranded.
+- `apps/desktop/src/updates/releaseNotes.ts` — T3 Pretty's desktop updater reliability safeguards remain in place: release-note source strings are capped before markup processing.
+- `apps/desktop/src/updates/releaseNotes.ts` — Untrusted updater payload entries continue to be runtime-validated before their properties are accessed.
+- `apps/desktop/src/updates/releaseNotes.ts` — Normalization remains bounded to the first MAX_RELEASE_NOTE_CANDIDATES raw entries, preventing unbounded work on malformed or oversized update metadata.
+- `apps/desktop/src/updates/releaseNotes.ts` — Release-note version strings continue to be capped at MAX_RELEASE_NOTE_VERSION_LENGTH.
+- `apps/desktop/src/window/QuitHold.test.ts` — The quit handler test harness continues to pass T3 Pretty's isActive callback, preserving the owning-window lifecycle safeguard.
+- `apps/desktop/src/window/QuitHold.test.ts` — The regression test still verifies that a pending asynchronous configuration read cannot trigger a quit after the owning window becomes inactive; it now tests the equivalent parent direct-mode resolution.
+- `apps/desktop/src/window/QuitHold.test.ts` — Inactive-window cancellation continues to avoid stale quit side effects, with expectations updated to the parent's typed and mode-dependent notification behavior.
+- `apps/desktop/src/window/QuitHold.ts` — Preserved T3 Pretty's optional isActive callback, which prevents obsolete or inactive shortcut handlers from quitting the application.
+- `apps/desktop/src/window/QuitHold.ts` — Applied the active-handler safeguard to the upstream quit-on-release path while retaining overlay cleanup through quitNow.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved the exported unregisterAllAgentAwarenessConnections lifecycle API used to clear all tracked environment connections and remove push-token and app-state listeners.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved T3 Pretty's additional Live Activity reliability cleanup via clearActivityPushTokenSubscription().
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved cancellation and reset of the pending active Live Activity registration retry timer.
+- `apps/mobile/src/features/files/ThreadFilesRouteScreen.tsx` — Preserved T3 Pretty's normalizeMobileFileRoutePath import, which protects fork-specific mobile file-route normalization behavior.
+- `apps/mobile/src/features/files/filePath.test.ts` — The mobile file-route hardening test remains intact, including path normalization, traversal rejection, and rejection of oversized scalar and segmented paths.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — T3 Pretty continues not to expose or write `sidebarAutoSettleOnMerge`, preserving the fork’s behavior of not auto-settling threads when pull requests merge.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Cross-environment reconciliation is restricted to `sidebarAutoSettleAfterDays`, so applying settings cannot silently restore the parent’s merged-thread auto-settlement preference.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — T3 Pretty's memo and useMemo imports remain available for the work-log feed's memoized rendering and stable-row performance behavior.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Disclosure interactions retain T3 Pretty's LayoutAnimation scheduling and selection haptic feedback.
+- `apps/mobile/src/lib/threadActivity.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/mobile/src/lib/threadActivity.ts` — Structured tool-call display sections, including MCP payloads, raw commands, tool output, compact changed-file diffs, and remaining sibling file paths.
+- `apps/mobile/src/lib/threadActivity.ts` — Suppression of changed-file output only when it is redundant, while retaining genuine tool output even when command-related text repeats.
+- `apps/mobile/src/lib/threadActivity.ts` — Single-file create/delete labeling and compact diff behavior supported by the Pretty work-log model.
+- `apps/mobile/src/lib/threadActivity.ts` — The refactored centralized feed-building architecture used by both one-shot and incremental feed construction, including local-message composition and loaded-message activity filtering.
+- `apps/server/src/assets/AssetAccess.ts` — Preserved T3 Pretty's Grok session image resolver, which pins and serves generated images from the originating Grok session.
+- `apps/server/src/cli/service.test.ts` — Preserved the `forkCliCommand` import so stale-service repair instructions continue using the T3 Pretty/Surge Connect fork CLI identity rather than a hard-coded parent command.
+- `apps/server/src/cloud/bootService.test.ts` — Systemd command assertions continue to use systemdUnit instead of hard-coding the parent service name, preserving T3 Pretty's public/internal build and service-identity configuration.
+- `apps/server/src/cloud/bootService.test.ts` — Launchd command assertions continue to use launchdLabel instead of hard-coding the parent label, preserving T3 Pretty's configured macOS service identity.
+- `apps/server/src/cloud/bootService.ts` — Public builds continue to install the systemd unit as t3pretty.service, while internal builds retain the t3code.service identity.
+- `apps/server/src/cloud/bootService.ts` — Public launchd installations continue to use the fork-owned com.sergeserb.t3pretty.service label and plist name, while internal builds retain com.t3tools.t3code.service.
+- `apps/server/src/cloud/bootService.ts` — Boot-service launcher, unit, and state files remain protected by explicit bounded-read limits.
+- `apps/server/src/cloud/bootService.ts` — BOOT_SERVICE_UNIT_FILE, BOOT_SERVICE_LAUNCHD_LABEL, BOOT_SERVICE_PLIST_FILE, and BOOT_SERVICE_UNIT_ENV remain exported for T3 Pretty compatibility.
+- `apps/server/src/cloud/bootService.ts` — Installation still refuses to overwrite state while a service update is pending.
+- `apps/server/src/http.test.ts` — Preserved the Effect and Stream imports required by T3 Pretty's bounded JSON body and media-file reliability tests.
+- `apps/server/src/http.ts` — Attachment asset requests using the T3 Pretty feed-preview variant continue to resolve through resolveAttachmentFeedPreview with the configured attachments directory, attachment ID, and original source path.
+- `apps/server/src/http.ts` — Resolved asset source metadata remains available for T3 Pretty's source-aware caching, CORS, and response-header behavior.
+- `apps/server/src/http.ts` — The asset route remains wrapped with HttpMiddleware.withLoggerDisabled, preserving the fork's route logging/performance behavior.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Projection metadata helpers used by T3 Pretty's context-window and tool-lifecycle snapshot compaction remain imported.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — T3 Pretty's bounded scans for tool text, MCP results, and changed-file trees remain in place as payload-size and hot-path safeguards.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Tool names remain normalized to trimmed, non-empty strings rather than allowing malformed values into projected activity payloads.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Raw-output projection continues receiving itemType, preserving T3 Pretty's image-generation-specific handling and generated-image projection safeguards.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Preserved the EnvironmentId import used by T3 Pretty's environment-aware orchestration and Connect thread-transfer behavior.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/Drivers/ClaudeSkills.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/Layers/ClaudeAdapter.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/Layers/GrokProvider.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/Layers/ProviderService.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/acp/AcpRuntimeModel.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/server.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/server.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/vcs/GitVcsDriver.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/workspace/WorkspaceFileSystem.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/src/ws.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/server/test/ActivityPayloadProjection.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/assets/assetUrls.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/browser/browserRecording.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/browser/browserRecording.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/AppSidebarLayout.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatMarkdown.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatView.logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ChatView.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/DiffWorkerPoolProvider.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/LegacySidebar.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/QuitHoldOverlay.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/SplashScreen.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ChatComposer.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/files/FilePreviewPanel.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/SettingsFontPreviews.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/settings/SettingsPanels.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/components/threadActionMenu.logic.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/composerDraftStore.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/composerDraftStore.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/hooks/useHandleNewThread.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/hooks/useSettings.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/hooks/useThreadActionMenu.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/lib/syntaxHighlighting.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/main.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/remoteOpen.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/routes/__root.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/state/entities.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/src/versionSkew.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `apps/web/vite.config.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `package.json` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/package.json` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/runtime.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/threadReducer.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/threadReducer.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/vcs.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/index.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/ipc.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/model.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/server.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/contracts/src/settings.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/effect-acp/src/protocol.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/shared/package.json` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/shared/src/model.test.ts` — kept the fork side wholesale as a fork-side fallback resolution
+- `patches/@legendapp__list@3.3.5.patch` — kept the fork side wholesale as a fork-side fallback resolution
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/desktop/src/app/DesktopApp.ts` — Integrated startup of the desktop app activation/control socket after primary backend startup.
+- `apps/desktop/src/app/DesktopApp.ts` — Integrated success logging when the desktop app control socket becomes ready.
+- `apps/desktop/src/app/DesktopApp.ts` — Integrated non-fatal startup error logging when the desktop app control socket is unavailable.
+- `apps/desktop/src/electron/ElectronProtocol.ts` — Added the parent's `stream: true` privilege to both production and development desktop schemes while retaining T3 Pretty's code-cache behavior.
+- `apps/desktop/src/ipc/channels.ts` — Parent desktop app-activation ready channel.
+- `apps/desktop/src/ipc/channels.ts` — Parent desktop app-activation complete channel.
+- `apps/desktop/src/ipc/channels.ts` — Parent desktop app-activation request channel.
+- `apps/desktop/src/preview/Manager.ts` — Added the parent's 10-second exclusive display-media recording arm grace (`RECORDING_ARM_GRACE_MS`).
+- `apps/desktop/src/preview/Manager.ts` — Retained the parent's 12 FPS picture-in-picture cadence and JPEG quality of 80 through Pretty's generalized recording/PiP constants.
+- `apps/desktop/src/preview/Manager.ts` — Preserved the parent's goal of keeping the active preview guest unthrottled during capture through Pretty's stronger synchronized source lease, including restoration when the source changes or the session closes.
+- `apps/desktop/src/preview/Manager.ts` — The parent's background-throttling intent is retained through Pretty's stronger active-source implementation: the current source is explicitly unthrottled, restored on release or replacement, and continuously followed by the screencast/fallback capture loop instead of accumulating unthrottled WebContents IDs.
+- `apps/desktop/src/preview/Manager.ts` — Recording startup now uses the parent's lifecycle lock, source warm-up and identity checks, session display-media request handler, exclusive expiring arm slot, renderer capture request, and complete failure cleanup.
+- `apps/desktop/src/preview/Manager.ts` — Recording shutdown now clears pending capture ownership while holding the same per-tab lifecycle lock, preventing races with an in-flight start.
+- `apps/desktop/src/preview/Manager.ts` — The parent's PreviewRecordingArmConflictError and PreviewRecordingCaptureUnavailableError types are included.
+- `apps/desktop/src/preview/Manager.ts` — Added PreviewRecordingArmConflictError to the exported PreviewManagerError schema union.
+- `apps/desktop/src/preview/Manager.ts` — Added PreviewRecordingCaptureUnavailableError to the exported PreviewManagerError schema union.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — Extracted the duplicated inline updater harness into the parent’s shared updatesTestHarness.ts implementation.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — Integrated typed quitAndInstall failure coverage that verifies windows are kept and backend recovery runs.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — Integrated install-reservation coverage preventing overlapping installs while failed-install recovery is still running, while permitting a later retry.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — Integrated updater error-event recovery coverage, replacing the fork’s narrower asynchronous installer-failure test.
+- `apps/desktop/src/updates/DesktopUpdates.test.ts` — Integrated installPrepared validation that rejects an install when the downloaded version no longer matches.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Added the 90-second PREPARED_INSTALL_CHECK_WAIT used by prepared installs.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Added finishedUpdateActions publication/subscription support so an install targeting an expected version can wait safely for an active update check.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Integrated the parent's atomic install-to-install-recovery action transition and guaranteed install-recovery action completion.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Integrated expected-version validation, mutex-protected admission, timeout-based refusal, scoped PubSub subscription, and the failed result field for prepared installs.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Integrated the parent's install-failure state transition and aggregate logging when recovery cannot restart every eligible backend.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Retained the parent behavior of stopping every backend in the pool concurrently with a five-second timeout before quitAndInstall, including the parallel WSL/Windows shutdown rationale.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Integrated the parent updater's `recoverFailedInstall(error.message)` implementation, which replaces the previous inline failed-install cleanup and the fork-only recovery call with the new first-party recovery path.
+- `apps/desktop/src/updates/releaseNotes.ts` — Each normalized release-note group now includes totalItems, including items omitted from the displayed per-group item limit.
+- `apps/desktop/src/updates/releaseNotes.ts` — normalizeDesktopUpdateReleaseNotes now returns the upstream NormalizedDesktopUpdateReleaseNotes object containing releaseNotes and omittedReleaseCount.
+- `apps/desktop/src/updates/releaseNotes.ts` — Normalization continues past the first six valid groups, within T3 Pretty's candidate bound, so omittedReleaseCount can report additional normalized releases.
+- `apps/desktop/src/window/QuitHold.test.ts` — Replaced the legacy enabled/isEnabled test API with the parent's QuitConfirmationMode-based mode/getMode API.
+- `apps/desktop/src/window/QuitHold.test.ts` — Integrated the parent's typed QuitShortcutHintEvent callback naming and event-object notification behavior.
+- `apps/desktop/src/window/QuitHold.test.ts` — Integrated the parent's explicit double-click mode setup and clarified quick-double-press test description.
+- `apps/desktop/src/window/QuitHold.test.ts` — Adapted the fork lifecycle regression to the parent's asynchronous mode-resolution semantics, including the rule that unresolved direct mode emits no hint events.
+- `apps/desktop/src/window/QuitHold.ts` — Integrated the parent's getMode API using QuitConfirmationMode instead of the former boolean isEnabled callback.
+- `apps/desktop/src/window/QuitHold.ts` — Integrated the parent's structured QuitShortcutHintEvent notification API.
+- `apps/desktop/src/window/QuitHold.ts` — Retained the parent's quit-on-release behavior, composed with the fork's lifecycle safeguard.
+- `apps/mobile/src/features/files/ThreadFilesRouteScreen.tsx` — Integrated the parent's isVideoPreviewFile import, enabling the upstream video preview behavior already used by defaultViewMode and FileContent.
+- `apps/mobile/src/features/files/filePath.test.ts` — Added parent test coverage showing that fileRoutePathSegments round-trips both workspace-relative paths and absolute host paths through route segments.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Integrated the parent’s consolidated `useEnvironments`-based mobile settings implementation instead of restoring the obsolete per-saved-connection rows.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Integrated the inactive-thread auto-settlement toggle and configurable day threshold, including default handling, whole-string integer validation, and minimum/maximum bounds.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Integrated fan-out of inactive-thread setting edits to all connected capable environments.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — Integrated mismatch detection and an “Apply to all” action, narrowed to the compatible inactive-thread setting.
+- `apps/mobile/src/features/terminal/ThreadTerminalPanel.tsx` — Integrated parent commit 08aad594f's dead-code cleanup by deleting the unused mobile ThreadTerminalPanel alongside its deleted model.
+- `apps/mobile/src/features/terminal/ThreadTerminalPanel.tsx` — Kept terminal functionality on the parent's surviving referenced path; the nightly reference evidence points to the active ThreadTerminalPanel integration under apps/web rather than this mobile duplicate.
+- `apps/mobile/src/features/terminal/ThreadTerminalPanel.tsx` — followed the parent nightly's deletion of this file
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Added the exported ThreadDisclosureChevron component supporting right- and down-oriented collapsed states.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated the upstream Reanimated chevron rotation with the shared disclosure duration and system reduced-motion handling.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Integrated the upstream accessibility and pointer-event treatment that keeps the decorative chevron out of the accessibility tree and non-interactive.
+- `apps/mobile/src/features/threads/thread-work-log.tsx` — Added useLayoutEffect required to synchronize the chevron rotation before paint.
+- `apps/mobile/src/lib/threadActivity.ts` — Imported the parent work-log presentation additions `commandDetailRepeatsCommand` and `extractCommandOutputText` together with the existing grouping and lifecycle presentation APIs.
+- `apps/mobile/src/lib/threadActivity.ts` — Preserved the parent's fix for retaining command-associated detail/output by using Pretty's section-aware serializer, which models command and output independently rather than globally deduplicating text blocks.
+- `apps/mobile/src/lib/threadActivity.ts` — Preserved complete command copy/detail information through the centralized activity builder and expanded-body path without reintroducing the parent's duplicated inline feed assembly.
+- `apps/server/src/assets/AssetAccess.ts` — Integrated the parent MediaFile runtime helper and OpenMediaFile type required by exact media-file asset handling.
+- `apps/server/src/cli/service.test.ts` — Integrated the parent test infrastructure imports for Node services, networking, host process environment, Effect configuration, filesystem, layers, terminal handling, CLI command execution, assertions, and Vitest mock cleanup.
+- `apps/server/src/cli/service.test.ts` — Enabled the upstream service-command test coverage present below the conflict, including layered command execution and downgrade-protection testing.
+- `apps/server/src/cloud/bootService.test.ts` — Pending remote updates are tested with allowDowngrade set to both false and true on Linux, ensuring the downgrade override cannot replace an update owned by the remote launcher.
+- `apps/server/src/cloud/bootService.test.ts` — Pending remote updates are tested with allowDowngrade set to both false and true on macOS.
+- `apps/server/src/cloud/bootService.test.ts` — The launchd bootout test now invokes the callable service.install() API introduced upstream.
+- `apps/server/src/cloud/bootService.ts` — Imported and used compareExactServiceVersions for exact service-version ordering.
+- `apps/server/src/cloud/bootService.ts` — After stopping an installed launcher, the installer re-reads its final state and detects a remote update that completed after the earlier status check.
+- `apps/server/src/cloud/bootService.ts` — A newer installed service version now causes BootServiceDowngradeRefusedError before files are changed, unless allowDowngrade is explicitly enabled.
+- `apps/server/src/cloud/bootService.ts` — The parent's downgrade protection is composed with the existing pending-update check and rollback/restart flow.
+- `apps/server/src/http.test.ts` — Integrated the parent test-suite change that imports vi from vite-plus/test while retaining describe.
+- `apps/server/src/http.ts` — Imported the parent's MediaFile stat/stream API and OpenMediaFile type for the updated asset-serving implementation.
+- `apps/server/src/http.ts` — Propagated an explicit HEAD versus GET mode to assetFileResponse so HEAD requests can use the parent's bodyless media-response behavior.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Retained the parent shared workspace-image-preview path utility import.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Projected meaningful toolName values for clients, adapted through T3 Pretty's existing string normalization.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Added the parent fallback that summarizes data.result for command_execution activities when neither rawOutput nor ACP content yields a projection.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Integrated the parent DEFAULT_PROVIDER_INTERACTION_MODE import for the upstream provider interaction-mode test behavior.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/Drivers/OpenCodeDriver.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/web/src/observability/clientTracing.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/desktop/src/preview/Manager.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/desktop/src/preview/Manager.test.ts after 3 attempts
+- `apps/desktop/src/preview/Manager.ts` — The parent's main-window-wide background-throttling toggles and `unthrottledWebContentsIds` bookkeeping that later force all touched webContents to `true`.. Reason: Pretty's source-scoped lease already unthrottles the active capture guest, restores replaced guests immediately, and restores each guest's actual prior setting. The parent approach would affect unrelated window contents and could overwrite a pre-existing `false` setting.
+- `apps/desktop/src/preview/Manager.ts` — The parent's picture-in-picture-only capture loop, under which recording keeps only an activity lease.. Reason: Pretty's fork-specific cross-provider preview watchability requires recordings and picture-in-picture to share the CDP screencast/capturePage frame pipeline.
+- `apps/desktop/src/preview/Manager.ts` — The parent's start path that does not eagerly require a live preview webContents.. Reason: Pretty's synchronized source-state capture session is initialized from a concrete guest and must validate that source before creating the shared recording/PiP capture loop.
+- `apps/desktop/src/preview/Manager.ts` — The parent's Buffer-specific type for `lastPictureInPictureFrame`.. Reason: Pretty keeps the cache aligned with the shared `DesktopPreviewRecordingFrame["data"]` contract so the internal frame pipeline cannot drift from the IPC contract.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Change automatic-update polling from 30 minutes to 4 minutes.. Reason: This conflicts with T3 Pretty's explicit desktop/macOS efficiency optimization; the fork's 30-minute cadence remains authoritative.
+- `apps/desktop/src/updates/DesktopUpdates.ts` — Unconditionally restart every backend returned by the pool after a failed install.. Reason: That would start backend instances whose desiredRunning state was false and regress T3 Pretty's lifecycle safeguards. Recovery is adapted to restart every backend that was running or intended to run before shutdown.
+- `apps/desktop/src/updates/releaseNotes.ts` — Process every supplied release-note candidate without a global candidate bound.. Reason: T3 Pretty's MAX_RELEASE_NOTE_CANDIDATES limit is an intentional desktop updater reliability safeguard against unbounded or hostile metadata.
+- `apps/desktop/src/updates/releaseNotes.ts` — Parse each complete release-note source string without a size bound.. Reason: T3 Pretty intentionally limits each source to MAX_RELEASE_NOTE_SOURCE_LENGTH before markup processing to bound CPU and memory use.
+- `apps/desktop/src/updates/releaseNotes.ts` — Directly access entry.note and entry.version without validating unknown array entries, and preserve arbitrarily long version strings.. Reason: T3 Pretty's runtime type guard and version-length cap prevent malformed update payloads from throwing or propagating oversized metadata.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Parent removed unregisterAllAgentAwarenessConnections entirely.. Reason: Removing this fork lifecycle API would regress T3 Pretty's mobile teardown behavior and leak connection/listener, Live Activity push-token subscription, or retry state. Retaining it is compatible with the surrounding parent registration and refresh implementation.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — The parent’s “Auto-settle merged threads” switch and writes to `sidebarAutoSettleOnMerge`.. Reason: T3 Pretty intentionally stopped auto-settling threads when pull requests merge; restoring this control would regress that authoritative fork behavior.
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx` — The parent’s broad mismatch reconciliation via the complete `pickSharedServerSettings(referenceSettings)` patch.. Reason: The broad patch can propagate `sidebarAutoSettleOnMerge` and undo T3 Pretty’s merged-thread behavior. Reconciliation is therefore limited to the compatible `sidebarAutoSettleAfterDays` field.
+- `apps/mobile/src/features/threads/ThreadFeed.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/features/threads/ThreadFeed.tsx after 3 attempts
+- `apps/mobile/src/lib/threadActivity.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/mobile/src/lib/threadActivity.test.ts after 3 attempts
+- `apps/server/src/cloud/bootService.ts` — Hard-code the systemd service name and launchd label to the parent T3 Code identities for every build flavor.. Reason: That would overwrite T3 Pretty's public release identity and could collide with or manipulate the wrong service. The parent identities remain in use for internal builds.
+- `apps/server/src/cloud/bootService.ts` — Make the boot-service unit, launchd label/plist, and environment-name constants module-private.. Reason: T3 Pretty already exposes these constants as part of its fork compatibility surface, so narrowing their visibility could break fork consumers and tests.
+- `apps/server/src/cloud/bootService.ts` — Use fs.readFileString without a size limit for the post-stop service-state read.. Reason: The same parent state and downgrade behavior is integrated through readTextWithinLimit so an oversized launcher-owned state file cannot cause an unbounded read.
+- `apps/server/src/orchestration/ActivityPayloadProjection.ts` — Verbatim projection of empty, whitespace-only, or non-string data.toolName values.. Reason: T3 Pretty's existing payload normalization intentionally accepts only trimmed, non-empty tool names. Valid upstream tool names are still projected, while copying malformed values would weaken fork behavior.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/Drivers/ClaudeSkills.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/Layers/ClaudeAdapter.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/Layers/GrokProvider.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/Layers/ProviderService.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/acp/AcpRuntimeModel.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/provider/acp/GrokAcpSupport.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/server.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/server.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/vcs/GitVcsDriver.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/workspace/WorkspaceFileSystem.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/src/ws.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/server/test/ActivityPayloadProjection.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/assets/assetUrls.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/browser/browserRecording.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/browser/browserRecording.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/AppSidebarLayout.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ChatMarkdown.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ChatView.logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ChatView.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/DiffWorkerPoolProvider.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/LegacySidebar.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/QuitHoldOverlay.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/SplashScreen.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ThreadStatusIndicators.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ChatComposer.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/chat/MessagesTimeline.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/files/FilePreviewPanel.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/settings/SettingsFontPreviews.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/settings/SettingsPanels.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/components/threadActionMenu.logic.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/composerDraftStore.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/composerDraftStore.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/hooks/useHandleNewThread.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/hooks/useSettings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/hooks/useThreadActionMenu.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/lib/syntaxHighlighting.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/main.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/remoteOpen.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/routes/__root.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/state/entities.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/src/versionSkew.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `apps/web/vite.config.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/runtime.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/threadReducer.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/threadReducer.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/client-runtime/src/state/vcs.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/index.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/ipc.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/model.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/server.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/contracts/src/settings.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/effect-acp/src/protocol.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/shared/package.json` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `packages/shared/src/model.test.ts` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback
+- `patches/@legendapp__list@3.3.5.patch` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: the model-resolution deadline passed before the job timeout; taking the fork-side fallback

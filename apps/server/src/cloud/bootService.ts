@@ -28,7 +28,9 @@ import {
   SERVICE_RUNTIME_SENTINEL_MAX_BYTES,
   SERVICE_STATE_FILE,
   SERVICE_STATE_MAX_BYTES,
+  compareExactServiceVersions,
   parseServiceState,
+  serviceStateActiveVersion,
   serviceStateHasPendingUpdate,
   type ServiceState,
 } from "./serviceProtocol.ts";
@@ -47,11 +49,11 @@ export const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 
 /** systemd expands `%` specifiers, including in unquoted append-log paths. */
-export function escapeSystemdSpecifiers(value: string): string {
+function escapeSystemdSpecifiers(value: string): string {
   return value.replaceAll("%", "%%");
 }
 
-export function quoteSystemdValue(value: string): string {
+function quoteSystemdValue(value: string): string {
   const escaped = escapeSystemdSpecifiers(value);
   return /[\s"'\\]/.test(escaped)
     ? `"${escaped.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`
@@ -101,7 +103,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
 }
 
 /** Plist values are emitted as XML text nodes; only these three need escaping. */
-export function escapeXmlText(value: string): string {
+function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
@@ -208,7 +210,7 @@ export interface BootServiceManager {
   readonly finalize: ReadonlyArray<BootServiceStep>;
 }
 
-export function systemdManager(input: {
+function systemdManager(input: {
   readonly path: Path.Path;
   readonly homeDir: string;
 }): BootServiceManager {
@@ -275,7 +277,7 @@ export function systemdManager(input: {
   };
 }
 
-export function launchdManager(input: {
+function launchdManager(input: {
   readonly path: Path.Path;
   readonly homeDir: string;
   readonly uid: number;
@@ -357,7 +359,7 @@ export function launchdManager(input: {
 }
 
 /** Undefined means this host cannot run the background service. */
-export function selectBootServiceManager(input: {
+function selectBootServiceManager(input: {
   readonly platform: NodeJS.Platform;
   readonly homeDir: string;
   readonly uid: number | undefined;
@@ -425,16 +427,30 @@ export class BootServiceUpdatePendingError extends Schema.TaggedErrorClass<BootS
   }
 }
 
+export class BootServiceDowngradeRefusedError extends Schema.TaggedErrorClass<BootServiceDowngradeRefusedError>()(
+  "BootServiceDowngradeRefusedError",
+  {
+    installedVersion: Schema.String,
+    targetVersion: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Refusing to replace t3@${this.installedVersion} with older t3@${this.targetVersion}. Run the command again with --allow-downgrade to continue.`;
+  }
+}
+
 export type BootServiceError =
   | BootServiceUnsupportedError
   | BootServiceCommandError
   | BootServiceInstallError
-  | BootServiceUpdatePendingError;
+  | BootServiceUpdatePendingError
+  | BootServiceDowngradeRefusedError;
 
 export interface BootServiceStatus {
   readonly supported: boolean;
   readonly installed: boolean;
   readonly current: boolean;
+  readonly installedVersion?: string;
   readonly unitPath: string;
   readonly logPath: string;
 }
@@ -442,7 +458,9 @@ export interface BootServiceStatus {
 export class BootService extends Context.Service<
   BootService,
   {
-    readonly install: Effect.Effect<BootServicePlan, BootServiceError>;
+    readonly install: (options?: {
+      readonly allowDowngrade?: boolean;
+    }) => Effect.Effect<BootServicePlan, BootServiceError>;
     readonly uninstall: Effect.Effect<boolean, BootServiceError>;
     readonly status: Effect.Effect<BootServiceStatus, BootServiceError>;
   }
@@ -578,7 +596,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       { discard: true },
     );
 
-  const install: BootService["Service"]["install"] = Effect.gen(function* () {
+  const install = Effect.fn("cloud.boot_service.install")(function* (options?: {
+    readonly allowDowngrade?: boolean;
+  }) {
     const manager = yield* requireManager;
     yield* fs
       .makeDirectory(input.logsDir, { recursive: true })
@@ -653,11 +673,23 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           statePath,
           SERVICE_STATE_MAX_BYTES,
         ).pipe(Effect.option);
-        if (
-          Option.isSome(previousStateText) &&
-          serviceStateHasPendingUpdate(previousStateText.value)
-        ) {
-          return yield* new BootServiceUpdatePendingError();
+        if (Option.isSome(previousStateText)) {
+          if (serviceStateHasPendingUpdate(previousStateText.value)) {
+            return yield* new BootServiceUpdatePendingError();
+          }
+          // A remote update can finish after the CLI checks status. Read its
+          // final version after the launcher stops and before changing files.
+          const installedVersion = serviceStateActiveVersion(previousStateText.value);
+          if (
+            installedVersion !== undefined &&
+            options?.allowDowngrade !== true &&
+            compareExactServiceVersions(input.cliVersion, installedVersion) < 0
+          ) {
+            return yield* new BootServiceDowngradeRefusedError({
+              installedVersion,
+              targetVersion: input.cliVersion,
+            });
+          }
         }
       }
       yield* fs
@@ -685,7 +717,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       ),
     );
     return plan;
-  }).pipe(Effect.withSpan("cloud.boot_service.install"));
+  });
 
   const uninstall: BootService["Service"]["uninstall"] = Effect.gen(function* () {
     const manager = yield* requireManager;
@@ -721,6 +753,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         readTextWithinLimit(fs, statePath, SERVICE_STATE_MAX_BYTES).pipe(Effect.option),
       ]);
     const state = Option.isSome(stateText) ? parseServiceState(stateText.value) : undefined;
+    const installedVersion = Option.isSome(stateText)
+      ? serviceStateActiveVersion(stateText.value)
+      : undefined;
     const normalizeUnit = (contents: string) =>
       detectedManager.kind === "launchd"
         ? contents.replace(/(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/, "$1$2")
@@ -728,6 +763,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     return {
       supported: true,
       installed: true,
+      ...(installedVersion === undefined ? {} : { installedVersion }),
       current:
         normalizeUnit(unit) === normalizeUnit(detectedManager.render(plan)) &&
         launcherExists &&
