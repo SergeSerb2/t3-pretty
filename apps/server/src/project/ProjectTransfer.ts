@@ -155,6 +155,43 @@ function isBusy(thread: OrchestrationThread): boolean {
   );
 }
 
+export function requireMoveSiblingThread(input: {
+  readonly title: string;
+  readonly detail: OrchestrationThread | undefined;
+  readonly shell:
+    | {
+        readonly hasPendingApprovals?: boolean;
+        readonly hasPendingUserInput?: boolean;
+      }
+    | undefined;
+}): OrchestrationThread | ProjectTransferError {
+  if (input.detail === undefined) {
+    return transferError(
+      "workspace_not_found",
+      `Could not load "${input.title}" to move this project. Try again once it is fully available.`,
+    );
+  }
+  if (isBusy(input.detail)) {
+    return transferError(
+      "thread_busy",
+      `Wait for "${input.detail.title}" to finish before moving this project.`,
+    );
+  }
+  if (input.shell === undefined) {
+    return transferError(
+      "workspace_not_found",
+      `Could not load "${input.detail.title}" to move this project. Try again once it is fully available.`,
+    );
+  }
+  if (input.shell.hasPendingApprovals || input.shell.hasPendingUserInput) {
+    return transferError(
+      "thread_busy",
+      `Resolve the pending approval or question on "${input.detail.title}" before moving this project.`,
+    );
+  }
+  return input.detail;
+}
+
 const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(function* (
   input: ProjectTransferInspectInput,
 ) {
@@ -227,22 +264,17 @@ const inspectTransferSource = Effect.fn("ProjectTransfer.inspectSource")(functio
         continue;
       }
       const siblingDetail = Option.getOrUndefined(yield* snapshots.getThreadDetailById(sibling.id));
-      if (!siblingDetail) continue;
-      if (isBusy(siblingDetail)) {
-        return yield* transferError(
-          "thread_busy",
-          `Wait for "${siblingDetail.title}" to finish before moving this project.`,
-        );
-      }
       const siblingShell = Option.getOrUndefined(yield* snapshots.getThreadShellById(sibling.id));
-      if (siblingShell?.hasPendingApprovals || siblingShell?.hasPendingUserInput) {
-        return yield* transferError(
-          "thread_busy",
-          `Resolve the pending approval or question on "${siblingDetail.title}" before moving this project.`,
-        );
+      const resolved = requireMoveSiblingThread({
+        title: sibling.title,
+        detail: siblingDetail,
+        shell: siblingShell,
+      });
+      if (isProjectTransferError(resolved)) {
+        return yield* resolved;
       }
-      skippedAttachmentCount += countAttachments(siblingDetail);
-      additionalThreads.push(stripThreadForTransfer(siblingDetail));
+      skippedAttachmentCount += countAttachments(resolved);
+      additionalThreads.push(stripThreadForTransfer(resolved));
     }
   }
   const manifest: ProjectTransferManifest = {

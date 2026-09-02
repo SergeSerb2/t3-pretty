@@ -187,6 +187,7 @@ export function ProjectTransferDialog() {
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(destinationRef),
     });
+    setInProgress(false);
     close();
   };
 
@@ -195,8 +196,13 @@ export function ProjectTransferDialog() {
   return (
     <Dialog
       open={threadRef !== null}
-      onOpenChange={(open) => {
-        if (!open && !isPending) close();
+      disablePointerDismissal={isPending}
+      onOpenChange={(open, eventDetails) => {
+        if (!open && isPending) {
+          eventDetails.cancel();
+          return;
+        }
+        if (!open) close();
       }}
     >
       <DialogPopup className="max-w-lg" showCloseButton={!isPending}>

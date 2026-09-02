@@ -44,4 +44,21 @@ describe("projectTransferStore", () => {
       inProgress: true,
     });
   });
+
+  it("ignores close while a transfer is in progress", () => {
+    const store = useProjectTransferStore.getState();
+    store.open(threadA);
+    store.setInProgress(true);
+    store.close();
+    expect(useProjectTransferStore.getState()).toMatchObject({
+      threadRef: threadA,
+      inProgress: true,
+    });
+    store.setInProgress(false);
+    store.close();
+    expect(useProjectTransferStore.getState()).toMatchObject({
+      threadRef: null,
+      inProgress: false,
+    });
+  });
 });

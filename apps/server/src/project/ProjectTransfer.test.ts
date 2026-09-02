@@ -7,8 +7,10 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   ProjectId,
+  ProjectTransferError,
   ProviderInstanceId,
   ThreadId,
+  type OrchestrationThread,
   type ProjectTransferManifest,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -22,6 +24,7 @@ import {
   cancelProjectTransfer,
   isManagedProjectWorkspace,
   prepareProjectTransfer,
+  requireMoveSiblingThread,
   validateProjectTransferUploadToken,
 } from "./ProjectTransfer.ts";
 
@@ -134,4 +137,64 @@ describe("ProjectTransfer", () => {
       yield* cancelProjectTransfer({ transferId: prepared.transferId });
     }).pipe(Effect.provide(testLayer)),
   );
+
+  it("refuses to move a sibling that cannot be loaded", () => {
+    const idle = requireMoveSiblingThread({
+      title: "Sibling",
+      detail: manifest.thread,
+      shell: { hasPendingApprovals: false, hasPendingUserInput: false },
+    });
+    expect(idle).toEqual(manifest.thread);
+
+    const missingDetail = requireMoveSiblingThread({
+      title: "History",
+      detail: undefined,
+      shell: { hasPendingApprovals: false },
+    });
+    expect(missingDetail).toBeInstanceOf(ProjectTransferError);
+    expect(missingDetail).toMatchObject({
+      reason: "workspace_not_found",
+      detail:
+        'Could not load "History" to move this project. Try again once it is fully available.',
+    });
+
+    const missingShell = requireMoveSiblingThread({
+      title: "History",
+      detail: manifest.thread,
+      shell: undefined,
+    });
+    expect(missingShell).toBeInstanceOf(ProjectTransferError);
+    expect(missingShell).toMatchObject({ reason: "workspace_not_found" });
+
+    const busy: OrchestrationThread = {
+      ...manifest.thread,
+      title: "Running sibling",
+      session: {
+        threadId: manifest.thread.id,
+        status: "running",
+        providerName: null,
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: NOW,
+      },
+    };
+    expect(
+      requireMoveSiblingThread({
+        title: busy.title,
+        detail: busy,
+        shell: {},
+      }),
+    ).toMatchObject({
+      reason: "thread_busy",
+      detail: 'Wait for "Running sibling" to finish before moving this project.',
+    });
+    expect(
+      requireMoveSiblingThread({
+        title: manifest.thread.title,
+        detail: manifest.thread,
+        shell: { hasPendingApprovals: true },
+      }),
+    ).toMatchObject({ reason: "thread_busy" });
+  });
 });
