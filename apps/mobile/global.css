@@ -80,7 +80,7 @@
       --color-header-border: rgba(22, 38, 26, 0.07);
       --color-glass-surface: rgba(255, 255, 255, 0.72);
       --color-glass-tint: rgba(255, 255, 255, 0.18);
-      /* Desktop scenery chrome is 42–52% over the pre-blurred photo. */
+      /* Desktop scenery chrome is 42% over the pre-blurred photo. */
       --color-chrome-glass: rgba(255, 255, 255, 0.52);
       --color-chrome-glass-border: rgba(22, 38, 26, 0.1);
 

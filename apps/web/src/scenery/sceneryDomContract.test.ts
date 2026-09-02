@@ -120,6 +120,19 @@ describe("glass contract with upstream chrome", () => {
     expect(composerSpecularSource).toContain('"--composer-hover-dur"');
   });
 
+  it("composer glass stacks without trapping backdrop-filter in a Backdrop Root", () => {
+    const shellRule =
+      indexCssSource.match(
+        /\.chat-composer-glass-shell \{[^}]*--composer-hover-dur:[^}]+\}/,
+      )?.[0] ?? "";
+    expect(shellRule).toContain("z-index: 0;");
+    expect(shellRule).not.toContain("isolation: isolate");
+    expect(indexCssSource).toMatch(
+      /\.chat-composer-glass-shell::before\s*\{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
+    );
+    expect(sceneryCssSource).toContain("--glass-opacity: 42%;");
+  });
+
   it("keeps hover chrome on an inset top drawer's joined outline", () => {
     const joinedRim =
       /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\)\s+\[data-chat-composer-main-surface="true"\]::after\s*\{[^}]+\}/.exec(

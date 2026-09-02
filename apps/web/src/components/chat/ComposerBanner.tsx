@@ -50,7 +50,7 @@ function Surface({
       data-variant={variant}
       className={cn(
         surfaceColors,
-        "relative isolate border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
+        "relative z-0 border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
         variantColors[variant],
         placement === "attached"
           ? "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-[16px]"

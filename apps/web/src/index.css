@@ -1305,7 +1305,7 @@ html[data-window-inactive]
     );
     --chat-composer-attached-tint: transparent;
     position: relative;
-    isolation: isolate;
+    z-index: 0;
     border: 0 !important;
     background: transparent !important;
     box-shadow: none;
@@ -1432,7 +1432,11 @@ html[data-window-inactive]
     /* Pointer speed multiplier; ComposerSpecular writes this on hover cross. */
     --composer-hover-dur: 1;
 
-    isolation: isolate;
+    /* Stacking context so ::before (z-0) stays behind the host (z-10) without
+       becoming a Backdrop Root. Isolating this element would trap the
+       ::before's backdrop-filter inside an empty group, so the composer reads
+       as a solid slab instead of frosted glass over the photo. */
+    z-index: 0;
 
     @variant dark {
       --chat-composer-glass-surface: color-mix(in srgb, var(--background) 96%, var(--color-white));
@@ -1811,7 +1815,7 @@ html[data-window-inactive]
 
   .chat-composer-context-strip {
     position: relative;
-    isolation: isolate;
+    z-index: 0;
 
     @variant dark {
       &::before {
