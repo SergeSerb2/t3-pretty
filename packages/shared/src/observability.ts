@@ -151,6 +151,18 @@ interface SerializableSpan {
   >;
 }
 
+const TRACE_ATTRIBUTE_MAX_DEPTH = 8;
+const TRACE_ATTRIBUTE_MAX_ENTRIES = 128;
+const TRACE_ATTRIBUTE_KEY_MAX_LENGTH = 256;
+const TRACE_SPAN_EVENT_MAX_ENTRIES = 256;
+const TRACE_SPAN_LINK_MAX_ENTRIES = 128;
+const OTLP_RESOURCE_SPAN_MAX_ENTRIES = 256;
+const OTLP_SCOPE_SPAN_MAX_ENTRIES = 1_024;
+const OTLP_TRACE_RECORD_MAX_ENTRIES = 4_096;
+const TRACE_TEXT_MAX_LENGTH = 1_024;
+const TRACE_STRUCTURE_TRUNCATED = "[Truncated]";
+const TRACE_VALUE_UNSERIALIZABLE = "[Unserializable]";
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -163,73 +175,149 @@ function markSeen(value: object, seen: WeakSet<object>): boolean {
   return false;
 }
 
-function normalizeJsonValue(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value ?? null;
-  }
-  if (typeof value === "bigint") {
-    return value.toString();
-  }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? "Invalid Date" : value.toISOString();
-  }
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      ...(value.stack ? { stack: value.stack } : {}),
-    };
-  }
-  if (Array.isArray(value)) {
+function boundedTraceText(value: string, maxLength = TRACE_TEXT_MAX_LENGTH): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}…`;
+}
+
+function boundedAttributeKey(key: string): string {
+  return boundedTraceText(key, TRACE_ATTRIBUTE_KEY_MAX_LENGTH);
+}
+
+function setTraceRecordEntry(record: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function normalizeJsonValue(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+  depth = 0,
+): unknown {
+  try {
+    if (
+      value === null ||
+      value === undefined ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return value ?? null;
+    }
+    if (typeof value === "bigint") {
+      return value.toString();
+    }
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? "Invalid Date" : value.toISOString();
+    }
+    if (value instanceof Error) {
+      return {
+        name: value.name,
+        message: value.message,
+        ...(value.stack ? { stack: value.stack } : {}),
+      };
+    }
+    if (depth >= TRACE_ATTRIBUTE_MAX_DEPTH) {
+      return TRACE_STRUCTURE_TRUNCATED;
+    }
+    if (Array.isArray(value)) {
+      if (markSeen(value, seen)) {
+        return "[Circular]";
+      }
+      const normalized: unknown[] = [];
+      const retained = Math.min(value.length, TRACE_ATTRIBUTE_MAX_ENTRIES);
+      for (let index = 0; index < retained; index += 1) {
+        normalized.push(normalizeJsonValue(value[index], seen, depth + 1));
+      }
+      if (value.length > retained) normalized.push(TRACE_STRUCTURE_TRUNCATED);
+      return normalized;
+    }
+    if (value instanceof Map) {
+      if (markSeen(value, seen)) {
+        return "[Circular]";
+      }
+      const normalized: Record<string, unknown> = {};
+      let retained = 0;
+      for (const [key, entryValue] of value) {
+        if (retained >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+          normalized[TRACE_STRUCTURE_TRUNCATED] = true;
+          break;
+        }
+        setTraceRecordEntry(
+          normalized,
+          boundedAttributeKey(String(key)),
+          normalizeJsonValue(entryValue, seen, depth + 1),
+        );
+        retained += 1;
+      }
+      return normalized;
+    }
+    if (value instanceof Set) {
+      if (markSeen(value, seen)) {
+        return "[Circular]";
+      }
+      const normalized: unknown[] = [];
+      for (const entry of value) {
+        if (normalized.length >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+          normalized.push(TRACE_STRUCTURE_TRUNCATED);
+          break;
+        }
+        normalized.push(normalizeJsonValue(entry, seen, depth + 1));
+      }
+      return normalized;
+    }
+    if (!isPlainObject(value)) {
+      return String(value);
+    }
     if (markSeen(value, seen)) {
       return "[Circular]";
     }
-    return value.map((entry) => normalizeJsonValue(entry, seen));
-  }
-  if (value instanceof Map) {
-    if (markSeen(value, seen)) {
-      return "[Circular]";
+    const normalized: Record<string, unknown> = {};
+    let retained = 0;
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      if (retained >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+        normalized[TRACE_STRUCTURE_TRUNCATED] = true;
+        break;
+      }
+      setTraceRecordEntry(
+        normalized,
+        boundedAttributeKey(key),
+        normalizeJsonValue(value[key], seen, depth + 1),
+      );
+      retained += 1;
     }
-    return Object.fromEntries(
-      Array.from(value.entries(), ([key, entryValue]) => [
-        String(key),
-        normalizeJsonValue(entryValue, seen),
-      ]),
-    );
+    return normalized;
+  } catch {
+    return TRACE_VALUE_UNSERIALIZABLE;
   }
-  if (value instanceof Set) {
-    if (markSeen(value, seen)) {
-      return "[Circular]";
-    }
-    return Array.from(value.values(), (entry) => normalizeJsonValue(entry, seen));
-  }
-  if (!isPlainObject(value)) {
-    return String(value);
-  }
-  if (markSeen(value, seen)) {
-    return "[Circular]";
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entryValue]) => [key, normalizeJsonValue(entryValue, seen)]),
-  );
 }
 
 export function compactTraceAttributes(
   attributes: Readonly<Record<string, unknown>>,
 ): TraceAttributes {
-  const entries: Array<[string, unknown]> = [];
-  for (const [key, value] of Object.entries(attributes)) {
-    if (value !== undefined && !LOCAL_TRACE_OMITTED_ATTRIBUTES.has(key)) {
-      entries.push([key, normalizeJsonValue(value)]);
+  const normalized: Record<string, unknown> = {};
+  let retained = 0;
+  for (const key in attributes) {
+    if (!Object.prototype.hasOwnProperty.call(attributes, key)) continue;
+    if (LOCAL_TRACE_OMITTED_ATTRIBUTES.has(key)) continue;
+    const value = attributes[key];
+    if (value === undefined) continue;
+    if (retained >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+      normalized[TRACE_STRUCTURE_TRUNCATED] = true;
+      break;
     }
+    setTraceRecordEntry(
+      normalized,
+      boundedAttributeKey(key),
+      truncateNestedValue(normalizeJsonValue(value)),
+    );
+    retained += 1;
   }
-  return Object.fromEntries(entries);
+  return normalized;
 }
 
 function formatTraceExit(exit: Exit.Exit<unknown, unknown>): EffectTraceRecord["exit"] {
@@ -239,17 +327,16 @@ function formatTraceExit(exit: Exit.Exit<unknown, unknown>): EffectTraceRecord["
   if (Cause.hasInterruptsOnly(exit.cause)) {
     return {
       _tag: "Interrupted",
-      cause: Cause.pretty(exit.cause),
+      cause: boundedTraceText(Cause.pretty(exit.cause), 4_096),
     };
   }
   return {
     _tag: "Failure",
-    cause: Cause.pretty(exit.cause),
+    cause: boundedTraceText(Cause.pretty(exit.cause), 4_096),
   };
 }
 
 const TRACE_ATTRIBUTE_MAX_LENGTH = 500;
-const TRACE_ATTRIBUTE_TRUNCATED_LENGTH = 200;
 const TRACE_ATTRIBUTE_TRUNCATION_SUFFIX = "…[truncated]";
 const LOCAL_TRACE_OMITTED_ATTRIBUTES: ReadonlySet<string> = new Set(["db.query.text"]);
 const VERBOSE_LOCAL_SPAN_NAMES: ReadonlySet<string> = new Set([
@@ -264,27 +351,53 @@ export function isVerboseLocalSpan(name: string): boolean {
 // Clamps strings nested inside already-normalized attribute values (arrays and
 // plain objects from normalizeJsonValue, e.g. an Error's `stack`). Returns the
 // input reference when nothing was clamped.
-function truncateNestedValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    return value.length <= TRACE_ATTRIBUTE_MAX_LENGTH
-      ? value
-      : `${value.slice(0, TRACE_ATTRIBUTE_MAX_LENGTH)}${TRACE_ATTRIBUTE_TRUNCATION_SUFFIX}`;
-  }
-  if (Array.isArray(value)) {
-    const truncated = value.map(truncateNestedValue);
-    return truncated.some((entry, index) => entry !== value[index]) ? truncated : value;
-  }
-  if (isPlainObject(value)) {
-    let truncated: Record<string, unknown> | undefined;
-    for (const [key, entry] of Object.entries(value)) {
-      const next = truncateNestedValue(entry);
-      if (next === entry) continue;
-      truncated ??= { ...value };
-      truncated[key] = next;
+function truncateNestedValue(value: unknown, depth = 0): unknown {
+  try {
+    if (typeof value === "string") {
+      return value.length <= TRACE_ATTRIBUTE_MAX_LENGTH
+        ? value
+        : `${value.slice(0, TRACE_ATTRIBUTE_MAX_LENGTH)}${TRACE_ATTRIBUTE_TRUNCATION_SUFFIX}`;
     }
-    return truncated ?? value;
+    if (depth >= TRACE_ATTRIBUTE_MAX_DEPTH && typeof value === "object" && value !== null) {
+      return TRACE_STRUCTURE_TRUNCATED;
+    }
+    if (Array.isArray(value)) {
+      const retained = Math.min(value.length, TRACE_ATTRIBUTE_MAX_ENTRIES);
+      const truncated: unknown[] = [];
+      let changed = retained !== value.length;
+      for (let index = 0; index < retained; index += 1) {
+        const current = value[index];
+        const next = truncateNestedValue(current, depth + 1);
+        truncated.push(next);
+        changed ||= next !== current;
+      }
+      if (value.length > retained) truncated.push(TRACE_STRUCTURE_TRUNCATED);
+      return changed ? truncated : value;
+    }
+    if (isPlainObject(value)) {
+      const truncated: Record<string, unknown> = {};
+      let changed = false;
+      let retained = 0;
+      for (const key in value) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+        if (retained >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+          truncated[TRACE_STRUCTURE_TRUNCATED] = true;
+          changed = true;
+          break;
+        }
+        const boundedKey = boundedAttributeKey(key);
+        const current = value[key];
+        const next = truncateNestedValue(current, depth + 1);
+        setTraceRecordEntry(truncated, boundedKey, next);
+        changed ||= boundedKey !== key || next !== current;
+        retained += 1;
+      }
+      return changed ? truncated : value;
+    }
+    return value;
+  } catch {
+    return TRACE_VALUE_UNSERIALIZABLE;
   }
-  return value;
 }
 
 /**
@@ -294,19 +407,28 @@ function truncateNestedValue(value: unknown): unknown {
  * mutates the input (the live span's attributes are shared with other tracers).
  */
 export function truncateTraceAttributes(attributes: TraceAttributes): TraceAttributes {
-  let truncated: Record<string, unknown> | undefined;
-  for (const [key, value] of Object.entries(attributes)) {
+  const truncated: Record<string, unknown> = {};
+  let changed = false;
+  let retained = 0;
+  for (const key in attributes) {
+    if (!Object.prototype.hasOwnProperty.call(attributes, key)) continue;
     if (LOCAL_TRACE_OMITTED_ATTRIBUTES.has(key)) {
-      truncated ??= { ...attributes };
-      delete truncated[key];
+      changed = true;
       continue;
     }
+    if (retained >= TRACE_ATTRIBUTE_MAX_ENTRIES) {
+      truncated[TRACE_STRUCTURE_TRUNCATED] = true;
+      changed = true;
+      break;
+    }
+    const boundedKey = boundedAttributeKey(key);
+    const value = attributes[key];
     const next = truncateNestedValue(value);
-    if (next === value) continue;
-    truncated ??= { ...attributes };
-    truncated[key] = next;
+    setTraceRecordEntry(truncated, boundedKey, next);
+    changed ||= boundedKey !== key || next !== value;
+    retained += 1;
   }
-  return truncated ?? attributes;
+  return changed ? truncated : attributes;
 }
 
 export function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
@@ -315,7 +437,7 @@ export function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
 
   return {
     type: "effect-span",
-    name: span.name,
+    name: boundedTraceText(span.name),
     traceId: span.traceId,
     spanId: span.spanId,
     ...(parentSpanId ? { parentSpanId } : {}),
@@ -327,12 +449,14 @@ export function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
     attributes: truncateTraceAttributes(
       compactTraceAttributes(Object.fromEntries(span.attributes)),
     ),
-    events: span.events.map(([name, startTime, attributes]) => ({
-      name,
-      timeUnixNano: String(startTime),
-      attributes: truncateTraceAttributes(compactTraceAttributes(attributes)),
-    })),
-    links: span.links.map((link) => ({
+    events: span.events
+      .slice(-TRACE_SPAN_EVENT_MAX_ENTRIES)
+      .map(([name, startTime, attributes]) => ({
+        name: boundedTraceText(name),
+        timeUnixNano: String(startTime),
+        attributes: truncateTraceAttributes(compactTraceAttributes(attributes)),
+      })),
+    links: span.links.slice(0, TRACE_SPAN_LINK_MAX_ENTRIES).map((link) => ({
       traceId: link.span.traceId,
       spanId: link.span.spanId,
       attributes: truncateTraceAttributes(compactTraceAttributes(link.attributes)),
@@ -465,7 +589,7 @@ class LocalFileSpan implements Tracer.Span {
     this.traceId = delegate.traceId;
     this.parent = options.parent;
     this.annotations = options.annotations;
-    this.links = [...options.links];
+    this.links = options.links.slice(0, TRACE_SPAN_LINK_MAX_ENTRIES);
     this.sampled = delegate.sampled;
     this.kind = delegate.kind;
     this.status = {
@@ -486,24 +610,46 @@ class LocalFileSpan implements Tracer.Span {
     this.delegate.end(endTime, exit);
 
     if (this.sampled && !isVerboseLocalSpan(this.name)) {
-      this.push(spanToTraceRecord(this));
+      try {
+        this.push(spanToTraceRecord(this));
+      } catch {
+        // Observability must never fail the operation whose span just ended.
+      }
     }
   }
 
   attribute(key: string, value: unknown): void {
-    this.attributes.set(key, value);
-    this.delegate.attribute(key, value);
+    const retained = this.attributes.has(key) || this.attributes.size < TRACE_ATTRIBUTE_MAX_ENTRIES;
+    if (retained) {
+      this.attributes.set(key, value);
+      this.delegate.attribute(key, value);
+    }
   }
 
   event(name: string, startTime: bigint, attributes?: Record<string, unknown>): void {
     const nextAttributes = attributes ?? {};
-    this.events.push([name, startTime, nextAttributes]);
-    this.delegate.event(name, startTime, nextAttributes);
+    const event: [name: string, startTime: bigint, attributes: Record<string, unknown>] = [
+      name,
+      startTime,
+      nextAttributes,
+    ];
+    const retained = this.events.length < TRACE_SPAN_EVENT_MAX_ENTRIES;
+    if (retained) {
+      this.events.push(event);
+      this.delegate.event(name, startTime, nextAttributes);
+    } else {
+      // Keep the beginning of the span plus its newest event without growing
+      // one long-lived span for every progress heartbeat it observes.
+      this.events[TRACE_SPAN_EVENT_MAX_ENTRIES - 1] = event;
+    }
   }
 
   addLinks(links: ReadonlyArray<Tracer.SpanLink>): void {
-    this.links.push(...links);
-    this.delegate.addLinks(links);
+    const remaining = TRACE_SPAN_LINK_MAX_ENTRIES - this.links.length;
+    if (remaining <= 0) return;
+    const retained = links.slice(0, remaining);
+    this.links.push(...retained);
+    this.delegate.addLinks(retained);
   }
 }
 
@@ -528,7 +674,11 @@ export const makeLocalFileTracer = Effect.fn("makeLocalFileTracer")(function* (
 
   return Tracer.make({
     span(spanOptions) {
-      return new LocalFileSpan(spanOptions, delegate.span(spanOptions), sink.push);
+      const boundedOptions = {
+        ...spanOptions,
+        links: spanOptions.links.slice(0, TRACE_SPAN_LINK_MAX_ENTRIES),
+      };
+      return new LocalFileSpan(boundedOptions, delegate.span(boundedOptions), sink.push);
     },
     ...(delegate.context ? { context: delegate.context } : {}),
   });
@@ -546,12 +696,19 @@ export function decodeOtlpTraceRecords(
   payload: OtlpTracer.TraceData,
 ): ReadonlyArray<OtlpTraceRecord> {
   const records: Array<OtlpTraceRecord> = [];
+  let resourceSpanCount = 0;
+  let scopeSpanCount = 0;
 
-  for (const resourceSpan of payload.resourceSpans) {
+  resourceSpans: for (const resourceSpan of payload.resourceSpans) {
+    resourceSpanCount += 1;
+    if (resourceSpanCount > OTLP_RESOURCE_SPAN_MAX_ENTRIES) break;
     const resourceAttributes = decodeAttributes(resourceSpan.resource?.attributes ?? []);
 
     for (const scopeSpan of resourceSpan.scopeSpans) {
+      scopeSpanCount += 1;
+      if (scopeSpanCount > OTLP_SCOPE_SPAN_MAX_ENTRIES) break resourceSpans;
       for (const span of scopeSpan.spans) {
+        if (records.length >= OTLP_TRACE_RECORD_MAX_ENTRIES) break resourceSpans;
         records.push(
           otlpSpanToTraceRecord({
             resourceAttributes,
@@ -584,22 +741,24 @@ function otlpSpanToTraceRecord(input: {
 }): OtlpTraceRecord {
   return {
     type: "otlp-span",
-    name: input.span.name,
-    traceId: input.span.traceId,
-    spanId: input.span.spanId,
-    ...(input.span.parentSpanId ? { parentSpanId: input.span.parentSpanId } : {}),
+    name: boundedTraceText(input.span.name),
+    traceId: boundedTraceText(input.span.traceId, 128),
+    spanId: boundedTraceText(input.span.spanId, 64),
+    ...(input.span.parentSpanId
+      ? { parentSpanId: boundedTraceText(input.span.parentSpanId, 64) }
+      : {}),
     sampled: true,
     kind: normalizeSpanKind(input.span.kind),
-    startTimeUnixNano: input.span.startTimeUnixNano,
-    endTimeUnixNano: input.span.endTimeUnixNano,
+    startTimeUnixNano: boundedTraceText(input.span.startTimeUnixNano, 64),
+    endTimeUnixNano: boundedTraceText(input.span.endTimeUnixNano, 64),
     durationMs:
       Number(parseBigInt(input.span.endTimeUnixNano) - parseBigInt(input.span.startTimeUnixNano)) /
       1_000_000,
     attributes: decodeAttributes(input.span.attributes),
     resourceAttributes: input.resourceAttributes,
     scope: {
-      ...(input.scopeName ? { name: input.scopeName } : {}),
-      ...(input.scopeVersion ? { version: input.scopeVersion } : {}),
+      ...(input.scopeName ? { name: boundedTraceText(input.scopeName) } : {}),
+      ...(input.scopeVersion ? { version: boundedTraceText(input.scopeVersion) } : {}),
       attributes: input.scopeAttributes,
     },
     events: decodeEvents(input.span.events),
@@ -609,27 +768,27 @@ function otlpSpanToTraceRecord(input: {
 }
 
 function decodeStatus(input: OtlpSpanStatus): OtlpTraceRecord["status"] {
-  const code = String(input.code);
+  const code = boundedTraceText(String(input.code), 64);
   const message = input.message;
 
   return {
     code,
-    ...(message ? { message } : {}),
+    ...(message ? { message: boundedTraceText(message) } : {}),
   };
 }
 
 function decodeEvents(input: ReadonlyArray<OtlpSpanEvent>): ReadonlyArray<TraceRecordEvent> {
-  return input.map((current) => ({
-    name: current.name,
-    timeUnixNano: current.timeUnixNano,
+  return input.slice(-TRACE_SPAN_EVENT_MAX_ENTRIES).map((current) => ({
+    name: boundedTraceText(current.name),
+    timeUnixNano: boundedTraceText(current.timeUnixNano, 64),
     attributes: decodeAttributes(current.attributes),
   }));
 }
 
 function decodeLinks(input: ReadonlyArray<OtlpSpanLink>): ReadonlyArray<TraceRecordLink> {
-  return input.flatMap((current) => {
-    const traceId = current.traceId;
-    const spanId = current.spanId;
+  return input.slice(0, TRACE_SPAN_LINK_MAX_ENTRIES).map((current) => {
+    const traceId = boundedTraceText(current.traceId, 128);
+    const spanId = boundedTraceText(current.spanId, 64);
     return {
       traceId,
       spanId,
@@ -643,16 +802,19 @@ function decodeAttributes(
 ): Readonly<Record<string, unknown>> {
   const entries: Record<string, unknown> = {};
 
-  for (const attribute of input) {
-    entries[attribute.key] = decodeValue(attribute.value);
+  for (const attribute of input.slice(0, TRACE_ATTRIBUTE_MAX_ENTRIES)) {
+    setTraceRecordEntry(entries, boundedAttributeKey(attribute.key), decodeValue(attribute.value));
   }
 
   return compactTraceAttributes(entries);
 }
 
-function decodeValue(input: OtlpResource.AnyValue | null | undefined): unknown {
+function decodeValue(input: OtlpResource.AnyValue | null | undefined, depth = 0): unknown {
   if (input == null) {
     return null;
+  }
+  if (depth >= TRACE_ATTRIBUTE_MAX_DEPTH) {
+    return TRACE_STRUCTURE_TRUNCATED;
   }
   if ("stringValue" in input) {
     return input.stringValue;
@@ -670,10 +832,20 @@ function decodeValue(input: OtlpResource.AnyValue | null | undefined): unknown {
     return input.bytesValue;
   }
   if (input.arrayValue) {
-    return input.arrayValue.values.map((entry) => decodeValue(entry));
+    return input.arrayValue.values
+      .slice(0, TRACE_ATTRIBUTE_MAX_ENTRIES)
+      .map((entry) => decodeValue(entry, depth + 1));
   }
   if (input.kvlistValue) {
-    return decodeAttributes(input.kvlistValue.values);
+    const entries: Record<string, unknown> = {};
+    for (const attribute of input.kvlistValue.values.slice(0, TRACE_ATTRIBUTE_MAX_ENTRIES)) {
+      setTraceRecordEntry(
+        entries,
+        boundedAttributeKey(attribute.key),
+        decodeValue(attribute.value, depth + 1),
+      );
+    }
+    return compactTraceAttributes(entries);
   }
   return null;
 }
@@ -683,6 +855,7 @@ function normalizeSpanKind(input: number): OtlpTraceRecord["kind"] {
 }
 
 function parseBigInt(input: string): bigint {
+  if (input.length > 64) return 0n;
   try {
     return BigInt(input);
   } catch {

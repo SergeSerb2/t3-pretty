@@ -95,12 +95,25 @@ export function SkillsSettingsPanel() {
       ? null
       : skillsEnvironment.hostSkillsStateAtom(primaryEnvironmentId),
   );
+  const environmentKey = primaryEnvironmentId ?? "no-environment";
 
   return (
     <SettingsPageContainer>
-      <InstalledSkillsSection environmentId={primaryEnvironmentId} query={skillsState} />
-      <HostSkillsSection environmentId={primaryEnvironmentId} query={hostSkillsState} />
-      <MarketplaceSkillsSection environmentId={primaryEnvironmentId} query={marketplaceListings} />
+      <InstalledSkillsSection
+        key={`installed:${environmentKey}`}
+        environmentId={primaryEnvironmentId}
+        query={skillsState}
+      />
+      <HostSkillsSection
+        key={`host:${environmentKey}`}
+        environmentId={primaryEnvironmentId}
+        query={hostSkillsState}
+      />
+      <MarketplaceSkillsSection
+        key={`marketplace:${environmentKey}`}
+        environmentId={primaryEnvironmentId}
+        query={marketplaceListings}
+      />
       <DetectedSkillsSection hostSkills={hostSkillsState.data?.skills ?? []} />
     </SettingsPageContainer>
   );
@@ -264,6 +277,7 @@ function InstalledSkillsSection({
     setIds: setEnabledSkillIds,
     reset: resetEnabledSkillIds,
   } = useOptimisticIdList(settings.skills.enabledSkillIds, environmentId ?? "");
+  const enabledSkillIdSet = useMemo(() => new Set(enabledSkillIds), [enabledSkillIds]);
   const writeEnabledSkillIds = useCallback(
     (next: ReadonlyArray<SkillId>) => {
       if (environmentId === null) return;
@@ -273,7 +287,7 @@ function InstalledSkillsSection({
         input: { patch: { skills: { enabledSkillIds: next } } },
       }).then((result) => {
         if (result._tag === "Failure") {
-          resetEnabledSkillIds();
+          resetEnabledSkillIds(next);
         }
       });
     },
@@ -282,13 +296,13 @@ function InstalledSkillsSection({
   const setSkillEnabled = useCallback(
     (skillId: SkillId, enabled: boolean) => {
       const next = enabled
-        ? enabledSkillIds.includes(skillId)
+        ? enabledSkillIdSet.has(skillId)
           ? enabledSkillIds
           : [...enabledSkillIds, skillId]
         : enabledSkillIds.filter((id) => id !== skillId);
       writeEnabledSkillIds(next);
     },
-    [enabledSkillIds, writeEnabledSkillIds],
+    [enabledSkillIdSet, enabledSkillIds, writeEnabledSkillIds],
   );
 
   const handleUninstall = useCallback(
@@ -315,11 +329,18 @@ function InstalledSkillsSection({
       }
       beginExit(skill);
       // Drop the orphaned enablement so the id does not linger in settings.
-      if (enabledSkillIds.includes(skill.id)) {
+      if (enabledSkillIdSet.has(skill.id)) {
         writeEnabledSkillIds(enabledSkillIds.filter((id) => id !== skill.id));
       }
     },
-    [beginExit, enabledSkillIds, environmentId, uninstallSkill, writeEnabledSkillIds],
+    [
+      beginExit,
+      enabledSkillIdSet,
+      enabledSkillIds,
+      environmentId,
+      uninstallSkill,
+      writeEnabledSkillIds,
+    ],
   );
 
   return (
@@ -351,7 +372,7 @@ function InstalledSkillsSection({
           >
             <InstalledSkillRow
               skill={skill}
-              enabled={enabledSkillIds.includes(skill.id)}
+              enabled={enabledSkillIdSet.has(skill.id)}
               pending={uninstallingIds.has(skill.id)}
               onToggle={(enabled) => setSkillEnabled(skill.id, enabled)}
               onUninstall={() => void handleUninstall(skill)}

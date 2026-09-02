@@ -646,6 +646,26 @@ describe("provider update launch notification logic", () => {
     ).toBeNull();
   });
 
+  it("compares mixed-precision update timestamps chronologically", () => {
+    expect(
+      getProviderUpdateSidebarPillView(
+        [
+          provider({
+            driver: driver("codex"),
+            updateState: {
+              status: "failed",
+              startedAt: checkedAt,
+              finishedAt: "2026-04-23T10:00:00.9Z",
+              message: "command failed",
+              output: null,
+            },
+          }),
+        ],
+        { visibleAfterIso: "2026-04-23T10:00:00Z" },
+      ),
+    ).toMatchObject({ tone: "error" });
+  });
+
   it("shows a newer success before falling back to an older failure", () => {
     const providers = [
       provider({

@@ -61,4 +61,21 @@ describe("workspaceFileImageAtom", () => {
     unmount();
     registry.dispose();
   });
+
+  it("fails a prefetch that never settles instead of leaving the preview loading forever", async () => {
+    const imageAtom = createWorkspaceFileImageAtomFamily({
+      prefetch: () => new Promise<boolean>(() => undefined),
+      prefetchTimeoutMs: 1,
+    });
+    const registry = AtomRegistry.make();
+    const atom = imageAtom("https://example.test/stalled.png");
+    const unmount = registry.mount(atom);
+
+    await vi.waitFor(() => {
+      expect(AsyncResult.isFailure(registry.get(atom))).toBe(true);
+    });
+
+    unmount();
+    registry.dispose();
+  });
 });

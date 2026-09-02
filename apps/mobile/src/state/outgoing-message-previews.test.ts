@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { MessageId } from "@t3tools/contracts";
 
 import {
+  boundOutgoingMessagePreviewUris,
   getOutgoingMessagePreviewUris,
   previewUrisFromDraftAttachments,
   rememberOutgoingMessageDraftAttachments,
@@ -62,5 +63,17 @@ describe("outgoing message previews", () => {
     expect(capTestKeys).toHaveLength(32);
     expect(capTestKeys[0]).toBe("cap-test-8");
     expect(previews["cap-test-39"]).toEqual(["file:///tmp/cap-39.png"]);
+  });
+
+  it("bounds aggregate preview URI characters while preserving the newest entry", () => {
+    expect(
+      boundOutgoingMessagePreviewUris(
+        {
+          old: ["12345"],
+          newest: ["abcdef", "ghij"],
+        },
+        { maxEntries: 10, maxUriCharacters: 7 },
+      ),
+    ).toEqual({ newest: ["abcdef"] });
   });
 });

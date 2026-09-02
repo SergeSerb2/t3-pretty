@@ -16,14 +16,26 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderOptionSelections, type ProviderOptionSelection } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
+export const SUBAGENT_CHILD_MODEL_MAX_LENGTH = 2_048;
+export const SUBAGENT_POLICY_MAX_CHILDREN = 128;
+const SubagentChildModel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(SUBAGENT_CHILD_MODEL_MAX_LENGTH),
+);
+
 export const SubagentPolicyMode = Schema.Literals(["inherit", "off", "on"]);
 export type SubagentPolicyMode = typeof SubagentPolicyMode.Type;
 
 export const SubagentChildSelection = Schema.Struct({
-  model: TrimmedNonEmptyString,
+  model: SubagentChildModel,
   options: Schema.optional(ProviderOptionSelections),
 });
 export type SubagentChildSelection = typeof SubagentChildSelection.Type;
+
+export const SubagentPolicyChildren = Schema.Record(
+  ProviderInstanceId,
+  SubagentChildSelection,
+).check(Schema.isMaxProperties(SUBAGENT_POLICY_MAX_CHILDREN));
+export type SubagentPolicyChildren = typeof SubagentPolicyChildren.Type;
 
 export const ThreadSubagentPolicy = Schema.Struct({
   mode: SubagentPolicyMode,
@@ -43,9 +55,7 @@ export const SubagentPolicySettings = Schema.Struct({
   // but children no longer silently inherit the parent model.
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Per-instance child pin. Missing instance → cheaper sibling of the parent.
-  children: Schema.Record(ProviderInstanceId, SubagentChildSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
+  children: SubagentPolicyChildren.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type SubagentPolicySettings = typeof SubagentPolicySettings.Type;
 
@@ -69,7 +79,7 @@ export const ResolvedSubagentPolicy = Schema.Struct({
   child: Schema.NullOr(SubagentChildSelection),
   childSource: Schema.NullOr(SubagentChildSource),
   bind: SubagentPolicyBind,
-  parentModel: TrimmedNonEmptyString,
+  parentModel: SubagentChildModel,
 });
 export type ResolvedSubagentPolicy = typeof ResolvedSubagentPolicy.Type;
 

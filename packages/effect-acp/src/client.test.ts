@@ -1,5 +1,6 @@
 import * as Path from "effect/Path";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -31,6 +32,14 @@ const ExtRequest = jsonRpcRequest("x/test", Schema.Struct({ hello: Schema.String
 const ExtResponse = jsonRpcResponse(Schema.Struct({ ok: Schema.Boolean }));
 const PromptRequest = jsonRpcRequest("session/prompt", AcpSchema.PromptRequest);
 const PromptResponse = jsonRpcResponse(AcpSchema.PromptResponse);
+const SessionUpdateNotification = jsonRpcNotification(
+  "session/update",
+  AcpSchema.SessionNotification,
+);
+const BufferedNotificationMarker = jsonRpcNotification(
+  "x/buffer-marker",
+  Schema.Struct({ done: Schema.Boolean }),
+);
 const decodePromptRequestLine = Schema.decodeEffect(Schema.fromJsonString(PromptRequest));
 const XAiPromptCompleteNotification = jsonRpcNotification(
   "_x.ai/session/prompt_complete",
@@ -342,6 +351,66 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
         assert.deepEqual(yield* Ref.get(typedRequests), [{ message: "hello from typed request" }]);
         assert.deepEqual(yield* Ref.get(typedNotifications), [{ count: 2 }]);
       }).pipe(Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
+    }),
+  );
+
+  it.effect("bounds notifications that arrive before a handler is registered", () =>
+    Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const scope = yield* Scope.make();
+
+      yield* Effect.gen(function* () {
+        const acp = yield* AcpClient.make(stdio).pipe(Effect.provideService(Scope.Scope, scope));
+        const inputDrained = yield* Deferred.make<void>();
+        yield* acp.handleExtNotification(
+          "x/buffer-marker",
+          Schema.Struct({ done: Schema.Boolean }),
+          () => Deferred.succeed(inputDrained, undefined).pipe(Effect.asVoid),
+        );
+
+        const totalNotifications = AcpClient.ACP_BUFFERED_NOTIFICATION_CAPACITY + 2;
+        for (let index = 0; index < totalNotifications; index += 1) {
+          yield* Queue.offer(
+            input,
+            yield* encodeJsonl(SessionUpdateNotification, {
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "session-1",
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: String(index) },
+                },
+              },
+            }),
+          );
+        }
+        yield* Queue.offer(
+          input,
+          yield* encodeJsonl(BufferedNotificationMarker, {
+            jsonrpc: "2.0",
+            method: "x/buffer-marker",
+            params: { done: true },
+          }),
+        );
+        yield* Deferred.await(inputDrained);
+
+        const retained = yield* Ref.make<Array<AcpSchema.SessionNotification>>([]);
+        yield* acp.handleSessionUpdate((notification) =>
+          Ref.update(retained, (current) => [...current, notification]),
+        );
+
+        const notifications = yield* Ref.get(retained);
+        assert.equal(notifications.length, AcpClient.ACP_BUFFERED_NOTIFICATION_CAPACITY);
+        const texts = notifications.map((notification) =>
+          notification.update.sessionUpdate === "agent_message_chunk" &&
+          notification.update.content.type === "text"
+            ? notification.update.content.text
+            : undefined,
+        );
+        assert.equal(texts[0], "2");
+        assert.equal(texts.at(-1), String(totalNotifications - 1));
+      }).pipe(Effect.ensuring(Scope.close(scope, Exit.void)));
     }),
   );
 

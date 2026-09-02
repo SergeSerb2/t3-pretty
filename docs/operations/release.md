@@ -30,7 +30,9 @@ This document covers the unified release workflow for stable and nightly desktop
 - Deploys the hosted web app to Vercel only after a release is published:
   - stable releases are aliased to the `latest` hosted app channel
   - nightly releases are aliased to the `nightly` hosted app channel
-- Signing is optional and auto-detected per platform from secrets.
+- macOS signing and notarization credentials are required; the official release
+  stops rather than publishing an unsigned macOS updater. Windows signing is
+  auto-detected and remains optional; Linux artifacts are not signed.
 
 ## Required release credentials
 
@@ -99,6 +101,11 @@ database. Local personal stages provision isolated branches from it and are neve
 Production adopts the configured relay API and tunnel DNS zones as retained Cloudflare resources.
 Personal stages reference the production-owned zones.
 
+Relay deployment state is accepted only when its relay/tracing endpoints are bounded,
+credential-free HTTPS URLs and its datasets/tokens are bounded and control-free. The release workflow
+creates the token-bearing handoff file exclusively at mode `0600`, retains its artifact for one day,
+and has each consumer revalidate the file and mask the token before exporting it.
+
 Developers deploy personal stages locally rather than through pull-request automation:
 
 ```sh
@@ -121,9 +128,9 @@ Required GitHub Actions secrets:
 Optional GitHub Actions variables:
 
 - `VERCEL_TEAM_SLUG`: overrides the Vercel CLI scope when the team slug is preferred over the `VERCEL_ORG_ID` secret.
-- `T3CODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`.
-- `T3CODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`.
-- `T3CODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`.
+- `T3CODE_WEB_ROUTER_URL`: defaults to `https://app.t3.codes`; it must be an HTTPS origin without credentials, a path, query, fragment, or custom port.
+- `T3CODE_WEB_LATEST_DOMAIN`: defaults to `latest.app.t3.codes`; it must be a public DNS name.
+- `T3CODE_WEB_NIGHTLY_DOMAIN`: defaults to `nightly.app.t3.codes`; it must be a public DNS name.
 
 Required Vercel domains:
 
@@ -191,10 +198,12 @@ the **Update server** action targeting a package version that does not exist yet
 
 For a release smoke test, confirm `npm view t3@<version> version` returns the expected version, then
 connect the new client to a server on the previous version and verify that the update action
-reconnects to the matching server. Use releases with identical migration manifests for the
-automatic path. When the manifest changed, verify that the remote action stops before restart and
-shows the exact local `npx t3@<version> service update` command. Also test the manual or
-desktop-managed guidance when those environments are available.
+reconnects to the matching server. When the release adds database migrations, verify that the
+remote update applies them and reconnects. A failed trial must restore the database snapshot and
+restart the previous server. If the installed launcher does not support the target protocol,
+verify that the update stops before restart and run `npx t3@<version> service update` once on the
+server machine. Also test the manual or desktop-managed guidance when those environments are
+available.
 
 ## Desktop auto-update notes
 
@@ -216,6 +225,7 @@ desktop-managed guidance when those environments are available.
 - macOS metadata note:
   - `electron-updater` reads `latest-mac.yml` on stable and `nightly-mac.yml` on nightly, for both Intel and Apple Silicon.
   - The workflow merges the per-arch mac manifests into one channel-specific mac manifest before publishing the GitHub Release.
+  - Publication requires the exact macOS, Windows, and Linux channel-manifest set. Every referenced payload must be a regular local file whose byte size and SHA-512 match the manifest; both macOS architectures must be present.
 
 ### Windows payload topology and update validation
 
@@ -223,10 +233,12 @@ Windows packages the bundled server and only its runtime-external/native
 dependency closure in `resources/server.asar`. Native modules and helper
 executables declared as unpacked by that archive must be present at the matching
 paths below `resources/server.asar.unpacked`. The Windows-native backend reads
-the archive in place through Electron. WSL cannot read ASAR files, so enabling
-the WSL backend extracts the server tree once into the desktop state directory
-under `wsl-server-tree/<version>` and reuses the completed version until the app
-is updated.
+the archive in place through Electron. Packaged Windows builds also ship a
+Linux-only `resources/wsl-runtime.tar.gz` plus its SHA-256 sidecar. WSL verifies
+and extracts that archive into `~/.t3/wsl-runtime/sha256-<archive-digest>` inside
+the selected distro, then reuses it for later launches of the same update. The
+Windows-side `wsl-server-tree/<version>` extraction remains a fallback and is
+removed after the distro-local runtime passes preflight.
 
 The artifact builder rejects a Windows package when any of these invariants
 break:
@@ -237,6 +249,11 @@ break:
 - On same-architecture Windows builds, the packaged primary cannot load the fff
   native library from inside `server.asar` through its `.unpacked` sibling.
 - The isolated, extracted sidecar cannot load the server entry with plain Node.
+- A Windows build with a WSL node-pty prebuild omits the WSL archive or SHA-256
+  sidecar, the sidecar digest does not match the emitted archive, or required
+  Linux runtime members are absent.
+- The emitted WSL archive contains Windows/Darwin node-pty payloads, ConPTY,
+  pnpm install metadata, or Windows-only FFF, ffi-rs, or msgpackr bindings.
 - The external Windows resource monitor is absent.
 - The unpacked Windows application contains more than 80 files.
 
@@ -273,7 +290,7 @@ Checklist:
    - invoke the CLI publish script with npm dist-tag `latest`
 5. Nightly runs invoke the same publish script with npm dist-tag `nightly`.
 
-## 1) Release validation and unsigned builds
+## 1) Release validation and signing
 
 There is no dry-run tag path. Pushing any accepted non-nightly tag, including
 `v0.0.0-test.1`, classifies the run as the stable channel. It publishes `t3` with npm dist-tag
@@ -287,8 +304,9 @@ risk, manually dispatch `channel=nightly`; this still publishes a real nightly n
 prerelease, desktop updater release, and hosted nightly alias, but it does not update stable aliases or
 commit a version bump to `main`. Only run it when a real nightly release is acceptable.
 
-Manual `channel=stable` with a version input is also a real stable-channel release. Omitting signing
-secrets only makes platform artifacts unsigned; it does not prevent publication.
+Manual `channel=stable` with a version input is also a real stable-channel release. Missing Apple
+signing or notarization credentials stops the official release before publication. Missing Windows
+signing credentials still produces an unsigned Windows artifact.
 
 ## 2) Apple signing + notarization setup (macOS)
 
@@ -380,12 +398,11 @@ Checklist:
 
 ## 5) Troubleshooting
 
-- macOS build unsigned when expected signed:
+- macOS build stops because signing/notarization prerequisites are missing:
   - Check all Apple secrets plus `APPLE_TEAM_ID` are populated and non-empty.
   - Confirm the provisioning profile belongs to `APPLE_TEAM_ID.com.t3tools.t3code` and includes
     Associated Domains.
 - Windows build unsigned when expected signed:
   - Check all Azure ATS and auth secrets are populated and non-empty.
 - Build fails with signing error:
-  - Retry with secrets removed to confirm unsigned path still works.
   - Re-check certificate/profile names and tenant/client credentials.

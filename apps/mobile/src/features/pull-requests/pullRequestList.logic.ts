@@ -5,6 +5,8 @@ import type {
   PullRequestListState,
 } from "@t3tools/contracts";
 
+import { compareTimestamps } from "../../lib/time";
+
 export type PullRequestGroupKey = "reviewRequested" | "authored" | "others";
 
 export interface PullRequestGroup {
@@ -143,7 +145,7 @@ export function partitionPullRequestsWithPriority(
     }
   }
   const byRecency = (left: PullRequestListEntry, right: PullRequestListEntry) =>
-    right.updatedAt.localeCompare(left.updatedAt);
+    compareTimestamps(right.updatedAt, left.updatedAt);
   return (
     [
       { key: "reviewRequested", entries: [...reviewByKey.values()].sort(byRecency) },
@@ -215,7 +217,7 @@ export function rankPullRequestMatches(
   // Copy then sort: Hermes does not ship Array#toSorted.
   return [...entries].sort((left, right) => {
     const byScore = scorePullRequestMatch(right, query) - scorePullRequestMatch(left, query);
-    return byScore !== 0 ? byScore : right.updatedAt.localeCompare(left.updatedAt);
+    return byScore !== 0 ? byScore : compareTimestamps(right.updatedAt, left.updatedAt);
   });
 }
 

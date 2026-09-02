@@ -225,20 +225,20 @@ jobs:
             git tag --points-at HEAD \
               --list 'fork-v*' \
               --list 'v*-nightly.*.fork' \
-              --sort=-version:refname | head -n 1
+              --sort=-version:refname | sed -n '1p'
           )"
           if [[ -z "$existing_tag" ]]; then
             # A run that generated What's New notes tags the changelog child
             # commit instead of the triggering commit; recognize that child so
             # re-running a completed Actions run still skips the release.
             head_sha="$(git rev-parse HEAD)"
-            for tag in $(git tag --list 'v*-nightly.*.fork' --sort=-version:refname); do
-              if [[ "$(git rev-parse --verify --quiet "$tag^{commit}~1")" == "$head_sha" ]] &&
+            while IFS= read -r tag; do
+              if [[ -z "$existing_tag" ]] &&
+                [[ "$(git rev-parse --verify --quiet "$tag^{commit}~1")" == "$head_sha" ]] &&
                 [[ "$(git log -1 --format=%s "$tag^{commit}")" == "docs(changelog):"* ]]; then
                 existing_tag="$tag"
-                break
               fi
-            done
+            done < <(git tag --list 'v*-nightly.*.fork' --sort=-version:refname)
           fi
           if [[ -n "$existing_tag" ]]; then
             echo "Commit already has fork release $existing_tag."

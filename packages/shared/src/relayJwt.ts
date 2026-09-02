@@ -10,6 +10,7 @@ export const RELAY_HEALTH_REQUEST_TYP = "t3-cloud-health+jwt";
 export const RELAY_MINT_RESPONSE_TYP = "t3-env-mint+jwt";
 export const RELAY_HEALTH_RESPONSE_TYP = "t3-env-health+jwt";
 export const RELAY_ACTIVITY_PUBLISH_TYP = "t3-env-activity+jwt";
+export const RELAY_JWT_MAX_LENGTH = 64 * 1024;
 
 export class RelayJwtError extends Schema.TaggedErrorClass<RelayJwtError>()("RelayJwtError", {
   operation: Schema.Literals(["sign", "verify"]),
@@ -41,6 +42,9 @@ export function normalizeRelayIssuer(value: string): string {
 }
 
 export function decodeRelayJwt(token: string): JWTPayload {
+  if (token.length > RELAY_JWT_MAX_LENGTH) {
+    throw new RangeError(`Relay JWT exceeds ${RELAY_JWT_MAX_LENGTH} characters.`);
+  }
   return decodeJwt(token);
 }
 
@@ -75,6 +79,9 @@ export function verifyRelayJwt(input: {
 }): Effect.Effect<JWTPayload, RelayJwtError> {
   return Effect.tryPromise({
     try: async () => {
+      if (input.token.length > RELAY_JWT_MAX_LENGTH) {
+        throw new RangeError(`Relay JWT exceeds ${RELAY_JWT_MAX_LENGTH} characters.`);
+      }
       const key = await importSPKI(normalizePem(input.publicKey), "EdDSA");
       const verified = await jwtVerify(input.token, key, {
         algorithms: ["EdDSA"],

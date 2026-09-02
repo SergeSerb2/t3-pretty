@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Scope from "effect/Scope";
 import {
   PullRequestOperationError,
   PullRequestUnavailableError,
@@ -104,17 +105,11 @@ const DIFF_CACHE_TTL = Duration.seconds(60);
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
 /** Sized like the client's own stale time; a row's counts move only when somebody pushes. */
 const LIST_STATS_CACHE_TTL = Duration.seconds(60);
-/**
- * How long a cache's last success may still be served while a fresh read runs behind it.
- * Bounded by one host round-trip: longer than that, and a view that re-reads while open is
- * handed yesterday's answer and never the background fetch that replaced it. An explicit
- * refresh or a mutation bumps the epochs and skips held answers entirely.
- */
-const LIST_STALE_WINDOW = Duration.minutes(10);
-const DETAIL_STALE_WINDOW = Duration.seconds(60);
-const DIFF_STALE_WINDOW = Duration.seconds(20);
+/** A diff can stay interactive while its next cached value is fetched off the critical path. */
+const DIFF_STALE_WINDOW = Duration.minutes(10);
 /** How long one host's signed-in login is believed without asking its CLI again. */
 const VIEWER_CACHE_TTL = Duration.minutes(10);
+const VIEWER_CACHE_CAPACITY = 256;
 const LIST_CACHE_CAPACITY = 64;
 const LIST_STATS_CACHE_CAPACITY = 32;
 const DETAIL_CACHE_CAPACITY = 128;
@@ -498,6 +493,9 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const backgroundRefreshScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
 
   const refineUnknownProjectKinds = (
     projects: ReadonlyArray<OrchestrationProjectShell>,
@@ -706,6 +704,14 @@ export const make = Effect.gen(function* () {
   // "is this host set up" answer the provider switcher shows, and holding it would keep saying
   // signed-out after the reader has signed in.
   const viewersByHost = new Map<string, { readonly at: number; readonly result: ResolvedViewer }>();
+  const recordViewer = (host: string, at: number, result: ResolvedViewer) => {
+    viewersByHost.delete(host);
+    if (viewersByHost.size >= VIEWER_CACHE_CAPACITY) {
+      const oldest = viewersByHost.keys().next().value;
+      if (oldest !== undefined) viewersByHost.delete(oldest);
+    }
+    viewersByHost.set(host, { at, result });
+  };
 
   const resolveViewers = (
     projects: ReadonlyArray<SupportedProject>,
@@ -717,8 +723,11 @@ export const make = Effect.gen(function* () {
         Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<ResolvedViewer> => {
           const held = viewersByHost.get(host);
           if (held !== undefined && now - held.at <= Duration.toMillis(VIEWER_CACHE_TTL)) {
+            viewersByHost.delete(host);
+            viewersByHost.set(host, held);
             return Effect.succeed(held.result);
           }
+          viewersByHost.delete(host);
           const forHost = projects.filter((project) => project.host === host);
           const api = forHost[0]!.api;
           // Every checkout on the host, not just the ones that survived de-duplication: one
@@ -733,7 +742,7 @@ export const make = Effect.gen(function* () {
               error: null as PullRequestProviderError | null,
             })),
             Effect.tap((result) =>
-              Effect.map(Clock.currentTimeMillis, (at) => viewersByHost.set(host, { at, result })),
+              Effect.map(Clock.currentTimeMillis, (at) => recordViewer(host, at, result)),
             ),
             Effect.catch((error) => Effect.succeed({ host, kind: api.kind, viewer: null, error })),
           );
@@ -756,8 +765,8 @@ export const make = Effect.gen(function* () {
     viewer: string,
   ): boolean => {
     if (filters === undefined) return true;
-    const labels = item.labels.map((label) => label.name.trim().toLowerCase());
-    const holds = (label: string) => labels.includes(label.trim().toLowerCase());
+    const labels = new Set(item.labels.map((label) => label.name.trim().toLowerCase()));
+    const holds = (label: string) => labels.has(label.trim().toLowerCase());
     return (
       (filters.draft === undefined || item.isDraft === (filters.draft === "only")) &&
       // Judged on the provider row rather than the entry, because the two absences mean
@@ -1839,45 +1848,38 @@ export const make = Effect.gen(function* () {
       return { stats: stats.flat() };
     });
 
-  const context = yield* Effect.context<never>();
-  const runFork = Effect.runForkWith(context);
-
   /**
-   * Stale answers served while a fresh one is fetched behind them. Every read here leaves the
-   * process for a CLI whose wall clock is the host's — seconds on a good day, tens of them on a
-   * slow network — and the short cache windows below mean almost every page visit pays that
-   * clock again. The last success per key is therefore held a while longer: a read inside the
-   * window answers with it at once and refreshes the cache in the background, so the next read
-   * is fresh without anyone having waited on it.
-   *
-   * Correctness leans on the epochs: an explicit refresh or a mutation bumps them, the epoch is
-   * part of every key, and a held answer under the old key is simply never asked for again — so
-   * "give me truly fresh" still means exactly that.
+   * The diff is not live-polled and is expensive enough to keep its stale-while-revalidate path.
+   * Explicit refreshes and mutations still strand held values through the reference epoch.
    */
-  const staleWhileRevalidate = <A>(staleFor: Duration.Duration, capacity: number) => {
-    const staleMs = Duration.toMillis(staleFor);
-    const held = new Map<string, { readonly at: number; readonly value: A }>();
-    const record = (key: string, value: A) =>
+  const staleDiff = (() => {
+    const staleMs = Duration.toMillis(DIFF_STALE_WINDOW);
+    const held = new Map<string, { readonly at: number; readonly value: PullRequestDiffResult }>();
+    const record = (key: string, value: PullRequestDiffResult) =>
       Effect.map(Clock.currentTimeMillis, (at) => {
         held.delete(key);
-        if (held.size >= capacity) {
+        if (held.size >= DIFF_CACHE_CAPACITY) {
           const oldest = held.keys().next().value;
           if (oldest !== undefined) held.delete(oldest);
         }
         held.set(key, { at, value });
       });
-    return <E>(key: string, read: Effect.Effect<A, E>): Effect.Effect<A, E> => {
+    return <E>(key: string, read: Effect.Effect<PullRequestDiffResult, E>) => {
       const recorded = read.pipe(Effect.tap((value) => record(key, value)));
       return Effect.flatMap(Clock.currentTimeMillis, (now) => {
         const snapshot = held.get(key);
         if (snapshot === undefined || now - snapshot.at > staleMs) return recorded;
-        // Run as its own fiber rather than a child: the caller is answered and gone before the
-        // refresh lands. The read still coalesces on the cache key, so ten stale reads in one
-        // window cost one host request — and a failed refresh costs nothing but the retry.
-        return Effect.sync(() => runFork(Effect.ignore(recorded))).pipe(Effect.as(snapshot.value));
+        // Run in the service-owned scope rather than the caller scope: the caller is answered and
+        // gone before the refresh lands, while service teardown can still interrupt and await it.
+        // The read coalesces on the cache key, so ten stale reads cost one host request.
+        return recorded.pipe(
+          Effect.ignore,
+          Effect.forkIn(backgroundRefreshScope),
+          Effect.as(snapshot.value),
+        );
       });
     };
-  };
+  })();
 
   // Epochs are the invalidation mechanism: a key carries its scope's epoch, so bumping the
   // epoch strands every entry made under the old one — no enumerating a cache whose keys
@@ -1963,10 +1965,6 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? LIST_CACHE_TTL : Duration.zero),
     },
   );
-  const staleList = staleWhileRevalidate<PullRequestListResult>(
-    LIST_STALE_WINDOW,
-    LIST_CACHE_CAPACITY,
-  );
   const list: PullRequestService["Service"]["list"] = (input) => {
     const key = JSON.stringify([
       listingsEpoch,
@@ -1993,7 +1991,7 @@ export const make = Effect.gen(function* () {
         ? null
         : Object.entries(input.cursors).toSorted(([left], [right]) => left.localeCompare(right)),
     ]);
-    return staleList(key, Cache.get(listCache, key));
+    return Cache.get(listCache, key);
   };
 
   const detailCache = yield* Cache.makeWith(
@@ -2006,13 +2004,9 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
     },
   );
-  const staleDetail = staleWhileRevalidate<PullRequestDetail>(
-    DETAIL_STALE_WINDOW,
-    DETAIL_CACHE_CAPACITY,
-  );
   const detail: PullRequestService["Service"]["detail"] = (input) => {
     const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
-    return staleDetail(key, Cache.get(detailCache, key));
+    return Cache.get(detailCache, key);
   };
 
   const activityCache = yield* Cache.makeWith(
@@ -2025,13 +2019,9 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
     },
   );
-  const staleActivity = staleWhileRevalidate<PullRequestActivity>(
-    DETAIL_STALE_WINDOW,
-    DETAIL_CACHE_CAPACITY,
-  );
   const activity: PullRequestService["Service"]["activity"] = (input) => {
     const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
-    return staleActivity(key, Cache.get(activityCache, key));
+    return Cache.get(activityCache, key);
   };
 
   const diffCache = yield* Cache.makeWith(
@@ -2061,10 +2051,6 @@ export const make = Effect.gen(function* () {
       },
     },
   );
-  const staleDiff = staleWhileRevalidate<PullRequestDiffResult>(
-    DIFF_STALE_WINDOW,
-    DIFF_CACHE_CAPACITY,
-  );
   const diff: PullRequestService["Service"]["diff"] = (input) => {
     const key = JSON.stringify([
       refEpoch(input),
@@ -2093,10 +2079,6 @@ export const make = Effect.gen(function* () {
   // shares between clients like every other read. Refs are sorted so one page's worth of rows
   // is one key however the client assembled them, and the listings epoch rides along so the
   // refresh that forgets the listing forgets its decorations with it.
-  const staleListStats = staleWhileRevalidate<PullRequestListStatsResult>(
-    LIST_STALE_WINDOW,
-    LIST_STATS_CACHE_CAPACITY,
-  );
   const listStats: PullRequestService["Service"]["listStats"] = (input) => {
     if (input.refs.length === 0) return Effect.succeed({ stats: [] });
     const key = JSON.stringify([
@@ -2107,7 +2089,7 @@ export const make = Effect.gen(function* () {
           `${left[0]} ${left[1]} ${left[2]}`.localeCompare(`${right[0]} ${right[1]} ${right[2]}`),
         ),
     ]);
-    return staleListStats(key, Cache.get(listStatsCache, key));
+    return Cache.get(listStatsCache, key);
   };
 
   const invalidate: PullRequestService["Service"]["invalidate"] = (input) =>

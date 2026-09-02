@@ -1,6 +1,8 @@
 import type { DesktopSshPasswordPromptRequest } from "@t3tools/contracts";
 import { useEffect, useId, useRef, useState } from "react";
 
+import { subscribeSecondTick } from "~/lib/secondTicker";
+
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -86,12 +88,9 @@ function ActiveSshPasswordPrompt({
   }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    return subscribeSecondTick(() => {
       setNow(Date.now());
-    }, 1_000);
-    return () => {
-      window.clearInterval(interval);
-    };
+    });
   }, []);
 
   const expiresAtMs = Date.parse(request.expiresAt);

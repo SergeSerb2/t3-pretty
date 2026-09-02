@@ -1,6 +1,7 @@
 /**
- * Brand mark for an app. Renders the service favicon and falls back to a
- * monogram on the catalog's brand color when the favicon can't load (offline,
+ * Brand mark for an app. Catalog domains ship with a bundled brand icon (see
+ * ./icons, keyed by `iconDomain`); anything without one tries the service
+ * favicon and falls back to a monogram on the catalog's brand color (offline,
  * blocked, or a custom MCP server with no catalog entry at all).
  */
 import { useState } from "react";
@@ -8,6 +9,20 @@ import type { AppCatalogEntry, AppConnection } from "@t3tools/contracts";
 import { findAppCatalogEntry } from "@t3tools/contracts";
 
 import { cn } from "~/lib/utils";
+
+const BUNDLED_ICONS = import.meta.glob<string>("./icons/*", {
+  eager: true,
+  import: "default",
+  query: "?no-inline",
+});
+
+function iconSrc(domain: string): string {
+  return (
+    BUNDLED_ICONS[`./icons/${domain}.png`] ??
+    BUNDLED_ICONS[`./icons/${domain}.svg`] ??
+    `https://${domain}/favicon.ico`
+  );
+}
 
 /** Neutral background for connections without a catalog entry. */
 const CUSTOM_APP_COLOR = "#6b7280";
@@ -70,7 +85,7 @@ export function AppIcon({
 
   return (
     <img
-      src={`https://${domain}/favicon.ico`}
+      src={iconSrc(domain)}
       alt=""
       loading="lazy"
       width={size}

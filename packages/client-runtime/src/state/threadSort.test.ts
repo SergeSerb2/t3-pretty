@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  compareIsoDateTimes,
   planPinnedMove,
   sortPinnedThreadsByOrderKey,
   sortThreads,
   type ThreadSortInput,
 } from "./threadSort.ts";
+
+describe("compareIsoDateTimes", () => {
+  it("orders mixed fractional precision and timezone offsets chronologically", () => {
+    expect(compareIsoDateTimes("2026-01-01T00:00:00.9Z", "2026-01-01T00:00:00Z")).toBeGreaterThan(
+      0,
+    );
+    expect(
+      compareIsoDateTimes("2025-12-31T16:00:01-08:00", "2026-01-01T00:00:00.900Z"),
+    ).toBeGreaterThan(0);
+    expect(compareIsoDateTimes("2026-01-01T00:00:00Z", "2025-12-31T16:00:00-08:00")).toBe(0);
+  });
+
+  it("sorts invalid legacy values before valid timestamps", () => {
+    expect(compareIsoDateTimes("not-a-date", "2026-01-01T00:00:00Z")).toBeLessThan(0);
+    expect(compareIsoDateTimes("invalid-b", "invalid-a")).toBeGreaterThan(0);
+  });
+});
 
 type TestThread = { readonly id: string } & ThreadSortInput;
 

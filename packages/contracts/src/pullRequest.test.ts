@@ -7,13 +7,16 @@ import {
   PullRequestComment,
   PullRequestListInput,
   PullRequestListResult,
+  PULL_REQUEST_REVIEW_MAX_COMMENTS,
   PullRequestReviewerRequestInput,
+  PullRequestSubmitReviewInput,
   resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
 
 const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
+const decodeSubmitReview = Schema.decodeUnknownSync(PullRequestSubmitReviewInput);
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },
@@ -155,6 +158,35 @@ describe("PullRequestReviewerRequestInput", () => {
         requested: true,
       }).reviewers.map((entry) => entry.kind),
     ).toEqual(["user", "team"]);
+  });
+});
+
+describe("PullRequestSubmitReviewInput", () => {
+  const reference = { projectId: "p1", repository: "acme/web", number: 1 };
+  const comments = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      position: { kind: "added" as const, newLine: 1 },
+      body: "Review this line.",
+    }));
+
+  it("bounds the review payload and per-comment host mutation fan-out", () => {
+    expect(
+      decodeSubmitReview({
+        ...reference,
+        verdict: "comment",
+        body: "",
+        comments: comments(PULL_REQUEST_REVIEW_MAX_COMMENTS),
+      }).comments,
+    ).toHaveLength(PULL_REQUEST_REVIEW_MAX_COMMENTS);
+    expect(() =>
+      decodeSubmitReview({
+        ...reference,
+        verdict: "comment",
+        body: "",
+        comments: comments(PULL_REQUEST_REVIEW_MAX_COMMENTS + 1),
+      }),
+    ).toThrow();
   });
 });
 

@@ -15,7 +15,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Semaphore from "effect/Semaphore";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import * as Stream from "effect/Stream";
+import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { HostProcessArchitecture, HostProcessPlatform } from "./hostProcess.ts";
 
@@ -101,6 +102,67 @@ const CLOUDFLARED_RELEASE_ASSETS: Readonly<
 const INSTALL_LOCK_RETRY_COUNT = 100;
 const INSTALL_LOCK_RETRY_DELAY = "100 millis";
 const INSTALL_LOCK_STALE_MS = 5 * 60 * 1_000;
+/** The pinned binaries are well below this; stop a bad mirror before it can exhaust memory. */
+const CLOUDFLARED_DOWNLOAD_MAX_BYTES = 128 * 1024 * 1024;
+const CLOUDFLARED_DOWNLOAD_TIMEOUT = "5 minutes";
+
+interface BoundedDownloadChunk {
+  readonly chunk: Uint8Array;
+  readonly truncated: boolean;
+}
+
+const collectBoundedDownload = <E>(stream: Stream.Stream<Uint8Array, E>) =>
+  stream.pipe(
+    Stream.mapAccum(
+      () => 0,
+      (bytes, chunk): readonly [number, ReadonlyArray<BoundedDownloadChunk>] => {
+        const remainingBytes = CLOUDFLARED_DOWNLOAD_MAX_BYTES - bytes;
+        const retained =
+          remainingBytes <= 0
+            ? new Uint8Array()
+            : chunk.byteLength > remainingBytes
+              ? chunk.slice(0, remainingBytes)
+              : chunk;
+        const truncated = chunk.byteLength > remainingBytes;
+        return [
+          bytes + retained.byteLength,
+          [{ chunk: retained, truncated } satisfies BoundedDownloadChunk],
+        ];
+      },
+    ),
+    Stream.takeUntil((bounded) => bounded.truncated),
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], bytes: 0, truncated: false }),
+      (state, bounded) => {
+        if (bounded.chunk.byteLength > 0) state.chunks.push(bounded.chunk);
+        return {
+          chunks: state.chunks,
+          bytes: state.bytes + bounded.chunk.byteLength,
+          truncated: state.truncated || bounded.truncated,
+        };
+      },
+    ),
+    Effect.map((collected) => {
+      const bytes = new Uint8Array(collected.bytes);
+      let offset = 0;
+      for (const chunk of collected.chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return { bytes, truncated: collected.truncated } as const;
+    }),
+  );
+
+const releaseDownloadResponseBody = <E>(stream: Stream.Stream<Uint8Array, E>) =>
+  stream.pipe(
+    // Pulling at most one chunk gives the HTTP implementation a chance to
+    // acquire and then cancel its reader without draining an attacker-sized
+    // response. The short deadline also covers a server that never sends it.
+    Stream.take(1),
+    Stream.runDrain,
+    Effect.timeout("1 second"),
+    Effect.ignore,
+  );
 
 const trimmedString = (name: string) =>
   Config.string(name).pipe(
@@ -288,48 +350,76 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     asset: CloudflaredReleaseAsset,
     report: (stage: RelayClientInstallProgressStage) => Effect.Effect<void>,
   ) {
-    yield* report("downloading");
-    const response = yield* httpClient.execute(HttpClientRequest.get(asset.url)).pipe(
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
-      Effect.mapError(
-        (cause) =>
-          new RelayClientInstallError({
-            reason: "download_failed",
-            message: "Could not download the relay client.",
-            cause,
-          }),
-      ),
-    );
-    const bytes = new Uint8Array(
-      yield* response.arrayBuffer.pipe(
+    return yield* Effect.gen(function* () {
+      yield* report("downloading");
+      const response = yield* httpClient.execute(HttpClientRequest.get(asset.url)).pipe(
         Effect.mapError(
-          (cause) =>
+          () =>
+            new RelayClientInstallError({
+              reason: "download_failed",
+              message: "Could not download the relay client.",
+            }),
+        ),
+      );
+      if (response.status < 200 || response.status >= 300) {
+        yield* releaseDownloadResponseBody(response.stream);
+        return yield* new RelayClientInstallError({
+          reason: "download_failed",
+          message: "Could not download the relay client.",
+        });
+      }
+      const declaredLength = Number(response.headers["content-length"]);
+      if (Number.isFinite(declaredLength) && declaredLength > CLOUDFLARED_DOWNLOAD_MAX_BYTES) {
+        yield* releaseDownloadResponseBody(response.stream);
+        return yield* new RelayClientInstallError({
+          reason: "download_failed",
+          message: "The relay client download was larger than expected.",
+        });
+      }
+      const download = yield* collectBoundedDownload(response.stream).pipe(
+        Effect.mapError(
+          () =>
             new RelayClientInstallError({
               reason: "download_failed",
               message: "Could not read the downloaded relay client binary.",
+            }),
+        ),
+      );
+      if (download.truncated) {
+        return yield* new RelayClientInstallError({
+          reason: "download_failed",
+          message: "The relay client download was larger than expected.",
+        });
+      }
+      yield* report("verifying");
+      const checksum = yield* crypto.digest("SHA-256", download.bytes).pipe(
+        Effect.mapError(
+          (cause) =>
+            new RelayClientInstallError({
+              reason: "validation_failed",
+              message: "Could not verify the downloaded relay client checksum.",
               cause,
             }),
         ),
-      ),
-    );
-    yield* report("verifying");
-    const checksum = yield* crypto.digest("SHA-256", bytes).pipe(
-      Effect.mapError(
-        (cause) =>
+      );
+      if (Encoding.encodeHex(checksum) !== asset.sha256) {
+        return yield* new RelayClientInstallError({
+          reason: "invalid_checksum",
+          message: "Downloaded relay client checksum did not match the pinned release.",
+        });
+      }
+      return download.bytes;
+    }).pipe(
+      Effect.timeout(CLOUDFLARED_DOWNLOAD_TIMEOUT),
+      Effect.catchTag("TimeoutError", () =>
+        Effect.fail(
           new RelayClientInstallError({
-            reason: "validation_failed",
-            message: "Could not verify the downloaded relay client checksum.",
-            cause,
+            reason: "download_failed",
+            message: "Timed out downloading the relay client.",
           }),
+        ),
       ),
     );
-    if (Encoding.encodeHex(checksum) !== asset.sha256) {
-      return yield* new RelayClientInstallError({
-        reason: "invalid_checksum",
-        message: "Downloaded relay client checksum did not match the pinned release.",
-      });
-    }
-    return bytes;
   });
 
   const acquireInstallLock = Effect.fn("cloudflared.acquireInstallLock")(function* (

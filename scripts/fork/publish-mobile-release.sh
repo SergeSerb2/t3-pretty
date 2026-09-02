@@ -10,10 +10,9 @@
 # is only compiled when the native fingerprint changed, or a maintainer set
 # T3CODE_FORCE_IOS / T3CODE_MOBILE_MODE=build. eas submit / Fastlane pilot
 # uploads that IPA as a TestFlight build through App Store Connect; it does
-# not submit the app for App Store review. macos-release runs macOS 27
-# developer beta, so the compiler is Xcode-beta.app. TestFlight accepts the
-# current Xcode 27 beta (not every older beta). EAS cloud is only the
-# fallback when this Mac has no full Xcode at all.
+# not submit the app for App Store review. Local builds use stable Xcode;
+# beta toolchains can fall out of App Store Connect support without warning,
+# so the existing EAS cloud path handles IPA builds while this Mac is on beta.
 #
 # Buildkite cancels intermediate main builds when pushes land in quick
 # succession, so a release can die mid-flight and a later push would skip on
@@ -433,9 +432,11 @@ fingerprint=""
 )
 
 if [[ ! -f "$gate_file" ]]; then
-  submitted_fingerprint=""
+  submitted_fingerprint_file="$tmp/ios-submitted-fingerprint"
   if [[ -f .t3-fork/ios-production-fingerprint ]]; then
-    submitted_fingerprint="$(tr -d '[:space:]' < .t3-fork/ios-production-fingerprint)"
+    cp .t3-fork/ios-production-fingerprint "$submitted_fingerprint_file"
+  else
+    : > "$submitted_fingerprint_file"
   fi
   # Trust the recorded fingerprint, including one left by the old GitHub
   # Actions importer. Installed TestFlight binaries pick up JS via OTA.
@@ -449,7 +450,7 @@ if [[ ! -f "$gate_file" ]]; then
   node scripts/fork/resolve-ios-native-build.mjs \
     --fingerprint-file "$fingerprint_file" \
     --builds-file "$builds_file" \
-    --submitted-fingerprint "$submitted_fingerprint" \
+    --submitted-fingerprint-file "$submitted_fingerprint_file" \
     --force "$force_flag"
 fi
 if ! grep -q '^should_build=' "$gate_file"; then
@@ -470,17 +471,27 @@ fi
 is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
   # leftover Xcode.app on macOS 27 can exist without being runnable.
-  if DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version >/dev/null 2>&1; then
-    return 0
+  local version_output
+  if ! version_output="$(DEVELOPER_DIR="$1" "$1/usr/bin/xcodebuild" -version 2>/dev/null)"; then
+    echo "Skipping $1: xcodebuild -version failed." >&2
+    return 1
   fi
-  echo "Skipping $1: xcodebuild -version failed." >&2
-  return 1
+  if [[ "$1" == *Xcode-beta.app* || -f "$1/../Resources/BetaVersion.plist" ]]; then
+    local accepted_beta_build="${T3CODE_ACCEPTED_XCODE_BETA_BUILD:-27A5252f}"
+    local beta_build
+    beta_build="$(sed -n 's/^Build version //p' <<< "$version_output" | head -n 1)"
+    if [[ "$beta_build" != "$accepted_beta_build" ]]; then
+      echo "Skipping $1: beta build ${beta_build:-unknown}; accepted beta is $accepted_beta_build." >&2
+      return 1
+    fi
+  fi
+  return 0
 }
 
-# Prefer a full Xcode.app, then Xcode-beta.app, if xcodebuild actually runs.
-# Command Line Tools cannot compile an IPA. TestFlight currently accepts
-# Xcode 27 beta 5 (27A5237l). This Mac is on macOS 27 developer beta so a
-# leftover Xcode.app often cannot run and Xcode-beta.app is the toolchain.
+# Prefer a stable full Xcode.app if xcodebuild actually runs. Command Line
+# Tools cannot compile an IPA. The current Apple-listed beta is accepted for
+# macOS developer builds; stale betas fall back to EAS cloud.
+# Override T3CODE_ACCEPTED_XCODE_BETA_BUILD when Apple advances the listed beta.
 # Origin's pipeline upload rejects `interruptible`, so a later main push
 # can still cancel this job. Do not merge unrelated main PRs during an IPA.
 developer_dir=""
@@ -500,7 +511,7 @@ if ! is_full_xcode "$developer_dir"; then
   ipa_via_cloud=true
   ls -ld /Applications/Xcode*.app 2>/dev/null || echo "No Xcode*.app under /Applications."
   xcode-select -p 2>/dev/null || true
-  annotate info "No full Xcode on this Mac (need Xcode.app or Xcode-beta.app, not Command Line Tools). Compiling the TestFlight IPA on EAS cloud."
+  annotate info "No full Xcode on this Mac that is safe for App Store Connect. Compiling the TestFlight IPA on EAS cloud."
 fi
 
 load_secret APPLE_API_KEY
@@ -595,6 +606,9 @@ else
 
   mkdir -p "$HOME/.cache/t3-pretty-release/cocoapods"
   export CP_HOME_DIR="$HOME/.cache/t3-pretty-release/cocoapods"
+  # Homebrew 5 prompts on a TTY before installing deps; the LaunchAgent has one.
+  export HOMEBREW_NO_ASK=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
   if ! command -v pod >/dev/null; then
     brew install cocoapods
   fi
@@ -688,7 +702,11 @@ git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 git commit --no-verify -m "chore(mobile): record iOS production fingerprint"
 
 branch="automation/ios-fingerprint-${fingerprint:0:12}"
-git push --force origin "HEAD:refs/heads/$branch"
+git push --force origin "HEAD:refs/heads/$branch" || {
+  echo "Fingerprint branch push failed; retrying once."
+  sleep 5
+  git push --force origin "HEAD:refs/heads/$branch"
+}
 node scripts/fork/origin-forge.mjs setup-ci
 body_path="$tmp/t3-pretty-ios-fingerprint.md"
 printf '%s\n' \

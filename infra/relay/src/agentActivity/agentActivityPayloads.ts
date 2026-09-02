@@ -6,7 +6,7 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
-import type { ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
+import type { ApnsLiveActivityAlert, ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
 
 export function isTerminalPhase(state: RelayAgentActivityState): boolean {
   return state.phase === "completed" || state.phase === "failed";
@@ -97,5 +97,12 @@ export function sanitizeApnsNotificationPayload(
     title: truncateText(notification.title, MAX_SUMMARY_TEXT_LENGTH),
     body: truncateText(notification.body, MAX_SUMMARY_TEXT_LENGTH),
     deepLink: sanitizeDeepLink(notification.deepLink),
+  };
+}
+
+export function sanitizeApnsLiveActivityAlert(alert: ApnsLiveActivityAlert): ApnsLiveActivityAlert {
+  return {
+    title: truncateText(alert.title, MAX_SUMMARY_TEXT_LENGTH),
+    body: truncateText(alert.body, MAX_SUMMARY_TEXT_LENGTH),
   };
 }

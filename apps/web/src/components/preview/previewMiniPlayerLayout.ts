@@ -24,6 +24,23 @@ export function clampPreviewMiniPlayerSize(
   };
 }
 
+/** Overlay is inset:0 on the mini webview. Use the laid-out scale; skip panel offsets. */
+export function miniPlayerCursorContent(content: { readonly scale: number } | null): {
+  readonly x: number;
+  readonly y: number;
+  readonly scale: number;
+  readonly scrollLeft: number;
+  readonly scrollTop: number;
+} {
+  return {
+    x: 0,
+    y: 0,
+    scale: content && content.scale > 0 ? content.scale : 1,
+    scrollLeft: 0,
+    scrollTop: 0,
+  };
+}
+
 export function clampPreviewMiniPlayerPosition(
   position: PreviewMiniPlayerPosition,
   container: PreviewMiniPlayerSize,

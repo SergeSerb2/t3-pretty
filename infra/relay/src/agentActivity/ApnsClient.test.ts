@@ -4,10 +4,14 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
@@ -18,6 +22,15 @@ import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
 
 const isApnsJwtSigningError = Schema.is(ApnsClient.ApnsJwtSigningError);
 const isApnsHttpRequestError = Schema.is(ApnsClient.ApnsHttpRequestError);
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const decodeDeliveredState = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      activeCount: Schema.Number,
+      activities: Schema.Array(Schema.Struct({ environmentId: Schema.String })),
+    }),
+  ),
+);
 
 const TestLayer = ApnsClient.layer.pipe(
   Layer.provide(ApnsProviderTokens.layer),
@@ -50,6 +63,9 @@ describe("ApnsClient", () => {
       },
     ],
   };
+
+  const payloadBytes = (payload: unknown) =>
+    new TextEncoder().encode(encodeUnknownJson(payload)).byteLength;
 
   it.effect("requests an update push token when remotely starting a Live Activity", () =>
     Effect.gen(function* () {
@@ -208,6 +224,61 @@ describe("ApnsClient", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("compacts Live Activity state to the APNs payload ceiling", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const largeRow = {
+        ...state.activities[0]!,
+        environmentId: EnvironmentId.make("e".repeat(191)),
+        threadId: ThreadId.make("t".repeat(191)),
+        projectTitle: "p".repeat(120),
+        threadTitle: "t".repeat(120),
+        modelTitle: "m".repeat(120),
+        status: "s".repeat(40),
+        deepLink: "/" + "d".repeat(511),
+      };
+      const request = apns.makeLiveActivityRequest({
+        event: "start",
+        token: "token",
+        state: {
+          ...state,
+          activeCount: 5,
+          activities: Array.from({ length: 5 }, () => largeRow),
+        },
+        alert: { title: "a".repeat(120), body: "b".repeat(120) },
+        nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
+        nowIso: DateTime.formatIso(now),
+      });
+
+      expect(payloadBytes(request.payload)).toBeLessThanOrEqual(ApnsClient.APNS_PAYLOAD_MAX_BYTES);
+      const payload = request.payload as {
+        readonly aps: { readonly "content-state": { readonly props: string } };
+      };
+      const deliveredState = decodeDeliveredState(payload.aps["content-state"].props);
+      expect(deliveredState.activeCount).toBe(5);
+      expect(deliveredState.activities[0]?.environmentId).toBe(largeRow.environmentId);
+      expect(deliveredState.activities.length).toBeLessThan(5);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("keeps pathological notification metadata below the APNs payload ceiling", () =>
+    Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makePushNotificationRequest({
+        token: "push-token",
+        notification: {
+          title: "\u0000".repeat(120),
+          body: "\u0000".repeat(120),
+          environmentId: "\u0000".repeat(191),
+          threadId: "\u0000".repeat(191),
+          deepLink: "/" + "\u0000".repeat(511),
+        },
+      });
+
+      expect(payloadBytes(request.payload)).toBeLessThanOrEqual(ApnsClient.APNS_PAYLOAD_MAX_BYTES);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("preserves JWT signing context and the crypto cause", () =>
     Effect.gen(function* () {
       const apns = yield* ApnsClient.ApnsClient;
@@ -319,6 +390,113 @@ describe("ApnsClient", () => {
       });
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect("rejects oversized APNs response bodies without retaining them", () => {
+    const { privateKey } = NodeCrypto.generateKeyPairSync("ec", {
+      namedCurve: "prime256v1",
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const credentials = {
+      teamId: "team-response-limit",
+      keyId: "key-response-limit",
+      privateKey: Redacted.make(privateKey),
+      bundleId: "com.t3tools.test",
+      environment: "sandbox",
+    } satisfies ApnsCredentials;
+    const oversizedHttpClient = HttpClient.make((request) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response("x".repeat(ApnsClient.APNS_RESPONSE_MAX_BYTES + 1), { status: 500 }),
+        ),
+      ),
+    );
+    const layer = ApnsClient.layer.pipe(
+      Layer.provide(ApnsProviderTokens.layer),
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, oversizedHttpClient)),
+    );
+
+    return Effect.gen(function* () {
+      const apns = yield* ApnsClient.ApnsClient;
+      const request = apns.makePushNotificationRequest({
+        token: "push-token",
+        notification: {
+          title: "Thread",
+          body: "Input: Project",
+          environmentId: "env",
+          threadId: "thread",
+          deepLink: "/threads/env/thread",
+        },
+      });
+      const error = yield* apns
+        .sendPushNotificationRequest({ credentials, request, issuedAtUnixSeconds: 123 })
+        .pipe(Effect.flip);
+
+      expect(isApnsHttpRequestError(error)).toBe(true);
+      if (!isApnsHttpRequestError(error)) {
+        return yield* Effect.die("expected APNs HTTP request error");
+      }
+      expect(error).toMatchObject({ stage: "read-response", status: 500 });
+      expect(String(error.cause)).toContain("APNs response exceeded 8192 bytes");
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("applies one deadline across the APNs request and response body", () =>
+    Effect.gen(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const hangingHttpClient = HttpClient.make(() =>
+        Deferred.succeed(requestStarted, undefined).pipe(
+          Effect.andThen(Effect.never as Effect.Effect<HttpClientResponse.HttpClientResponse>),
+        ),
+      );
+      const layer = ApnsClient.layer.pipe(
+        Layer.provide(ApnsProviderTokens.layer),
+        Layer.provide(Layer.succeed(HttpClient.HttpClient, hangingHttpClient)),
+      );
+      const { privateKey } = NodeCrypto.generateKeyPairSync("ec", {
+        namedCurve: "prime256v1",
+        privateKeyEncoding: { type: "pkcs8", format: "pem" },
+        publicKeyEncoding: { type: "spki", format: "pem" },
+      });
+
+      const error = yield* Effect.gen(function* () {
+        const apns = yield* ApnsClient.ApnsClient;
+        const request = apns.makePushNotificationRequest({
+          token: "deadline-token",
+          notification: {
+            title: "Thread",
+            body: "Input: Project",
+            environmentId: "env",
+            threadId: "thread",
+            deepLink: "/threads/env/thread",
+          },
+        });
+        const fiber = yield* apns
+          .sendPushNotificationRequest({
+            credentials: {
+              teamId: "team-deadline",
+              keyId: "key-deadline",
+              privateKey: Redacted.make(privateKey),
+              bundleId: "com.t3tools.test",
+              environment: "sandbox",
+            },
+            request,
+            issuedAtUnixSeconds: 123,
+          })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Deferred.await(requestStarted);
+        yield* TestClock.adjust(Duration.millis(ApnsClient.APNS_REQUEST_TIMEOUT_MS));
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(layer));
+
+      expect(isApnsHttpRequestError(error)).toBe(true);
+      if (!isApnsHttpRequestError(error)) {
+        return yield* Effect.die("expected APNs HTTP request error");
+      }
+      expect(error).toMatchObject({ stage: "deadline", status: null });
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
 
   it.effect("reuses the signed provider JWT across pushes within the reuse window", () => {
     ApnsProviderTokens.__resetApnsProviderTokenCacheForTest();

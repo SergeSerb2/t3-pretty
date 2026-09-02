@@ -114,10 +114,8 @@ export function useReviewSections(input: {
     selectedSectionIdExists,
   ]);
 
-  let activeCheckpoint = readyCheckpoints[0] ?? null;
-  if (selectedSection?.kind === "turn") {
-    activeCheckpoint = checkpointBySectionId[selectedSection.id] ?? activeCheckpoint;
-  }
+  const activeCheckpoint =
+    selectedSection?.kind === "turn" ? (checkpointBySectionId[selectedSection.id] ?? null) : null;
   const activeSectionId = activeCheckpoint
     ? getReviewSectionIdForCheckpoint(activeCheckpoint)
     : null;
@@ -134,7 +132,11 @@ export function useReviewSections(input: {
     if (!reviewCache.threadKey || !activeSectionId) {
       return;
     }
-    setReviewTurnDiffLoading(reviewCache.threadKey, activeSectionId, activeTurnDiff.isPending);
+    const threadKey = reviewCache.threadKey;
+    setReviewTurnDiffLoading(threadKey, activeSectionId, activeTurnDiff.isPending);
+    return () => {
+      setReviewTurnDiffLoading(threadKey, activeSectionId, false);
+    };
   }, [activeSectionId, activeTurnDiff.isPending, reviewCache.threadKey]);
 
   useEffect(() => {

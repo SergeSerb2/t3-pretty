@@ -1,7 +1,13 @@
 import * as Schema from "effect/Schema";
 import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
-import { AuthSessionId, ClientSurface, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  AuthSessionId,
+  ClientSurface,
+  ClientWebDeployment,
+  NonNegativeInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 /**
  * Declares the server's overall authentication posture.
@@ -81,6 +87,21 @@ export const AuthAccessReadScope = "access:read" as const;
 export const AuthAccessWriteScope = "access:write" as const;
 export const AuthRelayReadScope = "relay:read" as const;
 export const AuthRelayWriteScope = "relay:write" as const;
+export const AUTH_ENVIRONMENT_SCOPE_MAX_COUNT = 8;
+export const AUTH_CREDENTIAL_MAX_LENGTH = 16_384;
+export const AUTH_IDENTIFIER_MAX_LENGTH = 256;
+export const AUTH_SUBJECT_MAX_LENGTH = 256;
+export const AUTH_CLIENT_LABEL_MAX_LENGTH = 256;
+export const AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH = 128;
+export const AUTH_CLIENT_USER_AGENT_MAX_LENGTH = 4_096;
+export const AUTH_CLIENT_OS_MAX_LENGTH = 256;
+export const AUTH_CLIENT_BROWSER_MAX_LENGTH = 256;
+export const AUTH_PROOF_KEY_THUMBPRINT_MAX_LENGTH = 256;
+export const AUTH_OAUTH_SCOPE_MAX_LENGTH = 1_024;
+export const AUTH_ERROR_MESSAGE_MAX_LENGTH = 4_096;
+export const AUTH_ACCESS_PAIRING_LINK_MAX_COUNT = 1_024;
+export const AUTH_ACCESS_CLIENT_SESSION_MAX_COUNT = 1_024;
+export const AUTH_ACCESS_TOKEN_MAX_EXPIRES_IN_SECONDS = 2_147_483_647;
 export const AuthEnvironmentScope = Schema.Literals([
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -92,8 +113,48 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthRelayWriteScope,
 ]);
 export type AuthEnvironmentScope = typeof AuthEnvironmentScope.Type;
-export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope);
+export const AuthEnvironmentScopes = Schema.Array(AuthEnvironmentScope).check(
+  Schema.isMaxLength(AUTH_ENVIRONMENT_SCOPE_MAX_COUNT),
+);
 export type AuthEnvironmentScopes = typeof AuthEnvironmentScopes.Type;
+
+export const AuthCredential = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CREDENTIAL_MAX_LENGTH),
+);
+export const AuthIdentifier = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_IDENTIFIER_MAX_LENGTH),
+);
+export const AuthSubject = TrimmedNonEmptyString.check(Schema.isMaxLength(AUTH_SUBJECT_MAX_LENGTH));
+export const AuthClientLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CLIENT_LABEL_MAX_LENGTH),
+);
+export const AuthClientIpAddress = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CLIENT_IP_ADDRESS_MAX_LENGTH),
+);
+export const AuthClientUserAgent = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CLIENT_USER_AGENT_MAX_LENGTH),
+);
+export const AuthClientOperatingSystem = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CLIENT_OS_MAX_LENGTH),
+);
+export const AuthClientBrowser = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_CLIENT_BROWSER_MAX_LENGTH),
+);
+export const AuthProofKeyThumbprint = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_PROOF_KEY_THUMBPRINT_MAX_LENGTH),
+);
+export const AuthOAuthScope = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(AUTH_OAUTH_SCOPE_MAX_LENGTH),
+);
+export const AuthErrorMessage = Schema.String.check(
+  Schema.isMaxLength(AUTH_ERROR_MESSAGE_MAX_LENGTH),
+);
+export const AuthAccessSessionId = AuthSessionId.check(
+  Schema.isMaxLength(AUTH_IDENTIFIER_MAX_LENGTH),
+);
+const AuthAccessTokenExpiresIn = NonNegativeInt.check(
+  Schema.isLessThanOrEqualTo(AUTH_ACCESS_TOKEN_MAX_EXPIRES_IN_SECONDS),
+);
 
 export const AuthStandardClientScopes = [
   AuthOrchestrationReadScope,
@@ -137,14 +198,14 @@ export const AuthEnvironmentBootstrapTokenType =
  */
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
-  bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
-  sessionMethods: Schema.Array(ServerAuthSessionMethod),
-  sessionCookieName: TrimmedNonEmptyString,
+  bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod).check(Schema.isMaxLength(2)),
+  sessionMethods: Schema.Array(ServerAuthSessionMethod).check(Schema.isMaxLength(3)),
+  sessionCookieName: AuthIdentifier,
 });
 export type ServerAuthDescriptor = typeof ServerAuthDescriptor.Type;
 
 export const AuthBrowserSessionRequest = Schema.Struct({
-  credential: TrimmedNonEmptyString,
+  credential: AuthCredential,
 });
 export type AuthBrowserSessionRequest = typeof AuthBrowserSessionRequest.Type;
 
@@ -166,73 +227,77 @@ export const AuthClientMetadataDeviceType = Schema.Literals([
 export type AuthClientMetadataDeviceType = typeof AuthClientMetadataDeviceType.Type;
 
 export const AuthClientPresentationMetadata = Schema.Struct({
-  label: Schema.optionalKey(TrimmedNonEmptyString),
+  label: Schema.optionalKey(AuthClientLabel),
   deviceType: Schema.optionalKey(AuthClientMetadataDeviceType),
-  os: Schema.optionalKey(TrimmedNonEmptyString),
+  os: Schema.optionalKey(AuthClientOperatingSystem),
+  osMajorVersion: Schema.optionalKey(Schema.Int),
+  deviceModel: Schema.optionalKey(TrimmedNonEmptyString),
   surface: Schema.optionalKey(ClientSurface),
+  webDeployment: Schema.optionalKey(ClientWebDeployment),
+  browser: Schema.optionalKey(TrimmedNonEmptyString),
   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetadata.Type;
 
 export const AuthTokenExchangeRequest = Schema.Struct({
   grant_type: Schema.Literal(AuthTokenExchangeGrantType),
-  subject_token: TrimmedNonEmptyString,
+  subject_token: AuthCredential,
   subject_token_type: Schema.Literal(AuthEnvironmentBootstrapTokenType),
   requested_token_type: Schema.Literal(AuthAccessTokenType),
-  scope: Schema.optionalKey(TrimmedNonEmptyString),
-  client_label: Schema.optionalKey(TrimmedNonEmptyString),
+  scope: Schema.optionalKey(AuthOAuthScope),
+  client_label: Schema.optionalKey(AuthClientLabel),
   client_device_type: Schema.optionalKey(AuthClientMetadataDeviceType),
-  client_os: Schema.optionalKey(TrimmedNonEmptyString),
+  client_os: Schema.optionalKey(AuthClientOperatingSystem),
 }).pipe(HttpApiSchema.asFormUrlEncoded());
 export type AuthTokenExchangeRequest = typeof AuthTokenExchangeRequest.Type;
 
 export const AuthAccessTokenResult = Schema.Struct({
-  access_token: TrimmedNonEmptyString,
+  access_token: AuthCredential,
   issued_token_type: Schema.Literal(AuthAccessTokenType),
   token_type: Schema.Literals(["Bearer", "DPoP"]),
-  expires_in: Schema.Number,
-  scope: TrimmedNonEmptyString,
+  expires_in: AuthAccessTokenExpiresIn,
+  scope: AuthOAuthScope,
 });
 export type AuthAccessTokenResult = typeof AuthAccessTokenResult.Type;
 
 export const AuthWebSocketTicketResult = Schema.Struct({
-  ticket: TrimmedNonEmptyString,
+  ticket: AuthCredential,
   expiresAt: Schema.DateTimeUtc,
 });
 export type AuthWebSocketTicketResult = typeof AuthWebSocketTicketResult.Type;
 
 export const AuthPairingCredentialResult = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  credential: TrimmedNonEmptyString,
-  label: Schema.optionalKey(TrimmedNonEmptyString),
+  id: AuthIdentifier,
+  credential: AuthCredential,
+  label: Schema.optionalKey(AuthClientLabel),
   expiresAt: Schema.DateTimeUtc,
 });
 export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Type;
 
 export const AuthPairingLink = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  credential: TrimmedNonEmptyString,
+  id: AuthIdentifier,
+  credential: AuthCredential,
   scopes: AuthEnvironmentScopes,
-  subject: TrimmedNonEmptyString,
-  label: Schema.optionalKey(TrimmedNonEmptyString),
+  subject: AuthSubject,
+  label: Schema.optionalKey(AuthClientLabel),
   createdAt: Schema.DateTimeUtc,
   expiresAt: Schema.DateTimeUtc,
 });
 export type AuthPairingLink = typeof AuthPairingLink.Type;
 
 export const AuthClientMetadata = Schema.Struct({
-  label: Schema.optionalKey(TrimmedNonEmptyString),
-  ipAddress: Schema.optionalKey(TrimmedNonEmptyString),
-  userAgent: Schema.optionalKey(TrimmedNonEmptyString),
+  label: Schema.optionalKey(AuthClientLabel),
+  ipAddress: Schema.optionalKey(AuthClientIpAddress),
+  userAgent: Schema.optionalKey(AuthClientUserAgent),
   deviceType: AuthClientMetadataDeviceType,
-  os: Schema.optionalKey(TrimmedNonEmptyString),
-  browser: Schema.optionalKey(TrimmedNonEmptyString),
+  os: Schema.optionalKey(AuthClientOperatingSystem),
+  browser: Schema.optionalKey(AuthClientBrowser),
 });
 export type AuthClientMetadata = typeof AuthClientMetadata.Type;
 
 export const AuthClientSession = Schema.Struct({
-  sessionId: AuthSessionId,
-  subject: TrimmedNonEmptyString,
+  sessionId: AuthAccessSessionId,
+  subject: AuthSubject,
   scopes: AuthEnvironmentScopes,
   method: ServerAuthSessionMethod,
   client: AuthClientMetadata,
@@ -244,15 +309,25 @@ export const AuthClientSession = Schema.Struct({
 });
 export type AuthClientSession = typeof AuthClientSession.Type;
 
+export const AuthPairingLinks = Schema.Array(AuthPairingLink).check(
+  Schema.isMaxLength(AUTH_ACCESS_PAIRING_LINK_MAX_COUNT),
+);
+export type AuthPairingLinks = typeof AuthPairingLinks.Type;
+
+export const AuthClientSessions = Schema.Array(AuthClientSession).check(
+  Schema.isMaxLength(AUTH_ACCESS_CLIENT_SESSION_MAX_COUNT),
+);
+export type AuthClientSessions = typeof AuthClientSessions.Type;
+
 export const AuthAccessSnapshot = Schema.Struct({
-  pairingLinks: Schema.Array(AuthPairingLink),
-  clientSessions: Schema.Array(AuthClientSession),
+  pairingLinks: AuthPairingLinks,
+  clientSessions: AuthClientSessions,
 });
 export type AuthAccessSnapshot = typeof AuthAccessSnapshot.Type;
 
 export const AuthAccessStreamSnapshotEvent = Schema.Struct({
   version: Schema.Literal(1),
-  revision: Schema.Number,
+  revision: NonNegativeInt,
   type: Schema.Literal("snapshot"),
   payload: AuthAccessSnapshot,
 });
@@ -260,7 +335,7 @@ export type AuthAccessStreamSnapshotEvent = typeof AuthAccessStreamSnapshotEvent
 
 export const AuthAccessStreamPairingLinkUpsertedEvent = Schema.Struct({
   version: Schema.Literal(1),
-  revision: Schema.Number,
+  revision: NonNegativeInt,
   type: Schema.Literal("pairingLinkUpserted"),
   payload: AuthPairingLink,
 });
@@ -269,10 +344,10 @@ export type AuthAccessStreamPairingLinkUpsertedEvent =
 
 export const AuthAccessStreamPairingLinkRemovedEvent = Schema.Struct({
   version: Schema.Literal(1),
-  revision: Schema.Number,
+  revision: NonNegativeInt,
   type: Schema.Literal("pairingLinkRemoved"),
   payload: Schema.Struct({
-    id: TrimmedNonEmptyString,
+    id: AuthIdentifier,
   }),
 });
 export type AuthAccessStreamPairingLinkRemovedEvent =
@@ -281,21 +356,34 @@ export type AuthAccessStreamPairingLinkRemovedEvent =
 export class AuthAccessStreamError extends Schema.TaggedErrorClass<AuthAccessStreamError>()(
   "AuthAccessStreamError",
   {
-    message: Schema.String,
+    message: AuthErrorMessage,
   },
-) {}
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: { readonly message: string }) {
+    super({ message: props.message.slice(0, AUTH_ERROR_MESSAGE_MAX_LENGTH) } as any);
+  }
+}
 
 export class EnvironmentAuthorizationError extends Schema.TaggedErrorClass<EnvironmentAuthorizationError>()(
   "EnvironmentAuthorizationError",
   {
-    message: Schema.String,
+    message: AuthErrorMessage,
     requiredScope: AuthEnvironmentScope,
   },
-) {}
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: { readonly message: string; readonly requiredScope: AuthEnvironmentScope }) {
+    super({
+      message: props.message.slice(0, AUTH_ERROR_MESSAGE_MAX_LENGTH),
+      requiredScope: props.requiredScope,
+    } as any);
+  }
+}
 
 export const AuthAccessStreamClientUpsertedEvent = Schema.Struct({
   version: Schema.Literal(1),
-  revision: Schema.Number,
+  revision: NonNegativeInt,
   type: Schema.Literal("clientUpserted"),
   payload: AuthClientSession,
 });
@@ -303,10 +391,10 @@ export type AuthAccessStreamClientUpsertedEvent = typeof AuthAccessStreamClientU
 
 export const AuthAccessStreamClientRemovedEvent = Schema.Struct({
   version: Schema.Literal(1),
-  revision: Schema.Number,
+  revision: NonNegativeInt,
   type: Schema.Literal("clientRemoved"),
   payload: Schema.Struct({
-    sessionId: AuthSessionId,
+    sessionId: AuthAccessSessionId,
   }),
 });
 export type AuthAccessStreamClientRemovedEvent = typeof AuthAccessStreamClientRemovedEvent.Type;
@@ -321,17 +409,17 @@ export const AuthAccessStreamEvent = Schema.Union([
 export type AuthAccessStreamEvent = typeof AuthAccessStreamEvent.Type;
 
 export const AuthRevokePairingLinkInput = Schema.Struct({
-  id: TrimmedNonEmptyString,
+  id: AuthIdentifier,
 });
 export type AuthRevokePairingLinkInput = typeof AuthRevokePairingLinkInput.Type;
 
 export const AuthRevokeClientSessionInput = Schema.Struct({
-  sessionId: AuthSessionId,
+  sessionId: AuthAccessSessionId,
 });
 export type AuthRevokeClientSessionInput = typeof AuthRevokeClientSessionInput.Type;
 
 export const AuthCreatePairingCredentialInput = Schema.Struct({
-  label: Schema.optionalKey(TrimmedNonEmptyString),
+  label: Schema.optionalKey(AuthClientLabel),
   scopes: Schema.optionalKey(AuthEnvironmentScopes),
 });
 export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;

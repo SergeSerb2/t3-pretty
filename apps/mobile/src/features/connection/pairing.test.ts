@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  REMOTE_PAIRING_HOST_MAX_LENGTH,
+  REMOTE_PAIRING_TOKEN_MAX_LENGTH,
+  REMOTE_PAIRING_URL_MAX_LENGTH,
+} from "@t3tools/shared/remote";
 
 import {
   buildPairingUrl,
@@ -25,6 +30,13 @@ describe("buildPairingUrl", () => {
       "https://192.168.1.100:3773/#token=pairing-token",
     );
   });
+
+  it("rejects oversized host and token input before URL construction", () => {
+    expect(buildPairingUrl("x".repeat(REMOTE_PAIRING_HOST_MAX_LENGTH + 1), "token")).toBe("");
+    expect(buildPairingUrl("example.com", "x".repeat(REMOTE_PAIRING_TOKEN_MAX_LENGTH + 1))).toBe(
+      "",
+    );
+  });
 });
 
 describe("extractPairingUrlFromQrPayload", () => {
@@ -48,6 +60,12 @@ describe("extractPairingUrlFromQrPayload", () => {
       "Scanned QR code did not contain a pairing URL.",
     );
   });
+
+  it("rejects oversized payloads before URL parsing", () => {
+    expect(() =>
+      extractPairingUrlFromQrPayload("x".repeat(REMOTE_PAIRING_URL_MAX_LENGTH + 1)),
+    ).toThrowError("Scanned QR code contained an oversized pairing URL.");
+  });
 });
 
 describe("parsePairingUrl", () => {
@@ -59,6 +77,13 @@ describe("parsePairingUrl", () => {
     ).toEqual({
       host: "https://desktop.tailnet.ts.net",
       code: "pairing-token",
+    });
+  });
+
+  it("rejects oversized URLs before parsing", () => {
+    expect(parsePairingUrl("x".repeat(REMOTE_PAIRING_URL_MAX_LENGTH + 1))).toEqual({
+      host: "",
+      code: "",
     });
   });
 });

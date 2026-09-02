@@ -22,6 +22,12 @@ export interface RelayClientTracingResource {
   readonly component?: string;
 }
 
+const TRACE_ERROR_MESSAGE_MAX_LENGTH = 4_096;
+const TRACE_ERROR_NAME_MAX_LENGTH = 128;
+const TRACE_ERROR_STACK_MAX_LENGTH = 64 * 1_024;
+const TRACE_ERROR_CAUSE_MAX_DEPTH = 16;
+const TRACE_EXIT_REASON_LIMIT = 64;
+
 export class RelayClientTracer extends Context.Reference(
   "@t3tools/shared/relayTracing/RelayClientTracer",
   {
@@ -41,8 +47,42 @@ export const withRelayClientTracing = <A, E, R>(
     ),
   );
 
-function cleanTraceStack(error: Error): string {
-  const stack = error.stack ?? `${error.name}: ${error.message}`;
+function readProperty(value: object, key: PropertyKey): unknown {
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" ? value.slice(0, maxLength) : undefined;
+}
+
+function fallbackTraceMessage(value: unknown): string {
+  if (value === null) return "null";
+  switch (typeof value) {
+    case "string":
+      return value.slice(0, TRACE_ERROR_MESSAGE_MAX_LENGTH);
+    case "boolean":
+    case "number":
+    case "bigint":
+    case "undefined":
+      return String(value);
+    case "symbol":
+      return value.description?.slice(0, TRACE_ERROR_MESSAGE_MAX_LENGTH) ?? "symbol";
+    case "function":
+      return "function";
+    case "object":
+      return "object";
+  }
+  return "unknown";
+}
+
+function cleanTraceStack(value: object, name: string, message: string): string {
+  const stack =
+    boundedString(readProperty(value, "stack"), TRACE_ERROR_STACK_MAX_LENGTH) ??
+    `${name}: ${message}`;
   const lines = stack.split("\n");
   const effectFrameIndex = lines.findIndex(
     (line, index) => index > 0 && /(?:Generator\.next|~effect\/Effect)/.test(line),
@@ -50,39 +90,42 @@ function cleanTraceStack(error: Error): string {
   return effectFrameIndex < 0 ? stack : lines.slice(0, effectFrameIndex).join("\n");
 }
 
-function traceSafeError(value: unknown, seen = new WeakSet<object>()): Error {
+function traceSafeError(value: unknown, seen = new WeakSet<object>(), depth = 0): Error {
+  const record = typeof value === "object" && value !== null ? value : undefined;
   const message =
-    value instanceof Error
-      ? value.message
-      : typeof value === "object" &&
-          value !== null &&
-          "message" in value &&
-          typeof value.message === "string"
-        ? value.message
-        : String(value);
+    boundedString(
+      record === undefined ? undefined : readProperty(record, "message"),
+      TRACE_ERROR_MESSAGE_MAX_LENGTH,
+    ) ?? fallbackTraceMessage(value);
+  const name =
+    boundedString(
+      record === undefined ? undefined : readProperty(record, "name"),
+      TRACE_ERROR_NAME_MAX_LENGTH,
+    ) ?? "Error";
 
   let cause: Error | undefined;
-  if (typeof value === "object" && value !== null && !seen.has(value)) {
-    seen.add(value);
-    if ("cause" in value && value.cause !== undefined) {
-      cause = traceSafeError(value.cause, seen);
+  if (record !== undefined && !seen.has(record)) {
+    seen.add(record);
+    const causeValue = readProperty(record, "cause");
+    if (causeValue !== undefined) {
+      cause =
+        depth < TRACE_ERROR_CAUSE_MAX_DEPTH
+          ? traceSafeError(causeValue, seen, depth + 1)
+          : new Error(`Additional cause omitted after ${TRACE_ERROR_CAUSE_MAX_DEPTH} levels.`);
     }
   }
 
   const error = new Error(message, cause ? { cause } : undefined);
-  if (value instanceof Error) {
-    error.name = value.name;
-    error.stack = cleanTraceStack(value);
-  } else if (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof value.name === "string"
-  ) {
-    error.name = value.name;
+  error.name = name;
+  if (record !== undefined) {
+    error.stack = cleanTraceStack(record, name, message);
   }
   if (cause) {
-    error.stack = `${error.stack ?? `${error.name}: ${error.message}`}\nCaused by: ${cause.stack ?? `${cause.name}: ${cause.message}`}`;
+    error.stack =
+      `${error.stack ?? `${error.name}: ${error.message}`}\nCaused by: ${cause.stack ?? `${cause.name}: ${cause.message}`}`.slice(
+        0,
+        TRACE_ERROR_STACK_MAX_LENGTH,
+      );
   }
   return error;
 }
@@ -91,19 +134,27 @@ function traceSafeExit(exit: Exit.Exit<unknown, unknown>): Exit.Exit<unknown, un
   if (Exit.isSuccess(exit)) {
     return exit;
   }
-  return Exit.failCause(
-    Cause.fromReasons(
-      exit.cause.reasons.map((reason) => {
-        if (Cause.isFailReason(reason)) {
-          return Cause.makeFailReason(traceSafeError(reason.error));
-        }
-        if (Cause.isDieReason(reason)) {
-          return Cause.makeDieReason(traceSafeError(reason.defect));
-        }
-        return reason;
-      }),
-    ),
-  );
+  const reasons: Array<Cause.Reason<unknown>> = [];
+  const retainedCount = Math.min(exit.cause.reasons.length, TRACE_EXIT_REASON_LIMIT);
+  for (let index = 0; index < retainedCount; index += 1) {
+    const reason = exit.cause.reasons[index];
+    if (reason === undefined) continue;
+    if (Cause.isFailReason(reason)) {
+      reasons.push(Cause.makeFailReason(traceSafeError(reason.error)));
+    } else if (Cause.isDieReason(reason)) {
+      reasons.push(Cause.makeDieReason(traceSafeError(reason.defect)));
+    } else {
+      reasons.push(reason);
+    }
+  }
+  if (exit.cause.reasons.length > retainedCount) {
+    reasons.push(
+      Cause.makeDieReason(
+        new Error(`${exit.cause.reasons.length - retainedCount} additional reasons omitted.`),
+      ),
+    );
+  }
+  return Exit.failCause(Cause.fromReasons(reasons));
 }
 
 function nonInterferingTracer(delegate: Tracer.Tracer): Tracer.Tracer {

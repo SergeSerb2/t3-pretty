@@ -25,6 +25,14 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import {
+  findSharedSettingsMismatches,
+  pickSharedServerSettings,
+  splitSharedServerPatch,
+} from "@t3tools/client-runtime/state/shared-settings";
+import { subscribeBrowserClientSettings } from "~/clientPersistenceStorage";
+import { toastManager } from "~/components/ui/toast";
+import { isHostedStaticApp } from "~/hostedPairing";
 import { ensureLocalApi } from "~/localApi";
 import {
   getThemeDefinition,
@@ -35,7 +43,11 @@ import {
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
-import { usePrimaryEnvironment } from "~/state/environments";
+import {
+  type EnvironmentPresentation,
+  useEnvironments,
+  usePrimaryEnvironment,
+} from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -53,6 +65,13 @@ let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
 let clientSettingsHydrated = false;
 let clientSettingsHydrationPromise: Promise<void> | null = null;
 let clientSettingsHydrationGeneration = 0;
+let pendingClientSettingsPatch: ClientSettingsPatch = {};
+let queuedClientSettingsWrite: ClientSettings | null = null;
+let clientSettingsWritePromise: Promise<void> | null = null;
+let clientSettingsWriteGeneration = 0;
+let clientSettingsExternalSubscription: (() => void) | null = null;
+let clientSettingsExternalRefreshGeneration = 0;
+let clientSettingsLocalMutationGeneration = 0;
 
 function emitClientSettingsChange() {
   for (const listener of clientSettingsListeners) {
@@ -83,11 +102,28 @@ function setClientSettingsHydrated(nextHydrated: boolean): void {
   emitClientSettingsHydrationChange();
 }
 
+function syncClientSettingsExternalSubscription(): void {
+  const hasSubscribers =
+    clientSettingsListeners.size > 0 || clientSettingsHydrationListeners.size > 0;
+  if (hasSubscribers && clientSettingsExternalSubscription === null) {
+    clientSettingsExternalSubscription = subscribeBrowserClientSettings(() => {
+      void refreshClientSettingsFromExternalStorage();
+    });
+    return;
+  }
+  if (!hasSubscribers && clientSettingsExternalSubscription !== null) {
+    clientSettingsExternalSubscription();
+    clientSettingsExternalSubscription = null;
+  }
+}
+
 function subscribeClientSettings(listener: () => void): () => void {
   clientSettingsListeners.add(listener);
-  void hydrateClientSettings();
+  syncClientSettingsExternalSubscription();
+  void hydrateClientSettings().catch(() => undefined);
   return () => {
     clientSettingsListeners.delete(listener);
+    syncClientSettingsExternalSubscription();
   };
 }
 
@@ -97,9 +133,11 @@ function getClientSettingsHydratedSnapshot(): boolean {
 
 function subscribeClientSettingsHydration(listener: () => void): () => void {
   clientSettingsHydrationListeners.add(listener);
-  void hydrateClientSettings();
+  syncClientSettingsExternalSubscription();
+  void hydrateClientSettings().catch(() => undefined);
   return () => {
     clientSettingsHydrationListeners.delete(listener);
+    syncClientSettingsExternalSubscription();
   };
 }
 
@@ -112,24 +150,32 @@ async function hydrateClientSettings(): Promise<void> {
   }
 
   const hydrationGeneration = clientSettingsHydrationGeneration;
+  const externalRefreshGeneration = clientSettingsExternalRefreshGeneration;
   const nextHydration = (async () => {
     try {
       const persistedSettings = await ensureLocalApi().persistence.getClientSettings();
-      if (hydrationGeneration !== clientSettingsHydrationGeneration) {
+      if (
+        hydrationGeneration !== clientSettingsHydrationGeneration ||
+        externalRefreshGeneration !== clientSettingsExternalRefreshGeneration
+      ) {
         return;
       }
-      if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
-      }
+      const pendingPatch = pendingClientSettingsPatch;
+      pendingClientSettingsPatch = {};
+      const hydratedSettings = {
+        ...DEFAULT_CLIENT_SETTINGS,
+        ...persistedSettings,
+        ...pendingPatch,
+      };
+      replaceClientSettingsSnapshot(hydratedSettings);
+      setClientSettingsHydrated(true);
+      if (Object.keys(pendingPatch).length > 0) enqueueClientSettingsWrite(hydratedSettings);
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, {
         operation: "hydrate",
         ...safeErrorLogAttributes(error),
       });
-    } finally {
-      if (hydrationGeneration === clientSettingsHydrationGeneration) {
-        setClientSettingsHydrated(true);
-      }
+      throw error;
     }
   })();
 
@@ -143,16 +189,87 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
-function persistClientSettings(settings: ClientSettings): void {
-  replaceClientSettingsSnapshot(settings);
-  void ensureLocalApi()
-    .persistence.setClientSettings(settings)
-    .catch((error) => {
-      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
-        operation: "persist",
-        ...safeErrorLogAttributes(error),
-      });
+async function waitForClientSettingsWrites(): Promise<void> {
+  for (;;) {
+    const write = clientSettingsWritePromise;
+    if (write === null) return;
+    await write;
+  }
+}
+
+async function refreshClientSettingsFromExternalStorage(): Promise<void> {
+  const refreshGeneration = ++clientSettingsExternalRefreshGeneration;
+  const localMutationGeneration = clientSettingsLocalMutationGeneration;
+  try {
+    // A local full-document write wins if it overlaps an older cross-tab
+    // notification. Wait for it, then read whichever document is actually
+    // current instead of briefly rolling the UI back to the other tab's copy.
+    await waitForClientSettingsWrites();
+    const persistedSettings = await ensureLocalApi().persistence.getClientSettings();
+    if (
+      refreshGeneration !== clientSettingsExternalRefreshGeneration ||
+      localMutationGeneration !== clientSettingsLocalMutationGeneration
+    ) {
+      return;
+    }
+    const pendingPatch = pendingClientSettingsPatch;
+    pendingClientSettingsPatch = {};
+    const settings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      ...persistedSettings,
+      ...pendingPatch,
+    };
+    replaceClientSettingsSnapshot(settings);
+    setClientSettingsHydrated(true);
+    if (Object.keys(pendingPatch).length > 0) enqueueClientSettingsWrite(settings);
+  } catch (error) {
+    console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} external sync failed`, {
+      operation: "external-sync",
+      ...safeErrorLogAttributes(error),
     });
+  }
+}
+
+function enqueueClientSettingsWrite(settings: ClientSettings): void {
+  queuedClientSettingsWrite = settings;
+  if (clientSettingsWritePromise) return;
+
+  const writeGeneration = clientSettingsWriteGeneration;
+  const writePromise = (async () => {
+    for (;;) {
+      if (writeGeneration !== clientSettingsWriteGeneration) return;
+      const next = queuedClientSettingsWrite;
+      if (next === null) return;
+      queuedClientSettingsWrite = null;
+      try {
+        await ensureLocalApi().persistence.setClientSettings(next);
+      } catch (error) {
+        console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
+          operation: "persist",
+          ...safeErrorLogAttributes(error),
+        });
+      }
+    }
+  })().finally(() => {
+    if (clientSettingsWritePromise === writePromise) {
+      clientSettingsWritePromise = null;
+      if (queuedClientSettingsWrite) enqueueClientSettingsWrite(queuedClientSettingsWrite);
+    }
+  });
+  clientSettingsWritePromise = writePromise;
+}
+
+function persistClientSettingsPatch(patch: ClientSettingsPatch): void {
+  clientSettingsLocalMutationGeneration += 1;
+  pendingClientSettingsPatch = { ...pendingClientSettingsPatch, ...patch };
+  const settings = { ...getClientSettingsSnapshot(), ...patch };
+  replaceClientSettingsSnapshot(settings);
+  if (!clientSettingsHydrated) {
+    void hydrateClientSettings().catch(() => undefined);
+    return;
+  }
+  pendingClientSettingsPatch = {};
+  enqueueClientSettingsWrite(settings);
 }
 
 // ── Key sets for routing patches ─────────────────────────────────────
@@ -220,7 +337,9 @@ export function mergeEnvironmentSettings(
   serverSettings: ServerSettings,
   clientSettings: ClientSettings,
 ): UnifiedSettings {
-  return { ...serverSettings, ...clientSettings };
+  // Decode drops retired client keys, but older untyped persistence adapters
+  // can still return them. Server-owned values must always win.
+  return { ...clientSettings, ...serverSettings };
 }
 
 function useMergedSettings<T>(
@@ -336,6 +455,30 @@ export function usePrimarySettings<T = UnifiedSettings>(
   return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
+export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
+  "This setting is saved on a server, and the hosted app is not anchored to one. Change it from the desktop app or from the server's own address.";
+
+export function usePrimarySettingsAvailable(): boolean {
+  const primaryEnvironment = usePrimaryEnvironment();
+  return primaryEnvironment !== null || !isHostedStaticApp();
+}
+
+function supportsSharedSettings(environment: EnvironmentPresentation): boolean {
+  return (
+    environment.connection.phase === "connected" &&
+    environment.serverConfig?.environment.capabilities.threadAutoSettlement === true
+  );
+}
+
+function useConnectedEnvironmentIds(): ReadonlyArray<EnvironmentId> {
+  const { environments } = useEnvironments();
+  return useMemo(
+    () =>
+      environments.filter(supportsSharedSettings).map((environment) => environment.environmentId),
+    [environments],
+  );
+}
+
 /**
  * Returns an updater that routes each key to the correct backing store.
  *
@@ -347,29 +490,88 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     serverEnvironment.updateSettings,
     "server settings update",
   );
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const updateSettings = useCallback(
     (patch: UnifiedSettingsPatch) => {
       const { serverPatch, clientPatch } = splitPatch(patch);
 
       if (Object.keys(serverPatch).length > 0) {
-        if (environmentId) {
+        const { sharedPatch, localPatch } = splitSharedServerPatch(serverPatch);
+        const hasLocalPatch = Object.keys(localPatch).length > 0;
+        const hasSharedPatch = Object.keys(sharedPatch).length > 0;
+        const sharedTargets = new Set(connectedEnvironmentIds);
+        if (environmentId) sharedTargets.add(environmentId);
+
+        if ((hasLocalPatch && !environmentId) || (hasSharedPatch && sharedTargets.size === 0)) {
+          toastManager.add({
+            type: "warning",
+            title: "Setting not saved",
+            description: PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+          });
+        }
+        if (environmentId && hasLocalPatch) {
           void persistServerSettings({
             environmentId,
-            input: { patch: serverPatch },
+            input: { patch: localPatch },
           });
+        }
+        if (hasSharedPatch) {
+          for (const targetId of sharedTargets) {
+            void persistServerSettings({
+              environmentId: targetId,
+              input: { patch: sharedPatch },
+            });
+          }
         }
       }
       if (Object.keys(clientPatch).length > 0) {
-        persistClientSettings({
-          ...getClientSettingsSnapshot(),
-          ...clientPatch,
-        });
+        persistClientSettingsPatch(clientPatch);
       }
     },
-    [environmentId, persistServerSettings],
+    [connectedEnvironmentIds, environmentId, persistServerSettings],
   );
 
   return updateSettings;
+}
+
+export function useSharedSettingsSync() {
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
+  const primarySettings =
+    primaryEnvironment !== null && supportsSharedSettings(primaryEnvironment)
+      ? (primaryEnvironment.serverConfig?.settings ?? null)
+      : null;
+  const { environments } = useEnvironments();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+  const mismatches = useMemo(
+    () =>
+      findSharedSettingsMismatches({
+        primaryEnvironmentId,
+        primarySettings,
+        environments: environments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+          connected: supportsSharedSettings(environment),
+          settings: environment.serverConfig?.settings ?? null,
+        })),
+      }),
+    [environments, primaryEnvironmentId, primarySettings],
+  );
+  const applyToAll = useCallback(() => {
+    if (primarySettings === null) return;
+    const patch = pickSharedServerSettings(primarySettings);
+    for (const mismatch of mismatches) {
+      void persistServerSettings({
+        environmentId: mismatch.environmentId,
+        input: { patch },
+      });
+    }
+  }, [mismatches, persistServerSettings, primarySettings]);
+
+  return { mismatches, applyToAll };
 }
 
 export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
@@ -382,25 +584,43 @@ export function useUpdatePrimarySettings() {
 
 export function useUpdateClientSettings() {
   return useCallback((patch: ClientSettingsPatch) => {
-    persistClientSettings({
-      ...getClientSettingsSnapshot(),
-      ...patch,
-    });
+    persistClientSettingsPatch(patch);
   }, []);
 }
 
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
+  clientSettingsWriteGeneration += 1;
+  clientSettingsExternalRefreshGeneration += 1;
+  clientSettingsLocalMutationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
   clientSettingsHydrated = false;
   clientSettingsHydrationPromise = null;
+  pendingClientSettingsPatch = {};
+  queuedClientSettingsWrite = null;
+  clientSettingsWritePromise = null;
   clientSettingsListeners.clear();
   clientSettingsHydrationListeners.clear();
+  syncClientSettingsExternalSubscription();
 }
 
 export function __setClientSettingsForTests(settings: ClientSettings): void {
   clientSettingsHydrationGeneration += 1;
+  clientSettingsWriteGeneration += 1;
+  clientSettingsExternalRefreshGeneration += 1;
+  clientSettingsLocalMutationGeneration += 1;
   clientSettingsSnapshot = settings;
   clientSettingsHydrated = true;
   clientSettingsHydrationPromise = null;
+  pendingClientSettingsPatch = {};
+  queuedClientSettingsWrite = null;
+  clientSettingsWritePromise = null;
+}
+
+export function __persistClientSettingsPatchForTests(patch: ClientSettingsPatch): void {
+  persistClientSettingsPatch(patch);
+}
+
+export async function __waitForClientSettingsPersistenceForTests(): Promise<void> {
+  await waitForClientSettingsWrites();
 }

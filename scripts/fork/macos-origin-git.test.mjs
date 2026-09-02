@@ -46,6 +46,30 @@ function helpers(home, store) {
 }
 
 describe("macos-origin-git pre-checkout hook", () => {
+  it("refreshes the Origin store before checkout", () => {
+    const { home, store } = makeHome();
+    try {
+      const bin = NodePath.join(home, ".local", "bin");
+      NodeFS.mkdirSync(bin, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(bin, "refresh-origin-git-credentials.sh"),
+        `#!/bin/sh
+test -z "\${FORCE_COLOR+x}"
+test -z "\${NO_COLOR+x}"
+printf 'https://x-access-token:fresh@origin.cursor.com\\n' > "$ORIGIN_GIT_CREDENTIALS"
+`,
+        { mode: 0o755 },
+      );
+      const env = envFor(home, store);
+      env.FORCE_COLOR = "1";
+      env.NO_COLOR = "1";
+      NodeChildProcess.execFileSync("bash", [script], { env, stdio: "ignore" });
+      assert.include(NodeFS.readFileSync(store, "utf8"), "fresh");
+    } finally {
+      NodeFS.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("writes the file store even when origin credential-helper is already set", () => {
     const { home, store } = makeHome();
     try {

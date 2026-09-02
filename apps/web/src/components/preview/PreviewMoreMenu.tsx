@@ -4,6 +4,7 @@ import type { DesktopPreviewColorScheme } from "@t3tools/contracts";
 import { Minus, MoreVertical, Plus as PlusIcon, RotateCcw } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
+import { toastManager } from "~/components/ui/toast";
 import {
   Menu,
   MenuItem,
@@ -70,9 +71,21 @@ export function PreviewMoreMenu({
   if (!previewBridge) return null;
   const bridge = previewBridge;
   const tabDisabled = !tabId || !hasWebContents;
-  const callTab = (op: (tabId: string) => Promise<void>) => () => {
+  const reportFailure = (title: string, error: unknown) => {
+    toastManager.add({
+      type: "error",
+      title,
+      description: error instanceof Error ? error.message : "An error occurred.",
+    });
+  };
+  const run = (title: string, operation: () => Promise<void>) => {
+    void Promise.resolve()
+      .then(operation)
+      .catch((error: unknown) => reportFailure(title, error));
+  };
+  const callTab = (title: string, op: (tabId: string) => Promise<void>) => () => {
     if (!tabId) return;
-    void op(tabId).catch(() => undefined);
+    run(title, () => op(tabId));
   };
 
   const zoomLabel = `${Math.round(zoomFactor * 100)}%`;
@@ -93,10 +106,16 @@ export function PreviewMoreMenu({
         <TooltipPopup>More</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" sideOffset={6} className="min-w-56">
-        <MenuItem onClick={callTab(bridge.hardReload)} disabled={tabDisabled}>
+        <MenuItem
+          onClick={callTab("Unable to reload preview", bridge.hardReload)}
+          disabled={tabDisabled}
+        >
           Hard reload
         </MenuItem>
-        <MenuItem onClick={callTab(bridge.openDevTools)} disabled={tabDisabled}>
+        <MenuItem
+          onClick={callTab("Unable to open DevTools", bridge.openDevTools)}
+          disabled={tabDisabled}
+        >
           Open DevTools
         </MenuItem>
         <MenuItem onClick={onNativePictureInPicture} disabled={tabDisabled}>
@@ -114,9 +133,9 @@ export function PreviewMoreMenu({
               value={colorScheme}
               onValueChange={(value) => {
                 if (!tabId) return;
-                void bridge
-                  .setColorScheme(tabId, value as DesktopPreviewColorScheme)
-                  .catch(() => undefined);
+                run("Unable to update preview appearance", () =>
+                  bridge.setColorScheme(tabId, value as DesktopPreviewColorScheme),
+                );
               }}
             >
               {COLOR_SCHEME_OPTIONS.map((option) => (
@@ -144,7 +163,7 @@ export function PreviewMoreMenu({
               variant="outline"
               size="icon-xs"
               type="button"
-              onClick={callTab(bridge.zoomOut)}
+              onClick={callTab("Unable to zoom preview out", bridge.zoomOut)}
               aria-label="Zoom out"
               disabled={tabDisabled}
             >
@@ -157,7 +176,7 @@ export function PreviewMoreMenu({
               variant="outline"
               size="icon-xs"
               type="button"
-              onClick={callTab(bridge.zoomIn)}
+              onClick={callTab("Unable to zoom preview in", bridge.zoomIn)}
               aria-label="Zoom in"
               disabled={tabDisabled}
             >
@@ -167,7 +186,7 @@ export function PreviewMoreMenu({
               variant="ghost"
               size="icon-xs"
               type="button"
-              onClick={callTab(bridge.resetZoom)}
+              onClick={callTab("Unable to reset preview zoom", bridge.resetZoom)}
               aria-label="Reset zoom"
               className="[:hover,[data-pressed]]:bg-foreground/10"
               disabled={tabDisabled}
@@ -177,10 +196,12 @@ export function PreviewMoreMenu({
           </span>
         </MenuItem>
         <MenuSeparator />
-        <MenuItem onClick={() => void bridge.clearCookies().catch(() => undefined)}>
+        <MenuItem
+          onClick={() => run("Unable to clear preview cookies", () => bridge.clearCookies())}
+        >
           Clear cookies
         </MenuItem>
-        <MenuItem onClick={() => void bridge.clearCache().catch(() => undefined)}>
+        <MenuItem onClick={() => run("Unable to clear preview cache", () => bridge.clearCache())}>
           Clear cache
         </MenuItem>
       </MenuPopup>

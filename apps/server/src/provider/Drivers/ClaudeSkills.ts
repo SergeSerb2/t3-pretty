@@ -13,12 +13,21 @@
  */
 import * as NodeOS from "node:os";
 
-import type { ClaudeSettings, ServerProviderSkill } from "@t3tools/contracts";
+import {
+  type ClaudeSettings,
+  type ServerProviderSkill,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+  SKILL_FRONTMATTER_READ_MAX_BYTES,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_SOURCE_PATH_MAX_LENGTH,
+  SKILL_STATE_MAX_ITEMS,
+} from "@t3tools/contracts";
 import { parseSkillFrontmatter } from "@t3tools/shared/skillFrontmatter";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
+import { readTextPrefix } from "../../boundedFileRead.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 
 type ClaudeSkillScope = "user" | "project";
@@ -84,11 +93,13 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
       .readDirectory(root.directory)
       .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
 
-    for (const entry of [...entries].sort()) {
+    for (const entry of [...entries].sort().slice(0, SKILL_STATE_MAX_ITEMS)) {
       const skillPath = path.join(root.directory, entry, "SKILL.md");
-      const contents = yield* fileSystem
-        .readFileString(skillPath)
-        .pipe(Effect.orElseSucceed(() => undefined));
+      const contents = yield* readTextPrefix(
+        fileSystem,
+        skillPath,
+        SKILL_FRONTMATTER_READ_MAX_BYTES,
+      ).pipe(Effect.orElseSucceed(() => undefined));
       if (contents === undefined) {
         continue;
       }
@@ -102,17 +113,25 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
       }
 
       const name = (frontmatter.kind === "parsed" ? frontmatter.name : undefined) ?? entry.trim();
-      if (!name) {
+      if (
+        !name ||
+        name.length > SKILL_NAME_MAX_LENGTH ||
+        skillPath.length > SKILL_SOURCE_PATH_MAX_LENGTH
+      ) {
         continue;
       }
 
+      if (!skillsByName.has(name) && skillsByName.size >= SKILL_STATE_MAX_ITEMS) {
+        const oldestName = skillsByName.keys().next().value;
+        if (oldestName !== undefined) skillsByName.delete(oldestName);
+      }
       skillsByName.set(name, {
         name,
         path: skillPath,
         enabled: true,
         scope: root.scope,
         ...(frontmatter.kind === "parsed" && frontmatter.description
-          ? { description: frontmatter.description }
+          ? { description: frontmatter.description.slice(0, SKILL_DESCRIPTION_MAX_LENGTH) }
           : {}),
       });
     }

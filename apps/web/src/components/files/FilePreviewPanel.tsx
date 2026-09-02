@@ -12,13 +12,12 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
+import { ChevronRight, Code2, Eye, FolderTree, Globe2 } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlState } from "~/assets/assetUrls";
-import ChatMarkdown from "~/components/ChatMarkdown";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -29,6 +28,7 @@ import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Spinner } from "~/components/ui/spinner";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -42,6 +42,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import FileBrowserPanel from "./FileBrowserPanel";
+import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -133,6 +134,7 @@ function WorkspaceImagePreview(props: {
   readonly threadRef: ScopedThreadRef;
   readonly absolutePath: string;
   readonly alt: string;
+  readonly refreshRequestId: number;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, {
     _tag: "workspace-file",
@@ -140,27 +142,36 @@ function WorkspaceImagePreview(props: {
     path: props.absolutePath,
   });
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const imageUrl =
+    assetUrl._tag === "Success" && props.refreshRequestId > 0
+      ? `${assetUrl.url}${assetUrl.url.includes("?") ? "&" : "?"}t3-refresh=${props.refreshRequestId}`
+      : assetUrl._tag === "Success"
+        ? assetUrl.url
+        : null;
 
-  if (assetUrl._tag === "Failure" || (assetUrl._tag === "Success" && failedUrl === assetUrl.url)) {
+  if (assetUrl._tag === "Failure" || (imageUrl !== null && failedUrl === imageUrl)) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+      <div
+        role="alert"
+        className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive"
+      >
         Unable to load workspace image.
       </div>
     );
   }
 
-  return assetUrl._tag === "Success" ? (
+  return imageUrl !== null ? (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
       <img
         className="max-h-full max-w-full object-contain"
-        src={assetUrl.url}
+        src={imageUrl}
         alt={props.alt}
-        onError={() => setFailedUrl(assetUrl.url)}
+        onError={() => setFailedUrl(imageUrl)}
       />
     </div>
   ) : (
     <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-      <LoaderCircle className="size-5 animate-spin" />
+      <Spinner aria-label="Loading workspace image" className="size-5" />
     </div>
   );
 }
@@ -207,6 +218,7 @@ const REVEAL_MAX_ATTEMPTS = 30;
  */
 const REVEAL_GUARD_FRAMES = 20;
 const REVEAL_GUARD_TOLERANCE_PX = 2;
+const MAX_RETAINED_FILE_REVEAL_STATES = 32;
 
 interface FileRevealState {
   frameId: number | null;
@@ -222,6 +234,17 @@ function useFileLineReveal(
 ): FilePostRender {
   const [revealStatesByPath] = useState(() => new Map<string, FileRevealState>());
 
+  useEffect(
+    () => () => {
+      for (const state of revealStatesByPath.values()) {
+        if (state.frameId !== null) cancelAnimationFrame(state.frameId);
+        state.cancelGuard?.();
+      }
+      revealStatesByPath.clear();
+    },
+    [revealStatesByPath],
+  );
+
   return useCallback<FilePostRender>(
     (fileContainer, instance, phase) => {
       if (relativePath === null) return;
@@ -233,7 +256,16 @@ function useFileLineReveal(
         handledRequestId: null,
         latestRequestId: null,
       };
-      if (!existingState) revealStatesByPath.set(relativePath, state);
+      if (existingState) revealStatesByPath.delete(relativePath);
+      revealStatesByPath.set(relativePath, state);
+      while (revealStatesByPath.size > MAX_RETAINED_FILE_REVEAL_STATES) {
+        const evictable = [...revealStatesByPath].find(
+          ([path, candidate]) =>
+            path !== relativePath && candidate.frameId === null && candidate.cancelGuard === null,
+        );
+        if (!evictable) break;
+        revealStatesByPath.delete(evictable[0]);
+      }
 
       const cancelPendingReveal = () => {
         if (state.frameId !== null) {
@@ -423,6 +455,15 @@ function useFileSaveCoordinator({
         onConfirmed: (confirmedContents) => {
           confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
         },
+        onError: (error) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Unable to save ${relativePath}`,
+              description: error instanceof Error ? error.message : "The file is still unsaved.",
+            }),
+          );
+        },
       }),
     [cwd, environmentId, onPendingChange, relativePath, writeFile],
   );
@@ -500,6 +541,10 @@ function EditableFileSurface({
 
   useEffect(
     () => () => {
+      if (selectionFrameRef.current !== null) {
+        cancelAnimationFrame(selectionFrameRef.current);
+        selectionFrameRef.current = null;
+      }
       editor.cleanUp();
     },
     [editor],
@@ -727,11 +772,11 @@ function RenderedMarkdownSurface({
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <ChatMarkdown
+      <FileMarkdownPreview
         text={contents}
         cwd={cwd}
+        relativePath={relativePath}
         threadRef={threadRef}
-        className="mx-auto max-w-4xl px-6 py-5"
         onTaskListChange={({ markerOffset, checked }) => {
           const currentContents =
             getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ??
@@ -783,6 +828,7 @@ export default function FilePreviewPanel({
   const isImage = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
   const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage);
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
+  const [imageRefreshRequestId, setImageRefreshRequestId] = useState(0);
   // Reading markdown rendered is a preference, not a property of one file. Keeping
   // it on the panel meant a thread switch dropped it and forced source back.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
@@ -1001,14 +1047,18 @@ export default function FilePreviewPanel({
               threadRef={threadRef}
               absolutePath={absolutePath}
               alt={relativePath}
+              refreshRequestId={imageRefreshRequestId}
             />
           ) : relativePath && file.error && file.data === null ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+            <div
+              role="alert"
+              className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive"
+            >
               {file.error}
             </div>
           ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-              <LoaderCircle className="size-5 animate-spin" />
+              <Spinner aria-label={`Loading ${relativePath}`} className="size-5" />
             </div>
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
@@ -1080,7 +1130,14 @@ export default function FilePreviewPanel({
               selectedPath={relativePath}
               selectedPathRevealId={revealRequestId}
               onOpenFile={onOpenFile}
-              {...(relativePath && !isImage ? { onRefreshSelectedFile: file.refresh } : {})}
+              {...(relativePath !== null
+                ? {
+                    onRefreshSelectedFile: isImage
+                      ? () => setImageRefreshRequestId((requestId) => requestId + 1)
+                      : file.refresh,
+                    selectedFileRefreshPending: !isImage && file.isPending,
+                  }
+                : {})}
             />
           </aside>
         ) : null}

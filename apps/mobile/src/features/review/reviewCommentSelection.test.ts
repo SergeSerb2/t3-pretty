@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  clearReviewCommentTarget,
+  clearReviewCommentTargetIfCurrent,
   countReviewCommentContexts,
   formatReviewCommentContext,
   parseReviewCommentMessageSegments,
   parseReviewInlineComments,
+  setReviewCommentTarget,
   type ReviewCommentTarget,
 } from "./reviewCommentSelection";
 
@@ -43,6 +46,18 @@ function makeTarget(): ReviewCommentTarget {
 }
 
 describe("review comment serialization", () => {
+  it("does not let an old sheet clear a newer comment target", () => {
+    const oldTarget = makeTarget();
+    const newTarget = { ...makeTarget(), sectionId: "section-2" };
+
+    setReviewCommentTarget(oldTarget);
+    setReviewCommentTarget(newTarget);
+
+    expect(clearReviewCommentTargetIfCurrent(oldTarget)).toBe(false);
+    expect(clearReviewCommentTargetIfCurrent(newTarget)).toBe(true);
+    clearReviewCommentTarget();
+  });
+
   it("preserves enough metadata for inline diff rendering", () => {
     const serialized = formatReviewCommentContext(makeTarget(), "Please keep this configurable.");
 

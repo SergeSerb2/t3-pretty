@@ -14,7 +14,9 @@ import { vi } from "vite-plus/test";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import {
+  BOOTSTRAP_ENVELOPE_MAX_BYTES,
   BootstrapEnvelopeDecodeError,
+  BootstrapEnvelopeTooLargeError,
   BootstrapFdStatError,
   BootstrapInputStreamOpenError,
   readBootstrapEnvelope,
@@ -198,6 +200,26 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
         error.message,
         `Failed to decode bootstrap envelope from file descriptor ${fd}.`,
       );
+    }),
+  );
+
+  it.effect("rejects an oversized bootstrap line before decoding", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      yield* fs.writeFileString(filePath, "x".repeat(BOOTSTRAP_ENVELOPE_MAX_BYTES + 1));
+
+      const fd = yield* Effect.acquireRelease(
+        Effect.sync(() => NodeFS.openSync(filePath, "r")),
+        (fd) => Effect.sync(() => NodeFS.closeSync(fd)),
+      );
+      const error = yield* readBootstrapEnvelope(TestEnvelopeSchema, fd, {
+        timeoutMs: 100,
+      }).pipe(Effect.flip);
+
+      assert.instanceOf(error, BootstrapEnvelopeTooLargeError);
+      assert.equal(error.fd, fd);
+      assert.equal(error.maxBytes, BOOTSTRAP_ENVELOPE_MAX_BYTES);
     }),
   );
 

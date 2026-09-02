@@ -19,7 +19,7 @@ export class RotatingFileSinkConfigurationError extends Schema.TaggedErrorClass<
   },
 ) {
   override get message(): string {
-    return `${this.option} must be >= ${this.minimum} (received ${this.received})`;
+    return `${this.option} must be a safe integer >= ${this.minimum} (received ${this.received})`;
   }
 }
 
@@ -49,14 +49,14 @@ export class RotatingFileSink {
   private currentSize = 0;
 
   constructor(options: RotatingFileSinkOptions) {
-    if (options.maxBytes < 1) {
+    if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 1) {
       throw new RotatingFileSinkConfigurationError({
         option: "maxBytes",
         received: options.maxBytes,
         minimum: 1,
       });
     }
-    if (options.maxFiles < 1) {
+    if (!Number.isSafeInteger(options.maxFiles) || options.maxFiles < 1) {
       throw new RotatingFileSinkConfigurationError({
         option: "maxFiles",
         received: options.maxFiles,
@@ -141,23 +141,35 @@ export class RotatingFileSink {
   }
 
   private pruneOverflowBackups(): void {
+    let directory: NodeFS.Dir | undefined;
+    let failure: { readonly cause: unknown } | undefined;
     try {
       const dir = NodePath.dirname(this.filePath);
       const baseName = NodePath.basename(this.filePath);
-      for (const entry of NodeFS.readdirSync(dir)) {
-        if (!entry.startsWith(`${baseName}.`)) continue;
-        const suffix = Number(entry.slice(baseName.length + 1));
+      directory = NodeFS.opendirSync(dir);
+      for (;;) {
+        const entry = directory.readSync();
+        if (entry === null) break;
+        if (!entry.name.startsWith(`${baseName}.`)) continue;
+        const suffix = Number(entry.name.slice(baseName.length + 1));
         if (!Number.isInteger(suffix) || suffix <= this.maxFiles) continue;
-        NodeFS.rmSync(NodePath.join(dir, entry), { force: true });
+        NodeFS.rmSync(NodePath.join(dir, entry.name), { force: true });
       }
     } catch (cause) {
-      if (this.throwOnError) {
-        throw new RotatingFileSinkError({
-          operation: "prune",
-          filePath: this.filePath,
-          cause,
-        });
+      failure = { cause };
+    } finally {
+      try {
+        directory?.closeSync();
+      } catch (cause) {
+        failure ??= { cause };
       }
+    }
+    if (failure !== undefined && this.throwOnError) {
+      throw new RotatingFileSinkError({
+        operation: "prune",
+        filePath: this.filePath,
+        cause: failure.cause,
+      });
     }
   }
 

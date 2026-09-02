@@ -1,5 +1,8 @@
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
-import { RelayAgentActivityState as RelayAgentActivityStateSchema } from "@t3tools/contracts/relay";
+import {
+  RELAY_ACTIVITY_MAX_COUNT,
+  type RelayAgentActivityState,
+  RelayAgentActivityState as RelayAgentActivityStateSchema,
+} from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -7,7 +10,7 @@ import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
 import { relayAgentActivityRows, relayEnvironmentLinks } from "../persistence/schema.ts";
@@ -42,11 +45,12 @@ export class AgentActivityRowPruneTerminalPersistenceError extends Schema.Tagged
   "AgentActivityRowPruneTerminalPersistenceError",
   {
     updatedBefore: Schema.String,
+    staleUpdatedBefore: Schema.optionalKey(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Failed to prune terminal agent activity rows updated before ${this.updatedBefore}.`;
+    return `Failed to prune agent activity rows updated before ${this.updatedBefore}.`;
   }
 }
 
@@ -71,6 +75,7 @@ export class AgentActivityRows extends Context.Service<
     }) => Effect.Effect<void, AgentActivityRowUpsertPersistenceError>;
     readonly pruneTerminal: (input: {
       readonly updatedBefore: string;
+      readonly staleUpdatedBefore?: string;
     }) => Effect.Effect<void, AgentActivityRowPruneTerminalPersistenceError>;
     readonly remove: (input: {
       readonly environmentId: string;
@@ -186,20 +191,29 @@ export const make = Effect.gen(function* () {
     pruneTerminal: Effect.fn("relay.agent_activity_rows.prune_terminal")(function* (input) {
       yield* Effect.annotateCurrentSpan({
         "relay.agent_activity_prune.before": input.updatedBefore,
+        ...(input.staleUpdatedBefore === undefined
+          ? {}
+          : { "relay.agent_activity_prune.stale_before": input.staleUpdatedBefore }),
       });
+      const terminalCondition = and(
+        sql`${relayAgentActivityRows.stateJson} ->> 'phase' IN ('completed', 'failed')`,
+        lt(relayAgentActivityRows.updatedAt, input.updatedBefore),
+      );
       yield* db
         .delete(relayAgentActivityRows)
         .where(
-          and(
-            sql`${relayAgentActivityRows.stateJson} ->> 'phase' IN ('completed', 'failed')`,
-            lt(relayAgentActivityRows.updatedAt, input.updatedBefore),
-          ),
+          input.staleUpdatedBefore === undefined
+            ? terminalCondition
+            : or(terminalCondition, lt(relayAgentActivityRows.updatedAt, input.staleUpdatedBefore)),
         )
         .pipe(
           Effect.mapError(
             (cause) =>
               new AgentActivityRowPruneTerminalPersistenceError({
                 updatedBefore: input.updatedBefore,
+                ...(input.staleUpdatedBefore === undefined
+                  ? {}
+                  : { staleUpdatedBefore: input.staleUpdatedBefore }),
                 cause,
               }),
           ),
@@ -228,6 +242,7 @@ export const make = Effect.gen(function* () {
           ),
         )
         .orderBy(desc(relayAgentActivityRows.updatedAt))
+        .limit(RELAY_ACTIVITY_MAX_COUNT)
         .pipe(
           Effect.flatMap((rows) =>
             Effect.forEach(rows, (row) => encodeJsonValue(row.stateJson), {
@@ -270,6 +285,7 @@ export const make = Effect.gen(function* () {
           ),
         )
         .orderBy(desc(relayAgentActivityRows.updatedAt))
+        .limit(RELAY_ACTIVITY_MAX_COUNT)
         .pipe(
           Effect.flatMap((rows) =>
             Effect.forEach(rows, (row) => encodeJsonValue(row.stateJson), {

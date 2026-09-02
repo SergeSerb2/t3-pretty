@@ -14,8 +14,8 @@ afterEach(() => {
 });
 
 describe("writePullRequestHandoffDraft", () => {
-  it("writes the prompt into the project's new-task composer draft", async () => {
-    const draftKey = await writePullRequestHandoffDraft({
+  it("writes the prompt into the project's new-task composer draft", () => {
+    const draftKey = writePullRequestHandoffDraft({
       environmentId,
       projectId,
       prompt: "Fix the review finding.",
@@ -31,14 +31,14 @@ describe("writePullRequestHandoffDraft", () => {
     });
   });
 
-  it("replaces an earlier hand-off instead of stacking both", async () => {
-    await writePullRequestHandoffDraft({
+  it("replaces an earlier hand-off instead of stacking both", () => {
+    writePullRequestHandoffDraft({
       environmentId,
       projectId,
       prompt: "Explain this pull request.",
       url: pullRequestUrl,
     });
-    const draftKey = await writePullRequestHandoffDraft({
+    const draftKey = writePullRequestHandoffDraft({
       environmentId,
       projectId,
       prompt: "Fix the review finding.",
@@ -48,13 +48,13 @@ describe("writePullRequestHandoffDraft", () => {
     expect(getComposerDraftSnapshot(draftKey).text).toBe("Fix the review finding.");
   });
 
-  it("keeps a sentence the reader typed and puts the hand-off under it", async () => {
+  it("keeps a sentence the reader typed and puts the hand-off under it", () => {
     const draftKey = newTaskComposerDraftKey(environmentId, projectId);
     appAtomRegistry.set(composerDraftsAtom, {
       [draftKey]: { text: "check the migration first", attachments: [] },
     });
 
-    await writePullRequestHandoffDraft({
+    writePullRequestHandoffDraft({
       environmentId,
       projectId,
       prompt: "Fix the review finding.",
@@ -66,7 +66,7 @@ describe("writePullRequestHandoffDraft", () => {
     );
   });
 
-  it("replaces a hydrated hand-off after restart instead of stacking", async () => {
+  it("replaces a hydrated hand-off after restart instead of stacking", () => {
     const draftKey = newTaskComposerDraftKey(environmentId, projectId);
     // Simulate drafts.json hydration: text and ownership both restored from disk.
     appAtomRegistry.set(composerDraftsAtom, {
@@ -77,7 +77,7 @@ describe("writePullRequestHandoffDraft", () => {
       },
     });
 
-    await writePullRequestHandoffDraft({
+    writePullRequestHandoffDraft({
       environmentId,
       projectId,
       prompt: "Fix the review finding.",

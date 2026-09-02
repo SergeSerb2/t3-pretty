@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { PullRequestRow } from "./PullRequestRow";
-import { pullRequestChecksState } from "./pullRequestPresentation";
+import { pullRequestCheckListKeys, pullRequestChecksState } from "./pullRequestPresentation";
 
 function check(status: PullRequestCheck["status"]): PullRequestCheck {
   return { name: `check-${status}`, status, description: null, url: null };
@@ -22,6 +22,27 @@ describe("pullRequestChecksState", () => {
     // Skipped and neutral are neither a pass nor a failure, so they are no verdict at all.
     expect(pullRequestChecksState([check("skipped"), check("neutral")])).toBe(null);
     expect(pullRequestChecksState([])).toBe(null);
+  });
+});
+
+describe("pullRequestCheckListKeys", () => {
+  it("keeps check identity stable when the host reorders status rows", () => {
+    const build = { ...check("pending"), name: "build", url: "https://checks.test/build" };
+    const lint = { ...check("success"), name: "lint", url: "https://checks.test/lint" };
+    const firstKeys = pullRequestCheckListKeys([build, lint]);
+    const reorderedKeys = pullRequestCheckListKeys([
+      { ...lint, status: "failure" },
+      { ...build, status: "success" },
+    ]);
+
+    expect(reorderedKeys).toEqual([firstKeys[1], firstKeys[0]]);
+  });
+
+  it("gives repeated host check runs unique keys", () => {
+    const repeated = { ...check("pending"), name: "build" };
+    const keys = pullRequestCheckListKeys([repeated, repeated]);
+
+    expect(new Set(keys).size).toBe(2);
   });
 });
 

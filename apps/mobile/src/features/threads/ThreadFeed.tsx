@@ -29,6 +29,7 @@ import {
 } from "react-native-nitro-markdown";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Platform,
   type LayoutChangeEvent,
@@ -56,14 +57,13 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withRepeat,
   withSequence,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { MOTION_TIMING } from "../../lib/motion";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -97,7 +97,11 @@ import { buildReviewParsedDiff } from "../review/reviewModel";
 import { cn } from "../../lib/cn";
 import { recordThreadPerformanceSpan } from "../observability/threadPerformance";
 import { useOpenChangeRequestLink } from "../pull-requests/useOpenNativePullRequest";
-import { deriveCenteredContentHorizontalPadding, type LayoutVariant } from "../../lib/layout";
+import {
+  deriveCenteredContentHorizontalPadding,
+  deriveThreadFeedInitialContentInset,
+  type LayoutVariant,
+} from "../../lib/layout";
 import {
   resolveMarkdownFontSizes,
   resolveNativeMarkdownTypography,
@@ -115,6 +119,7 @@ import {
 } from "../../lib/threadActivity";
 import {
   shouldShowThreadFeedLoadingOverlay,
+  scheduleThreadLoadingVisibility,
   THREAD_FEED_LIST_READY_FALLBACK_MS,
   type ThreadContentPresentation,
 } from "./threadContentPresentation";
@@ -135,6 +140,10 @@ import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-prev
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
+import { usePreparedConnection } from "../../state/session";
+import * as Option from "effect/Option";
+import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
+import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -186,14 +195,10 @@ function isFreshTimestamp(input: string): boolean {
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ENTRY_WINDOW_MS;
 }
 
-// The loading placeholder enters only after a beat: a cached thread resolves
+// The loading placeholder mounts only after a beat: a cached thread resolves
 // well inside the delay, so fast switches never flash "Loading messages".
-// Empty copy has no delay so a loading→empty handoff can crossfade instead
-// of stacking another wait.
 const FEED_PLACEHOLDER_ENTER_DELAY_MS = 220;
-const FEED_PLACEHOLDER_ENTER = FadeIn.delay(FEED_PLACEHOLDER_ENTER_DELAY_MS)
-  .duration(200)
-  .reduceMotion(ReduceMotion.System);
+const FEED_PLACEHOLDER_ENTER = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 const FEED_PLACEHOLDER_SWAP = FadeIn.duration(200).reduceMotion(ReduceMotion.System);
 const FEED_PLACEHOLDER_EXIT = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
 
@@ -220,6 +225,7 @@ export interface ThreadFeedProps {
   readonly onEndFollowEnabledChange?: (enabled: boolean) => void;
   readonly onListReady?: () => void;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
+  readonly readAloudEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: {
     readonly loading: boolean;
@@ -297,7 +303,6 @@ function ThreadMarkdownImageView(props: {
   readonly alt: string | null;
   readonly onPressImage: (uri: string) => void;
 }) {
-  const codeBackground = useThemeColor("--color-md-code-bg");
   const [availableWidth, setAvailableWidth] = useState(0);
   const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [failedUri, setFailedUri] = useState<string | null>(null);
@@ -330,12 +335,9 @@ function ThreadMarkdownImageView(props: {
     >
       {props.uri === null || failed ? (
         <View
+          className="items-center justify-center rounded-[10px] bg-md-code-bg"
           style={{
             ...frameStyle,
-            borderRadius: 10,
-            backgroundColor: codeBackground,
-            alignItems: "center",
-            justifyContent: "center",
           }}
         >
           {failed ? (
@@ -353,13 +355,9 @@ function ThreadMarkdownImageView(props: {
           style={{ alignSelf: "flex-start" }}
         >
           <View
+            className="items-center justify-center overflow-hidden rounded-[10px] bg-md-code-bg"
             style={{
               ...frameStyle,
-              borderRadius: 10,
-              backgroundColor: codeBackground,
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
             }}
           >
             <ThreadMarkdownImageRequest
@@ -644,23 +642,18 @@ function MarkdownCodeBlock(props: {
 }
 
 function useReviewCommentColors(): ReviewCommentColors {
-  const background = useThemeColor("--color-card");
-  const border = useThemeColor("--color-border");
-  const mutedBackground = useThemeColor("--color-subtle");
-  const text = useThemeColor("--color-foreground");
-  const mutedText = useThemeColor("--color-foreground-muted");
-  const codeBackground = useThemeColor("--color-md-code-bg");
+  const theme = useUniwindTheme();
 
   return useMemo(
     () => ({
-      background,
-      border,
-      mutedBackground,
-      text,
-      mutedText,
-      codeBackground,
+      background: theme["--color-card"],
+      border: theme["--color-border"],
+      mutedBackground: theme["--color-subtle"],
+      text: theme["--color-foreground"],
+      mutedText: theme["--color-foreground-muted"],
+      codeBackground: theme["--color-md-code-bg"],
     }),
-    [background, border, codeBackground, mutedBackground, mutedText, text],
+    [theme],
   );
 }
 
@@ -678,25 +671,26 @@ function useMarkdownStyles(
     [appearance.baseFontSize],
   );
   const themeMode = themeAppearance;
-  const markdownBodyColor = String(useThemeColor("--color-md-body"));
-  const markdownStrongColor = String(useThemeColor("--color-md-strong"));
-  const markdownLinkColor = String(useThemeColor("--color-md-link"));
-  const markdownBlockquoteBg = String(useThemeColor("--color-md-blockquote-bg"));
-  const markdownBlockquoteBorder = String(useThemeColor("--color-md-blockquote-border"));
-  const markdownCodeBg = String(useThemeColor("--color-md-code-bg"));
-  const markdownCodeText = String(useThemeColor("--color-md-code-text"));
-  const markdownInlineCodeText = String(useThemeColor("--color-foreground-secondary"));
-  const markdownHrColor = String(useThemeColor("--color-md-hr"));
-  const markdownUserBodyColor = String(useThemeColor("--color-user-bubble-foreground"));
-  const markdownUserCodeBg = String(useThemeColor("--color-md-user-code-bg"));
-  const markdownUserCodeText = String(useThemeColor("--color-md-user-code-text"));
-  const markdownUserInlineCodeText = String(useThemeColor("--color-user-bubble-foreground-muted"));
-  const markdownUserFenceBg = String(useThemeColor("--color-md-user-fence-bg"));
-  const markdownUserFenceText = String(useThemeColor("--color-md-user-fence-text"));
-  const iconSubtleColor = String(useThemeColor("--color-icon-subtle"));
-  const inlineSkillForeground = String(useThemeColor("--color-inline-skill-foreground"));
-  const userBubbleSkillForeground = String(useThemeColor("--color-user-bubble-skill-foreground"));
-  const userBubbleForegroundMuted = String(useThemeColor("--color-user-bubble-foreground-muted"));
+  const theme = useUniwindTheme();
+  const markdownBodyColor = theme["--color-md-body"];
+  const markdownStrongColor = theme["--color-md-strong"];
+  const markdownLinkColor = theme["--color-md-link"];
+  const markdownBlockquoteBg = theme["--color-md-blockquote-bg"];
+  const markdownBlockquoteBorder = theme["--color-md-blockquote-border"];
+  const markdownCodeBg = theme["--color-md-code-bg"];
+  const markdownCodeText = theme["--color-md-code-text"];
+  const markdownInlineCodeText = theme["--color-foreground-secondary"];
+  const markdownHrColor = theme["--color-md-hr"];
+  const markdownUserBodyColor = theme["--color-user-bubble-foreground"];
+  const markdownUserCodeBg = theme["--color-md-user-code-bg"];
+  const markdownUserCodeText = theme["--color-md-user-code-text"];
+  const markdownUserInlineCodeText = theme["--color-user-bubble-foreground-muted"];
+  const markdownUserFenceBg = theme["--color-md-user-fence-bg"];
+  const markdownUserFenceText = theme["--color-md-user-fence-text"];
+  const iconSubtleColor = theme["--color-icon-subtle"];
+  const inlineSkillForeground = theme["--color-inline-skill-foreground"];
+  const userBubbleSkillForeground = theme["--color-user-bubble-skill-foreground"];
+  const userBubbleForegroundMuted = theme["--color-user-bubble-foreground-muted"];
   const regularFontFamily = useFontFamily("regular");
   const boldFontFamily = useFontFamily("bold");
 
@@ -1166,6 +1160,10 @@ function renderFeedEntry(
     readonly reviewCommentBubbleWidth: number;
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly readAloudEnabled: boolean;
+    readonly readAloudMessageId: string | null;
+    readonly readAloudPhase: ReadAloudPhase;
+    readonly onToggleReadAloud: (messageId: string, text: string) => void;
   },
 ) {
   const entry = info.item;
@@ -1182,7 +1180,7 @@ function renderFeedEntry(
         accessibilityState={{ expanded: entry.expanded }}
         onPress={() => props.onToggleTurnFold(entry.turnId)}
         hitSlop={4}
-        className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-neutral-200/80 px-2 dark:border-white/[0.08]"
+        className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-adaptive-neutral-200-a80-white-a8 px-2"
       >
         <Text className="font-t3-medium text-sm tabular-nums text-foreground-muted">
           {entry.label}
@@ -1190,7 +1188,7 @@ function renderFeedEntry(
         <SymbolView
           name={entry.expanded ? "chevron.down" : "chevron.right"}
           size={15}
-          tintColor={iconSubtleColor}
+          tintColorClassName={"accent-icon-subtle"}
           type="monochrome"
         />
       </Pressable>
@@ -1214,7 +1212,9 @@ function renderFeedEntry(
     const isUser = message.role === "user";
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
-    const attachments = message.attachments ?? [];
+    const attachments = (message.attachments ?? []).filter(
+      (attachment) => attachment.type === "image",
+    );
     const userImages = isUser
       ? resolveUserMessageImageSources({
           attachments,
@@ -1282,7 +1282,7 @@ function renderFeedEntry(
             })}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
               {timestampLabel}
             </Text>
             {message.text.trim().length > 0 ? (
@@ -1339,13 +1339,24 @@ function renderFeedEntry(
                 attachmentId: attachment.id,
                 localPreviewUri: null,
               }}
-              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
+              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-adaptive-neutral-200-800"
               onPressImage={props.onPressImage}
             />
           );
         })}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
+            {props.readAloudEnabled &&
+            !message.streaming &&
+            message.text.trim() &&
+            readAloudChunks(message.text).length > 0 ? (
+              <ReadAloudButton
+                active={props.readAloudMessageId === message.id}
+                phase={props.readAloudPhase}
+                tintColor={iconSubtleColor}
+                onPress={() => props.onToggleReadAloud(message.id, message.text)}
+              />
+            ) : null}
             <CopyTextButton
               accessibilityLabel="Copy message"
               text={message.text}
@@ -1353,7 +1364,7 @@ function renderFeedEntry(
               buttonSize={28}
               iconSize={13}
             />
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
               {timestampLabel}
             </Text>
           </View>
@@ -1375,6 +1386,49 @@ function renderFeedEntry(
       threadId={props.threadId}
       workspaceRoot={props.workspaceRoot}
     />
+  );
+}
+
+function ReadAloudButton(props: {
+  readonly active: boolean;
+  readonly phase: ReadAloudPhase;
+  readonly tintColor: ColorValue;
+  readonly onPress: () => void;
+}) {
+  const loading = props.active && props.phase === "loading";
+  const label = props.active
+    ? loading
+      ? "Stop preparing read aloud"
+      : "Stop read aloud"
+    : "Read response aloud";
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ busy: loading, selected: props.active }}
+      hitSlop={8}
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        width: 28,
+        height: 28,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 9,
+        opacity: pressed ? 0.52 : 1,
+      })}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={props.tintColor} />
+      ) : (
+        <SymbolView
+          name={props.active ? "stop.fill" : "play"}
+          size={13}
+          tintColor={props.tintColor}
+          type="monochrome"
+        />
+      )}
+    </Pressable>
   );
 }
 
@@ -1424,9 +1478,7 @@ const WorkingTimelineRow = memo(function WorkingTimelineRow() {
   return (
     <View className="mb-4 px-1.5 py-1">
       <View>
-        <Text className="font-t3-medium text-xs text-neutral-600 dark:text-neutral-400">
-          Thinking
-        </Text>
+        <Text className="font-t3-medium text-xs text-adaptive-neutral-600-400">Thinking</Text>
         <Animated.View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -1530,6 +1582,7 @@ const ReviewCommentCard = memo(function ReviewCommentCard(props: {
 }) {
   const { codeSurface, nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { themeAppearance: appearanceScheme, themeId } = useAppearancePreferences();
+  const appTheme = useUniwindTheme();
   const NativeReviewDiffView = resolveNativeReviewDiffView();
   const patch = useMemo(() => buildReviewCommentPatch(props.comment), [props.comment]);
   const parsedDiff = useMemo(
@@ -1542,8 +1595,8 @@ const ReviewCommentCard = memo(function ReviewCommentCard(props: {
     [nativeReviewDiffData.rows],
   );
   const nativeReviewDiffTheme = useMemo(
-    () => createNativeReviewDiffTheme(appearanceScheme, themeId),
-    [appearanceScheme, themeId],
+    () => createNativeReviewDiffTheme(appearanceScheme, themeId, appTheme),
+    [appearanceScheme, appTheme, themeId],
   );
   const nativeRowsJson = useMemo(() => JSON.stringify(compactNativeRows), [compactNativeRows]);
   const nativeThemeJson = useMemo(
@@ -1716,6 +1769,19 @@ function ThreadFeedPlaceholder(props: {
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
+  const preparedConnection = usePreparedConnection(props.environmentId);
+  const reportReadAloudError = useCallback((message: string) => {
+    Alert.alert("Read aloud", message);
+  }, []);
+  const readAloud = useNativeReadAloud({
+    enabled: props.readAloudEnabled === true,
+    prepared: Option.getOrNull(preparedConnection),
+    reportError: reportReadAloudError,
+  });
+  const onToggleReadAloud = useCallback(
+    (messageId: string, text: string) => void readAloud.toggle(messageId, text),
+    [readAloud.toggle],
+  );
   const openChangeRequestLink = useOpenChangeRequestLink(props.environmentId);
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const foldSettleFrameRef = useRef<number | null>(null);
@@ -1790,6 +1856,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const bottomContentInset = props.contentBottomInset ?? 18;
   const usesNativeAutomaticInsets =
     props.usesAutomaticContentInsets === true && Platform.OS === "ios";
+  const initialContentInset = deriveThreadFeedInitialContentInset({
+    platform: Platform.OS,
+    usesNativeAutomaticInsets,
+    bottomContentInset,
+  });
   // Footer clears the floating composer. With automatic insets UIKit already
   // adds the safe-area bottom, so only reserve the overlap above that strip —
   // same net amount the old animated contentInset path reported.
@@ -1810,8 +1881,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     ? navigationHeaderHeight || insets.top + IOS_NAV_BAR_HEIGHT
     : topContentInset;
 
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const userBubbleColor = useThemeColor("--color-user-bubble");
+  const theme = useUniwindTheme();
+  const iconSubtleColor = theme["--color-icon-subtle"];
+  const userBubbleColor = theme["--color-user-bubble"];
   const onMarkdownLinkPress = useCallback(
     (href: string) => {
       const presentation = resolveMarkdownLinkPresentation(href);
@@ -2018,10 +2090,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
 
   // The empty↔filled key below remounts the list, which resets its imperative
-  // content-inset override. Although keyboard padding re-reports through
-  // onContentInsetChange, re-apply any non-zero end inset in a layout effect
+  // content-inset override. Re-apply the current measured overlay height
+  // (composer plus any pending approval / user-input card) in a layout effect
   // before the fresh instance's first positioning tick so its one-shot initial
-  // end-scroll does not rest one composer-height short.
+  // end-scroll does not rest one overlay-height short. On Android the declarative
+  // contentInset floor below covers the window before this effect lands.
   const listMountKey = `${feedThreadKey}:${props.feed.length === 0 ? "empty" : "filled"}`;
   const listReadyForKeyRef = useRef<string | null>(null);
   const [listReady, setListReady] = useState(false);
@@ -2057,11 +2130,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     const timeout = setTimeout(markListReady, THREAD_FEED_LIST_READY_FALLBACK_MS);
     return () => clearTimeout(timeout);
   }, [listReadyForCurrentMount, markListReady, isFeedEmpty]);
-  const showLoadingOverlay = shouldShowThreadFeedLoadingOverlay({
+  const loadingOverlayRequested = shouldShowThreadFeedLoadingOverlay({
     contentPresentationKind: props.contentPresentation.kind,
     feedLength: props.feed.length,
     listReady: listReadyForCurrentMount,
   });
+  const [loadingOverlayVisible, setLoadingOverlayVisible] = useState(false);
+  useEffect(
+    () =>
+      scheduleThreadLoadingVisibility(
+        loadingOverlayRequested,
+        FEED_PLACEHOLDER_ENTER_DELAY_MS,
+        setLoadingOverlayVisible,
+      ),
+    [loadingOverlayRequested],
+  );
+  const showLoadingOverlay = loadingOverlayRequested && loadingOverlayVisible;
   const feedPlaceholder = showLoadingOverlay
     ? {
         title: "Loading messages",
@@ -2084,7 +2168,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const feedOpacity = useSharedValue(1);
   useEffect(() => {
     feedOpacity.value = showLoadingOverlay
-      ? withDelay(FEED_PLACEHOLDER_ENTER_DELAY_MS, withTiming(0, MOTION_TIMING))
+      ? withTiming(0, MOTION_TIMING)
       : withTiming(1, MOTION_TIMING);
   }, [feedOpacity, showLoadingOverlay]);
   const feedContainerStyle = useAnimatedStyle(() => ({ opacity: feedOpacity.value }));
@@ -2133,6 +2217,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      readAloudEnabled: props.readAloudEnabled === true,
+      readAloudMessageId: readAloud.activeMessageId,
+      readAloudPhase: readAloud.phase,
+      onToggleReadAloud,
     }),
     [
       copiedRowId,
@@ -2145,6 +2233,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       localPreviewUrisByMessageId,
       terminalAssistantMessageIds,
       unsettledTurnId,
+      props.readAloudEnabled,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      onToggleReadAloud,
     ],
   );
 
@@ -2343,6 +2435,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
+        readAloudEnabled: props.readAloudEnabled === true,
+        readAloudMessageId: readAloud.activeMessageId,
+        readAloudPhase: readAloud.phase,
+        onToggleReadAloud,
       }),
     [
       copiedRowId,
@@ -2363,10 +2459,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       onToggleWorkGroup,
       onToggleWorkRow,
       props.environmentId,
+      props.readAloudEnabled,
       props.skills,
       props.threadId,
       props.workspaceRoot,
       renderMarkdownImage,
+      readAloud.activeMessageId,
+      readAloud.phase,
+      onToggleReadAloud,
     ],
   );
 
@@ -2427,6 +2527,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // ThreadDetailScreen); this tells LegendList's scroll math about the
             // extra so programmatic end scrolls land at the true resting offset.
             contentInsetEndStaticAdjustment={usesNativeAutomaticInsets ? insets.bottom : 0}
+            // Android: the composer overlay only exists as the keyboard
+            // integration's animated bottom padding, which the list's scroll
+            // math cannot see until the inset reports above land — and those
+            // arrive via runOnJS, racing the remounted list's one-shot initial
+            // scroll-at-end. Seed the estimated overlay height as a declarative
+            // contentInset floor: LegendList consumes it in JS math only
+            // (Android's ScrollView has no native contentInset prop) and the
+            // first reported override REPLACES it instead of adding to it.
+            // Not on iOS: there the prop would reach UIKit and inset natively
+            // on top of the animated padding.
+            {...(initialContentInset ? { contentInset: initialContentInset } : {})}
             // The keyboard integration's offset math (end pinning, max scroll)
             // must add the same UIKit-added extra, or its keyboard-open end
             // targets land one safe-area short of the true resting offset.

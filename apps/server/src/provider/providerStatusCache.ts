@@ -1,5 +1,4 @@
 import {
-  type ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
@@ -11,6 +10,9 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
+
+const PROVIDER_STATUS_CACHE_MAX_BYTES = 4 * 1024 * 1024;
 
 const decodeProviderStatusCache = Schema.decodeUnknownEffect(
   Schema.fromJsonString(ServerProviderSchema),
@@ -21,7 +23,13 @@ const mergeProviderModels = (
   cachedModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
   const fallbackSlugs = new Set(fallbackModels.map((model) => model.slug));
-  return [...fallbackModels, ...cachedModels.filter((model) => !fallbackSlugs.has(model.slug))];
+  // The fallback snapshot is built from current settings and already carries
+  // every custom model, so cached custom rows that are not in it were removed
+  // while the cache was stale and must not come back.
+  return [
+    ...fallbackModels,
+    ...cachedModels.filter((model) => !model.isCustom && !fallbackSlugs.has(model.slug)),
+  ];
 };
 
 export const orderProviderSnapshots = (
@@ -98,23 +106,6 @@ export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCa
   },
 );
 
-/**
- * Legacy kind-keyed path resolver retained for callers that still think in
- * terms of `ProviderDriverKind`. Prefer `resolveProviderStatusCachePath` with an
- * `instanceId`; new code should route through the instance registry.
- *
- * @deprecated use `resolveProviderStatusCachePath` with an instance id.
- */
-export const resolveLegacyProviderStatusCachePath = Effect.fn(
-  "resolveLegacyProviderStatusCachePath",
-)(function* (input: {
-  readonly cacheDir: string;
-  readonly provider: ProviderDriverKind;
-}): Effect.fn.Return<string, never, Path.Path> {
-  const path = yield* Path.Path;
-  return path.join(input.cacheDir, `${input.provider}.json`);
-});
-
 export const readProviderStatusCache = (filePath: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -123,7 +114,9 @@ export const readProviderStatusCache = (filePath: string) =>
       return undefined;
     }
 
-    const raw = yield* fs.readFileString(filePath).pipe(Effect.orElseSucceed(() => ""));
+    const raw = yield* readTextWithinLimit(fs, filePath, PROVIDER_STATUS_CACHE_MAX_BYTES).pipe(
+      Effect.orElseSucceed(() => ""),
+    );
     const trimmed = raw.trim();
     if (trimmed.length === 0) {
       return undefined;
@@ -146,8 +139,15 @@ export const writeProviderStatusCache = (input: {
   readonly provider: ServerProvider;
 }) => {
   const { updateState: _updateState, ...cacheableProvider } = input.provider;
+  const contents = `${JSON.stringify(cacheableProvider, null, 2)}\n`;
+  if (new TextEncoder().encode(contents).byteLength > PROVIDER_STATUS_CACHE_MAX_BYTES) {
+    return Effect.logWarning("provider status cache exceeds the persistence limit, skipping", {
+      path: input.filePath,
+      maximumBytes: PROVIDER_STATUS_CACHE_MAX_BYTES,
+    });
+  }
   return writeFileStringAtomically({
     filePath: input.filePath,
-    contents: `${JSON.stringify(cacheableProvider, null, 2)}\n`,
+    contents,
   });
 };

@@ -185,6 +185,51 @@ describe("observability", () => {
     );
   });
 
+  it("bounds attribute collection width and nesting depth before serialization", () => {
+    let deep: unknown = "leaf";
+    for (let depth = 0; depth < 20; depth += 1) deep = { next: deep };
+    const attributes = compactTraceAttributes({
+      wide: Array.from({ length: 200 }, (_, index) => index),
+      deep,
+    });
+
+    const wide = attributes["wide"] as ReadonlyArray<unknown>;
+    assert.equal(wide.length, 129);
+    assert.equal(wide.at(-1), "[Truncated]");
+    assert.include(JSON.stringify(attributes["deep"]), "[Truncated]");
+  });
+
+  it("does not let an adversarial attribute getter fail span serialization", () => {
+    const value = {};
+    Object.defineProperty(value, "secret", {
+      enumerable: true,
+      get: () => {
+        throw new Error("getter failed");
+      },
+    });
+
+    assert.deepStrictEqual(compactTraceAttributes({ value }), {
+      value: "[Unserializable]",
+    });
+  });
+
+  it("preserves prototype-named trace attributes as own data", () => {
+    const attributes: Record<string, unknown> = {};
+    Object.defineProperty(attributes, "__proto__", {
+      enumerable: true,
+      value: new Map([["__proto__", "retained"]]),
+    });
+
+    const compacted = compactTraceAttributes(attributes);
+    const nested = compacted["__proto__"] as Record<string, unknown>;
+
+    assert.equal(Object.getPrototypeOf(compacted), Object.prototype);
+    assert.equal(Object.hasOwn(compacted, "__proto__"), true);
+    assert.equal(Object.getPrototypeOf(nested), Object.prototype);
+    assert.equal(Object.hasOwn(nested, "__proto__"), true);
+    assert.equal(nested["__proto__"], "retained");
+  });
+
   nodeServicesIt("node services", (it) => {
     it.effect("flushes buffered trace records on close", () =>
       Effect.scoped(

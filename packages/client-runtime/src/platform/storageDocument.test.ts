@@ -1,5 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Schema from "effect/Schema";
 
 import * as TokenStore from "../authorization/tokenStore.ts";
 import {
@@ -16,6 +17,8 @@ import {
   SshConnectionTarget,
 } from "../connection/model.ts";
 import {
+  CONNECTION_CATALOG_MAX_RECORDS_PER_KIND,
+  ConnectionCatalogDocument,
   EMPTY_CONNECTION_CATALOG_DOCUMENT,
   registerConnectionInCatalog,
   removeConnectionFromCatalog,
@@ -52,6 +55,29 @@ const REMOTE_TOKEN = new TokenStore.RemoteDpopAccessToken({
 });
 
 describe("ConnectionCatalogDocument", () => {
+  it("rejects a catalog with an unbounded record collection", () => {
+    const decode = Schema.decodeUnknownSync(ConnectionCatalogDocument);
+    expect(() =>
+      decode({
+        ...EMPTY_CONNECTION_CATALOG_DOCUMENT,
+        targets: Array.from(
+          { length: CONNECTION_CATALOG_MAX_RECORDS_PER_KIND + 1 },
+          () => BEARER_TARGET,
+        ),
+      }),
+    ).toThrow();
+  });
+
+  it("rejects oversized persisted connection fields", () => {
+    const decode = Schema.decodeUnknownSync(ConnectionCatalogDocument);
+    expect(() =>
+      decode({
+        ...EMPTY_CONNECTION_CATALOG_DOCUMENT,
+        targets: [{ ...BEARER_TARGET, label: "x".repeat(2_049) }],
+      }),
+    ).toThrow();
+  });
+
   it("registers a bearer connection as one catalog mutation", () => {
     const document = registerConnectionInCatalog(
       EMPTY_CONNECTION_CATALOG_DOCUMENT,

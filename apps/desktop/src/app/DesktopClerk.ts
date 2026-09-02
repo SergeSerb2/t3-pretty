@@ -123,7 +123,7 @@ export const make = Effect.gen(function* () {
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
-      const runPromise = Effect.runPromiseWith(context);
+      const runFork = Effect.runForkWith(context);
 
       // The SDK bridge holds Electron's single-instance lock (acquired at
       // bridge creation) so OAuth deep-link callbacks on Windows/Linux are
@@ -136,13 +136,19 @@ export const make = Effect.gen(function* () {
       }
 
       yield* electronApp.on("second-instance", () => {
-        void runPromise(
+        runFork(
           Effect.gen(function* () {
             const mainWindow = yield* electronWindow.currentMainOrFirst;
             if (Option.isSome(mainWindow)) {
               yield* electronWindow.reveal(mainWindow.value);
             }
-          }),
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Failed to reveal desktop window for second instance.", {
+                cause,
+              }),
+            ),
+          ),
         );
       });
     }).pipe(Effect.withSpan("desktop.clerk.configure")),

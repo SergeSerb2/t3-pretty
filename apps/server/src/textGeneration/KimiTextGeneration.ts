@@ -20,6 +20,9 @@ import {
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -61,7 +64,7 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
     modelSelection: ModelSelection;
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
-      const outputRef = yield* Ref.make("");
+      const outputRef = yield* Ref.make(makeBoundedTextGenerationOutput());
       const runtime = yield* makeKimiAcpRuntime({
         kimiSettings,
         environment: resolvedEnvironment,
@@ -79,7 +82,9 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
         if (content.type !== "text") {
           return Effect.void;
         }
-        return Ref.update(outputRef, (current) => current + content.text);
+        return Ref.update(outputRef, (current) =>
+          appendBoundedTextGenerationOutput(current, content.text),
+        );
       });
 
       const promptResult = yield* Effect.gen(function* () {
@@ -128,7 +133,14 @@ export const makeKimiTextGeneration = Effect.fn("makeKimiTextGeneration")(functi
         ),
       );
 
-      const rawResult = (yield* Ref.get(outputRef)).trim();
+      const output = yield* Ref.get(outputRef);
+      if (output.truncated) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: "Kimi Code returned structured output above the one MiB limit.",
+        });
+      }
+      const rawResult = decodeBoundedTextGenerationOutput(output).trim();
       if (!rawResult) {
         return yield* new TextGenerationError({
           operation,
