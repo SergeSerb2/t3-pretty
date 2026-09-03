@@ -121,6 +121,7 @@ import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts"
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -193,14 +194,19 @@ const NativeTelemetryLayerLive = NativeTelemetryClient.layer.pipe(
 const DesktopTelemetryReceiverLayerLive = DesktopTelemetryReceiver.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
-
-const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
-  Layer.provideMerge(NativeTelemetryLayerLive),
+// One memoized desktop services graph owns the Electron telemetry FD and
+// exposes both the receiver and the update driver to outer runtime consumers.
+const DesktopServicesLayerLive = DesktopAppUpdate.layer.pipe(
   Layer.provideMerge(DesktopTelemetryReceiverLayerLive),
 );
 
+const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
+  Layer.provideMerge(NativeTelemetryLayerLive),
+  Layer.provide(DesktopServicesLayerLive),
+);
+
 const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
-  Layer.provide(DesktopTelemetryReceiverLayerLive),
+  Layer.provide(DesktopServicesLayerLive),
 );
 
 const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
@@ -582,7 +588,6 @@ const requestBodyLimitLayer = HttpRouter.middleware(
   { global: true },
 );
 
-
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
@@ -617,6 +622,9 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ComputerUseService.layer),
   Layer.provide(ServerSelfUpdate.layer),
+  // Supply the same memoized desktop graph used by diagnostics directly at
+  // the route boundary where ServerSelfUpdate requires its update driver.
+  Layer.provide(DesktopServicesLayerLive),
   Layer.provide(commandReadinessLayer),
   Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),
