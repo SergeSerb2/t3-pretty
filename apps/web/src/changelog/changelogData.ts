@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260902.1260001474",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260902.1260001473",
     date: "2026-09-03",
     items: [
