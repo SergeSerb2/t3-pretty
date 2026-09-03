@@ -9,6 +9,7 @@ import { assert, describe, it } from "vite-plus/test";
 
 import {
   applyResolutionEdits,
+  assertValidResolvedSource,
   buildConflictPrompt,
   buildValidationRetryPrompt,
   conflictResolutionEfforts,
@@ -24,6 +25,7 @@ import {
   prepareConflictPrompt,
   providerAvailabilityRetryDelayMs,
   pruneResolutionCache,
+  quarantineCachedResolution,
   readCachedResolution,
   readResponseTextBounded,
   readReusedSyncReport,
@@ -1000,6 +1002,220 @@ ${">".repeat(7)} theirs
     }
   });
 
+  it("quarantines invalid completed TS/TSX checkpoints before they can replay", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-cache-poison-"),
+    );
+    try {
+      const poisonedKey = "a".repeat(64);
+      const poisonedEntry = {
+        path: "apps/web/src/Poisoned.tsx",
+        resolvedSource: "export const value = 1;\nexport const value = 2;\n",
+        forkChangesPreserved: [],
+        upstreamChangesIntegrated: [],
+        upstreamChangesOmitted: [],
+      };
+      const poisonedPath = NodePath.join(temporaryDirectory, `${poisonedKey}.json`);
+      NodeFS.writeFileSync(poisonedPath, `${JSON.stringify(poisonedEntry)}\n`);
+
+      assert.equal(
+        readCachedResolution({ key: poisonedKey, cacheDir: temporaryDirectory }),
+        undefined,
+      );
+      assert.isFalse(NodeFS.existsSync(poisonedPath));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${poisonedKey}.invalid`)));
+
+      const miskeyedKey = "c".repeat(64);
+      NodeFS.writeFileSync(
+        NodePath.join(temporaryDirectory, `${miskeyedKey}.json`),
+        `${JSON.stringify({ ...poisonedEntry, path: "notes.txt" })}\n`,
+      );
+      assert.equal(
+        readCachedResolution({
+          key: miskeyedKey,
+          cacheDir: temporaryDirectory,
+          expectedPath: "apps/web/src/Poisoned.tsx",
+        }),
+        undefined,
+      );
+      assert.isTrue(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${miskeyedKey}.invalid`)));
+
+      const rejectedKey = "b".repeat(64);
+      assert.isFalse(
+        writeCachedResolution({
+          key: rejectedKey,
+          cacheDir: temporaryDirectory,
+          entry: {
+            ...poisonedEntry,
+            resolvedSource: "export function Component() { return <div />; }\n};\n",
+          },
+        }),
+      );
+      assert.isFalse(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${rejectedKey}.json`)));
+
+      assert.doesNotThrow(() =>
+        assertValidResolvedSource({
+          path: "apps/web/src/Valid.tsx",
+          source: "export function Component() { return <div />; }\n",
+        }),
+      );
+      assert.doesNotThrow(() =>
+        assertValidResolvedSource({
+          path: "apps/web/src/Decorated.ts",
+          source: "class State { @tracked accessor value = 1; }\n",
+        }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Route.tsx",
+            source: "export const route = true;\nreturn null;\n",
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Settings.tsx",
+            source: 'import { value } from "./value";\n} from "./value";\n',
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+      assert.equal(
+        quarantineCachedResolution({ key: "invalid", cacheDir: temporaryDirectory }),
+        undefined,
+      );
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("regenerates a poisoned completed checkpoint instead of replaying it", async () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-poison-replay-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const conflictPath = "Poisoned.tsx";
+    const source = (value) => `export const value = "${value}";\n`;
+    let server;
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("base"));
+      git("add", conflictPath);
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("theirs"));
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("ours"));
+      git("commit", "-aqm", "fork changes");
+      assert.throws(() => git("merge", "theirs"));
+      git("checkout", "--conflict=diff3", "--", conflictPath);
+
+      const conflictedSource = NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8");
+      const conflict = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const conflictText = conflictedSource.slice(conflict.start, conflict.end);
+      const cacheDirectory = NodePath.join(directory, "cache");
+      const cacheKey = resolutionCacheKey({ path: conflictPath, conflictedSource });
+      NodeFS.mkdirSync(cacheDirectory);
+      NodeFS.writeFileSync(
+        NodePath.join(cacheDirectory, `${cacheKey}.json`),
+        `${JSON.stringify({
+          path: conflictPath,
+          resolvedSource: "export const value = 1;\nexport const value = 2;\n",
+          forkChangesPreserved: ["poison should not replay"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        })}\n`,
+      );
+
+      let requestCount = 0;
+      const repairedSource =
+        'export const forkValue = "ours";\nexport const upstreamValue = "theirs";\n';
+      server = NodeHttp.createServer((request, response) => {
+        request.resume();
+        request.on("end", () => {
+          requestCount += 1;
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              status: "completed",
+              output_text: JSON.stringify({
+                safe: true,
+                edits: [
+                  {
+                    old_text: conflictText,
+                    new_text: repairedSource,
+                    summary: "integrated both values",
+                  },
+                ],
+                fork_changes_preserved: ["kept the fork value"],
+                upstream_changes_integrated: ["integrated the parent value"],
+                upstream_changes_omitted: [],
+                summary: "repaired the poisoned resolution",
+              }),
+            }),
+          );
+        });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert.isObject(address);
+
+      const child = NodeChildProcess.spawn(process.execPath, [resolverPath], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          CLI_PROXY_API_KEY: "test-key",
+          CLI_PROXY_API_URL: `http://127.0.0.1:${address.port}`,
+          PREVIOUS_UPSTREAM_TAG: "",
+          REUSED_SYNC_RESOLUTION: "false",
+          SYNC_RESOLUTION_CACHE_DIR: cacheDirectory,
+          UPSTREAM_TAG: "v0.0.0-nightly.poison-test",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      const exitCode = await new Promise((resolve) => child.on("close", resolve));
+
+      assert.equal(exitCode, 0, stderr);
+      assert.include(stdout, "rejected and quarantined the invalid checkpointed resolution");
+      assert.notInclude(stdout, "reused the checkpointed resolution");
+      assert.equal(requestCount, 1);
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8"),
+        repairedSource,
+      );
+      assert.equal(
+        readCachedResolution({
+          key: cacheKey,
+          cacheDir: cacheDirectory,
+          expectedPath: conflictPath,
+        }).resolvedSource,
+        repairedSource,
+      );
+      assert.isTrue(NodeFS.existsSync(NodePath.join(cacheDirectory, `${cacheKey}.invalid`)));
+    } finally {
+      if (server) await new Promise((resolve) => server.close(resolve));
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  }, 10_000);
+
   it("round-trips an in-progress file after every completed conflict batch", () => {
     const temporaryDirectory = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-partial-cache-"),
@@ -1245,6 +1461,25 @@ ${">".repeat(7)} theirs
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "reused the checkpointed resolution");
     assert.include(resolver, "SYNC_RESOLUTION_CACHE_DIR");
+  });
+
+  it("installs parser dependencies before resolving and gates the complete web tree", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+    const earlyInstall = script.indexOf(
+      "The sync resolver could not install its validation dependencies",
+    );
+    const firstMerge = script.indexOf('merge_ref origin/main "chore(sync): merge origin/main');
+    const validationStart = script.indexOf("validate_sync_tree() {");
+    const webTypecheck = script.indexOf("vp run --filter @t3tools/web typecheck", validationStart);
+    const webLint = script.indexOf("vp lint apps/web/src", validationStart);
+    const webBuild = script.indexOf("vp run --filter @t3tools/web build", validationStart);
+
+    assert.isAtLeast(earlyInstall, 0);
+    assert.isBelow(earlyInstall, firstMerge);
+    assert.isAbove(webTypecheck, validationStart);
+    assert.isAbove(webLint, webTypecheck);
+    assert.isAbove(webBuild, webLint);
+    assert.include(script, "failed the web lint error gate");
   });
 
   it("requests a fresh resolution when a batch's edit set fails validation", () => {

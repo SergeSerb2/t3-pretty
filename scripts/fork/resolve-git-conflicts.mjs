@@ -7,6 +7,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
+import { parse as parseJavaScript } from "@babel/parser";
+
 import {
   redactCliProxyDiagnostic,
   resolveCliProxyApiUrl,
@@ -60,6 +62,7 @@ const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS 
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
+const TYPESCRIPT_SOURCE_PATTERN = /\.(?:cts|mts|ts|tsx)$/u;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
 // Per-file progress is checkpointed here after every completed conflict batch
 // (one JSON per file, keyed by a hash of the original conflicted input) and
@@ -125,7 +128,7 @@ export function resolutionCacheKey({ path, conflictedSource }) {
     .digest("hex");
 }
 
-export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR }) {
+export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, expectedPath }) {
   if (!/^[0-9a-f]{64}$/u.test(key)) return undefined;
   try {
     const path = NodePath.join(cacheDir, `${key}.json`);
@@ -157,9 +160,65 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR }) {
     ) {
       return undefined;
     }
+    if (expectedPath !== undefined && entry.path !== expectedPath) {
+      const quarantined = quarantineCachedResolution({ key, cacheDir });
+      process.stdout.write(
+        `[fork-sync] rejected${quarantined ? " and quarantined" : ""} a checkpointed resolution for ${oneLine(entry.path)} that was keyed for ${oneLine(expectedPath)}\n`,
+      );
+      return undefined;
+    }
+    if (hasCompletedResolution && typeof entry.resolvedSource === "string") {
+      try {
+        assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource });
+      } catch (error) {
+        const quarantined = quarantineCachedResolution({ key, cacheDir });
+        process.stdout.write(
+          `[fork-sync] rejected${quarantined ? " and quarantined" : ""} the invalid checkpointed resolution for ${oneLine(entry.path)}: ${oneLine(error instanceof Error ? error.message : String(error))}\n`,
+        );
+        return undefined;
+      }
+    }
     return entry;
   } catch {
     return undefined;
+  }
+}
+
+export function quarantineCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR }) {
+  if (!/^[0-9a-f]{64}$/u.test(key)) return undefined;
+  const path = NodePath.join(cacheDir, `${key}.json`);
+  const quarantinePath = NodePath.join(cacheDir, `${key}.invalid`);
+  try {
+    if (!NodeFS.lstatSync(path).isFile()) return undefined;
+    NodeFS.rmSync(quarantinePath, { force: true });
+    NodeFS.renameSync(path, quarantinePath);
+    return quarantinePath;
+  } catch {
+    return undefined;
+  }
+}
+
+export function assertValidResolvedSource({ path, source }) {
+  if (typeof path !== "string" || typeof source !== "string") {
+    throw new Error("completed resolution did not contain a source path and string");
+  }
+  if (LEFTOVER_MARKER_PATTERN.test(source)) {
+    throw new Error(`${path} contains conflict markers`);
+  }
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
+  try {
+    const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
+    if (path.endsWith(".tsx")) plugins.push("jsx");
+    parseJavaScript(source, {
+      sourceFilename: path,
+      sourceType: "unambiguous",
+      plugins,
+    });
+  } catch (error) {
+    throw new Error(
+      `${path} is not syntactically valid TypeScript: ${oneLine(error instanceof Error ? error.message : String(error))}`,
+      { cause: error },
+    );
   }
 }
 
@@ -169,6 +228,9 @@ export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_
   try {
     if (!/^[0-9a-f]{64}$/u.test(key)) {
       throw new Error("invalid resolution cache key");
+    }
+    if (Object.hasOwn(entry, "resolvedSource")) {
+      assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource });
     }
     NodeFS.mkdirSync(cacheDir, { recursive: true });
     const serialized = `${JSON.stringify(entry)}\n`;
@@ -1366,7 +1428,7 @@ async function resolveConflict(path, token) {
   // Resume from the checkpoint cache when an earlier run already completed
   // this exact conflicted input; only never-finished files reach the model.
   const cacheKey = resolutionCacheKey({ path, conflictedSource });
-  const cached = readCachedResolution({ key: cacheKey });
+  const cached = readCachedResolution({ key: cacheKey, expectedPath: path });
   if (cached && typeof cached.partialSource !== "string") {
     if (cached.deleted === true) {
       git(["rm", "-q", "--", path]);
@@ -1448,6 +1510,12 @@ async function resolveConflict(path, token) {
             conflicts,
             resolution: response.resolution,
           });
+          // Partial checkpoints necessarily contain merge markers. Once this
+          // batch removes the final marker, reject malformed TS/TSX here so a
+          // fresh model attempt can repair it instead of poisoning every rerun.
+          if (!LEFTOVER_MARKER_PATTERN.test(nextSource)) {
+            assertValidResolvedSource({ path, source: nextSource });
+          }
           resolution = response.resolution;
           usedEffort = response.usedEffort;
           effectiveTier = response.effectiveTier;
