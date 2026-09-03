@@ -168,6 +168,55 @@ function selectDeveloperDir({ apps, env = {} }) {
   );
 }
 
+function extractBuildFingerprintConfiguration() {
+  const match = mobileRelease.match(
+    /configure_eas_build_fingerprint\(\) \{[\s\S]*?\n\}\n\nconfigure_eas_submit_credentials/,
+  );
+  assert.ok(match, "build fingerprint configuration missing");
+  return match[0].replace(/\n\nconfigure_eas_submit_credentials$/u, "");
+}
+
+function extractIpaFingerprintVerification() {
+  const match = mobileRelease.match(/verify_ipa_fingerprint\(\) \{\n[\s\S]*?\n\}/);
+  assert.ok(match, "IPA fingerprint verification missing");
+  return match[0];
+}
+
+function extractCloudBuildDetailsReader() {
+  const match = mobileRelease.match(
+    /read_eas_cloud_build_details\(\) \{[\s\S]*?\n\}\n\nverify_ipa_fingerprint/,
+  );
+  assert.ok(match, "cloud build details reader missing");
+  return match[0].replace(/\n\nverify_ipa_fingerprint$/u, "");
+}
+
+function makeFingerprintIpa(fingerprint) {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-ipa-"));
+  const updates = NodePath.join(root, "Payload", "T3PrettyInternal.app", "EXUpdates.bundle");
+  NodeFS.mkdirSync(updates, { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(updates, "fingerprint"), fingerprint);
+  const ipa = NodePath.join(root, "T3PrettyInternal.ipa");
+  NodeChildProcess.execFileSync("zip", ["-q", "-r", ipa, "Payload"], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return { root, ipa };
+}
+
+function verifyIpaFingerprint(ipa, expected) {
+  return NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `${extractIpaFingerprintVerification()}\nverify_ipa_fingerprint "$1" "$2"`,
+      "verify-ipa-fingerprint",
+      ipa,
+      expected,
+    ],
+    { encoding: "utf8" },
+  );
+}
+
 function extractOtaBaseFns() {
   const line = mobileRelease.match(/native_submit_line\(\) \{\n[\s\S]*?\n\}/);
   const base = mobileRelease.match(/mobile_release_base\(\) \{\n[\s\S]*?\n\}/);
@@ -354,6 +403,132 @@ describe("iOS publish Xcode selection", () => {
       installFakeXcode(apps, "Xcode-beta.app", true, false, "27A5252f");
 
       assert.equal(selectDeveloperDir({ apps, env: { DEVELOPER_DIR: "" } }), stable);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("iOS embedded runtime fingerprint", () => {
+  it("pins the build worker to the fingerprint used by the OTA and native gate", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-json-"));
+    const easJson = NodePath.join(root, "eas.json");
+    const expected = "f4da50b3d2326db6b7f34aa680546943796adc3b";
+    try {
+      NodeFS.writeFileSync(
+        easJson,
+        `${JSON.stringify({ build: { production: { env: { APP_VARIANT: "production" } } } })}\n`,
+      );
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2"`,
+          "configure-build-fingerprint",
+          easJson,
+          expected,
+        ],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+
+      const configured = JSON.parse(NodeFS.readFileSync(easJson, "utf8"));
+      assert.equal(configured.build.production.env.APP_VARIANT, "production");
+      assert.equal(configured.build.production.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE, expected);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads the application archive from EAS cloud output", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-cloud-build-"));
+    const buildJson = NodePath.join(root, "build.json");
+    const buildId = "467e7759-a0d5-47d6-a8b5-9be5a14f3aa4";
+    const applicationArchiveUrl = "https://expo.invalid/application.ipa";
+    try {
+      const readDetails = () =>
+        NodeChildProcess.execFileSync(
+          "bash",
+          [
+            "-c",
+            `${extractCloudBuildDetailsReader()}\nread_eas_cloud_build_details "$1"`,
+            "read-cloud-build",
+            buildJson,
+          ],
+          { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        )
+          .trim()
+          .split("\n");
+
+      NodeFS.writeFileSync(
+        buildJson,
+        `${JSON.stringify([
+          {
+            id: buildId,
+            artifacts: {
+              applicationArchiveUrl,
+              buildUrl: "https://expo.invalid/extra-build-artifact.tar.gz",
+            },
+          },
+        ])}\n`,
+      );
+      assert.deepEqual(readDetails(), [buildId, applicationArchiveUrl]);
+
+      const legacyBuildUrl = "https://expo.invalid/legacy-build.ipa";
+      NodeFS.writeFileSync(
+        buildJson,
+        `EAS output follows\n${JSON.stringify({
+          id: buildId,
+          artifacts: { buildUrl: legacyBuildUrl },
+        })}\n`,
+      );
+      assert.deepEqual(readDetails(), [buildId, legacyBuildUrl]);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("builds before adding the randomized submit key path, then verifies before submit", () => {
+    const override = mobileRelease.indexOf('configure_eas_build_fingerprint "$fingerprint"');
+    const buildCredential = mobileRelease.indexOf('export EXPO_ASC_API_KEY_PATH="$key_path"');
+    const cloudBuild = mobileRelease.indexOf("    eas build \\", override);
+    const localBuild = mobileRelease.indexOf("    eas build \\", cloudBuild + 1);
+    const verify = mobileRelease.indexOf(
+      'verify_ipa_fingerprint "$ipa_path" "$fingerprint"',
+      localBuild,
+    );
+    const submitCredentials = mobileRelease.indexOf(
+      'configure_eas_submit_credentials "$key_path"',
+      verify,
+    );
+    const submit = mobileRelease.indexOf("  eas submit \\", submitCredentials);
+
+    assert.isAtLeast(override, 0);
+    assert.isAtLeast(buildCredential, 0);
+    assert.isBelow(buildCredential, cloudBuild);
+    assert.isAbove(cloudBuild, override);
+    assert.isAbove(localBuild, cloudBuild);
+    assert.isAbove(verify, localBuild);
+    assert.isAbove(submitCredentials, verify);
+    assert.isAbove(submit, submitCredentials);
+    assert.notInclude(mobileRelease.slice(override, verify), "ascApiKeyPath");
+    assert.isBelow(
+      mobileRelease.indexOf('fingerprint="$verified_fingerprint"', verify),
+      mobileRelease.indexOf("> .t3-fork/ios-production-fingerprint", verify),
+    );
+  });
+
+  it("accepts a matching embedded fingerprint and fails closed on a mismatch", () => {
+    const embedded = "4ed986f84d740653c1ff27b32a3e0c0a7c139efc";
+    const { root, ipa } = makeFingerprintIpa(embedded);
+    try {
+      const matching = verifyIpaFingerprint(ipa, embedded);
+      assert.equal(matching.status, 0);
+      assert.equal(matching.stdout.trim(), embedded);
+
+      const mismatched = verifyIpaFingerprint(ipa, "f4da50b3d2326db6b7f34aa680546943796adc3b");
+      assert.notEqual(mismatched.status, 0);
+      assert.include(mismatched.stderr, "Embedded iOS runtime fingerprint mismatch");
+      assert.include(mismatched.stderr, "Refusing TestFlight submit");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

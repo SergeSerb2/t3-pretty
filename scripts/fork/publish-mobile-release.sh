@@ -334,6 +334,109 @@ restore_eas_json() {
   fi
 }
 
+configure_eas_build_fingerprint() {
+  local expected_fingerprint="$1"
+  export EXPO_UPDATES_FINGERPRINT_OVERRIDE="$expected_fingerprint"
+  node --input-type=module - "$eas_json" "$expected_fingerprint" <<'NODE'
+import fs from "node:fs";
+const [easJsonPath, expectedFingerprint] = process.argv.slice(2);
+const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
+eas.build ??= {};
+eas.build.production ??= {};
+eas.build.production.env = {
+  ...eas.build.production.env,
+  EXPO_UPDATES_FINGERPRINT_OVERRIDE: expectedFingerprint,
+};
+fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
+NODE
+}
+
+configure_eas_submit_credentials() {
+  local key_path="$1"
+  local key_id="$2"
+  local issuer="$3"
+  node --input-type=module - "$eas_json" "$key_path" "$key_id" "$issuer" <<'NODE'
+import fs from "node:fs";
+const [easJsonPath, keyPath, keyId, issuer] = process.argv.slice(2);
+const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
+eas.submit ??= {};
+eas.submit.production ??= {};
+eas.submit.production.ios = {
+  ...eas.submit.production.ios,
+  ascApiKeyPath: keyPath,
+  ascApiKeyId: keyId,
+  ascApiKeyIssuerId: issuer,
+};
+fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
+NODE
+}
+
+read_eas_cloud_build_details() {
+  local cloud_build_json="$1"
+  node --input-type=module - "$cloud_build_json" <<'NODE'
+import fs from "node:fs";
+const raw = fs.readFileSync(process.argv[2], "utf8").trim();
+let data;
+try {
+  data = JSON.parse(raw);
+} catch {
+  const jsonStart = /^[\[{]/mu.exec(raw)?.index ?? -1;
+  if (jsonStart < 0) {
+    throw new Error("eas build --json did not emit JSON");
+  }
+  data = JSON.parse(raw.slice(jsonStart));
+}
+const build = Array.isArray(data) ? data[data.length - 1] : data;
+const id = typeof build?.id === "string" ? build.id : "";
+const artifactUrl =
+  typeof build?.artifacts?.applicationArchiveUrl === "string"
+    ? build.artifacts.applicationArchiveUrl
+    : typeof build?.artifacts?.buildUrl === "string"
+      ? build.artifacts.buildUrl
+      : "";
+if (!id) {
+  throw new Error("eas build --json did not include a build id");
+}
+if (!artifactUrl) {
+  throw new Error("eas build --json did not include an application archive URL");
+}
+process.stdout.write(`${id}\n${artifactUrl}\n`);
+NODE
+}
+
+verify_ipa_fingerprint() {
+  local ipa_path="$1"
+  local expected_fingerprint="$2"
+  local fingerprint_entry
+  local embedded_fingerprint
+  if ! command -v unzip >/dev/null; then
+    echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
+    return 1
+  fi
+  if [[ ! -f "$ipa_path" ]]; then
+    echo "Cannot verify iOS runtime fingerprint: IPA is missing at $ipa_path." >&2
+    return 1
+  fi
+  fingerprint_entry="$({ unzip -Z1 "$ipa_path" 2>/dev/null || true; } | awk '
+    /^Payload\/[^\/]+\.app\/EXUpdates\.bundle\/fingerprint$/ && !entry { entry = $0 }
+    END { print entry }
+  ')"
+  if [[ -z "$fingerprint_entry" ]]; then
+    echo "Cannot verify iOS runtime fingerprint: EXUpdates.bundle/fingerprint is missing." >&2
+    return 1
+  fi
+  embedded_fingerprint="$(unzip -p "$ipa_path" "$fingerprint_entry" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -z "$embedded_fingerprint" ]]; then
+    echo "Cannot verify iOS runtime fingerprint: embedded fingerprint is empty." >&2
+    return 1
+  fi
+  if [[ "$embedded_fingerprint" != "$expected_fingerprint" ]]; then
+    echo "Embedded iOS runtime fingerprint mismatch: expected $expected_fingerprint, got $embedded_fingerprint. Refusing TestFlight submit." >&2
+    return 1
+  fi
+  printf '%s\n' "$embedded_fingerprint"
+}
+
 if [[ "$MODE" == "update" || "$MODE" == "release" ]]; then
   # The path filter ran before the publish lock; a newer job may have
   # released while this one waited on it. Re-check coverage with the lock
@@ -385,7 +488,7 @@ fingerprint=""
     --non-interactive > "$fingerprint_file"; do
     fingerprint_attempts=$((fingerprint_attempts + 1))
     if (( fingerprint_attempts >= 2 )); then
-      echo "Could not generate the iOS fingerprint; building a native binary to be safe."
+      echo "Could not generate a stable iOS fingerprint; the native build will fail closed."
       printf 'placeholder\n' > "$fingerprint_file"
       printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
       exit 0
@@ -440,6 +543,10 @@ if [[ "$should_build" != "true" ]]; then
   annotate info "Native fingerprint is unchanged; TestFlight.app will not get a new build. Installed binaries pick up JS via OTA."
   exit 0
 fi
+if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
+  annotate error "A stable iOS runtime fingerprint is required before compiling or submitting TestFlight. Refusing an unverifiable build."
+  exit 1
+fi
 
 is_full_xcode() {
   [[ -n "$1" && "$1" != *CommandLineTools* && -x "$1/usr/bin/xcodebuild" ]] || return 1
@@ -486,6 +593,14 @@ if ! is_full_xcode "$developer_dir"; then
   xcode-select -p 2>/dev/null || true
   annotate info "No full Xcode on this Mac that is safe for App Store Connect. Compiling the TestFlight IPA on EAS cloud."
 fi
+if ! command -v unzip >/dev/null; then
+  echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
+  exit 1
+fi
+if [[ "$ipa_via_cloud" == "true" ]] && ! command -v curl >/dev/null; then
+  echo "curl is required to verify an EAS cloud IPA before TestFlight submit." >&2
+  exit 1
+fi
 
 load_secret APPLE_API_KEY
 load_secret APPLE_API_KEY_ID
@@ -495,6 +610,9 @@ export APPLE_TEAM_ID="${APPLE_TEAM_ID:-78A5P57U23}"
 export T3CODE_APPLE_TEAM_ID="${T3CODE_APPLE_TEAM_ID:-$APPLE_TEAM_ID}"
 load_secret CURSOR_API_KEY 0
 
+# EAS Build can use this API key to create or refresh signing credentials in
+# non-interactive mode. Keep it in the process environment for the build, but
+# do not add its randomized path to fingerprinted eas.json until submission.
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
 printf '%s' "$APPLE_API_KEY" > "$key_path"
 chmod 600 "$key_path"
@@ -506,21 +624,10 @@ export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 
 eas_json_bak="$tmp/eas.json.bak"
 cp "$eas_json" "$eas_json_bak"
-node --input-type=module - "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER" <<'NODE'
-import fs from "node:fs";
-const [keyPath, keyId, issuer] = process.argv.slice(2);
-const easJsonPath = "apps/mobile/eas.json";
-const eas = JSON.parse(fs.readFileSync(easJsonPath, "utf8"));
-eas.submit ??= {};
-eas.submit.production ??= {};
-eas.submit.production.ios = {
-  ...eas.submit.production.ios,
-  ascApiKeyPath: keyPath,
-  ascApiKeyId: keyId,
-  ascApiKeyIssuerId: issuer,
-};
-fs.writeFileSync(easJsonPath, `${JSON.stringify(eas, null, 2)}\n`);
-NODE
+configure_eas_build_fingerprint "$fingerprint"
+
+ipa_path="$tmp/t3-pretty.ipa"
+build_source="local Xcode"
 
 if [[ "$ipa_via_cloud" == "true" ]]; then
   cloud_build_json="$tmp/eas-cloud-build.json"
@@ -533,37 +640,12 @@ if [[ "$ipa_via_cloud" == "true" ]]; then
       --wait \
       --json > "$cloud_build_json"
   )
-  build_id="$(
-    node --input-type=module - "$cloud_build_json" <<'NODE'
-import fs from "node:fs";
-const raw = fs.readFileSync(process.argv[2], "utf8").trim();
-let data;
-try {
-  data = JSON.parse(raw);
-} catch {
-  const start = Math.max(raw.lastIndexOf("\n{") + 1, raw.lastIndexOf("{"));
-  data = JSON.parse(raw.slice(start));
-}
-const build = Array.isArray(data) ? data[data.length - 1] : data;
-const id = typeof build?.id === "string" ? build.id : "";
-if (!id) {
-  throw new Error("eas build --json did not include a build id");
-}
-process.stdout.write(`${id}\n`);
-NODE
-  )"
-  (
-    cd apps/mobile
-    eas submit \
-      --platform ios \
-      --profile production \
-      --id "$build_id" \
-      --no-wait \
-      --non-interactive
-  )
-  record_local_native_submit "$commit"
-  annotate success "Submitted TestFlight IPA via EAS cloud"
-  restore_eas_json
+  cloud_build_details="$tmp/eas-cloud-build-details"
+  read_eas_cloud_build_details "$cloud_build_json" > "$cloud_build_details"
+  build_id="$(sed -n '1p' "$cloud_build_details")"
+  artifact_url="$(sed -n '2p' "$cloud_build_details")"
+  curl --fail --location --retry 3 --output "$ipa_path" "$artifact_url"
+  build_source="EAS cloud build $build_id"
 else
   echo "Using Xcode at $developer_dir"
   export DEVELOPER_DIR="$developer_dir"
@@ -598,7 +680,6 @@ else
   chmod +x "$security_wrap/security"
   export PATH="$security_wrap:$PATH"
 
-  ipa_path="$tmp/t3-pretty.ipa"
   export EAS_LOCAL_BUILD_ARTIFACTS_DIR="$tmp/eas-artifacts"
   mkdir -p "$EAS_LOCAL_BUILD_ARTIFACTS_DIR"
 
@@ -616,48 +697,38 @@ else
   fi
   test -n "$ipa_path"
   test -f "$ipa_path"
-
-  # Fastlane pilot uploads a TestFlight build. This is not App Store review.
-  (
-    cd apps/mobile
-    eas submit \
-      --platform ios \
-      --profile production \
-      --path "$ipa_path" \
-      --no-wait \
-      --non-interactive
-  )
-  record_local_native_submit "$commit"
-  annotate success "Submitted TestFlight IPA $ipa_path"
-  restore_eas_json
 fi
 
-if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
-  echo "Fingerprint was unknown at compile time; generating after TestFlight submit."
-  retry="$tmp/ios-fingerprint-retry.json"
-  retry_builds="$tmp/ios-builds-retry.json"
-  retry_gate="$tmp/ios-gate-retry.txt"
-  printf '[]\n' > "$retry_builds"
-  if (
-    cd apps/mobile
-    eas fingerprint:generate \
-      --platform ios \
-      --build-profile production \
-      --json \
-      --non-interactive > "$retry"
-  ); then
-    GITHUB_OUTPUT="$retry_gate" node scripts/fork/resolve-ios-native-build.mjs \
-      --fingerprint-file "$retry" \
-      --builds-file "$retry_builds" \
-      --submitted-fingerprint "" \
-      --force false
-    fingerprint="$(awk -F= '/^fingerprint=/ { print $2 }' "$retry_gate" | tail -n 1)"
-  fi
+verified_fingerprint=""
+if ! verified_fingerprint="$(verify_ipa_fingerprint "$ipa_path" "$fingerprint")"; then
+  annotate error "The $build_source IPA does not embed the OTA runtime fingerprint. TestFlight submit was blocked."
+  exit 1
 fi
-if [[ -z "$fingerprint" || "$fingerprint" == "unknown" ]]; then
-  echo "Could not record an iOS fingerprint after TestFlight submit; the next release may compile again." >&2
-  exit 0
+fingerprint="$verified_fingerprint"
+echo "Verified embedded iOS runtime fingerprint=$fingerprint in $build_source IPA."
+
+# Submission profile credentials are intentionally added only after the IPA is built.
+# eas.json is a native fingerprint source, and the temporary key path changes
+# on every run; adding it before the build makes the binary reject its own OTA.
+configure_eas_submit_credentials "$key_path" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"
+
+# Fastlane pilot uploads a TestFlight build. This is not App Store review.
+(
+  cd apps/mobile
+  eas submit \
+    --platform ios \
+    --profile production \
+    --path "$ipa_path" \
+    --no-wait \
+    --non-interactive
+)
+record_local_native_submit "$commit"
+if [[ "$ipa_via_cloud" == "true" ]]; then
+  annotate success "Submitted verified TestFlight IPA from EAS cloud build $build_id"
+else
+  annotate success "Submitted verified TestFlight IPA $ipa_path"
 fi
+restore_eas_json
 
 if ! load_secret CURSOR_API_KEY; then
   echo "CURSOR_API_KEY is missing; TestFlight already submitted. Skipping the fingerprint record PR." >&2
