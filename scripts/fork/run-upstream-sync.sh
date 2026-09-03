@@ -405,6 +405,17 @@ if ! retry checkpoint_resolutions; then
   exit 1
 fi
 
+# Completed TS/TSX checkpoints are parsed before the resolver trusts them.
+# Install the parser from fork main before checking out a reusable sync branch,
+# since that branch can predate the validation dependency and conflict while it
+# is being reconciled with current main. The merged tree is installed again
+# below because its dependency graph may differ.
+if ! retry vp i --frozen-lockfile; then
+  SYNC_FAIL_REASON="The sync resolver could not install its validation dependencies from the frozen lockfile."
+  echo "$SYNC_FAIL_REASON" >&2
+  exit 1
+fi
+
 # Restore checkpointed per-file resolutions first: a run that failed
 # or timed out mid-merge reruns only the files that never finished.
 load_resolution_cache() {
@@ -716,6 +727,18 @@ validate_sync_tree() {
   fi
   if ! vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck; then
     SYNC_FAIL_REASON="The merged sync tree failed shared contract typechecks."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  if ! vp run --filter @t3tools/web typecheck; then
+    SYNC_FAIL_REASON="The merged sync tree failed the web typecheck."
+    echo "$SYNC_FAIL_REASON" >&2
+    return 1
+  fi
+  # Keep warnings informational, but block parser, duplicate-declaration, and
+  # other error-level defects before an automation branch can be published.
+  if ! vp lint apps/web/src; then
+    SYNC_FAIL_REASON="The merged sync tree failed the web lint error gate."
     echo "$SYNC_FAIL_REASON" >&2
     return 1
   fi
