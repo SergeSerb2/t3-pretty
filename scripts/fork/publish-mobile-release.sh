@@ -283,13 +283,30 @@ tmp=""
 eas_json="$root/apps/mobile/eas.json"
 eas_json_bak=""
 cleanup() {
+  local status=$?
+  local cleanup_failed=0
+  trap - EXIT
+  set +e
   if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
-    cp "$eas_json_bak" "$eas_json"
+    if ! cp "$eas_json_bak" "$eas_json"; then
+      echo "Could not restore $eas_json from its release backup." >&2
+      cleanup_failed=1
+    fi
   fi
   if [[ -n "${tmp:-}" ]]; then
-    rm -rf "$tmp"
+    if ! rm -rf -- "$tmp"; then
+      echo "Could not remove iOS release temporary files at $tmp." >&2
+      cleanup_failed=1
+    fi
   fi
-  apple_signing_lock_release
+  if ! apple_signing_lock_release; then
+    echo "Could not release the Apple signing lock." >&2
+    cleanup_failed=1
+  fi
+  if (( status == 0 && cleanup_failed != 0 )); then
+    status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 apple_signing_lock_acquire
@@ -376,26 +393,61 @@ read_eas_cloud_build_details() {
   node --input-type=module - "$cloud_build_json" <<'NODE'
 import fs from "node:fs";
 const raw = fs.readFileSync(process.argv[2], "utf8").trim();
-let data;
-try {
-  data = JSON.parse(raw);
-} catch {
-  const jsonStart = /^[\[{]/mu.exec(raw)?.index ?? -1;
-  if (jsonStart < 0) {
-    throw new Error("eas build --json did not emit JSON");
+const values = [];
+for (let start = 0; start < raw.length; start += 1) {
+  if (raw[start] !== "{" && raw[start] !== "[") continue;
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let end = start; end < raw.length; end += 1) {
+    const character = raw[end];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      stack.push("}");
+    } else if (character === "[") {
+      stack.push("]");
+    } else if (character === "}" || character === "]") {
+      if (stack.pop() !== character) break;
+      if (stack.length === 0) {
+        let parsed = false;
+        try {
+          values.push(JSON.parse(raw.slice(start, end + 1)));
+          parsed = true;
+        } catch {
+          // A non-JSON progress fragment may wrap later JSON. Keep scanning
+          // from the next opener instead of skipping the entire fragment.
+        }
+        if (parsed) start = end;
+        break;
+      }
+    }
   }
-  data = JSON.parse(raw.slice(jsonStart));
 }
-const build = Array.isArray(data) ? data[data.length - 1] : data;
-const id = typeof build?.id === "string" ? build.id : "";
-const artifactUrl =
-  typeof build?.artifacts?.applicationArchiveUrl === "string"
-    ? build.artifacts.applicationArchiveUrl
-    : typeof build?.artifacts?.buildUrl === "string"
-      ? build.artifacts.buildUrl
-      : "";
+const candidates = values.flatMap((value) =>
+  Array.isArray(value) ? value : Array.isArray(value?.builds) ? value.builds : [value],
+);
+const nonEmptyString = (value) => (typeof value === "string" && value.trim() ? value : "");
+const archiveUrlFor = (candidate) =>
+  nonEmptyString(candidate?.artifacts?.applicationArchiveUrl) ||
+  nonEmptyString(candidate?.artifacts?.buildUrl);
+const build = [...candidates].reverse().find((candidate) => {
+  return nonEmptyString(candidate?.id) && archiveUrlFor(candidate);
+});
+const id = nonEmptyString(build?.id);
+const artifactUrl = archiveUrlFor(build);
 if (!id) {
-  throw new Error("eas build --json did not include a build id");
+  throw new Error("eas build --json did not include a completed build with an id and archive");
 }
 if (!artifactUrl) {
   throw new Error("eas build --json did not include an application archive URL");
@@ -620,8 +672,8 @@ export EXPO_ASC_ISSUER_ID="$APPLE_API_ISSUER"
 export EXPO_APPLE_TEAM_ID="$APPLE_TEAM_ID"
 export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 
+cp "$eas_json" "$tmp/eas.json.bak"
 eas_json_bak="$tmp/eas.json.bak"
-cp "$eas_json" "$eas_json_bak"
 configure_eas_build_fingerprint "$fingerprint"
 
 ipa_path="$tmp/t3-pretty.ipa"

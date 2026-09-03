@@ -190,6 +190,20 @@ function extractCloudBuildDetailsReader() {
   return match[0].replace(/\n\nverify_ipa_fingerprint$/u, "");
 }
 
+function extractSubmitCredentialConfiguration() {
+  const match = mobileRelease.match(
+    /configure_eas_submit_credentials\(\) \{[\s\S]*?\n\}\n\nread_eas_cloud_build_details/,
+  );
+  assert.ok(match, "submit credential configuration missing");
+  return match[0].replace(/\n\nread_eas_cloud_build_details$/u, "");
+}
+
+function extractEasJsonCleanupTrap() {
+  const match = mobileRelease.match(/cleanup\(\) \{[\s\S]*?\n\}\ntrap cleanup EXIT/);
+  assert.ok(match, "eas.json cleanup trap missing");
+  return match[0];
+}
+
 function makeFingerprintIpa(fingerprint) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-ipa-"));
   const updates = NodePath.join(root, "Payload", "T3PrettyInternal.app", "EXUpdates.bundle");
@@ -493,6 +507,165 @@ describe("iOS embedded runtime fingerprint", () => {
         })}\n`,
       );
       assert.deepEqual(readDetails(), [buildId, legacyBuildUrl]);
+
+      const finalBuildId = "c002d0fa-6063-49e8-ace6-cb51779f1c53";
+      const finalArchiveUrl = "https://expo.invalid/final-application.ipa";
+      NodeFS.writeFileSync(
+        buildJson,
+        [
+          "progress {not valid JSON around the later values:",
+          JSON.stringify({
+            status: "IN_QUEUE",
+            progress: { message: "Waiting [for a worker]", position: 1 },
+          }),
+          JSON.stringify([
+            {
+              id: buildId,
+              artifacts: { applicationArchiveUrl },
+            },
+            {
+              id: finalBuildId,
+              metadata: { nested: [{ message: "complete" }] },
+              artifacts: { applicationArchiveUrl: finalArchiveUrl },
+            },
+          ]),
+          "}",
+        ].join("\n"),
+      );
+      assert.deepEqual(readDetails(), [finalBuildId, finalArchiveUrl]);
+
+      NodeFS.writeFileSync(
+        buildJson,
+        `${JSON.stringify([
+          {
+            id: finalBuildId,
+            artifacts: { applicationArchiveUrl: finalArchiveUrl },
+          },
+          { id: "", artifacts: { applicationArchiveUrl: "" } },
+        ])}\n`,
+      );
+      assert.deepEqual(readDetails(), [finalBuildId, finalArchiveUrl]);
+
+      NodeFS.writeFileSync(
+        buildJson,
+        `${JSON.stringify({
+          id: buildId,
+          artifacts: { applicationArchiveUrl: "", buildUrl: legacyBuildUrl },
+        })}\n`,
+      );
+      assert.deepEqual(readDetails(), [buildId, legacyBuildUrl]);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("restores eas.json through the early EXIT trap after every mutation stage", () => {
+    const trap = mobileRelease.indexOf("trap cleanup EXIT");
+    const backupCopy = mobileRelease.indexOf('cp "$eas_json" "$tmp/eas.json.bak"');
+    const backupActivation = mobileRelease.indexOf('eas_json_bak="$tmp/eas.json.bak"');
+    const firstMutation = mobileRelease.indexOf('configure_eas_build_fingerprint "$fingerprint"');
+    assert.isAtLeast(trap, 0);
+    assert.isAbove(backupCopy, trap);
+    assert.isAbove(backupActivation, backupCopy);
+    assert.isAbove(firstMutation, backupActivation);
+
+    for (const stage of ["backup", "build", "submit"]) {
+      const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-cleanup-"));
+      const tmp = NodePath.join(root, "release-tmp");
+      const easJson = NodePath.join(root, "eas.json");
+      const lockLog = NodePath.join(root, "lock-release.log");
+      const original = `${JSON.stringify({
+        build: { production: { env: { APP_VARIANT: "production" } } },
+        submit: { production: { ios: { appleTeamId: "team" } } },
+      })}\n`;
+      NodeFS.mkdirSync(tmp);
+      NodeFS.writeFileSync(easJson, original);
+      try {
+        const result = NodeChildProcess.spawnSync(
+          "bash",
+          [
+            "-c",
+            [
+              "set -euo pipefail",
+              "apple_signing_lock_release() { printf 'released\\n' > \"$lock_log\"; }",
+              'eas_json="$1"',
+              'tmp="$2"',
+              'lock_log="$4"',
+              'eas_json_bak=""',
+              extractEasJsonCleanupTrap(),
+              extractBuildFingerprintConfiguration(),
+              extractSubmitCredentialConfiguration(),
+              'cp "$eas_json" "$tmp/eas.json.bak"',
+              'eas_json_bak="$tmp/eas.json.bak"',
+              'if [[ "$3" == "backup" ]]; then printf \'{"partial":true}\\n\' > "$eas_json"; fi',
+              'if [[ "$3" == "build" || "$3" == "submit" ]]; then',
+              '  configure_eas_build_fingerprint "expected-fingerprint"',
+              "fi",
+              'if [[ "$3" == "submit" ]]; then',
+              '  configure_eas_submit_credentials "/tmp/randomized-key.p8" "key" "issuer"',
+              "fi",
+              "exit 42",
+            ].join("\n"),
+            "eas-json-cleanup",
+            easJson,
+            tmp,
+            stage,
+            lockLog,
+          ],
+          { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        );
+        assert.equal(result.status, 42, `${stage} failure status must survive cleanup`);
+        assert.equal(NodeFS.readFileSync(easJson, "utf8"), original);
+        assert.isFalse(NodeFS.existsSync(tmp), `${stage} failure must remove release temp files`);
+        assert.equal(NodeFS.readFileSync(lockLog, "utf8"), "released\n");
+      } finally {
+        NodeFS.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("releases the signing lock even when restoring eas.json fails", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-cleanup-fail-"));
+    const tmp = NodePath.join(root, "release-tmp");
+    const easJson = NodePath.join(root, "eas.json");
+    const lockLog = NodePath.join(root, "lock-release.log");
+    NodeFS.mkdirSync(tmp);
+    NodeFS.writeFileSync(easJson, '{"original":true}\n');
+    try {
+      const result = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          [
+            "set -euo pipefail",
+            "apple_signing_lock_release() { printf 'released\\n' > \"$lock_log\"; }",
+            'eas_json="$1"',
+            'tmp="$2"',
+            'lock_log="$3"',
+            'eas_json_bak=""',
+            "cp_calls=0",
+            "cp() {",
+            "  cp_calls=$((cp_calls + 1))",
+            "  if (( cp_calls == 2 )); then return 1; fi",
+            '  command cp "$@"',
+            "}",
+            extractEasJsonCleanupTrap(),
+            'cp "$eas_json" "$tmp/eas.json.bak"',
+            'eas_json_bak="$tmp/eas.json.bak"',
+            'printf \'{"mutated":true}\\n\' > "$eas_json"',
+            "exit 42",
+          ].join("\n"),
+          "eas-json-cleanup-failure",
+          easJson,
+          tmp,
+          lockLog,
+        ],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      assert.equal(result.status, 42);
+      assert.include(result.stderr, "Could not restore");
+      assert.isFalse(NodeFS.existsSync(tmp));
+      assert.equal(NodeFS.readFileSync(lockLog, "utf8"), "released\n");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
