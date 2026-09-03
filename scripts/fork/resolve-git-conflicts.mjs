@@ -1032,6 +1032,12 @@ function providerUnavailableError(message) {
   return error;
 }
 
+function deferredSyncError(message) {
+  const error = new Error(message);
+  error.syncDeferred = true;
+  return error;
+}
+
 async function requestConflictResolution({
   path,
   prompt,
@@ -1069,8 +1075,8 @@ async function requestConflictResolution({
           "the model provider remained unavailable until the resolution deadline",
         );
       }
-      throw new Error(
-        "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
+      throw deferredSyncError(
+        "the model-resolution window ended; checkpointing for the next pinned run",
       );
     }
     const effort = efforts[effortIndex];
@@ -1576,7 +1582,7 @@ async function main() {
       }
       resolutions.push(await resolveConflict(path, token));
     } catch (error) {
-      if (error?.providerUnavailable === true) throw error;
+      if (error?.providerUnavailable === true || error?.syncDeferred === true) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       try {
         resolutions.push(fallbackResolution(path, reason));
@@ -1642,6 +1648,6 @@ const invokedPath = process.argv[1] ? NodePath.resolve(process.argv[1]) : "";
 if (invokedPath === NodeURL.fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`[fork-sync] ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
+    process.exitCode = error?.syncDeferred === true ? 75 : 1;
   });
 }

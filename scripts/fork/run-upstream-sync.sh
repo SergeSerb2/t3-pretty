@@ -46,13 +46,15 @@ export CLI_PROXY_MODEL="${CLI_PROXY_MODEL:-gpt-5.6-sol}"
 export CLI_PROXY_REASONING_EFFORT="${CLI_PROXY_REASONING_EFFORT:-xhigh}"
 export CLI_PROXY_SERVICE_TIER="${CLI_PROXY_SERVICE_TIER:-priority}"
 SYNC_FAIL_REASON=""
+RESOLVER_PID=""
+CHECKPOINT_PID=""
 
 CACHE_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 CACHE_ROOT="${CACHE_ROOT%/}"
 export SYNC_RESOLUTION_CACHE_DIR="${SYNC_RESOLUTION_CACHE_DIR:-${CACHE_ROOT}/sync-resolution-cache}"
 # Stop issuing model requests 150 minutes in: the Buildkite timeout is 180,
-# a timed-out job files no blocked report, and the remaining files land
-# through the fork-side fallback instead.
+# leaving enough time to checkpoint the active target and completed work for
+# the next scheduled run instead of publishing unresolved fork-side fallbacks.
 export SYNC_MODEL_DEADLINE_EPOCH_MS="$(( ($(date +%s) + 150 * 60) * 1000 ))"
 mkdir -p "$SYNC_RESOLUTION_CACHE_DIR"
 
@@ -171,6 +173,38 @@ checkpoint_resolutions() {
   echo "Checkpointed ${#entries[@]} resolution progress file(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
+run_conflict_resolver() {
+  local resolver_status=0
+  node scripts/fork/resolve-git-conflicts.mjs &
+  RESOLVER_PID=$!
+  (
+    while sleep 300; do
+      kill -0 "$RESOLVER_PID" 2>/dev/null || exit 0
+      checkpoint_resolutions || true
+    done
+  ) &
+  CHECKPOINT_PID=$!
+  wait "$RESOLVER_PID" || resolver_status=$?
+  RESOLVER_PID=""
+  kill "$CHECKPOINT_PID" 2>/dev/null || true
+  wait "$CHECKPOINT_PID" 2>/dev/null || true
+  CHECKPOINT_PID=""
+  return "$resolver_status"
+}
+
+stop_conflict_resolver() {
+  if [[ -n "$CHECKPOINT_PID" ]]; then
+    kill "$CHECKPOINT_PID" 2>/dev/null || true
+    wait "$CHECKPOINT_PID" 2>/dev/null || true
+    CHECKPOINT_PID=""
+  fi
+  if [[ -n "$RESOLVER_PID" ]]; then
+    kill "$RESOLVER_PID" 2>/dev/null || true
+    wait "$RESOLVER_PID" 2>/dev/null || true
+    RESOLVER_PID=""
+  fi
+}
+
 report_blocked() {
   local status="${1:-1}"
   local tag="${UPSTREAM_TAG:-unknown}"
@@ -196,13 +230,17 @@ on_exit() {
   # On cancellation the log tee dies first; without this, the first echo in
   # checkpoint_resolutions takes SIGPIPE and kills the trap before the push.
   trap '' PIPE
+  stop_conflict_resolver
   if [[ "$has_update" == 1 ]]; then
     checkpoint_resolutions || true
   fi
-  # 143/130 mean the job was cancelled or superseded — not a blockage, and
-  # the kill grace period is better spent on the checkpoint above. A landed
-  # sync must never file a blocked report over a best-effort post-land step.
-  if (( status != 0 && status != 143 && status != 130 )) && [[ "$sync_landed" != 1 ]]; then
+  # 143/130 mean the job was cancelled or superseded, while 75 means its
+  # resolution window ended and the next pinned run should resume. None are
+  # blockages, and the kill grace period is better spent on the checkpoint
+  # above. A landed sync must never file a blocked report over a best-effort
+  # post-land step.
+  if (( status != 0 && status != 143 && status != 130 && status != 75 )) &&
+    [[ "$sync_landed" != 1 ]]; then
     report_blocked "$status" || true
   fi
   exit "$status"
@@ -377,7 +415,7 @@ resolve_current_merge() {
     return "$merge_status"
   fi
   load_resolution_cache
-  node scripts/fork/resolve-git-conflicts.mjs
+  run_conflict_resolver
 
   # The resolver side-picks a conflicted generated lockfile instead of
   # AI-splicing it. Reconcile that copy with the merged package

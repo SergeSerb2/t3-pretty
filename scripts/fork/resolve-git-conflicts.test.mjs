@@ -831,7 +831,35 @@ ${">".repeat(7)} theirs
     assert.equal(availabilityAttempts, 0);
     assert.equal(nextProviderAvailabilityAttempt(availabilityAttempts, true), 1);
     assert.include(resolver, "waiting without consuming the ${effort} reasoning attempt");
-    assert.include(resolver, "if (error?.providerUnavailable === true) throw error");
+    assert.include(resolver, "error?.providerUnavailable === true || error?.syncDeferred === true");
+  });
+
+  it("checkpoints long syncs periodically and defers instead of falling back at the deadline", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, "while sleep 300");
+    assert.include(script, "checkpoint_resolutions || true");
+    assert.include(script, "run_conflict_resolver");
+    assert.include(script, "stop_conflict_resolver");
+    assert.include(script, 'kill "$RESOLVER_PID"');
+    const resolverStart = script.indexOf("node scripts/fork/resolve-git-conflicts.mjs &");
+    const checkpointStart = script.indexOf("while sleep 300", resolverStart);
+    const resolverWait = script.indexOf('wait "$RESOLVER_PID"', checkpointStart);
+    const checkpointStop = script.indexOf('kill "$CHECKPOINT_PID"', resolverWait);
+    assert.isAtLeast(resolverStart, 0);
+    assert.isAbove(checkpointStart, resolverStart);
+    assert.isAbove(resolverWait, checkpointStart);
+    assert.isAbove(checkpointStop, resolverWait);
+    assert.isBelow(
+      script.indexOf("stop_conflict_resolver\n"),
+      script.indexOf('if [[ "$has_update" == 1 ]]'),
+    );
+    assert.include(resolver, "throw deferredSyncError");
+    assert.include(resolver, "error?.syncDeferred === true");
+    assert.include(resolver, "error?.syncDeferred === true ? 75 : 1");
+    assert.notInclude(resolver, "taking the fork-side fallback");
+    assert.include(script, "status != 75");
   });
 
   it("records the iOS production fingerprint without tripping the format hook", () => {
