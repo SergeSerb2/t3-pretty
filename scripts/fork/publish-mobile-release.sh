@@ -488,10 +488,8 @@ fingerprint=""
     --non-interactive > "$fingerprint_file"; do
     fingerprint_attempts=$((fingerprint_attempts + 1))
     if (( fingerprint_attempts >= 2 )); then
-      echo "Could not generate a stable iOS fingerprint; the native build will fail closed."
-      printf 'placeholder\n' > "$fingerprint_file"
-      printf 'should_build=true\nfingerprint=unknown\n' > "$gate_file"
-      exit 0
+      echo "Could not generate a stable iOS fingerprint; refusing a native build." >&2
+      exit 1
     fi
     echo "iOS fingerprint generation flaked; retrying once."
     sleep 10

@@ -410,6 +410,17 @@ describe("iOS publish Xcode selection", () => {
 });
 
 describe("iOS embedded runtime fingerprint", () => {
+  it("fails the job directly when a stable fingerprint cannot be generated", () => {
+    const failure = mobileRelease.match(
+      /if \(\( fingerprint_attempts >= 2 \)\); then[\s\S]*?\n    fi/,
+    );
+    assert.ok(failure);
+    assert.include(failure[0], "refusing a native build");
+    assert.include(failure[0], "exit 1");
+    assert.notInclude(failure[0], "fingerprint=unknown");
+    assert.notInclude(failure[0], "should_build=true");
+  });
+
   it("pins the build worker to the fingerprint used by the OTA and native gate", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-json-"));
     const easJson = NodePath.join(root, "eas.json");
