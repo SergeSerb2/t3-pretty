@@ -4544,6 +4544,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("returns a typed error when desktop update control is unavailable", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const error = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.serverCommitDesktopUpdate]({ requestId: "missing-control" }).pipe(
+            Effect.flip,
+          ),
+        ),
+      );
+
+      assert.equal(error._tag, "ServerSelfUpdateError");
+      if (error._tag === "ServerSelfUpdateError") {
+        assert.equal(error.reason, "This server cannot commit a desktop app update.");
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("accepts same-origin websocket cookie authentication from a browser", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
