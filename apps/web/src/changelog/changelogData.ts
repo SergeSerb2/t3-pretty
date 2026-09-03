@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260902.1260001425",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260902.1260001421",
     date: "2026-09-03",
     items: [
