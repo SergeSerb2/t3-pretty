@@ -29,6 +29,7 @@ import {
   readReusedSyncReport,
   readTextFileBounded,
   resolutionCacheKey,
+  restoreResolutionCacheMtimes,
   writePartialResolutionCheckpoint,
   writeCachedResolution,
 } from "./resolve-git-conflicts.mjs";
@@ -81,6 +82,7 @@ describe("T3 Pretty upstream conflict resolver", () => {
         NodeFS.utimesSync(path, index + 1, index + 1);
       }
       NodeFS.writeFileSync(NodePath.join(directory, "unexpected.json"), "ignored");
+      NodeFS.writeFileSync(NodePath.join(directory, "active-upstream-tag"), "nightly-1\n");
 
       assert.deepEqual(pruneResolutionCache({ cacheDir: directory, maxEntries: 2, maxBytes: 10 }), {
         kept: 2,
@@ -91,6 +93,10 @@ describe("T3 Pretty upstream conflict resolver", () => {
       assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[1]}.json`)));
       assert.isTrue(NodeFS.existsSync(NodePath.join(directory, `${keys[2]}.json`)));
       assert.isFalse(NodeFS.existsSync(NodePath.join(directory, "unexpected.json")));
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, "active-upstream-tag"), "utf8"),
+        "nightly-1\n",
+      );
     } finally {
       NodeFS.rmSync(directory, { recursive: true, force: true });
     }
@@ -98,6 +104,56 @@ describe("T3 Pretty upstream conflict resolver", () => {
 
   it("refuses to prune a broad temporary-directory root", () => {
     assert.throws(() => pruneResolutionCache({ cacheDir: NodeOS.tmpdir() }), /broad or protected/u);
+  });
+
+  it("breaks same-time cache recency ties by key", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-ties-"));
+    try {
+      const first = `${"a".repeat(64)}.json`;
+      const second = `${"b".repeat(64)}.json`;
+      for (const name of [second, first]) {
+        const path = NodePath.join(directory, name);
+        NodeFS.writeFileSync(path, "1");
+        NodeFS.utimesSync(path, 10, 10);
+      }
+
+      pruneResolutionCache({ cacheDir: directory, maxEntries: 1, maxBytes: 1 });
+
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, first)));
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, second)));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("restores cache recency before pruning an extracted archive", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-mtimes-"));
+    try {
+      const older = `${"1".repeat(64)}.json`;
+      const newer = `${"2".repeat(64)}.json`;
+      NodeFS.writeFileSync(NodePath.join(directory, older), "12345");
+      NodeFS.writeFileSync(NodePath.join(directory, newer), "12345");
+
+      restoreResolutionCacheMtimes({
+        cacheDir: directory,
+        manifest: `10\t${older}\n20\t${newer}\n`,
+      });
+      pruneResolutionCache({ cacheDir: directory, maxEntries: 1, maxBytes: 5 });
+
+      assert.isFalse(NodeFS.existsSync(NodePath.join(directory, older)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(directory, newer)));
+      assert.throws(
+        () => restoreResolutionCacheMtimes({ cacheDir: directory, manifest: `30\t${older}\n` }),
+        /missing cache entry/u,
+      );
+      assert.throws(
+        () =>
+          restoreResolutionCacheMtimes({ cacheDir: directory, manifest: "20\t../escape.json\n" }),
+        /invalid resolution-cache timestamp manifest/u,
+      );
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
@@ -839,7 +895,30 @@ ${">".repeat(7)} theirs
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
 
     assert.include(script, "while sleep 300");
-    assert.include(script, "checkpoint_resolutions || true");
+    assert.include(script, "checkpoint_loaded_resolutions || true");
+    assert.include(script, "git read-tree --empty");
+    assert.include(script, 'local replace_cache="${1:-false}"');
+    assert.include(script, 'if [[ "$RESOLUTION_CACHE_LOADED" == 1 ]]');
+    assert.include(
+      script,
+      "git log --full-history -m --format='timestamp:%ct' --name-only --no-renames",
+    );
+    assert.include(script, '[[ "$remote_entry_count" == "$restored_entry_count" ]]');
+    assert.include(script, "resolve-git-conflicts.mjs --restore-and-prune-cache");
+    assert.include(resolver, 'process.argv[2] === "--restore-and-prune-cache"');
+    assert.include(script, '[[ "$sync_landed" == 1 && "$RESOLUTION_CACHE_LOADED" == 1 ]]');
+    assert.include(script, "resolve-git-conflicts.mjs --prune-cache");
+    assert.include(resolver, 'process.argv[2] === "--prune-cache"');
+    const cacheWriter = resolver.slice(
+      resolver.indexOf("export function writeCachedResolution"),
+      resolver.indexOf("export function writePartialResolutionCheckpoint"),
+    );
+    assert.notInclude(cacheWriter, "pruneResolutionCache");
+    const resolverMain = resolver.slice(
+      resolver.indexOf("async function main()"),
+      resolver.indexOf("const invokedPath"),
+    );
+    assert.notInclude(resolverMain, "pruneResolutionCache");
     assert.include(script, "run_conflict_resolver");
     assert.include(script, "stop_conflict_resolver");
     assert.include(script, 'kill "$RESOLVER_PID"');
@@ -1155,8 +1234,12 @@ ${">".repeat(7)} theirs
     assert.include(script, "trap on_exit EXIT");
     assert.include(
       script,
-      'git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"',
+      'git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$restore_cache"',
     );
+    assert.include(script, 'mv "$SYNC_RESOLUTION_CACHE_DIR" "$backup_cache"');
+    assert.include(script, 'mv "$candidate" "$SYNC_RESOLUTION_CACHE_DIR"');
+    assert.include(script, 'mv "$backup_cache" "$SYNC_RESOLUTION_CACHE_DIR"');
+    assert.include(script, '> "$restore_cache/active-upstream-tag"');
     assert.include(script, "git commit-tree");
 
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");

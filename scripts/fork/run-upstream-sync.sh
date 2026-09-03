@@ -48,6 +48,7 @@ export CLI_PROXY_SERVICE_TIER="${CLI_PROXY_SERVICE_TIER:-priority}"
 SYNC_FAIL_REASON=""
 RESOLVER_PID=""
 CHECKPOINT_PID=""
+RESOLUTION_CACHE_LOADED=0
 
 CACHE_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 CACHE_ROOT="${CACHE_ROOT%/}"
@@ -129,6 +130,7 @@ git config --unset-all remote.upstream.partialclonefilter || true
 
 checkpoint_resolutions() {
   shopt -s nullglob
+  local replace_cache="${1:-false}"
   local target_file="$SYNC_RESOLUTION_CACHE_DIR/active-upstream-tag"
   if [[ -n "${UPSTREAM_TAG:-}" ]]; then
     printf '%s\n' "$UPSTREAM_TAG" > "$target_file"
@@ -147,9 +149,12 @@ checkpoint_resolutions() {
   local GIT_INDEX_FILE="$index_file"
   export GIT_INDEX_FILE
   local parent_args=()
+  git read-tree --empty
   if git rev-parse -q --verify "origin/$RESOLUTION_CACHE_BRANCH" >/dev/null 2>&1; then
-    git read-tree "origin/$RESOLUTION_CACHE_BRANCH"
     parent_args=(-p "origin/$RESOLUTION_CACHE_BRANCH")
+    if [[ "$replace_cache" != "true" ]]; then
+      git read-tree "origin/$RESOLUTION_CACHE_BRANCH"
+    fi
   fi
   local entry blob
   for entry in "${entries[@]}"; do
@@ -173,6 +178,38 @@ checkpoint_resolutions() {
   echo "Checkpointed ${#entries[@]} resolution progress file(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
+checkpoint_loaded_resolutions() {
+  if [[ "$RESOLUTION_CACHE_LOADED" == 1 ]]; then
+    checkpoint_resolutions true
+  else
+    checkpoint_resolutions
+  fi
+}
+
+install_resolution_cache() {
+  local candidate="$1"
+  local backup_cache
+  if ! backup_cache="$(mktemp -d "${SYNC_RESOLUTION_CACHE_DIR}.backup.XXXXXX")"; then
+    return 1
+  fi
+  if ! rmdir "$backup_cache"; then
+    rm -rf "$backup_cache"
+    return 1
+  fi
+  if ! mv "$SYNC_RESOLUTION_CACHE_DIR" "$backup_cache"; then
+    return 1
+  fi
+  if mv "$candidate" "$SYNC_RESOLUTION_CACHE_DIR"; then
+    rm -rf "$backup_cache" || true
+    return 0
+  fi
+  if mv "$backup_cache" "$SYNC_RESOLUTION_CACHE_DIR"; then
+    return 1
+  fi
+  echo "error: cache install failed and the previous cache remains at $backup_cache" >&2
+  return 2
+}
+
 run_conflict_resolver() {
   local resolver_status=0
   node scripts/fork/resolve-git-conflicts.mjs &
@@ -180,7 +217,7 @@ run_conflict_resolver() {
   (
     while sleep 300; do
       kill -0 "$RESOLVER_PID" 2>/dev/null || exit 0
-      checkpoint_resolutions || true
+      checkpoint_loaded_resolutions || true
     done
   ) &
   CHECKPOINT_PID=$!
@@ -225,14 +262,31 @@ has_update=0
 sync_landed=0
 
 on_exit() {
-  local status=$?
+  local status=$? compact_status checkpoint_cache=1
   trap - EXIT
   # On cancellation the log tee dies first; without this, the first echo in
   # checkpoint_resolutions takes SIGPIPE and kills the trap before the push.
   trap '' PIPE
   stop_conflict_resolver
   if [[ "$has_update" == 1 ]]; then
-    checkpoint_resolutions || true
+    # Keep every in-progress resolution across cancellations and deadline
+    # deferrals. Once the integration has landed, only reusable history remains
+    # and the cache can return to its steady-state bound before replacement.
+    if [[ "$sync_landed" == 1 && "$RESOLUTION_CACHE_LOADED" == 1 ]]; then
+      if compact_resolution_cache; then
+        :
+      else
+        compact_status=$?
+        if [[ "$compact_status" == 2 ]]; then
+          exit 1
+        fi
+        checkpoint_cache=0
+        echo "warning: cache compaction failed; leaving the remote cache unchanged."
+      fi
+    fi
+    if [[ "$checkpoint_cache" == 1 ]]; then
+      checkpoint_loaded_resolutions || true
+    fi
   fi
   # 143/130 mean the job was cancelled or superseded, while 75 means its
   # resolution window ended and the next pinned run should resume. None are
@@ -354,9 +408,98 @@ fi
 # Restore checkpointed per-file resolutions first: a run that failed
 # or timed out mid-merge reruns only the files that never finished.
 load_resolution_cache() {
+  local restore_root restore_cache cache_names cache_mtimes
+  local remote_entry_count restored_entry_count install_status copy_ok entry
+  RESOLUTION_CACHE_LOADED=0
+  restore_root="$(mktemp -d "${SYNC_RESOLUTION_CACHE_DIR}.restore.XXXXXX")" || return 0
+  restore_cache="$restore_root/cache"
+  cache_names="$restore_root/names"
+  cache_mtimes="$restore_root/mtimes"
+  mkdir -p "$restore_cache"
+
   if origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
-    git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$SYNC_RESOLUTION_CACHE_DIR"
+    if git archive "origin/$RESOLUTION_CACHE_BRANCH" | tar -x -C "$restore_cache"; then
+      if git ls-tree -r --name-only "origin/$RESOLUTION_CACHE_BRANCH" |
+        awk '/^[0-9a-f]{64}[.]json$/ { print }' > "$cache_names" &&
+        git log --full-history -m --format='timestamp:%ct' --name-only --no-renames \
+          "origin/$RESOLUTION_CACHE_BRANCH" -- '*.json' |
+          awk '
+            FILENAME == ARGV[1] { current[$0] = 1; next }
+            /^timestamp:/ { timestamp = substr($0, 11); next }
+            /^[0-9a-f]{64}[.]json$/ && current[$0] && !seen[$0]++ {
+              print timestamp "\t" $0
+            }
+          ' "$cache_names" - > "$cache_mtimes"; then
+        remote_entry_count="$(awk 'END { print NR }' "$cache_names")"
+        restored_entry_count="$(awk 'END { print NR }' "$cache_mtimes")"
+      else
+        remote_entry_count=-1
+        restored_entry_count=-2
+      fi
+      if [[ "$remote_entry_count" == "$restored_entry_count" ]] &&
+        SYNC_RESOLUTION_CACHE_DIR="$restore_cache" \
+          node scripts/fork/resolve-git-conflicts.mjs --restore-and-prune-cache < "$cache_mtimes"; then
+        # The steady-state bound applies to restored history, never to work from
+        # the active run. Layer local progress onto the bounded remote candidate.
+        copy_ok=1
+        for entry in "$SYNC_RESOLUTION_CACHE_DIR"/*.json "$SYNC_RESOLUTION_CACHE_DIR/active-upstream-tag"; do
+          [[ -f "$entry" ]] || continue
+          cp -p "$entry" "$restore_cache/" || copy_ok=0
+        done
+        if [[ "$copy_ok" == 1 ]]; then
+          printf '%s\n' "$UPSTREAM_TAG" > "$restore_cache/active-upstream-tag"
+          if install_resolution_cache "$restore_cache"; then
+            RESOLUTION_CACHE_LOADED=1
+            echo "Loaded bounded history and retained active progress for $UPSTREAM_TAG."
+          else
+            install_status=$?
+            if [[ "$install_status" == 2 ]]; then
+              rm -rf "$restore_root"
+              return 1
+            fi
+            echo "warning: could not install the restored resolution cache; preserved the previous local cache."
+          fi
+        else
+          echo "warning: could not retain local resolution progress; preserved the previous local cache."
+        fi
+      else
+        echo "warning: resolution-cache history was incomplete; preserving the remote cache without replacement."
+      fi
+    fi
   fi
+  rm -rf "$restore_root"
+}
+
+compact_resolution_cache() {
+  local compact_root compact_cache install_status entry
+  compact_root="$(mktemp -d "${SYNC_RESOLUTION_CACHE_DIR}.compact.XXXXXX")" || return 1
+  compact_cache="$compact_root/cache"
+  mkdir -p "$compact_cache"
+  for entry in "$SYNC_RESOLUTION_CACHE_DIR"/*.json "$SYNC_RESOLUTION_CACHE_DIR/active-upstream-tag"; do
+    [[ -f "$entry" ]] || continue
+    if ! cp -p "$entry" "$compact_cache/"; then
+      rm -rf "$compact_root"
+      return 1
+    fi
+  done
+  if ! SYNC_RESOLUTION_CACHE_DIR="$compact_cache" \
+    node scripts/fork/resolve-git-conflicts.mjs --prune-cache; then
+    rm -rf "$compact_root"
+    return 1
+  fi
+  printf '%s\n' "$UPSTREAM_TAG" > "$compact_cache/active-upstream-tag"
+  if install_resolution_cache "$compact_cache"; then
+    rm -rf "$compact_root"
+    return 0
+  else
+    install_status=$?
+  fi
+  if [[ "$install_status" == 2 ]]; then
+    rm -rf "$compact_root"
+    return 2
+  fi
+  rm -rf "$compact_root"
+  return 1
 }
 
 # Homebrew's node no longer ships corepack, and a bare `corepack enable`

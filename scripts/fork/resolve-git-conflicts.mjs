@@ -41,6 +41,7 @@ const MAX_MODEL_ERROR_BYTES = 64 * 1024;
 const MAX_RESOLUTION_CACHE_BYTES = 8 * 1024 * 1024;
 const MAX_RESOLUTION_CACHE_ENTRIES = 256;
 const MAX_RESOLUTION_CACHE_TOTAL_BYTES = 64 * 1024 * 1024;
+const MAX_CACHE_MTIME_MANIFEST_BYTES = 1024 * 1024;
 const MAX_SYNC_REPORT_BYTES = 8 * 1024 * 1024;
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 // Refusals sometimes name exactly what they need ("provide the
@@ -52,9 +53,9 @@ const WIDE_CONTEXT_LINES = 400;
 // Wall-clock guard: worst-case model time for one batch (validation retries
 // x transient retries x the 10-minute request timeout, doubled by the wide
 // retry) exceeds the Buildkite job timeout, and a timed-out job is killed
-// with no blocked report. Past the deadline every remaining request throws
-// immediately and the affected files take the fork-side fallback, so the
-// run still lands. run-upstream-sync.sh sets this to job start + 150min.
+// with no blocked report. Past the deadline the run defers before issuing
+// another request, leaving periodic checkpoints for the next pinned run.
+// run-upstream-sync.sh sets this to job start + 150min.
 const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS ?? "") || undefined;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
@@ -98,6 +99,22 @@ export function readTextFileBounded(path, maxBytes, label) {
   } finally {
     NodeFS.closeSync(file);
   }
+}
+
+async function readStdinBounded(maxBytes) {
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of process.stdin) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    length += bytes.byteLength;
+    if (length > maxBytes) {
+      throw new Error(
+        `resolution-cache timestamp manifest exceeds the ${maxBytes}-byte safety limit`,
+      );
+    }
+    chunks.push(bytes);
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
 }
 
 export function resolutionCacheKey({ path, conflictedSource }) {
@@ -182,6 +199,29 @@ export function writePartialResolutionCheckpoint(options) {
   );
 }
 
+export function restoreResolutionCacheMtimes({ manifest, cacheDir = RESOLUTION_CACHE_DIR }) {
+  if (Buffer.byteLength(manifest, "utf8") > MAX_CACHE_MTIME_MANIFEST_BYTES) {
+    throw new Error("resolution-cache timestamp manifest exceeded its safety limit");
+  }
+  const seen = new Set();
+  for (const line of manifest.split("\n")) {
+    if (line === "") continue;
+    const match = /^(\d{1,12})\t([0-9a-f]{64}\.json)$/u.exec(line);
+    if (!match) throw new Error("invalid resolution-cache timestamp manifest");
+    const [, rawTimestamp, name] = match;
+    const timestamp = Number(rawTimestamp);
+    if (!Number.isSafeInteger(timestamp) || timestamp <= 0 || seen.has(name)) {
+      throw new Error("invalid resolution-cache timestamp manifest");
+    }
+    seen.add(name);
+    const path = NodePath.join(cacheDir, name);
+    if (!NodeFS.existsSync(path) || !NodeFS.lstatSync(path).isFile()) {
+      throw new Error("resolution-cache timestamp manifest referenced a missing cache entry");
+    }
+    NodeFS.utimesSync(path, timestamp, timestamp);
+  }
+}
+
 export function pruneResolutionCache({
   cacheDir = RESOLUTION_CACHE_DIR,
   maxEntries = MAX_RESOLUTION_CACHE_ENTRIES,
@@ -229,6 +269,9 @@ export function pruneResolutionCache({
     const name = directoryEntry.name;
     const path = NodePath.join(resolvedCacheDir, name);
     const metadata = NodeFS.lstatSync(path);
+    if (name === "active-upstream-tag" && metadata.isFile() && metadata.size <= 1_024) {
+      continue;
+    }
     if (
       !/^[0-9a-f]{64}\.json$/u.test(name) ||
       !metadata.isFile() ||
@@ -1538,7 +1581,6 @@ function resolveGeneratedLockfile(path) {
 }
 
 async function main() {
-  pruneResolutionCache();
   const paths = git(["diff", "--name-only", "--diff-filter=U", "-z"]).split("\0").filter(Boolean);
 
   const lockfilePaths = paths.filter(isGeneratedLockfile);
@@ -1646,7 +1688,20 @@ async function main() {
 
 const invokedPath = process.argv[1] ? NodePath.resolve(process.argv[1]) : "";
 if (invokedPath === NodeURL.fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  const run = async () => {
+    if (process.argv[2] === "--restore-and-prune-cache") {
+      const manifest = await readStdinBounded(MAX_CACHE_MTIME_MANIFEST_BYTES);
+      restoreResolutionCacheMtimes({ manifest, cacheDir: RESOLUTION_CACHE_DIR });
+      pruneResolutionCache({ cacheDir: RESOLUTION_CACHE_DIR });
+      return;
+    }
+    if (process.argv[2] === "--prune-cache") {
+      pruneResolutionCache({ cacheDir: RESOLUTION_CACHE_DIR });
+      return;
+    }
+    await main();
+  };
+  run().catch((error) => {
     process.stderr.write(`[fork-sync] ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = error?.syncDeferred === true ? 75 : 1;
   });
