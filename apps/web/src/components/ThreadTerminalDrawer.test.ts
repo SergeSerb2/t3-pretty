@@ -10,14 +10,14 @@ describe("terminal selection actions", () => {
   it("clears a pending or currently owned menu when the selection disappears", () => {
     expect(
       shouldClearTerminalSelectionAction({
-        actionPending: true,
+        timerPending: true,
         openMenuRequestId: null,
         currentRequestId: 4,
       }),
     ).toBe(true);
     expect(
       shouldClearTerminalSelectionAction({
-        actionPending: false,
+        timerPending: false,
         openMenuRequestId: 4,
         currentRequestId: 4,
       }),
@@ -27,14 +27,14 @@ describe("terminal selection actions", () => {
   it("does not let an old selection popup cancel its replacement right-click menu", () => {
     expect(
       shouldClearTerminalSelectionAction({
-        actionPending: false,
+        timerPending: false,
         openMenuRequestId: 3,
         currentRequestId: 4,
       }),
     ).toBe(false);
     expect(
       shouldClearTerminalSelectionAction({
-        actionPending: false,
+        timerPending: false,
         openMenuRequestId: null,
         currentRequestId: 4,
       }),

@@ -61,7 +61,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
-import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
+import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "../diffs/StyledDiffCodeView";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -768,7 +768,7 @@ export function PullRequestCodeTab({
     [omittedFileStats],
   );
 
-  const diffViewOptions = useMemo(
+  const diffViewOptions = useMemo<StyledDiffCodeViewOptions<ReviewAnnotationGroup>>(
     () => ({
       diffStyle: diffRenderMode === "split" ? ("split" as const) : ("unified" as const),
       lineDiffType: "none" as const,

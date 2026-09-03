@@ -8,6 +8,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
@@ -170,6 +171,12 @@ export function buildThreadActionMenuItems(
     ],
   };
 
+  const projectSettings: ContextMenuItem<ThreadActionMenuId> = {
+    id: "project-settings",
+    label: "Project settings",
+    icon: "settings",
+  };
+
   const danger: ContextMenuItem<ThreadActionMenuId>[] = [
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
@@ -186,5 +193,5 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  return joinGroups([lifecycle, edit, [copy], danger]);
+  return joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
 }

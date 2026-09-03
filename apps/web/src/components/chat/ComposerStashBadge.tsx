@@ -2,6 +2,7 @@ import { BookmarkIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
 import { ComposerBanner } from "./ComposerBanner";
 
 /**
@@ -15,11 +16,13 @@ import { ComposerBanner } from "./ComposerBanner";
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   count: number;
   menuOpen: boolean;
+  placement?: "inline" | "tab";
   pulseKey: number;
   pulsing: boolean;
   onToggleMenu: () => void;
 }) {
   if (props.count === 0) return null;
+  const inline = props.placement === "inline";
   const count = (
     <ComposerBanner.Count
       key={props.pulseKey}
@@ -32,6 +35,28 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       {props.count}
     </ComposerBanner.Count>
   );
+
+  if (inline) {
+    return (
+      <Button
+        size="micro"
+        variant="ghost-muted"
+        data-prompt-stash-badge="true"
+        aria-label={`Stashed prompts: ${props.count}. Open stash.`}
+        aria-expanded={props.menuOpen}
+        className={cn(
+          "shrink-0 gap-1 px-1.5 text-xs sm:text-xs",
+          (props.menuOpen || props.pulsing) &&
+            "[--control-icon-color:currentColor] text-foreground",
+        )}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={props.onToggleMenu}
+      >
+        <BookmarkIcon className="size-3 shrink-0" aria-hidden="true" />
+        {count}
+      </Button>
+    );
+  }
 
   return (
     <ComposerBanner.Root

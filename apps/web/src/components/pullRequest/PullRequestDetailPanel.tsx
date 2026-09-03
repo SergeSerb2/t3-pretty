@@ -129,6 +129,7 @@ import {
   pullRequestComposerTarget,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
+  pullRequestCheckoutCommand,
   pullRequestUrlHost,
   readableFailure,
   resolveBaseFreshness,
@@ -675,6 +676,14 @@ export function PullRequestDetailPanel({
     [activity, coreDetail],
   );
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
+  const checkoutCommand = detail
+    ? pullRequestCheckoutCommand(
+        detail.provider,
+        detail.number,
+        detail.headBranch,
+        detail.headRepositoryNameWithOwner,
+      )
+    : null;
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
       ? null

@@ -80,7 +80,7 @@ export function ThreadRouteView() {
   const canonicalThreadRef = draftId
     ? resolveDraftPromotionNavigationTarget({
         serverThreadRef: draftServerThreadRef,
-        serverThreadStarted: threadHasStarted(serverThreadShell),
+        serverThread: serverThreadShell,
         backgroundSubmissionPending,
       })
     : null;
