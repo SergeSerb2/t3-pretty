@@ -51,13 +51,34 @@ describe("server bundle smoke", () => {
     );
   });
 
+  it("retries a child that loses the loopback bind race", async () => {
+    await withFixture(
+      `
+        import * as fs from "node:fs";
+        import * as path from "node:path";
+        fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
+        console.error("listen EADDRINUSE");
+        process.exitCode = 1;
+      `,
+      async ({ entryPath, cwd }) => {
+        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
+          /EADDRINUSE/u,
+        );
+        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+          .trim()
+          .split("\n");
+        assert.lengthOf(attempts, 3);
+      },
+    );
+  });
+
   it("times out and stops a bundle that never becomes ready", async () => {
     await withFixture(
       `
         setInterval(() => {}, 1_000);
       `,
       async ({ entryPath, cwd }) => {
-        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 150 })).rejects.toThrow(
+        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 500 })).rejects.toThrow(
           /did not become ready/u,
         );
       },

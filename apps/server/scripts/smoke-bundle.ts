@@ -14,6 +14,7 @@ const OUTPUT_LIMIT = 64 * 1024;
 const POLL_INTERVAL_MS = 100;
 const REQUEST_TIMEOUT_MS = 1_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
+const MAX_BIND_ATTEMPTS = 3;
 
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => {
@@ -78,15 +79,12 @@ const readEnvironmentDescriptor = async (url: string, timeoutMs: number): Promis
   );
 };
 
-export async function smokeServerBundle(input: {
+const smokeServerBundleAttempt = async (input: {
   readonly entryPath: string;
   readonly cwd: string;
+  readonly baseDir: string;
   readonly timeoutMs: number;
-}): Promise<void> {
-  const entryPath = NodePath.resolve(input.entryPath);
-  const cwd = NodePath.resolve(input.cwd);
-  await NodeFS.access(entryPath);
-  const baseDir = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-"));
+}) => {
   const port = await reserveLoopbackPort();
   const readinessUrl = `http://127.0.0.1:${String(port)}/.well-known/t3/environment`;
   const childEnvironment: NodeJS.ProcessEnv = { ...NodeProcess.env, NODE_PATH: "" };
@@ -109,18 +107,18 @@ export async function smokeServerBundle(input: {
     NodeProcess.execPath,
     [
       "--no-global-search-paths",
-      entryPath,
+      input.entryPath,
       "serve",
       "--host",
       "127.0.0.1",
       "--port",
       String(port),
       "--base-dir",
-      baseDir,
+      input.baseDir,
       "--no-browser",
     ],
     {
-      cwd,
+      cwd: input.cwd,
       env: childEnvironment,
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -166,6 +164,31 @@ export async function smokeServerBundle(input: {
     );
   } finally {
     await stopChild(child, exited);
+  }
+};
+
+export async function smokeServerBundle(input: {
+  readonly entryPath: string;
+  readonly cwd: string;
+  readonly timeoutMs: number;
+}): Promise<void> {
+  const entryPath = NodePath.resolve(input.entryPath);
+  const cwd = NodePath.resolve(input.cwd);
+  await NodeFS.access(entryPath);
+  const baseDir = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-"));
+
+  try {
+    for (let attempt = 1; attempt <= MAX_BIND_ATTEMPTS; attempt += 1) {
+      try {
+        await smokeServerBundleAttempt({ ...input, entryPath, cwd, baseDir });
+        return;
+      } catch (error) {
+        if (attempt === MAX_BIND_ATTEMPTS || !String(error).includes("EADDRINUSE")) {
+          throw error;
+        }
+      }
+    }
+  } finally {
     await NodeFS.rm(baseDir, { recursive: true, force: true });
   }
 }
