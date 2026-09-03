@@ -422,6 +422,24 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
+  it("defers Windows for upstream-sync webhooks but keeps ordinary main releases", () => {
+    const windowsStep = pipeline.slice(
+      pipeline.indexOf(":windows: Windows NSIS"),
+      pipeline.indexOf(":linux: Linux x64 AppImage"),
+    );
+    const upstreamSyncCommitPattern = /^chore\(sync\): /u;
+
+    assert.include(windowsStep, 'build.branch == "main" && build.source != "schedule"');
+    assert.include(
+      windowsStep,
+      '!(build.source == "webhook" && build.message =~ /^chore\\(sync\\): /)',
+    );
+    assert.isTrue(
+      upstreamSyncCommitPattern.test("chore(sync): merge upstream v0.0.39-nightly.20260903.1267"),
+    );
+    assert.isFalse(upstreamSyncCommitPattern.test("fix(server): restore deferred projection"));
+  });
+
   it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {
     const windows = NodeFS.readFileSync(NodePath.resolve(here, "build-windows-nsis.ps1"), "utf8");
     const windowsAgent = NodeFS.readFileSync(

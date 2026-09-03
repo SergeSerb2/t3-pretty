@@ -170,7 +170,12 @@ steps:
     # not cancel the Windows agent job while it is still waiting.
     # Scheduled builds exist only to run upstream sync. Do not rebuild NSIS
     # every four hours when main has not changed.
-    if: build.branch == "main" && build.source != "schedule"
+    # The sync merge's webhook releases the other updated surfaces, but leave
+    # Windows deferred until a later ordinary main build while its release work
+    # is intentionally paused. API/UI builds can still release the same commit.
+    if: >-
+      build.branch == "main" && build.source != "schedule" &&
+      !(build.source == "webhook" && build.message =~ /^chore\(sync\): /)
     timeout_in_minutes: 90
     agents:
       queue: windows-release
