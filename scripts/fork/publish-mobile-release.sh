@@ -285,15 +285,18 @@ eas_json_bak=""
 cleanup() {
   local status=$?
   local cleanup_failed=0
+  local preserve_tmp=0
   trap - EXIT
   set +e
   if [[ -n "${eas_json_bak:-}" && -f "$eas_json_bak" ]]; then
     if ! cp "$eas_json_bak" "$eas_json"; then
-      echo "Could not restore $eas_json from its release backup." >&2
+      echo "Could not restore $eas_json; preserving its backup at $eas_json_bak" \
+        "and release temporary directory at $tmp." >&2
       cleanup_failed=1
+      preserve_tmp=1
     fi
   fi
-  if [[ -n "${tmp:-}" ]]; then
+  if [[ -n "${tmp:-}" && "$preserve_tmp" == "0" ]]; then
     if ! rm -rf -- "$tmp"; then
       echo "Could not remove iOS release temporary files at $tmp." >&2
       cleanup_failed=1

@@ -624,7 +624,7 @@ describe("iOS embedded runtime fingerprint", () => {
     }
   });
 
-  it("releases the signing lock even when restoring eas.json fails", () => {
+  it("preserves the backup and releases the signing lock when restoring eas.json fails", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-cleanup-fail-"));
     const tmp = NodePath.join(root, "release-tmp");
     const easJson = NodePath.join(root, "eas.json");
@@ -653,7 +653,7 @@ describe("iOS embedded runtime fingerprint", () => {
             'cp "$eas_json" "$tmp/eas.json.bak"',
             'eas_json_bak="$tmp/eas.json.bak"',
             'printf \'{"mutated":true}\\n\' > "$eas_json"',
-            "exit 42",
+            "exit 0",
           ].join("\n"),
           "eas-json-cleanup-failure",
           easJson,
@@ -662,9 +662,16 @@ describe("iOS embedded runtime fingerprint", () => {
         ],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
-      assert.equal(result.status, 42);
+      assert.equal(result.status, 1, "restore failure must upgrade a successful exit");
       assert.include(result.stderr, "Could not restore");
-      assert.isFalse(NodeFS.existsSync(tmp));
+      assert.include(result.stderr, NodePath.join(tmp, "eas.json.bak"));
+      assert.include(result.stderr, tmp);
+      assert.isTrue(NodeFS.existsSync(tmp));
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(tmp, "eas.json.bak"), "utf8"),
+        '{"original":true}\n',
+      );
+      assert.equal(NodeFS.readFileSync(easJson, "utf8"), '{"mutated":true}\n');
       assert.equal(NodeFS.readFileSync(lockLog, "utf8"), "released\n");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
