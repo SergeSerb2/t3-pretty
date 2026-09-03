@@ -2089,8 +2089,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
         }
 
-        // A later event in the outer command transaction can add attachment
-        // references after this projector ran. Re-read them only after commit.
+        // The engine accumulates every event's returned cleanup and runs none
+        // until the transaction containing all planned events and the command
+        // receipt commits. Re-read attachment references at that point so a
+        // later event from the same command is included in this keep-set.
         // runAttachmentSideEffects treats each map value as a keep-set and
         // removes the other on-disk entries for that thread.
         const retainedThreadRelativePaths = new Map<string, Set<string>>();
@@ -2114,6 +2116,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       Effect.provideService(ServerConfig, serverConfig),
       (effect, _attachmentSideEffects, event) =>
         effect.pipe(
+          // Cleanup runs after the command receipt is committed and therefore
+          // cannot roll the command back. Keep it best-effort: a repository
+          // read failure happens before runAttachmentSideEffects and retains
+          // every file rather than risking deletion or reporting an accepted
+          // command as failed.
           Effect.catch((cause) =>
             Effect.logWarning("failed to apply projected attachment side-effects", {
               sequence: event.sequence,
@@ -2248,6 +2255,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = Effect.fn(
       "projectEvent",
     )(function* (event) {
+      // Standalone single-event path (bootstrap/tests). Live commands use
+      // projectEventDeferred so the engine can batch all cleanups until its
+      // outer transaction and command receipt have committed.
       const cleanup = yield* projectEventDeferred(event);
       yield* cleanup;
     });
