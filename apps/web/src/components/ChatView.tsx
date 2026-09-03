@@ -2572,8 +2572,10 @@ function ChatViewContent(props: ChatViewProps) {
                   dismissServerUpdateFailure(serverUpdateState);
                   setDismissedServerUpdateState(serverUpdateState);
                 }
-                dismissVersionMismatch(versionMismatchDismissKey);
-                setDismissedVersionMismatchKey(versionMismatchDismissKey);
+                if (versionMismatchDismissKey) {
+                  dismissVersionMismatch(versionMismatchDismissKey);
+                  setDismissedVersionMismatchKey(versionMismatchDismissKey);
+                }
               },
             }),
       });
