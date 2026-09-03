@@ -87,7 +87,11 @@ describe("buildThreadActionMenuItems", () => {
       label: "Project settings",
       icon: "settings",
     });
-    expect(items[copyIndex + 2]?.id).toBe("archive");
+    expect(items[copyIndex + 2]).toMatchObject({
+      id: "sep-before-danger",
+      separator: true,
+    });
+    expect(items[copyIndex + 3]?.id).toBe("archive");
   });
 
   it("offers transfer only when the environment supports it", () => {

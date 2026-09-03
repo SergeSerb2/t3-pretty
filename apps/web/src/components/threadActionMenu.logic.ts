@@ -193,5 +193,5 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  return joinGroups([lifecycle, edit, [copy, projectSettings, ...danger]]);
+  return joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
 }

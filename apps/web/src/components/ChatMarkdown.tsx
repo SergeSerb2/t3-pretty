@@ -1231,7 +1231,6 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly copyMarkdown?: string;
   readonly srcFragment?: string;
   readonly style?: CSSProperties | undefined;
-  readonly workspaceRoot?: string | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
@@ -2415,7 +2414,6 @@ function ChatMarkdown({
               copyMarkdown={copyMarkdown}
               srcFragment={markdownImageSourceFragment(classifiedSrc)}
               style={authoredSizeStyle}
-              workspaceRoot={cwd}
               onImageExpand={onImageExpand}
             />
           );
