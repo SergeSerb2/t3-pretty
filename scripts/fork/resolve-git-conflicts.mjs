@@ -1004,8 +1004,9 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   // The proxy intermittently 502s when a single xhigh call reasons for very
   // long, and one gateway blip otherwise aborts the whole sync (seen
   // 2026-08-14 on nightly 1089). Retry transient failures — network errors,
-  // 429, 5xx, and incomplete responses — dropping to high effort on the last
-  // attempt so one pathological long-think cannot sink the run. Model
+  // 429, 5xx, and incomplete responses — stepping down from xhigh to high
+  // and then medium so the same pathological long-think cannot burn three
+  // five-minute gateway timeouts. Model
   // declines (safe=false on a completed response) never retry.
   const maxAttempts = 3;
   let apiResponse;
@@ -1016,7 +1017,7 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
         "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
       );
     }
-    const effort = attempt < maxAttempts ? REASONING_EFFORT : "high";
+    const effort = attempt === 1 ? REASONING_EFFORT : attempt === 2 ? "high" : "medium";
     let response;
     let raw = "";
     try {

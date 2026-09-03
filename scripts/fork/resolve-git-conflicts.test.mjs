@@ -750,10 +750,13 @@ ${">".repeat(7)} theirs
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
     // Network errors, 408, 429, 5xx, and unparseable/incomplete responses
-    // retry; the last attempt drops to high effort so one long-think cannot
-    // 502.
+    // retry; retries step down to high and then medium so one long-think
+    // cannot burn the same five-minute gateway timeout three times.
     assert.include(resolver, "const maxAttempts = 3");
-    assert.include(resolver, 'attempt < maxAttempts ? REASONING_EFFORT : "high"');
+    assert.include(
+      resolver,
+      'attempt === 1 ? REASONING_EFFORT : attempt === 2 ? "high" : "medium"',
+    );
     assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
     assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
     assert.include(resolver, "did not produce a completed response");
