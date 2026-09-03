@@ -2091,18 +2091,23 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
         // A later event in the outer command transaction can add attachment
         // references after this projector ran. Re-read them only after commit.
-        const prunedThreadRelativePaths = new Map<string, Set<string>>();
+        // runAttachmentSideEffects treats each map value as a keep-set and
+        // removes the other on-disk entries for that thread.
+        const retainedThreadRelativePaths = new Map<string, Set<string>>();
         for (const threadId of attachmentSideEffects.prunedThreadRelativePaths.keys()) {
           const messages = yield* projectionThreadMessageRepository.listByThreadId({
             threadId: ThreadId.make(threadId),
           });
-          prunedThreadRelativePaths.set(
+          retainedThreadRelativePaths.set(
             threadId,
             collectThreadAttachmentRelativePaths(threadId, messages),
           );
         }
 
-        yield* runAttachmentSideEffects({ deletedThreadIds, prunedThreadRelativePaths });
+        yield* runAttachmentSideEffects({
+          deletedThreadIds,
+          prunedThreadRelativePaths: retainedThreadRelativePaths,
+        });
       },
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
