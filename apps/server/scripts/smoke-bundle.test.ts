@@ -84,7 +84,7 @@ describe("server bundle smoke", () => {
       `,
       async ({ entryPath, cwd }) => {
         await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
-          /EADDRINUSE/u,
+          /exited before readiness[\s\S]*configuration note mentions EADDRINUSE/u,
         );
         const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
           .trim()
