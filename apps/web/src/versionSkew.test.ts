@@ -195,7 +195,7 @@ describe("versionSkew", () => {
 
   it("copies a fork CLI tarball command, not npm t3", () => {
     expect(manualServerUpdateCommand("0.0.34")).toBe(
-      "npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.34.tgz t3",
+      "npx --yes --package https://github.com/SergeSerb2/t3-pretty/releases/download/public-v0.0.34/t3-0.0.34.tgz t3",
     );
   });
 

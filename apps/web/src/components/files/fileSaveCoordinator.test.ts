@@ -87,6 +87,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange: vi.fn(),
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.change("unsaved");
@@ -109,6 +110,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange: vi.fn(),
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.change("first");
@@ -134,6 +136,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange: vi.fn(),
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.change("only");
@@ -156,6 +159,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange: vi.fn(),
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.change("latest");
@@ -260,6 +264,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange,
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.dispose();
@@ -280,6 +285,7 @@ describe("FileSaveCoordinator", () => {
       persist,
       onPendingChange: vi.fn(),
       onConfirmed: vi.fn(),
+      onError: vi.fn(),
     });
 
     coordinator.change("temporary edit");

@@ -43,6 +43,7 @@ describe("buildThreadActionMenuItems", () => {
       "regenerate-title",
       "mark-unread",
       "copy",
+      "project-settings",
       "archive",
       "delete",
     ]);
@@ -57,6 +58,7 @@ describe("buildThreadActionMenuItems", () => {
       "regenerate-title",
       "mark-unread",
       "copy",
+      "project-settings",
       "archive",
       "delete",
     ]);

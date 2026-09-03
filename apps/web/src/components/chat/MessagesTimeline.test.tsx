@@ -995,7 +995,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Copy link"');
+    expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-footer="true"');
   });
@@ -1178,7 +1178,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("+2 previous log entries");
+    expect(markup).toContain("Ran 2 commands and received 1 update");
     expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
   });
 
@@ -1354,7 +1354,22 @@ describe("MessagesTimeline", () => {
 
     expect(markup).not.toContain("Working for");
     expect(markup).toContain("Thinking");
-    expect(markup).toContain("gap-1.5 py-0.5 px-1");
+    expect(markup).toContain("gap-1.5 py-0.5 px-0.5");
+  });
+
+  it("keeps the setup status while preparing an empty worktree", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        isPreparingWorktree
+        activeTurnStartedAt={MESSAGE_CREATED_AT}
+        timelineEntries={[]}
+      />,
+    );
+
+    expect(markup).toContain("Setting up worktree…");
+    expect(markup).not.toContain(">Thinking<");
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {
@@ -1434,7 +1449,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-testid="file-diff"');
   });
 
-  it("renders a muted failure marker for failed tool lifecycle entries", () => {
+  it("keeps mixed failure summaries muted and accessible", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1467,9 +1482,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-x");
-    expect(markup).toContain('aria-label="Tool call failed"');
-    // Ordinary tool failures render muted, not red.
+    expect(markup).toContain("Received 1 update and used 1 tool");
+    expect(markup).toContain("tool call failed");
+    // Ordinary tool failures remain discoverable without destructive styling.
     expect(markup).not.toContain("text-destructive");
   });
 

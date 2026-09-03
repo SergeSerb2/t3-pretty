@@ -114,6 +114,8 @@ export const ServerProviderModel = Schema.Struct({
   name: ServerProviderLabel,
   shortName: Schema.optional(ServerProviderLabel),
   subProvider: Schema.optional(ServerProviderLabel),
+  aliases: Schema.optional(Schema.Array(ServerProviderLabel)),
+  badge: Schema.optional(Schema.Literal("new")),
   isCustom: Schema.Boolean,
   isDefault: Schema.optional(Schema.Boolean),
   isLegacy: Schema.optional(Schema.Boolean),

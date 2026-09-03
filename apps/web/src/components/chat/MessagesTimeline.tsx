@@ -62,6 +62,7 @@ import { AnimatedHeight } from "../AnimatedHeight";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
 import {
   BotIcon,
+  BrainIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleAlertIcon,
@@ -495,6 +496,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         expandedTurnIds,
         expandedWorkGroupIds,
         isWorking,
+        isPreparingWorktree,
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
@@ -506,6 +508,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedTurnIds,
       expandedWorkGroupIds,
       isWorking,
+      isPreparingWorktree,
       activeTurnStartedAt,
       turnDiffSummaryByAssistantMessageId,
       revertTurnCountByUserMessageId,
@@ -1027,7 +1030,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   const isExpandedToolGroupEntry = row.kind === "work" && row.isExpandedToolGroupEntry;
   const isLastExpandedToolGroupEntry = row.kind === "work" && row.isLastExpandedToolGroupEntry;
   const isExpandedToolGroupHeader =
-    (row.kind === "work-toggle" && row.summary !== null && row.onlyToolEntries && row.expanded) ||
+    (row.kind === "work-toggle" && row.summary !== null && row.expanded) ||
     (row.kind === "work-live" && row.expanded);
 
   return (
@@ -1074,7 +1077,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
-      {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
+      {row.kind === "working" ? <WorkingTimelineRow /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
     </div>
   );
@@ -1553,28 +1556,13 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
   );
 });
 
-function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isPreparingWorktree } = use(TimelineRowActivityCtx);
-
+function WorkingTimelineRow() {
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
-        <span
-          key={isPreparingWorktree ? "setup" : "working"}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
-        >
-          {isPreparingWorktree ? (
-            <>
-              Setting up worktree…
-              <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
-            </>
-          ) : row.createdAt ? (
-            <>
-              Working for <WorkingTimer createdAt={row.createdAt} />
-            </>
-          ) : (
-            "Working..."
-          )}
+        <span className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none">
+          Setting up worktree…
+          <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
         </span>
       </div>
     </div>
@@ -1584,11 +1572,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
 function ThinkingTimelineRow() {
   const { isPreparingWorktree } = use(TimelineRowActivityCtx);
   // Reserve the activity row during setup so the handoff keeps the same height.
-  return (
-    <div className="min-h-7">
-      {isPreparingWorktree ? null : <ThinkingActivityRow />}
-    </div>
-  );
+  return <div className="min-h-7">{isPreparingWorktree ? null : <ThinkingActivityRow />}</div>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1680,7 +1664,7 @@ function LiveActivityRow({
 
 function ThinkingActivityRow() {
   const activity = use(TimelineRowActivityCtx);
-  return <LiveActivityRow label={activity.liveHeadline ?? "Thinking"} />;
+  return <LiveActivityRow label={activity.liveHeadline ?? "Thinking"} iconName="brain" />;
 }
 
 function LiveActivityContent({
@@ -1781,6 +1765,7 @@ function toolGroupSummaryIconName(
       return "bot";
     case "tone-tool":
       return "zap";
+    case "update":
     case "mixed":
     case null:
       return "hammer";
@@ -1793,7 +1778,7 @@ function WorkGroupToggleTimelineRow({
   row: Extract<TimelineRow, { kind: "work-toggle" }>;
 }) {
   const ctx = use(TimelineRowCtx);
-  if (row.onlyToolEntries && row.summary) {
+  if (row.summary) {
     return (
       <button
         type="button"
@@ -2024,7 +2009,7 @@ function UserMessagePreviewAnnotationCard(props: {
 
 function UserMessageCanvasSelectionCard(props: {
   selection: ParsedCanvasSelection;
-  image: NonNullable<TimelineMessage["attachments"]>[number] | null;
+  image: ChatImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (
@@ -2414,6 +2399,7 @@ function useStableRows(rows: MessagesTimelineRow[]): MessagesTimelineRow[] {
 
 type WorkEntryIconName =
   | "bot"
+  | "brain"
   | "check"
   | "circle-alert"
   | "eye"
@@ -2434,6 +2420,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
   switch (name) {
     case "bot":
       return <BotIcon className={className} aria-hidden />;
+    case "brain":
+      return <BrainIcon className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
@@ -2479,7 +2467,7 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   }
   if (tone === "thinking") {
     return {
-      iconName: "bot",
+      iconName: "brain",
       className: "text-foreground",
     };
   }
@@ -3040,7 +3028,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                   />
                 }
               >
-                <XIcon className="block size-3 shrink-0 text-destructive" aria-hidden />
+                <XIcon className="block size-3 shrink-0" aria-hidden />
               </TooltipTrigger>
               <TooltipPopup>Failed</TooltipPopup>
             </Tooltip>
@@ -3075,6 +3063,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                     alt={viewedImage.alt}
                     srcFragment={viewedImage.srcFragment}
                     style={{ maxHeight: "16rem" }}
+                    workspaceRoot={ctx.workspaceRoot ?? undefined}
                     onImageExpand={ctx.onImageExpand}
                   />
                 </div>

@@ -128,10 +128,9 @@ function clientMetadata() {
     },
     desktopBridge: window.desktopBridge,
   });
-  return {
-    ...metadata,
-    label: metadata.label.replace("T3 Code", "T3 Pretty"),
-  };
+  return metadata.label === undefined
+    ? metadata
+    : { ...metadata, label: metadata.label.replace("T3 Code", "T3 Pretty") };
 }
 
 function sshPreparationError(cause: unknown) {

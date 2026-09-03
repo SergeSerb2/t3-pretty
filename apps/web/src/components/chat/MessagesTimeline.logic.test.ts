@@ -882,8 +882,7 @@ describe("deriveMessagesTimelineRows", () => {
       "turn-fold:turn-1",
       "assistant-final-entry",
       "user-followup-entry",
-      "working-indicator-row",
-      "thinking-indicator-row",
+      "live-activity-row",
     ]);
     const finalRow = rows.find((row) => row.id === "assistant-final-entry");
     expect(finalRow?.kind === "message" && finalRow.showAssistantMeta).toBe(true);
@@ -933,10 +932,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
 
     expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
-    expect(rows.map((row) => row.id)).toEqual([
-      "assistant-thought-entry",
-      "work-live:work-entry-1",
-    ]);
+    expect(rows.map((row) => row.id)).toEqual(["assistant-thought-entry", "live-activity-row"]);
   });
 
   it("keeps adjacent active tool calls in one replacing row", () => {
@@ -1252,7 +1248,7 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
-  it("shows thinking after the latest tool call completes while the turn is running", () => {
+  it("keeps the latest completed tool in the shared activity row", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1285,7 +1281,8 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(rows.map((row) => row.kind)).toEqual(["work-live"]);
     expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
-      active: false,
+      id: "live-activity-row",
+      active: true,
       entry: { id: "latest-command" },
       groupedEntries: [{ id: "latest-command" }],
     });
@@ -1349,7 +1346,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(rows.filter((row) => row.kind === "turn-fold").map((row) => row.turnId)).toEqual([
       "turn-1",
     ]);
-    expect(rows.map((row) => row.id)).toContain("work-live:running-work-entry");
+    expect(rows.map((row) => row.id)).toContain("live-activity-row");
   });
 
   it("only shows assistant metadata on the terminal assistant message", () => {
@@ -1646,8 +1643,8 @@ describe("computeStableMessagesTimelineRows", () => {
       initial,
     );
 
-    const initialThinking = initial.byId.get("thinking-indicator-row");
-    const updatedThinking = updated.byId.get("thinking-indicator-row");
+    const initialThinking = initial.byId.get("live-activity-row");
+    const updatedThinking = updated.byId.get("live-activity-row");
     expect(initialThinking).toMatchObject({ kind: "thinking" });
     expect(updatedThinking).toBe(initialThinking);
     expect(updated.result.at(-1)).toBe(updatedThinking);

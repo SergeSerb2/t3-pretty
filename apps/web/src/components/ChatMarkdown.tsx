@@ -3,15 +3,23 @@ import {
   CheckIcon,
   ChevronRightIcon,
   CopyIcon,
+  FileSpreadsheetIcon,
+  FileTextIcon,
   GlobeIcon,
+  ImageIcon,
   InfoIcon,
   LightbulbIcon,
+  MailIcon,
   Maximize2Icon,
+  MessageSquareIcon,
   MessageSquareWarningIcon,
   Minimize2Icon,
   OctagonAlertIcon,
+  PresentationIcon,
+  SparklesIcon,
   TriangleAlertIcon,
   WrapTextIcon,
+  type LucideIcon,
 } from "lucide-react";
 import type {
   AssetResource,
@@ -25,6 +33,17 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import {
+  codexArtifactTemplatePresentationLabel,
+  type CodexArtifactTemplate,
+  type CodexArtifactTemplateKind,
+} from "@t3tools/client-runtime/codex-artifact-templates";
+import {
+  artifactTemplateFromHastProperties,
+  CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES,
+  remarkCodexDirectives,
+  renderCodexFileCitationsAsMarkdown,
+} from "@t3tools/client-runtime/codex-markdown-directives";
 import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
@@ -163,6 +182,8 @@ interface ChatMarkdownProps {
   lineBreaks?: boolean;
   /** Parse sanitized raw HTML instead of displaying its source text. */
   parseRawHtml?: boolean;
+  /** Append a prompt that invokes a newly created artifact-template skill. */
+  onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   imageBaseDir?: string | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 }
@@ -198,6 +219,64 @@ export function shouldUseMarkdownFileBrowserPrimaryAction(input: {
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
+
+const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
+  document: FileTextIcon,
+  presentation: PresentationIcon,
+  spreadsheet: FileSpreadsheetIcon,
+  site: GlobeIcon,
+  "google-docs": FileTextIcon,
+  "google-slides": PresentationIcon,
+  "google-sheets": FileSpreadsheetIcon,
+  image: ImageIcon,
+  email: MailIcon,
+  slack: MessageSquareIcon,
+} satisfies Record<CodexArtifactTemplateKind, LucideIcon>;
+
+function CodexArtifactTemplateCard(props: {
+  readonly template: CodexArtifactTemplate;
+  readonly onUse?: ((template: CodexArtifactTemplate) => void) | undefined;
+}) {
+  const Icon = ARTIFACT_TEMPLATE_ICON_BY_KIND[props.template.artifactKind];
+  const presentationLabel = codexArtifactTemplatePresentationLabel(props.template.artifactKind);
+
+  return (
+    <div
+      role="group"
+      aria-label={`${props.template.displayName} template`}
+      className="chat-markdown-artifact-template my-[0.65rem] flex w-full min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card/60 px-3 py-2.5 text-foreground shadow-xs"
+      data-artifact-kind={props.template.artifactKind}
+      data-markdown-copy={`${props.template.displayName} (${presentationLabel})\n\n`}
+      data-skill-name={props.template.skillName}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="relative flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted-foreground shadow-xs">
+          <Icon aria-hidden className="size-5" />
+          <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border border-background bg-fuchsia-500 text-white shadow-xs">
+            <SparklesIcon aria-hidden className="size-2.5" />
+          </span>
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-foreground">
+            {props.template.displayName}
+          </span>
+          <span className="block text-xs text-muted-foreground">{presentationLabel}</span>
+        </span>
+      </div>
+      {props.onUse ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={() => props.onUse?.(props.template)}
+        >
+          Use template
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
@@ -286,6 +365,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
+    div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     img: [...(defaultSchema.attributes?.img ?? []), "dataLocalSrc", "dataMarkdownTitle"],
   },
   protocols: {
@@ -299,6 +379,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGfm,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
+  remarkCodexDirectives,
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
@@ -307,6 +388,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
   remarkGfm,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
+  remarkCodexDirectives,
   remarkBreaks,
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
@@ -1141,11 +1223,16 @@ function ChatMarkdownImageFallback(props: {
 /** Environment-hosted images load through a signed asset URL. */
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
-  readonly resource: Extract<AssetResource, { readonly _tag: "attachment" | "workspace-file" }>;
+  readonly resource: Extract<
+    AssetResource,
+    { readonly _tag: "attachment" | "workspace-file" | "media-file" }
+  >;
   readonly alt: string;
   readonly copyMarkdown?: string;
   readonly srcFragment?: string;
   readonly style?: CSSProperties | undefined;
+  readonly workspaceRoot?: string | undefined;
+  readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
@@ -1174,10 +1261,18 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       alt={props.alt}
       data-markdown-copy={props.copyMarkdown}
       loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
       draggable={false}
       className={CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME}
       style={props.style}
       onError={() => setFailedUrl(assetUrl.url)}
+      onClick={() =>
+        props.onImageExpand?.({
+          images: [{ src: assetUrl.url + (props.srcFragment ?? ""), name: props.alt || "image" }],
+          index: 0,
+        })
+      }
     />
   );
 });
@@ -1710,6 +1805,7 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
   parseRawHtml = true,
+  onUseArtifactTemplate,
   imageBaseDir,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
@@ -1780,7 +1876,9 @@ function ChatMarkdown({
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText } = useMemo(() => {
-    const candidates = extractMarkdownFileLinkCandidates(renderedText);
+    const candidates = extractMarkdownFileLinkCandidates(
+      renderCodexFileCitationsAsMarkdown(renderedText),
+    );
     const metaByHref = new Map<
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
@@ -1930,12 +2028,13 @@ function ChatMarkdown({
       return openFileInPreview({
         threadRef,
         filePath: path,
+        workspaceRoot: cwd,
         httpBaseUrl: preparedConnection.value.httpBaseUrl,
         createAssetUrl,
         openPreview,
       });
     },
-    [createAssetUrl, openPreview, preparedConnection, threadRef],
+    [createAssetUrl, cwd, openPreview, preparedConnection, threadRef],
   );
   const findWorkspaceBasenameMatch = useCallback(
     async (workspaceRelativePath: string) => {
@@ -2046,6 +2145,15 @@ function ChatMarkdown({
     };
 
     return {
+      div({ node, children, ...props }) {
+        const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
+        if (artifactTemplate) {
+          return (
+            <CodexArtifactTemplateCard template={artifactTemplate} onUse={onUseArtifactTemplate} />
+          );
+        }
+        return <div {...props}>{children}</div>;
+      },
       p({ node: _node, children, ...props }) {
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
@@ -2287,6 +2395,8 @@ function ChatMarkdown({
               src={imageSource.uri}
               alt={altText}
               loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
               className={cn(props.className, CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME)}
               style={authoredSizeStyle}
             />
@@ -2297,7 +2407,7 @@ function ChatMarkdown({
             <ChatMarkdownAssetImage
               environmentId={threadRef.environmentId}
               resource={{
-                _tag: "workspace-file",
+                _tag: "media-file",
                 threadId: threadRef.threadId,
                 path: imageSource.path,
               }}
@@ -2305,6 +2415,8 @@ function ChatMarkdown({
               copyMarkdown={copyMarkdown}
               srcFragment={markdownImageSourceFragment(classifiedSrc)}
               style={authoredSizeStyle}
+              workspaceRoot={cwd}
+              onImageExpand={onImageExpand}
             />
           );
         }
@@ -2362,6 +2474,7 @@ function ChatMarkdown({
     inlineCodeFileLinkMetaByText,
     imageBaseDir,
     isStreaming,
+    onUseArtifactTemplate,
     onImageExpand,
     navigateToMarkdownFragment,
     onTaskListChange,

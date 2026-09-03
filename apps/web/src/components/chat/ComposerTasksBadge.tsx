@@ -1,8 +1,9 @@
-import { ListTodoIcon } from "lucide-react";
+import { ListTodoIcon, XIcon } from "lucide-react";
 import { memo, type ComponentProps } from "react";
 
 import { formatDuration } from "../../session-logic";
 import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
 import { ComposerBanner } from "./ComposerBanner";
 
 export interface ComposerTasksProgress {
@@ -95,12 +96,16 @@ function TaskSummary({
 
 export const ComposerTasksBadge = memo(function ComposerTasksBadge({
   expanded,
+  hasTrailingShoulder = false,
+  onDismiss,
   onToggle,
   placement = "tab",
   progress,
   steps,
 }: {
   readonly expanded: boolean;
+  readonly hasTrailingShoulder?: boolean;
+  readonly onDismiss?: (() => void) | undefined;
   readonly onToggle: () => void;
   readonly placement?: "inline" | "tab";
   readonly progress: ComposerTasksProgress;
@@ -120,22 +125,45 @@ export const ComposerTasksBadge = memo(function ComposerTasksBadge({
       <TaskSummary expanded={expanded} progress={progress} steps={steps} />
     </ComposerBanner.Row>
   );
-  return placement === "inline" ? (
-    row
-  ) : (
-    <ComposerBanner.Root density="comfortable" data-composer-shoulder-tab>
+  const badge = onDismiss ? (
+    <span className="inline-flex min-w-0 flex-1 items-center gap-0.5">
       {row}
+      <Button
+        size="icon-micro"
+        variant="ghost-muted"
+        aria-label="Dismiss tasks for this turn"
+        className="shrink-0"
+        onClick={onDismiss}
+        onPointerDown={(event) => event.preventDefault()}
+      >
+        <XIcon aria-hidden className="size-2.5" />
+      </Button>
+    </span>
+  ) : (
+    row
+  );
+  return placement === "inline" ? (
+    badge
+  ) : (
+    <ComposerBanner.Root
+      density="comfortable"
+      data-composer-shoulder-tab
+      data-composer-trailing-shoulder={hasTrailingShoulder || undefined}
+    >
+      {badge}
     </ComposerBanner.Root>
   );
 });
 
 export const ComposerTasksContent = memo(function ComposerTasksContent({
   expanded,
+  onDismiss,
   onToggle,
   progress,
   steps,
 }: {
   readonly expanded: boolean;
+  readonly onDismiss?: (() => void) | undefined;
   readonly onToggle: () => void;
   readonly progress: ComposerTasksProgress;
   readonly steps: readonly ComposerTaskStep[];
@@ -147,6 +175,7 @@ export const ComposerTasksContent = memo(function ComposerTasksContent({
     >
       <ComposerTasksBadge
         expanded={expanded}
+        onDismiss={onDismiss}
         onToggle={onToggle}
         placement="inline"
         progress={progress}

@@ -20,6 +20,8 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   canSettle,
   canSnooze,
+  changeRequestAutoSettles,
+  effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
@@ -503,6 +505,7 @@ function SortablePinnedThreadRow(props: {
 const EMPTY_SIDEBAR_DRAFT_COMPOSER: ComposerThreadDraftState = {
   prompt: "",
   images: [],
+  files: [],
   nonPersistedImageIds: [],
   persistedAttachments: [],
   terminalContexts: [],
@@ -2193,6 +2196,7 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
+    const now = `${nowMinute}:00.000Z`;
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];

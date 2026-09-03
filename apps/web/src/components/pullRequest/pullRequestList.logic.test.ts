@@ -5,6 +5,7 @@ import {
   filterPullRequestsByInvolvement,
   findScopedProject,
   mergePullRequestLists,
+  pullRequestDiffStatKey,
   pullRequestEntryKey,
   pullRequestEnvironmentSetKey,
   groupPullRequestsByInvolvement,
@@ -68,15 +69,19 @@ describe("visible pull request line-count targets", () => {
     const entriesByKey = new Map(entries.map((item) => [pullRequestEntryKey(item), item]));
     const firstKey = pullRequestEntryKey(entries[0]!);
     const secondKey = pullRequestEntryKey(entries[1]!);
-    const completedStats = mergePullRequestDiffStats(new Map(), [
-      {
-        environmentId: ENV_1,
-        projectId: "project-1",
-        number: 1,
-        additions: 1,
-        deletions: 1,
-      },
-    ]);
+    const completedStats = mergePullRequestDiffStats(
+      new Map(),
+      [
+        {
+          environmentId: ENV_1,
+          projectId: "project-1",
+          number: 1,
+          additions: 1,
+          deletions: 1,
+        },
+      ],
+      new Set(entries.map(pullRequestDiffStatKey)),
+    );
 
     const keys = pullRequestStatsKeysToRequest(
       entriesByKey,
@@ -125,15 +130,19 @@ describe("visible pull request line-count targets", () => {
     ];
     const entriesByKey = new Map(entries.map((item) => [pullRequestEntryKey(item), item]));
     const [firstKey, secondKey] = entries.map(pullRequestEntryKey);
-    const cachedStats = mergePullRequestDiffStats(new Map(), [
-      {
-        environmentId: ENV_1,
-        projectId: "project-1",
-        number: 1,
-        additions: 1,
-        deletions: 1,
-      },
-    ]);
+    const cachedStats = mergePullRequestDiffStats(
+      new Map(),
+      [
+        {
+          environmentId: ENV_1,
+          projectId: "project-1",
+          number: 1,
+          additions: 1,
+          deletions: 1,
+        },
+      ],
+      new Set(entries.map(pullRequestDiffStatKey)),
+    );
 
     const visible = pullRequestStatsRequestBatches({
       entriesByKey,
@@ -168,6 +177,7 @@ describe("visible pull request line-count targets", () => {
         additions: item.additions,
         deletions: item.deletions,
       })),
+      new Set(entries.map(pullRequestDiffStatKey)),
     );
 
     const visible = pullRequestStatsRequestBatches({
@@ -240,6 +250,7 @@ describe("visible pull request line-count targets", () => {
         additions: item.additions,
         deletions: item.deletions,
       })),
+      new Set(entries.map(pullRequestDiffStatKey)),
     );
     expect(
       pullRequestStatsRequestBatches({
