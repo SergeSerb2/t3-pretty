@@ -128,7 +128,7 @@ checkpoint_resolutions() {
   shopt -s nullglob
   local entries=("$SYNC_RESOLUTION_CACHE_DIR"/*.json)
   if (( ${#entries[@]} == 0 )); then
-    echo "No completed resolutions to checkpoint."
+    echo "No resolution progress to checkpoint."
     return 0
   fi
   origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null || true
@@ -160,7 +160,7 @@ checkpoint_resolutions() {
   # No retry here: this also runs from the EXIT trap inside Buildkite's
   # short cancel grace period, and retry's backoff sleeps would eat it.
   origin_git push origin "$commit:refs/heads/$RESOLUTION_CACHE_BRANCH"
-  echo "Checkpointed ${#entries[@]} resolution(s) to $RESOLUTION_CACHE_BRANCH."
+  echo "Checkpointed ${#entries[@]} resolution progress file(s) to $RESOLUTION_CACHE_BRANCH."
 }
 
 report_blocked() {

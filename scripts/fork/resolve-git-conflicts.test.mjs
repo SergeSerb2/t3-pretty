@@ -1,5 +1,6 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -14,6 +15,7 @@ import {
   isBinaryAssetConflict,
   isGeneratedLockfile,
   isForkDeletionConflict,
+  MAX_BATCHES_PER_FILE,
   MAX_VALIDATION_ATTEMPTS,
   prepareConflictPrompt,
   pruneResolutionCache,
@@ -22,6 +24,7 @@ import {
   readReusedSyncReport,
   readTextFileBounded,
   resolutionCacheKey,
+  writePartialResolutionCheckpoint,
   writeCachedResolution,
 } from "./resolve-git-conflicts.mjs";
 
@@ -816,6 +819,233 @@ ${">".repeat(7)} theirs
       NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
   });
+
+  it("round-trips an in-progress file after every completed conflict batch", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-partial-cache-"),
+    );
+    try {
+      const conflictedSource = `${"<".repeat(7)} ours\nx\n${"=".repeat(7)}\ny\n${">".repeat(7)} theirs\n`;
+      const key = resolutionCacheKey({
+        path: "apps/mobile/src/features/threads/ThreadFeed.tsx",
+        conflictedSource,
+      });
+
+      const partialEntry = {
+        path: "apps/mobile/src/features/threads/ThreadFeed.tsx",
+        partialSource: conflictedSource,
+        completedBatches: 2,
+        forkChangesPreserved: ["kept read-aloud behavior"],
+        upstreamChangesIntegrated: ["integrated file-chip handling"],
+        upstreamChangesOmitted: [],
+      };
+      assert.isTrue(
+        writeCachedResolution({
+          key,
+          cacheDir: temporaryDirectory,
+          entry: partialEntry,
+        }),
+      );
+      assert.isFalse(
+        writeCachedResolution({
+          key: "invalid",
+          cacheDir: temporaryDirectory,
+          entry: partialEntry,
+        }),
+      );
+      assert.throws(
+        () =>
+          writePartialResolutionCheckpoint({
+            key: "invalid",
+            cacheDir: temporaryDirectory,
+            entry: partialEntry,
+          }),
+        /could not persist conflict batch 2/u,
+      );
+
+      const cached = readCachedResolution({ key, cacheDir: temporaryDirectory });
+      assert.equal(cached.partialSource, conflictedSource);
+      assert.equal(cached.completedBatches, 2);
+      assert.deepEqual(cached.forkChangesPreserved, ["kept read-aloud behavior"]);
+
+      writeCachedResolution({
+        key,
+        cacheDir: temporaryDirectory,
+        entry: {
+          ...cached,
+          partialSource: "markers already gone\n",
+        },
+      });
+      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+
+      writeCachedResolution({
+        key,
+        cacheDir: temporaryDirectory,
+        entry: {
+          ...partialEntry,
+          resolvedSource: "completed resolution\n",
+          partialSource: "stale partial source\n",
+        },
+      });
+      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+
+      const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+      assert.include(resolver, "checkpointed conflict batch");
+      assert.include(resolver, "resumed partial conflict resolution");
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes the next model batch from a partial checkpoint", async () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-resume-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const conflictPath = "fixture.ts";
+    const filler = Array.from(
+      { length: 220 },
+      (_, index) => `const filler${index} = ${index};`,
+    ).join("\n");
+    const source = (first, second) =>
+      `const first = "${first}";\n${filler}\nconst second = "${second}";\n`;
+    let server;
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("base", "base"));
+      git("add", conflictPath);
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("theirs", "theirs"));
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("ours", "ours"));
+      git("commit", "-aqm", "fork changes");
+      assert.throws(() => git("merge", "theirs"));
+      git("checkout", "--conflict=diff3", "--", conflictPath);
+
+      const originalConflict = NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8");
+      const firstBatch = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource: originalConflict,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const firstResolution = 'const first = "ours-and-theirs";\n';
+      const partialSource =
+        originalConflict.slice(0, firstBatch.start) +
+        firstResolution +
+        originalConflict.slice(firstBatch.end);
+      const remainingBatch = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource: partialSource,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const remainingConflict = partialSource.slice(remainingBatch.start, remainingBatch.end);
+      const cacheDirectory = NodePath.join(directory, "cache");
+      const cacheKey = resolutionCacheKey({
+        path: conflictPath,
+        conflictedSource: originalConflict,
+      });
+      writeCachedResolution({
+        key: cacheKey,
+        cacheDir: cacheDirectory,
+        entry: {
+          path: conflictPath,
+          partialSource,
+          completedBatches: MAX_BATCHES_PER_FILE,
+          forkChangesPreserved: ["kept the first fork edit"],
+          upstreamChangesIntegrated: ["integrated the first parent edit"],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      const requestBodies = [];
+      server = NodeHttp.createServer((request, response) => {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          requestBodies.push(JSON.parse(body));
+          const resolution = {
+            safe: true,
+            edits: [
+              {
+                old_text: remainingConflict,
+                new_text: 'const second = "ours-and-theirs";\n',
+                summary: "combined the remaining edit",
+              },
+            ],
+            fork_changes_preserved: ["kept the second fork edit"],
+            upstream_changes_integrated: ["integrated the second parent edit"],
+            upstream_changes_omitted: [],
+            summary: "resolved only the remaining conflict",
+          };
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({ status: "completed", output_text: JSON.stringify(resolution) }),
+          );
+        });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert.isObject(address);
+
+      const child = NodeChildProcess.spawn(process.execPath, [resolverPath], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          CLI_PROXY_API_KEY: "test-key",
+          CLI_PROXY_API_URL: `http://127.0.0.1:${address.port}`,
+          PREVIOUS_UPSTREAM_TAG: "",
+          REUSED_SYNC_RESOLUTION: "false",
+          SYNC_RESOLUTION_CACHE_DIR: cacheDirectory,
+          UPSTREAM_TAG: "v0.0.0-nightly.resume-test",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      const exitCode = await new Promise((resolve) => child.on("close", resolve));
+
+      assert.equal(exitCode, 0, stderr);
+      assert.include(
+        stdout,
+        `resumed partial conflict resolution for fixture.ts after ${MAX_BATCHES_PER_FILE}`,
+      );
+      assert.include(stdout, `resolved batch ${MAX_BATCHES_PER_FILE + 1} for fixture.ts`);
+      assert.lengthOf(requestBodies, 1);
+      assert.include(requestBodies[0].input, 'const second = "ours";');
+      assert.notInclude(requestBodies[0].input, firstResolution.trim());
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8"),
+        source("ours-and-theirs", "ours-and-theirs"),
+      );
+      const report = NodeFS.readFileSync(
+        NodePath.join(directory, ".t3-fork/upstream-sync-report.md"),
+        "utf8",
+      );
+      assert.include(report, "kept the first fork edit");
+      assert.include(report, "integrated the first parent edit");
+      assert.include(report, "kept the second fork edit");
+      assert.include(report, "integrated the second parent edit");
+    } finally {
+      if (server) await new Promise((resolve) => server.close(resolve));
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  }, 10_000);
 
   it("checkpoints completed resolutions to a durable branch even when a sync fails", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");

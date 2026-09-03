@@ -23,13 +23,14 @@ const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 // 2026-08-14 nightlies 1089-1090). Five medium-sized conflicts in
 // ThreadFeed.tsx still crossed the proxy's five-minute response boundary on
 // nightly 1261, and three still hit the same boundary. Resolve one conflict
-// per request; the file-level checkpoint and job deadline bound the extra
+// per request; the per-batch checkpoint and job deadline bound the extra
 // calls without risking another all-or-nothing fallback.
 // The job timeout, not a conflict ceiling, bounds a backlog run: refusing
 // above a fixed count only guaranteed the next nightly arrived with even
 // more conflicts piled onto the same unintegrated merge.
 const MAX_CONFLICTS_PER_REQUEST = 1;
-const MAX_BATCHES_PER_FILE = 32;
+export const MAX_BATCHES_PER_FILE = 32;
+const MAX_CHECKPOINTED_BATCHES_PER_FILE = 100_000;
 export const MAX_VALIDATION_ATTEMPTS = 3;
 const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
@@ -58,11 +59,12 @@ const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
 const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
-// Completed per-file resolutions are checkpointed here (one JSON per file,
-// keyed by a hash of the conflicted input) and pushed to the
-// automation/sync-resolution-cache branch by the workflow even when a run
-// fails, so a rerun only pays for files that never finished. A new nightly
-// changes the conflicted content, so stale entries simply never match.
+// Per-file progress is checkpointed here after every completed conflict batch
+// (one JSON per file, keyed by a hash of the original conflicted input) and
+// pushed to the automation/sync-resolution-cache branch by the workflow even
+// when a run fails. A rerun resumes the last unfinished file instead of paying
+// for all of its earlier batches again. A new nightly changes the conflicted
+// content, so stale entries simply never match.
 const RESOLUTION_CACHE_DIR = process.env.SYNC_RESOLUTION_CACHE_DIR ?? ".git/sync-resolution-cache";
 
 export function readTextFileBounded(path, maxBytes, label) {
@@ -110,11 +112,27 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR }) {
   try {
     const path = NodePath.join(cacheDir, `${key}.json`);
     const entry = JSON.parse(readTextFileBounded(path, MAX_RESOLUTION_CACHE_BYTES, path));
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const declaresDeletedResolution = Object.hasOwn(entry, "deleted");
+    const declaresSourceResolution = Object.hasOwn(entry, "resolvedSource");
+    const declaresPartialResolution =
+      Object.hasOwn(entry, "partialSource") || Object.hasOwn(entry, "completedBatches");
+    const hasCompletedResolution =
+      !declaresPartialResolution &&
+      ((entry.deleted === true && !declaresSourceResolution) ||
+        (typeof entry.resolvedSource === "string" && !declaresDeletedResolution));
+    const hasPartialResolution =
+      !declaresDeletedResolution &&
+      !declaresSourceResolution &&
+      typeof entry.partialSource === "string" &&
+      Buffer.byteLength(entry.partialSource, "utf8") <= MAX_CONFLICT_FILE_BYTES &&
+      LEFTOVER_MARKER_PATTERN.test(entry.partialSource) &&
+      Number.isSafeInteger(entry.completedBatches) &&
+      entry.completedBatches > 0 &&
+      entry.completedBatches <= MAX_CHECKPOINTED_BATCHES_PER_FILE;
     if (
-      typeof entry !== "object" ||
-      entry === null ||
       typeof entry.path !== "string" ||
-      (entry.deleted !== true && typeof entry.resolvedSource !== "string") ||
+      (!hasCompletedResolution && !hasPartialResolution) ||
       !Array.isArray(entry.forkChangesPreserved) ||
       !Array.isArray(entry.upstreamChangesIntegrated) ||
       !Array.isArray(entry.upstreamChangesOmitted)
@@ -147,11 +165,20 @@ export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_
     } finally {
       NodeFS.rmSync(temporaryPath, { force: true });
     }
+    return true;
   } catch {
     process.stdout.write(
       `[fork-sync] could not checkpoint the resolution for ${oneLine(entry.path)}\n`,
     );
+    return false;
   }
+}
+
+export function writePartialResolutionCheckpoint(options) {
+  if (writeCachedResolution(options)) return;
+  throw new Error(
+    `${options.entry.path} could not persist conflict batch ${options.entry.completedBatches}`,
+  );
 }
 
 export function pruneResolutionCache({
@@ -1213,7 +1240,7 @@ async function resolveConflict(path, token) {
   // this exact conflicted input; only never-finished files reach the model.
   const cacheKey = resolutionCacheKey({ path, conflictedSource });
   const cached = readCachedResolution({ key: cacheKey });
-  if (cached) {
+  if (cached && typeof cached.partialSource !== "string") {
     if (cached.deleted === true) {
       git(["rm", "-q", "--", path]);
     } else {
@@ -1239,19 +1266,26 @@ async function resolveConflict(path, token) {
   // Resolve in batches: each request covers at most MAX_CONFLICTS_PER_REQUEST
   // conflicts, edits are applied, and the next batch is prepared against the
   // updated file until no conflict markers remain.
-  let source = conflictedSource;
-  const forkChangesPreserved = [];
-  const upstreamChangesIntegrated = [];
-  const upstreamChangesOmitted = [];
-  let batches = 0;
+  let source = cached?.partialSource ?? conflictedSource;
+  const forkChangesPreserved = [...(cached?.forkChangesPreserved ?? [])];
+  const upstreamChangesIntegrated = [...(cached?.upstreamChangesIntegrated ?? [])];
+  const upstreamChangesOmitted = [...(cached?.upstreamChangesOmitted ?? [])];
+  let completedBatches = cached?.completedBatches ?? 0;
+  if (cached?.partialSource) {
+    process.stdout.write(
+      `[fork-sync] resumed partial conflict resolution for ${path} after ${completedBatches} completed batch(es)\n`,
+    );
+  }
+  let batchesThisRun = 0;
   let widenNextBatch = false;
   while (LEFTOVER_MARKER_PATTERN.test(source)) {
-    batches += 1;
-    if (batches > MAX_BATCHES_PER_FILE) {
+    batchesThisRun += 1;
+    if (batchesThisRun > MAX_BATCHES_PER_FILE) {
       throw new Error(
-        `${path} still contains conflict markers after ${MAX_BATCHES_PER_FILE} resolution batches`,
+        `${path} still contains conflict markers after ${MAX_BATCHES_PER_FILE} resolution batches in this run`,
       );
     }
+    const batchNumber = completedBatches + 1;
     const { conflicts, prompt, totalConflicts } = prepareConflictPrompt({
       path,
       conflictedSource: source,
@@ -1295,7 +1329,7 @@ async function resolveConflict(path, token) {
           validationError = error;
           if (attempt < MAX_VALIDATION_ATTEMPTS) {
             process.stdout.write(
-              `[fork-sync] batch ${batches} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
+              `[fork-sync] batch ${batchNumber} for ${path} returned an invalid edit set (${error instanceof Error ? error.message : String(error)}); requesting a fresh resolution\n`,
             );
           }
         }
@@ -1308,9 +1342,9 @@ async function resolveConflict(path, token) {
       // so it does not consume budget.
       if (error?.modelDeclined === true && !widenNextBatch) {
         widenNextBatch = true;
-        batches -= 1;
+        batchesThisRun -= 1;
         process.stdout.write(
-          `[fork-sync] batch ${batches + 1} for ${path} was declined as unsafe; retrying once with ${WIDE_CONTEXT_LINES}-line conflict context\n`,
+          `[fork-sync] batch ${batchNumber} for ${path} was declined as unsafe; retrying once with ${WIDE_CONTEXT_LINES}-line conflict context\n`,
         );
         continue;
       }
@@ -1324,8 +1358,25 @@ async function resolveConflict(path, token) {
       ...stringList(resolution.upstream_changes_integrated, "upstream_changes_integrated"),
     );
     upstreamChangesOmitted.push(...omittedChangeList(resolution.upstream_changes_omitted));
+    completedBatches = batchNumber;
+    if (LEFTOVER_MARKER_PATTERN.test(source)) {
+      writePartialResolutionCheckpoint({
+        key: cacheKey,
+        entry: {
+          path,
+          partialSource: source,
+          completedBatches,
+          forkChangesPreserved,
+          upstreamChangesIntegrated,
+          upstreamChangesOmitted,
+        },
+      });
+      process.stdout.write(
+        `[fork-sync] checkpointed conflict batch ${completedBatches} for ${path}\n`,
+      );
+    }
     process.stdout.write(
-      `[fork-sync] resolved batch ${batches} for ${path} (${conflicts.length} of ${totalConflicts} remaining conflicts) with ${MODEL}/${usedEffort} (requested tier=${SERVICE_TIER}, effective tier=${oneLine(String(effectiveTier))}): ${oneLine(resolution.summary)}\n`,
+      `[fork-sync] resolved batch ${completedBatches} for ${path} (${conflicts.length} of ${totalConflicts} remaining conflicts) with ${MODEL}/${usedEffort} (requested tier=${SERVICE_TIER}, effective tier=${oneLine(String(effectiveTier))}): ${oneLine(resolution.summary)}\n`,
     );
   }
 
