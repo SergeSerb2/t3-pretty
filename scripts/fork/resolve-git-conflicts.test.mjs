@@ -507,6 +507,25 @@ ${">".repeat(7)} theirs
     assert.include(script, 'export PREVIOUS_UPSTREAM_TAG="$current_tag"');
   });
 
+  it("finishes a persisted upstream target before advancing to a newer nightly", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, 'origin_git show "origin/$RESOLUTION_CACHE_BRANCH:active-upstream-tag"');
+    assert.include(script, 'tag_is_available "$active_tag"');
+    assert.include(script, 'tag_is_newer_than_current "$active_tag"');
+    assert.include(script, 'latest_tag="$active_tag"');
+    assert.include(script, 'printf \'%s\\n\' "$UPSTREAM_TAG" > "$target_file"');
+    assert.include(script, 'entries+=("$target_file")');
+  });
+
+  it("validates an explicit upstream target before using it", () => {
+    const script = NodeFS.readFileSync(syncScriptPath, "utf8");
+
+    assert.include(script, 'if ! tag_is_available "$SYNC_TARGET_UPSTREAM_TAG"');
+    assert.include(script, 'if ! tag_is_newer_than_current "$SYNC_TARGET_UPSTREAM_TAG"');
+    assert.include(script, 'latest_tag="$SYNC_TARGET_UPSTREAM_TAG"');
+  });
+
   it("removes upstream workflows before restoring the fork-owned directory", () => {
     const script = NodeFS.readFileSync(syncScriptPath, "utf8");
     const remove = script.indexOf("git rm -r -f --ignore-unmatch -- .github/workflows");

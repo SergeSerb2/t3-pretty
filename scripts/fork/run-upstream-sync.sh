@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Integrate the newest pingdotgg/t3code nightly into T3 Pretty and land it
-# on Origin main. The four-hour Buildkite schedule runs this as a native
+# Integrate a pingdotgg/t3code nightly into T3 Pretty and land it on Origin
+# main. Once a run starts, later runs finish that target before advancing to
+# a newer nightly. The four-hour Buildkite schedule runs this as a native
 # macos-release step. The imported GHA wrapper calls the same script so a
 # manual workflow_dispatch cannot drift.
 #
@@ -126,7 +127,14 @@ git config --unset-all remote.upstream.partialclonefilter || true
 
 checkpoint_resolutions() {
   shopt -s nullglob
+  local target_file="$SYNC_RESOLUTION_CACHE_DIR/active-upstream-tag"
+  if [[ -n "${UPSTREAM_TAG:-}" ]]; then
+    printf '%s\n' "$UPSTREAM_TAG" > "$target_file"
+  fi
   local entries=("$SYNC_RESOLUTION_CACHE_DIR"/*.json)
+  if [[ -f "$target_file" ]]; then
+    entries+=("$target_file")
+  fi
   if (( ${#entries[@]} == 0 )); then
     echo "No resolution progress to checkpoint."
     return 0
@@ -222,20 +230,56 @@ if ! upstream_tag_listing="$(retry list_upstream_nightly_tags)"; then
   echo "Could not list upstream nightly tags after 3 attempts." >&2
   exit 1
 fi
-latest_tag="$(printf '%s\n' "$upstream_tag_listing" |
-  awk '{sub("refs/tags/", "", $2); print $2}' |
+upstream_tag_names="$(printf '%s\n' "$upstream_tag_listing" |
+  awk '{sub("refs/tags/", "", $2); print $2}')"
+newest_tag="$(printf '%s\n' "$upstream_tag_names" |
   sort -V |
   tail -n 1)"
-if [[ -z "$latest_tag" ]]; then
+if [[ -z "$newest_tag" ]]; then
   echo "No upstream nightly tag found." >&2
   exit 1
 fi
 
-retry git fetch --no-tags --no-filter --force upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
 current_tag=""
 if [[ -f .t3-fork/upstream-nightly ]]; then
   current_tag="$(tr -d '[:space:]' < .t3-fork/upstream-nightly)"
 fi
+
+tag_is_available() {
+  grep -Fxq -- "$1" <<< "$upstream_tag_names"
+}
+
+tag_is_newer_than_current() {
+  [[ -z "$current_tag" ]] ||
+    [[ "$1" != "$current_tag" &&
+      "$(printf '%s\n%s\n' "$current_tag" "$1" | sort -V | tail -n 1)" == "$1" ]]
+}
+
+latest_tag="$newest_tag"
+if [[ -n "${SYNC_TARGET_UPSTREAM_TAG:-}" ]]; then
+  if ! tag_is_available "$SYNC_TARGET_UPSTREAM_TAG"; then
+    echo "Requested upstream nightly $SYNC_TARGET_UPSTREAM_TAG does not exist." >&2
+    exit 1
+  fi
+  if ! tag_is_newer_than_current "$SYNC_TARGET_UPSTREAM_TAG" &&
+    [[ "$SYNC_TARGET_UPSTREAM_TAG" != "$current_tag" ]]; then
+    echo "Requested upstream nightly $SYNC_TARGET_UPSTREAM_TAG is older than $current_tag." >&2
+    exit 1
+  fi
+  latest_tag="$SYNC_TARGET_UPSTREAM_TAG"
+  echo "Using explicitly requested upstream nightly $latest_tag."
+else
+  active_tag=""
+  if origin_git fetch origin "refs/heads/$RESOLUTION_CACHE_BRANCH:refs/remotes/origin/$RESOLUTION_CACHE_BRANCH" 2>/dev/null; then
+    active_tag="$(origin_git show "origin/$RESOLUTION_CACHE_BRANCH:active-upstream-tag" 2>/dev/null | tr -d '[:space:]' || true)"
+  fi
+  if [[ -n "$active_tag" ]] && tag_is_available "$active_tag" && tag_is_newer_than_current "$active_tag"; then
+    latest_tag="$active_tag"
+    echo "Continuing active upstream nightly $latest_tag before advancing to $newest_tag."
+  fi
+fi
+
+retry git fetch --no-tags --no-filter --force upstream "refs/tags/$latest_tag:refs/tags/$latest_tag"
 # The resolver uses previous_tag..origin/main to recover the fork's
 # intent for conflicted paths. Fresh clones do not have the
 # previous tag ref even though its commit is in main's history, and
@@ -259,6 +303,15 @@ fi
 branch="automation/upstream-${latest_tag//[^0-9A-Za-z._-]/-}"
 export SYNC_BRANCH="$branch"
 has_update=1
+
+# Persist the target before any model work begins. Buildkite cancellation can
+# kill the process group before EXIT runs, but the next scheduled run must
+# still finish this nightly instead of invalidating its conflict checkpoints.
+if ! retry checkpoint_resolutions; then
+  SYNC_FAIL_REASON="Could not persist active upstream target $UPSTREAM_TAG before resolution."
+  echo "$SYNC_FAIL_REASON" >&2
+  exit 1
+fi
 
 # Restore checkpointed per-file resolutions first: a run that failed
 # or timed out mid-merge reruns only the files that never finished.
@@ -557,7 +610,7 @@ current_sync_used_fallback() {
 }
 write_sync_pr_body() {
   printf '%s\n\n' \
-    'Automated four-hour integration of the newest parent T3 Code nightly into T3 Pretty.' \
+    'Automated four-hour integration of a parent T3 Code nightly into T3 Pretty.' \
     'Clean merges are retained directly. Text conflicts are resolved through CLIProxyAPI with gpt-5.6-sol at xhigh reasoning under the T3 Pretty preservation contract.'
   printf 'The complete conflict-resolution audit for `%s` is committed in `.t3-fork/upstream-sync-report.md`.\n' "$UPSTREAM_TAG"
   if current_sync_used_fallback; then
