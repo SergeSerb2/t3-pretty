@@ -1,7 +1,6 @@
-import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
+import { GlassView } from "expo-glass-effect";
 import type { ReactNode, Ref } from "react";
 import {
-  Platform,
   useColorScheme,
   View,
   type ColorValue,
@@ -12,6 +11,7 @@ import {
 import { withUniwind } from "uniwind";
 
 import { cn } from "../lib/cn";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 
 // Explicit mappings keep the native glassEffectStyle enum out of style-array conversion.
 const ThemedGlassView = withUniwind(GlassView, {
@@ -46,7 +46,6 @@ export function GlassSurface({
   ...props
 }: GlassSurfaceProps) {
   const isDarkMode = useColorScheme() === "dark";
-  const supportsGlass = Platform.OS === "ios" && isGlassEffectAPIAvailable();
   const surfaceStyle: ViewStyle = {
     borderRadius: 32,
     overflow: "hidden",
@@ -66,7 +65,7 @@ export function GlassSurface({
     elevation: chrome === "none" ? 0 : 12,
   };
 
-  if (supportsGlass) {
+  if (NATIVE_LIQUID_GLASS_SUPPORTED) {
     return (
       <ThemedGlassView
         {...props}
