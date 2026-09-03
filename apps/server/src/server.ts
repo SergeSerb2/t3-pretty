@@ -204,11 +204,10 @@ const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
   Layer.provide(DesktopTelemetryReceiverLayerLive),
 );
 
-// Reuse the receiver: a second live layer would compete for the desktop
-// telemetry file descriptor supplied by Electron.
-const DesktopAppUpdateLayerLive = DesktopAppUpdate.layer.pipe(
-  Layer.provide(DesktopTelemetryReceiverLayerLive),
-);
+// RuntimeDependenciesLive already exposes the shared desktop receiver. Keep
+// this layer dependent on that parent instance so every Electron FD consumer
+// is visibly composed in the same scope.
+const DesktopAppUpdateLayerLive = DesktopAppUpdate.layer;
 
 const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provide(HostPowerMonitorLayerLive),
