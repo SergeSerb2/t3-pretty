@@ -16,6 +16,31 @@ const REQUEST_TIMEOUT_MS = 1_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 const MAX_BIND_ATTEMPTS = 3;
 
+const INHERITED_ENVIRONMENT_NAMES = [
+  "COMSPEC",
+  "ComSpec",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "PATH",
+  "PATHEXT",
+  "Path",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "TZ",
+  "WINDIR",
+  "windir",
+] as const;
+
+class ServerBundleAttemptError extends Error {
+  readonly retryableBindCollision: boolean;
+
+  constructor(message: string, retryableBindCollision: boolean) {
+    super(message);
+    this.retryableBindCollision = retryableBindCollision;
+  }
+}
+
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
@@ -28,6 +53,38 @@ export const redactServerOutput = (output: string): string =>
   output
     .replace(/^Token: .*$/gmu, "Token: [redacted]")
     .replace(/^Pairing URL: .*$/gmu, "Pairing URL: [redacted]");
+
+export const buildSmokeEnvironment = (
+  baseDir: string,
+  parentEnvironment: NodeJS.ProcessEnv = NodeProcess.env,
+): NodeJS.ProcessEnv => {
+  const environment: NodeJS.ProcessEnv = {
+    HOME: baseDir,
+    NODE_PATH: "",
+    T3CODE_HOME: baseDir,
+    TEMP: baseDir,
+    TMP: baseDir,
+    TMPDIR: baseDir,
+    USERPROFILE: baseDir,
+    XDG_CACHE_HOME: NodePath.join(baseDir, "cache"),
+    XDG_CONFIG_HOME: NodePath.join(baseDir, "config"),
+    XDG_DATA_HOME: NodePath.join(baseDir, "data"),
+  };
+
+  for (const name of INHERITED_ENVIRONMENT_NAMES) {
+    const value = parentEnvironment[name];
+    if (value !== undefined) environment[name] = value;
+  }
+
+  return environment;
+};
+
+const isLoopbackBindCollision = (output: string, port: number): boolean => {
+  const address = `127.0.0.1:${String(port)}`;
+  return output
+    .split("\n")
+    .some((line) => /\b(?:listen|bind) EADDRINUSE\b/u.test(line) && line.includes(address));
+};
 
 const reserveLoopbackPort = () =>
   new Promise<number>((resolve, reject) => {
@@ -87,21 +144,7 @@ const smokeServerBundleAttempt = async (input: {
 }) => {
   const port = await reserveLoopbackPort();
   const readinessUrl = `http://127.0.0.1:${String(port)}/.well-known/t3/environment`;
-  const childEnvironment: NodeJS.ProcessEnv = { ...NodeProcess.env, NODE_PATH: "" };
-  for (const name of [
-    "T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD",
-    "T3CODE_BOOTSTRAP_FD",
-    "T3CODE_DESKTOP_TELEMETRY_FD",
-    "T3CODE_DEV_ALLOWED_ORIGINS",
-    "T3CODE_HOME",
-    "T3CODE_HOST",
-    "T3CODE_MODE",
-    "T3CODE_NO_BROWSER",
-    "T3CODE_PORT",
-    "VITE_DEV_SERVER_URL",
-  ]) {
-    delete childEnvironment[name];
-  }
+  const childEnvironment = buildSmokeEnvironment(input.baseDir);
 
   const child = NodeChildProcess.spawn(
     NodeProcess.execPath,
@@ -145,8 +188,10 @@ const smokeServerBundleAttempt = async (input: {
     while (Date.now() < deadline) {
       if (spawnError) throw spawnError;
       if (child.exitCode !== null || child.signalCode !== null) {
-        throw new Error(
-          `Server bundle exited before readiness (exit ${String(child.exitCode)}, signal ${String(child.signalCode)}).\n${redactServerOutput(`${stderr}${stdout}`)}`,
+        const output = redactServerOutput(`${stderr}${stdout}`);
+        throw new ServerBundleAttemptError(
+          `Server bundle exited before readiness (exit ${String(child.exitCode)}, signal ${String(child.signalCode)}).\n${output}`,
+          isLoopbackBindCollision(output, port),
         );
       }
 
@@ -183,7 +228,10 @@ export async function smokeServerBundle(input: {
         await smokeServerBundleAttempt({ ...input, entryPath, cwd, baseDir });
         return;
       } catch (error) {
-        if (attempt === MAX_BIND_ATTEMPTS || !String(error).includes("EADDRINUSE")) {
+        if (
+          attempt === MAX_BIND_ATTEMPTS ||
+          !(error instanceof ServerBundleAttemptError && error.retryableBindCollision)
+        ) {
           throw error;
         }
       }

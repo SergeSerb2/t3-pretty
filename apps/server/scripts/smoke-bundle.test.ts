@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "vite-plus/test";
 
-import { redactServerOutput, smokeServerBundle } from "./smoke-bundle.ts";
+import { buildSmokeEnvironment, redactServerOutput, smokeServerBundle } from "./smoke-bundle.ts";
 
 const withFixture = async (
   source: string,
@@ -57,7 +57,8 @@ describe("server bundle smoke", () => {
         import * as fs from "node:fs";
         import * as path from "node:path";
         fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
-        console.error("listen EADDRINUSE");
+        const portIndex = process.argv.indexOf("--port") + 1;
+        console.error(\`Error: listen EADDRINUSE: address already in use 127.0.0.1:\${process.argv[portIndex]}\`);
         process.exitCode = 1;
       `,
       async ({ entryPath, cwd }) => {
@@ -68,6 +69,27 @@ describe("server bundle smoke", () => {
           .trim()
           .split("\n");
         assert.lengthOf(attempts, 3);
+      },
+    );
+  });
+
+  it("does not retry an unrelated failure that merely mentions EADDRINUSE", async () => {
+    await withFixture(
+      `
+        import * as fs from "node:fs";
+        import * as path from "node:path";
+        fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
+        console.error("configuration note mentions EADDRINUSE");
+        process.exitCode = 1;
+      `,
+      async ({ entryPath, cwd }) => {
+        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
+          /EADDRINUSE/u,
+        );
+        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+          .trim()
+          .split("\n");
+        assert.lengthOf(attempts, 1);
       },
     );
   });
@@ -89,6 +111,29 @@ describe("server bundle smoke", () => {
     assert.equal(
       redactServerOutput("Token: secret\nPairing URL: http://example.test/#token=secret\n"),
       "Token: [redacted]\nPairing URL: [redacted]\n",
+    );
+  });
+
+  it("isolates home and config roots while retaining required platform paths", () => {
+    assert.deepEqual(
+      buildSmokeEnvironment("/tmp/smoke", {
+        PATH: "/usr/bin",
+        T3CODE_PORT: "9999",
+        VITE_DEV_SERVER_URL: "http://example.test",
+      }),
+      {
+        HOME: "/tmp/smoke",
+        NODE_PATH: "",
+        PATH: "/usr/bin",
+        T3CODE_HOME: "/tmp/smoke",
+        TEMP: "/tmp/smoke",
+        TMP: "/tmp/smoke",
+        TMPDIR: "/tmp/smoke",
+        USERPROFILE: "/tmp/smoke",
+        XDG_CACHE_HOME: "/tmp/smoke/cache",
+        XDG_CONFIG_HOME: "/tmp/smoke/config",
+        XDG_DATA_HOME: "/tmp/smoke/data",
+      },
     );
   });
 });
