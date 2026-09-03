@@ -758,7 +758,13 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(pipeline, 'version: "0.35.1"');
-    assert.include(pipeline, 'cache: "/cache/bkcache/mise"');
+    assert.notInclude(pipeline, 'cache: "/cache/bkcache/mise"');
+    const importerStep = pipeline.slice(
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+      pipeline.indexOf(":git: Upstream Sync"),
+    );
+    assert.include(importerStep, "queue: macos-release");
+    assert.include(importerStep, "os: macos");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");

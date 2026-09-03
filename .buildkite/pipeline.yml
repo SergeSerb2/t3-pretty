@@ -5,13 +5,14 @@
 # workflows themselves skip no-op desktop/mobile work.
 #
 # Queues:
-#   linux-small    — Buildkite hosted Linux (importer + ubuntu-latest jobs + AppImage)
-#   macos-release  — shared Mac queue. Packaging steps (DMG, mobile, relay,
-#                    sync) add os=macos so they only run on m5-dev; Origin PR
-#                    Review stays queue-wide so the review-only Linux agent
-#                    (m1-linux-t3code-fork) can take it. Do not invent a
-#                    second queue until it exists in the Buildkite cluster;
-#                    an unknown queue fails pipeline upload for every PR.
+#   linux-small    — Buildkite hosted Linux (imported ubuntu-latest jobs + AppImage)
+#   macos-release  — shared Mac queue. The workflow importer and packaging
+#                    steps (DMG, mobile, relay, sync) add os=macos so they only
+#                    run on m5-dev; Origin PR Review stays queue-wide so the
+#                    review-only Linux agent (m1-linux-t3code-fork) can take
+#                    it. Do not invent a second queue until it exists in the
+#                    Buildkite cluster; an unknown queue fails pipeline upload
+#                    for every PR.
 #   windows-release — serge-pc native NSIS (importer cannot run Windows jobs)
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
@@ -69,10 +70,11 @@ steps:
     # on it.
     timeout_in_minutes: 30
     agents:
-      queue: linux-small
-    # Persist mise/buildkite-gha between hosted jobs so every release does not
-    # consume the anonymous GitHub API allowance reinstalling the importer.
-    cache: "/cache/bkcache/mise"
+      # buildkite-gha uploads its generated pipeline with --reject-secrets.
+      # Hosted Agent v4 does not provide that flag; the self-hosted Mac queue
+      # runs compatible Agent v3 and is a supported native arm64 importer.
+      queue: macos-release
+      os: macos
     plugins:
       - github-actions#v0.13.0:
           # Exact commit tagged v0.35.1. Source mode avoids mise's flaky

@@ -50,7 +50,7 @@ function jobBlock(source, jobId) {
 }
 
 describe("T3 Pretty release runner placement", () => {
-  it("keeps imported desktop CI on hosted Linux without GitHub actions", () => {
+  it("imports desktop CI on Agent v3 and runs its generated jobs on hosted Linux", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
     const importer = pipeline.slice(
@@ -61,7 +61,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(desktopWorkflow, "T3CODE_BUILD_FLAVOR: internal");
     assert.include(importer, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(importer, 'version: "0.35.1"');
-    assert.include(importer, 'cache: "/cache/bkcache/mise"');
+    assert.notInclude(importer, 'cache: "/cache/bkcache/mise"');
+    assert.include(importer, "queue: macos-release");
+    assert.include(importer, "os: macos");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
@@ -178,9 +180,9 @@ describe("T3 Pretty release runner placement", () => {
   it("pins macos-release packaging steps to os=macos agents", () => {
     // m1-linux-t3code-fork shares the macos-release queue as a review-only
     // agent; DMG/mobile/relay/sync must never be assigned to a Linux box.
-    // upstream-sync, macos-dmg, three mobile jobs, deploy-relay — reviews
-    // stay queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 7);
+    // importer, upstream-sync, macos-dmg, three mobile jobs, deploy-relay —
+    // reviews stay queue-wide.
+    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 8);
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
