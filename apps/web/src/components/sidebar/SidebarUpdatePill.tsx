@@ -470,7 +470,6 @@ function SidebarUpdateControl() {
       >
         <Tooltip disabled={showReleaseNotesPopover}>
           <TooltipTrigger
-            id={releaseNotesTriggerId}
             render={
               <PopoverTrigger
                 {...(!showReleaseNotesPopover
