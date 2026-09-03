@@ -24,10 +24,11 @@ export interface OrchestrationProjectionPipelineShape {
   readonly bootstrap: Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
-   * Project a single orchestration event into projection repositories.
+   * Project a standalone single orchestration event into projection repositories.
    *
    * Projectors run sequentially in one transaction. Attachment cleanup runs
-   * after that transaction commits.
+   * after that transaction commits. Live command processing must use
+   * projectEventDeferred so cleanup waits for the caller's outer transaction.
    */
   readonly projectEvent: (
     event: OrchestrationEvent,
