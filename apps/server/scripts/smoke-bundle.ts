@@ -2,13 +2,13 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off - This build boundary must exercise a real child process and HTTP listener.
 
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
-import { parseArgs } from "node:util";
+import * as NodeUtil from "node:util";
 
 const OUTPUT_LIMIT = 64 * 1024;
 const POLL_INTERVAL_MS = 100;
@@ -85,9 +85,7 @@ const isLoopbackBindCollision = (output: string, port: number): boolean => {
   return output
     .split("\n")
     .some(
-      (line) =>
-        /\bEADDRINUSE\b/u.test(line) &&
-        (line.includes(address) || line.includes(`:${String(port)}`) || namedPort.test(line)),
+      (line) => /\bEADDRINUSE\b/u.test(line) && (line.includes(address) || namedPort.test(line)),
     );
 };
 
@@ -240,8 +238,8 @@ export async function smokeServerBundle(input: {
 }): Promise<void> {
   const entryPath = NodePath.resolve(input.entryPath);
   const cwd = NodePath.resolve(input.cwd);
-  await NodeFS.access(entryPath);
-  const baseDir = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-"));
+  await NodeFSP.access(entryPath);
+  const baseDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-"));
 
   try {
     for (let attempt = 1; attempt <= MAX_BIND_ATTEMPTS; attempt += 1) {
@@ -258,7 +256,7 @@ export async function smokeServerBundle(input: {
       }
     }
   } finally {
-    await NodeFS.rm(baseDir, { recursive: true, force: true });
+    await NodeFSP.rm(baseDir, { recursive: true, force: true });
   }
 }
 
@@ -267,7 +265,7 @@ const isEntrypoint =
   NodePath.resolve(NodeProcess.argv[1]) === NodeURL.fileURLToPath(import.meta.url);
 
 if (isEntrypoint) {
-  const { values } = parseArgs({
+  const { values } = NodeUtil.parseArgs({
     options: {
       cwd: { type: "string", default: NodeProcess.cwd() },
       entry: { type: "string", default: "dist/bin.mjs" },

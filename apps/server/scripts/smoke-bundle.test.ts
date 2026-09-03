@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Fixtures launch real child processes to verify the release smoke boundary.
 import type * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -17,13 +17,13 @@ const withFixture = async (
   source: string,
   run: (input: { readonly entryPath: string; readonly cwd: string }) => Promise<void>,
 ) => {
-  const cwd = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-test-"));
+  const cwd = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-test-"));
   const entryPath = NodePath.join(cwd, "fixture.mjs");
-  await NodeFS.writeFile(entryPath, source);
+  await NodeFSP.writeFile(entryPath, source);
   try {
     await run({ entryPath, cwd });
   } finally {
-    await NodeFS.rm(cwd, { recursive: true, force: true });
+    await NodeFSP.rm(cwd, { recursive: true, force: true });
   }
 };
 
@@ -71,7 +71,7 @@ describe("server bundle smoke", () => {
         await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
           /EADDRINUSE/u,
         );
-        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+        const attempts = (await NodeFSP.readFile(NodePath.join(cwd, "attempts"), "utf8"))
           .trim()
           .split("\n");
         assert.lengthOf(attempts, 3);
@@ -92,7 +92,29 @@ describe("server bundle smoke", () => {
         await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
           /exited before readiness[\s\S]*configuration note mentions EADDRINUSE/u,
         );
-        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+        const attempts = (await NodeFSP.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+          .trim()
+          .split("\n");
+        assert.lengthOf(attempts, 1);
+      },
+    );
+  });
+
+  it("does not retry a URL that happens to contain the reserved port", async () => {
+    await withFixture(
+      `
+        import * as fs from "node:fs";
+        import * as path from "node:path";
+        fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
+        const portIndex = process.argv.indexOf("--port") + 1;
+        console.error(\`EADDRINUSE was mentioned near https://example.invalid:\${process.argv[portIndex]}/callback\`);
+        process.exitCode = 1;
+      `,
+      async ({ entryPath, cwd }) => {
+        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
+          /exited before readiness/u,
+        );
+        const attempts = (await NodeFSP.readFile(NodePath.join(cwd, "attempts"), "utf8"))
           .trim()
           .split("\n");
         assert.lengthOf(attempts, 1);
@@ -114,7 +136,7 @@ describe("server bundle smoke", () => {
         await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
           /EADDRINUSE/u,
         );
-        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+        const attempts = (await NodeFSP.readFile(NodePath.join(cwd, "attempts"), "utf8"))
           .trim()
           .split("\n");
         assert.lengthOf(attempts, 3);

@@ -621,9 +621,10 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(ShellStream.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ComputerUseService.layer),
-  // DesktopServicesLayerLive is exported by the outer RuntimeDependenciesLive
-  // graph, so self-update consumes that same parent-scoped update driver.
   Layer.provide(ServerSelfUpdate.layer),
+  // Supply the same memoized desktop graph used by diagnostics directly at
+  // the route boundary where ServerSelfUpdate requires its update driver.
+  Layer.provide(DesktopServicesLayerLive),
   Layer.provide(commandReadinessLayer),
   Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),
