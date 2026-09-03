@@ -194,20 +194,20 @@ const NativeTelemetryLayerLive = NativeTelemetryClient.layer.pipe(
 const DesktopTelemetryReceiverLayerLive = DesktopTelemetryReceiver.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
-
-const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
-  Layer.provideMerge(NativeTelemetryLayerLive),
+// One memoized desktop services graph owns the Electron telemetry FD and
+// exposes both the receiver and the update driver to outer runtime consumers.
+const DesktopServicesLayerLive = DesktopAppUpdate.layer.pipe(
   Layer.provideMerge(DesktopTelemetryReceiverLayerLive),
 );
 
-const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
-  Layer.provide(DesktopTelemetryReceiverLayerLive),
+const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
+  Layer.provideMerge(NativeTelemetryLayerLive),
+  Layer.provideMerge(DesktopServicesLayerLive),
 );
 
-// RuntimeDependenciesLive already exposes the shared desktop receiver. Keep
-// this layer dependent on that parent instance so every Electron FD consumer
-// is visibly composed in the same scope.
-const DesktopAppUpdateLayerLive = DesktopAppUpdate.layer;
+const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
+  Layer.provide(DesktopServicesLayerLive),
+);
 
 const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provide(HostPowerMonitorLayerLive),
@@ -621,7 +621,9 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(ShellStream.layer),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ComputerUseService.layer),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
+  // DesktopServicesLayerLive is exported by the outer RuntimeDependenciesLive
+  // graph, so self-update consumes that same parent-scoped update driver.
+  Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
   Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),

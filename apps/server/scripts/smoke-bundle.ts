@@ -81,9 +81,14 @@ export const buildSmokeEnvironment = (
 
 const isLoopbackBindCollision = (output: string, port: number): boolean => {
   const address = `127.0.0.1:${String(port)}`;
+  const namedPort = new RegExp(`\\bport\\D{0,32}${String(port)}\\b`, "u");
   return output
     .split("\n")
-    .some((line) => /\b(?:listen|bind) EADDRINUSE\b/u.test(line) && line.includes(address));
+    .some(
+      (line) =>
+        /\bEADDRINUSE\b/u.test(line) &&
+        (line.includes(address) || line.includes(`:${String(port)}`) || namedPort.test(line)),
+    );
 };
 
 const reserveLoopbackPort = () =>

@@ -100,6 +100,28 @@ describe("server bundle smoke", () => {
     );
   });
 
+  it("retries a nonstandard EADDRINUSE diagnostic tied to the reserved port", async () => {
+    await withFixture(
+      `
+        import * as fs from "node:fs";
+        import * as path from "node:path";
+        fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
+        const portIndex = process.argv.indexOf("--port") + 1;
+        console.error(\`EADDRINUSE while opening reserved port \${process.argv[portIndex]}\`);
+        process.exitCode = 1;
+      `,
+      async ({ entryPath, cwd }) => {
+        await expect(smokeServerBundle({ entryPath, cwd, timeoutMs: 5_000 })).rejects.toThrow(
+          /EADDRINUSE/u,
+        );
+        const attempts = (await NodeFS.readFile(NodePath.join(cwd, "attempts"), "utf8"))
+          .trim()
+          .split("\n");
+        assert.lengthOf(attempts, 3);
+      },
+    );
+  });
+
   it("times out and stops a bundle that never becomes ready", async () => {
     await withFixture(
       `
