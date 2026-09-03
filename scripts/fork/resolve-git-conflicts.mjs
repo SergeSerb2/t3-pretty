@@ -990,7 +990,30 @@ function conflictSourceForPath(path) {
   return { conflictedSource, deleteConflict: { deletedSide: hasTheirs ? "ours" : "theirs" } };
 }
 
-async function requestConflictResolution({ path, prompt, conflictCount, token }) {
+// Spend the highest reasoning budget once per file. A completed batch has
+// already established that file's fork intent, while a widened retry needs
+// more source context rather than another long-think at the proxy boundary.
+export function conflictResolutionEfforts({
+  completedBatches = 0,
+  widened = false,
+  initialEffort = REASONING_EFFORT,
+} = {}) {
+  if (!["ultra", "max", "xhigh", "high"].includes(initialEffort)) {
+    return [initialEffort, initialEffort, initialEffort];
+  }
+  if (widened) return ["medium", "medium", "medium"];
+  if (completedBatches > 0) return ["high", "medium", "medium"];
+  if (initialEffort !== "high") return [initialEffort, "high", "medium"];
+  return ["high", "medium", "medium"];
+}
+
+async function requestConflictResolution({
+  path,
+  prompt,
+  conflictCount,
+  token,
+  efforts = conflictResolutionEfforts(),
+}) {
   if (!API_URL) {
     throw new Error(
       "CLI_PROXY_API_URL must be a bounded credential-free HTTPS URL or a loopback HTTP URL.",
@@ -1008,16 +1031,16 @@ async function requestConflictResolution({ path, prompt, conflictCount, token })
   // and then medium so the same pathological long-think cannot burn three
   // five-minute gateway timeouts. Model
   // declines (safe=false on a completed response) never retry.
-  const maxAttempts = 3;
+  const maxAttempts = efforts.length;
   let apiResponse;
-  let usedEffort = REASONING_EFFORT;
+  let usedEffort = efforts[0];
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (MODEL_DEADLINE_EPOCH_MS !== undefined && Date.now() > MODEL_DEADLINE_EPOCH_MS) {
       throw new Error(
         "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
       );
     }
-    const effort = attempt === 1 ? REASONING_EFFORT : attempt === 2 ? "high" : "medium";
+    const effort = efforts[attempt - 1];
     let response;
     let raw = "";
     try {
@@ -1305,6 +1328,7 @@ async function resolveConflict(path, token) {
     let usedEffort = REASONING_EFFORT;
     let effectiveTier = "unknown";
     let validationError;
+    const efforts = conflictResolutionEfforts({ completedBatches, widened: widenNextBatch });
     try {
       for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
         const response = await requestConflictResolution({
@@ -1312,6 +1336,7 @@ async function resolveConflict(path, token) {
           prompt: buildValidationRetryPrompt(prompt, validationError),
           conflictCount: conflicts.length,
           token,
+          efforts,
         });
         try {
           const nextSource = applyResolutionEdits({

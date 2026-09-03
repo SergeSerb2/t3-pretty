@@ -11,6 +11,7 @@ import {
   applyResolutionEdits,
   buildConflictPrompt,
   buildValidationRetryPrompt,
+  conflictResolutionEfforts,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
@@ -752,11 +753,34 @@ ${">".repeat(7)} theirs
     // Network errors, 408, 429, 5xx, and unparseable/incomplete responses
     // retry; retries step down to high and then medium so one long-think
     // cannot burn the same five-minute gateway timeout three times.
-    assert.include(resolver, "const maxAttempts = 3");
+    assert.deepEqual(conflictResolutionEfforts({ initialEffort: "xhigh" }), [
+      "xhigh",
+      "high",
+      "medium",
+    ]);
+    assert.deepEqual(conflictResolutionEfforts({ initialEffort: "high" }), [
+      "high",
+      "medium",
+      "medium",
+    ]);
+    assert.deepEqual(conflictResolutionEfforts({ completedBatches: 1 }), [
+      "high",
+      "medium",
+      "medium",
+    ]);
+    assert.deepEqual(conflictResolutionEfforts({ widened: true }), ["medium", "medium", "medium"]);
+    assert.deepEqual(conflictResolutionEfforts({ initialEffort: "low" }), ["low", "low", "low"]);
+    assert.deepEqual(
+      conflictResolutionEfforts({ completedBatches: 1, widened: true, initialEffort: "low" }),
+      ["low", "low", "low"],
+    );
+    assert.include(resolver, "const maxAttempts = efforts.length");
+    assert.include(resolver, "efforts = conflictResolutionEfforts()");
     assert.include(
       resolver,
-      'attempt === 1 ? REASONING_EFFORT : attempt === 2 ? "high" : "medium"',
+      "const efforts = conflictResolutionEfforts({ completedBatches, widened: widenNextBatch })",
     );
+    assert.include(resolver, "usedEffort = efforts[0]");
     assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
     assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
     assert.include(resolver, "did not produce a completed response");
