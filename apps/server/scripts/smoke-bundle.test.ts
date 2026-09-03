@@ -43,6 +43,21 @@ describe("server bundle smoke", () => {
     );
   });
 
+  it("resolves a relative entry path from the requested working directory", async () => {
+    await withFixture(
+      `
+        import * as http from "node:http";
+        const portIndex = process.argv.indexOf("--port") + 1;
+        const port = Number(process.argv[portIndex]);
+        http.createServer((_request, response) => {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ serverVersion: "fixture" }));
+        }).listen(port, "127.0.0.1");
+      `,
+      ({ cwd }) => smokeServerBundle({ entryPath: "fixture.mjs", cwd, timeoutMs: 5_000 }),
+    );
+  });
+
   it("reports a child that exits before readiness", async () => {
     await withFixture(
       `
@@ -64,6 +79,7 @@ describe("server bundle smoke", () => {
         import * as path from "node:path";
         fs.appendFileSync(path.join(process.cwd(), "attempts"), "attempt\\n");
         const portIndex = process.argv.indexOf("--port") + 1;
+        process.stderr.write("x".repeat(1024 * 1024));
         console.error(\`Error: listen EADDRINUSE: address already in use 127.0.0.1:\${process.argv[portIndex]}\`);
         process.exitCode = 1;
       `,

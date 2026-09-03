@@ -202,7 +202,7 @@ const DesktopServicesLayerLive = DesktopAppUpdate.layer.pipe(
 
 const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
   Layer.provideMerge(NativeTelemetryLayerLive),
-  Layer.provideMerge(DesktopServicesLayerLive),
+  Layer.provide(DesktopServicesLayerLive),
 );
 
 const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(

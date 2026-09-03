@@ -207,6 +207,10 @@ const smokeServerBundleAttempt = async (input: {
     while (Date.now() < deadline) {
       if (spawnError) throw spawnError;
       if (child.exitCode !== null || child.signalCode !== null) {
+        // `exitCode` is observable on the `exit` event, before Node has
+        // necessarily drained the child's stdout/stderr. `close` follows only
+        // after those streams close, so wait before classifying bind failures.
+        await terminated;
         const output = redactServerOutput(`${stderr}${stdout}`);
         throw new ServerBundleAttemptError(
           `Server bundle exited before readiness (exit ${String(child.exitCode)}, signal ${String(child.signalCode)}).\n${output}`,
@@ -236,8 +240,8 @@ export async function smokeServerBundle(input: {
   readonly cwd: string;
   readonly timeoutMs: number;
 }): Promise<void> {
-  const entryPath = NodePath.resolve(input.entryPath);
   const cwd = NodePath.resolve(input.cwd);
+  const entryPath = NodePath.resolve(cwd, input.entryPath);
   await NodeFSP.access(entryPath);
   const baseDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-server-smoke-"));
 
