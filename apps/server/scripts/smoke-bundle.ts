@@ -106,22 +106,37 @@ const reserveLoopbackPort = () =>
     });
   });
 
-const stopChild = async (
+const waitForChildTermination = (terminated: Promise<void>, timeoutMs: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    let finished = false;
+    const finish = (terminatedInTime: boolean) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      resolve(terminatedInTime);
+    };
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    void terminated.then(() => finish(true));
+  });
+
+export const stopChild = async (
   child: NodeChildProcess.ChildProcess,
-  exited: Promise<void>,
+  terminated: Promise<void>,
+  timeoutMs = SHUTDOWN_TIMEOUT_MS,
 ): Promise<void> => {
   if (child.exitCode !== null || child.signalCode !== null) return;
 
   try {
     child.kill();
   } catch {
-    return;
+    if (await waitForChildTermination(terminated, timeoutMs)) return;
+    throw new Error("Server bundle child could not be stopped after its spawn failed.");
   }
-  await Promise.race([exited, delay(SHUTDOWN_TIMEOUT_MS)]);
-  if (child.exitCode === null && child.signalCode === null) {
-    child.kill("SIGKILL");
-    await exited;
-  }
+  if (await waitForChildTermination(terminated, timeoutMs)) return;
+
+  child.kill("SIGKILL");
+  if (await waitForChildTermination(terminated, timeoutMs)) return;
+  throw new Error("Server bundle child did not terminate after SIGKILL.");
 };
 
 const readEnvironmentDescriptor = async (url: string, timeoutMs: number): Promise<boolean> => {
@@ -170,8 +185,9 @@ const smokeServerBundleAttempt = async (input: {
   let stdout = "";
   let stderr = "";
   let spawnError: Error | undefined;
-  const exited = new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
+  const terminated = new Promise<void>((resolve) => {
+    child.once("close", () => resolve());
+    child.once("error", () => resolve());
   });
   child.stdout?.on("data", (chunk) => {
     stdout = appendOutput(stdout, chunk);
@@ -208,7 +224,7 @@ const smokeServerBundleAttempt = async (input: {
       `Server bundle did not become ready at ${readinessUrl} within ${String(input.timeoutMs)}ms.\n${redactServerOutput(`${stderr}${stdout}`)}`,
     );
   } finally {
-    await stopChild(child, exited);
+    await stopChild(child, terminated);
   }
 };
 

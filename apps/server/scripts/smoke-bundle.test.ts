@@ -1,11 +1,17 @@
 // @effect-diagnostics nodeBuiltinImport:off - Fixtures launch real child processes to verify the release smoke boundary.
+import type * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, expect, it } from "vite-plus/test";
 
-import { buildSmokeEnvironment, redactServerOutput, smokeServerBundle } from "./smoke-bundle.ts";
+import {
+  buildSmokeEnvironment,
+  redactServerOutput,
+  smokeServerBundle,
+  stopChild,
+} from "./smoke-bundle.ts";
 
 const withFixture = async (
   source: string,
@@ -105,6 +111,23 @@ describe("server bundle smoke", () => {
         );
       },
     );
+  });
+
+  it("bounds shutdown even when a child never reports termination", async () => {
+    const signals: Array<NodeJS.Signals | undefined> = [];
+    const child = {
+      exitCode: null,
+      signalCode: null,
+      kill: (signal?: NodeJS.Signals) => {
+        signals.push(signal);
+        return true;
+      },
+    } as unknown as NodeChildProcess.ChildProcess;
+
+    await expect(stopChild(child, new Promise(() => {}), 10)).rejects.toThrow(
+      /did not terminate after SIGKILL/u,
+    );
+    assert.deepEqual(signals, [undefined, "SIGKILL"]);
   });
 
   it("redacts ephemeral pairing credentials from failure output", () => {
