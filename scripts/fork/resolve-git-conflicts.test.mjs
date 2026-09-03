@@ -16,9 +16,13 @@ import {
   isBinaryAssetConflict,
   isGeneratedLockfile,
   isForkDeletionConflict,
+  isProviderAvailabilityFailure,
   MAX_BATCHES_PER_FILE,
+  MAX_PROVIDER_AVAILABILITY_ATTEMPTS,
   MAX_VALIDATION_ATTEMPTS,
+  nextProviderAvailabilityAttempt,
   prepareConflictPrompt,
+  providerAvailabilityRetryDelayMs,
   pruneResolutionCache,
   readCachedResolution,
   readResponseTextBounded,
@@ -750,9 +754,9 @@ ${">".repeat(7)} theirs
   it("retries transient resolver failures instead of aborting the whole sync", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
 
-    // Network errors, 408, 429, 5xx, and unparseable/incomplete responses
-    // retry; retries step down to high and then medium so one long-think
-    // cannot burn the same five-minute gateway timeout three times.
+    // Network errors, 408, non-availability 5xx, and unparseable/incomplete
+    // responses retry; retries step down to high and then medium so one
+    // long-think cannot burn the same five-minute gateway timeout three times.
     assert.deepEqual(conflictResolutionEfforts({ initialEffort: "xhigh" }), [
       "xhigh",
       "high",
@@ -774,7 +778,7 @@ ${">".repeat(7)} theirs
       conflictResolutionEfforts({ completedBatches: 1, widened: true, initialEffort: "low" }),
       ["low", "low", "low"],
     );
-    assert.include(resolver, "const maxAttempts = efforts.length");
+    assert.include(resolver, "while (effortIndex < efforts.length)");
     assert.include(resolver, "efforts = conflictResolutionEfforts()");
     assert.include(
       resolver,
@@ -782,10 +786,33 @@ ${">".repeat(7)} theirs
     );
     assert.include(resolver, "usedEffort = efforts[0]");
     assert.include(resolver, "status !== 0 && status !== 408 && status !== 429 && status < 500");
-    assert.include(resolver, "setTimeout(resolve, attempt * 15_000)");
+    assert.include(resolver, "setTimeout(resolve, effortIndex * 15_000)");
     assert.include(resolver, "did not produce a completed response");
     // Non-transient HTTP failures (auth, bad request) still throw immediately.
     assert.include(resolver, "CLIProxyAPI returned HTTP ${status}");
+  });
+
+  it("waits out provider availability without consuming reasoning attempts or falling back", () => {
+    const resolver = NodeFS.readFileSync(resolverPath, "utf8");
+
+    assert.equal(MAX_PROVIDER_AVAILABILITY_ATTEMPTS, 8);
+    assert.isTrue(isProviderAvailabilityFailure(502, "server_is_overloaded"));
+    assert.isTrue(isProviderAvailabilityFailure(503, "auth_unavailable: no auth available"));
+    assert.isTrue(isProviderAvailabilityFailure(429, "rate limit exceeded"));
+    assert.isTrue(isProviderAvailabilityFailure(529, "overloaded"));
+    assert.isFalse(isProviderAvailabilityFailure(503, "unrelated upstream error"));
+    assert.isFalse(isProviderAvailabilityFailure(0, "fetch failed"));
+    assert.equal(providerAvailabilityRetryDelayMs(1), 30_000);
+    assert.equal(providerAvailabilityRetryDelayMs(4), 120_000);
+    assert.equal(providerAvailabilityRetryDelayMs(8), 120_000);
+    let availabilityAttempts = nextProviderAvailabilityAttempt(0, true);
+    availabilityAttempts = nextProviderAvailabilityAttempt(availabilityAttempts, true);
+    assert.equal(availabilityAttempts, 2);
+    availabilityAttempts = nextProviderAvailabilityAttempt(availabilityAttempts, false);
+    assert.equal(availabilityAttempts, 0);
+    assert.equal(nextProviderAvailabilityAttempt(availabilityAttempts, true), 1);
+    assert.include(resolver, "waiting without consuming the ${effort} reasoning attempt");
+    assert.include(resolver, "if (error?.providerUnavailable === true) throw error");
   });
 
   it("records the iOS production fingerprint without tripping the format hook", () => {

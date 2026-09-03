@@ -32,6 +32,7 @@ const MAX_CONFLICTS_PER_REQUEST = 1;
 export const MAX_BATCHES_PER_FILE = 32;
 const MAX_CHECKPOINTED_BATCHES_PER_FILE = 100_000;
 export const MAX_VALIDATION_ATTEMPTS = 3;
+export const MAX_PROVIDER_AVAILABILITY_ATTEMPTS = 8;
 const MAX_CONFLICT_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROMPT_BYTES = 600_000;
 const MAX_EDIT_DISTANCE = 20_000;
@@ -1007,6 +1008,30 @@ export function conflictResolutionEfforts({
   return ["high", "medium", "medium"];
 }
 
+export function isProviderAvailabilityFailure(status, raw) {
+  return (
+    status === 429 ||
+    (status >= 500 &&
+      /(?:auth_unavailable|no auth available|overloaded|service_unavailable|service unavailable)/iu.test(
+        raw,
+      ))
+  );
+}
+
+export function providerAvailabilityRetryDelayMs(attempt) {
+  return Math.min(attempt * 30_000, 120_000);
+}
+
+export function nextProviderAvailabilityAttempt(attempts, unavailable) {
+  return unavailable ? attempts + 1 : 0;
+}
+
+function providerUnavailableError(message) {
+  const error = new Error(message);
+  error.providerUnavailable = true;
+  return error;
+}
+
 async function requestConflictResolution({
   path,
   prompt,
@@ -1029,18 +1054,26 @@ async function requestConflictResolution({
   // 2026-08-14 on nightly 1089). Retry transient failures — network errors,
   // 429, 5xx, and incomplete responses — stepping down from xhigh to high
   // and then medium so the same pathological long-think cannot burn three
-  // five-minute gateway timeouts. Model
-  // declines (safe=false on a completed response) never retry.
-  const maxAttempts = efforts.length;
+  // five-minute gateway timeouts. Provider overload/auth outages use their
+  // own bounded backoff without consuming a reasoning attempt; exhausting
+  // that backoff aborts the run instead of creating a fork-side fallback.
+  // Model declines (safe=false on a completed response) never retry.
   let apiResponse;
   let usedEffort = efforts[0];
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  let effortIndex = 0;
+  let availabilityAttempts = 0;
+  while (effortIndex < efforts.length) {
     if (MODEL_DEADLINE_EPOCH_MS !== undefined && Date.now() > MODEL_DEADLINE_EPOCH_MS) {
+      if (availabilityAttempts > 0) {
+        throw providerUnavailableError(
+          "the model provider remained unavailable until the resolution deadline",
+        );
+      }
       throw new Error(
         "the model-resolution deadline passed before the job timeout; taking the fork-side fallback",
       );
     }
-    const effort = efforts[attempt - 1];
+    const effort = efforts[effortIndex];
     let response;
     let raw = "";
     try {
@@ -1124,6 +1157,12 @@ async function requestConflictResolution({
       raw = error instanceof Error ? error.message : String(error);
     }
     raw = redactCliProxyDiagnostic(raw, [token]);
+    const status = response?.status ?? 0;
+    const providerUnavailable = !response?.ok && isProviderAvailabilityFailure(status, raw);
+    availabilityAttempts = nextProviderAvailabilityAttempt(
+      availabilityAttempts,
+      providerUnavailable,
+    );
     if (response?.ok) {
       try {
         apiResponse = JSON.parse(raw);
@@ -1135,26 +1174,41 @@ async function requestConflictResolution({
         break;
       }
       process.stdout.write(
-        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} returned an unparseable or incomplete response; retrying\n`,
+        `[fork-sync] attempt ${effortIndex + 1}/${efforts.length} for ${path} returned an unparseable or incomplete response; retrying\n`,
       );
+      effortIndex += 1;
     } else {
-      const status = response?.status ?? 0;
       // 408 is the proxy timing out a long think ("stream closed before
       // response.completed", seen on nightly 1226) — as transient as a 5xx.
       if (status !== 0 && status !== 408 && status !== 429 && status < 500) {
         throw new Error(`CLIProxyAPI returned HTTP ${status}: ${oneLine(raw).slice(0, 500)}`);
       }
+      if (providerUnavailable) {
+        process.stdout.write(
+          `[fork-sync] provider availability attempt ${availabilityAttempts}/${MAX_PROVIDER_AVAILABILITY_ATTEMPTS} for ${path} hit HTTP ${status}: ${oneLine(raw).slice(0, 200)}; waiting without consuming the ${effort} reasoning attempt\n`,
+        );
+        if (availabilityAttempts >= MAX_PROVIDER_AVAILABILITY_ATTEMPTS) {
+          throw providerUnavailableError(
+            `CLIProxyAPI remained unavailable for ${path} after ${availabilityAttempts} attempts`,
+          );
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, providerAvailabilityRetryDelayMs(availabilityAttempts)),
+        );
+        continue;
+      }
       process.stdout.write(
-        `[fork-sync] attempt ${attempt}/${maxAttempts} for ${path} hit a transient failure (HTTP ${status || "network error"}: ${oneLine(raw).slice(0, 200)}); retrying\n`,
+        `[fork-sync] attempt ${effortIndex + 1}/${efforts.length} for ${path} hit a transient failure (HTTP ${status || "network error"}: ${oneLine(raw).slice(0, 200)}); retrying\n`,
       );
+      effortIndex += 1;
     }
-    if (attempt < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, attempt * 15_000));
+    if (effortIndex < efforts.length) {
+      await new Promise((resolve) => setTimeout(resolve, effortIndex * 15_000));
     }
   }
   if (apiResponse?.status !== "completed") {
     throw new Error(
-      `CLIProxyAPI did not produce a completed response for ${path} after ${maxAttempts} attempts`,
+      `CLIProxyAPI did not produce a completed response for ${path} after ${efforts.length} reasoning attempts`,
     );
   }
   const resolution = JSON.parse(extractResponseText(apiResponse));
@@ -1512,15 +1566,17 @@ async function main() {
   const failures = [];
   for (const path of modelPaths) {
     const entries = unmergedModes.filter((line) => line.endsWith(`\t${path}`));
-    // A model failure must not block the merge: the file falls back to the
-    // fork side, every completed file is checkpointed, and only a path whose
-    // fallback itself fails (a broken index entry) can still fail the run.
+    // A resolution defect must not block the merge: the file falls back to
+    // the fork side. Provider availability is different—publishing a fallback
+    // because credentials or capacity briefly disappeared would discard valid
+    // integration work, so that condition aborts and checkpoints the run.
     try {
       if (entries.some((entry) => !entry.startsWith("100644 ") && !entry.startsWith("100755 "))) {
         throw new Error("has a non-regular git mode and cannot be model-resolved");
       }
       resolutions.push(await resolveConflict(path, token));
     } catch (error) {
+      if (error?.providerUnavailable === true) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       try {
         resolutions.push(fallbackResolution(path, reason));
