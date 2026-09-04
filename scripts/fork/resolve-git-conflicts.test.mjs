@@ -1092,7 +1092,7 @@ ${">".repeat(7)} theirs
     }
   });
 
-  it("validates every partial TS checkpoint against a complete fork-side candidate", () => {
+  it("validates every partial TS checkpoint against both complete side candidates", () => {
     const temporaryDirectory = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-partial-poison-"),
     );
@@ -1150,6 +1150,103 @@ ${">".repeat(7)} theirs
           source: partialSource,
           forkSide: "ours",
         }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/Partial.tsx",
+            source: "export const broken = (\n",
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+
+      const structurallyCoupledSource = [
+        "export const preview =",
+        "<<<<<<< OURS",
+        "  expanded ? {",
+        "||||||| BASE",
+        "  collapsed;",
+        "=======",
+        "  collapsed;",
+        ">>>>>>> THEIRS",
+        "",
+      ].join("\n");
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Partial.tsx",
+            source: materializeResolutionProgressForValidation({
+              path: "apps/web/src/Partial.tsx",
+              source: structurallyCoupledSource,
+              forkSide: "ours",
+            }),
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: structurallyCoupledSource,
+          forkSide: "ours",
+        }),
+      );
+      const reverseStructurallyCoupledSource = [
+        "export const preview =",
+        "<<<<<<< OURS",
+        "  collapsed;",
+        "||||||| BASE",
+        "  collapsed;",
+        "=======",
+        "  expanded ? {",
+        ">>>>>>> THEIRS",
+        "",
+      ].join("\n");
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Partial.tsx",
+            source: materializeResolutionProgressForValidation({
+              path: "apps/web/src/Partial.tsx",
+              source: reverseStructurallyCoupledSource,
+              forkSide: "theirs",
+            }),
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: reverseStructurallyCoupledSource,
+          forkSide: "theirs",
+        }),
+      );
+
+      const asymmetricKey = "c".repeat(64);
+      const asymmetricEntry = {
+        path: "apps/web/src/Partial.tsx",
+        partialSource: structurallyCoupledSource,
+        completedBatches: 1,
+        forkChangesPreserved: [],
+        upstreamChangesIntegrated: [],
+        upstreamChangesOmitted: [],
+      };
+      assert.isTrue(
+        writeCachedResolution({
+          key: asymmetricKey,
+          cacheDir: temporaryDirectory,
+          entry: asymmetricEntry,
+        }),
+      );
+      assert.equal(
+        readCachedResolution({
+          key: asymmetricKey,
+          cacheDir: temporaryDirectory,
+          expectedPath: asymmetricEntry.path,
+        }).partialSource,
+        structurallyCoupledSource,
+      );
+      assert.isFalse(
+        NodeFS.existsSync(NodePath.join(temporaryDirectory, `${asymmetricKey}.invalid`)),
       );
 
       const provisionalDuplicate = [
