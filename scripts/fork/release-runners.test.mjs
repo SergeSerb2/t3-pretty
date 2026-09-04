@@ -423,63 +423,15 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
-  it("defers Windows for upstream-sync delivery webhooks but keeps ordinary main releases", () => {
+  it("requires an explicit opt-in while Windows packaging is paused", () => {
     const windowsStep = pipeline.slice(
       pipeline.indexOf(":windows: Windows NSIS"),
       pipeline.indexOf(":linux: Linux x64 AppImage"),
     );
-    const upstreamSyncCommitPattern = /^chore\(sync\): /u;
-    const mobileFingerprintCommitPattern =
-      /^chore\(mobile\): record (iOS production|internal Android|public Android) fingerprint/u;
-    const shouldRunWindows = ({ branch = "main", source, message }) =>
-      branch === "main" &&
-      source !== "schedule" &&
-      !(
-        source === "webhook" &&
-        (upstreamSyncCommitPattern.test(message) || mobileFingerprintCommitPattern.test(message))
-      );
-
     assert.include(windowsStep, 'build.branch == "main" && build.source != "schedule"');
-    assert.include(windowsStep, "build.message =~ /^chore\\(sync\\): /");
-    assert.include(
-      windowsStep,
-      "build.message =~ /^chore\\(mobile\\): record (iOS production|internal Android|public Android) fingerprint/",
-    );
-    assert.isTrue(
-      upstreamSyncCommitPattern.test("chore(sync): merge upstream v0.0.39-nightly.20260903.1267"),
-    );
-    assert.isTrue(
-      mobileFingerprintCommitPattern.test("chore(mobile): record iOS production fingerprint"),
-    );
-    assert.isTrue(
-      mobileFingerprintCommitPattern.test("chore(mobile): record internal Android fingerprint"),
-    );
-    assert.isTrue(
-      mobileFingerprintCommitPattern.test("chore(mobile): record public Android fingerprint"),
-    );
-    assert.isFalse(upstreamSyncCommitPattern.test("fix(server): restore deferred projection"));
-    assert.isFalse(mobileFingerprintCommitPattern.test("chore(mobile): update release metadata"));
-    assert.isFalse(
-      shouldRunWindows({
-        source: "webhook",
-        message: "chore(mobile): record iOS production fingerprint",
-      }),
-    );
-    assert.isTrue(
-      shouldRunWindows({
-        source: "api",
-        message: "chore(mobile): record iOS production fingerprint",
-      }),
-    );
-    assert.isTrue(
-      shouldRunWindows({
-        source: "ui",
-        message: "chore(sync): merge upstream v0.0.39-nightly.20260903.1267",
-      }),
-    );
-    assert.isTrue(
-      shouldRunWindows({ source: "webhook", message: "fix(server): ordinary release" }),
-    );
+    assert.include(windowsStep, 'build.env("T3CODE_ENABLE_WINDOWS_RELEASE") == "1"');
+    assert.notInclude(windowsStep, "build.message");
+    assert.notInclude(pipeline, "T3CODE_ENABLE_WINDOWS_RELEASE: ");
   });
 
   it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {

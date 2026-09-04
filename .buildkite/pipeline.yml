@@ -170,15 +170,11 @@ steps:
     # not cancel the Windows agent job while it is still waiting.
     # Scheduled builds exist only to run upstream sync. Do not rebuild NSIS
     # every four hours when main has not changed.
-    # The sync merge's webhook releases the other updated surfaces. Its mobile
-    # publisher can then merge an automated fingerprint marker, so defer both
-    # webhook subjects while Windows release work is intentionally paused.
-    # API/UI builds can still release the same commit.
+    # Windows packaging is paused while the antivirus issue is investigated.
+    # A maintainer must explicitly opt in when Windows release work resumes.
     if: >-
       build.branch == "main" && build.source != "schedule" &&
-      !(build.source == "webhook" &&
-        (build.message =~ /^chore\(sync\): / ||
-         build.message =~ /^chore\(mobile\): record (iOS production|internal Android|public Android) fingerprint/))
+      build.env("T3CODE_ENABLE_WINDOWS_RELEASE") == "1"
     timeout_in_minutes: 90
     agents:
       queue: windows-release
