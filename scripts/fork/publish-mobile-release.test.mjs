@@ -743,6 +743,22 @@ describe("iOS embedded runtime fingerprint", () => {
     }
   });
 
+  it("fails closed when the EXUpdates fingerprint sidecar does not match", () => {
+    const embedded = "4ed986f84d740653c1ff27b32a3e0c0a7c139efc";
+    const { root, ipa } = makeFingerprintIpa({
+      fingerprint: embedded,
+      runtimeVersion: "f4da50b3d2326db6b7f34aa680546943796adc3b",
+    });
+    try {
+      const mismatched = verifyIpaFingerprint(ipa, "f4da50b3d2326db6b7f34aa680546943796adc3b");
+      assert.notEqual(mismatched.status, 0);
+      assert.include(mismatched.stderr, "Embedded iOS runtime fingerprint mismatch");
+      assert.include(mismatched.stderr, "Refusing TestFlight submit");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to a matching Expo.plist runtime version", () => {
     const embedded = "a21dfbf91ea34506691ef12e24f26e9ddb36b901";
     const { root, ipa } = makeFingerprintIpa({ runtimeVersion: embedded });
