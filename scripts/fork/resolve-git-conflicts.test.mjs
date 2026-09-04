@@ -9,6 +9,7 @@ import { assert, describe, it } from "vite-plus/test";
 
 import {
   applyResolutionEdits,
+  assertValidResolutionProgressSource,
   assertValidResolvedSource,
   buildConflictPrompt,
   buildValidationRetryPrompt,
@@ -21,6 +22,7 @@ import {
   MAX_BATCHES_PER_FILE,
   MAX_PROVIDER_AVAILABILITY_ATTEMPTS,
   MAX_VALIDATION_ATTEMPTS,
+  materializeResolutionProgressForValidation,
   nextProviderAvailabilityAttempt,
   prepareConflictPrompt,
   providerAvailabilityRetryDelayMs,
@@ -553,7 +555,7 @@ ${">".repeat(7)} theirs
     assert.include(mobileRelease, "eas submit");
     assert.include(mobileRelease, "eas build:list");
     assert.notInclude(mobileRelease, "--status finished");
-    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 2);
+    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 1);
     assert.isBelow(mobileRelease.indexOf("eas update"), mobileRelease.indexOf("eas submit"));
   });
 
@@ -1090,6 +1092,177 @@ ${">".repeat(7)} theirs
     }
   });
 
+  it("validates every partial TS checkpoint against a complete fork-side candidate", () => {
+    const temporaryDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-partial-poison-"),
+    );
+    const partialSource = [
+      "export function choose() {",
+      "<<<<<<< OURS",
+      '  return "fork";',
+      "||||||| BASE",
+      '  return "base";',
+      "=======",
+      '  return "parent";',
+      ">>>>>>> THEIRS",
+      "}",
+      "",
+    ].join("\n");
+    const expectedForkSource = 'export function choose() {\n  return "fork";\n}\n';
+    const expectedParentSource = 'export function choose() {\n  return "parent";\n}\n';
+    try {
+      assert.equal(
+        materializeResolutionProgressForValidation({
+          path: "apps/web/src/Partial.tsx",
+          source: partialSource,
+          forkSide: "ours",
+        }),
+        expectedForkSource,
+      );
+      assert.equal(
+        materializeResolutionProgressForValidation({
+          path: "apps/web/src/Partial.tsx",
+          source: partialSource,
+          forkSide: "theirs",
+        }),
+        expectedParentSource,
+      );
+      const twoWaySource = partialSource.replace('||||||| BASE\n  return "base";\n', "");
+      assert.equal(
+        materializeResolutionProgressForValidation({
+          path: "apps/web/src/Partial.tsx",
+          source: twoWaySource,
+          forkSide: "ours",
+        }),
+        expectedForkSource,
+      );
+      assert.equal(
+        materializeResolutionProgressForValidation({
+          path: "apps/web/src/Partial.tsx",
+          source: twoWaySource,
+          forkSide: "theirs",
+        }),
+        expectedParentSource,
+      );
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: partialSource,
+          forkSide: "ours",
+        }),
+      );
+
+      const provisionalDuplicate = [
+        'const activeThreadShell = "upstream";',
+        "<<<<<<< OURS",
+        'const activeThreadShell = "fork";',
+        "||||||| BASE",
+        'const activeThreadShell = "base";',
+        "=======",
+        'const legacyThreadShell = "parent";',
+        ">>>>>>> THEIRS",
+        "",
+      ].join("\n");
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: provisionalDuplicate,
+          forkSide: "ours",
+        }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Partial.tsx",
+            source: materializeResolutionProgressForValidation({
+              path: "apps/web/src/Partial.tsx",
+              source: provisionalDuplicate,
+              forkSide: "ours",
+            }),
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+
+      const resolvedDuplicate = provisionalDuplicate.replace(
+        'const activeThreadShell = "upstream";',
+        "const duplicate = 1;\nconst duplicate = 2;",
+      );
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/Partial.tsx",
+            source: resolvedDuplicate,
+            forkSide: "theirs",
+          }),
+        /partial resolution has invalid resolved TypeScript/u,
+      );
+
+      for (const poisonedPrefix of ["export const broken = (", "export const broken = value."]) {
+        assert.throws(
+          () =>
+            assertValidResolutionProgressSource({
+              path: "apps/web/src/Partial.tsx",
+              source: `${poisonedPrefix}\n${partialSource}`,
+              forkSide: "ours",
+            }),
+          /partial resolution has invalid resolved TypeScript/u,
+        );
+      }
+
+      const poisonedKey = "d".repeat(64);
+      const poisonedEntry = {
+        path: "apps/web/src/Partial.tsx",
+        partialSource: partialSource.replace(
+          "export function choose() {",
+          "export function choose() {\n)",
+        ),
+        completedBatches: 22,
+        forkChangesPreserved: [],
+        upstreamChangesIntegrated: [],
+        upstreamChangesOmitted: [],
+      };
+      NodeFS.writeFileSync(
+        NodePath.join(temporaryDirectory, `${poisonedKey}.json`),
+        `${JSON.stringify(poisonedEntry)}\n`,
+      );
+      assert.equal(
+        readCachedResolution({ key: poisonedKey, cacheDir: temporaryDirectory }),
+        undefined,
+      );
+      assert.isTrue(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${poisonedKey}.invalid`)));
+
+      const rejectedKey = "e".repeat(64);
+      assert.isFalse(
+        writeCachedResolution({
+          key: rejectedKey,
+          cacheDir: temporaryDirectory,
+          entry: poisonedEntry,
+        }),
+      );
+      assert.isFalse(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${rejectedKey}.json`)));
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/Partial.tsx",
+            source: poisonedEntry.partialSource,
+            forkSide: "ours",
+          }),
+        /partial resolution has invalid resolved TypeScript/u,
+      );
+
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/Partial.tsx",
+            source: partialSource.replace("=======", "======"),
+          }),
+        /malformed partial conflict markers/u,
+      );
+    } finally {
+      NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("regenerates a poisoned completed checkpoint instead of replaying it", async () => {
     const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-poison-replay-"));
     const git = (...args) =>
@@ -1221,7 +1394,17 @@ ${">".repeat(7)} theirs
       NodePath.join(NodeOS.tmpdir(), "t3-pretty-sync-partial-cache-"),
     );
     try {
-      const conflictedSource = `${"<".repeat(7)} ours\nx\n${"=".repeat(7)}\ny\n${">".repeat(7)} theirs\n`;
+      const conflictedSource = [
+        "export const value =",
+        "<<<<<<< ours",
+        '  "x";',
+        "||||||| base",
+        '  "base";',
+        "=======",
+        '  "y";',
+        ">>>>>>> theirs",
+        "",
+      ].join("\n");
       const key = resolutionCacheKey({
         path: "apps/mobile/src/features/threads/ThreadFeed.tsx",
         conflictedSource,
@@ -1264,26 +1447,36 @@ ${">".repeat(7)} theirs
       assert.equal(cached.completedBatches, 2);
       assert.deepEqual(cached.forkChangesPreserved, ["kept read-aloud behavior"]);
 
-      writeCachedResolution({
-        key,
-        cacheDir: temporaryDirectory,
-        entry: {
-          ...cached,
-          partialSource: "markers already gone\n",
-        },
-      });
-      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+      assert.isFalse(
+        writeCachedResolution({
+          key,
+          cacheDir: temporaryDirectory,
+          entry: {
+            ...cached,
+            partialSource: "markers already gone\n",
+          },
+        }),
+      );
+      assert.equal(
+        readCachedResolution({ key, cacheDir: temporaryDirectory }).partialSource,
+        conflictedSource,
+      );
 
-      writeCachedResolution({
-        key,
-        cacheDir: temporaryDirectory,
-        entry: {
-          ...partialEntry,
-          resolvedSource: "completed resolution\n",
-          partialSource: "stale partial source\n",
-        },
-      });
-      assert.equal(readCachedResolution({ key, cacheDir: temporaryDirectory }), undefined);
+      assert.isFalse(
+        writeCachedResolution({
+          key,
+          cacheDir: temporaryDirectory,
+          entry: {
+            ...partialEntry,
+            resolvedSource: "completed resolution\n",
+            partialSource: "stale partial source\n",
+          },
+        }),
+      );
+      assert.equal(
+        readCachedResolution({ key, cacheDir: temporaryDirectory }).partialSource,
+        conflictedSource,
+      );
 
       const resolver = NodeFS.readFileSync(resolverPath, "utf8");
       assert.include(resolver, "checkpointed conflict batch");
@@ -1367,12 +1560,15 @@ ${">".repeat(7)} theirs
         });
         request.on("end", () => {
           requestBodies.push(JSON.parse(body));
+          const poisonedAttempt = requestBodies.length === 1;
           const resolution = {
             safe: true,
             edits: [
               {
                 old_text: remainingConflict,
-                new_text: 'const second = "ours-and-theirs";\n',
+                new_text: poisonedAttempt
+                  ? 'const second = "ours-and-theirs";\n);\n'
+                  : 'const second = "ours-and-theirs";\n',
                 summary: "combined the remaining edit",
               },
             ],
@@ -1422,9 +1618,13 @@ ${">".repeat(7)} theirs
         `resumed partial conflict resolution for fixture.ts after ${MAX_BATCHES_PER_FILE}`,
       );
       assert.include(stdout, `resolved batch ${MAX_BATCHES_PER_FILE + 1} for fixture.ts`);
-      assert.lengthOf(requestBodies, 1);
-      assert.include(requestBodies[0].input, 'const second = "ours";');
-      assert.notInclude(requestBodies[0].input, firstResolution.trim());
+      assert.include(stdout, "returned an invalid edit set");
+      assert.include(stdout, "requesting a fresh resolution");
+      assert.lengthOf(requestBodies, 2);
+      for (const requestBody of requestBodies) {
+        assert.include(requestBody.input, 'const second = "ours";');
+        assert.notInclude(requestBody.input, firstResolution.trim());
+      }
       assert.equal(
         NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8"),
         source("ours-and-theirs", "ours-and-theirs"),
@@ -1437,6 +1637,145 @@ ${">".repeat(7)} theirs
       assert.include(report, "integrated the first parent edit");
       assert.include(report, "kept the second fork edit");
       assert.include(report, "integrated the second parent edit");
+    } finally {
+      if (server) await new Promise((resolve) => server.close(resolve));
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("defers a poisoned later batch without replacing its last valid checkpoint", async () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-defer-poison-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const conflictPath = "fixture.ts";
+    const filler = Array.from(
+      { length: 220 },
+      (_, index) => `const filler${index} = ${index};`,
+    ).join("\n");
+    const source = (first, second) =>
+      `const first = "${first}";\n${filler}\nconst second = "${second}";\n`;
+    let server;
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("base", "base"));
+      git("add", conflictPath);
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("theirs", "theirs"));
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("ours", "ours"));
+      git("commit", "-aqm", "fork changes");
+      assert.throws(() => git("merge", "theirs"));
+      git("checkout", "--conflict=diff3", "--", conflictPath);
+
+      const originalConflict = NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8");
+      const firstBatch = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource: originalConflict,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const firstResolution = 'const first = "ours-and-theirs";\n';
+      const partialSource =
+        originalConflict.slice(0, firstBatch.start) +
+        firstResolution +
+        originalConflict.slice(firstBatch.end);
+      const remainingBatch = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource: partialSource,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const remainingConflict = partialSource.slice(remainingBatch.start, remainingBatch.end);
+      const cacheDirectory = NodePath.join(directory, "cache");
+      const cacheKey = resolutionCacheKey({
+        path: conflictPath,
+        conflictedSource: originalConflict,
+      });
+      assert.isTrue(
+        writeCachedResolution({
+          key: cacheKey,
+          cacheDir: cacheDirectory,
+          entry: {
+            path: conflictPath,
+            partialSource,
+            completedBatches: 1,
+            forkChangesPreserved: ["kept the first fork edit"],
+            upstreamChangesIntegrated: ["integrated the first parent edit"],
+            upstreamChangesOmitted: [],
+          },
+        }),
+      );
+      const cachePath = NodePath.join(cacheDirectory, `${cacheKey}.json`);
+      const lastValidCheckpoint = NodeFS.readFileSync(cachePath, "utf8");
+
+      const requestBodies = [];
+      server = NodeHttp.createServer((request, response) => {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          requestBodies.push(JSON.parse(body));
+          const resolution = {
+            safe: true,
+            edits: [
+              {
+                old_text: remainingConflict,
+                new_text: 'const second = "ours-and-theirs";\n);\n',
+                summary: "introduced a stray token",
+              },
+            ],
+            fork_changes_preserved: ["kept the second fork edit"],
+            upstream_changes_integrated: ["integrated the second parent edit"],
+            upstream_changes_omitted: [],
+            summary: "poisoned the remaining conflict",
+          };
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({ status: "completed", output_text: JSON.stringify(resolution) }),
+          );
+        });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert.isObject(address);
+
+      const child = NodeChildProcess.spawn(process.execPath, [resolverPath], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          CLI_PROXY_API_KEY: "test-key",
+          CLI_PROXY_API_URL: `http://127.0.0.1:${address.port}`,
+          PREVIOUS_UPSTREAM_TAG: "",
+          REUSED_SYNC_RESOLUTION: "false",
+          SYNC_RESOLUTION_CACHE_DIR: cacheDirectory,
+          UPSTREAM_TAG: "v0.0.0-nightly.defer-test",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      const exitCode = await new Promise((resolve) => child.on("close", resolve));
+
+      assert.equal(exitCode, 75, stderr);
+      assert.lengthOf(requestBodies, MAX_VALIDATION_ATTEMPTS);
+      assert.include(stderr, "keeping the last valid checkpoint");
+      assert.notInclude(stdout, "fork-side fallback for fixture.ts");
+      assert.equal(NodeFS.readFileSync(cachePath, "utf8"), lastValidCheckpoint);
+      assert.isFalse(NodeFS.existsSync(NodePath.join(cacheDirectory, `${cacheKey}.invalid`)));
     } finally {
       if (server) await new Promise((resolve) => server.close(resolve));
       NodeFS.rmSync(directory, { recursive: true, force: true });
@@ -1489,6 +1828,9 @@ ${">".repeat(7)} theirs
     // failure: bounded fresh requests usually validate (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
+    assert.include(resolver, "assertValidResolutionProgressSource({ path, source: nextSource })");
+    assert.include(resolver, "keeping the last valid checkpoint");
+    assert.include(resolver, "throw deferredSyncError(");
     assert.equal(MAX_VALIDATION_ATTEMPTS, 3);
 
     const retryPrompt = buildValidationRetryPrompt(

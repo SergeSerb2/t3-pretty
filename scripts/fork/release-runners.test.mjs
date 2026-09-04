@@ -211,7 +211,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "eas build");
     assert.include(mobileRelease, "--local");
     assert.include(mobileRelease, "eas submit");
-    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 2);
+    assert.equal((mobileRelease.match(/--no-wait/g) || []).length, 1);
     assert.include(mobileRelease, "Xcode-beta.app");
     assert.include(mobileRelease, "HOMEBREW_NO_ASK=1");
     assert.include(mobileRelease, "brew install cocoapods");
@@ -249,7 +249,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "origin/main already records a macos-release TestFlight submit");
     assert.include(mobileRelease, "Runner already submitted a TestFlight IPA");
     assert.notInclude(mobileRelease, "git fetch --unshallow");
-    assert.include(mobileRelease, "generating after TestFlight submit");
+    assert.include(mobileRelease, "stable iOS runtime fingerprint is required");
     assert.include(mobileRelease, "--builds-file");
     assert.include(mobileRelease, "Skipping the fingerprint record PR");
     assert.include(mobileRelease, '"$MODE" == "build" || "$FORCE_IOS" == "true"');
@@ -262,10 +262,11 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(mobileRelease, "ipa_via_cloud");
     assert.include(mobileRelease, "--wait");
     assert.include(mobileRelease, '--json > "$cloud_build_json"');
-    assert.include(mobileRelease, "eas build --json did not include a build id");
-    assert.include(mobileRelease, '--id "$build_id"');
+    assert.include(mobileRelease, "completed build with an id and archive");
+    assert.include(mobileRelease, '--path "$ipa_path"');
+    assert.include(mobileRelease, "verify_ipa_fingerprint");
     assert.notInclude(mobileRelease, "--latest");
-    assert.include(mobileRelease, "Submitted TestFlight IPA via EAS cloud");
+    assert.include(mobileRelease, "Submitted verified TestFlight IPA from EAS cloud build");
     assert.include(mobileRelease, "No full Xcode on this Mac");
     assert.notInclude(mobileRelease, "Skipping a new IPA");
     assert.notInclude(mobileRelease, "xcode_is_store_supported");
