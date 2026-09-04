@@ -60,6 +60,8 @@ const WIDE_CONTEXT_LINES = 400;
 // run-upstream-sync.sh sets this to job start + 150min.
 const MODEL_DEADLINE_EPOCH_MS = Number(process.env.SYNC_MODEL_DEADLINE_EPOCH_MS ?? "") || undefined;
 const CONFLICT_PATTERN = /^<<<<<<<[^\n]*\n[\s\S]*?^>>>>>>>[^\n]*(?:\n|$)/gmu;
+const MATERIALIZABLE_CONFLICT_PATTERN =
+  /^<<<<<<<[^\n]*\n([\s\S]*?)(?:^\|\|\|\|\|\|\|[^\n]*\n[\s\S]*?)?^=======[^\n]*(?:\n|$)([\s\S]*?)^>>>>>>>[^\n]*(?:\n|$)/gmu;
 const LEFTOVER_MARKER_PATTERN = /^(?:<{7}|\|{7}|={7}|>{7})/mu;
 const GENERATED_LOCKFILE_PATTERN = /(?:^|\/)pnpm-lock\.yaml$/u;
 const TYPESCRIPT_SOURCE_PATTERN = /\.(?:cts|mts|ts|tsx)$/u;
@@ -178,6 +180,20 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, exp
         return undefined;
       }
     }
+    if (hasPartialResolution) {
+      try {
+        assertValidResolutionProgressSource({
+          path: entry.path,
+          source: entry.partialSource,
+        });
+      } catch (error) {
+        const quarantined = quarantineCachedResolution({ key, cacheDir });
+        process.stdout.write(
+          `[fork-sync] rejected${quarantined ? " and quarantined" : ""} the invalid partial checkpoint for ${oneLine(entry.path)}: ${oneLine(error instanceof Error ? error.message : String(error))}\n`,
+        );
+        return undefined;
+      }
+    }
     return entry;
   } catch {
     return undefined;
@@ -222,6 +238,95 @@ export function assertValidResolvedSource({ path, source }) {
   }
 }
 
+export function materializeResolutionProgressForValidation({
+  path,
+  source,
+  forkSide = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours",
+}) {
+  return materializeResolutionProgressDetails({ path, source, forkSide }).source;
+}
+
+function materializeResolutionProgressDetails({
+  path,
+  source,
+  forkSide = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours",
+}) {
+  if (typeof path !== "string" || typeof source !== "string") {
+    throw new Error("partial resolution did not contain a source path and string");
+  }
+  if (!LEFTOVER_MARKER_PATTERN.test(source)) return { source, unresolvedSpans: [] };
+  if (forkSide !== "ours" && forkSide !== "theirs") {
+    throw new Error(`${path} has an invalid fork side for partial validation`);
+  }
+
+  let materializedConflicts = 0;
+  let sourceOffset = 0;
+  let outputOffset = 0;
+  const pieces = [];
+  const unresolvedSpans = [];
+  for (const conflict of source.matchAll(MATERIALIZABLE_CONFLICT_PATTERN)) {
+    const prefix = source.slice(sourceOffset, conflict.index);
+    const selectedSource = forkSide === "theirs" ? conflict[2] : conflict[1];
+    pieces.push(prefix, selectedSource);
+    outputOffset += prefix.length;
+    unresolvedSpans.push({ start: outputOffset, end: outputOffset + selectedSource.length });
+    outputOffset += selectedSource.length;
+    sourceOffset = conflict.index + conflict[0].length;
+    materializedConflicts += 1;
+  }
+  pieces.push(source.slice(sourceOffset));
+  const materialized = pieces.join("");
+  if (materializedConflicts === 0 || LEFTOVER_MARKER_PATTERN.test(materialized)) {
+    throw new Error(`${path} contains malformed partial conflict markers`);
+  }
+  return { source: materialized, unresolvedSpans };
+}
+
+export function assertValidResolutionProgressSource({ path, source, forkSide } = {}) {
+  if (!LEFTOVER_MARKER_PATTERN.test(source)) {
+    assertValidResolvedSource({ path, source });
+    return;
+  }
+  const materialized = materializeResolutionProgressDetails({ path, source, forkSide });
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
+  const diagnosticIsProvisionalCrossConflict = (error) => {
+    const position = Number.isSafeInteger(error?.pos)
+      ? error.pos
+      : Number.isSafeInteger(error?.loc?.index)
+        ? error.loc.index
+        : undefined;
+    return (
+      error?.reasonCode === "VarRedeclaration" &&
+      position !== undefined &&
+      materialized.unresolvedSpans.some(({ start, end }) => position >= start && position < end)
+    );
+  };
+  try {
+    const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
+    if (path.endsWith(".tsx")) plugins.push("jsx");
+    // A valid cross-conflict composition can temporarily redeclare a binding
+    // until a later marker removes the fork's old declaration. Suppress only
+    // that recoverable diagnostic when its duplicate token came from a
+    // still-unresolved side; every other parser error is model-owned poison.
+    // The marker-free result is still validated strictly above.
+    const parsed = parseJavaScript(materialized.source, {
+      sourceFilename: path,
+      sourceType: "unambiguous",
+      plugins,
+      errorRecovery: true,
+    });
+    const resolvedSourceError = parsed.errors.find(
+      (error) => !diagnosticIsProvisionalCrossConflict(error),
+    );
+    if (resolvedSourceError) throw resolvedSourceError;
+  } catch (error) {
+    throw new Error(
+      `${path} partial resolution has invalid resolved TypeScript: ${oneLine(error instanceof Error ? error.message : String(error))}`,
+      { cause: error },
+    );
+  }
+}
+
 export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_DIR }) {
   // Checkpointing is best-effort: never fail a completed resolution over a
   // cache write problem.
@@ -231,6 +336,9 @@ export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_
     }
     if (Object.hasOwn(entry, "resolvedSource")) {
       assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource });
+    }
+    if (Object.hasOwn(entry, "partialSource")) {
+      assertValidResolutionProgressSource({ path: entry.path, source: entry.partialSource });
     }
     NodeFS.mkdirSync(cacheDir, { recursive: true });
     const serialized = `${JSON.stringify(entry)}\n`;
@@ -1510,12 +1618,13 @@ async function resolveConflict(path, token) {
             conflicts,
             resolution: response.resolution,
           });
-          // Partial checkpoints necessarily contain merge markers. Once this
-          // batch removes the final marker, reject malformed TS/TSX here so a
-          // fresh model attempt can repair it instead of poisoning every rerun.
-          if (!LEFTOVER_MARKER_PATTERN.test(nextSource)) {
-            assertValidResolvedSource({ path, source: nextSource });
-          }
+          // Validate every batch, not only the one that removes the final
+          // marker. Materializing unresolved conflict blocks to the fork side
+          // gives the parser a complete candidate, while source-span tracking
+          // distinguishes provisional cross-conflict diagnostics from damage
+          // in text the model already resolved. A malformed batch is retried
+          // immediately instead of poisoning the durable partial checkpoint.
+          assertValidResolutionProgressSource({ path, source: nextSource });
           resolution = response.resolution;
           usedEffort = response.usedEffort;
           effectiveTier = response.effectiveTier;
@@ -1531,7 +1640,15 @@ async function resolveConflict(path, token) {
           }
         }
       }
-      if (validationError) throw validationError;
+      if (validationError) {
+        const retryState =
+          completedBatches > 0
+            ? "keeping the last valid checkpoint so the next pinned run can retry without discarding its earlier integration"
+            : "the next pinned run will retry from the original conflict instead of taking a whole-file fallback";
+        throw deferredSyncError(
+          `${path} could not validate batch ${batchNumber} after ${completedBatches} completed batches; ${retryState}`,
+        );
+      }
     } catch (error) {
       // A decline often names context the fork moved outside the default
       // window. Rebuild the batch once with a much wider window before the
