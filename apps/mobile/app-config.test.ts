@@ -1,7 +1,13 @@
+import * as NodeChildProcess from "node:child_process";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
 import { expect, it } from "vite-plus/test";
 
 import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./app-identity.ts";
 import config, { resolveRelyingParty, resolveVoiceDictationPlugins } from "./app.config.ts";
+
+const here = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 
 it("matches the default Expo config to its selected build identity", () => {
   const buildFlavor = config.extra?.buildFlavor;
@@ -52,4 +58,23 @@ it("links expo-audio only for internal mobile builds", () => {
   expect(resolveVoiceDictationPlugins(false)).toEqual(["./plugins/withoutPublicExpoAudio.cjs"]);
   const [internalPlugin] = resolveVoiceDictationPlugins(true);
   expect(Array.isArray(internalPlugin) ? internalPlugin[0] : internalPlugin).toBe("expo-audio");
+});
+
+it("emits the release fingerprint override as a literal runtime version", () => {
+  const expectedFingerprint = "a21dfbf91ea34506691ef12e24f26e9ddb36b901";
+  const expoCli = NodePath.join(here, "node_modules", "expo", "bin", "cli");
+  const rawConfig = NodeChildProcess.execFileSync(process.execPath, [expoCli, "config", "--json"], {
+    cwd: here,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      APP_VARIANT: "production",
+      EXPO_NO_DOTENV: "1",
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: expectedFingerprint,
+      T3CODE_BUILD_FLAVOR: "internal",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  expect(JSON.parse(rawConfig).runtimeVersion).toBe(expectedFingerprint);
 });

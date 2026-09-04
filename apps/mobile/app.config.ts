@@ -18,6 +18,10 @@ const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const internalMicrophonePermission =
   "Allow T3 Pretty Internal to use your microphone for voice dictation.";
+// EAS build-tools resolves fingerprint policies before expo-updates' native
+// build helper gets a chance to honor this override. Emit the pinned build
+// fingerprint literally so the native binary and the OTA gate use one runtime.
+const pinnedRuntimeVersion = process.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE?.trim();
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
@@ -248,12 +252,14 @@ const config: ExpoConfig = {
   platforms: ["ios", "android"],
   scheme: variant.scheme,
   version: resolveMobileAppVersion(),
-  runtimeVersion: {
-    // Development manifests resolve on every launch, so avoid fingerprint's
-    // expensive native-project calculation there. Preview and production stay
-    // fingerprinted so OTAs only reach binaries with matching native projects.
-    policy: runtimeVersionPolicy,
-  },
+  runtimeVersion:
+    pinnedRuntimeVersion ||
+    ({
+      // Development manifests resolve on every launch, so avoid fingerprint's
+      // expensive native-project calculation there. Preview and production stay
+      // fingerprinted so OTAs only reach binaries with matching native projects.
+      policy: runtimeVersionPolicy,
+    } satisfies NonNullable<ExpoConfig["runtimeVersion"]>),
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",

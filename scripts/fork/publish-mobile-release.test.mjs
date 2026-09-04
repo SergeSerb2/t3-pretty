@@ -438,6 +438,7 @@ describe("iOS embedded runtime fingerprint", () => {
   it("pins the build worker to the fingerprint used by the OTA and native gate", () => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-eas-json-"));
     const easJson = NodePath.join(root, "eas.json");
+    const exportedFingerprint = NodePath.join(root, "exported-fingerprint");
     const expected = "f4da50b3d2326db6b7f34aa680546943796adc3b";
     try {
       NodeFS.writeFileSync(
@@ -448,10 +449,11 @@ describe("iOS embedded runtime fingerprint", () => {
         "bash",
         [
           "-c",
-          `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2"`,
+          `${extractBuildFingerprintConfiguration()}\neas_json="$1"\nconfigure_eas_build_fingerprint "$2"\nprintf '%s' "$EXPO_UPDATES_FINGERPRINT_OVERRIDE" > "$3"`,
           "configure-build-fingerprint",
           easJson,
           expected,
+          exportedFingerprint,
         ],
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
@@ -459,6 +461,7 @@ describe("iOS embedded runtime fingerprint", () => {
       const configured = JSON.parse(NodeFS.readFileSync(easJson, "utf8"));
       assert.equal(configured.build.production.env.APP_VARIANT, "production");
       assert.equal(configured.build.production.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE, expected);
+      assert.equal(NodeFS.readFileSync(exportedFingerprint, "utf8"), expected);
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
