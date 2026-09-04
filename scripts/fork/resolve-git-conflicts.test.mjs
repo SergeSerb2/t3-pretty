@@ -162,6 +162,54 @@ describe("T3 Pretty upstream conflict resolver", () => {
     }
   });
 
+  it("keeps authoritative remote cache entries while retaining local-only progress", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-precedence-"),
+    );
+    try {
+      const localCache = NodePath.join(directory, "local");
+      const restoredCache = NodePath.join(directory, "restored");
+      NodeFS.mkdirSync(localCache);
+      NodeFS.mkdirSync(restoredCache);
+
+      const collision = `${"a".repeat(64)}.json`;
+      const localOnly = `${"b".repeat(64)}.json`;
+      NodeFS.writeFileSync(NodePath.join(localCache, collision), "stale local\n");
+      NodeFS.writeFileSync(NodePath.join(localCache, localOnly), "active local progress\n");
+      NodeFS.writeFileSync(NodePath.join(localCache, "not-a-cache-key.json"), "ignored\n");
+      NodeFS.writeFileSync(NodePath.join(restoredCache, collision), "reviewed remote\n");
+
+      const syncScript = NodeFS.readFileSync(syncScriptPath, "utf8");
+      const functionSource = syncScript.match(
+        /retain_local_only_resolution_progress\(\) \{\n[\s\S]*?\n\}/u,
+      )?.[0];
+      assert.isString(functionSource);
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          `${functionSource}\nSYNC_RESOLUTION_CACHE_DIR="$1"\nretain_local_only_resolution_progress "$2"`,
+          "cache-precedence-test",
+          localCache,
+          restoredCache,
+        ],
+        { encoding: "utf8" },
+      );
+
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(restoredCache, collision), "utf8"),
+        "reviewed remote\n",
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(restoredCache, localOnly), "utf8"),
+        "active local progress\n",
+      );
+      assert.isFalse(NodeFS.existsSync(NodePath.join(restoredCache, "not-a-cache-key.json")));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, '["diff", "--name-only", "--diff-filter=U", "-z"]');
