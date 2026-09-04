@@ -341,6 +341,113 @@ function materializeResolutionProgressDetails({
   return { source: materialized, unresolvedSpans, conflictCount: materializedConflicts };
 }
 
+function diagnosticPosition(error) {
+  return Number.isSafeInteger(error?.pos)
+    ? error.pos
+    : Number.isSafeInteger(error?.loc?.index)
+      ? error.loc.index
+      : undefined;
+}
+
+function spanContainsPosition(spans, position) {
+  return spans.some(({ start, end }) => position >= start && position < end);
+}
+
+function unresolvedPriorBindingCausedRedeclaration({
+  error,
+  parsed,
+  plugins,
+  source,
+  unresolvedSpans,
+}) {
+  const position = diagnosticPosition(error);
+  const identifierName = error?.details?.identifierName;
+  if (
+    error?.reasonCode !== "VarRedeclaration" ||
+    position === undefined ||
+    typeof identifierName !== "string" ||
+    identifierName.length === 0 ||
+    spanContainsPosition(unresolvedSpans, position)
+  ) {
+    return false;
+  }
+
+  const matchingIdentifiers = new Map();
+  const pending = [parsed.program];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (!value || typeof value !== "object") continue;
+    if (
+      value.type === "Identifier" &&
+      value.name === identifierName &&
+      Number.isSafeInteger(value.start) &&
+      Number.isSafeInteger(value.end) &&
+      value.start < position &&
+      unresolvedSpans.some(({ start, end }) => value.start >= start && value.end <= end)
+    ) {
+      matchingIdentifiers.set(`${value.start}:${value.end}`, {
+        start: value.start,
+        end: value.end,
+      });
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "comments" || key === "errors" || key === "extra" || key === "loc") continue;
+      if (Array.isArray(child)) pending.push(...child);
+      else if (child && typeof child === "object") pending.push(child);
+    }
+  }
+  const replacements = [...matchingIdentifiers.values()].sort(
+    (left, right) => left.start - right.start,
+  );
+  if (replacements.length === 0) return false;
+
+  // Babel reports a redeclaration at the second binding. Rename matching
+  // identifiers from unresolved text and accept the diagnostic only when that
+  // exact error disappears without changing any other parser diagnostics.
+  let probeIdentifier = "__t3_sync_unresolved_binding";
+  while (source.includes(probeIdentifier)) probeIdentifier += "_";
+  let probeSource = source;
+  for (const { start, end } of replacements.toReversed()) {
+    probeSource = `${probeSource.slice(0, start)}${probeIdentifier}${probeSource.slice(end)}`;
+  }
+  const shiftedPosition = (originalPosition) =>
+    originalPosition +
+    replacements.reduce(
+      (offset, { start, end }) =>
+        start < originalPosition ? offset + probeIdentifier.length - (end - start) : offset,
+      0,
+    );
+
+  try {
+    const probe = parseJavaScript(probeSource, {
+      sourceType: "unambiguous",
+      plugins,
+      errorRecovery: true,
+    });
+    const expectedDiagnostics = parsed.errors
+      .filter((candidate) => candidate !== error)
+      .map((candidate) => ({
+        reasonCode: candidate.reasonCode,
+        position: shiftedPosition(diagnosticPosition(candidate)),
+      }));
+    const actualDiagnostics = probe.errors.map((candidate) => ({
+      reasonCode: candidate.reasonCode,
+      position: diagnosticPosition(candidate),
+    }));
+    return (
+      actualDiagnostics.length === expectedDiagnostics.length &&
+      expectedDiagnostics.every(({ reasonCode, position: expectedPosition }) =>
+        actualDiagnostics.some(
+          ({ reasonCode: actualReasonCode, position: actualPosition }) =>
+            actualReasonCode === reasonCode && actualPosition === expectedPosition,
+        ),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function assertValidResolutionProgressSource({ path, source, forkSide } = {}) {
   if (!LEFTOVER_MARKER_PATTERN.test(source)) {
     assertValidResolvedSource({ path, source });
@@ -391,18 +498,6 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
               forkSide: candidatePlan.forkSide,
               flippedConflictIndex: candidatePlan.flippedConflictIndex,
             });
-      const diagnosticIsProvisionalCrossConflict = (error) => {
-        const position = Number.isSafeInteger(error?.pos)
-          ? error.pos
-          : Number.isSafeInteger(error?.loc?.index)
-            ? error.loc.index
-            : undefined;
-        return (
-          error?.reasonCode === "VarRedeclaration" &&
-          position !== undefined &&
-          materialized.unresolvedSpans.some(({ start, end }) => position >= start && position < end)
-        );
-      };
       const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
       if (path.endsWith(".tsx")) plugins.push("jsx");
       // An unresolved side can be structurally coupled to a later conflict, so
@@ -419,6 +514,21 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
         plugins,
         errorRecovery: true,
       });
+      const diagnosticIsProvisionalCrossConflict = (error) => {
+        const position = diagnosticPosition(error);
+        return (
+          error?.reasonCode === "VarRedeclaration" &&
+          position !== undefined &&
+          (spanContainsPosition(materialized.unresolvedSpans, position) ||
+            unresolvedPriorBindingCausedRedeclaration({
+              error,
+              parsed,
+              plugins,
+              source: materialized.source,
+              unresolvedSpans: materialized.unresolvedSpans,
+            }))
+        );
+      };
       const resolvedSourceError = parsed.errors.find(
         (error) => !diagnosticIsProvisionalCrossConflict(error),
       );

@@ -1291,51 +1291,6 @@ ${">".repeat(7)} theirs
         NodeFS.existsSync(NodePath.join(temporaryDirectory, `${asymmetricKey}.invalid`)),
       );
 
-      const provisionalDuplicate = [
-        'const activeThreadShell = "upstream";',
-        "<<<<<<< OURS",
-        'const activeThreadShell = "fork";',
-        "||||||| BASE",
-        'const activeThreadShell = "base";',
-        "=======",
-        'const legacyThreadShell = "parent";',
-        ">>>>>>> THEIRS",
-        "",
-      ].join("\n");
-      assert.doesNotThrow(() =>
-        assertValidResolutionProgressSource({
-          path: "apps/web/src/Partial.tsx",
-          source: provisionalDuplicate,
-          forkSide: "ours",
-        }),
-      );
-      assert.throws(
-        () =>
-          assertValidResolvedSource({
-            path: "apps/web/src/Partial.tsx",
-            source: materializeResolutionProgressForValidation({
-              path: "apps/web/src/Partial.tsx",
-              source: provisionalDuplicate,
-              forkSide: "ours",
-            }),
-          }),
-        /not syntactically valid TypeScript/u,
-      );
-
-      const resolvedDuplicate = provisionalDuplicate.replace(
-        'const activeThreadShell = "upstream";',
-        "const duplicate = 1;\nconst duplicate = 2;",
-      );
-      assert.throws(
-        () =>
-          assertValidResolutionProgressSource({
-            path: "apps/web/src/Partial.tsx",
-            source: resolvedDuplicate,
-            forkSide: "theirs",
-          }),
-        /partial resolution has invalid resolved TypeScript/u,
-      );
-
       const mixedProjectionRequired = [
         "<<<<<<< OURS",
         'const content = "fork";',
@@ -1479,6 +1434,99 @@ ${">".repeat(7)} theirs
     } finally {
       NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("allows provisional redeclarations in either conflict order", () => {
+    const secondDeclarationInsideConflict = [
+      'const activeThreadShell = "upstream";',
+      "<<<<<<< OURS",
+      'const activeThreadShell = "fork";',
+      "||||||| BASE",
+      'const activeThreadShell = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "",
+    ].join("\n");
+    const firstDeclarationInsideConflict = [
+      "<<<<<<< OURS",
+      'const selectedInstanceId = "fork";',
+      "||||||| BASE",
+      'const selectedInstanceId = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      'const selectedInstanceId = "upstream";',
+      "",
+    ].join("\n");
+
+    for (const source of [secondDeclarationInsideConflict, firstDeclarationInsideConflict]) {
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source,
+          forkSide: "ours",
+        }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Partial.tsx",
+            source: materializeResolutionProgressForValidation({
+              path: "apps/web/src/Partial.tsx",
+              source,
+              forkSide: "ours",
+            }),
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+    }
+
+    const resolvedDuplicate = [
+      "const duplicate = 1;",
+      "const duplicate = 2;",
+      "<<<<<<< OURS",
+      'const unrelated = "fork";',
+      "||||||| BASE",
+      'const unrelated = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "",
+    ].join("\n");
+    assert.throws(
+      () =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: resolvedDuplicate,
+          forkSide: "theirs",
+        }),
+      /partial resolution has invalid resolved TypeScript/u,
+    );
+
+    const unrelatedScopedDeclaration = [
+      "const duplicate = 1;",
+      "<<<<<<< OURS",
+      "function nested() {",
+      '  const duplicate = "unrelated";',
+      "}",
+      "||||||| BASE",
+      "function nested() {}",
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "const duplicate = 2;",
+      "",
+    ].join("\n");
+    assert.throws(
+      () =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: unrelatedScopedDeclaration,
+          forkSide: "ours",
+        }),
+      /partial resolution has invalid resolved TypeScript/u,
+    );
   });
 
   it("removes exact duplicate imports introduced outside conflict markers", () => {
