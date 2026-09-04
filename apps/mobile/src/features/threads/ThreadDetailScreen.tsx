@@ -1,3 +1,4 @@
+import { FloatingWorkingControl, type FloatingWorkingStatus } from "./floating-working-control";
 import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -61,7 +62,7 @@ import { ControlPill } from "../../components/ControlPill";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
-import type { DraftComposerImageAttachment } from "../../lib/composerImages";
+import type { DraftComposerAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -116,7 +117,7 @@ export interface ThreadDetailScreenProps {
   readonly activePendingUserInputAnswers: Record<string, string | ReadonlyArray<string>> | null;
   readonly respondingUserInputId: ApprovalRequestId | null;
   readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly connectionStateLabel: EnvironmentConnectionPhase;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
@@ -139,6 +140,7 @@ export interface ThreadDetailScreenProps {
       previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
     ) => void;
   }) => Promise<void>;
+  readonly onPickDraftFiles?: () => Promise<void>;
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
@@ -924,6 +926,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 bottomInset={composerBottomInset}
                 onChangeDraftMessage={props.onChangeDraftMessage}
                 onPickDraftImages={props.onPickDraftImages}
+                onPickDraftFiles={props.onPickDraftFiles}
                 onNativePasteImages={props.onNativePasteImages}
                 onRemoveDraftImage={props.onRemoveDraftImage}
                 onStopThread={props.onStopThread}

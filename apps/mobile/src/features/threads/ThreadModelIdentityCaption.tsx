@@ -4,7 +4,6 @@ import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ProviderIcon } from "../../components/ProviderIcon";
-import { useThemeColor } from "../../lib/useThemeColor";
 import type { ModelOption } from "../../lib/modelOptions";
 import type { ThreadSettingsPickerModel } from "./thread-settings-picker";
 import { ThreadSettingsPickerPopover } from "./ThreadSettingsPickerPopover";
@@ -24,8 +23,6 @@ export function ThreadModelIdentityCaption(props: {
   readonly onOpenAdvanced: () => void;
   readonly onPressFallback: () => void;
 }) {
-  const iconMuted = useThemeColor("--color-icon-muted");
-
   const body = (
     <View className="max-w-full flex-row items-center justify-center gap-1.5 px-1">
       <ProviderIcon provider={props.identity.providerDriver} size={12} />
@@ -37,7 +34,12 @@ export function ThreadModelIdentityCaption(props: {
           </Text>
         ) : null}
       </Text>
-      <SymbolView name="chevron.down" size={9} tintColor={iconMuted} type="monochrome" />
+      <SymbolView
+        name="chevron.down"
+        size={9}
+        tintColorClassName="accent-icon-muted"
+        type="monochrome"
+      />
     </View>
   );
 

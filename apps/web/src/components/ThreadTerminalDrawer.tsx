@@ -4,7 +4,10 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
-  terminalBufferAppendSince,
+  INITIAL_TERMINAL_OUTPUT_CURSOR,
+  readTerminalOutputUpdate,
+  type TerminalOutputCursor,
+  type TerminalOutputUpdate,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
@@ -30,6 +33,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -98,8 +102,15 @@ function writeSystemMessage(terminal: GhosttyTerminalSurface, message: string): 
   terminal.write(`\r\n[terminal] ${message}\r\n`);
 }
 
-function writeTerminalBuffer(terminal: GhosttyTerminalSurface, buffer: string): void {
-  terminal.resetAndWrite(buffer);
+export function writeTerminalOutputUpdate(
+  terminal: Pick<GhosttyTerminalSurface, "resetAndWrite" | "write">,
+  update: TerminalOutputUpdate,
+): void {
+  if (update.type === "reset") {
+    terminal.resetAndWrite(update.data);
+  } else if (update.type === "append") {
+    terminal.write(update.data);
+  }
 }
 
 function parseTerminalColor(value: string, fallback: GhosttyColor): GhosttyColor {
@@ -328,6 +339,7 @@ interface TerminalViewportProps {
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   focusRequestId: number;
   autoFocus: boolean;
+  visible: boolean;
   resizeEpoch: number;
   drawerHeight: number;
   keybindings: ResolvedKeybindingsConfig;
@@ -352,12 +364,14 @@ export function TerminalViewport({
   onAddTerminalContext,
   focusRequestId,
   autoFocus,
+  visible,
   resizeEpoch,
   drawerHeight,
   keybindings,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
+  const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const openInPreferredEditor = useOpenInPreferredEditor(
@@ -429,12 +443,10 @@ export function TerminalViewport({
       input: { threadId, terminalId, cols, rows },
     }),
   );
-  const terminalBuffer = terminalSession.buffer;
-  const terminalBufferStartOffset = terminalSession.bufferStartOffset;
-  const terminalBufferEndOffset = terminalSession.bufferEndOffset;
-  const terminalBufferGeneration = terminalSession.bufferGeneration;
+  const terminalOutput = terminalSession.output;
   const terminalError = terminalSession.error;
   const terminalStatus = terminalSession.status;
+  const outputCursorRef = useRef<TerminalOutputCursor>(INITIAL_TERMINAL_OUTPUT_CURSOR);
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
   const synchronizeTerminalStatus = useEffectEvent(
     (terminal: GhosttyTerminalSurface, status: TerminalSessionState["status"]) => {
@@ -455,20 +467,14 @@ export function TerminalViewport({
   );
   const terminalVersion = terminalSession.version;
   const previousSessionRef = useRef({
-    buffer: terminalBuffer,
-    bufferStartOffset: terminalBufferStartOffset,
-    bufferEndOffset: terminalBufferEndOffset,
-    bufferGeneration: terminalBufferGeneration,
+    output: terminalOutput,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
   });
   const latestSessionRef = useRef(previousSessionRef.current);
   latestSessionRef.current = {
-    buffer: terminalBuffer,
-    bufferStartOffset: terminalBufferStartOffset,
-    bufferEndOffset: terminalBufferEndOffset,
-    bufferGeneration: terminalBufferGeneration,
+    output: terminalOutput,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
@@ -477,6 +483,11 @@ export function TerminalViewport({
   useEffect(() => {
     keybindingsRef.current = keybindings;
   }, [keybindings]);
+
+  useLayoutEffect(() => {
+    visibleRef.current = visible;
+    terminalRef.current?.setVisible(visible);
+  }, [visible]);
 
   useEffect(() => {
     const current = terminalFontRef.current;
@@ -500,6 +511,9 @@ export function TerminalViewport({
       const terminalOptions: GhosttyTerminalSurfaceOptions = {
         theme: terminalThemeFromApp(mount),
         font: terminalFontOptions(setupFont.family, setupFont.size),
+        get visible() {
+          return visibleRef.current;
+        },
         onData: (data) => handleData(data),
         onResize: (cols, rows) => void resizeTerminal(cols, rows),
         onSelectionChange: () => handleSelectionChange(),
@@ -517,6 +531,7 @@ export function TerminalViewport({
         terminal.dispose();
         return null;
       }
+      terminal.setVisible(visibleRef.current);
       // The theme observer is not installed yet, so re-read the theme in case
       // the app toggled light/dark while the WASM surface was loading.
       terminal.setTheme(terminalThemeFromApp(mount));
@@ -531,7 +546,14 @@ export function TerminalViewport({
       }
       const latestSession = latestSessionRef.current;
       previousSessionRef.current = latestSession;
-      if (latestSession.buffer.length > 0) terminal.resetAndWrite(latestSession.buffer);
+      const initialOutput = readTerminalOutputUpdate(
+        latestSession.output,
+        INITIAL_TERMINAL_OUTPUT_CURSOR,
+      );
+      if (initialOutput.type === "reset" && initialOutput.data.length > 0) {
+        writeTerminalOutputUpdate(terminal, initialOutput);
+      }
+      outputCursorRef.current = initialOutput.cursor;
       if (latestSession.error !== null) writeSystemMessage(terminal, latestSession.error);
       // Attaching to a session that already exited must still run exit handling
       // once, so mount synchronization starts from the empty "closed" state.
@@ -539,7 +561,7 @@ export function TerminalViewport({
       // never started, so only "exited" triggers the message — as with xterm.)
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status);
-      if (autoFocus) window.requestAnimationFrame(() => terminal.focus());
+      if (autoFocus && visibleRef.current) window.requestAnimationFrame(() => terminal.focus());
 
       const clearSelectionAction = () => {
         selectionActionRequestIdRef.current += 1;
@@ -932,10 +954,7 @@ export function TerminalViewport({
   useEffect(() => {
     const terminal = terminalRef.current;
     const current = {
-      buffer: terminalBuffer,
-      bufferStartOffset: terminalBufferStartOffset,
-      bufferEndOffset: terminalBufferEndOffset,
-      bufferGeneration: terminalBufferGeneration,
+      output: terminalOutput,
       error: terminalError,
       status: terminalStatus,
       version: terminalVersion,
@@ -947,42 +966,29 @@ export function TerminalViewport({
 
     const previous = previousSessionRef.current;
     synchronizeTerminalStatus(terminal, current.status);
-    if (current.version === previous.version) {
+    if (current.version === previous.version && current.output === previous.output) {
       return;
     }
 
-    const appended = terminalBufferAppendSince(previous, current);
-    if (appended === null) {
-      writeTerminalBuffer(terminal, current.buffer);
-      terminal.clearSelection();
-    } else if (appended.length > 0) {
-      terminal.write(appended);
-      terminal.clearSelection();
-    }
+    const outputUpdate = readTerminalOutputUpdate(current.output, outputCursorRef.current);
+    writeTerminalOutputUpdate(terminal, outputUpdate);
+    outputCursorRef.current = outputUpdate.cursor;
+    terminal.clearSelection();
 
     if (current.error !== null && current.error !== previous.error) {
       writeSystemMessage(terminal, current.error);
     }
 
-    if (previous.version === 0 && autoFocus) {
+    if (previous.version === 0 && autoFocus && visibleRef.current) {
       window.requestAnimationFrame(() => {
         terminal.focus();
       });
     }
     previousSessionRef.current = current;
-  }, [
-    autoFocus,
-    terminalBuffer,
-    terminalBufferEndOffset,
-    terminalBufferGeneration,
-    terminalBufferStartOffset,
-    terminalError,
-    terminalStatus,
-    terminalVersion,
-  ]);
+  }, [autoFocus, terminalOutput, terminalError, terminalStatus, terminalVersion]);
 
   useEffect(() => {
-    if (!autoFocus) return;
+    if (!autoFocus || !visible) return;
     const terminal = terminalRef.current;
     if (!terminal) return;
     const frame = window.requestAnimationFrame(() => {
@@ -991,15 +997,16 @@ export function TerminalViewport({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [autoFocus, focusRequestId]);
+  }, [autoFocus, focusRequestId, visible]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
-    if (!terminal) return;
+    if (!terminal || !visibleRef.current) return;
     const wasAtBottom = terminal.isAtBottom();
     // The surface reports grid changes through onResize, which is the single
     // channel for PTY resize RPCs; fitting here only refreshes the layout.
     const frame = window.requestAnimationFrame(() => {
+      if (!visibleRef.current) return;
       terminal.fit();
       if (wasAtBottom) {
         terminal.scrollToBottom();
@@ -1582,6 +1589,7 @@ export default function ThreadTerminalDrawer({
                           onAddTerminalContext={onAddTerminalContext}
                           focusRequestId={focusRequestId}
                           autoFocus={terminalId === resolvedActiveTerminalId}
+                          visible={visible}
                           resizeEpoch={resizeEpoch}
                           drawerHeight={drawerHeight}
                           keybindings={keybindings}
@@ -1611,6 +1619,7 @@ export default function ThreadTerminalDrawer({
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
+                  visible={visible}
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}

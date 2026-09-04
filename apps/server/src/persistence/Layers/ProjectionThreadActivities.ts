@@ -166,16 +166,23 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
     Result: Schema.Struct({ count: Schema.Number }),
     execute: ({ threadId }) =>
       sql`
-        WITH input_states AS (
+        WITH relevant_payloads AS MATERIALIZED (
+          SELECT * FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND kind IN (
+              'user-input.requested',
+              'user-input.resolved',
+              'provider.user-input.respond.failed'
+            )
+        ), input_states AS (
           SELECT
             kind,
             TRIM(json_extract(payload_json, '$.requestId')) AS request_id,
             lower(COALESCE(json_extract(payload_json, '$.detail'), '')) AS detail,
             created_at,
             activity_id
-          FROM projection_thread_activities
-          WHERE thread_id = ${threadId}
-            AND json_type(payload_json, '$.requestId') = 'text'
+          FROM relevant_payloads
+          WHERE json_type(payload_json, '$.requestId') = 'text'
             AND TRIM(json_extract(payload_json, '$.requestId')) <> ''
             AND kind IN (
               'user-input.requested',

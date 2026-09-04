@@ -80,7 +80,6 @@ import {
   isOwnedPastedImageUri,
   pickComposerImages,
   resolveComposerAttachmentDataUrl,
-  toUploadChatImageAttachments,
 } from "./composerImages";
 
 function attachment(id: string) {
@@ -107,32 +106,6 @@ describe("appendComposerImagesWithinLimit", () => {
       attachments: [...existing, accepted],
       rejected: [rejected],
     });
-  });
-});
-
-describe("toUploadChatImageAttachments", () => {
-  it("strips client draft id and previewUri for the startTurn wire shape", () => {
-    expect(
-      toUploadChatImageAttachments([
-        {
-          id: "client-draft-id",
-          type: "image",
-          name: "pasted-image.png",
-          mimeType: "image/png",
-          sizeBytes: 12,
-          dataUrl: "data:image/png;base64,AA==",
-          previewUri: "file:///tmp/preview.png",
-        },
-      ]),
-    ).toEqual([
-      {
-        type: "image",
-        name: "pasted-image.png",
-        mimeType: "image/png",
-        sizeBytes: 12,
-        dataUrl: "data:image/png;base64,AA==",
-      },
-    ]);
   });
 });
 
@@ -241,7 +214,7 @@ describe("pickComposerImages", () => {
     launchImageLibraryAsync.mockReset();
   });
 
-  it("does not ask the picker to encode base64 up front", async () => {
+  it("requests native image conversion for formats providers cannot accept", async () => {
     launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: [] });
 
     await pickComposerImages({ existingCount: 0 });
@@ -252,7 +225,7 @@ describe("pickComposerImages", () => {
         quality: 1,
       }),
     );
-    expect(launchImageLibraryAsync.mock.calls[0]?.[0]).not.toHaveProperty("base64");
+    expect(launchImageLibraryAsync.mock.calls[0]?.[0]).toHaveProperty("base64", true);
   });
 
   it("turns a native picker failure into an actionable result", async () => {
@@ -260,7 +233,7 @@ describe("pickComposerImages", () => {
 
     await expect(pickComposerImages({ existingCount: 0 })).resolves.toEqual({
       images: [],
-      error: "The photo library could not be opened. Try again.",
+      error: "picker unavailable",
     });
   });
 

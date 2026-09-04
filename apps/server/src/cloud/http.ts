@@ -89,6 +89,7 @@ import {
 import * as CliTokenManager from "./CliTokenManager.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import { traceRelayRequest } from "./traceRelayRequest.ts";
+import { filterRelayResponse } from "./relayResponse.ts";
 
 const CLOUD_MINT_NONCE_PREFIX = "cloud-mint-nonce-";
 const CLOUD_MINT_JTI_PREFIX = "cloud-mint-jti-";
@@ -566,12 +567,7 @@ const decodeRelayClientResponse = <A>(
   schema: Schema.Decoder<A>,
 ) =>
   Effect.gen(function* () {
-    if (response.status < 200 || response.status >= 300) {
-      yield* releaseHttpClientResponseBody(response);
-      return yield* new EnvironmentHttpInternalServerError({
-        message: "T3 Connect relay returned a non-success response.",
-      });
-    }
+    yield* filterRelayResponse(response);
     const declaredLength = Number(response.headers["content-length"]);
     if (Number.isFinite(declaredLength) && declaredLength > RELAY_CLIENT_RESPONSE_MAX_BYTES) {
       yield* releaseHttpClientResponseBody(response);

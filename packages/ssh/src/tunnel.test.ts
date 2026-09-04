@@ -199,7 +199,10 @@ describe("ssh tunnel scripts", () => {
       stopScript,
       'managed === "managed" && pid && port && runtime?.pid === pid && runtime.port === port',
     );
-    assert.include(stopScript, 'const defaultRuntimeFile = path.join(os.homedir(), ".t3"');
+    assert.include(
+      stopScript,
+      'const defaultRuntimeFile = path.join(defaultServerHome, "userdata", "server-runtime.json");',
+    );
     assert.notInclude(launchScript, "@@T3_");
     assert.notInclude(pairingScript, "@@T3_");
     assert.doesNotThrow(() => new Function(launchScript));
@@ -300,7 +303,7 @@ describe("ssh tunnel scripts", () => {
 
     assert.include(
       buildRemoteLaunchScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE }),
-      '[ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null',
+      '[ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && [ "$REMOTE_PID" = "$DEFAULT_RUNTIME_PID" ] && [ "$REMOTE_PORT" = "$DEFAULT_REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null',
     );
     assert.include(buildRemoteLaunchScript(), "RUNNER_CHANGED=1");
     assert.include(buildRemoteLaunchScript(), "ensure_remote_node_path()");
@@ -347,7 +350,7 @@ describe("ssh tunnel scripts", () => {
     );
     assert.include(
       buildRemoteLaunchScript(),
-      "if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(port))",
+      "if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(port) || port < 1 || port > 65535)",
     );
     assert.notInclude(
       buildRemoteLaunchScript(),
@@ -394,7 +397,12 @@ describe("ssh tunnel scripts", () => {
     return Effect.gen(function* () {
       const result = yield* launchOrReuseRemoteServer(target);
       assert.equal(result.remotePort, 3774);
-      assert.deepEqual(spawnedCommands[0]?.slice(-5, -1), ["sh", "-l", "-s", "--"]);
+      assert.deepEqual(spawnedCommands.find((args) => args.includes("sh"))?.slice(-5, -1), [
+        "sh",
+        "-l",
+        "-s",
+        "--",
+      ]);
     }).pipe(Effect.provide(processLayer));
   });
 

@@ -152,11 +152,11 @@ html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"] {
 }
 
 /* Approval, agent-question and Plan Ready panels rise out of the editor as
-   one block (the `rounded-t-[19px]` wrapper is unique to these five hosts,
+   one block (the top-drawer data attribute identifies this host,
    pinned by the contract test). Animating the wrapper — not the inner
    `[data-approval-detail]` pre — keeps the header line, question card and
    badge on the same beat instead of only the detail rising. */
-html[data-scenery-motion] [data-chat-composer-form] [class*="rounded-t-[19px]"] {
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer] {
   transition:
     opacity 220ms var(--sc-ease-out),
     translate 220ms var(--sc-ease-out);

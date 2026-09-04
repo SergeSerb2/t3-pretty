@@ -11,7 +11,6 @@ import { AndroidSheetHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { PullRequestPrimaryButton } from "./PullRequestActionChip";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -41,7 +40,6 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isAndroid = Platform.OS === "android";
-  const primaryColor = useThemeColor("--color-primary");
   const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const mode = props.route.params.mode;
@@ -160,7 +158,9 @@ export function PullRequestCommentSheet(props: PullRequestCommentSheetProps) {
                 style={({ pressed }) => ({ opacity: !canSubmit ? 0.45 : pressed ? 0.7 : 1 })}
                 className="min-h-9 min-w-14 flex-row items-center justify-end gap-1.5"
               >
-                {pending ? <ActivityIndicator color={String(primaryColor)} size="small" /> : null}
+                {pending ? (
+                  <ActivityIndicator colorClassName="accent-primary" size="small" />
+                ) : null}
                 <Text
                   className={cn(
                     "text-base font-t3-bold",

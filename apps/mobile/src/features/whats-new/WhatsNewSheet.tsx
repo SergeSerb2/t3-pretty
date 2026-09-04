@@ -2,7 +2,7 @@ import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { ChangelogItemKind, ChangelogRelease } from "./changelogData";
 
 const KIND_LABELS: Record<ChangelogItemKind, string> = {
@@ -28,7 +28,8 @@ export function WhatsNewSheet(props: {
   readonly onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const pressedOverlay = useThemeColor("--color-subtle");
+  const nativeTheme = useUniwindTheme();
+  const pressedOverlay = String(nativeTheme["--color-subtle"]);
 
   return (
     <Modal

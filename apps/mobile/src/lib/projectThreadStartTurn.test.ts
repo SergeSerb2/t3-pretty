@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import {
   EnvironmentId,
   MessageId,
@@ -7,7 +8,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildProjectThreadStartTurnInput,
@@ -17,7 +18,6 @@ import {
 vi.mock("expo-crypto", () => ({
   randomUUID: () => crypto.randomUUID(),
 }));
-vi.mock("./composerImages", () => ({ toUploadChatImageAttachments: () => [] }));
 
 describe("project thread title", () => {
   it("does not expose a native session id in the thread title", () => {
@@ -62,11 +62,9 @@ describe("project thread title", () => {
       messageId: "message",
       createdAt: "2026-09-01T00:00:00Z",
       text,
-      attachments: [],
-      modelSelection: {
-        instanceId: ProviderInstanceId.make("codex"),
-        model: "gpt-5.6-sol",
-      },
+      uploadedAttachments: [],
+      enabledSkillIds: [],
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
       runtimeMode: "full-access",
       interactionMode: "default",
       workspaceMode: "local",
@@ -92,7 +90,7 @@ describe("buildProjectThreadStartTurnInput", () => {
       messageId: "message-1",
       createdAt: "2026-04-01T00:00:00.000Z",
       text: "Build the composer",
-      attachments: [],
+      uploadedAttachments: [],
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",

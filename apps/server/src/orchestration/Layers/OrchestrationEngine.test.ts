@@ -355,6 +355,8 @@ describe("OrchestrationEngine", () => {
           }),
         ),
       hasEventAfter: () => Effect.succeed(false),
+      readAggregateRange: () => Stream.die("unused aggregate replay"),
+      getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
     };
 
     const projectionSnapshot = {
@@ -450,6 +452,7 @@ describe("OrchestrationEngine", () => {
           getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
           getThreadCheckpointContext: () => Effect.succeed(Option.none()),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+          getThreadRuntimeContext: () => Effect.die("unused"),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -1281,6 +1284,8 @@ describe("OrchestrationEngine", () => {
         return Stream.fromIterable(events);
       },
       hasEventAfter: () => Effect.succeed(false),
+      readAggregateRange: () => Stream.die("unused aggregate replay"),
+      getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
     };
 
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -1524,6 +1529,8 @@ describe("OrchestrationEngine", () => {
         return Stream.fromIterable(events);
       },
       hasEventAfter: () => Effect.succeed(false),
+      readAggregateRange: () => Stream.die("unused aggregate replay"),
+      getAggregateReplayStats: () => Effect.die("unused aggregate replay stats"),
     };
 
     let shouldFailProjection = true;

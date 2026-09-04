@@ -103,7 +103,7 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
 
       const error = yield* Effect.tryPromise(() => readServiceState(statePath)).pipe(Effect.flip);
       assert.instanceOf(error, Error);
-      assert.match(error.message, /exceeds the supported size/);
+      assert.match(String(error.cause), /exceeds the supported size/);
     }),
   );
 

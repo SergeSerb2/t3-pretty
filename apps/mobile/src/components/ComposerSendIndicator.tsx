@@ -13,6 +13,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
+import { withUniwind } from "uniwind";
+const ThemedSvg = withUniwind(Svg);
 
 /** Keep the send treatment on screen long enough to read, even on a fast path. */
 export const COMPOSER_SEND_INDICATOR_MIN_MS = 320;
@@ -42,7 +44,11 @@ export const COMPOSER_SEND_ICON_EXIT = FadeOutUp.duration(160).reduceMotion(Redu
  * Indeterminate send progress. Rotation is transform-only; reduced motion
  * leaves a static arc instead of a looping spin.
  */
-export function ComposerSendIndicator(props: { readonly color: string; readonly size?: number }) {
+export function ComposerSendIndicator(props: {
+  readonly color?: string;
+  readonly colorClassName?: string;
+  readonly size?: number;
+}) {
   const size = props.size ?? INDICATOR_SIZE;
   const rotation = useSharedValue(0);
 
@@ -72,13 +78,19 @@ export function ComposerSendIndicator(props: { readonly color: string; readonly 
       exiting={EXIT}
       style={[{ height: size, width: size }, spinStyle]}
     >
-      <Svg width={size} height={size} viewBox={`0 0 ${INDICATOR_SIZE} ${INDICATOR_SIZE}`}>
+      <ThemedSvg
+        width={size}
+        height={size}
+        color={props.color}
+        colorClassName={props.colorClassName}
+        viewBox={`0 0 ${INDICATOR_SIZE} ${INDICATOR_SIZE}`}
+      >
         <Circle
           cx={INDICATOR_SIZE / 2}
           cy={INDICATOR_SIZE / 2}
           fill="none"
           r={RADIUS}
-          stroke={props.color}
+          stroke="currentColor"
           strokeOpacity={0.22}
           strokeWidth={STROKE_WIDTH}
         />
@@ -87,23 +99,24 @@ export function ComposerSendIndicator(props: { readonly color: string; readonly 
           cy={INDICATOR_SIZE / 2}
           fill="none"
           r={RADIUS}
-          stroke={props.color}
+          stroke="currentColor"
           strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`}
           strokeLinecap="round"
           strokeWidth={STROKE_WIDTH}
         />
-      </Svg>
+      </ThemedSvg>
     </Animated.View>
   );
 }
 
 export function ComposerSendIconSlot(props: {
   readonly loading: boolean;
-  readonly color: string;
+  readonly color?: string;
+  readonly colorClassName?: string;
   readonly children: ReactNode;
 }) {
   if (props.loading) {
-    return <ComposerSendIndicator color={props.color} />;
+    return <ComposerSendIndicator color={props.color} colorClassName={props.colorClassName} />;
   }
 
   return (

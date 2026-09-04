@@ -341,7 +341,7 @@ export function ComposerToolbarButton(props: {
       ]}
     >
       {props.iconNode || props.icon || isLoading ? (
-        <ComposerSendIconSlot loading={isLoading} color={String(primaryFg)}>
+        <ComposerSendIconSlot loading={isLoading} color={"#ffffff"}>
           {props.iconNode ? (
             props.iconNode
           ) : props.icon ? (

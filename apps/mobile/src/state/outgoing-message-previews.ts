@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { MessageId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
-import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import type { DraftComposerAttachment } from "../lib/composerImages";
 import { appAtomRegistry } from "./atom-registry";
 
 const outgoingMessagePreviewUrisAtom = Atom.make<Readonly<Record<string, ReadonlyArray<string>>>>(
@@ -69,9 +69,11 @@ export function boundOutgoingMessagePreviewUris(
 }
 
 export function previewUrisFromDraftAttachments(
-  attachments: ReadonlyArray<DraftComposerImageAttachment>,
+  attachments: ReadonlyArray<DraftComposerAttachment>,
 ): ReadonlyArray<string> {
-  return attachments.map((attachment) => attachment.previewUri);
+  return attachments.map((attachment) =>
+    attachment.type === "image" ? attachment.previewUri : "",
+  );
 }
 
 /**
@@ -101,7 +103,7 @@ export function rememberOutgoingMessagePreviewUris(
 
 export function rememberOutgoingMessageDraftAttachments(
   messageId: MessageId | string,
-  attachments: ReadonlyArray<DraftComposerImageAttachment>,
+  attachments: ReadonlyArray<DraftComposerAttachment>,
 ): void {
   rememberOutgoingMessagePreviewUris(messageId, previewUrisFromDraftAttachments(attachments));
 }

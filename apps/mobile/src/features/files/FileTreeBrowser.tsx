@@ -223,10 +223,7 @@ export function FileTreeBrowser(props: {
     ),
     [expandedPaths, handleSelectFile, onPreviewFile, selectedPath, toggleDirectory],
   );
-  const rowState = useMemo(
-    () => ({ expandedPaths, iconColor, selectedPath }),
-    [expandedPaths, iconColor, selectedPath],
-  );
+  const rowState = useMemo(() => ({ expandedPaths, selectedPath }), [expandedPaths, selectedPath]);
 
   if (props.error && props.entries.length === 0) {
     return (

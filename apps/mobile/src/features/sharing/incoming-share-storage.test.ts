@@ -1,3 +1,7 @@
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "test-uuid",
+  getRandomBytes: (n: number) => new Uint8Array(n),
+}));
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 

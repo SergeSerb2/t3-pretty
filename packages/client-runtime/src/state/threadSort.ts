@@ -32,7 +32,18 @@ export function compareIsoDateTimes(left: string, right: string): number {
     return left === right ? 0 : left < right ? -1 : 1;
   }
   if (rightTimestamp === null) return 1;
-  return Math.sign(leftTimestamp - rightTimestamp);
+  const byMillisecond = Math.sign(leftTimestamp - rightTimestamp);
+  if (byMillisecond !== 0) return byMillisecond;
+  // Date.parse truncates sub-millisecond precision. Compare the remaining
+  // fractional digits at an equal millisecond without losing them to epoch rounding.
+  const remainder = (iso: string) =>
+    iso.match(/\.(\d+)(?:Z|[+-]\d{2}:?\d{2})$/)?.[1]?.slice(3) ?? "";
+  const leftRemainder = remainder(left);
+  const rightRemainder = remainder(right);
+  const width = Math.max(leftRemainder.length, rightRemainder.length);
+  const a = leftRemainder.padEnd(width, "0");
+  const b = rightRemainder.padEnd(width, "0");
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 export type SettledThreadTimestampInput = Pick<

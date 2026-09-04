@@ -269,7 +269,9 @@ export const make = Effect.gen(function* () {
       for (const window of yield* listWindows) {
         const exit = yield* Effect.exit(
           Effect.try({
-            try: () => window.destroy(),
+            try: () => {
+              if (!window.isDestroyed()) window.destroy();
+            },
             catch: (cause) =>
               new ElectronWindowOperationError({
                 operation: "destroy-window",

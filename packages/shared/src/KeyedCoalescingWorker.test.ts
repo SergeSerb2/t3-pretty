@@ -8,6 +8,33 @@ import * as Scope from "effect/Scope";
 import { makeKeyedCoalescingWorker } from "./KeyedCoalescingWorker.ts";
 
 describe("makeKeyedCoalescingWorker", () => {
+  it.live("processes undefined payloads, including another enqueue while active", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let calls = 0;
+        const worker = yield* makeKeyedCoalescingWorker<string, undefined, never, never>({
+          merge: () => undefined,
+          process: () =>
+            Effect.gen(function* () {
+              calls += 1;
+              if (calls === 1) {
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(release);
+              }
+            }),
+        });
+        yield* worker.enqueue("thread", undefined);
+        yield* Deferred.await(started);
+        yield* worker.enqueue("thread", undefined);
+        yield* Deferred.succeed(release, undefined);
+        yield* worker.drainKey("thread");
+        expect(calls).toBe(2);
+      }),
+    ),
+  );
+
   it.live("waits for latest work enqueued during active processing before draining the key", () =>
     Effect.scoped(
       Effect.gen(function* () {

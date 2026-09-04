@@ -279,12 +279,14 @@ describe("ElectronWindow", () => {
       const cause = new Error("window destroy failed");
       const window = {
         id: 43,
+        isDestroyed: () => false,
         destroy: vi.fn(() => {
           throw cause;
         }),
       } as unknown as Electron.BrowserWindow;
       const laterWindow = {
         id: 44,
+        isDestroyed: () => false,
         destroy: vi.fn(),
       } as unknown as Electron.BrowserWindow;
       getAllWindowsMock.mockReturnValueOnce([window, laterWindow]);

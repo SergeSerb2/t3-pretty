@@ -37,7 +37,7 @@ export function resolvePullRequestState(input: {
       kind: "merged",
       label: "Merged",
       symbol: "point.topleft.down.curvedto.point.bottomright.up",
-      textClassName: "text-violet-600 dark:text-violet-400",
+      textClassName: "text-adaptive-violet-600-400",
       badgeClassName: "bg-violet-500/15",
     };
   }
@@ -46,7 +46,7 @@ export function resolvePullRequestState(input: {
       kind: "closed",
       label: "Closed",
       symbol: "xmark",
-      textClassName: "text-red-600 dark:text-red-400",
+      textClassName: "text-adaptive-red-700-300",
       badgeClassName: "bg-red-500/15",
     };
   }
@@ -55,7 +55,7 @@ export function resolvePullRequestState(input: {
       kind: "draft",
       label: "Draft",
       symbol: "doc.text",
-      textClassName: "text-zinc-500 dark:text-zinc-400",
+      textClassName: "text-foreground-muted",
       badgeClassName: "bg-zinc-500/15",
     };
   }
@@ -72,7 +72,7 @@ export function resolvePullRequestState(input: {
     kind: "open",
     label: "Open",
     symbol: "arrow.triangle.pull",
-    textClassName: "text-emerald-600 dark:text-emerald-400",
+    textClassName: "text-adaptive-emerald-600-400",
     badgeClassName: "bg-emerald-500/15",
   };
 }
@@ -80,7 +80,10 @@ export function resolvePullRequestState(input: {
 export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
   if (checks.length === 0) return "No checks reported";
   const failed = checks.filter(
-    (check) => check.status === "failure" || check.status === "cancelled",
+    (check) =>
+      check.status === "action-required" ||
+      check.status === "failure" ||
+      check.status === "cancelled",
   ).length;
   const pending = checks.filter((check) => check.status === "pending").length;
   const passed = checks.filter((check) => check.status === "success").length;
@@ -97,6 +100,8 @@ export function pullRequestCheckStatusLabel(status: PullRequestCheckStatus): str
       return "Passed";
     case "failure":
       return "Failed";
+    case "action-required":
+      return "Action required";
     case "skipped":
       return "Skipped";
     case "neutral":
@@ -114,6 +119,7 @@ export function pullRequestCheckSymbol(
       return "clock";
     case "success":
       return "checkmark.circle";
+    case "action-required":
     case "failure":
     case "cancelled":
       return "xmark.circle.fill";
@@ -127,6 +133,7 @@ const CHECK_STATUS_TINT: Record<PullRequestCheckStatus, string> = {
   pending: "#d97706",
   success: "#059669",
   failure: "#dc2626",
+  "action-required": "#d97706",
   cancelled: "#dc2626",
   skipped: "#71717a",
   neutral: "#71717a",
@@ -139,12 +146,13 @@ export function pullRequestCheckStatusTint(status: PullRequestCheckStatus): stri
 export function pullRequestCheckStatusTextClass(status: PullRequestCheckStatus): string {
   switch (status) {
     case "pending":
-      return "text-amber-600 dark:text-amber-400";
+      return "text-adaptive-amber-700-400";
     case "success":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-adaptive-emerald-600-400";
+    case "action-required":
     case "failure":
     case "cancelled":
-      return "text-red-600 dark:text-red-400";
+      return "text-adaptive-red-700-300";
     case "skipped":
     case "neutral":
       return "text-foreground-muted";
@@ -178,19 +186,17 @@ export function describeChecksState(state: PullRequestChecksState | undefined): 
 }
 
 export function reviewDecisionTextClass(decision: PullRequestReviewDecision): string {
-  return decision === "approved"
-    ? "text-emerald-600 dark:text-emerald-400"
-    : "text-amber-600 dark:text-amber-400";
+  return decision === "approved" ? "text-adaptive-emerald-600-400" : "text-adaptive-amber-700-400";
 }
 
 export function checksStateTextClass(state: PullRequestChecksState): string {
   switch (state) {
     case "passing":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-adaptive-emerald-600-400";
     case "failing":
-      return "text-red-600 dark:text-red-400";
+      return "text-adaptive-red-700-300";
     case "pending":
-      return "text-amber-600 dark:text-amber-400";
+      return "text-adaptive-amber-700-400";
   }
 }
 

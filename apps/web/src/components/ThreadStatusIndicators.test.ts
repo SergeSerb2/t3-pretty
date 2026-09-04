@@ -10,9 +10,16 @@ import { effectiveSettled } from "@t3tools/client-runtime/state/thread-settled";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { AtomRegistry } from "effect/unstable/reactivity";
+import {
+  GitMergeIcon,
+  GitPullRequestClosedIcon,
+  GitPullRequestDraftIcon,
+  GitPullRequestIcon,
+} from "lucide-react";
 
 import {
   automatedReviewIndicator,
+  ChangeRequestStatusIcon,
   nextThreadChangeRequestSnapshot,
   prStatusIndicator,
   resolveDisplayedThreadPr,
@@ -26,6 +33,17 @@ import {
   updateThreadChangeRequestSnapshots,
 } from "./ThreadStatusIndicators";
 import { newestPullRequestSummary } from "../state/pullRequests";
+
+describe("ChangeRequestStatusIcon", () => {
+  it.each([
+    ["open", "open", false, GitPullRequestIcon],
+    ["draft", "open", true, GitPullRequestDraftIcon],
+    ["closed", "closed", false, GitPullRequestClosedIcon],
+    ["merged", "merged", false, GitMergeIcon],
+  ] as const)("uses the %s pull request glyph", (_label, state, isDraft, expectedIcon) => {
+    expect(ChangeRequestStatusIcon({ state, isDraft }).type).toBe(expectedIcon);
+  });
+});
 
 function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
   return {

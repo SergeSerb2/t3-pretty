@@ -156,7 +156,9 @@ export type ResolvedAssetSource =
   | "attachment"
   | "workspace-file"
   | "project-favicon"
-  | "generated-image";
+  | "generated-image"
+  | "native-app-icon"
+  | "media-file";
 
 export type ResolvedAsset = {
   readonly kind: "file";
@@ -836,7 +838,9 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   if (claims.kind === "native-app-icon") {
     const nativeAppIconResolver = yield* NativeAppIconResolver.NativeAppIconResolver;
     const iconPath = yield* nativeAppIconResolver.resolve(claims.app);
-    return iconPath ? ({ kind: "file", path: iconPath } satisfies ResolvedAsset) : null;
+    return iconPath
+      ? ({ kind: "file", path: iconPath, source: "native-app-icon" } satisfies ResolvedAsset)
+      : null;
   }
 
   const decodedPath = decodeRelativePath(relativePath);
@@ -863,7 +867,13 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.orElseSucceed(() => null),
     );
     return file
-      ? ({ kind: "file", path: canonicalFile, mimeType, file } satisfies ResolvedAsset)
+      ? ({
+          kind: "file",
+          path: canonicalFile,
+          mimeType,
+          file,
+          source: "media-file",
+        } satisfies ResolvedAsset)
       : null;
   }
   if (claims.kind === "workspace-file-exact") {

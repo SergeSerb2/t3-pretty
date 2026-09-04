@@ -350,7 +350,7 @@ describe("web cloud link environment client", () => {
           }),
         )
         .mockResolvedValueOnce(
-          Response.json({ ok: true, endpointRuntimeStatus: { status: "configured" } }),
+          Response.json({ ok: true, endpointRuntimeStatus: { status: "disabled" } }),
         );
       vi.stubGlobal("fetch", fetchMock);
 

@@ -20,6 +20,15 @@ describe("compareIsoDateTimes", () => {
     expect(compareIsoDateTimes("2026-01-01T00:00:00Z", "2025-12-31T16:00:00-08:00")).toBe(0);
   });
 
+  it("preserves sub-millisecond ordering and equivalent offset representations", () => {
+    expect(
+      compareIsoDateTimes("2026-01-01T00:00:00.0002Z", "2026-01-01T00:00:00.0001Z"),
+    ).toBeGreaterThan(0);
+    expect(
+      compareIsoDateTimes("2026-01-01T00:00:00.123400Z", "2025-12-31T16:00:00.1234-08:00"),
+    ).toBe(0);
+  });
+
   it("sorts invalid legacy values before valid timestamps", () => {
     expect(compareIsoDateTimes("not-a-date", "2026-01-01T00:00:00Z")).toBeLessThan(0);
     expect(compareIsoDateTimes("invalid-b", "invalid-a")).toBeGreaterThan(0);

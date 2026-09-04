@@ -29,7 +29,6 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import {
   createNativeMailSearchToolbarItem,
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
@@ -102,8 +101,6 @@ function PullRequestsHeader(props: {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const searchIconColor = useThemeColor("--color-icon");
-  const searchTextColor = useThemeColor("--color-foreground");
   const usesCompactMailToolbar =
     Platform.OS === "ios" && width < 700 && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED;
   const showHostFilter = shouldShowPullRequestHostFilter(props.hosts.length, props.selectedHost);
@@ -317,7 +314,7 @@ function PullRequestsHeader(props: {
               <SymbolView
                 name="chevron.left"
                 size={24}
-                tintColor={searchTextColor}
+                tintColorClassName="accent-foreground"
                 type="monochrome"
               />
             </Pressable>
@@ -325,7 +322,7 @@ function PullRequestsHeader(props: {
               <SymbolView
                 name="magnifyingglass"
                 size={17}
-                tintColor={searchIconColor}
+                tintColorClassName="accent-icon"
                 type="monochrome"
               />
               <TextInput
@@ -355,7 +352,7 @@ function PullRequestsHeader(props: {
                       : "line.3.horizontal.decrease.circle"
                   }
                   size={16}
-                  tintColor={searchIconColor}
+                  tintColorClassName="accent-icon"
                   type="monochrome"
                 />
               </Pressable>
@@ -578,7 +575,6 @@ export function PullRequestsScreen(props: {
   readonly onSelect: (entry: PullRequestListEntry) => void;
   readonly onAddProject: () => void;
 }) {
-  const refreshTint = useThemeColor("--color-icon");
   const hasCustomFilter =
     props.involvement !== "all" ||
     props.state !== "open" ||
@@ -608,7 +604,7 @@ export function PullRequestsScreen(props: {
     if (!props.capabilityKnown) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Checking this environment…</Text>
         </View>
       );
@@ -634,7 +630,7 @@ export function PullRequestsScreen(props: {
     if (props.firstLoad) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">Loading pull requests…</Text>
         </View>
       );
@@ -662,7 +658,7 @@ export function PullRequestsScreen(props: {
     if (typedQuery.length > 0 && !props.querySettled) {
       return (
         <View className="items-center py-16">
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">
             Searching every host for “{typedQuery}”
           </Text>
@@ -693,7 +689,7 @@ export function PullRequestsScreen(props: {
         onAction={props.onRefresh}
       />
     );
-  }, [hasCustomFilter, props, refreshTint, typedQuery]);
+  }, [hasCustomFilter, props, typedQuery]);
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
@@ -735,7 +731,7 @@ export function PullRequestsScreen(props: {
     return (
       <View className="items-center py-4">
         {props.loadingMore ? (
-          <ActivityIndicator color={refreshTint} />
+          <ActivityIndicator colorClassName="accent-icon" />
         ) : (
           <PullRequestActionChip label="Load more" onPress={props.onLoadMore} />
         )}
@@ -748,7 +744,6 @@ export function PullRequestsScreen(props: {
     props.firstLoad,
     props.loadingMore,
     props.onLoadMore,
-    refreshTint,
   ]);
 
   return (
@@ -806,7 +801,7 @@ export function PullRequestsScreen(props: {
           <RefreshControl
             onRefresh={props.onRefresh}
             refreshing={props.refreshing && !props.firstLoad}
-            tintColor={String(refreshTint)}
+            tintColorClassName="accent-icon"
           />
         }
         renderItem={renderItem}

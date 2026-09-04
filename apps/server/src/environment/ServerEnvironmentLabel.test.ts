@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -37,13 +38,22 @@ const NoopFileSystemLayer = FileSystem.layerNoop({});
 const TestLayer = Layer.merge(NoopFileSystemLayer, ProcessRunnerTest);
 const LinuxMachineInfoLayer = Layer.merge(
   ProcessRunnerTest,
-  FileSystem.layerNoop({
-    exists: (path) => Effect.succeed(path === "/etc/machine-info"),
-    readFileString: (path) =>
-      path === "/etc/machine-info"
-        ? Effect.succeed('PRETTY_HOSTNAME="Build Agent 01"\nICON_NAME="computer-vm"\n')
-        : Effect.succeed(""),
-  }),
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "machine-info-test-" });
+      const file = root + "/machine-info";
+      yield* fs.writeFileString(
+        file,
+        'PRETTY_HOSTNAME="Build Agent 01"\nICON_NAME="computer-vm"\n',
+      );
+      return FileSystem.makeNoop({
+        exists: (path) => Effect.succeed(path === "/etc/machine-info"),
+        open: (_path, options) => fs.open(file, options),
+      });
+    }),
+  ).pipe(Layer.provide(NodeServices.layer)),
 );
 const withHostPlatform = <ROut, E, RIn>(
   layer: Layer.Layer<ROut, E, RIn>,

@@ -169,7 +169,7 @@ describe("DesktopAppIdentity", () => {
 
         assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
       }),
-      { legacyPathExists: true },
+      { legacyPathExists: true, environment: { buildFlavor: "internal" } },
     ),
   );
 
@@ -179,9 +179,9 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Pretty (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
       }),
-      { legacyPathExists: true, legacyPathType: "File" },
+      { legacyPathExists: true, legacyPathType: "File", environment: { buildFlavor: "internal" } },
     ),
   );
 
@@ -208,7 +208,7 @@ describe("DesktopAppIdentity", () => {
           `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
         );
       }),
-      { legacyPathProbeError: cause },
+      { legacyPathProbeError: cause, environment: { buildFlavor: "internal" } },
     );
   });
 

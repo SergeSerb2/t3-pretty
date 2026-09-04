@@ -1,3 +1,4 @@
+import { T3Wordmark } from "../../components/T3Wordmark";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
@@ -62,7 +63,7 @@ const WORK_LOG_DETAIL_ENTER_TRANSITION = FadeIn.duration(140);
 const WORK_LOG_DETAIL_EXIT_TRANSITION = FadeOut.duration(120);
 
 function triggerDisclosureFeedback() {
-  LayoutAnimation.configureNext(WORK_LOG_LAYOUT_ANIMATION);
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
   void Haptics.selectionAsync().catch(() => undefined);
 }
 
@@ -107,7 +108,7 @@ export function ThreadDisclosureChevron(props: {
 function ShimmerWorkContent(props: {
   readonly environmentId?: EnvironmentId;
   readonly highlighted: boolean;
-  readonly icon: AppSymbolName;
+  readonly icon: WorkContentIcon;
   readonly iconSubtleColor: ColorValue;
   readonly label: string;
   readonly onTextLayout?: ComponentProps<typeof Text>["onTextLayout"];
@@ -127,14 +128,10 @@ function ShimmerWorkContent(props: {
             themeAppearance={props.themeAppearance ?? "light"}
           />
         ) : props.showIcon ? (
-          <SymbolView
-            name={props.icon}
-            size={14}
-            weight="medium"
-            {...(props.highlighted
-              ? { tintColorClassName: "accent-foreground" as const }
-              : { tintColor: props.iconSubtleColor })}
-            type="monochrome"
+          <WorkLogIcon
+            icon={props.icon}
+            color={props.iconSubtleColor}
+            highlighted={props.highlighted}
           />
         ) : null}
       </View>
@@ -493,7 +490,7 @@ export const ThreadWorkLog = memo(function ThreadWorkLog(props: {
           const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
           const failed = row.status === "failure";
           const showIcon = !row.groupedToolDetail || iconIsDestructive || failed;
-          const toolIcon = row.toolIcon;
+          const toolIcon = row.workEntry.toolIcon;
           const hasSpecialToolIcon = Boolean(toolIcon && props.environmentId);
 
           return (
@@ -877,6 +874,31 @@ function toolGroupSummarySymbolName(kind: ToolGroupSummaryKind): AppSymbolName {
     case "dynamic-tool":
     case "update":
     case "mixed":
+    default:
       return { ios: "hammer", android: "construction" };
   }
+}
+
+type WorkContentIcon = AppSymbolName | "browser" | "t3-code";
+function WorkLogIcon(props: {
+  readonly icon: WorkContentIcon;
+  readonly color: ColorValue;
+  readonly colorClassName?: string;
+  readonly highlighted?: boolean;
+}) {
+  const colorClassName = props.highlighted ? "accent-foreground" : props.colorClassName;
+  if (props.icon === "t3-code") {
+    return (
+      <T3Wordmark height={10} {...(colorClassName ? { colorClassName } : { color: props.color })} />
+    );
+  }
+  return (
+    <SymbolView
+      name={props.icon === "browser" ? { ios: "globe", android: "public" } : props.icon}
+      size={14}
+      weight="medium"
+      {...(colorClassName ? { tintColorClassName: colorClassName } : { tintColor: props.color })}
+      type="monochrome"
+    />
+  );
 }

@@ -161,10 +161,10 @@ describe("ShellStreamBroadcaster", () => {
         yield* PubSub.publish(liveEvents, activityEvent(2, "tool.updated"));
         yield* broadcaster.settle;
         const [firstBatch, secondBatch] = yield* Effect.all([
-          PubSub.take(first),
-          PubSub.take(second),
+          first.stream.pipe(Stream.take(1), Stream.runCollect),
+          second.stream.pipe(Stream.take(1), Stream.runCollect),
         ]);
-        assert.strictEqual(firstBatch, secondBatch);
+        assert.strictEqual(firstBatch[0], secondBatch[0]);
         assert.equal(firstBatch.length, 1);
         assert.equal(firstBatch[0]?.kind, "thread-upserted");
         assert.deepEqual(fetches, [threadId]);

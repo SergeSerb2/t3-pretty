@@ -1,3 +1,4 @@
+import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";

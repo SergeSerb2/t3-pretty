@@ -46,8 +46,36 @@ it("reports the installed service version and host paths", () => {
 it("gives a direct repair command for a stale service", () => {
   assert.include(
     formatServiceStatus({ ...status, current: false }, "0.0.29"),
-    `Next: Run \`${forkCliCommand("service update")}\`.`,
+    `Next: Run \`${forkCliCommand("service update", "0.0.29")}\`.`,
   );
+});
+
+it("explains an incomplete nightly installation and keeps repair on its installed version", () => {
+  const output = formatServiceStatus(
+    {
+      ...status,
+      current: false,
+      installedVersion: "0.0.32-nightly.1",
+      problems: ["linger-disabled", "service-stopped"],
+    },
+    "0.0.32-nightly.1",
+  );
+
+  expect(output).toContain("[linger-disabled]");
+  expect(output).toContain("last login session ends");
+  expect(output).toContain('sudo loginctl enable-linger "$(id -un)"');
+  expect(output).toContain("[service-stopped]");
+  expect(output).toContain(forkCliCommand("service update", "0.0.32-nightly.1"));
+  expect(output).not.toContain("t3@latest");
+});
+
+it("suggests the newer CLI version when the installed service needs an update", () => {
+  const output = formatServiceStatus(
+    { ...status, current: false, installedVersion: "0.0.28" },
+    "0.0.29",
+  );
+  expect(output).toContain(forkCliCommand("service update", "0.0.29"));
+  expect(output).not.toContain(forkCliCommand("service update", "0.0.28"));
 });
 
 it("explains where the service is supported", () => {
@@ -64,7 +92,7 @@ it("reports a newer installed service and gives an exact-version repair command"
   );
 
   assert.include(output, "t3@0.0.32-nightly.1 (newer than this t3@0.0.31 CLI)");
-  assert.include(output, "npx t3@0.0.32-nightly.1 service update");
+  assert.include(output, forkCliCommand("service update", "0.0.32-nightly.1"));
   assert.notInclude(output, "npx t3@latest service update");
 });
 
@@ -152,6 +180,15 @@ it.effect.each([
     name: "the same version",
     state: { ...status, current: false, installedVersion: packageJson.version },
   },
+  {
+    name: "an incomplete install of the same version",
+    state: {
+      ...status,
+      current: false,
+      installedVersion: packageJson.version,
+      problems: ["linger-disabled"] as const,
+    },
+  },
   { name: "an unknown version", state: { ...status, current: false } },
 ])("installs or repairs $name without an override", ({ state }) =>
   Effect.gen(function* () {
@@ -199,6 +236,15 @@ it.effect("keeps onboarding successful when a newer version appears before insta
       ),
     );
 
+    expect(ready).toBe(false);
+  }),
+);
+
+it.effect("keeps the manual-server fallback when background prerequisites fail", () =>
+  Effect.gen(function* () {
+    const ready = yield* recoverServiceOnboardingOffer(
+      Effect.fail(new BootService.BootServicePrerequisiteError({ problem: "linger-disabled" })),
+    );
     expect(ready).toBe(false);
   }),
 );

@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from "@effect/vitest";
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "test-uuid",
+  getRandomBytes: (n: number) => new Uint8Array(n),
+}));
+import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
@@ -74,7 +79,9 @@ describe("incoming native shares", () => {
     expect(removeOwnedFile).toHaveBeenCalledWith(image.value);
     expect(hasIncomingShareContent(result)).toBe(true);
     const persisted = encodeIncomingShareDraftForPersistence(result);
-    expect(persisted.attachments[0]?.dataUrl).toBe("");
+    expect(
+      persisted.attachments[0]?.type === "image" ? persisted.attachments[0].dataUrl : undefined,
+    ).toBe("");
     expect(JSON.stringify(persisted)).not.toContain(";base64,");
   });
 
@@ -188,7 +195,7 @@ describe("incoming native shares", () => {
           originalName: "report.pdf",
         },
       ],
-      fileReader: { readBase64, persistFile, removeOwnedFile },
+      fileReader: { readBase64, persistFile, removeOwnedFile, writePreviewFile: async () => null },
     });
 
     expect(result.attachments).toEqual([
@@ -233,6 +240,7 @@ describe("incoming native shares", () => {
         readBase64: async () => "unused",
         persistFile,
         removeOwnedFile,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -257,7 +265,13 @@ describe("incoming native shares", () => {
       createdAt: "2026-08-30T10:00:00.000Z",
       payloads: [{ ...video, shareType: "video" }],
       resolvedPayloads: [],
-      fileReader: { readBase64, persistFile, readSize: async () => sizeBytes, removeOwnedFile },
+      fileReader: {
+        readBase64,
+        persistFile,
+        readSize: async () => sizeBytes,
+        removeOwnedFile,
+        writePreviewFile: async () => null,
+      },
     });
 
     expect(result.warnings).toEqual([]);
@@ -306,6 +320,7 @@ describe("incoming native shares", () => {
         readBase64: async () => "unused",
         readSize: async () => 0,
         removeOwnedFile: async () => undefined,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -332,6 +347,7 @@ describe("incoming native shares", () => {
         persistFile,
         readSize,
         removeOwnedFile: async () => undefined,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -371,6 +387,7 @@ describe("incoming native shares", () => {
         persistFile,
         readSize,
         removeOwnedFile: async () => undefined,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -395,6 +412,7 @@ describe("incoming native shares", () => {
         persistFile: async () => "file:///documents/report.pdf",
         readSize: async (uri) => (uri.startsWith("content:") ? 0 : 42),
         removeOwnedFile: async () => undefined,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -424,6 +442,7 @@ describe("incoming native shares", () => {
         // is rejected instead of shipped with a made-up size.
         readSize: async (uri) => (uri.startsWith("content:") ? 42 : 0),
         removeOwnedFile,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -450,6 +469,7 @@ describe("incoming native shares", () => {
         readSize: async () => 42,
         persistFile: async (_uri, name) => `file:///documents/${name}`,
         removeOwnedFile: async () => undefined,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -478,6 +498,7 @@ describe("incoming native shares", () => {
         readBase64: async () => "unused",
         readSize: async () => 42,
         removeOwnedFile,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -512,6 +533,7 @@ describe("incoming native shares", () => {
         readSize: async () => 42,
         persistFile: async () => persistedUri,
         removeOwnedFile,
+        writePreviewFile: async () => null,
       },
     });
 
@@ -739,6 +761,7 @@ describe("incoming native shares", () => {
           return null;
         },
         removeOwnedFile,
+        writePreviewFile: async () => null,
       },
     });
 

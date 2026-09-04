@@ -249,6 +249,8 @@ function actionArgs(input: {
       return ["pr", "merge", "--disable-auto"];
     case "update-branch":
       return null;
+    default:
+      return null;
   }
 }
 

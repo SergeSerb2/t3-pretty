@@ -234,9 +234,9 @@ export const make = Effect.fn("MobileStorage.make")(function* () {
     }),
   );
 
-  const loadAgentAwarenessDeviceId = secureStorage
-    .getItem(AGENT_AWARENESS_DEVICE_ID_KEY)
-    .pipe(Effect.map((existing) => (existing?.trim() ? existing : null)));
+  const loadAgentAwarenessDeviceId = Effect.suspend(() =>
+    secureStorage.getItem(AGENT_AWARENESS_DEVICE_ID_KEY),
+  ).pipe(Effect.map((existing) => (existing?.trim() ? existing : null)));
 
   const loadAgentAwarenessRegistrationRecord = readJson<AgentAwarenessRegistrationRecord>(
     AGENT_AWARENESS_REGISTRATION_KEY,

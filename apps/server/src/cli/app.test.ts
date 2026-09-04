@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import type { DesktopAppActivationRequest } from "@t3tools/contracts";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
 import {
   HostProcessPlatform,
@@ -211,7 +212,10 @@ describe("t3 app", () => {
     withTempDirectory("t3-app-preferred-test-", (root) =>
       Effect.gen(function* () {
         vi.mocked(NodeOS.homedir).mockReturnValue(root);
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(
+          root,
+          T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty",
+        );
         const desktop = yield* fakeDesktop({ baseDir });
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
@@ -227,7 +231,10 @@ describe("t3 app", () => {
     withTempDirectory("t3-app-dev-test-", (root) =>
       Effect.gen(function* () {
         vi.mocked(NodeOS.homedir).mockReturnValue(root);
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(
+          root,
+          T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty",
+        );
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         yield* runCli(["app"]);
@@ -243,7 +250,10 @@ describe("t3 app", () => {
     withTempDirectory("t3-app-explicit-test-", (root) =>
       Effect.gen(function* () {
         vi.mocked(NodeOS.homedir).mockReturnValue(root);
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(
+          root,
+          T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty",
+        );
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         const flagError = yield* runCli(["app", "--base-dir", baseDir]).pipe(Effect.flip);
@@ -261,7 +271,10 @@ describe("t3 app", () => {
       withTempDirectory("t3-app-response-test-", (root) =>
         Effect.gen(function* () {
           vi.mocked(NodeOS.homedir).mockReturnValue(root);
-          const baseDir = NodePath.join(root, ".t3");
+          const baseDir = NodePath.join(
+            root,
+            T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty",
+          );
           const desktop = yield* fakeDesktop({
             baseDir,
             reply: (request) =>

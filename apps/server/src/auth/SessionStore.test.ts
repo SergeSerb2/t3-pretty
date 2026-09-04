@@ -60,6 +60,7 @@ const repositoryFailure = new PersistenceSqlError({
 
 const failingSessionLookupRepositoryLayer = Layer.succeed(AuthSessions.AuthSessionRepository, {
   create: () => Effect.void,
+  createReplacingActive: () => Effect.succeed([]),
   getById: () => Effect.fail(repositoryFailure),
   listActive: () => Effect.succeed([]),
   revoke: () => Effect.fail(repositoryFailure),
@@ -81,6 +82,7 @@ const failingSessionLookupCredentialLayer = Layer.effect(
 
 const activeSessionOverflowRepositoryLayer = Layer.succeed(AuthSessions.AuthSessionRepository, {
   create: () => Effect.void,
+  createReplacingActive: () => Effect.succeed([]),
   getById: () => Effect.succeed(Option.none()),
   listActive: () =>
     Effect.succeed(
@@ -114,6 +116,7 @@ const activeSessionOverflowCredentialLayer = Layer.effect(
   SessionStore.make,
 ).pipe(
   Layer.provide(activeSessionOverflowRepositoryLayer),
+  Layer.provide(ServerEnvironment.identityLayer),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(SqlitePersistenceMemory),
   Layer.provide(makeServerConfigLayer()),
@@ -295,6 +298,78 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         "relay:read",
       ]);
     }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect("atomically replaces active sessions with the same subject and method", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const browser = yield* sessions.issue({
+        subject: "desktop-bootstrap",
+        method: "browser-session-cookie",
+      });
+      const [firstBearer, secondBearer] = yield* Effect.all(
+        [
+          sessions.issue({
+            subject: "desktop-bootstrap",
+            method: "bearer-access-token",
+            replaceActiveForSubjectAndMethod: true,
+          }),
+          sessions.issue({
+            subject: "desktop-bootstrap",
+            method: "bearer-access-token",
+            replaceActiveForSubjectAndMethod: true,
+          }),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      const active = yield* sessions.listActive();
+      const bearerVerification = yield* Effect.all([
+        sessions.verify(firstBearer.token).pipe(Effect.option),
+        sessions.verify(secondBearer.token).pipe(Effect.option),
+      ]);
+
+      expect(active).toHaveLength(2);
+      expect(active.find((entry) => entry.sessionId === browser.sessionId)).toBeDefined();
+      expect(
+        active.filter(
+          (entry) =>
+            entry.subject === "desktop-bootstrap" && entry.method === "bearer-access-token",
+        ),
+      ).toHaveLength(1);
+      expect(bearerVerification.filter(Option.isSome)).toHaveLength(1);
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
+  it.effect("keeps the previous desktop session valid when replacement fails", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const sql = yield* SqlClient.SqlClient;
+      const previous = yield* sessions.issue({
+        subject: "desktop-bootstrap",
+        method: "bearer-access-token",
+      });
+      yield* sql`
+        CREATE TRIGGER reject_auth_session_insert BEFORE INSERT ON auth_sessions
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated insert failure');
+        END
+      `;
+
+      const error = yield* sessions
+        .issue({
+          subject: "desktop-bootstrap",
+          method: "bearer-access-token",
+          replaceActiveForSubjectAndMethod: true,
+        })
+        .pipe(Effect.flip);
+
+      expect(error._tag).toBe("SessionCredentialIssueError");
+      expect((yield* sessions.verify(previous.token)).sessionId).toBe(previous.sessionId);
+      expect((yield* sessions.listActive()).map((session) => session.sessionId)).toEqual([
+        previous.sessionId,
+      ]);
+    }).pipe(Effect.provide(Layer.mergeAll(makeSessionStoreLayer(), SqlitePersistenceMemory))),
   );
 
   it.effect("rejects websocket tokens once the parent session has expired", () =>

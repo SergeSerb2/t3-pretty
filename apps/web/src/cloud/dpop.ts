@@ -134,7 +134,7 @@ export function readStoredBrowserDpopKey(): Effect.Effect<BrowserDpopKey | null,
     return Effect.succeed(null);
   }
   return Effect.acquireUseRelease(
-    openDpopDatabase(),
+    openDpopDatabase().pipe(Effect.interruptible),
     (database) =>
       Effect.callback<BrowserDpopKey | null, BrowserDpopError>((resume) => {
         let settled = false;
@@ -205,7 +205,7 @@ export function writeStoredBrowserDpopKey(
     return Effect.void;
   }
   return Effect.acquireUseRelease(
-    openDpopDatabase(),
+    openDpopDatabase().pipe(Effect.interruptible),
     (database) =>
       Effect.callback<void, BrowserDpopError>((resume) => {
         let settled = false;

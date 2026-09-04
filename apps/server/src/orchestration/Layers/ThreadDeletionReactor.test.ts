@@ -1,3 +1,4 @@
+import * as PreviewManager from "../../preview/Manager.ts";
 import {
   CommandId,
   CorrelationId,
@@ -139,7 +140,11 @@ describe("ThreadDeletionReactor drain", () => {
       const terminalManager = {
         close: () => Effect.void,
       } as unknown as TerminalManager.TerminalManager["Service"];
+      const previewManager = {
+        close: () => Effect.void,
+      } as unknown as PreviewManager.PreviewManager["Service"];
       const layer = ThreadDeletionReactorLive.pipe(
+        Layer.provide(Layer.succeed(PreviewManager.PreviewManager, previewManager)),
         Layer.provide(Layer.succeed(ProviderService, providerService)),
         Layer.provide(Layer.succeed(TerminalManager.TerminalManager, terminalManager)),
         Layer.provide(Layer.succeed(OrchestrationEngineService, engine)),

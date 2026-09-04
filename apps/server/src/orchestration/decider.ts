@@ -508,7 +508,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      if (command.expectedBranch !== undefined && thread.branch !== command.expectedBranch) {
+      if (
+        command.type === "thread.settle" &&
+        command.expectedBranch !== undefined &&
+        thread.branch !== command.expectedBranch
+      ) {
         return yield* Effect.fail(
           new OrchestrationCommandInvariantError({
             commandType: command.type,
@@ -517,6 +521,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       if (
+        command.type === "thread.settle" &&
         command.expectedBranchEventId !== undefined &&
         thread.branchEventId !== command.expectedBranchEventId
       ) {
@@ -528,6 +533,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       if (
+        command.type === "thread.settle" &&
         command.onlyIfAutoSettlementEligible === true &&
         (thread.pinnedAt != null || thread.settledOverride !== null)
       ) {

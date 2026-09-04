@@ -6,35 +6,42 @@ import type {
   TerminalSummary,
   ThreadId,
 } from "@t3tools/contracts";
+import {
+  appendOutput,
+  DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
+  EMPTY_TERMINAL_OUTPUT_STATE,
+  resetOutput,
+  type TerminalOutputState,
+} from "./terminalOutput.ts";
 
-import { compareIsoDateTimes } from "./threadSort.ts";
+export {
+  DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
+  INITIAL_TERMINAL_OUTPUT_CURSOR,
+  readTerminalOutputUpdate,
+  terminalOutputText,
+  type TerminalOutputCursor,
+  type TerminalOutputState,
+  type TerminalOutputUpdate,
+} from "./terminalOutput.ts";
 
 export interface TerminalSessionState {
   readonly summary: TerminalSummary | null;
-  readonly buffer: string;
-  /** Absolute UTF-16 offsets for the retained window within this buffer generation. */
-  readonly bufferStartOffset: number;
-  readonly bufferEndOffset: number;
-  readonly bufferGeneration: number;
+  readonly output: TerminalOutputState;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
   readonly hasRunningSubprocess: boolean;
   readonly updatedAt: string | null;
   readonly version: number;
+  readonly lifecycleVersion: number;
 }
 
 export interface TerminalBufferState {
-  readonly buffer: string;
-  /** UTF-8 byte length of `buffer`, tracked alongside it so output appends stay O(chunk). */
-  readonly bufferByteLength: number;
-  /** Absolute UTF-16 offsets for the retained window within this buffer generation. */
-  readonly bufferStartOffset: number;
-  readonly bufferEndOffset: number;
-  readonly bufferGeneration: number;
+  readonly output: TerminalOutputState;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
   readonly updatedAt: string | null;
   readonly version: number;
+  readonly lifecycleVersion: number;
 }
 
 export interface KnownTerminalSessionTarget {
@@ -57,131 +64,61 @@ export function selectRunningSubprocessTerminalIds(
 }
 
 export const EMPTY_TERMINAL_BUFFER_STATE = Object.freeze<TerminalBufferState>({
-  buffer: "",
-  bufferByteLength: 0,
-  bufferStartOffset: 0,
-  bufferEndOffset: 0,
-  bufferGeneration: 0,
+  output: EMPTY_TERMINAL_OUTPUT_STATE,
   status: "closed",
   error: null,
   updatedAt: null,
   version: 0,
+  lifecycleVersion: 0,
 });
 
 export const EMPTY_TERMINAL_SESSION_STATE = Object.freeze<TerminalSessionState>({
   summary: null,
-  buffer: "",
-  bufferStartOffset: 0,
-  bufferEndOffset: 0,
-  bufferGeneration: 0,
+  output: EMPTY_TERMINAL_OUTPUT_STATE,
   status: "closed",
   error: null,
   hasRunningSubprocess: false,
   updatedAt: null,
   version: 0,
+  lifecycleVersion: 0,
 });
 
-export const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
+let terminalAttachGeneration = 0;
 
-interface TrimmedBuffer {
-  readonly buffer: string;
-  /** Exact UTF-8 byte length of `buffer`; the trim boundary is always code-point aligned. */
-  readonly byteLength: number;
-}
-
-function utf8CodePointSizeAt(
-  value: string,
-  index: number,
-): {
-  readonly codeUnits: number;
-  readonly byteLength: number;
-} {
-  const first = value.charCodeAt(index);
-  if (first <= 0x7f) return { codeUnits: 1, byteLength: 1 };
-  if (first <= 0x7ff) return { codeUnits: 1, byteLength: 2 };
-  if (first >= 0xd800 && first <= 0xdbff) {
-    const second = value.charCodeAt(index + 1);
-    if (second >= 0xdc00 && second <= 0xdfff) {
-      return { codeUnits: 2, byteLength: 4 };
-    }
-  }
-  // TextEncoder replaces an unpaired surrogate with U+FFFD, which is three
-  // bytes, just like every other BMP code point above U+07FF.
-  return { codeUnits: 1, byteLength: 3 };
-}
-
-function utf8ByteLength(value: string): number {
-  let byteLength = 0;
-  for (let index = 0; index < value.length;) {
-    const next = utf8CodePointSizeAt(value, index);
-    index += next.codeUnits;
-    byteLength += next.byteLength;
-  }
-  return byteLength;
-}
-
-function trimKnownBufferToBytes(
-  buffer: string,
-  byteLength: number,
-  maxBufferBytes: number,
-): TrimmedBuffer {
-  if (maxBufferBytes <= 0) {
-    return { buffer: "", byteLength: 0 };
-  }
-  if (byteLength <= maxBufferBytes) {
-    return { buffer, byteLength };
-  }
-
-  const minimumBytesToDrop = byteLength - maxBufferBytes;
-  let start = 0;
-  let droppedByteLength = 0;
-  while (start < buffer.length && droppedByteLength < minimumBytesToDrop) {
-    const next = utf8CodePointSizeAt(buffer, start);
-    start += next.codeUnits;
-    droppedByteLength += next.byteLength;
-  }
-
+/** A reinstalled attach stream must not reuse an old renderer's output cursor. */
+export function nextTerminalAttachSeedState(): TerminalBufferState {
   return {
-    buffer: buffer.slice(start),
-    byteLength: byteLength - droppedByteLength,
+    ...EMPTY_TERMINAL_BUFFER_STATE,
+    output: {
+      ...EMPTY_TERMINAL_OUTPUT_STATE,
+      generation: ++terminalAttachGeneration,
+    },
   };
-}
-
-function trimBufferToBytes(buffer: string, maxBufferBytes: number): TrimmedBuffer {
-  return trimKnownBufferToBytes(buffer, utf8ByteLength(buffer), maxBufferBytes);
-}
-
-function joinsSurrogatePair(left: string, right: string): boolean {
-  if (left.length === 0 || right.length === 0) return false;
-  const high = left.charCodeAt(left.length - 1);
-  const low = right.charCodeAt(0);
-  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
 }
 
 export function terminalBufferStateFromSnapshot(
   snapshot: TerminalSessionSnapshot,
   maxBufferBytes: number,
-  bufferGeneration = 1,
+  current: TerminalBufferState = EMPTY_TERMINAL_BUFFER_STATE,
 ): TerminalBufferState {
-  const trimmed = trimBufferToBytes(snapshot.history, maxBufferBytes);
-  const bufferEndOffset = snapshot.history.length;
   return {
-    buffer: trimmed.buffer,
-    bufferByteLength: trimmed.byteLength,
-    bufferStartOffset: bufferEndOffset - trimmed.buffer.length,
-    bufferEndOffset,
-    bufferGeneration,
+    output: resetOutput(current.output, snapshot.history, maxBufferBytes),
     status: snapshot.status,
     error: null,
     updatedAt: snapshot.updatedAt,
-    version: 1,
+    version: current.version + 1,
+    lifecycleVersion: current.lifecycleVersion,
   };
 }
 
 function latestTimestamp(left: string | null, right: string | null): string | null {
   if (left === null) return right;
   if (right === null) return left;
-  return compareIsoDateTimes(left, right) >= 0 ? left : right;
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  if (Number.isNaN(leftTime)) return right;
+  if (Number.isNaN(rightTime)) return left;
+  return leftTime >= rightTime ? left : right;
 }
 
 export function combineTerminalSessionState(
@@ -190,15 +127,13 @@ export function combineTerminalSessionState(
 ): TerminalSessionState {
   return {
     summary,
-    buffer: buffer.buffer,
-    bufferStartOffset: buffer.bufferStartOffset,
-    bufferEndOffset: buffer.bufferEndOffset,
-    bufferGeneration: buffer.bufferGeneration,
+    output: buffer.output,
     status: buffer.version > 0 ? buffer.status : (summary?.status ?? buffer.status),
     error: buffer.error,
     hasRunningSubprocess: summary?.hasRunningSubprocess ?? false,
     updatedAt: latestTimestamp(summary?.updatedAt ?? null, buffer.updatedAt),
     version: buffer.version,
+    lifecycleVersion: buffer.lifecycleVersion,
   };
 }
 
@@ -209,45 +144,28 @@ export function applyTerminalAttachStreamEvent(
 ): TerminalBufferState {
   switch (event.type) {
     case "snapshot":
+      return {
+        ...terminalBufferStateFromSnapshot(event.snapshot, maxBufferBytes, current),
+        lifecycleVersion:
+          current.version === 0 ? current.lifecycleVersion : current.lifecycleVersion + 1,
+      };
     case "restarted":
-      return terminalBufferStateFromSnapshot(
-        event.snapshot,
-        maxBufferBytes,
-        current.bufferGeneration + 1,
-      );
-    case "output": {
-      const chunkByteLength = utf8ByteLength(event.data);
-      const bufferEndOffset = current.bufferEndOffset + event.data.length;
-      const combinedBuffer = `${current.buffer}${event.data}`;
-      // Separately encoded chunks count a surrogate split at the append
-      // boundary as two replacement characters (six bytes); once joined it is
-      // one four-byte code point.
-      const combinedByteLength =
-        current.bufferByteLength +
-        chunkByteLength -
-        (joinsSurrogatePair(current.buffer, event.data) ? 2 : 0);
-      // Once full, scan only the prefix that must be evicted instead of
-      // re-encoding the complete 512-KiB retained window for every tiny chunk.
-      const next = trimKnownBufferToBytes(combinedBuffer, combinedByteLength, maxBufferBytes);
+      return {
+        ...terminalBufferStateFromSnapshot(event.snapshot, maxBufferBytes, current),
+        lifecycleVersion: current.lifecycleVersion + 1,
+      };
+    case "output":
       return {
         ...current,
-        buffer: next.buffer,
-        bufferByteLength: next.byteLength,
-        bufferStartOffset: bufferEndOffset - next.buffer.length,
-        bufferEndOffset,
+        output: appendOutput(current.output, event.data, maxBufferBytes),
         status: current.status === "closed" ? "running" : current.status,
         error: null,
         version: current.version + 1,
       };
-    }
     case "cleared":
       return {
         ...current,
-        buffer: "",
-        bufferByteLength: 0,
-        bufferStartOffset: 0,
-        bufferEndOffset: 0,
-        bufferGeneration: current.bufferGeneration + 1,
+        output: resetOutput(current.output, "", maxBufferBytes),
         error: null,
         version: current.version + 1,
       };
@@ -275,29 +193,6 @@ export function applyTerminalAttachStreamEvent(
     case "activity":
       return current;
   }
-}
-
-type TerminalBufferWindow = Pick<
-  TerminalSessionState,
-  "buffer" | "bufferStartOffset" | "bufferEndOffset" | "bufferGeneration"
->;
-
-/**
- * Returns only output added after `previous`, or null when the terminal must
- * reset because the retained window rolled past it or the stream restarted.
- */
-export function terminalBufferAppendSince(
-  previous: TerminalBufferWindow,
-  current: TerminalBufferWindow,
-): string | null {
-  if (
-    current.bufferGeneration !== previous.bufferGeneration ||
-    previous.bufferEndOffset < current.bufferStartOffset ||
-    previous.bufferEndOffset > current.bufferEndOffset
-  ) {
-    return null;
-  }
-  return current.buffer.slice(previous.bufferEndOffset - current.bufferStartOffset);
 }
 
 export function applyTerminalMetadataStreamEvent(

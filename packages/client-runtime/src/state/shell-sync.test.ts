@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -61,6 +62,7 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
 describe("environment shell synchronization", () => {
   it.effect("publishes live state before persistence and preserves it when ready", () =>
     Effect.gen(function* () {
+      const saveGate = Latch.makeUnsafe();
       const events = yield* Queue.unbounded<OrchestrationShellStreamItem>();
       const client = {
         [ORCHESTRATION_WS_METHODS.subscribeShell]: () => Stream.fromQueue(events),
@@ -80,7 +82,7 @@ describe("environment shell synchronization", () => {
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const cache = Persistence.EnvironmentCacheStore.of({
         loadShell: () => Effect.succeed(Option.none()),
-        saveShell: () => Effect.never,
+        saveShell: () => saveGate.await,
         loadThread: () => Effect.succeed(Option.none()),
         saveThread: () => Effect.void,
         removeThread: () => Effect.void,
@@ -103,6 +105,7 @@ describe("environment shell synchronization", () => {
         Effect.provideService(ShellSnapshotLoader, snapshotLoader),
       );
 
+      yield* Effect.addFinalizer(() => saveGate.open);
       yield* SubscriptionRef.set(supervisorState, {
         desired: true,
         network: "online",

@@ -580,7 +580,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const pr = useThreadPr(thread, props.projectCwd ?? props.project?.workspaceRoot ?? null);
 
-  const departure = useThreadDepartureAnimation(threadKey, {
+  const departure = useThreadDepartureAnimation(`${thread.environmentId}:${thread.id}`, {
     snoozed: snoozedRow,
     settled: props.settled === true,
   });

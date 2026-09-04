@@ -1,3 +1,9 @@
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "test-uuid",
+  getRandomBytes: (n: number) => new Uint8Array(n),
+}));
+vi.mock("expo-secure-store", () => ({}));
+import { vi } from "vite-plus/test";
 import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";

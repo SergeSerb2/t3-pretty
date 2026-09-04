@@ -41,6 +41,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { readFilePrefix } from "../../boundedFileRead.ts";
 import { ServerConfig } from "../../config.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -846,6 +847,7 @@ export function makeCursorAdapter(
                       }),
                     );
                     return;
+                  case "ThoughtDelta":
                   case "ContentDelta":
                     yield* logNative(
                       ctx.threadId,
@@ -859,8 +861,11 @@ export function makeCursorAdapter(
                         provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
-                        ...(event.itemId ? { itemId: event.itemId } : {}),
-                        streamKind: event.streamKind,
+                        ...(event._tag === "ContentDelta" && event.itemId
+                          ? { itemId: event.itemId }
+                          : {}),
+                        streamKind:
+                          event._tag === "ThoughtDelta" ? "reasoning_text" : event.streamKind,
                         text: event.text,
                         rawPayload: event.rawPayload,
                       }),
@@ -1045,9 +1050,16 @@ export function makeCursorAdapter(
             });
           }
 
+          // ACP has no system-message field; keep runtime context separate from the user's text.
           const result = yield* ctx.acp
             .prompt({
-              prompt: promptParts,
+              prompt: [
+                ...promptParts,
+                {
+                  type: "text",
+                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+                },
+              ],
             })
             .pipe(
               Effect.mapError((error) =>

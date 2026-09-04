@@ -888,6 +888,7 @@ export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerPro
 }
 
 export const ServerSelfUpdateInput = Schema.Struct({
+  continueRunningThreads: Schema.optionalKey(Schema.Boolean),
   /** Exact npm version of the `t3` package to install (never a dist-tag, so
       the server and the acknowledging client agree on what was requested). */
   targetVersion: TrimmedNonEmptyString,

@@ -224,7 +224,7 @@ describe("T3 Pretty iOS native-build gate", () => {
     assert.notInclude(source, '"$MODE" == "build" || "$MODE" == "release"');
     assert.include(source, "Native fingerprint is unchanged");
     assert.include(source, "ipa_via_cloud");
-    assert.include(source, "Submitted TestFlight IPA via EAS cloud");
+    assert.include(source, "Submitted verified TestFlight IPA from EAS cloud build");
     assert.include(source, "/Applications/Xcode-beta.app");
     assert.notInclude(source, "Skipping a new IPA");
     assert.notInclude(source, "xcode_is_store_supported");

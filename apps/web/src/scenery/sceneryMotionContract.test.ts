@@ -143,12 +143,12 @@ describe("composer contract", () => {
     expect(primaryActionsSource).toContain('aria-label="Stop generation"');
   });
 
-  it("approval / question / plan panels still mount under the rounded-t-[19px] wrapper", () => {
+  it("approval / question / plan panels retain their animated top drawer", () => {
     expect(chatComposerSource).toContain('data-chat-composer-form="true"');
-    expect(chatComposerSource).toContain(
-      'className="rounded-t-[19px] border-b border-border/65 bg-muted/20"',
+    expect(chatComposerSource).toContain('data-chat-composer-top-drawer="true"');
+    expect(motionStylesSource).toContain(
+      "[data-chat-composer-form] [data-chat-composer-top-drawer]",
     );
-    expect(chatComposerSource).toContain("flex flex-wrap items-center justify-end gap-2 px-3 pb-3");
     expect(primaryActionsSource).toContain('data-chat-composer-implement-actions="true"');
   });
 

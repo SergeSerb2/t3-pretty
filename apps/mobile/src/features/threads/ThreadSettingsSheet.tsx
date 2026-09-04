@@ -7,10 +7,9 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
   ScopedThreadRef,
-  ServerProvider,
 } from "@t3tools/contracts";
 import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
+
 import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -58,11 +57,6 @@ import {
 } from "../../native/StackHeader";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { serverEnvironment } from "../../state/server";
-import { ProviderSetupLink } from "../settings/ProviderSetupLink";
-import {
-  SettingsProviderSetupRouteScreen,
-  type ProviderSetupRouteParams,
-} from "../settings/SettingsProviderSetupRouteScreen";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   createProviderCatalogRefreshRunner,
@@ -88,7 +82,6 @@ import {
   modelMatchesCatalogQuery,
   pendingModelAfterPress,
   presentedSettingsSheetPage,
-  providerSetupCandidates,
   providerSectionIsCollapsed,
   threadSettingsSheetPageForRoute,
   visibleSheetOptionDescriptors,
@@ -592,7 +585,10 @@ function ThreadSettingsSessionProvider(
   const commitPendingModel = useCallback(() => {
     if (pendingModel) {
       if (!canCommitPendingModel(pendingModel, props.providerGroups)) {
-        Alert.alert("Model unavailable", "Complete provider setup or select another model.");
+        Alert.alert(
+          "Model unavailable",
+          "Set up this provider on web or desktop, or select another model.",
+        );
         return false;
       }
       void Haptics.selectionAsync();
@@ -734,11 +730,6 @@ type ThreadSettingsCatalogItem =
       readonly option: ModelOption;
       readonly isFirst: boolean;
       readonly isLast: boolean;
-    }
-  | {
-      readonly kind: "setup";
-      readonly key: string;
-      readonly provider: ServerProvider;
     }
   | {
       readonly kind: "empty";
@@ -925,7 +916,6 @@ function ThreadSettingsHomeContent(props: {
 }) {
   const insets = useSafeAreaInsets();
   const session = useThreadSettingsSession();
-  const iconSubtle = useThemeColor("--color-icon-subtle");
   const model = session.displayedModel;
 
   return (
@@ -955,7 +945,12 @@ function ThreadSettingsHomeContent(props: {
           ) : null}
         </View>
         <Text className="text-sm font-t3-medium text-foreground-muted">Change</Text>
-        <SymbolView name="chevron.right" size={12} tintColor={iconSubtle} type="monochrome" />
+        <SymbolView
+          name="chevron.right"
+          size={12}
+          tintColorClassName="accent-icon-subtle"
+          type="monochrome"
+        />
       </Pressable>
 
       <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Options</Text>
@@ -988,11 +983,8 @@ function ThreadSettingsHomeContent(props: {
 }
 
 /** One native scroll owner for the model catalog. */
-function ThreadSettingsCatalogContent(props: {
-  readonly onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
-}) {
+function ThreadSettingsCatalogContent() {
   const session = useThreadSettingsSession();
-  const config = useAtomValue(serverEnvironment.configValueAtom(session.environmentId));
   const catalogItems = useThreadSettingsCatalogItems(session);
   const [animationsReady, setAnimationsReady] = useState(false);
   const nativeHeaderHeight = use(HeaderHeightContext) ?? 0;
@@ -1004,26 +996,9 @@ function ThreadSettingsCatalogContent(props: {
     Platform.OS === "ios" && NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
       ? NATIVE_MAIL_SEARCH_TOOLBAR_CONTENT_INSET
       : 0;
-  const setupProviders = useMemo(
-    () =>
-      providerSetupCandidates({
-        providers: config?.providers ?? [],
-        instanceId: session.providerInstanceId,
-        providerFilter: session.providerFilter,
-        query: session.searchQuery,
-      }),
-    [config?.providers, session.providerInstanceId, session.providerFilter, session.searchQuery],
-  );
   const listItems = useMemo<ReadonlyArray<ThreadSettingsCatalogItem>>(
-    () => [
-      ...(catalogItems.length === 0 ? ([{ kind: "empty", key: "empty" }] as const) : catalogItems),
-      ...setupProviders.map((provider) => ({
-        kind: "setup" as const,
-        key: `setup:${provider.instanceId}`,
-        provider,
-      })),
-    ],
-    [catalogItems, setupProviders],
+    () => (catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems),
+    [catalogItems],
   );
   const renderCatalogItem = useCallback(
     (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
@@ -1038,13 +1013,6 @@ function ThreadSettingsCatalogContent(props: {
             isFirst={item.isFirst}
             isLast={item.isLast}
             option={item.option}
-          />
-        );
-      } else if (item.kind === "setup") {
-        content = (
-          <ProviderSetupLink
-            provider={item.provider}
-            onPress={() => props.onOpenProviderSetup(item.provider.instanceId)}
           />
         );
       } else if (item.kind === "empty") {
@@ -1067,7 +1035,7 @@ function ThreadSettingsCatalogContent(props: {
         </Animated.View>
       );
     },
-    [animationsReady, hasActiveCatalogFilter, props.onOpenProviderSetup],
+    [animationsReady, hasActiveCatalogFilter],
   );
 
   return (
@@ -1238,7 +1206,6 @@ type ThreadSettingsPickerStackParams = {
   ThreadSettingsHome: undefined;
   ThreadSettingsCatalog: undefined;
   ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
-  ThreadSettingsProviderSetup: ProviderSetupRouteParams;
 };
 
 type ThreadSettingsPickerPresentation = {
@@ -1457,15 +1424,7 @@ function ThreadSettingsCatalogScreen() {
               : undefined,
         }}
       />
-      <ThreadSettingsCatalogContent
-        onOpenProviderSetup={(instanceId) => {
-          if (!session.environmentId) return;
-          navigation.navigate("ThreadSettingsProviderSetup", {
-            environmentId: session.environmentId,
-            instanceId,
-          });
-        }}
-      />
+      <ThreadSettingsCatalogContent />
       <NativeHeaderToolbar placement="right">
         <NativeHeaderToolbar.Button
           accessibilityLabel="Refresh models"
@@ -1592,11 +1551,6 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerNavigatorProps
           name="ThreadSettingsChoice"
           component={ThreadSettingsChoiceScreen}
           options={({ route }) => ({ title: route.params.title })}
-        />
-        <ThreadSettingsPickerStack.Screen
-          name="ThreadSettingsProviderSetup"
-          component={SettingsProviderSetupRouteScreen}
-          options={{ title: "Antigravity" }}
         />
       </ThreadSettingsPickerStack.Navigator>
     </ThreadSettingsPickerPresentationContext.Provider>

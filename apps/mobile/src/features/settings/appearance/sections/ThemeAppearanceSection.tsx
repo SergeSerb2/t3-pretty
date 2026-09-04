@@ -11,7 +11,6 @@ import {
 } from "../../../../lib/mobileTheme";
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
 import { cn } from "../../../../lib/cn";
-import { useThemeColor } from "../../../../lib/useThemeColor";
 import { PHOTO_SETS, type PhotoSetId } from "../../../scenery/photoSets";
 import { useScenery } from "../../../scenery/SceneryProvider";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";

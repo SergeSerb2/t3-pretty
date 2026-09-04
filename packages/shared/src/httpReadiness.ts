@@ -128,7 +128,14 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
       Effect.gen(function* () {
         attempt += 1;
         const responseOption = yield* effect.pipe(
-          Effect.flatMap((response) => Stream.runDrain(response.stream).pipe(Effect.as(response))),
+          Effect.flatMap((response) =>
+            Stream.runDrain(response.stream).pipe(
+              Effect.catch((error) =>
+                error.reason._tag === "EmptyBodyError" ? Effect.void : Effect.fail(error),
+              ),
+              Effect.as(response),
+            ),
+          ),
           Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
           Effect.mapError((cause) => fail(cause)),
         );

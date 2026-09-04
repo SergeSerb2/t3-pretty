@@ -1,3 +1,8 @@
+import { usePreparedConnection } from "../../state/session";
+import { useNativeDictation } from "./useNativeDictation";
+import { ComposerToolbarButton } from "../../components/ComposerToolbar";
+import { themeColorWithAlpha } from "../../lib/mobileTheme";
+import { useThreadSettingsSheetPresentation } from "./use-thread-settings-sheet-presentation";
 import { useAtomValue } from "@effect/atom-react";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
@@ -5,7 +10,6 @@ import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import {
   CommonActions,
   StackActions,
-  useFocusEffect,
   useNavigation,
   usePreventRemove,
   type NavigationAction,
@@ -51,7 +55,6 @@ import {
   type ComposerEditorSelection,
 } from "../../components/ComposerEditor";
 import {
-  ComposerActionButton,
   ComposerInlineControl,
   ComposerToolbarRow,
   ComposerToolbarScroller,
@@ -207,8 +210,6 @@ function NewTaskDraftFrame(props: {
 }
 
 function NewTaskGlassChip(props: { readonly active: boolean; readonly children: ReactNode }) {
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
   if (!props.active) {
     return props.children;
   }
@@ -216,11 +217,8 @@ function NewTaskGlassChip(props: { readonly active: boolean; readonly children: 
   return (
     <GlassSurface
       chrome="none"
-      fallbackStyle={{
-        backgroundColor: chromeFill,
-        borderColor: chromeBorder,
-        borderWidth: StyleSheet.hairlineWidth,
-      }}
+      fallbackClassName="bg-chrome-glass border-chrome-glass-border"
+      fallbackStyle={{ borderWidth: StyleSheet.hairlineWidth }}
       style={NEW_TASK_GLASS_CHIP_STYLE}
     >
       {props.children}
@@ -1032,6 +1030,10 @@ export function NewTaskDraftScreen(props: {
         uris.map((uri, index) => ({
           id: `pending:${index}:${uri}`,
           previewUri: uri,
+          type: "image",
+          name: "Preparing image",
+          mimeType: "image/png",
+          sizeBytes: 0,
           preparing: true,
         })),
       );
@@ -1114,7 +1116,7 @@ export function NewTaskDraftScreen(props: {
     ) {
       Alert.alert(
         "Antigravity model unavailable",
-        "Open model settings to finish setup or choose another model.",
+        "Set up Antigravity on web or desktop, or choose another model.",
       );
       return;
     }
@@ -1285,10 +1287,6 @@ export function NewTaskDraftScreen(props: {
         text: initialMessageTextForSend,
         createdAt: turnMetadata.createdAt,
       },
-      onAttachmentsUploaded: async (attachments) => {
-        flow.replaceAttachments(attachments);
-        await flushComposerDrafts();
-      },
     });
     rememberOutgoingMessageDraftAttachments(messageId, draft.attachments);
 
@@ -1325,6 +1323,11 @@ export function NewTaskDraftScreen(props: {
       enabledSkillIds: draft.enabledSkillIds ?? [],
       initialMessageText: initialMessageTextForSend,
       initialAttachments: draft.attachments,
+      onAttachmentsUploaded: async (attachments) => {
+        flow.replaceAttachments(attachments);
+        await flushComposerDrafts();
+      },
+
       turnMetadata,
     });
 
@@ -1400,10 +1403,14 @@ export function NewTaskDraftScreen(props: {
 
   const isAndroid = Platform.OS === "android";
   const isDarkMode = sceneryColorScheme === "dark";
-  const attachedUris = new Set(flow.attachments.map((image) => image.previewUri));
+  const attachedUris = new Set(
+    flow.attachments.map((image) => (image.type === "image" ? image.previewUri : null)),
+  );
   const stripAttachments = [
     ...flow.attachments,
-    ...pendingPreviews.filter((preview) => !attachedUris.has(preview.previewUri)),
+    ...pendingPreviews.filter(
+      (preview) => preview.type !== "image" || !attachedUris.has(preview.previewUri),
+    ),
   ];
   const dispatchStatus = composerDispatchStatusLabel(
     pendingPreviews.length > 0
@@ -1694,6 +1701,7 @@ export function NewTaskDraftScreen(props: {
       ) : null}
 
       <ComposerSurface
+        isDarkMode={isDarkMode}
         style={{
           borderRadius: 26,
           minHeight: 140,

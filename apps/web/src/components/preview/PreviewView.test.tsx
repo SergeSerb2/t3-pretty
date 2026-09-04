@@ -182,6 +182,7 @@ vi.mock("~/previewMiniPlayerStore", () => {
         open: mocks.openMiniPlayer,
         undismiss: mocks.undismissMiniPlayer,
         close: mocks.closeMiniPlayer,
+        dismiss: mocks.closeMiniPlayer,
       }),
     },
   );
@@ -501,7 +502,7 @@ describe("PreviewView navigation", () => {
     renderToStaticMarkup(<PreviewView {...props} />);
     expect(mocks.pictureInPicturePressed).toBe(true);
     mocks.togglePictureInPicture?.();
-    expect(mocks.closeMiniPlayer).toHaveBeenCalledWith(props.threadRef);
+    expect(mocks.closeMiniPlayer).toHaveBeenCalledWith(props.threadRef, "tab-1");
   });
 
   it("keeps the native preview window as a secondary action", async () => {

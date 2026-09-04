@@ -1301,7 +1301,9 @@ const stateKey = process.argv[2] || "";
 if (!/^[0-9a-f]{16}$/.test(stateKey)) {
   throw new Error("Invalid SSH launch state key.");
 }
-const stateDirectory = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}", "ssh-launch", stateKey);
+const defaultServerHome = path.join(os.homedir(), "${REMOTE_BASE_DIR_NAME}");
+const defaultRuntimeFile = path.join(defaultServerHome, "userdata", "server-runtime.json");
+const stateDirectory = path.join(defaultServerHome, "ssh-launch", stateKey);
 const pidFile = path.join(stateDirectory, "pid");
 const portFile = path.join(stateDirectory, "port");
 const managedFile = path.join(stateDirectory, "managed");

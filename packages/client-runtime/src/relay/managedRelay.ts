@@ -567,19 +567,33 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
           expiresAtMillis: nowMillis + response.expires_in * 1_000,
         } satisfies ManagedRelayAccessTokenCacheEntry;
       }
+      const match = {
+        accountId: accountId.value,
+        clientId: options.clientId,
+        relayUrl,
+        thumbprint: input.thumbprint,
+        scopes: input.scopes,
+        nowMillis,
+      };
+      // Cache hits do not need to wait for an unrelated exchange or store write.
+      const cached = (yield* SynchronizedRef.get(cachedTokens)).find((token) =>
+        tokenMatches(token, match),
+      );
+      if (cached) {
+        yield* Effect.annotateCurrentSpan({
+          "relay.token_cache.result": "hit",
+        });
+        return cached;
+      }
       return yield* SynchronizedRef.modifyEffect(cachedTokens, (tokens) =>
         Effect.gen(function* () {
           const cacheIsCurrent = (yield* Ref.get(tokenCacheGeneration)) === cacheGeneration;
-          const activeTokens = tokens.filter((token) => token.expiresAtMillis > nowMillis + 5_000);
+          const lookupMillis = yield* Clock.currentTimeMillis;
+          const activeTokens = tokens.filter(
+            (token) => token.expiresAtMillis > lookupMillis + 5_000,
+          );
           const cached = activeTokens.find((token) =>
-            tokenMatches(token, {
-              accountId: accountId.value,
-              clientId: options.clientId,
-              relayUrl,
-              thumbprint: input.thumbprint,
-              scopes: input.scopes,
-              nowMillis,
-            }),
+            tokenMatches(token, { ...match, nowMillis: lookupMillis }),
           );
           if (cached) {
             yield* Effect.annotateCurrentSpan({
@@ -598,7 +612,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             thumbprint: input.thumbprint,
             scopes: input.scopes,
             accessToken: response.access_token,
-            expiresAtMillis: nowMillis + response.expires_in * 1_000,
+            expiresAtMillis: lookupMillis + response.expires_in * 1_000,
           };
           const nextTokens = [...activeTokens, next];
           if ((yield* Ref.get(tokenCacheGeneration)) !== cacheGeneration) {

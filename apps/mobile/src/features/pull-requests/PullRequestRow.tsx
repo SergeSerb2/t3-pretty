@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
 import {
   checksStateTextClass,
   describeChecksState,
@@ -24,7 +23,6 @@ export function PullRequestRow(props: {
   readonly showHost?: boolean;
   readonly onPress: (entry: PullRequestListEntry) => void;
 }) {
-  const separatorColor = useThemeColor("--color-separator");
   const presentation = resolvePullRequestState(props.entry);
   const diff = formatDiffStat(props.entry.additions, props.entry.deletions);
   const reviewDecision = describeReviewDecision(props.entry.reviewDecision);
@@ -48,10 +46,9 @@ export function PullRequestRow(props: {
         borderTopRightRadius: props.isFirst ? 16 : 0,
         borderBottomLeftRadius: props.isLast ? 16 : 0,
         borderBottomRightRadius: props.isLast ? 16 : 0,
-        borderBottomColor: separatorColor,
         borderBottomWidth: props.isLast ? 0 : StyleSheet.hairlineWidth,
       })}
-      className="bg-card px-4 py-3.5"
+      className="border-b-separator bg-card px-4 py-3.5"
     >
       <View className="flex-row items-start gap-3">
         <View className="mt-0.5">
@@ -110,7 +107,7 @@ export function PullRequestRow(props: {
               </Text>
             ) : null}
             {props.entry.viewerReviewRequested ? (
-              <Text className="text-2xs font-t3-medium text-amber-600 dark:text-amber-400">
+              <Text className="text-2xs font-t3-medium text-adaptive-amber-600-400">
                 Review requested
               </Text>
             ) : null}
