@@ -338,7 +338,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         <Text
           className={cn(
             "font-t3-extrabold text-sm",
-            props.answers ? "text-white" : "text-neutral-500 dark:text-neutral-400",
+            props.answers ? "text-white" : "text-adaptive-neutral-500-400",
           )}
         >
           Submit answers

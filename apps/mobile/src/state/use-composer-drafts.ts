@@ -1,3 +1,8 @@
+import { isOwnedComposerPreviewUri } from "../lib/composerImages";
+import type {
+  DraftComposerImageAttachment,
+  DraftComposerFileAttachment,
+} from "../lib/composerImages";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ModelSelection as ModelSelectionSchema,
@@ -17,13 +22,13 @@ import { useEffect } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import { removeStaleAtomicWriteTempFiles, writeFileAtomically } from "../lib/atomic-file";
-import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
+import { PersistedComposerAttachmentSchema } from "../lib/composer-image-schema";
 import {
   composerAttachmentFileReferenceKey,
   isComposerAttachmentFileRetained,
   retainComposerAttachmentFile,
 } from "../lib/composerAttachmentFiles";
-import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
+import type { DraftComposerAttachment, FileBackedComposerAttachment } from "../lib/composerImages";
 import { SerializedAsyncQueue } from "../lib/serialized-async-queue";
 import { appAtomRegistry } from "./atom-registry";
 import {
@@ -114,7 +119,7 @@ const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
 
 const ComposerDraftSchema = Schema.Struct({
   text: Schema.String,
-  attachments: Schema.Array(DraftComposerAttachmentSchema),
+  attachments: Schema.Array(PersistedComposerAttachmentSchema),
   importedShareIds: Schema.optional(Schema.Array(Schema.String)),
   modelSelection: Schema.optional(ModelSelectionSchema),
   runtimeMode: Schema.optional(RuntimeModeSchema),
@@ -185,6 +190,10 @@ const persistenceQueue = new SerializedAsyncQueue();
 /** Resets module-level state between test runs. */
 export function resetComposerDraftsLoadState(): void {
   loadPromise = null;
+  draftsLoaded = false;
+  lastLoadError = null;
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = null;
 }
 
 function normalizeDraft(draft: ComposerDraft | undefined): ComposerDraft {
@@ -251,10 +260,14 @@ export function decodePersistedComposerState(value: unknown): {
             : { lastHandoffPrompt: limitComposerDraftText(draft.lastHandoffPrompt) }),
           // Persisted drafts omit the payload; an empty dataUrl marks the
           // attachment for rehydration from its preview file on load.
-          attachments: draft.attachments.map((attachment) => ({
-            ...attachment,
-            dataUrl: attachment.dataUrl ?? "",
-          })),
+          attachments: draft.attachments.map((attachment) =>
+            attachment.type === "file" || attachment.fileUri
+              ? attachment
+              : {
+                  ...attachment,
+                  dataUrl: attachment.dataUrl ?? "",
+                },
+          ),
         };
         const nextDraft =
           // Stale new-task drafts left on disk by builds before the
@@ -306,7 +319,8 @@ function shouldRetainPersistedDraft(draft: ComposerDraft): boolean {
 
 type PersistedComposerDraft = Omit<ComposerDraft, "attachments"> & {
   readonly attachments: ReadonlyArray<
-    Omit<DraftComposerImageAttachment, "dataUrl"> & { readonly dataUrl?: string }
+    | (Omit<DraftComposerImageAttachment, "dataUrl"> & { readonly dataUrl?: string })
+    | DraftComposerFileAttachment
   >;
 };
 
@@ -325,7 +339,16 @@ export function encodePersistedComposerDrafts(
         draftKey,
         {
           ...normalizeDraft(draft),
-          attachments: draft.attachments.map(({ dataUrl: _dataUrl, ...attachment }) => attachment),
+          attachments: draft.attachments.map((attachment) => {
+            if (
+              attachment.type === "file" ||
+              attachment.fileUri ||
+              !isOwnedComposerPreviewUri(attachment.previewUri)
+            )
+              return attachment;
+            const { dataUrl: _dataUrl, ...persisted } = attachment;
+            return persisted;
+          }),
         },
       ]),
   );
@@ -382,7 +405,9 @@ async function rehydrateDraftAttachments(
   drafts: Record<string, ComposerDraft>,
 ): Promise<Record<string, ComposerDraft>> {
   const needsRehydration = Object.values(drafts).some((draft) =>
-    draft.attachments.some((attachment) => attachment.dataUrl.length === 0),
+    draft.attachments.some(
+      (attachment) => attachment.type === "image" && !attachment.fileUri && !attachment.dataUrl,
+    ),
   );
   if (!needsRehydration) {
     return drafts;
@@ -393,7 +418,7 @@ async function rehydrateDraftAttachments(
     const attachments = (
       await Promise.all(
         draft.attachments.map(async (attachment) => {
-          if (attachment.dataUrl.length > 0) {
+          if (attachment.type === "file" || attachment.fileUri || attachment.dataUrl) {
             return attachment;
           }
           const dataUrl = await resolveComposerAttachmentDataUrl(attachment, {
@@ -504,7 +529,7 @@ function isComposerAttachmentFileReferenced(fileUri: string): boolean {
   return [...drafts, ...queuedMessages, ...signedOutAttachmentOwners()].some((owner) =>
     owner.attachments.some(
       (attachment) =>
-        attachment.type === "file" &&
+        attachment.fileUri !== undefined &&
         composerAttachmentFileReferenceKey(attachment.fileUri) === referenceKey,
     ),
   );
@@ -531,9 +556,9 @@ export async function releaseUnusedComposerAttachmentFiles(
   attachments: ReadonlyArray<DraftComposerAttachment>,
 ): Promise<void> {
   const candidates = new Set(
-    attachments
-      .filter((attachment) => attachment.type === "file")
-      .map((attachment) => attachment.fileUri),
+    attachments.flatMap((attachment) =>
+      attachment.fileUri !== undefined ? [attachment.fileUri] : [],
+    ),
   );
   const uploadCandidates = new Map<EnvironmentId, Set<string>>();
   for (const attachment of attachments) {
@@ -582,7 +607,7 @@ export async function releaseUnusedComposerAttachmentFiles(
     incomingShareFileUris = new Set(
       incomingShares.flatMap((share) =>
         share.attachments.flatMap((attachment) =>
-          attachment.type === "file"
+          attachment.fileUri !== undefined
             ? [composerAttachmentFileReferenceKey(attachment.fileUri)]
             : [],
         ),
@@ -637,7 +662,8 @@ export function scheduleUnusedComposerAttachmentCleanup(
 ): void {
   if (
     !attachments.some(
-      (attachment) => attachment.type === "file" || attachment.uploadedAttachmentId !== undefined,
+      (attachment) =>
+        attachment.fileUri !== undefined || attachment.uploadedAttachmentId !== undefined,
     )
   ) {
     return;
@@ -649,7 +675,7 @@ export function scheduleUnusedComposerAttachmentCleanup(
 
 /** Keeps a native preview or upload readable until it finishes, then retries ownership cleanup. */
 export function retainComposerAttachmentFileForPreview(
-  attachment: DraftComposerFileAttachment,
+  attachment: FileBackedComposerAttachment,
 ): () => void {
   return retainComposerAttachmentFile(attachment.fileUri, () => {
     scheduleUnusedComposerAttachmentCleanup([attachment]);
@@ -672,6 +698,8 @@ function schedulePersistComposerState(): void {
           appAtomRegistry.get(stickyComposerModelSelectionAtom),
         );
       } catch (error) {
+        // A failed debounce has no timer left. A later final flush must retry
+        // these edits after persisted ownership can be read safely.
         console.warn("[composer-drafts] failed to persist drafts", error);
         // Draft persistence is best-effort; in-memory drafts still keep working.
       }
@@ -744,10 +772,7 @@ export async function requireComposerDraftsLoaded(): Promise<void> {
 
 /** Wait until persisted drafts have been merged into the in-memory composer state. */
 export async function waitForComposerDraftsLoaded(): Promise<void> {
-  ensureComposerDraftsLoaded();
-  if (loadPromise !== null) {
-    await loadPromise;
-  }
+  await requireComposerDraftsLoaded();
 }
 
 export async function getComposerCloudAccountId(): Promise<string | null> {
@@ -1353,7 +1378,7 @@ export async function mergeComposerDraftContent(
   content: ComposerDraftContent,
 ): Promise<{
   readonly skippedAttachmentCount: number;
-  readonly skippedAttachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly skippedAttachments: ReadonlyArray<DraftComposerAttachment>;
 }> {
   await requireComposerDraftsLoaded();
   if (persistTimer !== null) {

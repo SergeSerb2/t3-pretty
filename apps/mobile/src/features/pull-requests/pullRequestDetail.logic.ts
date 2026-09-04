@@ -675,6 +675,8 @@ export function composePullRequestDetailView(
 }
 
 export const ACTION_SUCCESS_LABELS = {
+  revert: "Revert pull request created",
+  "approve-workflows": "Workflows approved",
   merge: "Pull request merged",
   ready: "Marked ready for review",
   draft: "Converted to draft",
@@ -690,6 +692,8 @@ export const ACTION_SUCCESS_LABELS = {
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
 export const ACTION_FAILURE_LABELS = {
+  revert: "Could not revert this pull request",
+  "approve-workflows": "Could not approve these workflows",
   merge: "Could not merge this pull request",
   ready: "Could not mark this ready for review",
   draft: "Could not convert this to a draft",
@@ -702,6 +706,10 @@ export const ACTION_FAILURE_LABELS = {
 
 /** What to try, for the times the host says only that it refused. */
 export const ACTION_FAILURE_HINTS = {
+  revert:
+    "Check that you have write access and that the revert does not conflict with the base branch.",
+  "approve-workflows":
+    "Check that you have permission to approve workflow runs in this repository.",
   merge:
     "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
   ready: "The host refused it. Check that you have write access to this repository.",

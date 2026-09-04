@@ -893,6 +893,7 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                       }),
                     );
                     return;
+                  case "ThoughtDelta":
                   case "ContentDelta":
                     yield* logNative(
                       ctx.threadId,
@@ -906,8 +907,11 @@ export function makeKimiAdapter(kimiSettings: KimiSettings, options?: KimiAdapte
                         provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
-                        ...(event.itemId ? { itemId: event.itemId } : {}),
-                        streamKind: event.streamKind,
+                        ...(event._tag === "ContentDelta" && event.itemId
+                          ? { itemId: event.itemId }
+                          : {}),
+                        streamKind:
+                          event._tag === "ThoughtDelta" ? "reasoning_text" : event.streamKind,
                         text: event.text,
                         rawPayload: event.rawPayload,
                       }),

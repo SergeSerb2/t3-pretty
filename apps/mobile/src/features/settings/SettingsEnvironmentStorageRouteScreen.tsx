@@ -380,7 +380,7 @@ function EnvironmentStorageCard(props: {
             checkouts outside that folder are never counted or removed.
           </Text>
           {coverageWarning === null ? null : (
-            <Text className="text-sm leading-normal text-amber-700 dark:text-amber-300">
+            <Text className="text-sm leading-normal text-adaptive-amber-700-300">
               {coverageWarning}
             </Text>
           )}

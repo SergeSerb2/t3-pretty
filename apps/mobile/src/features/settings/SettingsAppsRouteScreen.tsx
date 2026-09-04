@@ -25,7 +25,6 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -607,7 +606,6 @@ function CatalogActionRow(props: {
   readonly value?: string;
   readonly onPress: () => void;
 }) {
-  const iconColor = useThemeColor("--color-icon");
   return (
     <Pressable
       accessibilityRole="button"
@@ -620,7 +618,7 @@ function CatalogActionRow(props: {
       <SymbolView
         name={props.icon}
         size={22}
-        tintColor={iconColor}
+        tintColorClassName="accent-icon"
         type="monochrome"
         weight="regular"
       />

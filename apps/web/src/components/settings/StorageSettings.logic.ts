@@ -209,7 +209,9 @@ export function storageInventoryCoverageWarning(inventory: StorageInventory): st
   if (scan.truncated === true) reasons.push("discovery reached a safety limit");
   const unreadable = scan.unreadableDirectories ?? 0;
   if (unreadable > 0) {
-    reasons.push(`${pluralCount(unreadable, "directory")} could not be read`);
+    reasons.push(
+      `${unreadable} ${unreadable === 1 ? "directory" : "directories"} could not be read`,
+    );
   }
   if (reasons.length === 0) return null;
   return `Inventory is incomplete: ${reasons.join(" and ")}. Bulk cleanup is disabled; listed paths can still be removed individually.`;

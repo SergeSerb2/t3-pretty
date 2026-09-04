@@ -8,10 +8,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { APP_BAR_HEIGHT } from "../../lib/layoutMetrics";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
-import { useOpenNativePullRequest } from "../pull-requests/useOpenNativePullRequest";
 import type { GitActionProgress } from "../../state/use-vcs-action-state";
 
 const OVERLAY_LAYOUT_TRANSITION = LinearTransition.duration(220);
@@ -21,9 +21,10 @@ const AnimatedGlassView = Animated.createAnimatedComponent(GlassView);
 export function GitActionProgressOverlay(props: {
   readonly progress: GitActionProgress;
   readonly onDismiss: () => void;
+  readonly onOpenPullRequest?: (url: string) => void;
 }) {
-  const { progress, onDismiss } = props;
-  const openNativePullRequest = useOpenNativePullRequest();
+  // Keyboard feedback also mounts this overlay above the screen navigator.
+  const { progress, onDismiss, onOpenPullRequest } = props;
   const insets = useSafeAreaInsets();
   const prevPhaseRef = useRef(progress.phase);
 
@@ -42,13 +43,17 @@ export function GitActionProgressOverlay(props: {
 
   const handlePress = useCallback(() => {
     if (progress.prUrl) {
-      void openNativePullRequest({ url: progress.prUrl });
+      if (onOpenPullRequest) {
+        onOpenPullRequest(progress.prUrl);
+      } else {
+        void tryOpenExternalUrl(progress.prUrl, "pull-request");
+      }
       return;
     }
     if (progress.phase === "success" || progress.phase === "error") {
       onDismiss();
     }
-  }, [onDismiss, openNativePullRequest, progress.phase, progress.prUrl]);
+  }, [onDismiss, onOpenPullRequest, progress.phase, progress.prUrl]);
 
   if (progress.phase === "idle") {
     return null;

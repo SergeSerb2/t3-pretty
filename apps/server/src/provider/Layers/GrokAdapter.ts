@@ -1,3 +1,4 @@
+import { normalizeGrokReasoningEffort } from "../acp/GrokAcpSupport.ts";
 import {
   ApprovalRequestId,
   ENTITY_ID_MAX_LENGTH,
@@ -40,6 +41,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { readFilePrefix } from "../../boundedFileRead.ts";
 import { ServerConfig } from "../../config.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -60,7 +62,6 @@ import {
 import { fingerprintAcpPlanUpdate, parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
-  advertisedGrokReasoningEffortsFromSessionSetup,
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
   currentGrokReasoningEffortFromSessionSetup,
@@ -1408,6 +1409,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                     }
                     return;
                   }
+                  case "ThoughtDelta":
                   case "ContentDelta":
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
@@ -1415,8 +1417,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                         provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: notificationTurnId,
-                        ...(event.itemId ? { itemId: event.itemId } : {}),
-                        streamKind: event.streamKind,
+                        ...(event._tag === "ContentDelta" && event.itemId
+                          ? { itemId: event.itemId }
+                          : {}),
+                        streamKind:
+                          event._tag === "ThoughtDelta" ? "reasoning_text" : event.streamKind,
                         text: event.text,
                         rawPayload: event.rawPayload,
                       }),
@@ -1590,6 +1595,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               const displayModel = currentModelId
                 ? resolveGrokAcpBaseModelId(currentModelId)
                 : undefined;
+              const runtimeInstructions = buildRuntimeInstructions({
+                harness: "Grok",
+                model: displayModel,
+                reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
+              });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;
               }
@@ -1645,6 +1655,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
                 promptParts,
+                runtimeInstructions,
                 turnId,
                 promptEpoch,
                 promptLifecycle: ctx.promptLifecycle,
@@ -1701,7 +1712,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
               const dispatched = yield* Deferred.make<void>();
               const fiber = yield* liveCtx.acp
-                .prompt({ prompt: prepared.promptParts }, { dispatched })
+                .prompt(
+                  {
+                    prompt: [
+                      ...prepared.promptParts,
+                      { type: "text", text: prepared.runtimeInstructions },
+                    ],
+                  },
+                  { dispatched },
+                )
                 .pipe(Effect.forkChild({ startImmediately: true }));
               // Hold the lifecycle permit until the runtime has registered this
               // prompt's RPC fiber, so a later steer's session/cancel targets

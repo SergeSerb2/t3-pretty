@@ -89,55 +89,34 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
         try {
           raw = await entry.text();
         } catch (cause) {
-          console.warn(
-            "[thread-outbox] could not read persisted message",
-            new ThreadOutboxStorageError({
-              operation: "read-message",
-              environmentId: null,
-              threadId: null,
-              messageId: null,
-              fileName: entry.name,
-              cause,
-            }),
-          );
-          continue;
+          // A partial queue hides attachment owners from cleanup. Keep all
+          // records untouched until every persisted message can be read.
+          throw new ThreadOutboxStorageError({
+            operation: "read-message",
+            environmentId: null,
+            threadId: null,
+            messageId: null,
+            fileName: entry.name,
+            cause,
+          });
         }
         try {
           messages.push(decodeQueuedThreadMessage(JSON.parse(raw) as unknown));
         } catch (cause) {
-          console.warn(
-            "[thread-outbox] quarantined invalid persisted message",
-            new ThreadOutboxStorageError({
-              operation: "decode-message",
-              environmentId: null,
-              threadId: null,
-              messageId: null,
-              fileName: entry.name,
-              cause,
-            }),
-          );
-          try {
-            // Preserve the exact bytes for manual recovery while moving the
-            // invalid record out of the active `.json` scan. Never quarantine
-            // transient read failures: only content that was read completely
-            // and failed JSON/schema validation reaches this branch.
-            await entry.move(new File(directory, `${entry.name}.${Date.now()}.invalid`));
-          } catch (quarantineCause) {
-            console.warn(
-              "[thread-outbox] could not quarantine invalid persisted message",
-              new ThreadOutboxStorageError({
-                operation: "quarantine-message",
-                environmentId: null,
-                threadId: null,
-                messageId: null,
-                fileName: entry.name,
-                cause: quarantineCause,
-              }),
-            );
-          }
+          // A partial queue hides attachment owners from cleanup. Keep all
+          // records untouched until every persisted message can be read.
+          throw new ThreadOutboxStorageError({
+            operation: "decode-message",
+            environmentId: null,
+            threadId: null,
+            messageId: null,
+            fileName: entry.name,
+            cause,
+          });
         }
       }
     } catch (cause) {
+      if (cause instanceof ThreadOutboxStorageError) throw cause;
       throw new ThreadOutboxStorageError({
         operation: "load",
         environmentId: null,

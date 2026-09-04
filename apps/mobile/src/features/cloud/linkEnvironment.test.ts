@@ -769,7 +769,7 @@ describe("mobile cloud link environment client", () => {
           return Promise.resolve(Response.json(validLinkResponse()));
         }
         return Promise.resolve(
-          Response.json({ ok: true, endpointRuntimeStatus: { status: "configured" } }),
+          Response.json({ ok: true, endpointRuntimeStatus: { status: "disabled" } }),
         );
       });
       vi.stubGlobal("fetch", fetchMock);
@@ -824,7 +824,7 @@ describe("mobile cloud link environment client", () => {
           return Promise.resolve(Response.json(validLinkResponse()));
         }
         return Promise.resolve(
-          Response.json({ ok: true, endpointRuntimeStatus: { status: "configured" } }),
+          Response.json({ ok: true, endpointRuntimeStatus: { status: "disabled" } }),
         );
       });
       vi.stubGlobal("fetch", fetchMock);

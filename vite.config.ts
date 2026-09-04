@@ -152,6 +152,11 @@ export default defineConfig({
           "apps/mobile/src/features/threads/git/GitOverviewSheet.tsx",
           "apps/mobile/src/features/threads/thread-list-items.tsx",
           "apps/mobile/src/features/threads/thread-list-v2-items.tsx",
+          // Fork native ripple, navigation options, and markdown renderer color bridges.
+          "apps/mobile/src/features/whats-new/WhatsNewSheet.tsx",
+          "apps/mobile/src/features/pull-requests/PullRequestMarkdown.tsx",
+          "apps/mobile/src/features/pull-requests/PullRequestDetailScreen.tsx",
+          "apps/mobile/src/components/AndroidAnchoredMenu.tsx",
           "apps/mobile/src/lib/useMobileNavigationTheme.ts",
           "apps/mobile/src/native/T3ComposerEditor.ios.tsx",
           "apps/mobile/src/native/T3ComposerEditor.native.tsx",

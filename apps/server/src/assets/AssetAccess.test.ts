@@ -732,6 +732,8 @@ describe("AssetAccess", () => {
       ).toEqual({
         kind: "file",
         path: attachmentPath,
+        source: "attachment",
+        attachmentId,
         fileName: "demo.mp4",
         mimeType: "video/mp4",
       });
@@ -780,6 +782,8 @@ describe("AssetAccess", () => {
       ).toEqual({
         kind: "file",
         path: attachmentPath,
+        source: "attachment",
+        attachmentId,
         fileName: "report.pdf",
         mimeType: "application/pdf",
       });
@@ -920,12 +924,16 @@ describe("AssetAccess", () => {
       expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-custom\.png$/);
       expect(
         yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
-      ).toEqual({ kind: "file", path: canonicalPath });
+      ).toEqual({ kind: "file", path: canonicalPath, source: "project-favicon" });
       const tamperedSuffixResult = yield* resolveAsset(
         suffix.slice(0, separatorIndex),
         "sibling.png",
       );
-      expect(tamperedSuffixResult).toEqual({ kind: "file", path: canonicalPath });
+      expect(tamperedSuffixResult).toEqual({
+        kind: "file",
+        path: canonicalPath,
+        source: "project-favicon",
+      });
       expect(tamperedSuffixResult).not.toEqual({ kind: "file", path: canonicalSiblingPath });
     }).pipe(Effect.provide(testLayer)),
   );

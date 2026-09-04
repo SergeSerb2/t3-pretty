@@ -1,14 +1,11 @@
-import { WorkerPoolContext } from "@pierre/diffs/react";
-import { WorkerPoolManager } from "@pierre/diffs/worker";
+import { WorkerPoolContextProvider, useWorkerPool } from "@pierre/diffs/react";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
 import * as Schema from "effect/Schema";
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
+import { syncDiffWorkerPoolTheme } from "./DiffWorkerPoolProvider.logic";
 import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
-import {
-  createDiffWorkerPoolIdleTerminator,
-  syncDiffWorkerPoolTheme,
-} from "./DiffWorkerPoolProvider.logic";
+import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 
 export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()("DiffWorkerError", {
   operation: Schema.Literals(["create-worker", "get-render-options", "set-render-options"]),
@@ -20,60 +17,90 @@ export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()(
   }
 }
 
-// One pool per page. Workers (814 KB script + oniguruma wasm each) spawn on the first
-// render task and are released after DIFF_WORKER_POOL_IDLE_MS without a mounted diff
-// surface; the manager itself is kept so instances that captured it keep working.
-let diffWorkerPool: WorkerPoolManager | undefined;
+function DiffWorkerThemeSync({ themeName }: { themeName: DiffThemeName }) {
+  const workerPool = useWorkerPool();
 
-function getDiffWorkerPool(themeName: DiffThemeName): WorkerPoolManager {
-  if (diffWorkerPool) {
-    return diffWorkerPool;
-  }
-  const cores =
-    typeof navigator === "undefined" ? 4 : Math.max(1, navigator.hardwareConcurrency || 4);
-  const pool = new WorkerPoolManager(
-    {
-      workerFactory: () => {
-        try {
-          return new DiffsWorker();
-        } catch (cause) {
-          throw new DiffWorkerError({ operation: "create-worker", themeName, cause });
-        }
-      },
-      poolSize: Math.max(2, Math.min(3, Math.floor(cores / 2))),
-      // Entry-capped only; @pierre/diffs exposes no byte cap for its AST LRUs.
-      totalASTLRUCacheSize: 120,
-    },
-    {
-      theme: themeName,
-      tokenizeMaxLineLength: 1_000,
-      useTokenTransformer: true,
-    },
+  useEffect(() => {
+    if (!workerPool) {
+      return;
+    }
+
+    void syncDiffWorkerPoolTheme(workerPool, themeName).catch((cause) => {
+      console.error(new DiffWorkerError({ operation: "set-render-options", themeName, cause }));
+    });
+  }, [themeName, workerPool]);
+
+  return null;
+}
+
+// Plain-text views do not queue a highlight task that could retry a blank first render.
+function DiffWorkerReady({ children }: { children?: ReactNode }) {
+  const workerPool = useWorkerPool();
+  const [ready, setReady] = useState(
+    () => !workerPool || workerPool.isInitialized() || !workerPool.isWorkingPool(),
   );
-  // The constructor eagerly boots the pool; cancel that so workers only spawn once
-  // a diff actually renders (the manager re-initializes itself on demand).
-  pool.terminate();
-  pool.subscribeToStatChanges(createDiffWorkerPoolIdleTerminator(pool));
-  diffWorkerPool = pool;
-  return pool;
+
+  useEffect(() => {
+    if (ready || !workerPool) return;
+
+    let mounted = true;
+    const finish = () => {
+      if (mounted) setReady(true);
+    };
+    // Failed pools use Pierre's existing main-thread highlighter.
+    void workerPool.initialize().then(finish, finish);
+    return () => {
+      mounted = false;
+    };
+  }, [ready, workerPool]);
+
+  return ready ? (
+    children
+  ) : (
+    <div
+      role="status"
+      className="flex min-h-0 flex-1 items-center justify-center p-4 text-xs text-muted-foreground"
+    >
+      Loading code...
+    </div>
+  );
 }
 
 export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
   const resolvedTheme = usePaintedAppearance();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
-  const [pool] = useState(() => getDiffWorkerPool(diffThemeName));
+  const workerPoolSize = useMemo(() => {
+    const cores =
+      typeof navigator === "undefined" ? 4 : Math.max(1, navigator.hardwareConcurrency || 4);
+    return Math.max(2, Math.min(3, Math.floor(cores / 2)));
+  }, []);
 
-  useLayoutEffect(() => {
-    void syncDiffWorkerPoolTheme(pool, diffThemeName).catch((cause) => {
-      console.error(
-        new DiffWorkerError({
-          operation: "set-render-options",
-          themeName: diffThemeName,
-          cause,
-        }),
-      );
-    });
-  }, [diffThemeName, pool]);
-
-  return <WorkerPoolContext.Provider value={pool}>{children}</WorkerPoolContext.Provider>;
+  return (
+    <WorkerPoolContextProvider
+      poolOptions={{
+        workerFactory: () => {
+          try {
+            return new DiffsWorker();
+          } catch (cause) {
+            throw new DiffWorkerError({
+              operation: "create-worker",
+              themeName: diffThemeName,
+              cause,
+            });
+          }
+        },
+        poolSize: workerPoolSize,
+        totalASTLRUCacheSize: 120,
+      }}
+      highlighterOptions={{
+        theme: diffThemeName,
+        preferredHighlighter: PREFERRED_HIGHLIGHTER,
+        tokenizeMaxLineLength: 1_000,
+        useTokenTransformer: true,
+      }}
+    >
+      <DiffWorkerThemeSync themeName={diffThemeName} />
+      <DiffWorkerReady>{children}</DiffWorkerReady>
+    </WorkerPoolContextProvider>
+  );
 }

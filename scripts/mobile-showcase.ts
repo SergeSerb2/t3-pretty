@@ -11,7 +11,7 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
-import { resolveMobileAppIdentity, resolveMobileAppVariant } from "../apps/mobile/app-identity.ts";
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./lib/mobile-app-identity.ts";
 import { loadRepoEnv, resolveBuildFlavor } from "./lib/public-config.ts";
 
 import showcaseConfig, {

@@ -744,7 +744,9 @@ export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
     const labeled = (
       refreshTrigger === undefined
         ? intervalQuery
-        : intervalQuery.pipe(Atom.makeRefreshOnSignal(refreshTrigger))
+        : withForcedQueryRefresh(intervalQuery, () => {
+            skipStaleTime = true;
+          }).pipe(Atom.makeRefreshOnSignal(refreshTrigger))
     ).pipe(Atom.setIdleTTL(idleTtlMs), Atom.withLabel(`${options.label}:${key}`));
     return withForcedQueryRefresh(labeled, () => {
       skipStaleTime = true;

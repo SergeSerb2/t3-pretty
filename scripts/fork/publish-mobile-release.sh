@@ -326,6 +326,10 @@ fi
 
 vp i --filter=@t3tools/mobile... --filter=@t3tools/scripts...
 
+# Bundling does not catch undefined identifiers; build 86 crashed before mount.
+# Stop before publishing OTA or submitting a native binary if mobile types fail.
+vp run --filter @t3tools/mobile typecheck
+
 pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
 export PATH="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin:${PATH}"
 

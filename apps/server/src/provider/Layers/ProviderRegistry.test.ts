@@ -388,6 +388,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           ]);
           assert.deepStrictEqual(status.slashCommands[0], NATIVE_RESUME_SLASH_COMMAND);
           assert.deepStrictEqual(status.slashCommands.slice(1), [
+            { name: "compact", description: "Summarize the conversation and reduce context usage" },
             {
               name: "feedback",
               description: "Send this thread and Codex logs to OpenAI",

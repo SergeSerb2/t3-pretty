@@ -16,7 +16,7 @@ import {
   resolveMarkdownFontSizes,
   resolveNativeMarkdownTypography,
 } from "../../lib/appearancePreferences";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
   hasNativeSelectableMarkdownText,
@@ -29,7 +29,6 @@ export function PullRequestMarkdown(props: {
   readonly density?: "body" | "comment";
 }) {
   const segments = useMemo(() => pullRequestBodySegments(props.markdown), [props.markdown]);
-  const muted = String(useThemeColor("--color-icon-subtle"));
 
   if (segments.length === 0) {
     return null;
@@ -58,7 +57,7 @@ export function PullRequestMarkdown(props: {
             <SymbolView
               name={segment.media === "video" ? "play" : "arrow.up.right"}
               size={14}
-              tintColor={muted}
+              tintColorClassName="accent-icon-subtle"
               type="monochrome"
             />
             <Text
@@ -95,14 +94,15 @@ function MarkdownRun(props: { readonly markdown: string; readonly density: "body
       ] as const,
     };
   }, [baseFontSize, props.density]);
-  const body = String(useThemeColor("--color-md-body"));
-  const strong = String(useThemeColor("--color-md-strong"));
-  const link = String(useThemeColor("--color-md-link"));
-  const blockquoteBorder = String(useThemeColor("--color-md-blockquote-border"));
-  const blockquoteBackground = String(useThemeColor("--color-md-blockquote-bg"));
-  const codeBackground = String(useThemeColor("--color-md-code-bg"));
-  const codeText = String(useThemeColor("--color-md-code-text"));
-  const horizontalRule = String(useThemeColor("--color-md-hr"));
+  const nativeTheme = useUniwindTheme();
+  const body = String(nativeTheme["--color-md-body"]);
+  const strong = String(nativeTheme["--color-md-strong"]);
+  const link = String(nativeTheme["--color-md-link"]);
+  const blockquoteBorder = String(nativeTheme["--color-md-blockquote-border"]);
+  const blockquoteBackground = String(nativeTheme["--color-md-blockquote-bg"]);
+  const codeBackground = String(nativeTheme["--color-md-code-bg"]);
+  const codeText = String(nativeTheme["--color-md-code-text"]);
+  const horizontalRule = String(nativeTheme["--color-md-hr"]);
   const regularFontFamily = useFontFamily("regular");
   const mediumFontFamily = useFontFamily("medium");
   const boldFontFamily = useFontFamily("bold");

@@ -153,9 +153,11 @@ describe("collectComposerInlineTokens", () => {
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 
-  it("stays fast on repeated unterminated quoted mentions", () => {
+  it("stays fast on repeated quoted mention fragments", () => {
     const started = performance.now();
-    expect(collectComposerInlineTokens(' @"'.repeat(40_000))).toEqual([]);
+    // Adjacent fragments form quoted paths containing " @". The final
+    // pair has no trailing whitespace, so it stays uncommitted.
+    expect(collectComposerInlineTokens(' @"'.repeat(40_000))).toHaveLength(19_999);
     expect(performance.now() - started).toBeLessThan(1_000);
   });
 

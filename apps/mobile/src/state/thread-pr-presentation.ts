@@ -47,11 +47,11 @@ export function presentThreadPr(
         ...automatedReviewPresentation,
         textClassName:
           pr.automatedReview?.state === "reviewing"
-            ? "text-blue-600 dark:text-blue-300"
+            ? "text-adaptive-blue-600-300"
             : pr.automatedReview?.state === "passed"
-              ? "text-emerald-600 dark:text-emerald-300"
+              ? "text-adaptive-emerald-600-300"
               : pr.automatedReview?.state === "feedback"
-                ? "text-amber-700 dark:text-amber-300"
+                ? "text-adaptive-amber-700-300"
                 : "text-foreground-muted",
       }
     : null;

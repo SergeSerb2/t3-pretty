@@ -33,7 +33,7 @@ import { cn } from "../../lib/cn";
 import { nativeGlassHeaderOverlapInset } from "../../lib/layoutMetrics";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { relativeTime } from "../../lib/time";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
@@ -105,7 +105,8 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
     headerHeight: navigationHeaderHeight,
     safeAreaTop: insets.top,
   });
-  const iconColor = useThemeColor("--color-icon");
+  const nativeTheme = useUniwindTheme();
+  const iconColor = String(nativeTheme["--color-icon"]);
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
   const reference = useResolvedPullRequestReference(props.route.params);
@@ -564,7 +565,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
       >
         {detailQuery.isPending && detail === null ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color={iconColor} />
+            <ActivityIndicator colorClassName="accent-icon" />
           </View>
         ) : detailQuery.error && detail === null ? (
           <View className="flex-1 justify-center px-6">
@@ -663,7 +664,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
                 <RefreshControl
                   refreshing={detailQuery.isPending && detail !== null}
                   onRefresh={() => void refresh()}
-                  tintColor={String(iconColor)}
+                  tintColorClassName="accent-icon"
                 />
               }
             >
@@ -683,7 +684,7 @@ export function PullRequestDetailScreen(props: PullRequestDetailScreenProps) {
               {tab === "conversation" ? (
                 activityQuery.isPending && activityQuery.data === null ? (
                   <View className="items-center py-16">
-                    <ActivityIndicator color={iconColor} />
+                    <ActivityIndicator colorClassName="accent-icon" />
                   </View>
                 ) : activityQuery.error && activityQuery.data === null ? (
                   <EmptyState
@@ -847,7 +848,6 @@ function OverviewTab(props: {
   readonly onRequestReviewers: () => void;
 }) {
   const { detail } = props;
-  const muted = String(useThemeColor("--color-icon-subtle"));
   const diff = formatDiffStat(detail.additions, detail.deletions);
   return (
     <View className="gap-3.5 pt-1">
@@ -864,11 +864,15 @@ function OverviewTab(props: {
           </View>
         </View>
         {diff ? (
-          <MetaLine icon="doc.text" tint={muted} label={`${diff} · ${detail.changedFiles} files`} />
+          <MetaLine
+            icon="doc.text"
+            tintClassName="accent-icon-subtle"
+            label={`${diff} · ${detail.changedFiles} files`}
+          />
         ) : null}
         <MetaLine
           icon="checkmark.circle"
-          tint={muted}
+          tintClassName="accent-icon-subtle"
           label={summarizePullRequestChecks(detail.checks)}
         />
         {detail.labels.length > 0 ? (
@@ -958,12 +962,17 @@ function OverviewTab(props: {
 
 function MetaLine(props: {
   readonly icon: Parameters<typeof SymbolView>[0]["name"];
-  readonly tint: string;
+  readonly tintClassName: string;
   readonly label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 py-1.5">
-      <SymbolView name={props.icon} size={14} tintColor={props.tint} type="monochrome" />
+      <SymbolView
+        name={props.icon}
+        size={14}
+        tintColorClassName={props.tintClassName}
+        type="monochrome"
+      />
       <Text className="flex-1 text-sm text-foreground" numberOfLines={2}>
         {props.label}
       </Text>
@@ -981,11 +990,10 @@ function FilesTab(props: {
   readonly onLoadMore: () => void;
   readonly onOpenFile: (path: string) => void;
 }) {
-  const muted = String(useThemeColor("--color-icon-subtle"));
   if (props.loading) {
     return (
       <View className="items-center py-16">
-        <ActivityIndicator color={muted} />
+        <ActivityIndicator colorClassName="accent-icon-subtle" />
       </View>
     );
   }
@@ -1022,7 +1030,12 @@ function FilesTab(props: {
               })}
               className="flex-row items-center gap-3 px-4 py-3.5"
             >
-              <SymbolView name="doc.text" size={15} tintColor={muted} type="monochrome" />
+              <SymbolView
+                name="doc.text"
+                size={15}
+                tintColorClassName="accent-icon-subtle"
+                type="monochrome"
+              />
               <Text className="flex-1 font-mono text-sm text-foreground" numberOfLines={1}>
                 {file.displayPath}
               </Text>

@@ -16,7 +16,6 @@ import {
   CircleDashedIcon,
   EyeIcon,
   FolderGit2Icon,
-  GitPullRequestIcon,
   HistoryIcon,
   MessageSquareWarningIcon,
   TerminalIcon,
@@ -35,6 +34,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -215,8 +215,16 @@ export function AutomatedReviewStatusIcon({
   return <Icon aria-hidden="true" className={`${className ?? "size-3"} ${status.colorClass}`} />;
 }
 
-export function ChangeRequestStatusIcon({ className }: { className?: string }) {
-  return <GitPullRequestIcon aria-hidden="true" className={className} />;
+export function ChangeRequestStatusIcon({
+  state,
+  isDraft = false,
+  className,
+}: Pick<NonNullable<ThreadPr>, "state"> & {
+  readonly isDraft?: boolean | undefined;
+  readonly className?: string | undefined;
+}) {
+  const presentation = resolvePullRequestState({ state, isDraft });
+  return <presentation.Icon aria-hidden="true" className={className} />;
 }
 
 export function PrStatusTooltipContent({ status }: { status: PrStatusIndicator }) {
@@ -667,7 +675,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
 
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      {prStatus ? (
+      {prStatus && pr ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -677,7 +685,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
               />
             }
           >
-            <ChangeRequestStatusIcon className="size-3" />
+            <ChangeRequestStatusIcon state={pr.state} isDraft={pr.isDraft} className="size-3" />
           </TooltipTrigger>
           <TooltipPopup side="top">
             <PrStatusTooltipContent status={prStatus} />

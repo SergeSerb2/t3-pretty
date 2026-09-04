@@ -161,7 +161,20 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("keeps public Pretty user data separate from internal migration paths", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          "/Users/alice/Library/Application Support/t3pretty",
+        );
+      }),
+      { legacyPathExists: true, environment: { buildFlavor: "public" } },
+    ),
+  );
+
+  it.effect("keeps using the internal build legacy userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
@@ -169,23 +182,23 @@ describe("DesktopAppIdentity", () => {
 
         assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
       }),
-      { legacyPathExists: true },
+      { legacyPathExists: true, environment: { buildFlavor: "internal" } },
     ),
   );
 
-  it.effect("does not use a regular file as the legacy userData directory", () =>
+  it.effect("does not use a regular file as the internal build legacy userData directory", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Pretty (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
       }),
-      { legacyPathExists: true, legacyPathType: "File" },
+      { legacyPathExists: true, legacyPathType: "File", environment: { buildFlavor: "internal" } },
     ),
   );
 
-  it.effect("preserves failures while inspecting the legacy userData path", () => {
+  it.effect("preserves failures while inspecting the internal build legacy userData path", () => {
     const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
@@ -208,7 +221,7 @@ describe("DesktopAppIdentity", () => {
           `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
         );
       }),
-      { legacyPathProbeError: cause },
+      { legacyPathProbeError: cause, environment: { buildFlavor: "internal" } },
     );
   });
 

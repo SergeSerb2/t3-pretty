@@ -175,10 +175,11 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       }),
   );
 
-  it.effect("keeps only recent raw notifications after their callbacks run", () =>
+  it.effect("does not replay callback notifications to late raw observers", () =>
     Effect.gen(function* () {
       const { stdio, input } = yield* makeInMemoryStdio();
       const handled = yield* Deferred.make<void>();
+      const finalHandled = yield* Deferred.make<void>();
       let handledCount = 0;
       const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
         stdio,
@@ -186,7 +187,11 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         onNotification: () =>
           Effect.sync(() => ++handledCount).pipe(
             Effect.flatMap((count) =>
-              count === 64 ? Deferred.succeed(handled, undefined).pipe(Effect.asVoid) : Effect.void,
+              count === 64
+                ? Deferred.succeed(handled, undefined).pipe(Effect.asVoid)
+                : count === 65
+                  ? Deferred.succeed(finalHandled, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
             ),
           ),
       });
@@ -201,12 +206,23 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       yield* Queue.offer(input, encoder.encode(`${messages.join("\n")}\n`));
       yield* Deferred.await(handled);
 
-      const retained = yield* transport.incoming.pipe(Stream.take(32), Stream.runCollect);
-
-      assert.equal(handledCount, 64);
-      assert.equal(retained.length, 32);
-      assert.deepEqual(retained[0]?.params, { index: 32 });
-      assert.deepEqual(retained[31]?.params, { index: 63 });
+      const observed = yield* transport.incoming.pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* Effect.yieldNow;
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({ jsonrpc: "2.0", method: "x/performance", params: { index: 64 } })}\n`,
+        ),
+      );
+      const retained = yield* Fiber.join(observed);
+      yield* Deferred.await(finalHandled);
+      assert.equal(handledCount, 65);
+      assert.equal(retained.length, 1);
+      assert.deepEqual(retained[0]?.params, { index: 64 });
     }),
   );
 

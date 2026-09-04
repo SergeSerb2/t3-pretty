@@ -104,18 +104,25 @@ export function upsertProviderWorkspaceSnapshot(
 }
 
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
-  if (provider.driver !== ProviderDriverKind.make("antigravity")) {
+  if (provider.driver === ProviderDriverKind.make("cursor") && provider.models.length === 0)
+    return true;
+  const isAntigravity = provider.driver === ProviderDriverKind.make("antigravity");
+  if (
+    !isAntigravity &&
+    provider.driver !== ProviderDriverKind.make("opencode") &&
+    provider.driver !== ProviderDriverKind.make("cursor")
+  ) {
     return true;
   }
 
-  if (!provider.enabled || provider.auth.status === "unauthenticated") {
+  if (isAntigravity && (!provider.enabled || provider.auth.status === "unauthenticated")) {
     return false;
   }
 
-  // Antigravity replaces its inventory after successful catalog discovery.
-  // Its local health check does not authenticate or discover models.
+  // Both drivers replace their inventories after successful catalog discovery.
+  // Antigravity's local health check does not authenticate or discover models.
   const isPendingAntigravityAuthentication =
-    provider.status === "warning" && provider.auth.status === "unknown";
+    isAntigravity && provider.status === "warning" && provider.auth.status === "unknown";
   const isPendingInitialProbe =
     provider.enabled && !provider.installed && provider.status === "warning";
   const didInstalledProviderProbeFail = provider.installed && provider.status === "error";
@@ -124,16 +131,22 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
   );
 };
 
+const shouldRetainMissingOpenCodeMetadata = (provider: ServerProvider): boolean =>
+  provider.driver === ProviderDriverKind.make("opencode") &&
+  shouldRetainMissingProviderModels(provider);
+
 const mergeProviderModels = (
+  provider: ServerProvider,
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
+  const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
   // Custom rows are derived from settings and every snapshot carries the full
   // current list, so a custom model missing from `nextModels` was removed by
   // the user and must not be resurrected from the previous snapshot.
   const retainablePreviousModels = previousModels.filter((model) => !model.isCustom);
 
-  if (nextModels.length === 0 && retainablePreviousModels.length > 0) {
+  if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {
     return retainablePreviousModels;
   }
 
@@ -149,10 +162,9 @@ const mergeProviderModels = (
     };
   });
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
-  return [
-    ...mergedModels,
-    ...retainablePreviousModels.filter((model) => !nextSlugs.has(model.slug)),
-  ];
+  return shouldRetainMissingModels
+    ? [...mergedModels, ...retainablePreviousModels.filter((model) => !nextSlugs.has(model.slug))]
+    : mergedModels;
 };
 
 export const mergeProviderSnapshot = (
@@ -163,14 +175,22 @@ export const mergeProviderSnapshot = (
     ? nextProvider
     : {
         ...nextProvider,
-        models: shouldRetainMissingProviderModels(nextProvider)
-          ? mergeProviderModels(previousProvider.models, nextProvider.models)
-          : nextProvider.models,
+        models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
         ...(nextProvider.workspaceSnapshots !== undefined
           ? { workspaceSnapshots: nextProvider.workspaceSnapshots }
           : previousProvider.workspaceSnapshots !== undefined
             ? { workspaceSnapshots: previousProvider.workspaceSnapshots }
             : {}),
+        ...(shouldRetainMissingOpenCodeMetadata(nextProvider)
+          ? {
+              slashCommands:
+                nextProvider.slashCommands.length === 0
+                  ? previousProvider.slashCommands
+                  : nextProvider.slashCommands,
+              skills:
+                nextProvider.skills.length === 0 ? previousProvider.skills : nextProvider.skills,
+            }
+          : {}),
       };
 
 export const haveProvidersChanged = (

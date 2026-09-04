@@ -1,6 +1,24 @@
-import { expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { shouldCloseThemeEditorOnKeyDown } from "./themeEditorKeyboard";
+
+class TestElement {
+  dataset: Record<string, string> = {};
+  parent: TestElement | null = null;
+  append(child: TestElement) {
+    child.parent = this;
+  }
+  closest(selector: string): TestElement | null {
+    return selector.includes(`[data-slot="${this.dataset.slot}"]`)
+      ? this
+      : (this.parent?.closest(selector) ?? null);
+  }
+}
+beforeEach(() => {
+  vi.stubGlobal("Element", TestElement);
+  vi.stubGlobal("document", { createElement: () => new TestElement() });
+});
+afterEach(() => vi.unstubAllGlobals());
 
 function keyboardEvent(target: EventTarget, overrides?: Partial<KeyboardEvent>) {
   return {

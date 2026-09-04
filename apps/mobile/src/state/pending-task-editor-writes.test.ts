@@ -1,3 +1,7 @@
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "test-uuid",
+  getRandomBytes: (n: number) => new Uint8Array(n),
+}));
 import { CommandId, EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 

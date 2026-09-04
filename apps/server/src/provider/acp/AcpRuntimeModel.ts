@@ -1175,17 +1175,6 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
     case "agent_thought_chunk": {
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
-          _tag: "ContentDelta",
-          streamKind: "reasoning_text",
-          text: upd.content.text,
-          rawPayload: params,
-        });
-      }
-      break;
-    }
-    case "agent_thought_chunk": {
-      if (upd.content.type === "text" && upd.content.text.length > 0) {
-        events.push({
           _tag: "ThoughtDelta",
           text: upd.content.text,
           rawPayload: params,
@@ -1198,4 +1187,12 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
   }
 
   return { ...(modeId !== undefined ? { modeId } : {}), events };
+}
+
+export function sessionModelStateFromInitialize(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+): EffectAcpSchema.SessionModelState | undefined {
+  const meta = initializeResult._meta;
+  const modelState = isRecord(meta) ? meta.modelState : undefined;
+  return isSessionModelState(modelState) ? modelState : undefined;
 }

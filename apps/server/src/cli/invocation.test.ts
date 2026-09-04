@@ -1,3 +1,4 @@
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { assert, it } from "@effect/vitest";
 
 import { detectCliRunner, formatCliCommand, suggestedPackageSpec } from "./invocation.ts";
@@ -44,12 +45,9 @@ it("treats stable installs as direct invocations", () => {
 it("re-suggests the fork CLI tarball for the running version", () => {
   assert.equal(
     suggestedPackageSpec("0.0.31-nightly.20260729"),
-    "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.31-nightly.20260729.tgz",
+    forkCliTarballUrl("0.0.31-nightly.20260729"),
   );
-  assert.equal(
-    suggestedPackageSpec("0.0.31"),
-    "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.31.tgz",
-  );
+  assert.equal(suggestedPackageSpec("0.0.31"), forkCliTarballUrl("0.0.31"));
 });
 
 it("formats serve suggestions to match the launching command", () => {
@@ -59,7 +57,7 @@ it("formats serve suggestions to match the launching command", () => {
       entryPath: "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
       version: "0.0.31-nightly.20260729",
     }),
-    "npx --yes --package https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.31-nightly.20260729.tgz t3 serve",
+    `npx --yes --package ${forkCliTarballUrl("0.0.31-nightly.20260729")} t3 serve`,
   );
   assert.equal(
     formatCliCommand({

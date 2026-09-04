@@ -103,6 +103,16 @@ describe("searchSettings", () => {
     ]);
   });
 
+  it.each(["usage providers", "CLIProxyAPI", "CLI proxy hub", "management key"])(
+    "finds usage-provider management by %s",
+    (query) => {
+      expect(searchSettings(query)[0]).toMatchObject({
+        id: "usage-providers",
+        to: "/settings/providers",
+      });
+    },
+  );
+
   it("returns no results for an empty query", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });
@@ -159,7 +169,7 @@ describe("searchSettings", () => {
       "tailscale-https",
       "wsl-backend",
       "auto-settle-inactive-threads",
-      "auto-settle-merged-threads",
+      "auto-archive-settled-threads",
       "days-before-auto-settle",
     ]);
     expect(available.map((item) => item.id).filter((id) => gatedIds.has(id))).toEqual([]);
@@ -177,9 +187,11 @@ describe("searchSettings", () => {
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
       "auto-settle-inactive-threads",
-      "auto-settle-merged-threads",
       "days-before-auto-settle",
     ]);
+    expect(searchSettings("auto-archive", available).map((item) => item.id)).toContain(
+      "auto-archive-settled-threads",
+    );
   });
 
   it("keeps catalog result ids unique", () => {

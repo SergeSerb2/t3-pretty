@@ -10,9 +10,8 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { Platform, Pressable, View, type ColorValue, type PressableProps } from "react-native";
+import { Platform, Pressable, type ColorValue, type PressableProps } from "react-native";
 import { withUniwind } from "uniwind";
-import { useThemeColor } from "../lib/useThemeColor";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { cn } from "../lib/cn";
@@ -109,7 +108,6 @@ export function ControlPill(props: {
       : variant === "danger"
         ? "accent-danger-foreground"
         : "accent-icon";
-  const iconTintColor = useThemeColor(iconTintClassName);
 
   const isCircle =
     variant === "circle" || variant === "danger" || (variant === "primary" && !props.label);
@@ -149,7 +147,10 @@ export function ControlPill(props: {
       className={containerClassName}
     >
       {props.iconNode || props.icon || isLoading ? (
-        <ComposerSendIconSlot loading={isLoading} color={String(iconTintColor)}>
+        <ComposerSendIconSlot
+          loading={isLoading}
+          colorClassName={iconTintClassName.replace("accent-", "text-")}
+        >
           {props.iconNode ? (
             props.iconNode
           ) : props.icon ? (

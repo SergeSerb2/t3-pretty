@@ -325,7 +325,7 @@ describe("DesktopConnectionCatalogStore", () => {
       const fileSystemLayer = Layer.succeed(
         FileSystem.FileSystem,
         FileSystem.makeNoop({
-          readFileString: () => Effect.fail(permissionError),
+          open: () => Effect.fail(permissionError),
         }),
       );
       const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(

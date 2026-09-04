@@ -19,7 +19,6 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -27,8 +26,12 @@ import {
   ThreadId,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
+  type OrchestrationShellStreamItem,
+  type OrchestrationGetSnapshotError,
   type ProjectId,
 } from "@t3tools/contracts";
+
+import { makeLiveStreamBudget, type RetainedLiveItem } from "./LiveStreamBudget.ts";
 
 import type { OrchestrationEventStoreError } from "../persistence/Errors.ts";
 import { SHELL_SUMMARY_COUNT_ACTIVITY_KINDS } from "./Layers/ProjectionPipeline.ts";
@@ -290,7 +293,10 @@ export class ShellStreamBroadcaster extends Context.Service<
      * published while it is in flight are buffered, not lost.
      */
     readonly subscribe: Effect.Effect<
-      PubSub.Subscription<ReadonlyArray<OrchestrationShellStreamEvent>>,
+      {
+        readonly stream: Stream.Stream<OrchestrationShellStreamItem, OrchestrationGetSnapshotError>;
+        readonly markSynchronized: Effect.Effect<void, OrchestrationGetSnapshotError>;
+      },
       never,
       Scope.Scope
     >;
@@ -322,9 +328,38 @@ export const layer = Layer.effect(
     const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const projector = makeShellStreamProjector(projectionSnapshotQuery);
-    // ponytail: unbounded per subscriber, same as the per-socket queue it
-    // replaces; a slow socket buffers here instead of in its own queue.
-    const pubsub = yield* PubSub.unbounded<ReadonlyArray<OrchestrationShellStreamEvent>>();
+    // Projection is shared, but each socket owns a byte/item budget including
+    // batches waiting for its RPC ACK. A slow client cannot grow server memory.
+    const subscribers = new Set<
+      (items: ReadonlyArray<OrchestrationShellStreamItem>) => Effect.Effect<void>
+    >();
+    const subscribe = Effect.gen(function* () {
+      const budget = yield* makeLiveStreamBudget();
+      const output = yield* Queue.unbounded<RetainedLiveItem<OrchestrationShellStreamItem>>();
+      const offer = (items: ReadonlyArray<OrchestrationShellStreamItem>) =>
+        budget.replace([], items).pipe(
+          Effect.flatMap((retained) => Queue.offerAll(output, retained)),
+          Effect.asVoid,
+        );
+      let closed = false;
+      const close = Effect.suspend(() => {
+        if (closed) return Effect.void;
+        closed = true;
+        subscribers.delete(publishToSubscriber);
+        return Queue.clear(output).pipe(
+          Effect.tap((items) => Effect.sync(() => budget.release(items))),
+          Effect.andThen(Queue.shutdown(output)),
+        );
+      });
+      const publishToSubscriber = (items: ReadonlyArray<OrchestrationShellStreamItem>) =>
+        offer(items).pipe(Effect.catchTags({ OrchestrationGetSnapshotError: () => close }));
+      subscribers.add(publishToSubscriber);
+      yield* Effect.addFinalizer(() => close);
+      return {
+        stream: budget.deliver(Stream.fromQueue(output)).pipe(Stream.scoped),
+        markSynchronized: offer([{ kind: "synchronized" }]),
+      };
+    });
     const raw = yield* Queue.unbounded<ShellRawInput>();
     yield* Effect.forkScoped(
       orchestrationEngine.streamDomainEvents.pipe(
@@ -340,7 +375,9 @@ export const layer = Layer.effect(
             .coalesceShellEvents(events)
             .pipe(
               Effect.flatMap((batch) =>
-                batch.length === 0 ? Effect.void : PubSub.publish(pubsub, batch),
+                batch.length === 0
+                  ? Effect.void
+                  : Effect.forEach([...subscribers], (offer) => offer(batch), { discard: true }),
               ),
             );
 
@@ -389,7 +426,7 @@ export const layer = Layer.effect(
     );
 
     return {
-      subscribe: PubSub.subscribe(pubsub),
+      subscribe,
       settle: Deferred.make<void>().pipe(
         Effect.tap((done) => Queue.offer(raw, { _tag: "barrier", done })),
         Effect.flatMap(Deferred.await),

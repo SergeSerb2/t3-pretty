@@ -54,6 +54,11 @@ const color = (family: TailwindColorFamily, shade?: TailwindColorShade, opacity 
 // neither literally `light` nor `dark`, so appearance-sensitive values must also be
 // represented as semantic variables for custom themes.
 const ADAPTIVE_COLORS = {
+  "--color-adaptive-amber-600-400": [color("amber", 600), color("amber", 400)],
+  "--color-adaptive-blue-600-300": [color("blue", 600), color("blue", 300)],
+  "--color-adaptive-emerald-600-300": [color("emerald", 600), color("emerald", 300)],
+  "--color-adaptive-emerald-700-400": [color("emerald", 700), color("emerald", 400)],
+  "--color-adaptive-red-600-400": [color("red", 600), color("red", 400)],
   "--color-adaptive-amber-50-950-a40": [color("amber", 50), color("amber", 950, 0.4)],
   "--color-adaptive-amber-200-900-a60": [color("amber", 200), color("amber", 900, 0.6)],
   "--color-adaptive-amber-500-a12-a16": [color("amber", 500, 0.12), color("amber", 500, 0.16)],

@@ -47,12 +47,16 @@ export function encodeIncomingShareDraftForPersistence(
 ): IncomingShareDraft {
   return {
     ...draft,
-    attachments: draft.attachments.map((attachment) => ({
-      ...attachment,
-      // A non-owned preview can disappear between launches. Preserve its
-      // payload until load-time migration successfully materializes our copy.
-      dataUrl: isOwnedComposerPreviewUri(attachment.previewUri) ? "" : attachment.dataUrl,
-    })),
+    attachments: draft.attachments.map((attachment) =>
+      attachment.type === "file" || attachment.fileUri
+        ? attachment
+        : {
+            ...attachment,
+            // A non-owned preview can disappear between launches. Preserve its
+            // payload until load-time migration successfully materializes our copy.
+            dataUrl: isOwnedComposerPreviewUri(attachment.previewUri) ? "" : attachment.dataUrl,
+          },
+    ),
   };
 }
 
@@ -92,9 +96,13 @@ export async function prepareIncomingShareDraftForUse(
     // can briefly multiply the 10 MB per-image budget, and a sibling failure
     // must not strand previews already created by this migration.
     for (const attachment of draft.attachments) {
+      if (attachment.type === "file" || attachment.fileUri) {
+        attachments.push(attachment);
+        continue;
+      }
       const dataUrl =
-        attachment.dataUrl.length > 0
-          ? attachment.dataUrl
+        (attachment.dataUrl?.length ?? 0) > 0
+          ? attachment.dataUrl!
           : await storage.resolveDataUrl(attachment, { throwOnReadError: true });
       if (dataUrl === null) {
         continue;

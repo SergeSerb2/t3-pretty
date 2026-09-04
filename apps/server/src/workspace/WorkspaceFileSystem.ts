@@ -7,6 +7,7 @@
  *
  * @module WorkspaceFileSystem
  */
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 
 import type {
@@ -206,38 +207,85 @@ export const make = Effect.gen(function* () {
         }),
     });
 
-  const readFile: WorkspaceFileSystem["Service"]["readFile"] = Effect.fn(
-    "WorkspaceFileSystem.readFile",
-  )(function* (input) {
+  const resolveReadTarget = Effect.fn("WorkspaceFileSystem.resolveReadTarget")(function* (
+    input: ProjectReadFileInput,
+  ) {
+    const requestedPath = input.relativePath.trim();
+    if (path.isAbsolute(requestedPath)) {
+      const realTargetPath = yield* Effect.tryPromise({
+        try: () => NodeFSP.realpath(requestedPath),
+        catch: (cause) =>
+          new WorkspaceFileSystemOperationError({
+            workspaceRoot: input.cwd,
+            relativePath: input.relativePath,
+            resolvedPath: requestedPath,
+            operationPath: requestedPath,
+            operation: "realpath-target",
+            cause,
+          }),
+      });
+      return { relativePath: requestedPath, realTargetPath };
+    }
+
     const target = yield* workspacePaths.resolveRelativePathWithinRoot({
       workspaceRoot: input.cwd,
       relativePath: input.relativePath,
     });
 
-    const realWorkspaceRoot = yield* realpathForOperation({
-      workspaceRoot: input.cwd,
-      relativePath: input.relativePath,
-      resolvedPath: target.absolutePath,
-      operationPath: input.cwd,
-      operation: "realpath-workspace-root",
+    const realWorkspaceRoot = yield* Effect.tryPromise({
+      try: () => NodeFSP.realpath(input.cwd),
+      catch: (cause) =>
+        new WorkspaceFileSystemOperationError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: target.absolutePath,
+          operationPath: input.cwd,
+          operation: "realpath-workspace-root",
+          cause,
+        }),
     });
-    const realTargetPath = yield* realpathForOperation({
-      workspaceRoot: input.cwd,
-      relativePath: input.relativePath,
-      resolvedPath: target.absolutePath,
-      operationPath: target.absolutePath,
-      operation: "realpath-target",
+    const realTargetPath = yield* Effect.tryPromise({
+      try: () => NodeFSP.realpath(target.absolutePath),
+      catch: (cause) =>
+        new WorkspaceFileSystemOperationError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: target.absolutePath,
+          operationPath: target.absolutePath,
+          operation: "realpath-target",
+          cause,
+        }),
     });
-    yield* assertCanonicalWithinRoot({
-      workspaceRoot: input.cwd,
-      relativePath: input.relativePath,
-      resolvedWorkspaceRoot: realWorkspaceRoot,
-      resolvedPath: realTargetPath,
-    });
+    const relativeRealPath = path.relative(realWorkspaceRoot, realTargetPath);
+    if (
+      relativeRealPath.startsWith(`..${path.sep}`) ||
+      relativeRealPath === ".." ||
+      path.isAbsolute(relativeRealPath)
+    ) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: realTargetPath,
+      });
+    }
+    return { relativePath: target.relativePath, realTargetPath };
+  });
+
+  const readFile: WorkspaceFileSystem["Service"]["readFile"] = Effect.fn(
+    "WorkspaceFileSystem.readFile",
+  )(function* (input) {
+    const target = yield* resolveReadTarget(input);
+    const realTargetPath = target.realTargetPath;
 
     return yield* Effect.acquireUseRelease(
       Effect.tryPromise({
-        try: () => NodeFSP.open(realTargetPath, "r"),
+        // A FIFO must not block the open before stat can reject it.
+        try: () =>
+          NodeFSP.open(
+            realTargetPath,
+            NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NONBLOCK ?? 0),
+          ),
         catch: (cause) =>
           new WorkspaceFileSystemOperationError({
             workspaceRoot: input.cwd,
@@ -460,7 +508,7 @@ export const make = Effect.gen(function* () {
     });
     const writePath =
       targetInfo === null
-        ? target.absolutePath
+        ? path.join(realParentPath, path.basename(target.absolutePath))
         : yield* realpathForOperation({
             workspaceRoot: input.cwd,
             relativePath: input.relativePath,

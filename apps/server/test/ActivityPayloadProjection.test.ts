@@ -309,6 +309,13 @@ describe("projectActivityPayload", () => {
   it("keeps current web and mobile derived output identical for every tool item type", () => {
     for (const activity of fixtures) {
       const projected = projectActivityPayload(activity);
+      if (activity === fixtures[0]) {
+        // Command output is reduced to a bounded preview on the wire. The web
+        // detail may show the full output when it has the original payload.
+        expect(deriveWorkLogEntries([projected])[0]?.detail).toBe("first useful line");
+        expect(deriveWorkLogEntries([activity])[0]?.detail).toContain("second line");
+        continue;
+      }
       if (activity === fixtures[4]) {
         // MCP is the one deliberate difference: the expanded row's toolData
         // loses result bulk but keeps the rendered identity fields.

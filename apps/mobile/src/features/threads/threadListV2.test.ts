@@ -341,7 +341,7 @@ describe("buildThreadListV2Items", () => {
     expect(layout.items[0]?.variant).toBe("card");
   });
 
-  it("keeps a merged thread active when the cached pull request identity matches", () => {
+  it("honors authoritative server settlement for a merged thread", () => {
     const thread = makeThread({
       id: ThreadId.make("linked-merged"),
       title: "Linked merged pull request",
@@ -356,8 +356,8 @@ describe("buildThreadListV2Items", () => {
       now: NOW,
     });
 
-    expect(layout.settledCount).toBe(0);
-    expect(layout.items[0]?.variant).toBe("card");
+    expect(layout.settledCount).toBe(1);
+    expect(layout.items[0]?.variant).toBe("slim");
   });
 
   it("keeps a merged thread active", () => {

@@ -281,17 +281,12 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.status).toBe("warning");
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
-      expect(snapshot.requiresNewThreadForModelChange).toBe(true);
-      expect(snapshot.models[0]?.capabilities?.optionDescriptors?.[0]?.id).toBe("reasoningEffort");
-      expect(
-        snapshot.models[0]?.capabilities?.optionDescriptors?.[0]?.type === "select"
-          ? snapshot.models[0].capabilities.optionDescriptors[0].options.map((option) => option.id)
-          : [],
-      ).toEqual(["low", "medium", "high", "xhigh"]);
+      expect(snapshot.slashCommands.some((command) => command.name === "resume")).toBe(true);
+      expect(snapshot.models[0]?.capabilities?.optionDescriptors).toEqual([]);
     }),
   );
 
-  it.effect("advertises 4.5 and 4.6 effort menus on custom models", () =>
+  it.effect("waits for advertised effort menus on custom models", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialGrokProviderSnapshot(
         decodeGrokSettings({ customModels: ["grok-4.5", "grok-4.6"] }),
@@ -301,8 +296,8 @@ describe("buildInitialGrokProviderSnapshot", () => {
           ?.optionDescriptors?.[0];
         return descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [];
       };
-      expect(effortIds("grok-4.5")).toEqual(["low", "medium", "high"]);
-      expect(effortIds("grok-4.6")).toEqual(["low", "medium", "high", "xhigh"]);
+      expect(effortIds("grok-4.5")).toEqual([]);
+      expect(effortIds("grok-4.6")).toEqual([]);
     }),
   );
 });

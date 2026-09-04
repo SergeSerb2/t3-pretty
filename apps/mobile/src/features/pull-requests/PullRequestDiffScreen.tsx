@@ -11,7 +11,6 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -41,8 +40,8 @@ const LINE_CLASS: Record<DiffLineKind, string> = {
 };
 
 const LINE_TEXT_CLASS: Record<DiffLineKind, string> = {
-  add: "text-emerald-700 dark:text-emerald-300",
-  del: "text-red-700 dark:text-red-300",
+  add: "text-adaptive-emerald-700-300",
+  del: "text-adaptive-red-700-300",
   hunk: "text-foreground-muted",
   meta: "text-foreground-tertiary",
   context: "text-foreground",
@@ -54,7 +53,6 @@ type PullRequestDiffScreenProps = StaticScreenProps<PullRequestDiffRouteParams>;
 
 export function PullRequestDiffScreen(props: PullRequestDiffScreenProps) {
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
   const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
   const reference = useResolvedPullRequestReference(props.route.params);
@@ -124,7 +122,7 @@ export function PullRequestDiffScreen(props: PullRequestDiffScreenProps) {
         </View>
       ) : waitingForSlice || waitingForContents ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={iconColor} />
+          <ActivityIndicator colorClassName="accent-icon" />
         </View>
       ) : diff.error && listed === undefined ? (
         <View className="flex-1 justify-center px-6">

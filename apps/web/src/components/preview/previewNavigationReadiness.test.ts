@@ -34,6 +34,7 @@ import { waitForNavigationReadiness } from "./previewNavigationReadiness";
 describe("waitForNavigationReadiness", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.resetAllMocks();
   });
 
@@ -66,6 +67,7 @@ describe("waitForNavigationReadiness", () => {
 
   it("times out when a bridge readiness call never settles", async () => {
     vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
     const threadRef = {
       environmentId: EnvironmentId.make("environment-2"),
       threadId: ThreadId.make("thread-1"),
@@ -87,8 +89,10 @@ describe("waitForNavigationReadiness", () => {
       "load",
       100,
     );
+    const rejected = expect(readiness).rejects.toBeInstanceOf(
+      PreviewAutomationNavigationTimeoutError,
+    );
     await vi.advanceTimersByTimeAsync(100);
-
-    await expect(readiness).rejects.toBeInstanceOf(PreviewAutomationNavigationTimeoutError);
+    await rejected;
   });
 });

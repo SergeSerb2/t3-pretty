@@ -8,10 +8,19 @@ export const DraftComposerImageAttachmentSchema = Schema.Struct({
   name: Schema.String,
   mimeType: Schema.String,
   sizeBytes: Schema.Number,
-  dataUrl: Schema.String,
+  // Accept future file-backed records before enabling the new image writers.
+  fileUri: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
+  dataUrl: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   uploadedAttachmentId: Schema.optional(Schema.String),
   uploadEnvironmentId: Schema.optional(EnvironmentId),
-});
+}).check(
+  Schema.makeFilter(
+    ({ fileUri, dataUrl }) =>
+      fileUri !== undefined ||
+      dataUrl !== undefined ||
+      "Image attachment has no file or inline bytes.",
+  ),
+);
 
 /**
  * Persisted drafts omit the base64 payload so a keystroke never serializes
@@ -26,7 +35,20 @@ export const PersistedComposerImageAttachmentSchema = Schema.Struct({
   mimeType: Schema.String,
   sizeBytes: Schema.Number,
   dataUrl: Schema.optional(Schema.String),
-});
+  fileUri: Schema.optional(Schema.String),
+  uploadedAttachmentId: Schema.optional(Schema.String),
+  uploadEnvironmentId: Schema.optional(EnvironmentId),
+}).check(
+  Schema.makeFilter(
+    ({ fileUri, dataUrl, previewUri }) =>
+      Boolean(
+        fileUri ||
+        dataUrl ||
+        previewUri.startsWith("data:image/") ||
+        /^file:\/\/.*\/t3-composer-previews\/[^/]+$/.test(previewUri),
+      ) || "Image attachment has no file or inline bytes.",
+  ),
+);
 
 export const DraftComposerFileAttachmentSchema = Schema.Struct({
   id: Schema.String,
@@ -41,5 +63,10 @@ export const DraftComposerFileAttachmentSchema = Schema.Struct({
 
 export const DraftComposerAttachmentSchema = Schema.Union([
   DraftComposerImageAttachmentSchema,
+  DraftComposerFileAttachmentSchema,
+]);
+
+export const PersistedComposerAttachmentSchema = Schema.Union([
+  PersistedComposerImageAttachmentSchema,
   DraftComposerFileAttachmentSchema,
 ]);

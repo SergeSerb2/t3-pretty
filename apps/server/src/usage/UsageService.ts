@@ -1,3 +1,4 @@
+import * as Deferred from "effect/Deferred";
 /**
  * UsageService - scans provider transcripts and returns priced usage buckets.
  *
@@ -729,8 +730,48 @@ export const make = Effect.gen(function* () {
     } satisfies UsageSummary;
   });
 
-  const readSummary: UsageService["Service"]["readSummary"] = (input) =>
-    scanSemaphore.withPermits(1)(readSummaryCore(input));
+  const inflightScans = new Map<string, Deferred.Deferred<UsageSummary, UsageReadError>>();
+
+  const scanKey = (input: UsageSummaryInput): string =>
+    JSON.stringify([
+      input.timeZone,
+      input.sinceDay,
+      input.untilDay,
+      input.resolution ?? "day",
+      input.sinceTime ?? null,
+      input.untilTime ?? null,
+    ]);
+
+  const readSummary = Effect.fn("UsageService.readSummary")(function* (input: UsageSummaryInput) {
+    const key = scanKey(input);
+    const deferred = yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        const existing = inflightScans.get(key);
+        if (existing !== undefined) return existing;
+
+        // Enrollment and detached-fiber creation must be atomic. Otherwise a
+        // canceled first caller can leave a Deferred with no scan to finish it.
+        const created = Deferred.makeUnsafe<UsageSummary, UsageReadError>();
+        inflightScans.set(key, created);
+        // Detached so one departing client cannot tear the scan out from under
+        // the fibers awaiting it; a finished scan warms the cache either way.
+        yield* scanSemaphore
+          .withPermits(1)(readSummaryCore(input))
+          .pipe(
+            Effect.onExit((exit) =>
+              Effect.sync(() => inflightScans.delete(key)).pipe(
+                Effect.andThen(Deferred.done(created, exit)),
+              ),
+            ),
+            Effect.forkDetach,
+          );
+        return created;
+      }),
+    );
+    // Waiting stays interruptible. The detached scan continues for other
+    // callers and still warms the cache if this caller leaves.
+    return yield* Deferred.await(deferred);
+  });
 
   return { readSummary, refreshRates } as const;
 });

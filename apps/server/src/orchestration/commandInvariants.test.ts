@@ -215,6 +215,7 @@ describe("commandInvariants", () => {
     };
     const retry: OrchestrationCommand = {
       type: "thread.create",
+      enabledSkillIds: [],
       commandId: CommandId.make("cmd-retry"),
       threadId,
       projectId: firstAttempt.projectId,

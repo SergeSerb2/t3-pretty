@@ -5,6 +5,7 @@ import {
   archiveSelectedThreadEntries,
   unarchiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
+  buildBulkUnpinContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
   countThreadsAwaitingUser,
   createThreadJumpHintVisibilityController,
@@ -230,6 +231,19 @@ describe("unarchiveSelectedThreadEntries", () => {
       restored: [entries[0], entries[2]],
       failures: [failure],
     });
+  });
+});
+
+describe("buildBulkUnpinContextMenuItem", () => {
+  it("counts only the pinned rows of a mixed selection", () => {
+    expect(buildBulkUnpinContextMenuItem({ pinnedCount: 2 })).toEqual({
+      id: "unpin",
+      label: "Unpin (2)",
+    });
+  });
+
+  it("omits the action when nothing selected is pinned", () => {
+    expect(buildBulkUnpinContextMenuItem({ pinnedCount: 0 })).toBeNull();
   });
 });
 

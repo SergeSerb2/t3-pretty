@@ -192,12 +192,17 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 {subtitle}
               </Text>
             </View>
-            <SymbolView name="chevron.right" size={14} tintColor={chevronColor} type="monochrome" />
+            <SymbolView
+              name="chevron.right"
+              size={14}
+              tintColorClassName="accent-icon-subtle"
+              type="monochrome"
+            />
           </Pressable>
         </View>
       );
     },
-    [chevronColor, projectScopes, reservedDestinationProject, selectProject, selectedEnvironmentId],
+    [projectScopes, reservedDestinationProject, selectProject, selectedEnvironmentId],
   );
 
   useEffect(() => {

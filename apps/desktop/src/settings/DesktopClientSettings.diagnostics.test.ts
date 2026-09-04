@@ -92,7 +92,7 @@ describe("DesktopClientSettings diagnostics", () => {
     return Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({
-          readFileString: () => Effect.fail(permissionError),
+          open: () => Effect.fail(permissionError),
         }),
       );
 
@@ -117,7 +117,16 @@ describe("DesktopClientSettings diagnostics", () => {
     Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({
-          readFileString: () => Effect.succeed("{not-json"),
+          open: () =>
+            Effect.succeed({
+              stat: Effect.succeed({ size: 9n } as FileSystem.File.Info),
+              read: (buffer: Uint8Array) =>
+                Effect.sync(() => {
+                  buffer.set(new TextEncoder().encode("{not-json"));
+                  return 9n;
+                }),
+              readAlloc: () => Effect.succeed(Option.none()),
+            } as unknown as FileSystem.File),
         }),
       );
 

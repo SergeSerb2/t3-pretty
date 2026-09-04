@@ -4,7 +4,6 @@ import { useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { useThemeColor } from "../../lib/useThemeColor";
 
 function actorInitials(actor: PullRequestActor | null): string {
   const source = actor?.name?.trim() || actor?.login || "?";
@@ -21,7 +20,6 @@ export function PullRequestActorAvatar(props: {
 }) {
   const size = props.size ?? 28;
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-  const muted = useThemeColor("--color-foreground-muted");
   const avatarUrl = props.actor?.avatarUrl ?? null;
   const uri = failedAvatarUrl === avatarUrl ? null : avatarUrl;
   const radius = size / 2;
@@ -42,7 +40,7 @@ export function PullRequestActorAvatar(props: {
       ) : (
         <Text
           className="font-t3-bold text-foreground-muted"
-          style={{ fontSize: Math.max(9, Math.round(size * 0.36)), color: String(muted) }}
+          style={{ fontSize: Math.max(9, Math.round(size * 0.36)) }}
         >
           {actorInitials(props.actor)}
         </Text>

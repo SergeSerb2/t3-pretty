@@ -101,6 +101,10 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
         uris.map((uri, index) => ({
           id: `pending:${index}:${uri}`,
           previewUri: uri,
+          type: "image",
+          name: "Preparing image",
+          mimeType: "image/png",
+          sizeBytes: 0,
           preparing: true,
         })),
       );
@@ -159,7 +163,16 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
       const result = await pickComposerImages({
         existingCount: attachments.length,
         onPicked: (previews) =>
-          setPendingPreviews(previews.map((preview) => ({ ...preview, preparing: true }))),
+          setPendingPreviews(
+            previews.map((preview) => ({
+              ...preview,
+              type: "image",
+              name: "Preparing image",
+              mimeType: "image/png",
+              sizeBytes: 0,
+              preparing: true,
+            })),
+          ),
       });
       if (result.images.length > 0) {
         setAttachments((current) => [...current, ...result.images]);
@@ -323,7 +336,11 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
                           ...attachments,
                           ...pendingPreviews.filter(
                             (preview) =>
-                              !attachments.some((image) => image.previewUri === preview.previewUri),
+                              !attachments.some(
+                                (image) =>
+                                  image.previewUri ===
+                                  (preview.type === "image" ? preview.previewUri : null),
+                              ),
                           ),
                         ]}
                         imageBorderRadius={16}

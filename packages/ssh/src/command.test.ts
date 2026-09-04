@@ -1,3 +1,4 @@
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Duration from "effect/Duration";
@@ -118,21 +119,21 @@ describe("ssh command", () => {
           appVersion: "0.0.17",
           updateChannel: "latest",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17.tgz",
+        forkCliTarballUrl("0.0.17"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.17-nightly.20260415.44",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17-nightly.20260415.44.tgz",
+        forkCliTarballUrl("0.0.17-nightly.20260415.44"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.33-nightly.20260809.1042000012",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.33-nightly.20260809.1042000012.tgz",
+        forkCliTarballUrl("0.0.33-nightly.20260809.1042000012"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -140,7 +141,7 @@ describe("ssh command", () => {
           updateChannel: "nightly",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -148,7 +149,7 @@ describe("ssh command", () => {
           updateChannel: "latest",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
     }),
   );

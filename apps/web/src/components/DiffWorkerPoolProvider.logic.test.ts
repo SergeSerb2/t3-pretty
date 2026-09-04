@@ -132,11 +132,11 @@ describe("syncDiffWorkerPoolTheme", () => {
 });
 
 describe("DiffWorkerPoolProvider painted theme", () => {
-  it("reconfigures the singleton pool when the painted appearance changes", () => {
+  it("reconfigures the shared pool when the painted appearance changes", () => {
     expect(providerSource).toContain("usePaintedAppearance");
-    expect(providerSource).toContain("useState(() => getDiffWorkerPool(diffThemeName))");
-    expect(providerSource).toContain("syncDiffWorkerPoolTheme(pool, diffThemeName)");
-    expect(providerSource).toContain("[diffThemeName, pool]");
+    expect(providerSource).toContain("WorkerPoolContextProvider");
+    expect(providerSource).toContain("syncDiffWorkerPoolTheme(workerPool, themeName)");
+    expect(providerSource).toContain("[themeName, workerPool]");
   });
 });
 

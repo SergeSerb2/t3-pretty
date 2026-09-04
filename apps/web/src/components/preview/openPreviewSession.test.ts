@@ -89,3 +89,8 @@ describe("openPreviewSession", () => {
     expect(readThreadPreviewState(threadRef).recentlySeenUrls).toEqual([]);
   });
 });
+
+vi.mock("~/browser/browserDefaults", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/browser/browserDefaults")>();
+  return { ...actual, resolveBrowserDefaults: async () => actual.getBrowserDefaults() };
+});

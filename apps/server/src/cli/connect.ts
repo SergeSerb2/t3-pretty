@@ -31,6 +31,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BootService from "../cloud/bootService.ts";
 import * as CliState from "../cloud/CliState.ts";
 import * as CliTokenManager from "../cloud/CliTokenManager.ts";
+import { filterRelayResponse } from "../cloud/relayResponse.ts";
 import {
   CLOUD_LINKED_USER_ID,
   isAgentActivityPublishingEnabledValue,
@@ -206,6 +207,8 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
     `  Relay: ${status.relayUrl ?? "not provisioned"}`,
     `  Publish agent activity: ${status.publishAgentActivity ? "enabled" : "disabled"}`,
     ...formatRelayClientStatus(status.relayClient),
+    "",
+    "This is saved setup, not a live connection check. Check the background service with `t3 service status`.",
     ...(nextStep ? ["", `Next: ${nextStep}`] : []),
   ].join("\n");
 }
@@ -354,10 +357,7 @@ const unlinkRelayEnvironment = Effect.fn("cloud.cli.unlink_relay_environment")(f
     const httpResponse = yield* HttpClientRequest.delete(
       `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
     ).pipe(HttpClientRequest.bearerToken(token.value.accessToken), httpClient.execute);
-    if (httpResponse.status < 200 || httpResponse.status >= 300) {
-      yield* releaseHttpClientResponseBody(httpResponse);
-      return yield* new CloudRelayUnlinkError({ reason: "request-failed" });
-    }
+    yield* filterRelayResponse(httpResponse);
     const declaredLength = Number(httpResponse.headers["content-length"]);
     if (Number.isFinite(declaredLength) && declaredLength > CLOUD_CLI_RELAY_RESPONSE_MAX_BYTES) {
       yield* releaseHttpClientResponseBody(httpResponse);
@@ -719,17 +719,17 @@ export const connectCommand = Command.make("connect", {
         // Show which account was linked so an unexpected identity (an
         // authorization code for a different account) is visible before the
         // machine is brought online.
-        yield* Console.log(`✓ Connected${connectedAs(linked.identity)}`);
+        yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
 
-        // Connect itself already succeeded; a boot-service failure must not
-        // fail the command, just tell the user what happened and move on.
+        // Authorization is stored. If service setup fails, preserve it and
+        // show how to run the server manually.
         const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
         if (background) {
           const platform = yield* HostProcessPlatform;
           yield* Console.log(
             platform === "darwin"
-              ? "\n✓ Background service ready\n\nT3 Code will stay reachable while you are logged in to this Mac."
-              : "\n✓ Background service ready\n\nT3 Code will stay reachable after you log out.",
+              ? "\n✓ Background service ready\n\nT3 Code is set to run while you are logged in to this Mac. The server establishes the T3 Connect link on startup."
+              : "\n✓ Background service ready\n\nT3 Code is set to keep running after you log out. The server establishes the T3 Connect link on startup.",
           );
           return;
         }

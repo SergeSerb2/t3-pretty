@@ -12,7 +12,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
 import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { PullRequestActorAvatar } from "./PullRequestActorAvatar";
 import { useEnvironmentQuery } from "../../state/query";
 import { pullRequestEnvironment } from "../../state/pullRequests";
@@ -28,7 +27,6 @@ type PullRequestReviewersSheetProps = StaticScreenProps<PullRequestDetailRoutePa
 
 export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps) {
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
   const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const reference = useResolvedPullRequestReference(props.route.params);
   const [query, setQueryState] = useState("");
@@ -140,7 +138,7 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
           ) : null}
         </View>
         {pendingId === candidate.id ? (
-          <ActivityIndicator color={String(iconColor)} size="small" />
+          <ActivityIndicator colorClassName="accent-icon" size="small" />
         ) : (
           <Text
             className={cn(
@@ -153,11 +151,11 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
         )}
       </Pressable>
     ),
-    [candidates.length, iconColor, pendingId, reference, toggleReviewer],
+    [candidates.length, pendingId, reference, toggleReviewer],
   );
   const rowState = useMemo(
-    () => ({ iconColor, pendingId, referenceAvailable: reference !== null }),
-    [iconColor, pendingId, reference],
+    () => ({ pendingId, referenceAvailable: reference !== null }),
+    [pendingId, reference],
   );
 
   return (
@@ -180,7 +178,7 @@ export function PullRequestReviewersSheet(props: PullRequestReviewersSheetProps)
       </View>
       {candidatesQuery.isPending && candidatesQuery.data === null ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={iconColor} />
+          <ActivityIndicator colorClassName="accent-icon" />
         </View>
       ) : candidatesQuery.error && candidatesQuery.data === null ? (
         <View className="flex-1 justify-center px-6">

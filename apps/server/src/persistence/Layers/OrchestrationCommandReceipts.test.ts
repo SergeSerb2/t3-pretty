@@ -24,7 +24,7 @@ receiptsLayer("OrchestrationCommandReceiptRepository", (it) => {
         commandId,
         aggregateKind: "thread",
         aggregateId: ThreadId.make("thread-1"),
-        acceptedAt: "2026-01-01T00:00:00.000Z",
+        acceptedAt: "2026-02-01T00:00:00.000Z",
         resultSequence: 1,
         status: "rejected",
         error: "x".repeat(ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS + 1_000),

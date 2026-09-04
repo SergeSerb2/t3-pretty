@@ -494,8 +494,7 @@ describe("AcpRuntimeModel", () => {
 
     expect(thoughtResult.events).toEqual([
       {
-        _tag: "ContentDelta",
-        streamKind: "reasoning_text",
+        _tag: "ThoughtDelta",
         text: "thinking through acp",
         rawPayload: {
           sessionId: "session-1",

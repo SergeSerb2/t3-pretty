@@ -414,7 +414,7 @@ describe("DesktopSavedEnvironments", () => {
       const fileSystemLayer = Layer.succeed(
         FileSystem.FileSystem,
         FileSystem.makeNoop({
-          readFileString: () => Effect.fail(permissionError),
+          open: () => Effect.fail(permissionError),
         }),
       );
       const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments.pipe(

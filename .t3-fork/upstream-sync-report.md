@@ -5443,3 +5443,16 @@
 - `.github/workflows/cursor-hygiene-webhook.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/windows-tests.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+## Manual integration: nightly 1280
+
+- Parent nightly: `v0.0.39-nightly.20260904.1280`
+- Previously integrated parent nightly: `v0.0.39-nightly.20260904.1276`
+- Integrated with Codex (GPT-6). All merge conflicts were reviewed against fork behavior and upstream tests.
+- Preserved T3 Pretty branding, release workflows, provider integrations, composer and timeline presentation, and bounded server/client resources.
+- Restored upstream Claude skill dispatch, streamed image classification, mobile media previews, stable Markdown renderers, shared sidebar projections, and active-session binding lookups.
+- Kept per-client stream budgets with overflow/reconnect recovery; compacted activity IDs before decoding payloads; restored shared usage scans under the existing scan serialization limit.
+- Reconciled ACP thought events across providers and fixed undefined-payload handling in the shared coalescing worker used for relay activity.
+- Updated migration fixtures to the fork's existing migration IDs; migration ordering and installed user data remain unchanged.
+- Restored version-specific fork CLI repair commands and platform-specific SSH fixture expectations.
+- Validation is recorded in the integration PR; final release and installed-app checks follow the merged commit.

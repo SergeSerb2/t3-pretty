@@ -32,7 +32,6 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 import { useFontFamily } from "../../lib/useFontFamily";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -130,8 +129,6 @@ function SkillPickerRow(props: {
   readonly onUninstalled: (skillId: SkillId) => void;
   readonly row: SkillRow;
 }) {
-  const iconColor = useThemeColor("--color-icon-muted");
-  const checkmarkColor = useThemeColor("--color-icon");
   const setHostSkillEnabled = useAtomCommand(skillsEnvironment.setHostSkillEnabled, {
     reportFailure: false,
   });
@@ -252,7 +249,7 @@ function SkillPickerRow(props: {
           <SymbolView
             name="checkmark"
             size={16}
-            tintColor={checkmarkColor}
+            tintColorClassName="accent-icon"
             type="monochrome"
             weight="semibold"
           />
@@ -264,7 +261,12 @@ function SkillPickerRow(props: {
             accessibilityLabel={`Manage ${props.row.name}`}
             className="items-center justify-center py-3 pr-4 pl-1"
           >
-            <SymbolView name="ellipsis" size={16} tintColor={iconColor} type="monochrome" />
+            <SymbolView
+              name="ellipsis"
+              size={16}
+              tintColorClassName="accent-icon-muted"
+              type="monochrome"
+            />
           </View>
         </AnchoredMenu>
       ) : null}
@@ -276,8 +278,6 @@ export function NewTaskSkillsPickerRouteScreen() {
   const flow = useNewTaskFlow();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const placeholderColor = useThemeColor("--color-placeholder");
-  const foregroundColor = useThemeColor("--color-foreground");
   const fontFamily = useFontFamily("regular");
   const [query, setQuery] = useState("");
 
@@ -420,8 +420,8 @@ export function NewTaskSkillsPickerRouteScreen() {
             className="h-11 rounded-xl bg-card px-4 text-base text-foreground"
             onChangeText={setQuery}
             placeholder="Find a skill"
-            placeholderTextColor={placeholderColor}
-            style={{ color: foregroundColor, fontFamily }}
+            placeholderTextColorClassName="accent-placeholder"
+            style={{ fontFamily }}
             value={query}
           />
         </View>

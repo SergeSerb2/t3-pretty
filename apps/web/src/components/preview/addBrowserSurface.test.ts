@@ -78,3 +78,8 @@ describe("addBrowserSurface", () => {
     ).toEqual(["browser:tab-1", "browser:tab-2"]);
   });
 });
+
+vi.mock("~/browser/browserDefaults", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/browser/browserDefaults")>();
+  return { ...actual, resolveBrowserDefaults: async () => actual.getBrowserDefaults() };
+});

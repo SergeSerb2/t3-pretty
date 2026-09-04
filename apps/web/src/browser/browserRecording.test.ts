@@ -105,6 +105,10 @@ class FakeMediaRecorder {
   }
 
   state: RecordingState = "inactive";
+  readonly stream = { getTracks: () => [] };
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    this.listeners.get(type)?.delete(listener);
+  }
   private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {

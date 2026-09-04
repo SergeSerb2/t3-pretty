@@ -1,3 +1,4 @@
+import type { ProjectionEventReplayStats } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ApprovalRequestId,
   ChatAttachment,
@@ -84,6 +85,14 @@ import {
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
 
+const EventReplayStatsInput = Schema.Struct({
+  fromSequenceExclusive: NonNegativeInt,
+  toSequenceInclusive: NonNegativeInt,
+});
+const EventReplayStatsRowSchema = Schema.Struct({
+  eventCount: Schema.Number,
+  payloadBytes: Schema.Number,
+});
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
 const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
@@ -128,6 +137,11 @@ const ProjectionThreadActivityIdRowSchema = Schema.Struct({
   activityId: ProjectionThreadActivity.fields.activityId,
 });
 const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
+const ProjectionThreadRuntimeContextDbRowSchema = Schema.Struct({
+  id: ThreadId,
+  title: Schema.String,
+  session: Schema.NullOr(ProjectionThreadSessionDbRowSchema),
+});
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
   Struct.assign({
     files: Schema.fromJsonString(Schema.Array(OrchestrationCheckpointFile)),
@@ -1204,6 +1218,40 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const getThreadRuntimeContextRow = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadRuntimeContextDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          threads.thread_id AS id,
+          threads.title,
+          sessions.thread_id AS "threadId",
+          sessions.status,
+          sessions.provider_name AS "providerName",
+          sessions.provider_instance_id AS "providerInstanceId",
+          sessions.runtime_mode AS "runtimeMode",
+          sessions.active_turn_id AS "activeTurnId",
+          sessions.last_error AS "lastError",
+          sessions.updated_at AS "updatedAt"
+        FROM projection_threads AS threads
+        LEFT JOIN projection_thread_sessions AS sessions
+          ON sessions.thread_id = threads.thread_id
+        WHERE threads.thread_id = ${threadId}
+          AND threads.deleted_at IS NULL
+          AND threads.archived_at IS NULL
+        LIMIT 1
+      `.pipe(
+        Effect.map((rows) =>
+          rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            session: row.threadId === null ? null : row,
+          })),
+        ),
+      ),
+  });
+
   const listThreadMessageRowsByThread = SqlSchema.findAll({
     Request: ThreadIdLookupInput,
     Result: ProjectionThreadMessageDbRowSchema,
@@ -1365,14 +1413,70 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Result: ProjectionThreadActivityIdRowSchema,
     execute: ({ threadId }) =>
       sql`
-        SELECT activity_id AS "activityId"
-        FROM projection_thread_activities
-        WHERE thread_id = ${threadId}
+        WITH candidates AS MATERIALIZED (
+          SELECT
+            activity_id,
+            thread_id,
+            turn_id,
+            kind,
+            projection_group_key,
+            context_used_tokens,
+            sequence,
+            created_at,
+            CASE
+              WHEN sequence IS NULL THEN '0|' || created_at || '|' || activity_id
+              ELSE '1|' || printf('%020llu', sequence) || '|' || created_at || '|' || activity_id
+            END AS sort_key
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+          ORDER BY
+            sequence DESC,
+            created_at DESC,
+            activity_id DESC
+          LIMIT ${THREAD_DETAIL_ACTIVITY_LIMIT}
+        ),
+        latest_context AS MATERIALIZED (
+          SELECT turn_id, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'context-window.updated' AND context_used_tokens IS NOT NULL
+          GROUP BY turn_id
+        ),
+        latest_completion AS MATERIALIZED (
+          SELECT turn_id, projection_group_key, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'tool.completed' AND projection_group_key IS NOT NULL
+          GROUP BY turn_id, projection_group_key
+        ),
+        retained AS MATERIALIZED (
+          SELECT candidate.activity_id
+          FROM candidates AS candidate
+          LEFT JOIN latest_context AS context
+            ON candidate.kind = 'context-window.updated'
+            AND candidate.context_used_tokens IS NOT NULL
+            AND context.turn_id IS candidate.turn_id
+          LEFT JOIN latest_completion AS completion
+            ON candidate.kind = 'tool.updated'
+            AND candidate.projection_group_key IS NOT NULL
+            AND completion.turn_id IS candidate.turn_id
+            AND completion.projection_group_key = candidate.projection_group_key
+          WHERE NOT COALESCE((
+              candidate.kind = 'context-window.updated'
+              AND candidate.context_used_tokens IS NOT NULL
+              AND context.sort_key > candidate.sort_key
+            ), 0)
+          AND NOT COALESCE((
+              candidate.kind = 'tool.updated'
+              AND candidate.projection_group_key IS NOT NULL
+              AND completion.sort_key > candidate.sort_key
+            ), 0)
+        )
+        SELECT activity.activity_id AS "activityId"
+        FROM projection_thread_activities AS activity
+        INNER JOIN retained ON retained.activity_id = activity.activity_id
         ORDER BY
-          sequence DESC,
-          created_at DESC,
-          activity_id DESC
-        LIMIT ${THREAD_DETAIL_ACTIVITY_LIMIT}
+          activity.sequence ASC,
+          activity.created_at ASC,
+          activity.activity_id ASC
       `,
   });
 
@@ -1865,40 +1969,96 @@ pending_approval_requests AS (
     Result: ProjectionThreadActivityIdRowSchema,
     execute: ({ threadId, minAnchorAt, minTurnKey, beforeAnchorAt, beforeTurnKey }) =>
       sql`
-        SELECT activity_id AS "activityId"
-        FROM projection_thread_activities
-        WHERE thread_id = ${threadId}
-          AND (
-            turn_id IN (
-              SELECT turn_id FROM projection_turns
-              WHERE thread_id = ${threadId}
-                AND turn_id IS NOT NULL
-                AND (
-                  requested_at > ${minAnchorAt}
-                  OR (
-                    requested_at = ${minAnchorAt}
-                    AND turn_id >= ${minTurnKey}
+        WITH candidates AS MATERIALIZED (
+          SELECT
+            activity_id,
+            thread_id,
+            turn_id,
+            kind,
+            projection_group_key,
+            context_used_tokens,
+            sequence,
+            created_at,
+            CASE
+              WHEN sequence IS NULL THEN '0|' || created_at || '|' || activity_id
+              ELSE '1|' || printf('%020llu', sequence) || '|' || created_at || '|' || activity_id
+            END AS sort_key
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND (
+              turn_id IN (
+                SELECT turn_id FROM projection_turns
+                WHERE thread_id = ${threadId}
+                  AND turn_id IS NOT NULL
+                  AND (
+                    requested_at > ${minAnchorAt}
+                    OR (
+                      requested_at = ${minAnchorAt}
+                      AND turn_id >= ${minTurnKey}
+                    )
                   )
-                )
-                AND (
-                  requested_at < ${beforeAnchorAt}
-                  OR (
-                    requested_at = ${beforeAnchorAt}
-                    AND turn_id < ${beforeTurnKey}
+                  AND (
+                    requested_at < ${beforeAnchorAt}
+                    OR (
+                      requested_at = ${beforeAnchorAt}
+                      AND turn_id < ${beforeTurnKey}
+                    )
                   )
-                )
+              )
+              OR (
+                turn_id IS NULL
+                AND created_at >= ${minAnchorAt}
+                AND created_at < ${beforeAnchorAt}
+              )
             )
-            OR (
-              turn_id IS NULL
-              AND created_at >= ${minAnchorAt}
-              AND created_at < ${beforeAnchorAt}
-            )
-          )
+          ORDER BY
+            sequence DESC,
+            created_at DESC,
+            activity_id DESC
+          LIMIT ${THREAD_DETAIL_ACTIVITY_LIMIT}
+        ),
+        latest_context AS MATERIALIZED (
+          SELECT turn_id, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'context-window.updated' AND context_used_tokens IS NOT NULL
+          GROUP BY turn_id
+        ),
+        latest_completion AS MATERIALIZED (
+          SELECT turn_id, projection_group_key, MAX(sort_key) AS sort_key
+          FROM candidates
+          WHERE kind = 'tool.completed' AND projection_group_key IS NOT NULL
+          GROUP BY turn_id, projection_group_key
+        ),
+        retained AS MATERIALIZED (
+          SELECT candidate.activity_id
+          FROM candidates AS candidate
+          LEFT JOIN latest_context AS context
+            ON candidate.kind = 'context-window.updated'
+            AND candidate.context_used_tokens IS NOT NULL
+            AND context.turn_id IS candidate.turn_id
+          LEFT JOIN latest_completion AS completion
+            ON candidate.kind = 'tool.updated'
+            AND candidate.projection_group_key IS NOT NULL
+            AND completion.turn_id IS candidate.turn_id
+            AND completion.projection_group_key = candidate.projection_group_key
+          WHERE NOT COALESCE((
+              candidate.kind = 'context-window.updated'
+              AND candidate.context_used_tokens IS NOT NULL
+              AND context.sort_key > candidate.sort_key
+            ), 0)
+          AND NOT COALESCE((
+              candidate.kind = 'tool.updated'
+              AND candidate.projection_group_key IS NOT NULL
+              AND completion.sort_key > candidate.sort_key
+            ), 0)
+        )
+        SELECT activity.activity_id AS "activityId"
+        FROM projection_thread_activities AS activity
+        INNER JOIN retained ON retained.activity_id = activity.activity_id
         ORDER BY
-          sequence DESC,
-          created_at DESC,
-          activity_id DESC
-        LIMIT ${THREAD_DETAIL_ACTIVITY_LIMIT}
+          activity.sequence ASC,
+          activity.created_at ASC,
+          activity.activity_id ASC
       `,
   });
 
@@ -2764,6 +2924,32 @@ pending_approval_requests AS (
       })),
     );
 
+  const readEventReplayStats = SqlSchema.findOne({
+    Request: EventReplayStatsInput,
+    Result: EventReplayStatsRowSchema,
+    execute: ({ fromSequenceExclusive, toSequenceInclusive }) =>
+      sql`
+        SELECT
+          COUNT(*) AS "eventCount",
+          COALESCE(SUM(octet_length(payload_json)), 0) AS "payloadBytes"
+        FROM orchestration_events
+        WHERE sequence > ${fromSequenceExclusive}
+          AND sequence <= ${toSequenceInclusive}
+      `,
+  });
+  const getEventReplayStats: ProjectionSnapshotQueryShape["getEventReplayStats"] = (input) =>
+    readEventReplayStats(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getEventReplayStats:query",
+          "ProjectionSnapshotQuery.getEventReplayStats:decodeRow",
+        ),
+      ),
+      Effect.map((row): ProjectionEventReplayStats => ({
+        eventCount: row.eventCount,
+        payloadBytes: row.payloadBytes,
+      })),
+    );
   const getCounts: ProjectionSnapshotQueryShape["getCounts"] = () =>
     readProjectionCounts(undefined).pipe(
       Effect.mapError(
@@ -3053,6 +3239,23 @@ pending_approval_requests AS (
         ),
         planProgress: threadPlanProgress.getThreadPlanProgress(threadRow.value.threadId),
       } satisfies OrchestrationThreadShell);
+    });
+
+  const getThreadRuntimeContext: ProjectionSnapshotQueryShape["getThreadRuntimeContext"] =
+    Effect.fn("ProjectionSnapshotQuery.getThreadRuntimeContext")(function* (threadId) {
+      const context = yield* getThreadRuntimeContextRow({ threadId }).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.getThreadRuntimeContext:query",
+            "ProjectionSnapshotQuery.getThreadRuntimeContext:decodeRow",
+          ),
+        ),
+      );
+      return Option.map(context, (row) => ({
+        id: row.id,
+        title: row.title,
+        session: row.session === null ? null : mapSessionRow(row.session),
+      }));
     });
 
   // Contiguous turn range bounding a windowed detail read; undefined loads the
@@ -3507,6 +3710,7 @@ pending_approval_requests AS (
     getArchivedShellSnapshot,
     searchThreads,
     getSnapshotSequence,
+    getEventReplayStats,
     getCounts,
     getActiveProjectByWorkspaceRoot,
     getProjectShellById,
@@ -3514,6 +3718,7 @@ pending_approval_requests AS (
     getThreadCheckpointContext,
     getFullThreadDiffContext,
     getThreadShellById,
+    getThreadRuntimeContext,
     getThreadDetailById,
     getThreadDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;

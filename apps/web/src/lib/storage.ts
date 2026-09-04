@@ -10,7 +10,10 @@ export interface SynchronousStateStorage extends StateStorage<void> {
   getItem: (name: string) => string | null;
 }
 
-export interface DebouncedStorage<R = unknown> extends StateStorage<R> {
+export interface DeferredStorage<TValue> {
+  getItem: (name: string) => string | null | Promise<string | null>;
+  setItem: (name: string, value: TValue) => void;
+  removeItem: (name: string) => void;
   flush: () => void;
 }
 
@@ -57,15 +60,17 @@ export function resolveLocalStorage(): SynchronousStateStorage {
   }
 }
 
-export function createDebouncedStorage(
+/** Keep the latest value and serialize it when the debounce fires or `flush` runs. */
+export function createDeferredStorage<TValue>(
   baseStorage: Partial<StateStorage> | null | undefined,
+  serialize: (value: TValue) => string,
   debounceMs: number = 300,
-): DebouncedStorage {
+): DeferredStorage<TValue> {
   const resolvedStorage = resolveStorage(baseStorage);
   const debouncedSetItem = new Debouncer(
-    (name: string, value: string) => {
+    (name: string, value: TValue) => {
       try {
-        resolvedStorage.setItem(name, value);
+        resolvedStorage.setItem(name, serialize(value));
       } catch {
         // Quota and browser-policy failures happen after the initiating render.
         // Keep them from surfacing as uncaught timer errors.
@@ -87,6 +92,7 @@ export function createDebouncedStorage(
     },
     removeItem: (name) => {
       debouncedSetItem.cancel();
+      debouncedSetItem.reset();
       try {
         resolvedStorage.removeItem(name);
       } catch {
@@ -97,4 +103,12 @@ export function createDebouncedStorage(
       debouncedSetItem.flush();
     },
   };
+}
+
+/** Compatibility for stores that already supply serialized strings. */
+export function createDebouncedStorage(
+  baseStorage: Partial<StateStorage> | null | undefined,
+  debounceMs = 300,
+) {
+  return createDeferredStorage(baseStorage, (value: string) => value, debounceMs);
 }

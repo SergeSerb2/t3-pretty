@@ -26,7 +26,6 @@ import { SymbolView } from "../../components/AppSymbol";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { useProjects } from "../../state/entities";
 import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
 import { useThreadSearch } from "../../state/queries";
@@ -47,6 +46,7 @@ import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
 import {
   buildHomeListLayout,
   DEFAULT_GROUP_DISPLAY_STATE,
+  EMPTY_HOME_LIST_LAYOUT,
   homeListItemsAreEqual,
   nextGroupDisplayState,
   type HomeGroupDisplayAction,
@@ -276,47 +276,56 @@ function ThreadNavigationSidebarPane(
   );
   const scopedProjects = useMemo(
     () =>
-      selectedProjectRefs === null
-        ? projects
-        : projects.filter((project) =>
-            selectedProjectRefs.has(scopedProjectKey(project.environmentId, project.id)),
-          ),
-    [projects, selectedProjectRefs],
+      threadListV2Enabled
+        ? []
+        : selectedProjectRefs === null
+          ? projects
+          : projects.filter((project) =>
+              selectedProjectRefs.has(scopedProjectKey(project.environmentId, project.id)),
+            ),
+    [threadListV2Enabled, projects, selectedProjectRefs],
   );
   const scopedThreads = useMemo(
     () =>
-      selectedProjectRefs === null
-        ? threads
-        : threads.filter((thread) =>
-            selectedProjectRefs.has(scopedProjectKey(thread.environmentId, thread.projectId)),
-          ),
-    [selectedProjectRefs, threads],
+      threadListV2Enabled
+        ? []
+        : selectedProjectRefs === null
+          ? threads
+          : threads.filter((thread) =>
+              selectedProjectRefs.has(scopedProjectKey(thread.environmentId, thread.projectId)),
+            ),
+    [threadListV2Enabled, selectedProjectRefs, threads],
   );
   const scopedPendingTasks = useMemo(
     () =>
-      selectedProjectRefs === null
-        ? pendingTasks
-        : pendingTasks.filter((pendingTask) =>
-            selectedProjectRefs.has(
-              scopedProjectKey(pendingTask.message.environmentId, pendingTask.creation.projectId),
+      threadListV2Enabled
+        ? []
+        : selectedProjectRefs === null
+          ? pendingTasks
+          : pendingTasks.filter((pendingTask) =>
+              selectedProjectRefs.has(
+                scopedProjectKey(pendingTask.message.environmentId, pendingTask.creation.projectId),
+              ),
             ),
-          ),
-    [pendingTasks, selectedProjectRefs],
+    [threadListV2Enabled, pendingTasks, selectedProjectRefs],
   );
   const groups = useMemo(
     () =>
-      buildHomeThreadGroups({
-        projects: scopedProjects,
-        threads: scopedThreads,
-        pendingTasks: scopedPendingTasks,
-        environmentId: options.selectedEnvironmentId,
-        searchQuery: props.searchQuery,
-        matchedThreadKeys,
-        projectSortOrder: options.projectSortOrder,
-        threadSortOrder: options.threadSortOrder,
-        projectGroupingMode: options.projectGroupingMode,
-      }),
+      threadListV2Enabled
+        ? []
+        : buildHomeThreadGroups({
+            projects: scopedProjects,
+            threads: scopedThreads,
+            pendingTasks: scopedPendingTasks,
+            environmentId: options.selectedEnvironmentId,
+            searchQuery: props.searchQuery,
+            matchedThreadKeys,
+            projectSortOrder: options.projectSortOrder,
+            threadSortOrder: options.threadSortOrder,
+            projectGroupingMode: options.projectGroupingMode,
+          }),
     [
+      threadListV2Enabled,
       matchedThreadKeys,
       options,
       props.searchQuery,
@@ -341,12 +350,14 @@ function ThreadNavigationSidebarPane(
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const listLayout = useMemo(
     () =>
-      buildHomeListLayout({
-        groups,
-        displayStates: groupDisplayStates,
-        showAllThreads: hasSearchQuery,
-      }),
-    [groups, groupDisplayStates, hasSearchQuery],
+      threadListV2Enabled
+        ? EMPTY_HOME_LIST_LAYOUT
+        : buildHomeListLayout({
+            groups,
+            displayStates: groupDisplayStates,
+            showAllThreads: hasSearchQuery,
+          }),
+    [threadListV2Enabled, groups, groupDisplayStates, hasSearchQuery],
   );
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
@@ -365,33 +376,6 @@ function ThreadNavigationSidebarPane(
 
   // Thread List v2 (beta) support — same model as the compact Home list
   // (HomeScreen.tsx): flat creation-order card block + settled recency tail.
-  // PR states stream in per-row. The next partition applies T3 Pretty's
-  // close-settles / merge-stays-active rule.
-  const [changeRequestByKey, setChangeRequestByKey] = useState<
-    ReadonlyMap<string, ThreadListV2ChangeRequestState>
-  >(() => new Map());
-  const handleChangeRequestState = useCallback(
-    (threadKey: string, changeRequest: ThreadListV2ChangeRequestState | null) => {
-      setChangeRequestByKey((current) => {
-        const existing = current.get(threadKey) ?? null;
-        if (
-          (existing?.state ?? null) === (changeRequest?.state ?? null) &&
-          (existing?.updatedAt ?? null) === (changeRequest?.updatedAt ?? null) &&
-          (existing?.linkedPullRequestKey ?? null) === (changeRequest?.linkedPullRequestKey ?? null)
-        ) {
-          return current;
-        }
-        const next = new Map(current);
-        if (changeRequest === null) {
-          next.delete(threadKey);
-        } else {
-          next.set(threadKey, changeRequest);
-        }
-        return next;
-      });
-    },
-    [],
-  );
   // The settled tail renders in pages; expansion resets when the filter
   // context changes so environment/search flips never inherit a deep page.
   const [settledVisibleCount, setSettledVisibleCount] = useState(
@@ -520,7 +504,6 @@ function ThreadNavigationSidebarPane(
       projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
       searchQuery: props.searchQuery,
       matchedThreadKeys,
-      changeRequestByKey,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
       settledLimit: settledVisibleCount,
@@ -530,7 +513,6 @@ function ThreadNavigationSidebarPane(
       selectedThreadKey: props.selectedThreadKey ?? null,
     });
   }, [
-    changeRequestByKey,
     nowMinute,
     snoozeWakeTick,
     snoozedShelfExpanded,

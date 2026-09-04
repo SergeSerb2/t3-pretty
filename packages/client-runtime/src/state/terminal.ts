@@ -15,7 +15,7 @@ import { request, subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
-  EMPTY_TERMINAL_BUFFER_STATE,
+  nextTerminalAttachSeedState,
 } from "./terminalSession.ts";
 
 export const TERMINAL_STATE_IDLE_TTL_MS = 60_000;
@@ -68,8 +68,10 @@ export function createTerminalEnvironmentAtoms<R, E>(
       label: "environment-data:terminal:attach",
       idleTtlMs: TERMINAL_STATE_IDLE_TTL_MS,
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
-        subscribe(WS_METHODS.terminalAttach, input).pipe(
-          Stream.scan(EMPTY_TERMINAL_BUFFER_STATE, applyTerminalAttachStreamEvent),
+        Stream.suspend(() =>
+          subscribe(WS_METHODS.terminalAttach, input).pipe(
+            Stream.scan(nextTerminalAttachSeedState(), applyTerminalAttachStreamEvent),
+          ),
         ),
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {

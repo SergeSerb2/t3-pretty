@@ -19,7 +19,7 @@ import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appBlurTargetRef } from "../lib/appBlurTarget";
-import { useThemeColor } from "../lib/useThemeColor";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 import { cn } from "../lib/cn";
 import { flattenMenuActions } from "./anchored-menu.logic";
@@ -148,9 +148,10 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
   const isDarkMode = useColorScheme() === "dark";
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboardHeight = useKeyboardState((state) => state.height);
-  const rippleColor = useThemeColor("--color-subtle");
-  const chromeFill = useThemeColor("--color-chrome-glass");
-  const chromeBorder = useThemeColor("--color-chrome-glass-border");
+  const nativeTheme = useUniwindTheme();
+  const rippleColor = String(nativeTheme["--color-subtle"]);
+  const chromeFill = String(nativeTheme["--color-chrome-glass"]);
+  const chromeBorder = String(nativeTheme["--color-chrome-glass-border"]);
 
   const close = useCallback(() => {
     if (isPlacementMode) {

@@ -798,7 +798,7 @@ describe("DesktopBackendConfiguration", () => {
       const failingFileSystemLayer = Layer.succeed(
         FileSystem.FileSystem,
         FileSystem.makeNoop({
-          readFileString: () => Effect.fail(cause),
+          open: () => Effect.fail(cause),
         }),
       );
 

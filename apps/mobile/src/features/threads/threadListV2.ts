@@ -326,6 +326,8 @@ export function buildThreadListV2ListItems(input: {
  * the settled recency tail, matching the web v2 list.
  */
 export function buildThreadListV2Items(input: {
+  /** Legacy callers may supply cached PR data; authoritative settlement lives on the server. */
+  readonly changeRequestByKey?: ReadonlyMap<string, ThreadListV2ChangeRequestState>;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly environmentId: EnvironmentId | null;
   readonly projectRefs?: ReadonlyArray<{
@@ -499,4 +501,10 @@ export function buildThreadListV2Items(input: {
     settledShelfHeaderIndex,
     nextSnoozeWakeAt,
   };
+}
+
+export interface ThreadListV2ChangeRequestState {
+  readonly state: "open" | "closed" | "merged";
+  readonly linkedPullRequestKey?: string;
+  readonly updatedAt?: string;
 }

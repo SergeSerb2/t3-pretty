@@ -391,6 +391,8 @@ function AgentRow({
 }) {
   const [open, setOpen] = useState(false);
   const visuals = STATUS_VISUALS[agent.status];
+  const statusLabel =
+    agent.kind === "subagent_batch" && agent.status === "idle" ? "Idle" : visuals.label;
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
   const role =
@@ -446,12 +448,12 @@ function AgentRow({
             agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
           )}
         >
-          {activity ?? visuals.label}
+          {activity ?? statusLabel}
         </span>
         <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
           {metadata.join(" · ")}
         </span>
-        <span className="sr-only">{visuals.label}</span>
+        <span className="sr-only">{statusLabel}</span>
       </button>
       {open ? (
         <AgentDetail agent={agent} entries={log ? subagentLogEntries(log, agent.id) : []} />

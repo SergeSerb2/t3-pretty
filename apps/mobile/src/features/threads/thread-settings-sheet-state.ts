@@ -6,7 +6,8 @@ import type {
 } from "@t3tools/contracts";
 
 import type { ModelOption, ProviderGroup } from "../../lib/modelOptions";
-import { providerNeedsSetup } from "../settings/provider-setup-state";
+const providerNeedsSetup = (provider: ServerProvider) =>
+  !provider.installed || provider.auth.status === "unauthenticated";
 import { selectableChoices } from "./thread-settings-options";
 
 export type ThreadSettingsSheetPage = "home" | "catalog";
@@ -102,7 +103,7 @@ export function visibleSheetOptionDescriptors(
   });
 }
 
-/** A model can disappear while its setup page is open inside the picker. */
+/** A model can disappear while the picker is open. */
 export function canCommitPendingModel(
   pending: ModelOption,
   groups: ReadonlyArray<ProviderGroup>,

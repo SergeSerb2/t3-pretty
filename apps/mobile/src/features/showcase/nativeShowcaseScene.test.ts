@@ -1,3 +1,5 @@
+import { vi } from "vite-plus/test";
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
 import { describe, expect, it } from "@effect/vitest";
 
 import { parseNativeShowcasePairingUrls } from "./nativeShowcaseScene";
