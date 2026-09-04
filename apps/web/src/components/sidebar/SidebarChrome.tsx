@@ -91,29 +91,31 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <img
-        alt=""
-        aria-hidden="true"
-        className={cn(
-          "h-5 w-auto shrink-0 object-contain",
-          // The sage mark carries the brand on plain chrome in both themes. Over
-          // scenery photo backdrops it washes out, so fall back to a white glyph.
-          onBackdrop && "brightness-0 invert",
-        )}
-        src="/t3-pretty-mark.png"
-      />
-      <span
-        className={cn(
-          "truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Pretty
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <img
+          alt=""
+          aria-hidden="true"
+          className={cn(
+            "h-5 w-auto shrink-0 object-contain",
+            // The sage mark carries the brand on plain chrome in both themes. Over
+            // scenery photo backdrops it washes out, so fall back to a white glyph.
+            onBackdrop && "brightness-0 invert",
+          )}
+          src="/t3-pretty-mark.png"
+        />
+        <span
+          className={cn(
+            "truncate text-sm font-medium tracking-tight",
+            onBackdrop ? "text-white/70" : "text-muted-foreground",
+          )}
+        >
+          Pretty
+        </span>
       </span>
     </Link>
   );

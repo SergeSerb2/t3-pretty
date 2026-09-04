@@ -76,6 +76,12 @@ export function ConnectionsRouteScreen() {
                   onReconnect={onReconnectEnvironment}
                   onRemove={onRemoveEnvironmentPress}
                   onUpdate={onUpdateEnvironment}
+                  onSetupProvider={(params) =>
+                    navigation.navigate("SettingsSheet", {
+                      screen: "SettingsContent",
+                      params: { screen: "SettingsProviderSetup", params },
+                    })
+                  }
                 />
               </View>
             ))}

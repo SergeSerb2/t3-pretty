@@ -22,7 +22,7 @@ import {
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
-import { previewAnnotationScreenshotFile } from "~/lib/previewAnnotation";
+import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { compressImageToByteLimit } from "~/lib/imageCompression";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureLocalApi } from "~/localApi";
@@ -593,14 +593,34 @@ export function PreviewView({
       try {
         const result = await previewBridge.pickElement(runtimeTabId);
         if (!result) return;
-        const { annotation, submission } = result;
+        const { annotation: picked, submission, screenshotFailed = false } = result;
+        // The structured annotation is still sendable when its optional crop
+        // stalls or fails, so tell the user what they lost and keep going
+        // instead of holding the composer for an attachment that never lands.
+        // The stored copy drops the screenshot on failure, otherwise the prompt
+        // would tell the agent a crop is attached when none was sent.
+        const capture = await capturePreviewAnnotationScreenshot(picked);
+        // Main reports a crop that failed or timed out on its side; the local
+        // conversion can fail too. Either way the user should hear about it.
+        const cropDropped = screenshotFailed || capture.status === "failed";
+        const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
         addPreviewAnnotation(threadRef, annotation);
+        if (cropDropped) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not capture the picked element",
+              // The send path reports its own outcome, so only say what this
+              // handler knows: the crop was dropped.
+              description: "The annotation was kept without the screenshot.",
+            }),
+          );
+        }
         let screenshotFile: File | null = null;
-        try {
-          const capturedFile = await previewAnnotationScreenshotFile(annotation);
-          if (capturedFile) {
+        if (capture.status === "captured") {
+          try {
             const compressed = await compressImageToByteLimit(
-              capturedFile,
+              capture.file,
               PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
             );
             if (compressed.ok) {
@@ -612,10 +632,10 @@ export function PreviewView({
                 description: "The screenshot is too large to attach safely.",
               });
             }
+          } catch {
+            // The structured annotation is still sendable when preparing its
+            // optional screenshot as a composer attachment fails.
           }
-        } catch {
-          // The structured annotation is still sendable when converting its
-          // optional screenshot into a composer attachment fails.
         }
         let image =
           screenshotFile && annotation.screenshot

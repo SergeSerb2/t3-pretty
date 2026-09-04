@@ -58,6 +58,7 @@ import {
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import {
+  type ChatMessage,
   type ChatFileAttachment,
   type ChatImageAttachment,
   isBrowserPreviewAttachment,
@@ -87,6 +88,7 @@ import {
   ImageIcon,
   LoaderCircleIcon,
   MessageCircleIcon,
+  Minimize2Icon,
   MinusIcon,
   MousePointerClickIcon,
   PackageIcon,
@@ -236,6 +238,7 @@ interface TimelineRowSharedState {
 interface TimelineRowActivityState {
   isWorking: boolean;
   isPreparingWorktree: boolean;
+  isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
@@ -334,6 +337,7 @@ interface MessagesTimelineProps {
   isWorking: boolean;
   activeTurnInProgress: boolean;
   isPreparingWorktree?: boolean;
+  isCompacting?: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
@@ -386,6 +390,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
   activeTurnInProgress,
   isPreparingWorktree = false,
+  isCompacting = false,
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
@@ -760,6 +765,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     () => ({
       isWorking,
       isPreparingWorktree,
+      isCompacting,
       isRevertingCheckpoint,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
@@ -767,6 +773,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }),
     [
       activeTurnInProgress,
+      isCompacting,
       isPreparingWorktree,
       isRevertingCheckpoint,
       isWorking,
@@ -815,6 +822,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           <LegendList<MessagesTimelineRow>
             ref={listRef}
             data={rows}
+            extraData={rows.length}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
             renderItem={renderItem}
@@ -1177,26 +1185,34 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   row.kind === "turn-plan"
                 ? "pb-2"
                 : "pb-4",
-        row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
+        (row.kind === "message" && row.message.role === "assistant") ||
+          row.kind === "assistant-meta"
+          ? "group/assistant"
+          : null,
       )}
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
-      data-message-id={row.kind === "message" ? row.message.id : undefined}
+      data-message-id={
+        row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
+      }
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? (
         <WorkGroupSection
           groupedEntries={row.groupedEntries}
           isExpandedToolGroupEntry={row.isExpandedToolGroupEntry}
+          displayLabel={row.displayLabel}
         />
       ) : null}
       {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
+      {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow /> : null}
@@ -1204,6 +1220,27 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
     </div>
   );
 });
+
+function ContextCompactionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={row.label}
+      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {row.label}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
 
 function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
   const ctx = use(TimelineRowCtx);
@@ -1576,19 +1613,12 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantReadAloudButton row={row} />
-            <AssistantCopyButton row={row} />
-            {!row.message.streaming && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={<p className="text-muted-foreground text-xs tabular-nums" />}
-                >
-                  {formatDayAwareTimestamp(row.message.updatedAt, ctx.timestampFormat)}
-                </TooltipTrigger>
-                <TooltipPopup>
-                  {formatChatTimestampTooltip(row.message.updatedAt, ctx.timestampFormat)}
-                </TooltipPopup>
-              </Tooltip>
-            )}
+            <AssistantMessageMeta
+              className="opacity-100"
+              message={row.message}
+              showCopyButton={row.showAssistantCopyButton}
+              copyStreaming={row.assistantCopyStreaming}
+            />
           </div>
         ) : null}
       </div>
@@ -1596,7 +1626,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   );
 }
 
-function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+function AssistantReadAloudButton({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "message" | "assistant-meta" }>;
+}) {
   const ctx = use(TimelineRowCtx);
   if (
     !ctx.readAloudEnabled ||
@@ -1644,11 +1678,82 @@ function AssistantReadAloudButton({ row }: { row: Extract<TimelineRow, { kind: "
   );
 }
 
-function AssistantCopyButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+function AssistantMetaTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "assistant-meta" }>;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-1">
+      <AssistantReadAloudButton row={row} />
+      <AssistantMessageMeta
+        className="mt-0.5"
+        message={row.message}
+        showCopyButton={row.showAssistantCopyButton}
+        copyStreaming={row.assistantCopyStreaming}
+        alwaysVisible
+      />
+    </div>
+  );
+}
+
+function AssistantMessageMeta({
+  className,
+  message,
+  showCopyButton,
+  copyStreaming,
+  alwaysVisible = false,
+}: {
+  className?: string;
+  message: ChatMessage;
+  showCopyButton: boolean;
+  copyStreaming: boolean;
+  alwaysVisible?: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        alwaysVisible
+          ? "opacity-100"
+          : "opacity-0 focus-within:opacity-100 group-hover/assistant:opacity-100",
+        className,
+      )}
+    >
+      <AssistantCopyButton
+        message={message}
+        showCopyButton={showCopyButton}
+        streaming={copyStreaming}
+      />
+      {!message.streaming && (
+        <Tooltip>
+          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
+          </TooltipTrigger>
+          <TooltipPopup>
+            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
+          </TooltipPopup>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
+function AssistantCopyButton({
+  message,
+  showCopyButton,
+  streaming,
+}: {
+  message: ChatMessage;
+  showCopyButton: boolean;
+  streaming: boolean;
+}) {
   const assistantCopyState = resolveAssistantMessageCopyState({
-    text: row.message.text ?? null,
-    showCopyButton: row.showAssistantCopyButton,
-    streaming: row.assistantCopyStreaming,
+    text: message.text ?? null,
+    showCopyButton,
+    streaming,
   });
 
   if (!assistantCopyState.visible) {
@@ -1785,12 +1890,29 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
 });
 
 function WorkingTimelineRow() {
+  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
+  const showCompacting = isCompacting && !isPreparingWorktree;
+
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
-        <span className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none">
-          Setting up worktree…
-          <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
+        <span
+          key={showCompacting ? "compacting" : "setup"}
+          className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
+        >
+          {showCompacting ? (
+            <>
+              <CompactingLabel />
+              <ActivityShimmerOverlay>
+                <CompactingLabel />
+              </ActivityShimmerOverlay>
+            </>
+          ) : (
+            <>
+              Setting up worktree…
+              <ActivityShimmerOverlay>Setting up worktree…</ActivityShimmerOverlay>
+            </>
+          )}
         </span>
       </div>
     </div>
@@ -1798,9 +1920,22 @@ function WorkingTimelineRow() {
 }
 
 function ThinkingTimelineRow() {
-  const { isPreparingWorktree } = use(TimelineRowActivityCtx);
-  // Reserve the activity row during setup so the handoff keeps the same height.
-  return <div className="min-h-7">{isPreparingWorktree ? null : <ThinkingActivityRow />}</div>;
+  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
+  // Reserve the activity row during setup/compaction so the handoff keeps the same height.
+  return (
+    <div className="min-h-7">
+      {isPreparingWorktree || isCompacting ? null : <ThinkingActivityRow />}
+    </div>
+  );
+}
+
+function CompactingLabel() {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Minimize2Icon aria-hidden="true" className="size-3" />
+      Compacting…
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1812,9 +1947,11 @@ function ThinkingTimelineRow() {
 const WorkGroupSection = memo(function WorkGroupSection({
   groupedEntries,
   isExpandedToolGroupEntry,
+  displayLabel,
 }: {
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
   isExpandedToolGroupEntry: boolean;
+  displayLabel?: string | undefined;
 }) {
   const { workspaceRoot } = use(TimelineRowCtx);
   const nonEmptyEntries = useMemo(
@@ -1846,6 +1983,7 @@ const WorkGroupSection = memo(function WorkGroupSection({
             key={workEntry.id}
             workEntry={workEntry}
             workspaceRoot={workspaceRoot}
+            displayLabel={displayLabel}
           />
         ))}
       </div>
@@ -3339,20 +3477,28 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
+  displayLabel?: string | undefined;
 }) {
-  const { workEntry, workspaceRoot } = props;
+  const { workEntry, workspaceRoot, displayLabel } = props;
   // Before any hooks: spawn CTA rows render their own component.
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }
-  return <PlainWorkEntryRow workEntry={workEntry} workspaceRoot={workspaceRoot} />;
+  return (
+    <PlainWorkEntryRow
+      workEntry={workEntry}
+      workspaceRoot={workspaceRoot}
+      displayLabel={displayLabel}
+    />
+  );
 });
 
 const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
+  displayLabel?: string | undefined;
 }) {
-  const { workEntry, workspaceRoot } = props;
+  const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const generatedImagePath = generatedImageWorkEntryPath(workEntry);
@@ -3374,12 +3520,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
   const hasSpecialToolIcon = toolPresentation !== null || workEntry.toolSurface !== undefined;
   const entryIconName = showWarningIndicator ? "x" : workEntryIconName(workEntry);
-  const heading = toolWorkEntryHeading(workEntry);
-  // Browser-automation rows label themselves; the raw detail (provider JSON)
-  // stays available behind the disclosure instead of trailing the heading.
-  const rawPreview = workEntry.previewAutomation
-    ? null
-    : workEntryPreview(workEntry, workspaceRoot);
+  const heading = displayLabel ?? toolWorkEntryHeading(workEntry);
+  // Direct rows and browser-automation rows already have authoritative labels;
+  // raw provider detail stays behind the disclosure instead of trailing them.
+  const rawPreview =
+    displayLabel !== undefined || workEntry.previewAutomation
+      ? null
+      : workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
     normalizeCompactToolLabel(rawPreview).toLowerCase() ===
@@ -3387,14 +3534,37 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       ? null
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
-  const displaySections = workEntryDisplaySections(workEntry, workspaceRoot);
+  const viewedImageLabels = new Set(
+    viewedImagePath
+      ? [viewedImagePath.trim(), formatWorkspaceRelativePath(viewedImagePath, workspaceRoot)]
+      : [],
+  );
+  const unfilteredDisplaySections = workEntryDisplaySections(workEntry, workspaceRoot);
+  const visibleCommand = workEntry.command?.trim();
+  const visibleCommandNeedsDisclosure =
+    displayLabel !== undefined &&
+    visibleCommand === displayLabel.trim() &&
+    (/[\r\n]|\s{2,}/u.test(visibleCommand) ||
+      workEntryDisplayAddsStructure(unfilteredDisplaySections));
+  const displaySections = unfilteredDisplaySections.filter((section) => {
+    const body = section.kind === "command" ? section.original : section.text;
+    const text = body.trim();
+    if (
+      section.kind === "command" &&
+      text === displayLabel?.trim() &&
+      !visibleCommandNeedsDisclosure
+    ) {
+      return false;
+    }
+    return !viewedImageLabels.has(text);
+  });
   const expandedBody = workEntryDisplayBody(displaySections);
   const previewRef = useRef<HTMLSpanElement>(null);
   const [previewClipped, setPreviewClipped] = useState(false);
   // Skip disclosure when the body only repeats the preview *and* the preview
-  // is fully visible. Keep expand when <pre> would preserve newlines/space runs
-  // that truncate (nowrap) collapses — equality after trim alone is not enough.
-  // Pretty-broken shell also needs a disclosure even when the one-liner fits.
+  // is fully visible. Keep expand when <pre> would preserve newlines or
+  // space runs that truncate (nowrap) collapses. Pretty-broken shell also
+  // needs a disclosure even when the one-liner fits.
   const collapsedPreview = preview === null ? null : preview.trim().replace(/\s+/g, " ");
   const bodyRepeatsPreview =
     expandedBody !== null && collapsedPreview !== null && expandedBody.trim() === collapsedPreview;
@@ -3411,11 +3581,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     return () => ro.disconnect();
   }, [bodyRepeatsPreview, preview]);
   const canExpand =
-    displaySections.length > 0 &&
-    (viewedImage !== null ||
-      !bodyRepeatsPreview ||
-      previewClipped ||
-      workEntryDisplayAddsStructure(displaySections));
+    viewedImage !== null ||
+    (displaySections.length > 0 &&
+      (!bodyRepeatsPreview || previewClipped || workEntryDisplayAddsStructure(displaySections)));
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
 
   const showDestructiveRowStyle =
@@ -3463,7 +3631,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     <div className="group/tool flex flex-col">
       <div
         className={cn(
-          "flex h-6 select-none items-center gap-2 rounded-md px-1 transition-colors duration-150 ease-out",
+          "flex min-h-6 select-none items-center gap-2 rounded-md px-1 transition-colors duration-150 ease-out",
           canExpand &&
             "cursor-pointer hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70 data-[state=open]:bg-accent/15",
         )}
@@ -3487,7 +3655,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           />
         </span>
         <p className="flex min-w-0 flex-1 items-baseline gap-2 text-[12px] leading-5">
-          <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+          <span
+            className={cn(
+              "min-w-0 shrink",
+              displayLabel !== undefined && !canExpand
+                ? "whitespace-pre-wrap break-words select-text"
+                : "truncate",
+              headingClass,
+            )}
+          >
+            {heading}
+          </span>
           {preview ? (
             <span ref={previewRef} className="min-w-0 flex-1 truncate text-secondary-label">
               {preview}
@@ -3528,7 +3706,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           ) : null}
         </span>
       </div>
-      {canExpand && displaySections.length > 0 ? (
+      {canExpand ? (
         <AnimatedHeight>
           {expanded ? (
             <>
@@ -3544,7 +3722,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                   />
                 </div>
               ) : null}
-              <ToolCallExpandedBody sections={displaySections} />
+              {displaySections.length > 0 ? (
+                <ToolCallExpandedBody sections={displaySections} />
+              ) : null}
             </>
           ) : null}
         </AnimatedHeight>

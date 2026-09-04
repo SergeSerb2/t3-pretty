@@ -26,34 +26,31 @@ const mobileEndorsementRows = [
     <div class="hero-grid" aria-hidden="true"></div>
 
     <div class="hero-float" aria-hidden="true">
-      <span class="hero-float-mark hf-claude" title="Claude Code">
-        <img src="/harnesses/claude-ai-icon.svg" alt="" />
-      </span>
-      <span class="hero-float-mark hf-codex" title="Codex">
-        <img src="/harnesses/openai_dark.svg" alt="" />
-      </span>
-      <span class="hero-float-mark hf-cursor" title="Cursor">
-        <img src="/harnesses/cursor_light.svg" alt="" />
-      </span>
-      <span class="hero-float-mark hf-grok" title="Grok">
-        <img src="/harnesses/grok-dark.svg" alt="" />
-      </span>
-      <span class="hero-float-mark hf-kimi" title="Kimi Code">
-        <img src="/harnesses/kimi.svg" alt="" />
-      </span>
+      {[
+        { key: "antigravity", title: "Antigravity", icon: "/harnesses/antigravity.png", cls: "hf-antigravity" },
+        { key: "claude", title: "Claude Code", icon: "/harnesses/claude-ai-icon.svg", cls: "hf-claude" },
+        { key: "codex", title: "Codex", icon: "/harnesses/openai_dark.svg", cls: "hf-codex" },
+        { key: "grok", title: "Grok", icon: "/harnesses/grok-dark.svg", cls: "hf-grok" },
+        { key: "cursor", title: "Cursor", icon: "/harnesses/cursor_light.svg", cls: "hf-cursor" },
+        { key: "kimi", title: "Kimi Code", icon: "/harnesses/kimi.svg", cls: "hf-kimi" },
+      ].map((m) => (
+        <span class:list={["hero-float-mark", m.cls]} title={m.title}>
+          <span class="hero-float-card"><img src={m.icon} alt="" /></span>
+        </span>
+      ))}
     </div>
 
     <div class="container hero-inner">
       <h1 class="hero-title display">
-        The open-source<br />control plane<br />for coding agents.
+        <span data-rise>The open-source</span><br /><span data-rise style="--d:90ms">control plane</span><br /><span data-rise style="--d:180ms">for coding agents.</span>
       </h1>
 
-      <p class="hero-sub">
-        Orchestrate Claude Code, Codex, Cursor, Grok, and Kimi from one surface.
+      <p class="hero-sub" data-rise style="--d:300ms">
+        Orchestrate Claude Code, Codex, Antigravity, Cursor, Grok, and Kimi from one surface.
         Bring your own subscription. Fork the whole thing.
       </p>
 
-      <div class="hero-actions">
+      <div class="hero-actions" data-rise style="--d:400ms">
         <a
           id="download-btn"
           href="https://github.com/pingdotgg/t3code/releases"
@@ -79,17 +76,20 @@ const mobileEndorsementRows = [
         </p>
       </div>
 
-      <div class="hero-preview">
-        <figure class="hero-screenshot-frame">
-          <img
-            src="/updated-screenshot.webp"
-            alt="T3 Code app showing multiple coding agent threads in one workspace"
-            width="2508"
-            height="1682"
-            loading="eager"
-            decoding="async"
-          />
-        </figure>
+      <!-- The rise wrapper is separate so its animated transform does not override the preview tilt. -->
+      <div data-rise style="--d:520ms">
+        <div class="hero-preview">
+          <figure class="hero-screenshot-frame">
+            <img
+              src="/app-desktop.webp"
+              alt="T3 Code with a settled thread beside its pull request diff"
+              width="2880"
+              height="1800"
+              loading="eager"
+              decoding="async"
+            />
+          </figure>
+        </div>
       </div>
     </div>
   </section>
@@ -186,9 +186,9 @@ const mobileEndorsementRows = [
       <div class="section-head">
         <h2>Bring your own sub</h2>
         <p>
-          T3 Code doesn't resell tokens. Plug in Claude Code, Codex,
-          Cursor, Grok, or Kimi with the credentials you already have — we orchestrate
-          them, you keep your plan.
+          T3 Code doesn't resell tokens. Plug in Claude Code, Codex, Cursor,
+          Grok, Antigravity, or Kimi with the credentials you already have. We
+          orchestrate them, you keep your plan.
         </p>
       </div>
 
@@ -219,6 +219,13 @@ const mobileEndorsementRows = [
           <div class="harness-meta">
             <div class="harness-name">Grok CLI</div>
             <div class="harness-tag">grok login</div>
+          </div>
+        </div>
+        <div class="harness">
+          <div class="harness-mark"><img src="/harnesses/antigravity.png" alt="" /></div>
+          <div class="harness-meta">
+            <div class="harness-name">Antigravity</div>
+            <div class="harness-tag">Google sign-in</div>
           </div>
         </div>
         <div class="harness">
@@ -479,6 +486,28 @@ const mobileEndorsementRows = [
 
   pauseOffscreenMarquee();
   init();
+
+  // Marks lean a few pixels toward the pointer, each by its own depth.
+  const hero = document.querySelector<HTMLElement>(".hero");
+  const field = document.querySelector<HTMLElement>(".hero-float");
+  const fine = window.matchMedia("(pointer: fine) and (prefers-reduced-motion: no-preference)").matches;
+  if (hero && field && fine) {
+    let raf = 0;
+    let nx = 0;
+    let ny = 0;
+    const apply = () => {
+      raf = 0;
+      field.style.setProperty("--px", `${(nx * 18).toFixed(1)}px`);
+      field.style.setProperty("--py", `${(ny * 14).toFixed(1)}px`);
+    };
+    hero.addEventListener("pointermove", (e) => {
+      const r = hero.getBoundingClientRect();
+      nx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+      ny = ((e.clientY - r.top) / r.height - 0.5) * 2;
+      if (!raf) raf = requestAnimationFrame(apply);
+    });
+    hero.addEventListener("pointerleave", () => { nx = 0; ny = 0; if (!raf) raf = requestAnimationFrame(apply); });
+  }
 </script>
 
 <style>
@@ -565,6 +594,8 @@ const mobileEndorsementRows = [
     max-width: 20ch;
     text-wrap: balance;
   }
+  /* Inline boxes ignore transforms, so each rising line needs its own block. */
+  .hero-title span { display: inline-block; }
 
   .hero-sub {
     color: var(--fg-muted);
@@ -648,51 +679,71 @@ const mobileEndorsementRows = [
   :global([data-platform="linux"]) .dl-icon--linux { display: block; }
   :global(html:not([data-platform])) .dl-icon--apple { display: block; }
 
-  /* Floating harness marks */
+  /* Floating harness marks. Six points on an ellipse around the hero copy:
+     two small at the top, two high and wide, two low and close. Symmetric,
+     and none of them touch the screenshot. The cards remain statically
+     rotated while the whole set leans a few pixels toward the pointer. */
   .hero-float {
     position: absolute;
     inset: 0;
     pointer-events: none;
     z-index: 1;
+    --px: 0px;
+    --py: 0px;
   }
 
   .hero-float-mark {
     position: absolute;
-    width: 96px;
-    height: 96px;
-    border-radius: 24px;
+    left: calc(50% + var(--x));
+    top: var(--y);
+    width: var(--s);
+    height: var(--s);
+    margin-left: calc(var(--s) / -2);
+    translate: calc(var(--px) * var(--depth)) calc(var(--py) * var(--depth));
+    transition: translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .hero-float-card {
     display: grid;
     place-items: center;
-    background: rgba(20, 20, 24, 0.9);
+    width: 100%;
+    height: 100%;
+    border-radius: 25%;
+    background: radial-gradient(circle at 30% 25%, var(--tint, rgba(255, 255, 255, 0.08)), rgba(20, 20, 24, 0.92) 65%);
     border: 1px solid var(--border);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     box-shadow:
       0 20px 48px -16px rgba(0, 0, 0, 0.65),
       0 2px 0 0 rgba(255, 255, 255, 0.04) inset;
+    transform: rotate(var(--rot));
   }
 
-  .hero-float-mark img {
-    width: 54px;
-    height: 54px;
+  .hero-float-card img {
+    width: 56%;
+    height: 56%;
     display: block;
     object-fit: contain;
   }
 
-  .hero-float-mark.hf-claude   { background: radial-gradient(circle at 30% 25%, rgba(217, 119, 87, 0.22), rgba(20, 20, 24, 0.92) 65%); top: 8%;  left: 7%;  animation-delay: 0s;    transform: rotate(-8deg); }
-  .hero-float-mark.hf-codex    { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 6%;  right: 7%; animation-delay: -2.5s; transform: rotate(6deg); }
-  .hero-float-mark.hf-cursor   { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 30%; right: 5%; animation-delay: -7s;   transform: rotate(-5deg); }
-  .hero-float-mark.hf-grok     { background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.08), rgba(20, 20, 24, 0.92) 65%); top: 52%; left: 6%;  animation-delay: -1.2s; transform: rotate(3deg); }
-  .hero-float-mark.hf-kimi     { background: radial-gradient(circle at 30% 25%, rgba(86, 168, 255, 0.14), rgba(20, 20, 24, 0.92) 65%); top: 52%; right: 6%; animation-delay: -3.8s; transform: rotate(-4deg); }
+  /* The Antigravity icon ships with its own rounded dark tile, so it fills the
+     card edge to edge instead of sitting inside it. */
+  .hf-antigravity .hero-float-card { background: #0d0d10; border-color: rgba(255, 255, 255, 0.1); }
+  .hf-antigravity .hero-float-card img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+
+  .hf-kimi        { --x: max(-300px, -19vw); --y: 20px;  --s: 64px; --rot: 6deg;  --depth: 0.6; --tint: rgba(86, 168, 255, 0.14); }
+  .hf-antigravity { --x: min(300px, 19vw);   --y: 20px;  --s: 64px; --rot: -5deg; --depth: 0.6; }
+  .hf-claude      { --x: max(-560px, -38vw); --y: 128px; --s: 96px; --rot: -8deg; --depth: 1.2; --tint: rgba(217, 119, 87, 0.22); }
+  .hf-codex       { --x: min(560px, 38vw);   --y: 128px; --s: 96px; --rot: 7deg;  --depth: 1.2; }
+  .hf-grok        { --x: max(-440px, -30vw); --y: 440px; --s: 80px; --rot: 4deg;  --depth: 0.9; }
+  .hf-cursor      { --x: min(440px, 30vw);   --y: 440px; --s: 80px; --rot: -5deg; --depth: 0.9; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-float-card { animation: none; transform: rotate(var(--rot)); }
+    .hero-float-mark { transition: none; }
+  }
 
   @media (max-width: 1180px) {
-    .hero-float-mark { width: 76px; height: 76px; border-radius: 20px; }
-    .hero-float-mark img { width: 42px; height: 42px; }
-    .hero-float-mark.hf-claude   { top: 4%;  left: 3%; }
-    .hero-float-mark.hf-codex    { top: 2%;  right: 3%; }
-    .hero-float-mark.hf-cursor   { top: 24%; right: 2%; }
-    .hero-float-mark.hf-grok     { top: 48%; left: 2%;  transform: rotate(3deg); }
-    .hero-float-mark.hf-kimi     { top: 48%; right: 2%; transform: rotate(-4deg); }
+    .hf-claude, .hf-codex { --s: 80px; }
+    .hf-grok, .hf-cursor { --s: 68px; --y: 420px; }
   }
 
   @media (max-width: 820px) {
@@ -709,84 +760,24 @@ const mobileEndorsementRows = [
       margin-bottom: 96px;
     }
 
-    .hero-float {
-      position: absolute;
-      inset: 0;
-      display: block;
-    }
-
-    .hero-float-mark {
-      position: absolute;
-      width: 78px;
-      height: 78px;
-      border-radius: 20px;
-    }
+    /* Three above the headline, Kimi beside the copy, and Cursor beside the CTA — keeps the center clear. */
+    .hf-claude { --x: calc(-50% + 49px); --y: 44px;  --s: 78px; --rot: -10deg; }
+    .hf-grok   { --x: 0px;                --y: 44px;  --s: 78px; --rot: -4deg; }
+    .hf-kimi   { --x: calc(50% - 43px);   --y: 240px; --s: 78px; --rot: 4deg; }
+    .hf-codex  { --x: calc(50% - 49px);   --y: 44px;  --s: 78px; --rot: 8deg; }
+    .hf-cursor { --x: calc(50% - 43px);   --y: 474px; --s: 78px; --rot: 7deg; }
 
     .hero-float-mark img {
       width: 44px;
       height: 44px;
     }
-
-    /* Three above the headline, Kimi beside the copy, and Cursor beside the CTA — keeps the center clear. */
-    .hero-float-mark.hf-claude {
-      top: 44px;
-      left: 10px;
-      transform: rotate(-10deg);
-    }
-
-    .hero-float-mark.hf-grok {
-      top: 44px;
-      left: calc(50% - 39px);
-      right: auto;
-      transform: rotate(-4deg);
-    }
-
-    .hero-float-mark.hf-kimi {
-      top: 240px;
-      right: 4px;
-      left: auto;
-      transform: rotate(4deg);
-    }
-
-    .hero-float-mark.hf-codex {
-      top: 44px;
-      right: 10px;
-      transform: rotate(8deg);
-    }
-
-    .hero-float-mark.hf-cursor {
-      top: 474px;
-      right: 4px;
-      left: auto;
-      transform: rotate(7deg);
-    }
   }
 
   @media (max-width: 340px) {
-    .hero-float-mark.hf-grok {
-      top: 57px;
-      left: calc(50% - 26px);
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-    }
-
-    .hero-float-mark.hf-kimi {
-      top: 220px;
-      right: 0;
-      left: auto;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-    }
-
-    .hero-float-mark.hf-cursor {
-      top: 580px;
-      right: 0;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-    }
+    .hf-grok   { --x: 0px;              --y: 57px;  --s: 52px; }
+    .hf-kimi   { --x: calc(50% - 26px); --y: 220px; --s: 52px; }
+    .hf-cursor { --x: calc(50% - 26px); --y: 580px; --s: 52px; }
+    .hf-antigravity { --s: 48px; }
 
     .hero-float-mark.hf-grok img,
     .hero-float-mark.hf-kimi img,
@@ -810,7 +801,7 @@ const mobileEndorsementRows = [
   .hero-screenshot-frame {
     position: relative;
     overflow: hidden;
-    aspect-ratio: 2508 / 1682;
+    aspect-ratio: 2880 / 1800;
     border-radius: 14px;
     background: #0a0a0c;
     box-shadow: 0 28px 64px -28px rgba(0, 0, 0, 0.75);
@@ -857,7 +848,7 @@ const mobileEndorsementRows = [
     flex-shrink: 0; width: 28px; height: 28px;
     display: grid; place-items: center;
   }
-  .harness-mark img { width: 22px; height: 22px; object-fit: contain; }
+  .harness-mark img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; }
 
   .harness-meta { flex: 1; min-width: 0; }
   .harness-name {
@@ -1271,6 +1262,10 @@ const mobileEndorsementRows = [
     margin-bottom: 24px;
   }
 
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
   @keyframes endorsementMarquee {
     from {
       transform: translateX(0);
@@ -1301,6 +1296,7 @@ const mobileEndorsementRows = [
     .harness-grid { grid-template-columns: 1fr 1fr; }
     .harness { border-right: 0; border-bottom: 1px solid var(--border); }
     .harness:nth-child(odd) { border-right: 1px solid var(--border); }
+    .harness:nth-child(even) { border-right: 0; }
     .git-inner { grid-template-columns: 1fr; gap: 40px; }
     .open-grid { grid-template-columns: 1fr; }
   }

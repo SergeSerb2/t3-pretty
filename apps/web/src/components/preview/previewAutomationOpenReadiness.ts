@@ -1,5 +1,6 @@
 import {
   FILL_PREVIEW_VIEWPORT,
+  type PreviewAutomationOperation,
   type PreviewAutomationOpenInput,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
@@ -29,18 +30,24 @@ export function shouldOpenPreviewMiniPlayer(
   return input.open ?? input.show ?? autoShowFloatingPreview;
 }
 
-/** Input actions that surface the floating player when their tab is hidden. */
-export const AUTO_PRESENT_AUTOMATION_OPERATIONS: ReadonlySet<string> = new Set([
-  "click",
-  "type",
-  "press",
-  "scroll",
-]);
+export function shouldAutoShowPreviewForAutomationUse(input: {
+  readonly operation: PreviewAutomationOperation;
+  readonly autoShowFloatingPreview: boolean;
+  readonly presentationSuppressed: boolean;
+}): boolean {
+  return (
+    input.operation !== "open" && input.autoShowFloatingPreview && !input.presentationSuppressed
+  );
+}
+
+export function explicitlySuppressesPreviewMiniPlayer(input: PreviewAutomationOpenInput): boolean {
+  return (input.open ?? input.show) === false;
+}
 
 /**
- * Whether an agent input action should pop the floating player so the human
- * can watch. Act → show, unless the user turned auto-show off, already sees
- * the tab (panel or player), or dismissed this tab's player.
+ * Adapter for T3 Pretty's per-tab presentation state. Upstream owns which
+ * automation operations auto-show; Pretty contributes whether this tab is
+ * already visible or its floating player has been dismissed.
  */
 export function shouldPresentAutomationActivity(input: {
   readonly operation: string;
@@ -50,12 +57,16 @@ export function shouldPresentAutomationActivity(input: {
   readonly miniPlayerTabId: string | null;
   readonly panelPreviewTabId: string | null;
 }): boolean {
-  if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(input.operation)) return false;
-  if (!input.autoShowFloatingPreview) return false;
-  if (input.dismissedTabIds.includes(input.tabId)) return false;
-  if (input.miniPlayerTabId === input.tabId) return false;
-  if (input.panelPreviewTabId === input.tabId) return false;
-  return true;
+  const presentationSuppressed =
+    input.dismissedTabIds.includes(input.tabId) ||
+    input.miniPlayerTabId === input.tabId ||
+    input.panelPreviewTabId === input.tabId;
+
+  return shouldAutoShowPreviewForAutomationUse({
+    operation: input.operation as PreviewAutomationOperation,
+    autoShowFloatingPreview: input.autoShowFloatingPreview,
+    presentationSuppressed,
+  });
 }
 
 export function previewAutomationOpenNeedsOverlay(

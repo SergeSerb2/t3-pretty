@@ -1,5 +1,5 @@
 import type { ProviderDriverKind, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useEffect } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
   Menu,
@@ -13,6 +13,7 @@ import {
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { resolveRuntimeModeOption, runtimeModeOptionsForProvider } from "./runtimeModeOptions";
+import { useComposerMenuState } from "./useComposerMenuState";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   provider: ProviderDriverKind;
@@ -26,15 +27,33 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showAutoCreatePullRequestToggle: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * The resting strip keeps this menu mounted out of flow while every block
+   * fits inline. Its portaled popup would outlive that transition, so an
+   * open menu closes when its trigger hides.
+   */
+  hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onToggleAutoCreatePullRequest: () => void;
 }) {
   const size = props.size ?? "sm";
   const showAutoPrDot = props.showAutoCreatePullRequestToggle && props.autoCreatePullRequest;
+  const [uncontrolledOpen, setUncontrolledOpen] = useComposerMenuState(props.hidden);
+  const open = !props.hidden && (props.open ?? uncontrolledOpen);
+  const setOpen = (nextOpen: boolean) => {
+    setUncontrolledOpen(nextOpen);
+    props.onOpenChange?.(nextOpen);
+  };
+
+  useEffect(() => {
+    if (props.hidden && (props.open ?? uncontrolledOpen)) {
+      props.onOpenChange?.(false);
+    }
+  }, [props.hidden, props.open, props.onOpenChange, uncontrolledOpen]);
 
   return (
-    <Menu open={props.open} onOpenChange={props.onOpenChange}>
+    <Menu open={open} onOpenChange={setOpen}>
       <MenuTrigger
         render={
           <ComposerControl

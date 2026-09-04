@@ -21,6 +21,7 @@ import {
   type ServerProviderSlashCommand,
   type ServerProviderModel,
   type ServerProviderState,
+  type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
@@ -41,6 +42,11 @@ export const NATIVE_RESUME_SLASH_COMMAND = {
   name: "resume",
   description: "Resume a native provider session in a new T3 thread",
   input: { hint: "Native session ID" },
+} satisfies ServerProviderSlashCommand;
+
+export const COMPACT_SLASH_COMMAND = {
+  name: "compact",
+  description: "Summarize the conversation and reduce context usage",
 } satisfies ServerProviderSlashCommand;
 
 export interface CommandResult {
@@ -71,6 +77,7 @@ export interface ProviderProbeResult {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProviderAuth;
   readonly message?: string;
+  readonly usageLimits?: ServerProviderUsageLimits;
 }
 
 export interface ServerProviderPresentation {
@@ -386,6 +393,7 @@ export function buildServerProvider(input: {
       .slice(0, SERVER_PROVIDER_SLASH_COMMANDS_MAX_ITEMS)
       .map(boundedProviderSlashCommand),
     skills: (input.skills ?? []).slice(0, SKILL_STATE_MAX_ITEMS).map(boundedProviderSkill),
+    ...(input.probe.usageLimits ? { usageLimits: input.probe.usageLimits } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
   };
 }

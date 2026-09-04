@@ -16,6 +16,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInteractionOpaquePayload, ProviderUserInputAnswers } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -331,6 +332,8 @@ export type ThreadStartedPayload = typeof ThreadStartedPayload.Type;
 
 const ThreadStateChangedPayload = Schema.Struct({
   state: RuntimeThreadState,
+  beforeTokens: Schema.optional(NonNegativeInt),
+  afterTokens: Schema.optional(NonNegativeInt),
   detail: Schema.optional(Schema.Unknown),
 });
 export type ThreadStateChangedPayload = typeof ThreadStateChangedPayload.Type;
@@ -532,8 +535,13 @@ const UserInputQuestionOption = Schema.Struct({
   label: TrimmedNonEmptyStringSchema.check(
     Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_LABEL_MAX_LENGTH),
   ),
-  description: TrimmedNonEmptyStringSchema.check(
+  description: Schema.String.check(
     Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH),
+  ),
+  value: Schema.optional(
+    Schema.String.check(
+      Schema.isMaxLength(PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH),
+    ),
   ),
 });
 export type UserInputQuestionOption = typeof UserInputQuestionOption.Type;
@@ -551,23 +559,25 @@ export const UserInputQuestion = Schema.Struct({
   options: Schema.Array(UserInputQuestionOption).check(
     Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS),
   ),
+  allowCustomAnswer: Schema.optional(Schema.Boolean),
   multiSelect: Schema.optional(Schema.Boolean).pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
   ),
 });
 export type UserInputQuestion = typeof UserInputQuestion.Type;
 
-const UserInputRequestedPayload = Schema.Struct({
+export const UserInputRequestedPayload = Schema.Struct({
   questions: Schema.Array(UserInputQuestion).check(
     Schema.isMaxLength(PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS),
   ),
+  responseMode: Schema.optional(Schema.Literal("message")),
 }).check(
   Schema.makeFilter(({ questions }) => {
     let totalChars = 0;
     for (const question of questions) {
       totalChars += question.id.length + question.header.length + question.question.length;
       for (const option of question.options) {
-        totalChars += option.label.length + option.description.length;
+        totalChars += option.label.length + option.description.length + (option.value?.length ?? 0);
       }
       if (totalChars > PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS) {
         return `User input request must not exceed ${PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS} characters.`;
@@ -824,8 +834,12 @@ const AccountUpdatedPayload = Schema.Struct({
 });
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
+/**
+ * Adapters normalise their native rate-limit payload at the boundary so the
+ * consumer that folds it into the provider snapshot never sees driver shapes.
+ */
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
-  rateLimits: Schema.Unknown,
+  limits: ProviderUsageLimitsUpdate,
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 

@@ -103,6 +103,27 @@ export function upsertProviderWorkspaceSnapshot(
   };
 }
 
+const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
+  if (provider.driver !== ProviderDriverKind.make("antigravity")) {
+    return true;
+  }
+
+  if (!provider.enabled || provider.auth.status === "unauthenticated") {
+    return false;
+  }
+
+  // Antigravity replaces its inventory after successful catalog discovery.
+  // Its local health check does not authenticate or discover models.
+  const isPendingAntigravityAuthentication =
+    provider.status === "warning" && provider.auth.status === "unknown";
+  const isPendingInitialProbe =
+    provider.enabled && !provider.installed && provider.status === "warning";
+  const didInstalledProviderProbeFail = provider.installed && provider.status === "error";
+  return (
+    isPendingAntigravityAuthentication || isPendingInitialProbe || didInstalledProviderProbeFail
+  );
+};
+
 const mergeProviderModels = (
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
@@ -142,7 +163,9 @@ export const mergeProviderSnapshot = (
     ? nextProvider
     : {
         ...nextProvider,
-        models: mergeProviderModels(previousProvider.models, nextProvider.models),
+        models: shouldRetainMissingProviderModels(nextProvider)
+          ? mergeProviderModels(previousProvider.models, nextProvider.models)
+          : nextProvider.models,
         ...(nextProvider.workspaceSnapshots !== undefined
           ? { workspaceSnapshots: nextProvider.workspaceSnapshots }
           : previousProvider.workspaceSnapshots !== undefined

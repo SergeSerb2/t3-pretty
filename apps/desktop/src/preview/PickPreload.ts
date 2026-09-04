@@ -1,4 +1,4 @@
-// @effect-diagnostics globalDate:off - This isolated Electron preload does not run inside an Effect runtime.
+// @effect-diagnostics globalDate:off globalTimers:off - This isolated Electron preload does not run inside an Effect runtime.
 import { ipcRenderer } from "electron";
 import { getElementContext } from "react-grab/primitives";
 import {
@@ -50,6 +50,8 @@ const PRIMARY = "var(--t3-primary)";
 const PRIMARY_FILL = "color-mix(in srgb, var(--t3-primary) 10%, transparent)";
 const MAX_MARQUEE_ELEMENTS = 20;
 const MAX_MARQUEE_SCANNED_ELEMENTS = 5_000;
+/** Upper bound on one element's React context lookup during submit. */
+const ELEMENT_CONTEXT_TIMEOUT_MS = 5_000;
 const CONTENT_LAYER_Z_INDEX = 1;
 const CHROME_LAYER_Z_INDEX = 10;
 
@@ -309,30 +311,74 @@ function toStackFrame(frame: {
   };
 }
 
-async function captureElement(element: Element): Promise<PickedElementPayload | null> {
+/**
+ * Resolves to `null` instead of hanging when `promise` outlives `millis`.
+ * `getElementContext` walks the inspected page's React internals, and some
+ * pages leave it pending forever. Without a bound, the whole submit chain
+ * stalls and the overlay sits on "Capturing…".
+ */
+function withCaptureTimeout<A>(promise: Promise<A>, millis: number): Promise<A | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), millis);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Truncation for the DOM-only preview used when React context is unavailable. */
+const HTML_PREVIEW_MAX_CHARS = 500;
+
+/**
+ * Describes a picked element. The React context lookup can stall or throw on
+ * some pages, so the element is never dropped: without context it still
+ * carries its tag, a short HTML preview, and its rect so the crop stays on the
+ * pick instead of falling back to the whole viewport.
+ */
+async function captureElement(element: Element): Promise<PickedElementPayload> {
+  const base = {
+    pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
+    pageTitle: document.title
+      ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
+      : null,
+    tagName: truncate(element.tagName.toLowerCase(), PICKED_ELEMENT_MAX_TAG_NAME_LENGTH),
+    pickedAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
+  };
   try {
-    const context = await getElementContext(element);
-    const stack = (context.stack ?? []).slice(0, PICKED_ELEMENT_MAX_STACK_FRAMES).map(toStackFrame);
-    return {
-      pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
-      pageTitle: document.title
-        ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
-        : null,
-      tagName: truncate(element.tagName.toLowerCase(), PICKED_ELEMENT_MAX_TAG_NAME_LENGTH),
-      selector: truncateNullable(context.selector, PICKED_ELEMENT_MAX_SELECTOR_LENGTH),
-      htmlPreview: truncate(context.htmlPreview ?? "", PICKED_ELEMENT_MAX_HTML_LENGTH),
-      componentName: truncateNullable(
-        context.componentName,
-        PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH,
-      ),
-      source: stack[0] ?? null,
-      stack,
-      styles: truncate(context.styles ?? "", PICKED_ELEMENT_MAX_STYLES_LENGTH),
-      pickedAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
-    };
+    const context = await withCaptureTimeout(
+      Promise.resolve(getElementContext(element)),
+      ELEMENT_CONTEXT_TIMEOUT_MS,
+    );
+    if (context) {
+      const stack = (context.stack ?? [])
+        .slice(0, PICKED_ELEMENT_MAX_STACK_FRAMES)
+        .map(toStackFrame);
+      return {
+        ...base,
+        selector: truncateNullable(context.selector, PICKED_ELEMENT_MAX_SELECTOR_LENGTH),
+        htmlPreview: truncate(context.htmlPreview ?? "", PICKED_ELEMENT_MAX_HTML_LENGTH),
+        componentName: truncateNullable(
+          context.componentName,
+          PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH,
+        ),
+        source: stack[0] ?? null,
+        stack,
+        styles: truncate(context.styles ?? "", PICKED_ELEMENT_MAX_STYLES_LENGTH),
+      };
+    }
   } catch {
-    return null;
+    // Fall through to the DOM-only payload.
   }
+  return {
+    ...base,
+    selector: null,
+    htmlPreview: element.outerHTML.slice(0, HTML_PREVIEW_MAX_CHARS),
+    componentName: null,
+    source: null,
+    stack: [],
+    styles: "",
+  };
 }
 
 function createButton(label: string, title: string): HTMLButtonElement {
@@ -1332,12 +1378,20 @@ function startAnnotation(): void {
     pendingCapture = true;
     submit.disabled = true;
     submit.textContent = "Capturing…";
+    // Snapshot everything the annotation will carry before the capture runs.
+    // The element context lookup can take up to its timeout, and the user can
+    // keep editing meanwhile; the annotation must describe what they submitted.
+    const submittedComment = comment.value.trim();
+    const submittedRegions = [...regions];
+    const submittedStrokes = [...strokes];
+    const submittedStyleChanges = boundedStyleChanges().map((change) => ({ ...change }));
     void Promise.all(
       Array.from(selected.values()).map(async (target) => {
         const element = await captureElement(target.element);
-        if (!element) return null;
-        for (const change of styleChanges.values()) {
-          if (change.targetId === target.id) change.selector = element.selector;
+        for (const change of submittedStyleChanges) {
+          if (change.targetId === target.id && element.selector !== null) {
+            change.selector = element.selector;
+          }
         }
         return {
           id: target.id,
@@ -1345,32 +1399,42 @@ function startAnnotation(): void {
           rect: rectFromDomRect(target.element.getBoundingClientRect()),
         };
       }),
-    ).then((captured) => {
-      const elements = captured.filter((target) => target !== null);
-      const annotation: PreviewAnnotationPayload = {
-        id: nextId("annotation"),
-        pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
-        pageTitle: document.title
-          ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
-          : null,
-        comment: truncate(comment.value.trim(), PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH),
-        elements,
-        regions: [...regions],
-        strokes: [...strokes],
-        styleChanges: boundedStyleChanges(),
-        screenshot: null,
-        createdAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
-      };
-      editor.style.display = "none";
-      toolbar.style.display = "none";
-      hoverOutline.style.display = "none";
-      const screenshotRect = unionRects([
-        ...elements.map((target) => target.rect),
-        ...regions.map((region) => region.rect),
-        ...strokes.map((stroke) => stroke.bounds),
-      ]);
-      ipcRenderer.send(ELEMENT_PICKED_CHANNEL, annotation, screenshotRect, submission);
-    });
+    )
+      .then((captured) => {
+        // The overlay may have been cancelled or replaced while the capture
+        // ran. A late submit must not deliver into the next pick's listener.
+        if (finished) return;
+        const elements = captured.filter((target) => target !== null);
+        const annotation: PreviewAnnotationPayload = {
+          id: nextId("annotation"),
+          pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
+          pageTitle: document.title
+            ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
+            : null,
+          comment: truncate(submittedComment, PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH),
+          elements,
+          regions: submittedRegions,
+          strokes: submittedStrokes,
+          styleChanges: submittedStyleChanges,
+          screenshot: null,
+          createdAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
+        };
+        editor.style.display = "none";
+        toolbar.style.display = "none";
+        hoverOutline.style.display = "none";
+        const screenshotRect = unionRects([
+          ...elements.map((target) => target.rect),
+          ...submittedRegions.map((region) => region.rect),
+          ...submittedStrokes.map((stroke) => stroke.bounds),
+        ]);
+        ipcRenderer.send(ELEMENT_PICKED_CHANNEL, annotation, screenshotRect, submission);
+      })
+      .catch(() => {
+        // Last resort. Main is waiting on this message, so hand it an empty
+        // pick rather than leaving the button stuck on "Capturing…" and the
+        // renderer's pick promise pending. teardown is a no-op once finished.
+        teardown(true);
+      });
   };
   submit.addEventListener("click", () => submitAnnotation("attach"));
   root.addEventListener("keydown", (event) => {

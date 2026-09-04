@@ -22,6 +22,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -428,6 +429,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     checkedAt,
     models,
     skills,
+    slashCommands: [COMPACT_SLASH_COMMAND],
     probe: {
       installed: true,
       version,

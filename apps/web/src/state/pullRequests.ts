@@ -27,8 +27,10 @@ import {
 import { useRetryInterruptedQuery } from "./query";
 
 export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connectionAtomRuntime);
-export const linkedPullRequestDetailAtom =
-  createLinkedPullRequestSummaryAtomFamily(connectionAtomRuntime);
+export const linkedPullRequestDetailAtom = createLinkedPullRequestSummaryAtomFamily(
+  connectionAtomRuntime,
+  pullRequestEnvironment.refreshes,
+);
 
 const MERGED_PULL_REQUEST_QUERY_IDLE_TTL_MS = 5 * 60_000;
 
@@ -160,6 +162,25 @@ const usePullRequestStatsQuery = createMergedEnvironmentQuery(
   "web-pull-requests:list-stats",
   pullRequestEnvironment.listStats,
 );
+
+const usePullRequestTurnRefreshQuery = createMergedEnvironmentQuery(
+  "web-pull-requests:turn-refreshes",
+  ({ environmentId }: EnvironmentQueryTarget<Readonly<Record<string, never>>>) =>
+    pullRequestEnvironment.refreshes({ environmentId, input: {} }),
+);
+
+export function usePullRequestTurnRefreshes(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<readonly [EnvironmentId, number]> {
+  return usePullRequestTurnRefreshQuery(
+    environmentIds.map((environmentId) => ({ environmentId, input: {} })),
+  ).values;
+}
+
+export function usePullRequestTurnRefresh(environmentId: EnvironmentId): number | null {
+  const result = useAtomValue(pullRequestEnvironment.refreshes({ environmentId, input: {} }));
+  return Option.getOrNull(AsyncResult.value(result));
+}
 
 export interface MergedPullRequestListView {
   readonly data: MergedPullRequestList | null;

@@ -84,6 +84,7 @@ import type {
 import {
   buildModelOptions,
   groupByProvider,
+  isModelSelectionUnavailable,
   type ModelOption,
   resolveThreadProviderGroups,
 } from "../../lib/modelOptions";
@@ -144,13 +145,8 @@ export interface ThreadComposerProps {
   readonly connectionState: RemoteClientConnectionState;
   readonly connectionError: string | null;
   readonly environmentLabel: string | null;
-  /**
-   * Message sync phase for the selected thread (drives the status pill):
-   * "loading" = first fetch, nothing to show yet; "syncing" = cached messages
-   * are on screen while they reconcile with the server.
-   */
-  readonly threadSyncPhase?: "loading" | "syncing" | null;
   readonly selectedThread: OrchestrationThreadShell;
+  readonly hasCompactableConversation: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
   readonly headQueuedMessageId: MessageId | null;
@@ -289,7 +285,7 @@ export function ComposerSurface(props: {
 }
 
 type ComposerStatusPillState = {
-  readonly kind: "unavailable" | "reconnecting" | "syncing";
+  readonly kind: "unavailable" | "reconnecting";
   readonly label: string;
 };
 
@@ -297,7 +293,6 @@ function composerConnectionStatus(input: {
   readonly connectionError: string | null;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
-  readonly threadSyncPhase?: "loading" | "syncing" | null;
 }): ComposerStatusPillState | null {
   const environmentLabel = input.environmentLabel ?? "Environment";
 
@@ -323,18 +318,6 @@ function composerConnectionStatus(input: {
     case "available":
       return { kind: "unavailable", label: `${environmentLabel} is not connected` };
     case "connected":
-      break;
-  }
-
-  // Connected: the pill is the single loading/sync indicator. One stable
-  // label per open — "Loading" when starting from scratch, "Syncing" when
-  // cached messages are already visible.
-  switch (input.threadSyncPhase) {
-    case "loading":
-      return { kind: "syncing", label: "Loading messages..." };
-    case "syncing":
-      return { kind: "syncing", label: "Syncing messages..." };
-    default:
       return null;
   }
 }
@@ -343,7 +326,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
   readonly onPress: () => void;
   readonly status: ComposerStatusPillState;
 }) {
-  const isReconnecting = props.status.kind !== "unavailable";
+  const isReconnecting = props.status.kind === "reconnecting";
   return (
     <Animated.View
       key={props.status.kind}
@@ -405,6 +388,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const sendStartedAtRef = useRef(0);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
+  const modelUnavailable =
+    props.connectionState === "connected" &&
+    isModelSelectionUnavailable(props.serverConfig, props.selectedThread.modelSelection);
   const isDispatching = isSending || pendingPreviews.length > 0 || props.isDeliveringQueuedMessage;
   const [composerSelection, setComposerSelection] = useState(() => ({
     start: props.draftMessage.length,
@@ -432,7 +418,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   // Recording can make the native editor resign first responder; keep the
   // toolbar visible so the Stop control remains reachable.
   const isExpanded = isFocused || settingsSheetPresentation.isActive || dictation.active;
-  const canSend = hasContent;
+  const canSend = hasContent && !modelUnavailable;
   const stripAttachments = useMemo(() => {
     const attachedUris = new Set(props.draftAttachments.map((image) => image.previewUri));
     return [
@@ -882,6 +868,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     () => ({
       ownerId: settingsOwnerId,
       environmentId: props.environmentId,
+      providerInstanceId: currentModelSelection.instanceId,
       providerGroups: threadProviderGroups,
       selectedModel: currentModelSelection,
       onSelectModel: handleSelectModelOption,
@@ -991,6 +978,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             status={visibleConnectionStatus}
             onPress={props.onReconnectEnvironment}
           />
+        ) : null}
+
+        {modelUnavailable ? (
+          <Pressable accessibilityRole="button" className="px-3 py-2" onPress={openSettings}>
+            <Text className="text-xs text-foreground">Model unavailable. Open model settings.</Text>
+          </Pressable>
         ) : null}
 
         <ComposerSurface

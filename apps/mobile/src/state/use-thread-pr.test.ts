@@ -58,4 +58,13 @@ describe("presentThreadPr", () => {
     });
     expect(presentThreadPr(pullRequest, undefined).automatedReview).toBeNull();
   });
+
+  it("uses gray for draft pull requests", () => {
+    expect(
+      presentThreadPr({ ...pullRequest, state: "open", isDraft: true }, undefined),
+    ).toMatchObject({
+      accessibilityLabel: "#3774 pull request draft",
+      textClassName: "text-adaptive-zinc-500-400",
+    });
+  });
 });

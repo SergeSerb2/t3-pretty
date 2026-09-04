@@ -71,6 +71,22 @@ describe("lookupRate", () => {
   });
 });
 
+describe("lookupRate", () => {
+  it("prices a bracketed context-tier variant at the base model's rate", () => {
+    const table = parseRateTable({
+      "claude-fable-5-1": {
+        input_cost_per_token: 1e-5,
+        output_cost_per_token: 2.5e-7,
+      },
+    });
+
+    expect(lookupRate(table, "claude-fable-5-1[1m]")).toEqual(
+      lookupRate(table, "claude-fable-5-1"),
+    );
+    expect(lookupRate(table, "anthropic/Claude-Fable-5-1[1m]")).toBeNull();
+  });
+});
+
 describe("priceUsage", () => {
   it("charges Kimi uncached input, cache reads, cache writes, and output separately", () => {
     const priced = priceUsage(emptyTable, "k3", totals, null);
