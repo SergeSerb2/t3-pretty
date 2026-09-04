@@ -12,7 +12,7 @@
     "test": "vp test run --passWithNoTests --project unit"
   },
   "dependencies": {
-    "@base-ui/react": "^1.4.1",
+    "@base-ui/react": "1.7.0",
     "@clerk/electron": "catalog:",
     "@clerk/react": "catalog:",
     "@codemirror/commands": "^6.10.4",
