@@ -345,9 +345,12 @@ fi
 git config user.name "t3-pretty-mobile[bot]"
 git config user.email "t3-pretty-bot@users.noreply.cursor.com"
 git commit --no-verify -m "chore(mobile): record ${flavor} Android fingerprint"
+# Refresh Origin auth after the potentially long native build, before pushing.
+node scripts/fork/origin-forge.mjs setup-ci
+# Origin's credential helper inherits the environment from git.
+unset FORCE_COLOR NO_COLOR
 branch="automation/android-${flavor}-fingerprint-${fingerprint:0:12}"
 git push --force origin "HEAD:refs/heads/$branch"
-node scripts/fork/origin-forge.mjs setup-ci
 body="$tmp/android-fingerprint.md"
 printf '%s\n' \
   "Records the submitted ${flavor} Android runtime fingerprint as release evidence. Later compatible releases can then avoid rebuilding the Play binary." \

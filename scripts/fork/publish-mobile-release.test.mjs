@@ -799,7 +799,7 @@ describe("iOS embedded runtime fingerprint", () => {
 describe("iOS fingerprint recording", () => {
   it("retries the bookkeeping branch push once", () => {
     const snippet = mobileRelease.match(
-      /branch="automation\/ios-fingerprint-[^\n]+\n[\s\S]*?origin-forge\.mjs setup-ci/,
+      /node scripts\/fork\/origin-forge\.mjs setup-ci\n[\s\S]*?branch="automation\/ios-fingerprint-[^\n]+\n[\s\S]*?\n\}/,
     )?.[0];
     assert.ok(snippet, "fingerprint branch push missing");
 
@@ -810,7 +810,7 @@ describe("iOS fingerprint recording", () => {
         const script = [
           "set -e",
           "git_attempts=0",
-          `git() { git_attempts=$((git_attempts + 1)); printf 'push\\n' >> "$TEST_LOG"; (( git_attempts > FAILURES )); }`,
+          `git() { [[ -f "$TEST_LOG" && -z "\${FORCE_COLOR+x}" && -z "\${NO_COLOR+x}" ]] || return 90; git_attempts=$((git_attempts + 1)); printf 'push\\n' >> "$TEST_LOG"; (( git_attempts > FAILURES )); }`,
           "sleep() { :; }",
           `node() { printf 'setup-ci\\n' >> "$TEST_LOG"; }`,
           "fingerprint=fe8118329f9969e50fad032c7ea3c536e6ea6967",
@@ -818,7 +818,13 @@ describe("iOS fingerprint recording", () => {
         ].join("\n");
         const result = NodeChildProcess.spawnSync("bash", ["-c", script], {
           encoding: "utf8",
-          env: { ...process.env, FAILURES: String(failures), TEST_LOG: log },
+          env: {
+            ...process.env,
+            FORCE_COLOR: "1",
+            NO_COLOR: "1",
+            FAILURES: String(failures),
+            TEST_LOG: log,
+          },
         });
         return { result, calls: NodeFS.readFileSync(log, "utf8").trim().split("\n") };
       } finally {
@@ -828,11 +834,11 @@ describe("iOS fingerprint recording", () => {
 
     const recovered = run(1);
     assert.equal(recovered.result.status, 0);
-    assert.deepEqual(recovered.calls, ["push", "push", "setup-ci"]);
+    assert.deepEqual(recovered.calls, ["setup-ci", "push", "push"]);
     assert.include(recovered.result.stdout, "Fingerprint branch push failed; retrying once.");
 
     const failed = run(2);
     assert.notEqual(failed.result.status, 0);
-    assert.deepEqual(failed.calls, ["push", "push"]);
+    assert.deepEqual(failed.calls, ["setup-ci", "push", "push"]);
   });
 });
