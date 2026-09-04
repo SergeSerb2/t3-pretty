@@ -86,8 +86,8 @@ const screenshot = await getImage({
                 srcset="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
               />
               <img
-                src={desktopScreenshot.src}
-                srcset={`${screenshot.srcSet.attribute}, ${desktopScreenshot.src} ${desktopScreenshot.width}w`}
+                src={screenshot.src}
+                srcset={screenshot.srcSet.attribute}
                 sizes="(max-width: 960px) min(864px, calc(100vw - 20px)), min(1180px, calc(100vw - 60px))"
                 alt="T3 Code with a settled thread beside its pull request diff"
                 width={desktopScreenshot.width}
