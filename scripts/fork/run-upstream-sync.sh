@@ -80,6 +80,24 @@ origin_git() {
   fi
 }
 
+stage_resolution_cache_entries() {
+  local replace_cache="$1"
+  shift
+  local entry entry_name blob
+  for entry in "$@"; do
+    entry_name="${entry##*/}"
+    if [[ "$replace_cache" != "true" && "$entry_name" =~ ^[0-9a-f]{64}[.]json$ ]] &&
+      git ls-files --error-unmatch -- "$entry_name" >/dev/null 2>&1; then
+      # The fetched branch already contains a reviewed artifact for this exact
+      # conflict key. A stale workspace cache must never update it before the
+      # authoritative branch can be restored by load_resolution_cache.
+      continue
+    fi
+    blob="$(git hash-object -w "$entry")"
+    git update-index --add --cacheinfo 100644 "$blob" "$entry_name"
+  done
+}
+
 # macos-release reuses the workspace. A previous sync that died mid-merge
 # leaves MERGE_HEAD; `git checkout -B main` then fails in ~2s and every
 # later nightly opens another blocked PR instead of finishing the merge.
@@ -156,11 +174,7 @@ checkpoint_resolutions() {
       git read-tree "origin/$RESOLUTION_CACHE_BRANCH"
     fi
   fi
-  local entry blob
-  for entry in "${entries[@]}"; do
-    blob="$(git hash-object -w "$entry")"
-    git update-index --add --cacheinfo 100644 "$blob" "$(basename "$entry")"
-  done
+  stage_resolution_cache_entries "$replace_cache" "${entries[@]}"
   local tree
   tree="$(git write-tree)"
   unset GIT_INDEX_FILE

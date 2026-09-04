@@ -210,6 +210,51 @@ describe("T3 Pretty upstream conflict resolver", () => {
     }
   });
 
+  it("keeps authoritative entries during the startup cache checkpoint", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-startup-cache-precedence-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      const collision = `${"c".repeat(64)}.json`;
+      const localOnly = `${"d".repeat(64)}.json`;
+      const activeTag = "active-upstream-tag";
+      NodeFS.writeFileSync(NodePath.join(directory, collision), "reviewed remote\n");
+      NodeFS.writeFileSync(NodePath.join(directory, activeTag), "older-nightly\n");
+      git("add", collision, activeTag);
+
+      NodeFS.writeFileSync(NodePath.join(directory, collision), "stale local\n");
+      NodeFS.writeFileSync(NodePath.join(directory, localOnly), "active local progress\n");
+      NodeFS.writeFileSync(NodePath.join(directory, activeTag), "current-nightly\n");
+
+      const syncScript = NodeFS.readFileSync(syncScriptPath, "utf8");
+      const functionSource = syncScript.match(
+        /stage_resolution_cache_entries\(\) \{\n[\s\S]*?\n\}/u,
+      )?.[0];
+      assert.isString(functionSource);
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          `${functionSource}\nstage_resolution_cache_entries false "$1" "$2" "$3"`,
+          "startup-cache-precedence-test",
+          NodePath.join(directory, collision),
+          NodePath.join(directory, localOnly),
+          NodePath.join(directory, activeTag),
+        ],
+        { cwd: directory, encoding: "utf8" },
+      );
+
+      assert.equal(git("show", `:${collision}`), "reviewed remote\n");
+      assert.equal(git("show", `:${localOnly}`), "active local progress\n");
+      assert.equal(git("show", `:${activeTag}`), "current-nightly\n");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, '["diff", "--name-only", "--diff-filter=U", "-z"]');
