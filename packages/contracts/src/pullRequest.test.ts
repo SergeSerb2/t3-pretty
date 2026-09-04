@@ -17,6 +17,7 @@ const decodeListResult = Schema.decodeUnknownSync(PullRequestListResult);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
 const decodeSubmitReview = Schema.decodeUnknownSync(PullRequestSubmitReviewInput);
+const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },
@@ -225,7 +226,6 @@ describe("PullRequestComment reactions", () => {
 });
 
 describe("updating a branch that has fallen behind its base", () => {
-  const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
   const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
 
   it("carries the way the branch should be brought up to date", () => {
@@ -249,7 +249,6 @@ describe("updating a branch that has fallen behind its base", () => {
 });
 
 describe("leaving a merge for the host to make once it is ready", () => {
-  const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
   const ref = { projectId: "project-1", repository: "acme/web", number: 7 };
 
   it("carries the strategy the deferred merge should use, as merging now does", () => {
@@ -260,6 +259,33 @@ describe("leaving a merge for the host to make once it is ready", () => {
 
   it("takes the arming back without a strategy, because there is nothing to choose", () => {
     expect(decodeAction({ ...ref, action: "disable-auto-merge" }).mergeMethod).toBeUndefined();
+  });
+});
+
+describe("reverting a merged pull request", () => {
+  it("carries the revert action without merge options", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "revert",
+    });
+
+    expect(action.action).toBe("revert");
+    expect(action.mergeMethod).toBeUndefined();
+  });
+});
+
+describe("approving fork workflows", () => {
+  it("carries workflow approval as its own action", () => {
+    const action = decodeAction({
+      projectId: "project-1",
+      repository: "acme/web",
+      number: 7,
+      action: "approve-workflows",
+    });
+
+    expect(action.action).toBe("approve-workflows");
   });
 });
 

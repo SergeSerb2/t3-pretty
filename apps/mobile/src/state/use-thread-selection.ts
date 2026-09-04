@@ -32,7 +32,6 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
   const routeParams = params ?? {};
   const routeThreadRef = useMemo<ScopedThreadRef | null>(() => {
@@ -79,11 +78,7 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
       selectedThreadDetail,
       localStartingShell,
     );
-    if (
-      resolvedThread === null ||
-      detailFallbackRef === null ||
-      selectedThreadDetail === null
-    ) {
+    if (resolvedThread === null || detailFallbackRef === null || selectedThreadDetail === null) {
       return resolvedThread;
     }
 

@@ -74,6 +74,7 @@ import { hasWideMarkdownBlock } from "../../lib/wideMarkdownBlocks";
 import {
   hasNativeSelectableMarkdownText,
   SelectableMarkdownText,
+  type MarkdownFileContextMenu,
   type MarkdownImageRenderer,
   type NativeMarkdownTextStyle,
   type SelectableMarkdownSkill,
@@ -81,6 +82,18 @@ import {
 import { createStreamingTextCadence } from "./streamingTextCadence";
 
 import { AppText as Text } from "../../components/AppText";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
+import { VideoAttachmentTile } from "../../components/VideoAttachmentTile";
+import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
+import { resolveMarkdownMediaPreview } from "../../lib/markdownMedia";
+import { useMediaActions, type MediaActionsSource } from "../../lib/mediaActions";
+import { MediaActionsMenu } from "../../components/MediaActionsMenu";
+import {
+  attachmentVideoPreviewSource,
+  mediaVideoPreviewUri,
+  mediaVideoThumbnailKey,
+  type MediaVideoPreviewSource,
+} from "../../lib/videoPreviewSource";
 import { CopyTextButton } from "../../components/CopyTextButton";
 import {
   parseReviewCommentMessageSegments,
@@ -137,13 +150,19 @@ import {
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { useAssetUrl, useAssetUrlState } from "../../state/assets";
 import { useOutgoingMessagePreviewUris } from "../../state/outgoing-message-previews";
-import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
+import {
+  basename,
+  fileRoutePathSegments,
+  isAbsolutePath,
+  resolveWorkspaceRelativeFilePath,
+} from "../files/filePath";
 import { resolveUserMessageImageSources, type UserMessageImageSource } from "./userMessageImages";
 import { MARKDOWN_IMAGE_MAX_WIDTH, resolveMarkdownImageDisplaySize } from "./markdownImageSize";
 import { usePreparedConnection } from "../../state/session";
 import * as Option from "effect/Option";
 import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
 import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
+import { fileChipMenu, resolveFileChipTarget, type FileChipAction } from "./fileChipMenu";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
   includeOrderedLists: Platform.OS === "android",
@@ -238,6 +257,7 @@ const USER_MESSAGE_IMAGE_FILL_STYLE = { width: "100%", height: "100%" } as const
 function MessageAttachmentImage(props: {
   readonly environmentId: EnvironmentId;
   readonly image: UserMessageImageSource;
+  readonly mimeType: string;
   readonly className: string;
   readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
 }) {
@@ -335,6 +355,9 @@ function ThreadMarkdownImageView(props: {
     >
       {props.uri === null || failed ? (
         <View
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={props.alt ?? "Markdown image"}
           className="items-center justify-center rounded-[10px] bg-md-code-bg"
           style={{
             ...frameStyle,
@@ -431,6 +454,49 @@ function ThreadMarkdownImage(props: {
       unavailable={assetUrl._tag === "Failure"}
       alt={props.alt}
       onPressImage={props.onPressImage}
+    />
+  );
+}
+
+const ThreadMediaVisibleContext = createContext(false);
+// LegendList only computes hook visibility when the list has a viewability config.
+const THREAD_MEDIA_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 0 };
+
+function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  useViewabilityAmount<ThreadFeedEntry>(
+    useCallback((token) => setVisible(token.sizeVisible > 0), []),
+  );
+  return <ThreadMediaVisibleContext value={visible}>{props.children}</ThreadMediaVisibleContext>;
+}
+
+function ThreadMarkdownVideo(props: { readonly source: MediaVideoPreviewSource }) {
+  const { source } = props;
+  const visible = useContext(ThreadMediaVisibleContext);
+  const thumbnailKey = mediaVideoThumbnailKey(source);
+  const asset = useAssetUrlState(
+    "environmentId" in source ? source.environmentId : null,
+    "resource" in source ? source.resource : null,
+  );
+  const refreshAssetUrl = useRefreshAssetUrl(
+    "environmentId" in source ? source.environmentId : null,
+    "resource" in source ? source.resource : null,
+  );
+  const uri = mediaVideoPreviewUri(source, asset._tag === "Success" ? asset.url : null);
+  return (
+    <MediaVideoPlayer
+      key={thumbnailKey}
+      uri={uri}
+      resolvePlaybackUri={
+        "resource" in source
+          ? async () => mediaVideoPreviewUri(source, await refreshAssetUrl())
+          : undefined
+      }
+      name={source.name}
+      thumbnailKey={thumbnailKey}
+      thumbnailVisible={visible}
+      unavailable={"resource" in source && asset._tag === "Failure"}
+      actionsSource={source.actionsSource}
     />
   );
 }
@@ -1151,13 +1217,14 @@ function renderFeedEntry(
     readonly onToggleWorkGroup: (groupId: string) => void;
     readonly onToggleWorkRow: (rowId: string) => void;
     readonly onToggleTurnFold: (turnId: TurnId) => void;
-    readonly onMarkdownLinkPress: (href: string) => void;
+    readonly markdownLinkHandlers: MarkdownLinkHandlers;
     readonly renderMarkdownImage: MarkdownImageRenderer;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
     readonly userBubbleColor: string | import("react-native").ColorValue;
     readonly markdownStyles: MarkdownStyleSets;
     readonly reviewCommentColors: ReviewCommentColors;
     readonly reviewCommentBubbleWidth: number;
+    readonly themeAppearance: "light" | "dark";
     readonly userBubbleMaxWidth: number;
     readonly localPreviewUrisByMessageId: Readonly<Record<string, ReadonlyArray<string>>>;
     readonly readAloudEnabled: boolean;
@@ -1198,10 +1265,14 @@ function renderFeedEntry(
   if (entry.type === "work-toggle") {
     return (
       <ThreadWorkGroupToggle
+        environmentId={props.environmentId}
         expanded={entry.expanded}
         hiddenCount={entry.hiddenCount}
         iconSubtleColor={iconSubtleColor}
         onlyToolActivities={entry.onlyToolActivities}
+        themeAppearance={props.themeAppearance}
+        toolSurface={entry.toolSurface}
+        toolIcon={entry.toolIcon}
         onToggle={() => props.onToggleWorkGroup(entry.groupId)}
       />
     );
@@ -1265,7 +1336,7 @@ function renderFeedEntry(
                 markdownStyles={styles}
                 reviewCommentColors={props.reviewCommentColors}
                 skills={props.skills}
-                onLinkPress={props.onMarkdownLinkPress}
+                linkHandlers={props.markdownLinkHandlers}
                 renderImage={props.renderMarkdownImage}
               />
             ) : null}
@@ -1275,6 +1346,9 @@ function renderFeedEntry(
                   key={image.key}
                   environmentId={props.environmentId}
                   image={image}
+                  mimeType={
+                    attachments.find((attachment) => attachment.id === image.attachmentId)?.mimeType
+                  }
                   className="aspect-[1.3] w-full rounded-[14px] bg-white/15"
                   onPressImage={props.onPressImage}
                 />
@@ -1325,7 +1399,8 @@ function renderFeedEntry(
             streaming={message.streaming === true}
             markdownStyles={styles}
             skills={props.skills}
-            onLinkPress={props.onMarkdownLinkPress}
+            linkHandlers={props.markdownLinkHandlers}
+            onUseArtifactTemplate={props.onUseArtifactTemplate}
             renderImage={props.renderMarkdownImage}
           />
         ) : null}
@@ -1339,6 +1414,7 @@ function renderFeedEntry(
                 attachmentId: attachment.id,
                 localPreviewUri: null,
               }}
+              mimeType={attachment.mimeType}
               className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-adaptive-neutral-200-800"
               onPressImage={props.onPressImage}
             />
@@ -1380,6 +1456,7 @@ function renderFeedEntry(
       environmentId={props.environmentId}
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
+      themeAppearance={props.themeAppearance}
       onCopyRow={props.onCopyWorkRow}
       onPressImage={props.onPressImage}
       onToggleRow={props.onToggleWorkRow}
@@ -1497,7 +1574,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
   readonly markdownStyles: MarkdownStyleSet;
   readonly reviewCommentColors: ReviewCommentColors;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
-  readonly onLinkPress: (href: string) => void;
+  readonly linkHandlers: MarkdownLinkHandlers;
   readonly renderImage: MarkdownImageRenderer;
 }) {
   // Messages sent from clients with the auto-PR toggle on carry a canned
@@ -1515,7 +1592,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
           skills={props.skills}
           textStyle={props.markdownStyles.nativeTextStyle}
           preserveSoftBreaks
-          onLinkPress={props.onLinkPress}
+          {...props.linkHandlers}
           renderImage={props.renderImage}
         />
       );
@@ -1557,7 +1634,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
             skills={props.skills}
             textStyle={props.markdownStyles.nativeTextStyle}
             preserveSoftBreaks
-            onLinkPress={props.onLinkPress}
+            {...props.linkHandlers}
             renderImage={props.renderImage}
           />
         ) : (
@@ -1791,7 +1868,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const previousLatestTurnRef = useRef(props.latestTurn);
   const userScrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { width: windowWidth } = useWindowDimensions();
-  const { appearance } = useAppearancePreferences();
+  const { appearance, themeAppearance } = useAppearancePreferences();
   const localPreviewUrisByMessageId = useOutgoingMessagePreviewUris();
   const [viewportWidth, setViewportWidth] = useState(() =>
     props.layoutVariant === "split" ? 0 : windowWidth,
@@ -1913,6 +1990,31 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }
     },
     [openChangeRequestLink, props.environmentId, props.threadId, props.workspaceRoot, navigation],
+  );
+  const markdownLinkHandlers = useMemo<MarkdownLinkHandlers>(
+    () => ({
+      onLinkPress: onMarkdownLinkPress,
+      fileContextMenu: (href) => {
+        const target = resolveFileChipTarget(href, props.workspaceRoot);
+        return target ? fileChipMenu(target) : undefined;
+      },
+      onFileContextMenuAction: (href, actionId) => {
+        const target = resolveFileChipTarget(href, props.workspaceRoot);
+        if (!target) return;
+        switch (actionId as FileChipAction) {
+          case "copy-full-path":
+            if (target.fullPath) copyTextWithHaptic(target.fullPath);
+            return;
+          case "copy-relative-path":
+            if (target.relativePath) copyTextWithHaptic(target.relativePath);
+            return;
+          case "open-file":
+            onMarkdownLinkPress(href);
+            return;
+        }
+      },
+    }),
+    [onMarkdownLinkPress, props.workspaceRoot],
   );
   const renderMarkdownImage = useCallback<MarkdownImageRenderer>(
     (image) => {
@@ -2425,13 +2527,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         onToggleWorkGroup,
         onToggleWorkRow,
         onToggleTurnFold,
-        onMarkdownLinkPress,
+        markdownLinkHandlers,
         renderMarkdownImage,
         iconSubtleColor,
         userBubbleColor,
         markdownStyles,
         reviewCommentColors,
         reviewCommentBubbleWidth,
+        themeAppearance,
         userBubbleMaxWidth,
         localPreviewUrisByMessageId,
         skills: props.skills,
@@ -2450,10 +2553,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       markdownStyles,
       reviewCommentColors,
       reviewCommentBubbleWidth,
+      themeAppearance,
       userBubbleMaxWidth,
       localPreviewUrisByMessageId,
       onCopyWorkRow,
-      onMarkdownLinkPress,
+      markdownLinkHandlers,
       onPressImage,
       onToggleTurnFold,
       onToggleWorkGroup,

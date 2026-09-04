@@ -25,13 +25,7 @@ import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../compo
 import { AppIcon } from "../apps/AppIcon";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
-import {
-  Command,
-  CommandGroup,
-  CommandGroupLabel,
-  CommandItem,
-  CommandList,
-} from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
 
@@ -147,7 +141,6 @@ function groupCommandItems(
   return groups;
 }
 
-
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   items: ComposerCommandItem[];
   resolvedTheme: "light" | "dark";
@@ -162,11 +155,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   const listRef = useRef<HTMLDivElement>(null);
   const commandGroups = useMemo(
     () =>
-      groupCommandItems(
-        props.items,
-        props.triggerKind,
-        props.groupSlashCommandSections ?? true,
-      ),
+      groupCommandItems(props.items, props.triggerKind, props.groupSlashCommandSections ?? true),
     [props.groupSlashCommandSections, props.items, props.triggerKind],
   );
 

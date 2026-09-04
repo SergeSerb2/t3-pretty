@@ -1,7 +1,9 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
+import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
+  resolveEnvironmentMachineKind,
   ServerConfig,
   ServerProcessDiagnosticsEntry,
   ServerProvider,
@@ -16,6 +18,7 @@ import {
   SERVER_TRACE_DIAGNOSTIC_TOP_MAX_COUNT,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
+import { ServerSettings } from "./settings.ts";
 
 const decodeServerProvider = Schema.decodeUnknownSync(ServerProvider);
 const decodeServerProviders = Schema.decodeUnknownSync(ServerProviders);
@@ -238,5 +241,55 @@ describe("server diagnostics payload bounds", () => {
         Array.from({ length: SERVER_PROCESS_DIAGNOSTIC_MAX_COUNT + 1 }, (_, index) => index + 1),
       ),
     ).toThrow();
+  });
+});
+
+describe("resolveEnvironmentMachineKind", () => {
+  const decodeDescriptor = Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor);
+  const decodeSettings = Schema.decodeUnknownSync(ServerSettings);
+  const descriptor = (platform: Record<string, unknown>) =>
+    decodeDescriptor({
+      environmentId: "env-1",
+      label: "Box",
+      platform: { os: "linux", arch: "x64", ...platform },
+      serverVersion: "1.0.0",
+      capabilities: {},
+    });
+
+  it("prefers the user's pick over what the server detected", () => {
+    expect(
+      resolveEnvironmentMachineKind({
+        environment: descriptor({ machine: "mac-mini" }),
+        settings: decodeSettings({ environmentIcon: "laptop" }),
+      }),
+    ).toBe("laptop");
+  });
+
+  it("uses detection when nothing is picked", () => {
+    expect(
+      resolveEnvironmentMachineKind({
+        environment: descriptor({ machine: "mac-mini" }),
+        settings: decodeSettings({}),
+      }),
+    ).toBe("mac-mini");
+  });
+
+  it("falls back to a server for older servers and before connect", () => {
+    expect(
+      resolveEnvironmentMachineKind({
+        environment: descriptor({}),
+        settings: decodeSettings({}),
+      }),
+    ).toBe("server");
+    expect(resolveEnvironmentMachineKind(null)).toBe("server");
+  });
+
+  it("drops a machine kind this build does not know instead of failing the descriptor", () => {
+    const parsed = descriptor({ machine: "toaster" });
+
+    expect(parsed.platform.machine).toBeUndefined();
+    expect(
+      resolveEnvironmentMachineKind({ environment: parsed, settings: decodeSettings({}) }),
+    ).toBe("server");
   });
 });

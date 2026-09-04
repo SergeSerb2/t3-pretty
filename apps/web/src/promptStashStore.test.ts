@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
-import {
-  EnvironmentId,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-} from "@t3tools/contracts";
+import { EnvironmentId, PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 import { removeLocalStorageItem } from "./hooks/useLocalStorage";
 

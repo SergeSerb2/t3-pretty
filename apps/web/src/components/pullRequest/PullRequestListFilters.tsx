@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ProjectId,
+  ProjectIconOverride,
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
@@ -60,6 +61,7 @@ export interface PullRequestFilterOption<Value extends string> {
    * uncoloured, which lets the item's selected state stay the thing the eye follows.
    */
   readonly Icon: ElementType<{ className?: string }>;
+
   /** Why it cannot be chosen, carried onto the item as its title. */
   readonly unavailable?: string | undefined;
 }
@@ -398,6 +400,8 @@ interface PullRequestProjectFilterProps {
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   }>;
   readonly projectId: ProjectId | undefined;
   readonly projectEnvironmentId: EnvironmentId | undefined;
@@ -427,6 +431,9 @@ function PullRequestProjectFilter({
             <ProjectFavicon
               environmentId={selectedProject.environmentId}
               cwd={selectedProject.workspaceRoot}
+              projectName={selectedProject.title}
+              faviconPath={selectedProject.faviconPath}
+              projectIcon={selectedProject.projectIcon}
               fallbackIcon={FolderGit2Icon}
               className="size-3.5 shrink-0"
             />
@@ -490,6 +497,9 @@ function PullRequestProjectFilter({
                     <ProjectFavicon
                       environmentId={project.environmentId}
                       cwd={project.workspaceRoot}
+                      projectName={project.title}
+                      faviconPath={project.faviconPath}
+                      projectIcon={project.projectIcon}
                       fallbackIcon={FolderGit2Icon}
                       className="size-3.5 shrink-0"
                     />
@@ -574,6 +584,8 @@ export function PullRequestFiltersMenu({
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   }>;
   projectId: ProjectId | undefined;
   /**

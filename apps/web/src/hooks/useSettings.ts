@@ -502,12 +502,15 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         const sharedTargets = new Set(connectedEnvironmentIds);
         if (environmentId) sharedTargets.add(environmentId);
 
-        if ((hasLocalPatch && !environmentId) || (hasSharedPatch && sharedTargets.size === 0)) {
+        // Dropping the write silently leaves the control looking saved.
+        const warnUnsaved = () =>
           toastManager.add({
             type: "warning",
             title: "Setting not saved",
             description: PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
           });
+        if ((hasLocalPatch && !environmentId) || (hasSharedPatch && sharedTargets.size === 0)) {
+          warnUnsaved();
         }
         if (environmentId && hasLocalPatch) {
           void persistServerSettings({

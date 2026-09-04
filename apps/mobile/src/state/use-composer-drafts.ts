@@ -471,7 +471,6 @@ export async function flushComposerDrafts(): Promise<void> {
     if (persistTimer !== null) {
       clearTimeout(persistTimer);
       persistTimer = null;
-
     }
     // Always land one current state snapshot. This also drains any already-
     // fired debounce, while covering a failed best-effort write whose cleared

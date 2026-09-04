@@ -40,7 +40,10 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  resolveEnvironmentMachineKind,
+} from "@t3tools/contracts";
 
 import {
   ComposerEditor,
@@ -60,6 +63,7 @@ import {
   ComposerDispatchStatusLabel,
   type ComposerAttachmentPreview,
 } from "../../components/ComposerAttachmentStrip";
+import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { waitForComposerSendIndicatorMin } from "../../components/ComposerSendIndicator";
 import { composerDispatchStatusLabel } from "../../lib/composerDispatchStatus";
 import {
@@ -455,8 +459,7 @@ export function NewTaskDraftScreen(props: {
     cancelledIncomingShareId !== props.incomingShareId &&
     !isIncomingShareAwaitingServerConfig,
   );
-  const isDispatching =
-    flow.submitting || pendingPreviews.length > 0 || isPickingAttachments;
+  const isDispatching = flow.submitting || pendingPreviews.length > 0 || isPickingAttachments;
   const isComposerInteractionLocked = isIncomingShareTransferPending || isDispatching;
   const composerSelectorsLocked = isComposerInteractionLocked;
   // Also guard while a submit is in flight: an Android back press or iOS
@@ -1453,7 +1456,7 @@ export function NewTaskDraftScreen(props: {
       scrollEnabled
       value={flow.prompt}
       selection={promptSelection}
-      skills={flow.selectedProviderStatus?.skills ?? []}
+      skills={composerMenu.skills}
       onChangeText={flow.setPrompt}
       onSelectionChange={(selection) => {
         setPromptSelection(selection);
@@ -1533,10 +1536,14 @@ export function NewTaskDraftScreen(props: {
         <ComposerInlineControl
           accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
           chevronDirection="right"
-          disabled={
-            composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy
+          disabled={composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy}
+          iconNode={
+            <EnvironmentMachineSymbol
+              kind={resolveEnvironmentMachineKind(selectedEnvironmentServerConfig)}
+              size={16}
+              tintColorClassName="accent-icon-muted"
+            />
           }
-          icon="desktopcomputer"
           label={`on ${selectedEnvironmentLabel}`}
           maxWidth={260}
           onPress={
@@ -1589,9 +1596,7 @@ export function NewTaskDraftScreen(props: {
           <ComposerInlineControl
             accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
             accessibilityLabel={workspaceLabel}
-            disabled={
-              composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy
-            }
+            disabled={composerSelectorsLocked || isComposerInteractionLocked || voiceInput.isBusy}
             iconNode={
               <NewTaskWorkspaceIcon
                 workspaceMode={flow.workspaceMode}
@@ -1718,9 +1723,7 @@ export function NewTaskDraftScreen(props: {
                 <>
                   <ComposerAttachmentButton
                     disabled={
-                      isIncomingShareTransferPending ||
-                      isDispatching ||
-                      isComposerInteractionLocked
+                      isIncomingShareTransferPending || isDispatching || isComposerInteractionLocked
                     }
                     supportsFiles={Boolean(
                       selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments,
@@ -1737,9 +1740,7 @@ export function NewTaskDraftScreen(props: {
                   >
                     <ThreadSettingsPickerPopover
                       accessibilityLabel="Model and reasoning settings"
-                      disabled={
-                        isIncomingShareTransferPending || isComposerInteractionLocked
-                      }
+                      disabled={isIncomingShareTransferPending || isComposerInteractionLocked}
                       model={settingsPicker}
                       onSelectModel={handleSelectModelOption}
                       onSelectOption={handleSelectPickerOption}
@@ -1747,9 +1748,7 @@ export function NewTaskDraftScreen(props: {
                     >
                       <ComposerInlineControl
                         accessibilityLabel="Model and reasoning settings"
-                        disabled={
-                          isIncomingShareTransferPending || isComposerInteractionLocked
-                        }
+                        disabled={isIncomingShareTransferPending || isComposerInteractionLocked}
                         emphasized
                         iconNode={
                           <ProviderIcon
@@ -1765,9 +1764,7 @@ export function NewTaskDraftScreen(props: {
                       <ComposerInlineControl
                         accessibilityHint={`Switches to ${flow.interactionMode === "plan" ? "Build" : "Plan"} mode`}
                         accessibilityLabel={`Interaction mode: ${flow.interactionMode === "plan" ? "Plan" : "Build"}`}
-                        disabled={
-                          isIncomingShareTransferPending || isComposerInteractionLocked
-                        }
+                        disabled={isIncomingShareTransferPending || isComposerInteractionLocked}
                         emphasized
                         icon={
                           flow.interactionMode === "plan"
@@ -1791,9 +1788,7 @@ export function NewTaskDraftScreen(props: {
                             : "Create PR when done: off"
                         }
                         active={autoCreatePullRequest}
-                        disabled={
-                          isIncomingShareTransferPending || isComposerInteractionLocked
-                        }
+                        disabled={isIncomingShareTransferPending || isComposerInteractionLocked}
                         icon="arrow.triangle.pull"
                         label="PR"
                         onPress={toggleAutoCreatePullRequest}
@@ -1825,9 +1820,9 @@ export function NewTaskDraftScreen(props: {
                       ? (dispatchStatus ?? "Starting task")
                       : flow.submitting
                         ? "Starting task"
-                      : environmentConnected
-                        ? "Start task"
-                        : "Queue task")
+                        : environmentConnected
+                          ? "Start task"
+                          : "Queue task")
                   }
                   disabled={!canStart && !isDispatching}
                   icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}

@@ -864,7 +864,6 @@ describe("DesktopBackendManager", () => {
       ),
   );
 
-
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

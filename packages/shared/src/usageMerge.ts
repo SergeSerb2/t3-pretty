@@ -336,12 +336,7 @@ export function mergeUsage(
   const current: EnvironmentUsage[] = [];
   const staleEnvironments: EnvironmentId[] = [];
   for (const environment of retainedEnvironments) {
-    if (
-      isCompatibleContractVersion(
-        environment.summary.contractVersion,
-        expectedContractVersion,
-      )
-    ) {
+    if (isCompatibleContractVersion(environment.summary.contractVersion, expectedContractVersion)) {
       current.push(environment);
     } else {
       staleEnvironments.push(environment.environmentId);

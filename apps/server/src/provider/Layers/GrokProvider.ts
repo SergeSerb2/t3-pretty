@@ -369,7 +369,10 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
-  const skills = yield* discoverGrokSkills(grokSettings, environment, cwd);
+  const skills = yield* discoverGrokSkills(grokSettings, environment, cwd).pipe(
+    Effect.tapError((cause) => Effect.logDebug("Grok skill discovery failed.", { cause })),
+    Effect.orElseSucceed(() => []),
+  );
 
   const discoveryExit = yield* discoverGrokModelsViaAcp(grokSettings, environment).pipe(
     Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),

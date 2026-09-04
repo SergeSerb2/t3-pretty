@@ -1,8 +1,13 @@
 import * as Equal from "effect/Equal";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
+import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 import {
+  liveActivityToolStatus,
+  normalizeCompactToolLabel,
   omitSupersededLifecycleMarkers,
+  resolveWorkEntryToolPresentation,
   summarizeToolGroup,
+  toolGroupAction,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -24,6 +29,7 @@ import {
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -31,6 +37,59 @@ export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
 export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
 export const TIMELINE_CONTENT_MAX_WIDTH = 768;
 export const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
+
+function singleToolCallLabel(entry: WorkLogEntry): string {
+  const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
+  if (toolPresentation) return toolPresentation.displayName;
+  const command = entry.command?.trim();
+  if (command) return command;
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+}
+
+export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
+  const toolPresentation = resolveWorkEntryToolPresentation(entry);
+  if (toolPresentation) return toolPresentation.displayName;
+  if (entry.command) return entry.command;
+  if (entry.detail) return entry.detail;
+  const [firstPath] = entry.changedFiles ?? [];
+  if (firstPath) {
+    const path = formatWorkspaceRelativePath(firstPath, workspaceRoot);
+    return entry.changedFiles!.length === 1
+      ? path
+      : `${path} +${entry.changedFiles!.length - 1} more`;
+  }
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+}
+
+export function liveWorkEntryLabel(
+  entry: WorkLogEntry,
+  workspaceRoot: string | undefined,
+  active: boolean,
+) {
+  const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
+  const toolPresentation = resolveWorkEntryToolPresentation({
+    ...entry,
+    toolLifecycleStatus: status,
+  });
+  if (toolPresentation) return toolPresentation.displayName;
+  const command = entry.command?.trim();
+  if (command) {
+    const verb =
+      status === "inProgress"
+        ? "Running"
+        : status === "failed"
+          ? "Failed"
+          : status === "declined"
+            ? "Declined"
+            : status === "stopped"
+              ? "Stopped"
+              : "Ran";
+    return `${verb} ${commandProgramName(command) ?? "command"}`;
+  }
+  return workEntryDisplayLabel(entry, workspaceRoot);
+}
 
 export function workEntryIsVisibleInGroup(
   entry: WorkLogEntry,
@@ -60,23 +119,21 @@ export interface TimelineEndState {
  */
 export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
-export function resolveTimelineIsAtEnd(
-  state: TimelineEndState | undefined,
-  endInset = 0,
-): boolean | undefined {
+export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boolean | undefined {
   if (!state) {
     return undefined;
-  }
-  if (state.isAtEnd) {
-    return true;
   }
   const { contentLength, scroll, scrollLength } = state;
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // contentLength includes the end inset (composer overlay), so subtract it to
-  // measure the distance to the real content bottom.
-  return contentLength - scroll - scrollLength - endInset <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
+  // contentLength includes the composer inset spacer, but the composer hides
+  // the same amount of viewport, so the inset cancels: plain
+  // contentLength - scroll - scrollLength is the gap between the last real row
+  // and the visible edge above the composer. LegendList's own isAtEnd subtracts
+  // the inset and is true anywhere in the bottom composer-height band, so it is
+  // only a fallback here, never a short-circuit.
+  return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
 export function shouldPreserveAssistantLineBreaks(text: string): boolean {
@@ -222,6 +279,9 @@ export type MessagesTimelineRow =
       onlyToolEntries: boolean;
       summary: string | null;
       summaryKind: ToolGroupSummaryKind | null;
+      toolSurface?: WorkLogEntry["toolSurface"];
+      toolIcon?: WorkLogEntry["toolIcon"];
+      summaryToolIcon?: "browser" | "t3-code";
       hasFailure: boolean;
     }
   | {
@@ -815,7 +875,6 @@ export function deriveMessagesTimelineRows(input: {
             entry.tone !== "error",
         );
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
-        const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
         if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
@@ -847,6 +906,32 @@ export function deriveMessagesTimelineRows(input: {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          const primarySourceEntry = visibleGroupedEntries.find(
+            (entry) => entry.toolSource !== undefined,
+          );
+          const primarySourceKey = primarySourceEntry?.toolSource?.key;
+          const primarySourceIcon = primarySourceKey
+            ? (visibleGroupedEntries.find(
+                (entry) =>
+                  entry.toolSource?.key === primarySourceKey && entry.toolIcon !== undefined,
+              )?.toolIcon ?? primarySourceEntry?.toolSource?.icon)
+            : undefined;
+          const groupToolSurface =
+            primarySourceEntry?.toolSurface ??
+            visibleGroupedEntries.findLast((entry) => entry.toolSurface !== undefined)?.toolSurface;
+          const groupToolIcon =
+            primarySourceIcon ??
+            visibleGroupedEntries.findLast((entry) => entry.toolIcon !== undefined)?.toolIcon;
+          const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
+          const singleEntry =
+            visibleGroupedEntries.length === 1 ? (visibleGroupedEntries[0] ?? null) : null;
+          const usesSingleToolCallLabel =
+            singleEntry !== null &&
+            workLogEntryIsToolLike(singleEntry) &&
+            toolGroupAction(singleEntry) !== "edit";
+          const summaryToolIcon = usesSingleToolCallLabel
+            ? resolveWorkEntryToolPresentation(singleEntry, "completed")?.icon
+            : undefined;
           nextRows.push({
             kind: "work-toggle",
             id: `work-toggle:${timelineEntry.id}`,
@@ -855,8 +940,15 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: visibleGroupedEntries.length,
             expanded,
             onlyToolEntries,
-            summary: summarizeToolGroup(visibleGroupedEntries),
+            summary: usesSingleToolCallLabel
+              ? singleToolCallLabel(singleEntry)
+              : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                ? singleEntry.label
+                : summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
+            ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
+            ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
+            ...(summaryToolIcon ? { summaryToolIcon } : {}),
             hasFailure:
               latestToolEntry !== undefined &&
               workEntryDisplayIndicatesToolFailure(latestToolEntry),
@@ -1033,6 +1125,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.onlyToolEntries === bw.onlyToolEntries &&
         a.summary === bw.summary &&
         a.summaryKind === bw.summaryKind &&
+        a.toolSurface === bw.toolSurface &&
+        Equal.equals(a.toolIcon, bw.toolIcon) &&
         a.hasFailure === bw.hasFailure
       );
     }

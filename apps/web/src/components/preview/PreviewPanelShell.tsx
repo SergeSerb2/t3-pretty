@@ -70,6 +70,7 @@ export function PreviewPanelShell(props: {
   const useDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
   const isInline = props.mode === "inline";
   const maximized = props.maximized === true;
+  const collapsible = isInline && props.open !== undefined;
   const open = props.open ?? true;
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
@@ -82,6 +83,26 @@ export function PreviewPanelShell(props: {
     maxWidth,
     edge: "left",
   });
+  const previousLayoutRef = useRef({ open, width });
+  useLayoutEffect(() => {
+    const previous = previousLayoutRef.current;
+    previousLayoutRef.current = { open, width };
+    if (!collapsible || previous.open !== open || previous.width === width) return;
+    const host = hostRef.current;
+    if (!host?.closest("[data-panel-animations=true]")) return;
+    host.style.setProperty("transition-duration", "0ms");
+    let restoreFrame = 0;
+    const paintFrame = window.requestAnimationFrame(() => {
+      restoreFrame = window.requestAnimationFrame(() => {
+        host.style.removeProperty("transition-duration");
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(paintFrame);
+      window.cancelAnimationFrame(restoreFrame);
+      host.style.removeProperty("transition-duration");
+    };
+  }, [collapsible, open, width]);
 
   const panelContents = (
     <>

@@ -53,10 +53,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
       if (rowWithPreservedAttachments._tag === "Some") {
         assert.equal(rowWithPreservedAttachments.value.text, "hello world");
         assert.equal(rowWithPreservedAttachments.value.createdAt, createdAt);
-        assert.equal(
-          rowWithPreservedAttachments.value.updatedAt,
-          "2026-02-28T19:05:01.000Z",
-        );
+        assert.equal(rowWithPreservedAttachments.value.updatedAt, "2026-02-28T19:05:01.000Z");
         assert.deepEqual(rowWithPreservedAttachments.value.attachments, attachments);
       }
 

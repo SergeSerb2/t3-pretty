@@ -141,11 +141,7 @@ const waitForDesktopOverlay = async (
       requestId,
     });
     const bridge = previewBridge;
-    if (
-      state.desktopByTabId[tabId] &&
-      bridge &&
-      isPreviewWebviewRendering(runtimeTabId)
-    ) {
+    if (state.desktopByTabId[tabId] && bridge && isPreviewWebviewRendering(runtimeTabId)) {
       const ready = await settlePreviewAutomationBeforeDeadline(
         previewAutomationDesktopStatusReady(() => bridge.automation.status(runtimeTabId)),
         deadline - Date.now(),

@@ -242,10 +242,7 @@ export async function pickComposerImages(input: {
     }
     const pickedMimeType = (asset.mimeType ?? mimeTypeFromUri(asset.uri)).toLowerCase();
     let mimeType = pickedMimeType;
-    if (
-      asset.type === "video" ||
-      (asset.type !== "image" && !mimeType.startsWith("image/"))
-    ) {
+    if (asset.type === "video" || (asset.type !== "image" && !mimeType.startsWith("image/"))) {
       error = `Unsupported file type for '${asset.fileName ?? "image"}'.`;
       continue;
     }

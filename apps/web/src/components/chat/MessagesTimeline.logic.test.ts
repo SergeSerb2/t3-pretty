@@ -64,6 +64,45 @@ describe("deriveTimelineMinimapTurns", () => {
       },
     ]);
   });
+
+  describe("settled legacy tool presentation", () => {
+    const entry = {
+      id: "tool-1",
+      createdAt: "2026-09-01T12:00:00Z",
+      label: "Tool call",
+      tone: "tool" as const,
+    };
+
+    it.each([
+      ["preview_click", "Clicked in the preview browser", "browser"],
+      ["task_status", "Got delegated task status", "t3-code"],
+    ] as const)(
+      "uses the completed %s call presentation for a settled legacy tool",
+      (tool, summary, summaryToolIcon) => {
+        const rows = deriveMessagesTimelineRows({
+          timelineEntries: [
+            {
+              id: "browser-entry",
+              kind: "work",
+              createdAt: entry.createdAt,
+              entry: {
+                ...entry,
+                itemType: "mcp_tool_call",
+                toolData: { server: "t3-code", tool },
+              },
+            },
+          ],
+          isWorking: false,
+          activeTurnStartedAt: null,
+          turnDiffSummaryByAssistantMessageId: new Map(),
+          revertTurnCountByUserMessageId: new Map(),
+        });
+        expect(rows).toMatchObject([
+          { kind: "work-toggle", hiddenCount: 1, summary, summaryToolIcon },
+        ]);
+      },
+    );
+  });
 });
 
 describe("shouldPreserveAssistantLineBreaks", () => {
@@ -1008,7 +1047,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
-  it("summarizes a tool run after commentary starts a new run", () => {
+  it("labels a single completed tool call without summarizing it", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1071,7 +1110,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(rows.map((row) => row.kind)).toEqual(["work-toggle", "message", "work-live"]);
     expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
       hiddenCount: 1,
-      summary: "Ran 1 command",
+      summary: "rg toolCall",
     });
   });
 
@@ -1463,6 +1502,7 @@ describe("deriveMessagesTimelineRows", () => {
           label: "Status updated",
           detail: "Editing MessagesTimeline.tsx",
           tone: middleTone,
+          toolSurface: "computer" as const,
         },
       },
       {
@@ -1475,6 +1515,8 @@ describe("deriveMessagesTimelineRows", () => {
           label: "test",
           detail: "Running tests",
           tone: "tool" as const,
+          toolSurface: "browser" as const,
+          toolIcon: { _tag: "website" as const, pageUrl: "https://example.com/checkout" },
         },
       },
     ];
@@ -1498,6 +1540,8 @@ describe("deriveMessagesTimelineRows", () => {
       hiddenCount: 3,
       expanded: false,
       summary,
+      toolSurface: "browser",
+      toolIcon: { _tag: "website", pageUrl: "https://example.com/checkout" },
     });
     expect(expandedRows.map((row) => row.id)).toEqual([
       "work-toggle:work-entry-1",
@@ -1507,6 +1551,84 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
     expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
       expanded: true,
+    });
+  });
+
+  it("deduplicates integration sources and uses the first source icon for the group", () => {
+    const chromeSource = {
+      key: "browser-use:chrome",
+      name: "Chrome",
+      kind: "integration" as const,
+      icon: {
+        _tag: "native-app" as const,
+        app: { _tag: "display-name" as const, displayName: "Google Chrome" },
+      },
+    };
+    const timelineEntries = [
+      {
+        id: "browser-1",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: {
+          id: "browser-1",
+          createdAt: "2026-01-01T00:00:01Z",
+          label: "Open MATLAB",
+          tone: "tool" as const,
+          toolSurface: "browser" as const,
+          toolSource: chromeSource,
+          toolIcon: {
+            _tag: "website" as const,
+            pageUrl: "https://www.mathworks.com/help/matlab/",
+          },
+        },
+      },
+      {
+        id: "browser-2",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:02Z",
+        entry: {
+          id: "browser-2",
+          createdAt: "2026-01-01T00:00:02Z",
+          label: "Show summary",
+          tone: "tool" as const,
+          toolSurface: "browser" as const,
+          toolSource: chromeSource,
+          toolIcon: {
+            _tag: "website" as const,
+            pageUrl: "https://www.mathworks.com/help/matlab/summary.html",
+          },
+        },
+      },
+      {
+        id: "command-1",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "command-1",
+          createdAt: "2026-01-01T00:00:03Z",
+          label: "Ran command",
+          command: "git status",
+          itemType: "command_execution" as const,
+          tone: "tool" as const,
+        },
+      },
+    ];
+    const [row] = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(row).toMatchObject({
+      kind: "work-toggle",
+      summary: "Used Chrome integration and ran 1 command",
+      toolSurface: "browser",
+      toolIcon: {
+        _tag: "website",
+        pageUrl: "https://www.mathworks.com/help/matlab/",
+      },
     });
   });
 
@@ -1602,6 +1724,35 @@ describe("deriveMessagesTimelineRows", () => {
 });
 
 describe("computeStableMessagesTimelineRows", () => {
+  it("replaces a cached work toggle when its icon presentation changes", () => {
+    const initialRow: MessagesTimelineRow = {
+      kind: "work-toggle",
+      id: "work-toggle:1",
+      createdAt: "2026-01-01T00:00:00Z",
+      groupId: "work-group:1",
+      hiddenCount: 1,
+      expanded: false,
+      onlyToolEntries: true,
+      summary: "Used Browser",
+      summaryKind: "other",
+      toolSurface: "browser",
+      hasFailure: false,
+    };
+    const initial = computeStableMessagesTimelineRows([initialRow], {
+      byId: new Map(),
+      result: [],
+    });
+    const enrichedRow: MessagesTimelineRow = {
+      ...initialRow,
+      toolIcon: { _tag: "website", pageUrl: "https://example.com" },
+    };
+
+    const updated = computeStableMessagesTimelineRows([enrichedRow], initial);
+
+    expect(updated).not.toBe(initial);
+    expect(updated.result[0]).toBe(enrichedRow);
+  });
+
   it.each(["", " \n"])("keeps Thinking after assistant content grows from %j", (text) => {
     const startedAt = "2026-01-01T00:00:00Z";
     const turnId = TurnId.make("turn-1");

@@ -230,7 +230,6 @@ describe("mobile model options", () => {
     expect(resolveDefaultableModelSelection(null, legacy)).toBe(legacy);
   });
 
-
   it("offers every provider only when the server supports thread handoff", () => {
     const providerGroups = [
       { providerKey: "claude", providerLabel: "Claude", models: [] },

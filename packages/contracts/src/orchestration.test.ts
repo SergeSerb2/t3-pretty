@@ -1223,6 +1223,36 @@ it.effect("project favicon overrides accept only supported image files", () =>
   }),
 );
 
+it.effect("project icon overrides accept Lucide icons, colors, and emoji", () =>
+  Effect.gen(function* () {
+    const lucide = yield* decodeOrchestrationCommand({
+      type: "project.meta.update",
+      commandId: "cmd-project-lucide-icon",
+      projectId: "project-1",
+      projectIcon: { kind: "lucide", name: "alarm-clock", color: "violet" },
+    });
+    assert.strictEqual(lucide.type, "project.meta.update");
+
+    const emoji = yield* decodeOrchestrationCommand({
+      type: "project.meta.update",
+      commandId: "cmd-project-emoji-icon",
+      projectId: "project-1",
+      projectIcon: { kind: "emoji", emoji: "👩🏽‍💻" },
+    });
+    assert.strictEqual(emoji.type, "project.meta.update");
+
+    const invalid = yield* Effect.exit(
+      decodeOrchestrationCommand({
+        type: "project.meta.update",
+        commandId: "cmd-project-invalid-icon",
+        projectId: "project-1",
+        projectIcon: { kind: "lucide", name: "Alarm Clock", color: "ultraviolet" },
+      }),
+    );
+    assert.strictEqual(invalid._tag, "Failure");
+  }),
+);
+
 it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi or unknown", () => {
   assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
   assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");

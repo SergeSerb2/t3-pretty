@@ -24,7 +24,6 @@ export function CompactBrandTitle(
     readonly allowFontScaling?: boolean;
   } = {},
 ) {
-
   const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
   const titleOffset = brandTitleOffset();
 

@@ -343,9 +343,7 @@ function normalizeFetchedBySet(
   return normalized;
 }
 
-function normalizeFetchedAtBySet(
-  value: unknown,
-): Partial<Record<PhotoSetId, number | null>> {
+function normalizeFetchedAtBySet(value: unknown): Partial<Record<PhotoSetId, number | null>> {
   const source = recordValue(value);
   if (!source) return {};
   const normalized: Partial<Record<PhotoSetId, number | null>> = {};
@@ -375,14 +373,15 @@ function normalizeRefreshCursorBySet(value: unknown): Partial<Record<PhotoSetId,
 export function migratePersistedSceneryState(persistedState: unknown): PersistedSceneryStoreState {
   const candidate = recordValue(persistedState) ?? {};
   const assignments = normalizeAssignments(candidate.assignments);
-  const fetchedBySetSource =
-    recordValue(candidate.fetchedBySet) ?? { [DEFAULT_PHOTO_SET_ID]: candidate.fetchedPhotos };
-  const fetchedAtBySetSource =
-    recordValue(candidate.fetchedAtBySet) ?? { [DEFAULT_PHOTO_SET_ID]: candidate.fetchedAt };
-  const refreshCursorBySetSource =
-    recordValue(candidate.refreshCursorBySet) ?? {
-      [DEFAULT_PHOTO_SET_ID]: candidate.refreshCursor,
-    };
+  const fetchedBySetSource = recordValue(candidate.fetchedBySet) ?? {
+    [DEFAULT_PHOTO_SET_ID]: candidate.fetchedPhotos,
+  };
+  const fetchedAtBySetSource = recordValue(candidate.fetchedAtBySet) ?? {
+    [DEFAULT_PHOTO_SET_ID]: candidate.fetchedAt,
+  };
+  const refreshCursorBySetSource = recordValue(candidate.refreshCursorBySet) ?? {
+    [DEFAULT_PHOTO_SET_ID]: candidate.refreshCursor,
+  };
   return {
     assignments,
     fetchedBySet: normalizeFetchedBySet(fetchedBySetSource, assignments),

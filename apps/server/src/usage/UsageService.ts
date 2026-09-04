@@ -527,11 +527,7 @@ export const make = Effect.gen(function* () {
       }
 
       const listing = yield* Effect.promise(() =>
-        listTranscriptFiles(
-          dir,
-          windowStartMs,
-          fileName === undefined ? undefined : { fileName },
-        ),
+        listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
       );
       // Absence only proves deletion after a complete walk. Treating a
       // truncated or partially unreadable listing as authoritative would evict

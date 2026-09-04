@@ -76,4 +76,3 @@ describe("incoming share storage", () => {
     );
   });
 });
-

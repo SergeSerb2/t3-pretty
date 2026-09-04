@@ -104,10 +104,7 @@ describe("buildProjectThreadStartTurnInput", () => {
       worktreePath: null,
       startFromOrigin: false,
       worktreeBranchName: "t3/thread-1",
-      enabledSkillIds: [
-        SkillId.make("acme/skills:skill-a"),
-        SkillId.make("host:Shared:grill-me"),
-      ],
+      enabledSkillIds: [SkillId.make("acme/skills:skill-a"), SkillId.make("host:Shared:grill-me")],
     });
 
     expect(input.bootstrap.createThread.enabledSkillIds).toEqual([

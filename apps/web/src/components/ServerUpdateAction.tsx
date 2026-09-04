@@ -1,3 +1,5 @@
+import type { ComponentProps } from "react";
+
 import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
@@ -79,6 +81,7 @@ export function ServerUpdateAction({
   threadContinuation = false,
   targetVersion,
   label = "Update",
+  size = "xs",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
@@ -90,6 +93,7 @@ export function ServerUpdateAction({
   readonly threadContinuation?: boolean;
   readonly targetVersion: string;
   readonly label?: string;
+  readonly size?: ComponentProps<typeof Button>["size"];
 }) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const continueThreadsAfterServerUpdate = useClientSettings(
@@ -180,14 +184,18 @@ export function ServerUpdateAction({
   if (selfUpdate === null) {
     const command = manualServerUpdateCommand(targetVersion);
     return (
-      <Button size="xs" variant="outline" onClick={() => copyToClipboard(command, { command })}>
+      <Button
+        size={size ?? "xs"}
+        variant="outline"
+        onClick={() => copyToClipboard(command, { command })}
+      >
         Copy update command
       </Button>
     );
   }
 
   return (
-    <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
+    <Button size={size ?? "xs"} variant="outline" onClick={() => void handleUpdate()}>
       {label}
     </Button>
   );

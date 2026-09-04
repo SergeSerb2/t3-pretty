@@ -567,7 +567,6 @@ export function useThreadComposerState() {
         "Could not attach image",
         `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
       );
-
     }
   }, [composerDrafts, selectedThreadShell]);
 

@@ -141,7 +141,6 @@ export const verifyRequestDpopProof = (input: {
             }),
           ),
           Effect.tap(() => scheduleDpopReplayStateRemoval(secretStore, secretName)),
-
         ),
     );
     return result.thumbprint;

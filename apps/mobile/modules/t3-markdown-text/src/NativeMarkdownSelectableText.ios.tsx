@@ -4,7 +4,20 @@ import { Image, Linking, type TextStyle, useColorScheme } from "react-native";
 import { MarkdownTextPrimitive } from "./MarkdownTextPrimitive";
 import { markdownFileIconSource } from "./markdownFileIcons";
 import type { NativeMarkdownTextRun } from "./nativeMarkdownText";
-import type { NativeMarkdownTextStyle } from "./SelectableMarkdownText.types";
+import type {
+  MarkdownFileContextMenu,
+  NativeMarkdownTextStyle,
+} from "./SelectableMarkdownText.types";
+
+export interface MarkdownFileContextMenuHandlers {
+  readonly fileContextMenu: (href: string) => MarkdownFileContextMenu | undefined;
+  readonly onFileContextMenuAction: (href: string, actionId: string) => void;
+}
+
+/** Set by SelectableMarkdownText so file chips anywhere in the block tree get the same menu. */
+export const MarkdownFileContextMenuContext = createContext<MarkdownFileContextMenuHandlers | null>(
+  null,
+);
 
 type MarkdownLinkCallbacks = {
   readonly onLinkPress?: (href: string) => void;
@@ -153,6 +166,7 @@ export function NativeMarkdownSelectableText(props: {
   const onLinkPress = props.onLinkPress ?? linkCallbacks.onLinkPress;
   const onLinkLongPress = props.onLinkLongPress ?? linkCallbacks.onLinkLongPress;
   const colorScheme = useColorScheme();
+  const menu = useContext(MarkdownFileContextMenuContext);
   const occurrences = new Map<string, number>();
   const prefixedExternalLinks = new Set<string>();
   const keyedRuns = props.runs.map((run) => {
@@ -209,6 +223,7 @@ export function NativeMarkdownSelectableText(props: {
     >
       {keyedRuns.map(({ key, run, text }) => {
         const href = run.href;
+        const contextMenu = run.fileIcon && href ? menu?.fileContextMenu(href) : undefined;
         return (
           <MarkdownTextPrimitive
             key={key}
@@ -219,6 +234,7 @@ export function NativeMarkdownSelectableText(props: {
                   ? "t3-skill:sf:cube"
                   : undefined
             }
+            contextMenuConfig={contextMenu ? JSON.stringify(contextMenu) : undefined}
             style={runStyle(run, props.textStyle)}
             onPress={
               href
@@ -236,6 +252,11 @@ export function NativeMarkdownSelectableText(props: {
                 ? () => {
                     onLinkLongPress(href);
                   }
+                : undefined
+            }
+            onContextMenuAction={
+              contextMenu && href && menu
+                ? (event) => menu.onFileContextMenuAction(href, event.nativeEvent.actionIdentifier)
                 : undefined
             }
           >
