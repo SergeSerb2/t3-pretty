@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { ComposerImageAttachment } from "~/composerDraftStore";
 import type { CanvasSelectionContext } from "~/lib/canvasSelection";
 import { cn } from "~/lib/utils";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface ComposerCanvasSelectionCardsProps {
   selections: ReadonlyArray<CanvasSelectionContext>;
@@ -22,14 +23,22 @@ const NODE_TYPE_STATS: ReadonlyArray<{ type: string; label: string; icon: ReactN
 ];
 
 function TargetStat(props: { icon: ReactNode; count: number; label: string }) {
+  const description = `${props.count} ${props.label}${props.count === 1 ? "" : "s"}`;
   return (
-    <span
-      className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground"
-      title={`${props.count} ${props.label}${props.count === 1 ? "" : "s"}`}
-    >
-      {props.icon}
-      {props.count}
-    </span>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground"
+            aria-label={description}
+          />
+        }
+      >
+        {props.icon}
+        {props.count}
+      </TooltipTrigger>
+      <TooltipPopup>{description}</TooltipPopup>
+    </Tooltip>
   );
 }
 

@@ -19,6 +19,22 @@ export function toSortableTimestamp(iso: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * Chronological comparison for wire timestamps. Plain string ordering breaks
+ * when equivalent producers use different fractional precision or offsets.
+ * Invalid legacy values stay deterministic and sort before valid timestamps.
+ */
+export function compareIsoDateTimes(left: string, right: string): number {
+  const leftTimestamp = toSortableTimestamp(left);
+  const rightTimestamp = toSortableTimestamp(right);
+  if (leftTimestamp === null) {
+    if (rightTimestamp !== null) return -1;
+    return left === right ? 0 : left < right ? -1 : 1;
+  }
+  if (rightTimestamp === null) return 1;
+  return Math.sign(leftTimestamp - rightTimestamp);
+}
+
 function getFirstSortableTimestamp(...values: Array<string | null | undefined>): number | null {
   for (const value of values) {
     const timestamp = toSortableTimestamp(value ?? undefined);
@@ -67,6 +83,24 @@ export function getThreadSortTimestamp(
     );
   }
   return getLatestUserMessageTimestamp(thread);
+}
+
+/**
+ * Sort anchor for the active thread list: creation time, re-anchored to
+ * unsettledAt when the thread last re-entered the active list (an explicit
+ * un-settle, or a settled thread waking on activity). The list stays static
+ * between lifecycle transitions, but an un-settled thread surfaces at the
+ * top instead of sinking back to its creation-order slot. Shared by web and
+ * mobile so both render the same order. Malformed timestamps sink to 0.
+ */
+export function activeThreadAnchorTimestampMs(thread: {
+  readonly createdAt: string;
+  readonly unsettledAt?: string | null | undefined;
+}): number {
+  return Math.max(
+    toSortableTimestamp(thread.createdAt) ?? 0,
+    toSortableTimestamp(thread.unsettledAt ?? undefined) ?? 0,
+  );
 }
 
 export function sortThreads<T extends { readonly id: string } & ThreadSortInput>(

@@ -26,7 +26,7 @@ describe("OrchestrationReactor", () => {
     runtime = null;
   });
 
-  it("starts every orchestration reactor", async () => {
+  it("starts the fork-authorized orchestration reactors", async () => {
     const started: string[] = [];
 
     runtime = ManagedRuntime.make(
@@ -73,7 +73,7 @@ describe("OrchestrationReactor", () => {
               started.push("thread-deletion-reactor");
               return Effect.void;
             },
-            drain: Effect.void,
+            drainThrough: () => Effect.void,
           }),
         ),
         Layer.provideMerge(

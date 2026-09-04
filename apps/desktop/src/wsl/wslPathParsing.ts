@@ -11,6 +11,8 @@ export interface WslConfig {
 // Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
 // Trailing char must also be \w so hand-edited config like "Ubuntu " / "Ubuntu-" / "Ubuntu." rejects.
 export const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
+const WSL_DISTRO_MAX_COUNT = 64;
+const WSL_DISTRO_NAME_MAX_LENGTH = 512;
 
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   const hasUtf16Bom = stdout.length >= 2 && stdout[0] === 0xff && stdout[1] === 0xfe;
@@ -32,8 +34,15 @@ export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
     if (fields.length < 3) continue;
     const name = fields[0]!.trim();
     const versionNum = parseInt(fields[2]!, 10);
-    if (!name || (versionNum !== 1 && versionNum !== 2)) continue;
+    if (
+      !name ||
+      name.length > WSL_DISTRO_NAME_MAX_LENGTH ||
+      (versionNum !== 1 && versionNum !== 2)
+    ) {
+      continue;
+    }
     distros.push({ name, isDefault, version: versionNum as 1 | 2 });
+    if (distros.length >= WSL_DISTRO_MAX_COUNT) break;
   }
   return distros;
 }

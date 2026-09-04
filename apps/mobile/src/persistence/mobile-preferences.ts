@@ -15,6 +15,8 @@ import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-sto
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
+export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
+export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
   readonly liveActivitiesEnabled?: boolean;
@@ -56,6 +58,10 @@ export interface Preferences {
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
   readonly planModeEnabled?: boolean;
+  /** Undefined preserves the default expanded Settled shelf. */
+  readonly threadListV2SettledShelfExpanded?: boolean;
+  /** Undefined preserves the default collapsed Snoozed shelf. */
+  readonly threadListV2SnoozedShelfExpanded?: boolean;
 }
 
 /** One thread → photo binding in the World Scenery theme. */
@@ -142,6 +148,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     lastSeenChangelogVersion?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
+    threadListV2SettledShelfExpanded?: boolean;
+    threadListV2SnoozedShelfExpanded?: boolean;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -184,9 +192,23 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.codeWordBreak === "boolean") preferences.codeWordBreak = parsed.codeWordBreak;
   if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
-    preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
-      (account): account is string => typeof account === "string",
-    );
+    const accounts: string[] = [];
+    const seenAccounts = new Set<string>();
+    for (const account of parsed.connectOnboardingOptOutAccounts.slice(
+      -CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS,
+    )) {
+      if (
+        typeof account !== "string" ||
+        account.length === 0 ||
+        account.length > CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH ||
+        seenAccounts.has(account)
+      ) {
+        continue;
+      }
+      seenAccounts.add(account);
+      accounts.push(account);
+    }
+    preferences.connectOnboardingOptOutAccounts = accounts;
   }
   if (Array.isArray(parsed.collapsedProjectGroups)) {
     preferences.collapsedProjectGroups = parsed.collapsedProjectGroups.filter(
@@ -270,6 +292,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.planModeEnabled === "boolean") {
     preferences.planModeEnabled = parsed.planModeEnabled;
+  }
+  if (typeof parsed.threadListV2SettledShelfExpanded === "boolean") {
+    preferences.threadListV2SettledShelfExpanded = parsed.threadListV2SettledShelfExpanded;
+  }
+  if (typeof parsed.threadListV2SnoozedShelfExpanded === "boolean") {
+    preferences.threadListV2SnoozedShelfExpanded = parsed.threadListV2SnoozedShelfExpanded;
   }
   return preferences;
 }

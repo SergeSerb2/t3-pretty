@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
@@ -34,6 +35,7 @@ const makeEnvironmentAuthLayer = (overrides?: Partial<ServerConfig.ServerConfig[
   EnvironmentAuth.layer.pipe(
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
+    Layer.provide(ServerEnvironment.identityLayer),
     Layer.provide(makeServerConfigLayer(overrides)),
   );
 
@@ -56,6 +58,49 @@ const requestMetadata = {
   browser: "Chrome",
   ipAddress: "192.168.1.23",
 };
+
+it.effect(
+  "allows ambient websocket cookies only from native, same-origin, or desktop callers",
+  () =>
+    Effect.sync(() => {
+      const requestUrl = new URL("http://127.0.0.1:3773/ws");
+
+      expect(
+        EnvironmentAuth.isAllowedAmbientCookieWebSocketOrigin({
+          requestUrl,
+          origin: undefined,
+        }),
+      ).toBe(true);
+      expect(
+        EnvironmentAuth.isAllowedAmbientCookieWebSocketOrigin({
+          requestUrl,
+          origin: "http://127.0.0.1:3773",
+        }),
+      ).toBe(true);
+      expect(
+        EnvironmentAuth.isAllowedAmbientCookieWebSocketOrigin({
+          requestUrl: new URL("ws://127.0.0.1:3773/ws"),
+          origin: "http://127.0.0.1:3773",
+        }),
+      ).toBe(true);
+      for (const origin of ["t3code://app", "t3code-dev://app"]) {
+        expect(EnvironmentAuth.isAllowedAmbientCookieWebSocketOrigin({ requestUrl, origin })).toBe(
+          true,
+        );
+      }
+
+      for (const origin of [
+        "https://attacker.example",
+        "null",
+        "",
+        "http://127.0.0.1:3773/unexpected-path",
+      ]) {
+        expect(EnvironmentAuth.isAllowedAmbientCookieWebSocketOrigin({ requestUrl, origin })).toBe(
+          false,
+        );
+      }
+    }),
+);
 
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
   it.effect("classifies invalid bootstrap credential failures for the HTTP boundary", () =>
@@ -109,7 +154,21 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
   );
 
-  it.effect("does not exchange ordinary pairing grants for administrative access tokens", () =>
+  it.effect("prefers a bearer token over a stale legacy cookie", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const bearer = yield* serverAuth.issueSession();
+      const verified = yield* serverAuth.authenticateHttpRequest({
+        cookies: { [sessions.legacyCookieName ?? "t3_session"]: "stale" },
+        headers: { authorization: `Bearer ${bearer.token}` },
+      } as never);
+
+      expect(verified.sessionId).toBe(bearer.sessionId);
+    }).pipe(Effect.provide(makeEnvironmentAuthLayer({ mode: "web", host: "192.168.1.50" }))),
+  );
+
+  it.effect("does not consume ordinary pairing grants on an over-scoped token exchange", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const pairingCredential = yield* serverAuth.issuePairingCredential();
@@ -123,6 +182,14 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         .pipe(Effect.flip);
 
       expect(error._tag).toBe("ServerAuthScopeNotGrantedError");
+
+      const token = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+        pairingCredential.credential,
+        ["orchestration:read"],
+        requestMetadata,
+      );
+
+      expect(token.scope).toBe("orchestration:read");
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
   );
 

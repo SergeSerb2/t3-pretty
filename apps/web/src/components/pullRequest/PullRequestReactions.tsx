@@ -5,7 +5,7 @@ import type {
   PullRequestRef,
 } from "@t3tools/contracts";
 import { SmilePlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -62,37 +62,106 @@ export function PullRequestReactionBar({
   readonly className?: string | undefined;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const targetKey = JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.number,
+    subjectId ?? null,
+  ]);
   const [pending, setPending] = useState<{
+    readonly targetKey: string;
     readonly signature: string;
     readonly values: ReadonlyMap<PullRequestReactionContent, boolean>;
-  }>({ signature: "", values: EMPTY_PENDING });
+  }>({ targetKey: "", signature: "", values: EMPTY_PENDING });
+  const requestVersionByReactionRef = useRef(new Map<string, number>());
+  const activeTargetKeyRef = useRef(targetKey);
+  const mountedRef = useRef(false);
+  activeTargetKeyRef.current = targetKey;
   const setReaction = useAtomCommand(pullRequestEnvironment.setReaction, { reportFailure: false });
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestVersionByReactionRef.current.clear();
+    };
+  }, []);
+
   const signature = reactionsSignature(reactions);
-  const values = pending.signature === signature ? pending.values : EMPTY_PENDING;
+  const values =
+    pending.targetKey === targetKey && pending.signature === signature
+      ? pending.values
+      : EMPTY_PENDING;
   const shown = applyPendingPullRequestReactions(reactions, values);
 
   const toggle = async (content: PullRequestReactionContent, reacted: boolean) => {
-    setPending({ signature, values: new Map([...values, [content, reacted]]) });
-    const result = await setReaction({
-      environmentId,
-      input: {
-        ...reference,
-        ...(subjectId === undefined ? {} : { subjectId }),
-        content,
-        reacted,
-      },
+    const requestKey = JSON.stringify([targetKey, content]);
+    const requestVersion = (requestVersionByReactionRef.current.get(requestKey) ?? 0) + 1;
+    requestVersionByReactionRef.current.set(requestKey, requestVersion);
+    setPending((current) => {
+      const next = new Map(
+        current.targetKey === targetKey && current.signature === signature
+          ? current.values
+          : EMPTY_PENDING,
+      );
+      next.set(content, reacted);
+      return { targetKey, signature, values: next };
     });
-    if (result._tag === "Failure") {
+
+    try {
+      const result = await setReaction({
+        environmentId,
+        input: {
+          ...reference,
+          ...(subjectId === undefined ? {} : { subjectId }),
+          content,
+          reacted,
+        },
+      });
+      if (
+        !mountedRef.current ||
+        activeTargetKeyRef.current !== targetKey ||
+        requestVersionByReactionRef.current.get(requestKey) !== requestVersion
+      ) {
+        return;
+      }
+      if (result._tag === "Failure") {
+        setPending((current) => {
+          if (current.targetKey !== targetKey || current.signature !== signature) return current;
+          const next = new Map(current.values);
+          next.delete(content);
+          return { targetKey: current.targetKey, signature: current.signature, values: next };
+        });
+        toastManager.add({ type: "error", title: "The reaction could not be saved" });
+        onRefresh();
+        return;
+      }
+      onRefresh();
+    } catch (error) {
+      if (
+        !mountedRef.current ||
+        activeTargetKeyRef.current !== targetKey ||
+        requestVersionByReactionRef.current.get(requestKey) !== requestVersion
+      ) {
+        return;
+      }
       setPending((current) => {
+        if (current.targetKey !== targetKey || current.signature !== signature) return current;
         const next = new Map(current.values);
         next.delete(content);
-        return { signature: current.signature, values: next };
+        return { targetKey: current.targetKey, signature: current.signature, values: next };
       });
-      toastManager.add({ type: "error", title: "The reaction could not be saved" });
-      return;
+      toastManager.add({
+        type: "error",
+        title: "The reaction could not be saved",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+      onRefresh();
+    } finally {
+      if (requestVersionByReactionRef.current.get(requestKey) === requestVersion) {
+        requestVersionByReactionRef.current.delete(requestKey);
+      }
     }
-    onRefresh();
   };
 
   if (shown.length === 0 && !canReact) return null;

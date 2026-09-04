@@ -92,6 +92,18 @@ function formatDurationMicros(value: number): string {
   return `${(value / 1_000_000).toFixed(2)} s`;
 }
 
+function PartialDataNotice({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 bg-amber-500/6 px-4 py-2.5 text-[11px] leading-relaxed text-amber-800 sm:px-5 dark:text-amber-200"
+    >
+      <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function formatSampleInterval(valueMs: number): string {
   if (valueMs < 1_000) return `${Math.max(0, Math.round(valueMs))} ms`;
   const seconds = valueMs / 1_000;
@@ -1245,6 +1257,11 @@ export function ResourceTelemetryDiagnostics() {
             </div>
           ) : null}
           <ResourceHistoryChart buckets={history.data?.buckets ?? []} />
+          {history.data?.topProcessesTruncated === true ? (
+            <PartialDataNotice>
+              The process ranking is partial; additional processes were omitted from this table.
+            </PartialDataNotice>
+          ) : null}
           <HistoryProcessTable processes={history.data?.topProcesses ?? []} />
         </div>
       </SettingsSection>
@@ -1261,6 +1278,11 @@ export function ResourceTelemetryDiagnostics() {
         }
       >
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">
+          {snapshot?.processesTruncated === true ? (
+            <PartialDataNotice>
+              The live process list is partial; additional processes were omitted from this table.
+            </PartialDataNotice>
+          ) : null}
           <ProcessTable
             processes={snapshot?.processes ?? []}
             signalingKeys={signalingKeys}
@@ -1282,6 +1304,11 @@ export function ResourceTelemetryDiagnostics() {
             counters identify known T3 operations so process spikes can be correlated with specific
             persistence and logging paths.
           </div>
+          {snapshot?.attribution.entriesTruncated === true ? (
+            <PartialDataNotice>
+              Attribution is summarized; additional operations were combined into the overflow row.
+            </PartialDataNotice>
+          ) : null}
           <AttributionTable entries={snapshot?.attribution.entries ?? []} />
         </div>
       </SettingsSection>

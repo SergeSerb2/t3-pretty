@@ -7,12 +7,20 @@ import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
 import * as SkillStore from "./SkillStore.ts";
+import { SKILL_STATE_MAX_ITEMS } from "@t3tools/contracts";
 
 const TestLayer = Layer.empty.pipe(
   Layer.provideMerge(SkillStore.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-skill-store-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
+
+it("bounds skill-state snapshots at the wire contract capacity", () => {
+  assert.strictEqual(SkillStore.remainingSkillStateCapacity(0), SKILL_STATE_MAX_ITEMS);
+  assert.strictEqual(SkillStore.remainingSkillStateCapacity(SKILL_STATE_MAX_ITEMS - 1), 1);
+  assert.strictEqual(SkillStore.remainingSkillStateCapacity(SKILL_STATE_MAX_ITEMS), 0);
+  assert.strictEqual(SkillStore.remainingSkillStateCapacity(SKILL_STATE_MAX_ITEMS + 1), 0);
+});
 
 /** Write a source skill directory in a fresh temp dir and return its path. */
 const makeSourceSkill = Effect.fn(function* (contents: string, extraFile?: string) {

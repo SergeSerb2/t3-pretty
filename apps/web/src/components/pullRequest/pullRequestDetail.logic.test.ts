@@ -13,7 +13,13 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  canStartContinuousFix,
+  countActionableComments,
   countFixableFindings,
+  hasActionableComments,
+  shouldOfferFixActions,
+  headerFitsFixActions,
+  shouldShowFixActionsInMenu,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -34,6 +40,7 @@ import {
   pullRequestDiffIdentity,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
+  pullRequestCheckoutCommand,
   pullRequestComposerTarget,
   pullRequestConversationFinding,
   pullRequestFindingKey,
@@ -47,6 +54,23 @@ import {
   editPullRequestThreadComment,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+
+describe("pull request checkout commands", () => {
+  it.each([
+    ["github", "feature", null, "gh pr checkout 42"],
+    ["gitlab", "feature", null, "glab mr checkout 42"],
+    ["azure-devops", "feature", null, "az repos pr checkout --id 42"],
+    [
+      "bitbucket",
+      "feature/checkout",
+      "maria/t3code",
+      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/t3code.git t3code-pr-42",
+    ],
+    ["unknown", "feature", null, null],
+  ] as const)("builds the %s command", (provider, branch, repository, expected) => {
+    expect(pullRequestCheckoutCommand(provider, 42, branch, repository)).toBe(expected);
+  });
+});
 
 const TIMELINE_SOURCE: Pick<
   PullRequestDetailView,
@@ -599,6 +623,31 @@ describe("pull request timeline", () => {
     ]);
   });
 
+  it("orders mixed-precision instants chronologically", () => {
+    const source = {
+      ...TIMELINE_SOURCE,
+      createdAt: "2026-07-01T00:00:00Z",
+      commits: [
+        {
+          ...TIMELINE_SOURCE.commits[0]!,
+          committedDate: "2026-07-01T00:00:00.8Z",
+        },
+      ],
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          createdAt: "2026-07-01T00:00:00.9Z",
+        },
+      ],
+    };
+
+    expect(buildPullRequestTimeline(source).map((event) => event.id)).toEqual([
+      "c1",
+      "1baf7bdcafe",
+      "created",
+    ]);
+  });
+
   it("carries the comment url, and leaves the events the host cannot address without one", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,
@@ -1012,13 +1061,91 @@ describe("fix findings handoff", () => {
       "",
       "Keep the hook on one node.",
     ].join("\n");
+    const reviewThreads = [
+      thread("please rename this"),
+      thread("already done", { id: "t-resolved", isResolved: true }),
+      thread(grokBody, { id: "t-grok", path: null, line: null }),
+    ];
+    const comments = [
+      {
+        id: "c-review",
+        kind: "review" as const,
+        author: { login: "reviewer", name: null, avatarUrl: null },
+        body: "Also drop the unused export.",
+        createdAt: "2026-07-03T00:00:00Z",
+        url: null,
+        path: null,
+        reviewState: "CHANGES_REQUESTED" as const,
+      },
+    ];
     expect(
       countFixableFindings({
-        reviewThreads: [
-          thread("please rename this"),
-          thread("already done", { id: "t-resolved", isResolved: true }),
-          thread(grokBody, { id: "t-grok", path: null, line: null }),
+        reviewThreads,
+        comments,
+        checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(4);
+    expect(countActionableComments({ reviewThreads, comments })).toBe(2);
+  });
+
+  it("lets a continuous fix start on pending checks with no current findings", () => {
+    const pendingOnly = {
+      reviewThreads: [] as PullRequestReviewThread[],
+      comments: [] as PullRequestComment[],
+      checks: [{ name: "build", status: "pending" as const, description: null, url: null }],
+    };
+    expect(countFixableFindings(pendingOnly)).toBe(0);
+    expect(canStartContinuousFix(pendingOnly)).toBe(true);
+    expect(canStartContinuousFix({ ...pendingOnly, checks: [] })).toBe(false);
+    expect(
+      canStartContinuousFix({
+        ...pendingOnly,
+        checks: [{ name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(false);
+    expect(
+      canStartContinuousFix({
+        reviewThreads: [],
+        comments: [],
+        checks: [failingCheck],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions unless a PR has unresolved review comments", () => {
+    expect(hasActionableComments({ reviewThreads: [], comments: [] })).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-talk",
+            kind: "issue-comment",
+            author: { login: "octocat", name: null, avatarUrl: null },
+            body: "please also update the docs",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: null,
+          },
         ],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("please rename this")],
+        comments: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
         comments: [
           {
             id: "c-review",
@@ -1031,9 +1158,50 @@ describe("fix findings handoff", () => {
             reviewState: "CHANGES_REQUESTED",
           },
         ],
-        checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
-    ).toBe(4);
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-inline",
+            kind: "review-comment",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Rename this helper.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: "apps/web/src/page.tsx",
+            reviewState: null,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions on a merged or closed pull request", () => {
+    const unresolved = {
+      reviewThreads: [thread("please rename this")],
+      comments: [] as PullRequestComment[],
+    };
+    expect(shouldOfferFixActions({ state: "open", ...unresolved })).toBe(true);
+    expect(shouldOfferFixActions({ state: "merged", ...unresolved })).toBe(false);
+    expect(shouldOfferFixActions({ state: "closed", ...unresolved })).toBe(false);
+    expect(
+      shouldOfferFixActions({
+        state: "open",
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("puts Fix actions in the header or the overflow menu, never both", () => {
+    expect(headerFitsFixActions(511)).toBe(false);
+    expect(headerFitsFixActions(512)).toBe(true);
+    expect(shouldShowFixActionsInMenu(true, true)).toBe(false);
+    expect(shouldShowFixActionsInMenu(true, false)).toBe(true);
+    expect(shouldShowFixActionsInMenu(false, false)).toBe(false);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {
@@ -1068,6 +1236,26 @@ describe("fix findings handoff", () => {
     expect(handoff.reviewComments).toEqual([]);
     // A check is CI, not a conversation — resolving review threads does not apply.
     expect(handoff.prompt).not.toContain("resolveReviewThread");
+  });
+
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+      continuous: true,
+    });
+    const once = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+    });
+
+    expect(continuous.prompt).toContain("green on its latest commit");
+    expect(continuous.prompt).toContain("wait for the next automated review cycle");
+    expect(continuous.prompt).toContain("required checks for that exact head");
+    expect(continuous.prompt).toContain("while actionable feedback remains unresolved");
+    expect(once.prompt).not.toContain("green on its latest commit");
   });
 
   it("leaves out a resolved conversation, and one nobody wrote in", () => {

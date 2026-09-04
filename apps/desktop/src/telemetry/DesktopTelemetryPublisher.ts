@@ -1,7 +1,13 @@
 import {
+  DESKTOP_ELECTRON_PROCESS_MAX_COUNT,
+  DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH,
   DesktopHostTelemetryMessage,
   type DesktopHostTelemetrySnapshot,
   type DesktopTelemetryControlMessage,
+  type DesktopTelemetryCancelDesktopUpdate,
+  type DesktopTelemetryCommitDesktopUpdate,
+  type DesktopTelemetryRequestDesktopUpdate,
+  type DesktopUpdateStatusReport,
   type HostPowerSnapshot,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -65,12 +71,25 @@ export class DesktopTelemetryPublisher extends Context.Service<
       message: DesktopTelemetryControlMessage,
     ) => Effect.Effect<void>;
     readonly removeControlSource: (sourceId: string) => Effect.Effect<void>;
+    /** Sends the report to the attached backend and replays the latest one
+        to backends that attach later (including the one spawned after a
+        relaunch). */
+    readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
+    /** Update requests received over the control channel. Single consumer. */
+    readonly updateRequests: Stream.Stream<DesktopTelemetryRequestDesktopUpdate>;
+    readonly updateCommits: Stream.Stream<DesktopTelemetryCommitDesktopUpdate>;
+    readonly updateCancellations: Stream.Stream<DesktopTelemetryCancelDesktopUpdate>;
   }
 >()("@t3tools/desktop/telemetry/DesktopTelemetryPublisher") {}
 
 function booleanState(value: boolean): HostPowerSnapshot["onBattery"] {
   return value ? "true" : "false";
 }
+
+const finiteOrZero = (value: number): number => (Number.isFinite(value) ? value : 0);
+
+const speedLimitPercent = (value: number): Option.Option<number> =>
+  Number.isFinite(value) ? Option.some(Math.max(0, Math.min(100, value))) : Option.none();
 
 function idleState(value: ElectronPowerMonitor.ElectronIdleState): HostPowerSnapshot["idle"] {
   switch (value) {
@@ -107,7 +126,7 @@ function updatePowerState(state: PowerState, event: PowerEvent): PowerState {
     case "thermal":
       return { ...state, thermalState: event.value };
     case "speedLimit":
-      return { ...state, speedLimitPercent: Option.some(event.value) };
+      return { ...state, speedLimitPercent: speedLimitPercent(event.value) };
   }
 }
 
@@ -154,12 +173,20 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     active: DEFAULT_HOST_POWER_ACTIVE_INTERVAL,
     idle: DEFAULT_HOST_POWER_IDLE_INTERVAL,
   });
-  const powerEvents = yield* Queue.unbounded<PowerEvent>();
+  // Electron can deliver power/thermal bursts while a metrics sample is still
+  // running. The reducer and subsequent polling recover current state, so keep
+  // a generous recent window instead of retaining an unlimited event backlog.
+  const powerEvents = yield* Queue.sliding<PowerEvent>(32);
   const sampleTriggers = yield* Queue.sliding<void>(1);
   const diagnosticsDemandSources = yield* Ref.make<ReadonlySet<string>>(new Set());
   const latest = yield* Ref.make(Option.none<DesktopHostTelemetrySnapshot>());
   const changes = yield* PubSub.sliding<DesktopHostTelemetrySnapshot>(8);
   const sequence = yield* Ref.make(0);
+  const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
+  const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
+  const updateRequestQueue = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
+  const updateCommitQueue = yield* Queue.unbounded<DesktopTelemetryCommitDesktopUpdate>();
+  const updateCancellationQueue = yield* Queue.unbounded<DesktopTelemetryCancelDesktopUpdate>();
 
   const offer = (event: PowerEvent): void => {
     Queue.offerUnsafe(powerEvents, event);
@@ -243,7 +270,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
         power: {
           source: "electron-main",
           idle: observedPower.idle,
-          idleSeconds,
+          idleSeconds: Math.max(0, finiteOrZero(idleSeconds)),
           locked: observedPower.locked,
           suspended: observedPower.suspended,
           onBattery: observedPower.onBattery,
@@ -253,19 +280,35 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           updatedAt: sampledAt,
         },
         speedLimitPercent: observedPower.speedLimitPercent,
-        electronProcesses: metrics.map((metric) => ({
+        ...(metrics.length > DESKTOP_ELECTRON_PROCESS_MAX_COUNT
+          ? { electronProcessesTruncated: true }
+          : {}),
+        electronProcesses: metrics.slice(0, DESKTOP_ELECTRON_PROCESS_MAX_COUNT).map((metric) => ({
           pid: metric.pid,
-          creationTimeMs: Math.max(0, Math.round(metric.creationTime)),
+          creationTimeMs: Math.max(0, Math.round(finiteOrZero(metric.creationTime))),
           type: metric.type,
-          ...(metric.name === undefined ? {} : { name: metric.name }),
-          ...(metric.serviceName === undefined ? {} : { serviceName: metric.serviceName }),
-          cpuPercent: metric.cpu.percentCPUUsage,
-          ...(metric.cpu.cumulativeCPUUsage === undefined
+          ...(metric.name === undefined
+            ? {}
+            : { name: metric.name.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH) }),
+          ...(metric.serviceName === undefined
+            ? {}
+            : {
+                serviceName: metric.serviceName.slice(0, DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH),
+              }),
+          cpuPercent: finiteOrZero(metric.cpu.percentCPUUsage),
+          ...(metric.cpu.cumulativeCPUUsage === undefined ||
+          !Number.isFinite(metric.cpu.cumulativeCPUUsage)
             ? {}
             : { cumulativeCpuSeconds: metric.cpu.cumulativeCPUUsage }),
-          idleWakeupsPerSecond: metric.cpu.idleWakeupsPerSecond,
-          workingSetBytes: Math.max(0, Math.round(metric.memory.workingSetSize * 1024)),
-          peakWorkingSetBytes: Math.max(0, Math.round(metric.memory.peakWorkingSetSize * 1024)),
+          idleWakeupsPerSecond: finiteOrZero(metric.cpu.idleWakeupsPerSecond),
+          workingSetBytes: Math.max(
+            0,
+            Math.round(finiteOrZero(metric.memory.workingSetSize) * 1024),
+          ),
+          peakWorkingSetBytes: Math.max(
+            0,
+            Math.round(finiteOrZero(metric.memory.peakWorkingSetSize) * 1024),
+          ),
         })),
       };
 
@@ -324,6 +367,12 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           active: Duration.millis(message.activeIntervalMs),
           idle: Duration.millis(message.idleIntervalMs),
         }).pipe(Effect.andThen(Queue.offer(sampleTriggers, undefined)), Effect.asVoid);
+      case "requestDesktopUpdate":
+        return Queue.offer(updateRequestQueue, message).pipe(Effect.asVoid);
+      case "commitDesktopUpdate":
+        return Queue.offer(updateCommitQueue, message).pipe(Effect.asVoid);
+      case "cancelDesktopUpdate":
+        return Queue.offer(updateCancellationQueue, message).pipe(Effect.asVoid);
     }
   };
   const removeControlSource: DesktopTelemetryPublisher["Service"]["removeControlSource"] = (
@@ -357,14 +406,35 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
       );
     }),
   );
+  const updateReports = Stream.unwrap(
+    Effect.gen(function* () {
+      const subscription = yield* PubSub.subscribe(updateReportChanges);
+      const initial = yield* Ref.get(latestUpdateReport);
+      return Stream.concat(
+        Option.match(initial, {
+          onNone: () => Stream.empty,
+          onSome: Stream.make,
+        }),
+        Stream.fromSubscription(subscription),
+      );
+    }),
+  );
   const encoded = Stream.concat(
     Stream.make({
       version: 1,
       type: "desktopTelemetryHello",
       electronPid: process.pid,
     } as const),
-    snapshots,
+    Stream.merge(snapshots, updateReports),
   ).pipe(Stream.map((message) => textEncoder.encode(`${encodeMessage(message)}\n`)));
+
+  const publishUpdateReport: DesktopTelemetryPublisher["Service"]["publishUpdateReport"] = (
+    report,
+  ) =>
+    Ref.set(latestUpdateReport, Option.some(report)).pipe(
+      Effect.andThen(PubSub.publish(updateReportChanges, report)),
+      Effect.asVoid,
+    );
 
   return DesktopTelemetryPublisher.of({
     latest: Ref.get(latest),
@@ -373,6 +443,10 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     handleControl,
     handleControlForSource,
     removeControlSource,
+    publishUpdateReport,
+    updateRequests: Stream.fromQueue(updateRequestQueue),
+    updateCommits: Stream.fromQueue(updateCommitQueue),
+    updateCancellations: Stream.fromQueue(updateCancellationQueue),
   });
 });
 

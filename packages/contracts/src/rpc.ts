@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
@@ -27,6 +28,7 @@ import {
 import {
   HostSkillId,
   HostSkillsState,
+  SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES,
   SkillId,
   SkillMarketplaceListing,
   SkillMarketplaceSource,
@@ -48,7 +50,15 @@ import {
   FilesystemBrowseResult,
   FilesystemBrowseError,
 } from "./filesystem.ts";
-import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
+import {
+  AssetAccessError,
+  AssetCreateUrlInput,
+  AssetCreateUrlResult,
+  AttachmentCreateUploadUrlInput,
+  AttachmentCreateUploadUrlResult,
+  AttachmentDeleteInput,
+  AttachmentUploadSigningKeyError,
+} from "./assets.ts";
 import {
   GitActionProgressEvent,
   VcsSwitchRefInput,
@@ -105,6 +115,17 @@ import {
   OrchestrationGetWorkflowScriptError,
 } from "./orchestration.ts";
 import {
+  ProjectTransferCancelInput,
+  ProjectTransferCancelResult,
+  ProjectTransferError,
+  ProjectTransferInspectInput,
+  ProjectTransferInspectResult,
+  ProjectTransferPrepareInput,
+  ProjectTransferPrepareResult,
+  ProjectTransferResult,
+  ProjectTransferSendInput,
+} from "./projectTransfer.ts";
+import {
   ProviderUploadFeedbackError,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
@@ -126,6 +147,7 @@ import {
   PullRequestOperationError,
   PullRequestReactionInput,
   PullRequestRef,
+  PullRequestSummary,
   PullRequestReviewerCandidateList,
   PullRequestReviewerRequestInput,
   PullRequestSubmitReviewInput,
@@ -199,6 +221,7 @@ import {
 } from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
+  DesktopUpdateCommitInput,
   ServerConfig,
   ServerProviderUpdateError,
   ServerProviderUpdateInput,
@@ -250,6 +273,10 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsImportFavicon: "projects.importFavicon",
+  projectTransfersInspect: "projectTransfers.inspect",
+  projectTransfersPrepare: "projectTransfers.prepare",
+  projectTransfersSend: "projectTransfers.send",
+  projectTransfersCancel: "projectTransfers.cancel",
 
   // Agent instruction file methods
   agentInstructionsList: "agentInstructions.list",
@@ -272,6 +299,8 @@ export const WS_METHODS = {
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
   assetsCreateUrl: "assets.createUrl",
+  attachmentsCreateUploadUrl: "attachments.createUploadUrl",
+  attachmentsDelete: "attachments.delete",
 
   // Provider methods
   providerUploadFeedback: "provider.uploadFeedback",
@@ -328,6 +357,7 @@ export const WS_METHODS = {
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
+  serverCommitDesktopUpdate: "server.commitDesktopUpdate",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
@@ -360,6 +390,7 @@ export const WS_METHODS = {
   // Pull request methods
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
+  pullRequestsSummary: "pullRequests.summary",
   pullRequestsDetail: "pullRequests.detail",
   pullRequestsActivity: "pullRequests.activity",
   pullRequestsThreadComments: "pullRequests.threadComments",
@@ -427,6 +458,7 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refreshes.
      */
     instanceId: Schema.optional(ProviderInstanceId),
+    cwd: Schema.optional(TrimmedNonEmptyString),
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
@@ -453,6 +485,12 @@ export const WsServerUpdateServerWithProgressRpc = Rpc.make(
     stream: true,
   },
 );
+
+export const WsServerCommitDesktopUpdateRpc = Rpc.make(WS_METHODS.serverCommitDesktopUpdate, {
+  payload: DesktopUpdateCommitInput,
+  success: ServerSelfUpdateResult,
+  error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
+});
 
 export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
   payload: Schema.Struct({}),
@@ -611,6 +649,12 @@ export const WsPullRequestsListRpc = Rpc.make(WS_METHODS.pullRequestsList, {
 export const WsPullRequestsListStatsRpc = Rpc.make(WS_METHODS.pullRequestsListStats, {
   payload: PullRequestListStatsInput,
   success: PullRequestListStatsResult,
+  error: PullRequestRpcError,
+});
+
+export const WsPullRequestsSummaryRpc = Rpc.make(WS_METHODS.pullRequestsSummary, {
+  payload: PullRequestRef,
+  success: PullRequestSummary,
   error: PullRequestRpcError,
 });
 
@@ -818,13 +862,17 @@ const SkillsMarketplaceQuery = Schema.Struct({
 
 export const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
 export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketplace, {
   payload: SkillsMarketplaceQuery,
-  success: Schema.Array(SkillMarketplaceListing),
+  success: Schema.Array(SkillMarketplaceListing).check(
+    Schema.isMaxLength(SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES),
+  ),
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
@@ -861,6 +909,41 @@ export const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
+});
+
+export const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCreateUploadUrl, {
+  payload: AttachmentCreateUploadUrlInput,
+  success: AttachmentCreateUploadUrlResult,
+  error: Schema.Union([AttachmentUploadSigningKeyError, EnvironmentAuthorizationError]),
+});
+
+export const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
+  payload: AttachmentDeleteInput,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsProjectTransfersInspectRpc = Rpc.make(WS_METHODS.projectTransfersInspect, {
+  payload: ProjectTransferInspectInput,
+  success: ProjectTransferInspectResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersPrepareRpc = Rpc.make(WS_METHODS.projectTransfersPrepare, {
+  payload: ProjectTransferPrepareInput,
+  success: ProjectTransferPrepareResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersSendRpc = Rpc.make(WS_METHODS.projectTransfersSend, {
+  payload: ProjectTransferSendInput,
+  success: ProjectTransferResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+export const WsProjectTransfersCancelRpc = Rpc.make(WS_METHODS.projectTransfersCancel, {
+  payload: ProjectTransferCancelInput,
+  success: ProjectTransferCancelResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
 });
 
 export const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
@@ -1177,6 +1260,14 @@ export const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTermi
 export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
   payload: Schema.Struct({
     knownConfigDigest: Schema.optionalKey(Schema.String),
+    /**
+     * Whether this client understands `environmentThemesUpdated` events.
+     * Already-shipped clients decode the stream against the old event union
+     * and would die on an unknown member, so the server emits the theme
+     * stream only to subscribers that ask for it. Absent on old clients;
+     * dropped by old servers.
+     */
+    environmentThemes: Schema.optional(Schema.Boolean),
   }),
   success: ServerConfigStreamEvent,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),
@@ -1218,6 +1309,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateProviderRpc,
   WsServerUpdateServerRpc,
   WsServerUpdateServerWithProgressRpc,
+  WsServerCommitDesktopUpdateRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
@@ -1244,6 +1336,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,
+  WsPullRequestsSummaryRpc,
   WsPullRequestsDetailRpc,
   WsPullRequestsActivityRpc,
   WsPullRequestsThreadCommentsRpc,
@@ -1282,6 +1375,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,
+  WsAttachmentsCreateUploadUrlRpc,
+  WsAttachmentsDeleteRpc,
+  WsProjectTransfersInspectRpc,
+  WsProjectTransfersPrepareRpc,
+  WsProjectTransfersSendRpc,
+  WsProjectTransfersCancelRpc,
   WsProviderUploadFeedbackRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,

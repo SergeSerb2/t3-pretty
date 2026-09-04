@@ -5,12 +5,16 @@ import { describe, expect, it } from "vite-plus/test";
 
 describe("thread titlebar layout controls", () => {
   const source = NodeFS.readFileSync(new URL("./ChatView.tsx", import.meta.url), "utf8");
+  const workspacePageHeaderSource = NodeFS.readFileSync(
+    new URL("./WorkspacePageHeader.tsx", import.meta.url),
+    "utf8",
+  );
   const rootStart = source.indexOf(
     '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
   );
   const headerStart = source.indexOf("data-chat-header", rootStart);
   const headerEnd = source.indexOf("<ChatHeader", headerStart);
-  const headerClose = source.indexOf("</header>", headerStart);
+  const headerClose = source.indexOf("</WorkspacePageHeader>", headerStart);
   const controlsRender = "{parkTitlebarLayoutControls ? panelLayoutControls : null}";
 
   it("keeps the layout-control cluster on the workspace root across right-panel toggles", () => {
@@ -44,7 +48,8 @@ describe("thread titlebar layout controls", () => {
     );
     expect(headerSlice).not.toContain("isElectron && !rightPanelOpen");
     expect(headerSlice).not.toContain("w-16");
-    expect(headerSlice).toContain("drag-region relative flex");
+    expect(headerSlice).toContain("electron={isElectron}");
+    expect(workspacePageHeaderSource).toContain('electron && "drag-region"');
     expect(holeIndex).toBeGreaterThan(headerEnd);
     expect(holeIndex).toBeLessThan(headerClose);
     expect(headerSlice).toContain("controlCount={2}");

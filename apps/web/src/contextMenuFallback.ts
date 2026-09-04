@@ -4,6 +4,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 // Inline Lucide-style icon paths (stroke-based, viewBox 0 0 24 24, strokeWidth 2).
 const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<string, string> }>> = {
+  "arrow-right-left": [
+    { tag: "path", attrs: { d: "M8 3 4 7l4 4" } },
+    { tag: "path", attrs: { d: "M4 7h16" } },
+    { tag: "path", attrs: { d: "m16 21 4-4-4-4" } },
+    { tag: "path", attrs: { d: "M20 17H4" } },
+  ],
   archive: [
     { tag: "rect", attrs: { width: "20", height: "5", x: "2", y: "3", rx: "1" } },
     { tag: "path", attrs: { d: "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" } },
@@ -96,6 +102,15 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "path", attrs: { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" } },
     { tag: "path", attrs: { d: "M8 16H3v5" } },
   ],
+  settings: [
+    {
+      tag: "path",
+      attrs: {
+        d: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
+      },
+    },
+    { tag: "circle", attrs: { cx: "12", cy: "12", r: "3" } },
+  ],
   "folder-tree": [
     {
       tag: "path",
@@ -187,6 +202,10 @@ function isNodeWithinMenuStack(target: EventTarget | null, menuStack: readonly H
 // dismiss it with the same result as an outside click or Escape.
 let activeContextMenuDismiss: (() => void) | null = null;
 
+export function isContextMenuOpen(): boolean {
+  return activeContextMenuDismiss !== null;
+}
+
 /**
  * Closes the currently open fallback context menu, resolving its show() with
  * null (the same result as dismissing by outside click or Escape). No-op when
@@ -210,8 +229,17 @@ export function showContextMenuFallback<T extends string>(
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const menuStack: HTMLDivElement[] = [];
     const submenuTriggerStack: Array<HTMLButtonElement | undefined> = [];
+    const pendingFrames = new Set<number>();
     let isDisposed = false;
     let canDismissFromPointer = false;
+
+    const scheduleFrame = (callback: () => void) => {
+      const frameId = requestAnimationFrame(() => {
+        pendingFrames.delete(frameId);
+        if (!isDisposed) callback();
+      });
+      pendingFrames.add(frameId);
+    };
 
     const dismiss = () => cleanup(null);
 
@@ -226,6 +254,10 @@ export function showContextMenuFallback<T extends string>(
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("contextmenu", onContextMenu, true);
+      for (const frameId of pendingFrames) {
+        cancelAnimationFrame(frameId);
+      }
+      pendingFrames.clear();
       const shouldRestoreFocus = isNodeWithinMenuStack(document.activeElement, menuStack);
       for (const menu of menuStack) {
         menu.remove();
@@ -469,8 +501,10 @@ export function showContextMenuFallback<T extends string>(
       menuStack[level] = menu;
       submenuTriggerStack[level] = parentTrigger;
 
-      requestAnimationFrame(() => {
-        clampMenuPosition(menu, preferredLeft, preferredTop);
+      scheduleFrame(() => {
+        if (menu.isConnected) {
+          clampMenuPosition(menu, preferredLeft, preferredTop);
+        }
       });
     };
 
@@ -486,7 +520,7 @@ export function showContextMenuFallback<T extends string>(
     }
     activeContextMenuDismiss = dismiss;
 
-    requestAnimationFrame(() => {
+    scheduleFrame(() => {
       canDismissFromPointer = true;
     });
   });

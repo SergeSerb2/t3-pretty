@@ -601,6 +601,24 @@ export const PullRequestRef = Schema.Struct({
 export type PullRequestRef = typeof PullRequestRef.Type;
 
 /**
+ * The small live shape a linked thread needs. Keeping it separate from detail means a sidebar
+ * status check never loads permissions, repository settings, checks, or base comparison data.
+ */
+export const PullRequestSummary = Schema.Struct({
+  provider: SourceControlProviderKind,
+  projectId: ProjectId,
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  state: PullRequestState,
+  headBranch: TrimmedNonEmptyString,
+  baseBranch: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+export type PullRequestSummary = typeof PullRequestSummary.Type;
+
+/**
  * One row's line counts, read after the listing rather than inside it. On GitHub the pair is
  * 40-60% of the wall clock of the search that answers the whole page — measured over twelve
  * repositories, 7.1s with it and 4.0s without — for two small numbers at the end of a row.
@@ -670,6 +688,7 @@ export const PullRequestDetail = Schema.Struct({
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
   headBranch: TrimmedNonEmptyString,
+  headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   baseBranch: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -830,6 +849,12 @@ export type PullRequestActionInput = typeof PullRequestActionInput.Type;
 // service rejects a body that is only whitespace.
 const CommentBody = Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536));
 
+/**
+ * One review can become one large host request (GitHub) or one sequential host mutation per
+ * comment (GitLab and Bitbucket). Keep both the wire payload and that mutation fan-out finite.
+ */
+export const PULL_REQUEST_REVIEW_MAX_COMMENTS = 100;
+
 export const PullRequestCommentInput = Schema.Struct({
   ...PullRequestRef.fields,
   body: CommentBody,
@@ -914,7 +939,9 @@ export const PullRequestSubmitReviewInput = Schema.Struct({
   verdict: PullRequestReviewVerdict,
   /** The review's own words. May be empty, which is how an approval with no remarks is sent. */
   body: Schema.String.check(Schema.isMaxLength(65_536)),
-  comments: Schema.Array(PullRequestReviewCommentDraft),
+  comments: Schema.Array(PullRequestReviewCommentDraft).check(
+    Schema.isMaxLength(PULL_REQUEST_REVIEW_MAX_COMMENTS),
+  ),
 });
 export type PullRequestSubmitReviewInput = typeof PullRequestSubmitReviewInput.Type;
 

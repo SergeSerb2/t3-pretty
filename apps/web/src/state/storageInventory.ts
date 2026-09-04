@@ -34,14 +34,29 @@ export interface EnvironmentStorageStatus {
   readonly inventory: StorageInventory | null;
 }
 
-const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatus[] => {
+export const STORAGE_INVENTORY_MAX_ENVIRONMENTS = 32;
+
+interface StorageInventoriesSnapshot {
+  readonly environments: readonly EnvironmentStorageStatus[];
+  readonly omittedEnvironmentCount: number;
+}
+
+const storageInventoriesAtom = Atom.make((get): StorageInventoriesSnapshot => {
   const presentations = get(environmentPresentations.presentationsAtom);
   const configs = get(environmentServerConfigsAtom);
   const statuses: EnvironmentStorageStatus[] = [];
+  let eligibleEnvironmentCount = 0;
 
   for (const [environmentId, presentation] of presentations) {
     const plan = usageConnectionPlan(presentation.connection.phase);
     if (plan === "skip") {
+      continue;
+    }
+    eligibleEnvironmentCount += 1;
+    // An inventory scan can walk thousands of paths on every target. Keep a
+    // fleet-sized catalog from starting all of those scans when Storage opens;
+    // the UI reports the omitted tail explicitly.
+    if (statuses.length >= STORAGE_INVENTORY_MAX_ENVIRONMENTS) {
       continue;
     }
     if (plan === "await-connect") {
@@ -100,17 +115,22 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       inventory,
     });
   }
-  return statuses;
+  return {
+    environments: statuses,
+    omittedEnvironmentCount: Math.max(0, eligibleEnvironmentCount - statuses.length),
+  };
 }).pipe(Atom.withLabel("web-storage-inventory"));
 
 export interface StorageInventoryView {
   readonly environments: readonly EnvironmentStorageStatus[];
   readonly isPending: boolean;
+  readonly omittedEnvironmentCount: number;
   readonly refresh: () => void;
 }
 
 export function useStorageInventories(): StorageInventoryView {
-  const environments = useAtomValue(storageInventoriesAtom);
+  const snapshot = useAtomValue(storageInventoriesAtom);
+  const environments = snapshot.environments;
 
   const refresh = useCallback(() => {
     for (const environment of environments) {
@@ -136,6 +156,7 @@ export function useStorageInventories(): StorageInventoryView {
       (environment) =>
         !environment.unsupported && environment.isPending && environment.error === null,
     ),
+    omittedEnvironmentCount: snapshot.omittedEnvironmentCount,
     refresh,
   };
 }

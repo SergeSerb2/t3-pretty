@@ -222,4 +222,27 @@ describe("VcsProjectConfig", () => {
       }),
     );
   });
+
+  it.layer(TestLayer)("bounds project config reads", (it) => {
+    it.effect("falls back to auto for an oversized valid config", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-vcs-config-test-",
+        });
+        const configDir = path.join(root, ".t3code");
+        yield* fileSystem.makeDirectory(configDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          path.join(configDir, "vcs.json"),
+          `{"vcs":{"kind":"jj"}}${" ".repeat(64 * 1024)}`,
+        );
+
+        const config = yield* VcsProjectConfig.VcsProjectConfig;
+        const kind = yield* config.resolveKind({ cwd: root });
+
+        assert.equal(kind, "auto");
+      }),
+    );
+  });
 });

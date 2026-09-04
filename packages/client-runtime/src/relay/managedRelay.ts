@@ -29,16 +29,18 @@ import {
   type RelayProtectedError as RelayProtectedErrorType,
   RelayUnregisterDeviceEndpoint,
 } from "@t3tools/contracts/relay";
+import { DPOP_METHOD_MAX_LENGTH, DPOP_URL_MAX_LENGTH } from "@t3tools/shared/dpopCommon";
 import { encodeOAuthScope, oauthScopeSetEquals } from "@t3tools/shared/oauthScope";
 import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
-import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
+import { normalizeSecureRelayUrl, SECURE_RELAY_URL_MAX_LENGTH } from "@t3tools/shared/relayUrl";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
@@ -66,14 +68,29 @@ export class ManagedRelayDpopKeyLoadError extends Schema.TaggedErrorClass<Manage
 export class ManagedRelayDpopProofCreationError extends Schema.TaggedErrorClass<ManagedRelayDpopProofCreationError>()(
   "ManagedRelayDpopProofCreationError",
   {
-    method: Schema.String,
-    url: Schema.String,
+    method: Schema.String.check(Schema.isMaxLength(DPOP_METHOD_MAX_LENGTH)),
+    url: Schema.String.check(Schema.isMaxLength(DPOP_URL_MAX_LENGTH)),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
     return `Could not create the relay DPoP proof for ${this.method} ${this.url}.`;
   }
+}
+
+function boundedDiagnostic(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+}
+
+export function makeManagedRelayDpopProofCreationError(
+  input: Pick<ManagedRelayDpopProofInput, "method" | "url">,
+  cause: unknown,
+): ManagedRelayDpopProofCreationError {
+  return new ManagedRelayDpopProofCreationError({
+    method: boundedDiagnostic(input.method, DPOP_METHOD_MAX_LENGTH),
+    url: boundedDiagnostic(input.url, DPOP_URL_MAX_LENGTH),
+    cause,
+  });
 }
 
 export const ManagedRelayDpopSignerError = Schema.Union([
@@ -133,7 +150,7 @@ export class ManagedRelayRequestTimeoutError extends Schema.TaggedErrorClass<Man
 export class ManagedRelayUrlInvalidError extends Schema.TaggedErrorClass<ManagedRelayUrlInvalidError>()(
   "ManagedRelayUrlInvalidError",
   {
-    relayUrl: Schema.String,
+    relayUrl: Schema.String.check(Schema.isMaxLength(SECURE_RELAY_URL_MAX_LENGTH)),
   },
 ) {
   override get message(): string {
@@ -429,7 +446,9 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
 ) {
   const relayUrl = normalizeSecureRelayUrl(options.relayUrl);
   if (relayUrl === null) {
-    return disabledManagedRelayClient(options.relayUrl);
+    return disabledManagedRelayClient(
+      boundedDiagnostic(options.relayUrl, SECURE_RELAY_URL_MAX_LENGTH),
+    );
   }
   const signer = yield* ManagedRelayDpopSigner;
   const client = yield* HttpApiClient.make(RelayApi, { baseUrl: relayUrl });
@@ -437,6 +456,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
   const cachedTokens = yield* SynchronizedRef.make<
     ReadonlyArray<ManagedRelayAccessTokenCacheEntry>
   >(initialTokens.filter((token) => token.clientId === options.clientId));
+  const tokenCacheGeneration = yield* Ref.make(0);
   const urlBuilder = HttpApiClient.urlBuilder(RelayApi, { baseUrl: relayUrl });
 
   type DpopProofTarget = Pick<ManagedRelayDpopProofInput, "method" | "url">;
@@ -529,6 +549,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
         "relay.scopes": input.scopes.join(" "),
       });
       const nowMillis = yield* Clock.currentTimeMillis;
+      const cacheGeneration = yield* Ref.get(tokenCacheGeneration);
       const accountId = relayAccountId(input.clerkToken);
       if (Option.isNone(accountId)) {
         yield* Effect.annotateCurrentSpan({
@@ -548,6 +569,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       }
       return yield* SynchronizedRef.modifyEffect(cachedTokens, (tokens) =>
         Effect.gen(function* () {
+          const cacheIsCurrent = (yield* Ref.get(tokenCacheGeneration)) === cacheGeneration;
           const activeTokens = tokens.filter((token) => token.expiresAtMillis > nowMillis + 5_000);
           const cached = activeTokens.find((token) =>
             tokenMatches(token, {
@@ -563,7 +585,7 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             yield* Effect.annotateCurrentSpan({
               "relay.token_cache.result": "hit",
             });
-            return [cached, activeTokens] as const;
+            return [cached, cacheIsCurrent ? activeTokens : tokens] as const;
           }
           yield* Effect.annotateCurrentSpan({
             "relay.token_cache.result": "miss",
@@ -579,6 +601,9 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
             expiresAtMillis: nowMillis + response.expires_in * 1_000,
           };
           const nextTokens = [...activeTokens, next];
+          if ((yield* Ref.get(tokenCacheGeneration)) !== cacheGeneration) {
+            return [next, tokens] as const;
+          }
           if (options.accessTokenStore) {
             yield* options.accessTokenStore.save(nextTokens);
           }
@@ -911,8 +936,14 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
       Effect.withSpan("clientRuntime.managedRelay.registerLiveActivity"),
       withRelayClientTracing,
     ),
-    resetTokenCache: SynchronizedRef.set(cachedTokens, []).pipe(
-      Effect.andThen(options.accessTokenStore ? options.accessTokenStore.clear : Effect.void),
+    resetTokenCache: Ref.update(tokenCacheGeneration, (generation) => generation + 1).pipe(
+      Effect.andThen(
+        SynchronizedRef.modifyEffect(cachedTokens, () =>
+          (options.accessTokenStore ? options.accessTokenStore.clear : Effect.void).pipe(
+            Effect.as([undefined, []] as const),
+          ),
+        ),
+      ),
       Effect.withSpan("clientRuntime.managedRelay.resetTokenCache"),
       withRelayClientTracing,
     ),

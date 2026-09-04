@@ -99,6 +99,7 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { readLocalApi } from "~/localApi";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { openPullRequestLink } from "~/lib/openPullRequestLink";
+import { subscribeSecondTick } from "~/lib/secondTicker";
 import {
   AutomatedReviewStatusIcon,
   automatedReviewIndicator,
@@ -953,7 +954,14 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       onClick={() => {
                         const api = readLocalApi();
                         if (!api) return;
-                        void api.shell.openExternal(publishResult.repository.url);
+                        void api.shell.openExternal(publishResult.repository.url).catch((error) => {
+                          toastManager.add({
+                            type: "error",
+                            title: "Unable to open repository",
+                            description:
+                              error instanceof Error ? error.message : "An error occurred.",
+                          });
+                        });
                       }}
                     >
                       <ExternalLinkIcon className="size-3.5" aria-hidden />
@@ -1228,16 +1236,12 @@ export default function GitActionsControl({
     : null;
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    return subscribeSecondTick(() => {
       if (!activeGitActionProgressRef.current) {
         return;
       }
       updateActiveProgressToast();
-    }, 1000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
+    });
   }, [updateActiveProgressToast]);
 
   useEffect(() => {
@@ -1541,7 +1545,16 @@ export default function GitActionsControl({
             const api = readLocalApi();
             if (!api) return;
             closeResultToast();
-            void api.shell.openExternal(toastCta.url);
+            void openPullRequestLink(api.shell, toastCta.url).catch((error) => {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Unable to open pull request link",
+                  description: error instanceof Error ? error.message : "An error occurred.",
+                  ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
+                }),
+              );
+            });
           },
         };
       }

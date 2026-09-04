@@ -1,6 +1,6 @@
 import { skillMentionToken } from "@t3tools/shared/skillTool";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -30,7 +30,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import { GlassView } from "expo-glass-effect";
 import {
   AppState,
   Keyboard,
@@ -64,6 +64,7 @@ import type { DraftComposerImageAttachment } from "../../lib/composerImages";
 import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import type {
   PendingApproval,
   PendingUserInput,
@@ -85,7 +86,7 @@ import {
 } from "./ThreadComposer";
 import { ThreadFeed } from "./ThreadFeed";
 import { resolveThreadFeedEndOffset } from "./thread-feed-end-scroll";
-import type { ThreadContentPresentation } from "./threadContentPresentation";
+import { threadLoadingPhase, type ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 
 // KeyboardStickyView memos its animated style against `style` identity.
@@ -115,8 +116,6 @@ export interface ThreadDetailScreenProps {
   readonly draftMessage: string;
   readonly draftAttachments: ReadonlyArray<DraftComposerImageAttachment>;
   readonly connectionStateLabel: EnvironmentConnectionPhase;
-  /** Message sync status for the selected thread (drives the composer status pill). */
-  readonly threadSyncStatus?: EnvironmentThreadStatus;
   /** Non-null when older turns exist beyond the loaded window. */
   readonly loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
   readonly activeThreadBusy: boolean;
@@ -240,7 +239,7 @@ function useStreamingHaptics(
     }
 
     lastStreamHapticAtRef.current = now;
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
   }, [enabled, threadId, feed]);
 }
 
@@ -319,22 +318,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     sceneryCreditHeight: 0,
   });
   const contentPresentationKind = props.contentPresentation.kind;
-  // The raw sync status enters "synchronizing" on every full fetch, cached or
-  // not. Whether messages are already on screen decides the pill label: no
-  // data yet → "Loading messages", cached data reconciling → "Syncing".
-  const threadSyncPhase = (() => {
-    switch (props.threadSyncStatus) {
-      case "empty":
-      case "cached":
-      case "synchronizing":
-        if (contentPresentationKind === "ready") {
-          return "syncing" as const;
-        }
-        return contentPresentationKind === "loading" ? ("loading" as const) : null;
-      default:
-        return null;
-    }
-  })();
+  // Transport reconciliation can restart after the conversation is already
+  // present. Only describe content as loading while there is nothing to show.
+  const threadSyncPhase = threadLoadingPhase(props.contentPresentation);
   const selectedThreadFeed = props.selectedThreadFeed;
   const composerChrome = composerExpanded ? COMPOSER_EXPANDED_CHROME : COMPOSER_COLLAPSED_CHROME;
   const composerOverlapHeight = composerChrome + composerBottomInset;
@@ -676,7 +662,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   }, []);
 
   const handleScrollToEnd = useCallback(() => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     void scrollMessageToEnd({ animated: true, closeKeyboard: false }).catch(() => {
       freeze.set(false);
     });
@@ -727,7 +713,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
           onTouchCancel={handleFeedTouchCancel}
         >
           <ThreadFeed
-            key={props.selectedThread.id}
+            key={selectedThreadKey}
             environmentId={props.environmentId}
             threadId={props.selectedThread.id}
             workspaceRoot={props.threadCwd}
@@ -751,6 +737,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             onListReady={pinFollowedFeedToEnd}
             skills={selectedProviderSkills}
             loadEarlier={props.loadEarlier ?? null}
+            readAloudEnabled={
+              T3CODE_BUILD_FLAVOR === "internal" &&
+              props.serverConfig?.environment.capabilities.readAloud === true
+            }
           />
         </View>
       ) : (
@@ -781,11 +771,11 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 entering={FadeInDown.duration(160)}
                 exiting={FadeOut.duration(100)}
               >
-                {isLiquidGlassSupported ? (
-                  <LiquidGlassView
+                {NATIVE_LIQUID_GLASS_SUPPORTED ? (
+                  <GlassView
                     colorScheme={isDarkMode ? "dark" : "light"}
-                    effect="regular"
-                    interactive
+                    glassEffectStyle="regular"
+                    isInteractive
                     // Interactive glass can render larger than the requested
                     // box (minimum touch size), so center the pill instead of
                     // relying on it filling the glass exactly.
@@ -805,7 +795,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                       icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
                       onPress={handleScrollToEnd}
                     />
-                  </LiquidGlassView>
+                  </GlassView>
                 ) : (
                   <ControlPill
                     accessibilityLabel="Scroll to end"

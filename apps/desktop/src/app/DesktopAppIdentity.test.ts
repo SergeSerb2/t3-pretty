@@ -113,6 +113,7 @@ const withIdentity = <A, E, R>(
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
     readonly legacyPathExists?: boolean;
+    readonly legacyPathType?: "File" | "Directory";
     readonly legacyPathProbeError?: PlatformError.PlatformError;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
@@ -129,12 +130,24 @@ const withIdentity = <A, E, R>(
       DesktopAppIdentity.layer.pipe(
         Layer.provideMerge(
           FileSystem.layerNoop({
-            exists: (path) =>
-              input.legacyPathProbeError
-                ? Effect.fail(input.legacyPathProbeError)
-                : Effect.succeed(
-                    input.legacyPathExists === true && path.includes("T3 Code (Alpha)"),
-                  ),
+            stat: (path) => {
+              if (input.legacyPathProbeError) {
+                return Effect.fail(input.legacyPathProbeError);
+              }
+              if (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")) {
+                return Effect.succeed({
+                  type: input.legacyPathType ?? "Directory",
+                } as FileSystem.File.Info);
+              }
+              return Effect.fail(
+                PlatformError.systemError({
+                  _tag: "NotFound",
+                  module: "FileSystem",
+                  method: "stat",
+                  pathOrDescriptor: path,
+                }),
+              );
+            },
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -160,12 +173,24 @@ describe("DesktopAppIdentity", () => {
     ),
   );
 
+  it.effect("does not use a regular file as the legacy userData directory", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Pretty (Alpha)");
+      }),
+      { legacyPathExists: true, legacyPathType: "File" },
+    ),
+  );
+
   it.effect("preserves failures while inspecting the legacy userData path", () => {
     const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
-      method: "exists",
+      method: "stat",
       description: "permission denied",
       pathOrDescriptor: legacyPath,
     });

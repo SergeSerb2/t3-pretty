@@ -250,6 +250,42 @@ it.layer(NodeServices.layer)("CliTokenManager.outOfBandOAuthLogin", (it) => {
     }),
   );
 
+  it.effect("keeps issued tokens out of invalid-response diagnostics", () =>
+    Effect.gen(function* () {
+      const tokenEndpointLayer = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(
+                JSON.stringify({
+                  access_token: "must-not-appear-in-diagnostics",
+                  refresh_token: "also-secret",
+                  expires_in: "not-a-number",
+                  token_type: "bearer",
+                }),
+                { status: 200, headers: { "content-type": "application/json" } },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      const error = yield* CliTokenManager.outOfBandOAuthLogin(
+        ({ authorizeUrl }: OutOfBandOAuthPromptInput) => {
+          const request = readConnectAuthorizeRequest(new URL(authorizeUrl));
+          assert.isNotNull(request);
+          return Effect.succeed(`clerk-code-123.${request!.state}`);
+        },
+      ).pipe(Effect.provide(tokenEndpointLayer), provideTestEnv, Effect.flip);
+
+      assert.strictEqual(error._tag, "CloudCliTokenExchangeFailure");
+      assert.notInclude(error.message, "must-not-appear-in-diagnostics");
+      assert.notInclude(error.message, "also-secret");
+    }),
+  );
+
   it.effect("fails without touching the token endpoint when the prompt returns garbage", () =>
     Effect.gen(function* () {
       const requests: Array<RecordedTokenRequest> = [];

@@ -481,10 +481,10 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
-          Files={FilesInspector}
-          Git={GitInspector}
+          files={<FilesInspector />}
+          git={<GitInspector />}
           mode={inspectorMode}
-          Route={props.renderInspector ? RouteInspector : undefined}
+          route={props.renderInspector ? <RouteInspector /> : undefined}
         />
       ),
     [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
@@ -560,7 +560,7 @@ function ThreadRouteContent(
     effectiveSettled(selectedThread, {
       now: threadLifecycleNow,
       autoSettleAfterDays: 3,
-      changeRequestState,
+      changeRequest: changeRequestState === null ? null : { state: changeRequestState },
     });
   const threadSnoozed =
     selectedThread !== null &&
@@ -810,7 +810,6 @@ function ThreadRouteContent(
           draftMessage={composer.draftMessage}
           draftAttachments={composer.draftAttachments}
           connectionStateLabel={routeConnectionState}
-          threadSyncStatus={selectedThreadDetailState.status}
           loadEarlier={loadEarlierTurns}
           activeThreadBusy={composer.activeThreadBusy}
           environmentId={selectedThread.environmentId}
@@ -824,7 +823,8 @@ function ThreadRouteContent(
           usesAutomaticContentInsets={usesNativeHeaderGlass}
           onOpenConnectionEditor={handleOpenConnectionEditor}
           onChangeDraftMessage={composer.onChangeDraftMessage}
-          onPickDraftImages={composer.onPickDraftImages}
+          onPickDraftMedia={composer.onPickDraftMedia}
+          onPickDraftFiles={composer.onPickDraftFiles}
           onNativePasteImages={composer.onNativePasteImages}
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}

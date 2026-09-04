@@ -6,6 +6,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
+import * as ApnsJwt from "./apnsJwt.ts";
 
 const { privateKey } = NodeCrypto.generateKeyPairSync("ec", {
   namedCurve: "prime256v1",
@@ -70,6 +71,40 @@ describe("ApnsProviderTokens", () => {
       // exact string documents the cache contract.
       expect(again).toBe(first);
       ApnsProviderTokens.__resetApnsProviderTokenCacheForTest();
+    }).pipe(Effect.provide(ApnsProviderTokens.layer));
+  });
+
+  it.effect("bounds provider-token and signing-scalar caches across key rotation", () => {
+    ApnsProviderTokens.__resetApnsProviderTokenCacheForTest();
+    ApnsJwt.__resetApnsSigningScalarCacheForTest();
+    return Effect.gen(function* () {
+      const tokens = yield* ApnsProviderTokens.ApnsProviderTokens;
+      for (
+        let index = 0;
+        index <= ApnsProviderTokens.APNS_PROVIDER_TOKEN_CACHE_MAX_ENTRIES;
+        index += 1
+      ) {
+        const rotated = NodeCrypto.generateKeyPairSync("ec", {
+          namedCurve: "prime256v1",
+          privateKeyEncoding: { type: "pkcs8", format: "pem" },
+          publicKeyEncoding: { type: "spki", format: "pem" },
+        });
+        yield* tokens.getJwt({
+          teamId: `team-${index}`,
+          keyId: `key-${index}`,
+          privateKey: Redacted.make(rotated.privateKey),
+          issuedAtUnixSeconds: WINDOW + 10,
+        });
+      }
+
+      expect(ApnsProviderTokens.__apnsProviderTokenCacheSizeForTest()).toBe(
+        ApnsProviderTokens.APNS_PROVIDER_TOKEN_CACHE_MAX_ENTRIES,
+      );
+      expect(ApnsJwt.__apnsSigningScalarCacheSizeForTest()).toBe(
+        ApnsJwt.APNS_SIGNING_SCALAR_CACHE_MAX_ENTRIES,
+      );
+      ApnsProviderTokens.__resetApnsProviderTokenCacheForTest();
+      ApnsJwt.__resetApnsSigningScalarCacheForTest();
     }).pipe(Effect.provide(ApnsProviderTokens.layer));
   });
 });

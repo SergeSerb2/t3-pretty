@@ -1,6 +1,7 @@
 import {
   type EnvironmentServerConfigSnapshot,
   type ServerConfig,
+  type ServerConfigStreamEvent,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
@@ -12,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
 import type * as Scope from "effect/Scope";
+import type * as Stream from "effect/Stream";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as Socket from "effect/unstable/socket/Socket";
@@ -35,6 +37,9 @@ const SOCKET_OPEN_TIMEOUT = "15 seconds";
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
+  readonly subscribeServerConfig?: (
+    input: Parameters<WsRpcProtocolClient[typeof WS_METHODS.subscribeServerConfig]>[0],
+  ) => Stream.Stream<ServerConfigStreamEvent, unknown>;
   readonly initialConfigSnapshot?: Effect.Effect<
     EnvironmentServerConfigSnapshot,
     ConnectionAttemptError
@@ -157,10 +162,21 @@ export const make = Effect.gen(function* () {
               }),
             ),
             Effect.catchCause((cause) =>
-              Effect.logDebug(
-                "Could not load initial server configuration over HTTP; using WebSocket compatibility fallback.",
-                { cause: Cause.pretty(cause) },
-              ).pipe(Effect.andThen(websocketConfig)),
+              Cause.hasInterrupts(cause)
+                ? Effect.failCause(
+                    Cause.map(
+                      cause,
+                      () =>
+                        new ConnectionTransientErrorClass({
+                          reason: "transport",
+                          detail: `${connection.label} initial HTTP configuration request was interrupted.`,
+                        }),
+                    ),
+                  )
+                : Effect.logDebug(
+                    "Could not load initial server configuration over HTTP; using WebSocket compatibility fallback.",
+                    { cause: Cause.pretty(cause) },
+                  ).pipe(Effect.andThen(websocketConfig)),
             ),
           )
         : websocketConfig

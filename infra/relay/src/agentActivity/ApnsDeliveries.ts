@@ -1,13 +1,13 @@
-import type {
-  RelayAgentActivityAggregateState,
-  RelayAgentAwarenessPreferences,
-  RelayDeliveryKind,
-  RelayDeliveryResult,
-} from "@t3tools/contracts/relay";
 import {
+  RELAY_DETAIL_MAX_LENGTH,
+  RELAY_TRACE_ID_MAX_LENGTH,
   RelayAgentActivityAggregateState as RelayAgentActivityAggregateStateSchema,
   RelayAgentAwarenessPreferences as RelayAgentAwarenessPreferencesSchema,
   RelayDeliveryKind as RelayDeliveryKindSchema,
+  type RelayAgentActivityAggregateState,
+  type RelayAgentAwarenessPreferences,
+  type RelayDeliveryKind,
+  type RelayDeliveryResult,
 } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -111,7 +111,9 @@ export class ApnsDeliveryTransportError extends Schema.TaggedErrorClass<ApnsDeli
       "ApnsJwtSigningError",
       "ApnsHttpRequestError",
     ]),
-    requestStage: Schema.NullOr(Schema.Literals(["send", "read-response"])),
+    requestStage: Schema.NullOr(
+      Schema.Literals(["validate-payload", "send", "read-response", "deadline"]),
+    ),
     cause: Schema.Defect(),
   },
 ) {
@@ -581,11 +583,22 @@ function staleJobResult(input: {
   };
 }
 
+function relayDeliveryDiagnostics(
+  result: Apns.ApnsDeliveryResult,
+): Pick<RelayDeliveryResult, "apnsStatus" | "apnsReason" | "apnsId"> {
+  return {
+    apnsStatus: result.status === 0 ? null : result.status,
+    apnsReason: result.reason?.slice(0, RELAY_DETAIL_MAX_LENGTH) ?? null,
+    apnsId: result.apnsId?.slice(0, RELAY_TRACE_ID_MAX_LENGTH) ?? null,
+  };
+}
+
 function deliveryAttemptOutcome(result: Apns.ApnsDeliveryResult) {
+  const diagnostics = relayDeliveryDiagnostics(result);
   return {
     ...(result.status === 0 ? {} : { apnsStatus: result.status }),
-    ...(result.reason === undefined ? {} : { apnsReason: result.reason }),
-    apnsId: result.apnsId,
+    ...(diagnostics.apnsReason === null ? {} : { apnsReason: diagnostics.apnsReason }),
+    apnsId: diagnostics.apnsId,
     ...(result.status === 0 ? { transportError: result.reason ?? "APNs request failed." } : {}),
   };
 }
@@ -774,9 +787,9 @@ export const make = Effect.gen(function* () {
         ),
       ),
       Effect.catchCause((cause) =>
-        Effect.logWarning("live-work recheck failed; allowing queued start", { cause }).pipe(
-          Effect.as(true),
-        ),
+        Effect.logWarning("live-work recheck failed; allowing queued start", {
+          error: Redacted.make(cause, { label: "AgentActivityRecheckFailure" }),
+        }).pipe(Effect.as(true)),
       ),
     );
   });
@@ -806,7 +819,7 @@ export const make = Effect.gen(function* () {
         // protections handle transport failures as usual.
         Effect.catchCause((cause) =>
           Effect.logWarning("agent-activity state recheck failed; allowing queued delivery", {
-            cause,
+            error: Redacted.make(cause, { label: "AgentActivityRecheckFailure" }),
             environmentId: input.environmentId,
             threadId: input.threadId,
           }).pipe(Effect.as(true)),
@@ -837,7 +850,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.catchCause((cause) =>
         Effect.logWarning("agent-activity aggregate recheck failed; allowing queued delivery", {
-          cause,
+          error: Redacted.make(cause, { label: "AgentActivityRecheckFailure" }),
           userId: input.userId,
         }).pipe(Effect.as(true)),
       ),
@@ -1016,9 +1029,7 @@ export const make = Effect.gen(function* () {
       deviceId: input.target.device_id,
       kind: input.kind,
       ok: result.ok,
-      apnsStatus: result.status === 0 ? null : result.status,
-      apnsReason: result.reason ?? null,
-      apnsId: result.apnsId,
+      ...relayDeliveryDiagnostics(result),
     };
   });
 
@@ -1141,9 +1152,7 @@ export const make = Effect.gen(function* () {
       deviceId: input.target.device_id,
       kind: "push_notification" as const,
       ok: result.ok,
-      apnsStatus: result.status === 0 ? null : result.status,
-      apnsReason: result.reason ?? null,
-      apnsId: result.apnsId,
+      ...relayDeliveryDiagnostics(result),
     };
   });
 

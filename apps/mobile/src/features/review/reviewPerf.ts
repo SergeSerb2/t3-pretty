@@ -27,6 +27,7 @@ export function measureReviewWork<T>(name: string, callback: () => T): T {
   const marker = `${REVIEW_PERF_PREFIX}.${name}.${reviewPerfSequence++}`;
   const startMark = `${marker}.start`;
   const endMark = `${marker}.end`;
+  const measureName = `${REVIEW_PERF_PREFIX}.${name}`;
   const startedAt = perf?.now?.() ?? Date.now();
 
   perf?.mark?.(startMark);
@@ -35,9 +36,10 @@ export function measureReviewWork<T>(name: string, callback: () => T): T {
   } finally {
     const durationMs = (perf?.now?.() ?? Date.now()) - startedAt;
     perf?.mark?.(endMark);
-    perf?.measure?.(`${REVIEW_PERF_PREFIX}.${name}`, startMark, endMark);
+    perf?.measure?.(measureName, startMark, endMark);
     perf?.clearMarks?.(startMark);
     perf?.clearMarks?.(endMark);
+    perf?.clearMeasures?.(measureName);
     console.log(`[review-perf] ${name}`, { durationMs: Number(durationMs.toFixed(2)) });
   }
 }
@@ -54,6 +56,7 @@ export async function measureReviewAsyncWork<T>(
   const marker = `${REVIEW_PERF_PREFIX}.${name}.${reviewPerfSequence++}`;
   const startMark = `${marker}.start`;
   const endMark = `${marker}.end`;
+  const measureName = `${REVIEW_PERF_PREFIX}.${name}`;
   const startedAt = perf?.now?.() ?? Date.now();
 
   perf?.mark?.(startMark);
@@ -62,9 +65,10 @@ export async function measureReviewAsyncWork<T>(
   } finally {
     const durationMs = (perf?.now?.() ?? Date.now()) - startedAt;
     perf?.mark?.(endMark);
-    perf?.measure?.(`${REVIEW_PERF_PREFIX}.${name}`, startMark, endMark);
+    perf?.measure?.(measureName, startMark, endMark);
     perf?.clearMarks?.(startMark);
     perf?.clearMarks?.(endMark);
+    perf?.clearMeasures?.(measureName);
     console.log(`[review-perf] ${name}`, { durationMs: Number(durationMs.toFixed(2)) });
   }
 }
@@ -74,7 +78,10 @@ export function markReviewEvent(name: string, details?: Record<string, unknown>)
     return;
   }
 
-  getPerformance()?.mark?.(`${REVIEW_PERF_PREFIX}.${name}`);
+  const markName = `${REVIEW_PERF_PREFIX}.${name}`;
+  const perf = getPerformance();
+  perf?.mark?.(markName);
+  perf?.clearMarks?.(markName);
   if (details) {
     console.log(`[review-perf] ${name}`, details);
     return;

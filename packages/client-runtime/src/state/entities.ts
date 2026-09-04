@@ -41,16 +41,22 @@ export class InvalidScopedProjectRefCollectionKeyError extends Schema.TaggedErro
   }
 }
 
+const decodeProjectKey = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Tuple([EnvironmentId, ProjectId])),
+);
+const decodeThreadKey = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Tuple([EnvironmentId, ThreadId])),
+);
 const decodeProjectRefCollectionKey = Schema.decodeUnknownSync(
-  Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
+  Schema.fromJsonString(Schema.Array(Schema.Tuple([EnvironmentId, ProjectId]))),
 );
 
 export function projectKey(ref: ScopedProjectRef): string {
-  return `${ref.environmentId}\u0000${ref.projectId}`;
+  return JSON.stringify([ref.environmentId, ref.projectId]);
 }
 
 export function threadKey(ref: ScopedThreadRef): string {
-  return `${ref.environmentId}\u0000${ref.threadId}`;
+  return JSON.stringify([ref.environmentId, ref.threadId]);
 }
 
 export function projectRefCollectionKey(refs: ReadonlyArray<ScopedProjectRef>): string {
@@ -58,20 +64,22 @@ export function projectRefCollectionKey(refs: ReadonlyArray<ScopedProjectRef>): 
 }
 
 export function parseProjectKey(key: string): ScopedProjectRef {
-  const separator = key.indexOf("\u0000");
-  if (separator < 0) {
+  let ref: readonly [EnvironmentId, ProjectId];
+  try {
+    ref = decodeProjectKey(key);
+  } catch {
     throw new InvalidScopedProjectKeyError({ key });
   }
   return {
-    environmentId: EnvironmentId.make(key.slice(0, separator)),
-    projectId: ProjectId.make(key.slice(separator + 1)),
+    environmentId: ref[0],
+    projectId: ref[1],
   };
 }
 
 export function parseProjectRefCollectionKey(key: string): ReadonlyArray<ScopedProjectRef> {
   let entries: ReadonlyArray<readonly [string, string]>;
   try {
-    entries = decodeProjectRefCollectionKey(JSON.parse(key));
+    entries = decodeProjectRefCollectionKey(key);
   } catch (cause) {
     throw new InvalidScopedProjectRefCollectionKeyError({ key, cause });
   }
@@ -82,13 +90,15 @@ export function parseProjectRefCollectionKey(key: string): ReadonlyArray<ScopedP
 }
 
 export function parseThreadKey(key: string): ScopedThreadRef {
-  const separator = key.indexOf("\u0000");
-  if (separator < 0) {
+  let ref: readonly [EnvironmentId, ThreadId];
+  try {
+    ref = decodeThreadKey(key);
+  } catch {
     throw new InvalidScopedThreadKeyError({ key });
   }
   return {
-    environmentId: EnvironmentId.make(key.slice(0, separator)),
-    threadId: ThreadId.make(key.slice(separator + 1)),
+    environmentId: ref[0],
+    threadId: ref[1],
   };
 }
 

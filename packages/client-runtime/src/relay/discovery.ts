@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -35,6 +36,7 @@ export type RelayEnvironmentAvailability = "checking" | "online" | "offline" | "
 // connectivity restore always lists (state.offline, stale status probes); the
 // restore claim still coalesces a racing wakeup.
 const AUTO_REFRESH_MIN_INTERVAL_MS = 60_000;
+const RELAY_STATUS_REFRESH_CONCURRENCY = 6;
 
 export interface RelayDiscoveredEnvironment {
   readonly environment: RelayClientEnvironmentRecord;
@@ -281,6 +283,19 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         if ((yield* Ref.get(accountGeneration)) !== generation) {
           return;
         }
+        const currentEnvironmentIds = new Set<string>(
+          environments.map((environment) => environment.environmentId),
+        );
+        yield* Ref.update(offlineReportFingerprints, (current) => {
+          if (
+            [...current.keys()].every((environmentId) => currentEnvironmentIds.has(environmentId))
+          ) {
+            return current;
+          }
+          return new Map(
+            [...current].filter(([environmentId]) => currentEnvironmentIds.has(environmentId)),
+          );
+        });
         yield* SubscriptionRef.update(state, (current) => ({
           ...current,
           environments: new Map(
@@ -313,7 +328,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             environments,
             (environment) => refreshStatus(generation, clerkToken, environment),
             {
-              concurrency: "unbounded",
+              concurrency: RELAY_STATUS_REFRESH_CONCURRENCY,
               discard: true,
             },
           );
@@ -346,6 +361,15 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
   const refresh = refreshDiscovery(true);
   const refreshCatalog = refreshDiscovery(false);
+  // Wakeups can arrive in bursts while a status sweep is still waiting on
+  // remote environments. Keep at most one follow-up sweep instead of forking
+  // an unbounded line of fibers behind refreshLock.
+  const wakeupRefreshRequests = yield* Queue.sliding<void>(1);
+  yield* Stream.fromQueue(wakeupRefreshRequests).pipe(
+    Stream.runForEach(() => refresh),
+    Effect.forkScoped,
+  );
+  const requestWakeupRefresh = Queue.offer(wakeupRefreshRequests, undefined);
 
   // Seeded so the first wakeup-driven refresh always runs; only repeats inside
   // the window coalesce. (Tests start on a TestClock at time 0.)
@@ -401,7 +425,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
             // (sign-in or cold start), and the list should be populated before
             // any screen asks for it. A signed-out refresh settles back to the
             // clean empty state.
-            yield* refresh.pipe(Effect.forkScoped);
+            yield* requestWakeupRefresh;
           })
         : Ref.get(hasRefreshed).pipe(
             Effect.flatMap((shouldRefresh) =>

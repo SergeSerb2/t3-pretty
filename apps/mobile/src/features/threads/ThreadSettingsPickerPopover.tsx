@@ -154,11 +154,11 @@ export function ThreadSettingsPickerPopover(props: {
   const bottom = anchor === null ? 0 : windowHeight - anchor.y + ANCHOR_GAP;
 
   const pickOption = (id: string, value: string | boolean) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectOption(id, value);
   };
   const pickRuntime = (mode: RuntimeMode) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectRuntime(mode);
   };
   const pickModel = (option: ModelOption, selected: boolean) => {
@@ -198,7 +198,7 @@ export function ThreadSettingsPickerPopover(props: {
         accessibilityRole="button"
         collapsable={false}
         onPress={(event) => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
           event.currentTarget.measureInWindow((x, y, width, height) => {
             setAnchor({ x, y, width, height });
           });

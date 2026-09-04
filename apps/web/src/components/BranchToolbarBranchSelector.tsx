@@ -374,9 +374,14 @@ export function BranchToolbarBranchSelector({
       const items: ContextMenuItem<"copy-branch-name">[] = [
         { id: "copy-branch-name", label: "Copy branch name", icon: "copy" },
       ];
-      void api.contextMenu.show(items, { x: event.clientX, y: event.clientY }).then((action) => {
-        if (action === "copy-branch-name") copyBranchName(branchName);
-      });
+      void api.contextMenu
+        .show(items, { x: event.clientX, y: event.clientY })
+        .then((action) => {
+          if (action === "copy-branch-name") copyBranchName(branchName);
+        })
+        .catch(() => {
+          // A menu that could not be shown has already consumed the right-click.
+        });
     },
     [copyBranchName],
   );

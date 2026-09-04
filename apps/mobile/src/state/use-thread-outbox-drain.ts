@@ -125,6 +125,7 @@ export function useThreadOutboxDrain(): void {
   const projects = useProjects();
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const [retryTick, setRetryTick] = useState(0);
+  const mountedRef = useRef(false);
   const retryAttemptRef = useRef(new Map<MessageId, number>());
   const retryNotBeforeRef = useRef(new Map<MessageId, number>());
   const retryTimersRef = useRef(new Map<MessageId, ReturnType<typeof setTimeout>>());
@@ -132,7 +133,9 @@ export function useThreadOutboxDrain(): void {
   // Unmounting (app teardown, or the mount gate closing when the outbox
   // empties) must not leave a retry timer firing into a dead worker.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       for (const timer of retryTimersRef.current.values()) {
         clearTimeout(timer);
       }
@@ -311,6 +314,21 @@ export function useThreadOutboxDrain(): void {
       return;
     }
 
+    const queuedMessageIds = new Set(
+      Object.values(queuedMessagesByThreadKey).flatMap((messages) =>
+        messages.map((message) => message.messageId),
+      ),
+    );
+    for (const messageId of retryAttemptRef.current.keys()) {
+      if (queuedMessageIds.has(messageId)) continue;
+      retryAttemptRef.current.delete(messageId);
+      retryNotBeforeRef.current.delete(messageId);
+      clearQueuedMessageRetrying(messageId);
+      const timer = retryTimersRef.current.get(messageId);
+      if (timer !== undefined) clearTimeout(timer);
+      retryTimersRef.current.delete(messageId);
+    }
+
     for (const [threadKey, queuedMessages] of Object.entries(queuedMessagesByThreadKey)) {
       const nextQueuedMessage = queuedMessages[0];
       if (!nextQueuedMessage) {
@@ -403,7 +421,19 @@ export function useThreadOutboxDrain(): void {
               : Promise.resolve(false);
       });
       void delivery
+        .catch((error) => {
+          console.warn("[thread-outbox] unexpected queued delivery rejection", {
+            environmentId: nextQueuedMessage.environmentId,
+            threadId: nextQueuedMessage.threadId,
+            messageId: nextQueuedMessage.messageId,
+            error,
+          });
+          return false;
+        })
         .then((sent) => {
+          if (!mountedRef.current) {
+            return;
+          }
           if (sent) {
             retryAttemptRef.current.delete(nextQueuedMessage.messageId);
             retryNotBeforeRef.current.delete(nextQueuedMessage.messageId);
@@ -427,7 +457,9 @@ export function useThreadOutboxDrain(): void {
           }
           const retryTimer = setTimeout(() => {
             retryTimersRef.current.delete(nextQueuedMessage.messageId);
-            setRetryTick((current) => current + 1);
+            if (mountedRef.current) {
+              setRetryTick((current) => current + 1);
+            }
           }, retryDelayMs);
           retryTimersRef.current.set(nextQueuedMessage.messageId, retryTimer);
         })

@@ -3,7 +3,8 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import type { VcsStatusResult } from "@t3tools/contracts";
+import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
+import type { EnvironmentId, ThreadLinkedPullRequest, VcsStatusResult } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import {
   CheckIcon,
@@ -23,6 +24,7 @@ import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { StatusPulseDot, useStatusPulse } from "../hooks/useStatusPulse";
+import { linkedPullRequestDetailAtom } from "../state/pullRequests";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
@@ -75,6 +77,43 @@ export function automatedReviewIndicator(
   return { state, colorClass, ...presentation };
 }
 
+export interface LinkedThreadPullRequestStatus {
+  readonly pr: NonNullable<ThreadPr>;
+  readonly sourceControlProvider: NonNullable<VcsStatusResult["sourceControlProvider"]>;
+}
+
+export function useLinkedThreadPullRequest(
+  environmentId: EnvironmentId | null,
+  linkedPullRequest: ThreadLinkedPullRequest | null | undefined,
+): LinkedThreadPullRequestStatus | null {
+  const detail = useEnvironmentQuery(
+    environmentId === null || linkedPullRequest == null
+      ? null
+      : linkedPullRequestDetailAtom({
+          environmentId,
+          input: {
+            projectId: linkedPullRequest.projectId,
+            repository: linkedPullRequest.repository,
+            number: linkedPullRequest.number,
+          },
+        }),
+  ).data;
+
+  return useMemo(
+    () =>
+      detail === null
+        ? null
+        : {
+            pr: pullRequestDetailToVcsStatus(detail),
+            sourceControlProvider: {
+              kind: detail.provider,
+              name: detail.provider,
+              baseUrl: "",
+            },
+          },
+    [detail],
+  );
+}
 export function settledPrHoverColorClass(state: NonNullable<ThreadPr>["state"]): string {
   switch (state) {
     case "open":
@@ -212,11 +251,13 @@ export interface ThreadChangeRequestSnapshot {
   readonly branch: string;
   readonly pr: NonNullable<ThreadPr>;
   readonly sourceControlProvider: VcsStatusResult["sourceControlProvider"] | undefined;
+  readonly linkedPullRequest?: ThreadLinkedPullRequest;
 }
 
 export const threadChangeRequestSnapshotsAtom = Atom.make<
   ReadonlyMap<string, ThreadChangeRequestSnapshot>
 >(new Map()).pipe(Atom.keepAlive, Atom.withLabel("sidebar:thread-change-request-snapshots"));
+export const THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT = 512;
 
 function isTerminalChangeRequestState(
   state: NonNullable<ThreadPr>["state"],
@@ -233,6 +274,19 @@ function sourceControlProvidersEqual(
   return left.kind === right.kind && left.name === right.name && left.baseUrl === right.baseUrl;
 }
 
+function linkedPullRequestsEqual(
+  left: ThreadLinkedPullRequest | null | undefined,
+  right: ThreadLinkedPullRequest | null | undefined,
+): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  return (
+    left.projectId === right.projectId &&
+    left.repository === right.repository &&
+    left.number === right.number &&
+    left.url === right.url
+  );
+}
+
 export function threadChangeRequestSnapshotsEqual(
   left: ThreadChangeRequestSnapshot,
   right: ThreadChangeRequestSnapshot,
@@ -246,8 +300,35 @@ export function threadChangeRequestSnapshotsEqual(
     left.pr.headRef === right.pr.headRef &&
     left.pr.state === right.pr.state &&
     (left.pr.updatedAt ?? null) === (right.pr.updatedAt ?? null) &&
-    sourceControlProvidersEqual(left.sourceControlProvider, right.sourceControlProvider)
+    sourceControlProvidersEqual(left.sourceControlProvider, right.sourceControlProvider) &&
+    linkedPullRequestsEqual(left.linkedPullRequest, right.linkedPullRequest)
   );
+}
+
+export function updateThreadChangeRequestSnapshots(
+  current: ReadonlyMap<string, ThreadChangeRequestSnapshot>,
+  threadKey: string,
+  snapshot: ThreadChangeRequestSnapshot | null,
+): ReadonlyMap<string, ThreadChangeRequestSnapshot> {
+  const existing = current.get(threadKey);
+  if (snapshot === null) {
+    if (existing === undefined) return current;
+    const next = new Map(current);
+    next.delete(threadKey);
+    return next;
+  }
+  if (existing !== undefined && threadChangeRequestSnapshotsEqual(existing, snapshot)) {
+    return current;
+  }
+  const next = new Map(current);
+  next.delete(threadKey);
+  next.set(threadKey, snapshot);
+  while (next.size > THREAD_CHANGE_REQUEST_SNAPSHOT_LIMIT) {
+    const oldestThreadKey = next.keys().next().value;
+    if (oldestThreadKey === undefined) break;
+    next.delete(oldestThreadKey);
+  }
+  return next;
 }
 
 export function setThreadChangeRequestSnapshot(
@@ -255,19 +336,8 @@ export function setThreadChangeRequestSnapshot(
   snapshot: ThreadChangeRequestSnapshot | null,
 ): void {
   appAtomRegistry.modify(threadChangeRequestSnapshotsAtom, (current) => {
-    const existing = current.get(threadKey);
-    if (snapshot === null) {
-      if (existing === undefined) return [false, current];
-      const next = new Map(current);
-      next.delete(threadKey);
-      return [true, next];
-    }
-    if (existing !== undefined && threadChangeRequestSnapshotsEqual(existing, snapshot)) {
-      return [false, current];
-    }
-    const next = new Map(current);
-    next.set(threadKey, snapshot);
-    return [true, next];
+    const next = updateThreadChangeRequestSnapshots(current, threadKey, snapshot);
+    return [next !== current, next];
   });
 }
 
@@ -282,10 +352,32 @@ export function nextThreadChangeRequestSnapshot(input: {
   gitStatus: VcsStatusResult | null;
   snapshot: ThreadChangeRequestSnapshot | null | undefined;
   retainTerminalOnBranchMismatch: boolean;
+  linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  linkedPullRequestStatus?: LinkedThreadPullRequestStatus | null | undefined;
 }): ThreadChangeRequestSnapshot | null | undefined {
-  const { threadBranch, gitStatus, snapshot, retainTerminalOnBranchMismatch } = input;
+  const {
+    threadBranch,
+    gitStatus,
+    snapshot,
+    retainTerminalOnBranchMismatch,
+    linkedPullRequest,
+    linkedPullRequestStatus,
+  } = input;
+  if (linkedPullRequest != null) {
+    if (linkedPullRequestStatus === null || linkedPullRequestStatus === undefined) {
+      return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+        ? undefined
+        : null;
+    }
+    return {
+      branch: threadBranch ?? linkedPullRequestStatus.pr.headRef,
+      pr: linkedPullRequestStatus.pr,
+      sourceControlProvider: linkedPullRequestStatus.sourceControlProvider,
+      linkedPullRequest,
+    };
+  }
   if (gitStatus === null) {
-    return undefined;
+    return snapshot?.linkedPullRequest === undefined ? undefined : null;
   }
   if (threadBranch === null) {
     return null;
@@ -293,6 +385,7 @@ export function nextThreadChangeRequestSnapshot(input: {
   if (gitStatus.refName !== threadBranch) {
     return retainTerminalOnBranchMismatch &&
       snapshot != null &&
+      snapshot.linkedPullRequest === undefined &&
       isTerminalChangeRequestState(snapshot.pr.state)
       ? undefined
       : null;
@@ -301,6 +394,7 @@ export function nextThreadChangeRequestSnapshot(input: {
     if (
       retainTerminalOnBranchMismatch &&
       snapshot != null &&
+      snapshot.linkedPullRequest === undefined &&
       isTerminalChangeRequestState(snapshot.pr.state)
     ) {
       return undefined;
@@ -326,8 +420,25 @@ export function resolveDisplayedThreadPr(input: {
   gitStatus: VcsStatusResult | null;
   snapshot: ThreadChangeRequestSnapshot | null | undefined;
   retainTerminalOnBranchMismatch: boolean;
+  linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  linkedPullRequestStatus?: LinkedThreadPullRequestStatus | null | undefined;
 }): ThreadPr | null {
-  const { threadBranch, gitStatus, snapshot, retainTerminalOnBranchMismatch } = input;
+  const {
+    threadBranch,
+    gitStatus,
+    snapshot,
+    retainTerminalOnBranchMismatch,
+    linkedPullRequest,
+    linkedPullRequestStatus,
+  } = input;
+  if (linkedPullRequest != null) {
+    return (
+      linkedPullRequestStatus?.pr ??
+      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+        ? (snapshot?.pr ?? null)
+        : null)
+    );
+  }
   if (
     threadBranch !== null &&
     gitStatus !== null &&
@@ -341,6 +452,7 @@ export function resolveDisplayedThreadPr(input: {
     threadBranch !== null &&
     retainTerminalOnBranchMismatch &&
     snapshot != null &&
+    snapshot.linkedPullRequest === undefined &&
     isTerminalChangeRequestState(snapshot.pr.state)
   ) {
     return snapshot.pr;
@@ -354,8 +466,25 @@ export function resolveDisplayedThreadPrProvider(input: {
   gitStatus: VcsStatusResult | null;
   snapshot: ThreadChangeRequestSnapshot | null | undefined;
   retainTerminalOnBranchMismatch: boolean;
+  linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
+  linkedPullRequestStatus?: LinkedThreadPullRequestStatus | null | undefined;
 }): VcsStatusResult["sourceControlProvider"] | undefined {
-  const { threadBranch, gitStatus, snapshot, retainTerminalOnBranchMismatch } = input;
+  const {
+    threadBranch,
+    gitStatus,
+    snapshot,
+    retainTerminalOnBranchMismatch,
+    linkedPullRequest,
+    linkedPullRequestStatus,
+  } = input;
+  if (linkedPullRequest != null) {
+    return (
+      linkedPullRequestStatus?.sourceControlProvider ??
+      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+        ? snapshot?.sourceControlProvider
+        : undefined)
+    );
+  }
   if (
     threadBranch !== null &&
     gitStatus !== null &&
@@ -369,6 +498,7 @@ export function resolveDisplayedThreadPrProvider(input: {
     threadBranch !== null &&
     retainTerminalOnBranchMismatch &&
     snapshot != null &&
+    snapshot.linkedPullRequest === undefined &&
     isTerminalChangeRequestState(snapshot.pr.state)
   ) {
     return snapshot.sourceControlProvider;
@@ -485,19 +615,28 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
   );
   const threadProjectCwd = threadProject?.workspaceRoot ?? null;
   const gitCwd = thread.worktreePath ?? threadProjectCwd;
+  const linkedPullRequest = useLinkedThreadPullRequest(
+    thread.environmentId,
+    thread.linkedPullRequest,
+  );
   const gitStatus = useEnvironmentQuery(
-    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
+    thread.linkedPullRequest == null &&
+      (thread.branch != null || thread.worktreePath !== null) &&
+      gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },
         })
       : null,
   );
-  const pr = resolveThreadPr({
-    threadBranch: thread.branch,
-    gitStatus: gitStatus.data,
-  });
-  const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
+  const pr =
+    thread.linkedPullRequest == null
+      ? resolveThreadPr({ threadBranch: thread.branch, gitStatus: gitStatus.data })
+      : (linkedPullRequest?.pr ?? null);
+  const prStatus = prStatusIndicator(
+    pr,
+    linkedPullRequest?.sourceControlProvider ?? gitStatus.data?.sourceControlProvider,
+  );
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,

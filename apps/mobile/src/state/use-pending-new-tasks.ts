@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";
 import { optimisticStartingThreadKey } from "../lib/optimisticThreadSend";
+import { compareTimestamps } from "../lib/time";
 import {
   flattenQueuedThreadMessages,
   type QueuedThreadCreation,
@@ -38,7 +39,7 @@ export function usePendingNewTasks(): ReadonlyArray<PendingNewTask> {
         title: deriveThreadTitleFromPrompt(message.text),
       });
     }
-    tasks.sort((left, right) => right.message.createdAt.localeCompare(left.message.createdAt));
+    tasks.sort((left, right) => compareTimestamps(right.message.createdAt, left.message.createdAt));
     return tasks;
   }, [queuedMessagesByThreadKey, startingThreads]);
 }

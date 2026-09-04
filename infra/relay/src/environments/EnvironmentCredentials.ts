@@ -6,7 +6,7 @@ import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { and, eq, exists, isNull, ne, notExists } from "drizzle-orm";
+import { and, eq, exists, isNull, lt, ne, notExists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import * as RelayDb from "../db.ts";
@@ -55,6 +55,18 @@ export class EnvironmentCredentialRevokePersistenceError extends Schema.TaggedEr
   }
 }
 
+export class EnvironmentCredentialPrunePersistenceError extends Schema.TaggedErrorClass<EnvironmentCredentialPrunePersistenceError>()(
+  "EnvironmentCredentialPrunePersistenceError",
+  {
+    revokedBefore: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to prune environment credentials revoked before '${this.revokedBefore}'`;
+  }
+}
+
 export interface EnvironmentCredentialPrincipal {
   readonly credentialId: string;
   readonly environmentId: string;
@@ -80,6 +92,24 @@ export class EnvironmentCredentials extends Context.Service<
     }) => Effect.Effect<boolean, EnvironmentCredentialRevokePersistenceError>;
   }
 >()("t3code-relay/environments/EnvironmentCredentials") {}
+
+export const pruneRevokedBefore = Effect.fn("relay.environment_credentials.prune_revoked_before")(
+  function* (input: { readonly revokedBefore: string }) {
+    const db = yield* RelayDb.RelayDb;
+    yield* db
+      .delete(relayEnvironmentCredentials)
+      .where(lt(relayEnvironmentCredentials.revokedAt, input.revokedBefore))
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new EnvironmentCredentialPrunePersistenceError({
+              revokedBefore: input.revokedBefore,
+              cause,
+            }),
+        ),
+      );
+  },
+);
 
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;

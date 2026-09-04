@@ -11,7 +11,13 @@ import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS,
+  PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS,
+  PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
@@ -24,11 +30,17 @@ import {
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
+  CODEX_STDERR_FRAGMENT_MAX_CHARS,
+  describeMcpElicitation,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   makeCodexSessionRuntime,
+  isTerminalCodexChildNotification,
   makeMemoryConsolidationNotificationFilter,
+  normalizeCodexUserInputQuestions,
   openCodexThread,
+  splitCodexStderrChunk,
+  toMcpElicitationResponse,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -45,6 +57,93 @@ describe("CodexSessionRuntimeIdentifierGenerationError", () => {
     NodeAssert.equal(
       error.message,
       "Failed to generate Codex App Server identifier for provider-event.",
+    );
+  });
+});
+
+describe("splitCodexStderrChunk", () => {
+  it("bounds incomplete and completed stderr fragments", () => {
+    const oversized = "x".repeat(CODEX_STDERR_FRAGMENT_MAX_CHARS + 1_000);
+
+    const [noLines, remainder] = splitCodexStderrChunk("", oversized);
+    NodeAssert.deepEqual(noLines, []);
+    NodeAssert.equal(remainder.length, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+
+    const [lines, nextRemainder] = splitCodexStderrChunk(remainder, "tail\r\nnext");
+    NodeAssert.equal(lines.length, 1);
+    NodeAssert.equal(lines[0]?.length, CODEX_STDERR_FRAGMENT_MAX_CHARS);
+    NodeAssert.equal(nextRemainder, "next");
+  });
+});
+
+describe("normalizeCodexUserInputQuestions", () => {
+  const freeformQuestion = {
+    id: "answer",
+    header: "Answer",
+    question: "What should Codex do next?",
+    options: null,
+  } as const;
+
+  it("keeps valid free-form questions without inventing options", () => {
+    NodeAssert.deepEqual(normalizeCodexUserInputQuestions([freeformQuestion]), [
+      {
+        id: "answer",
+        header: "Answer",
+        question: "What should Codex do next?",
+        options: [],
+        multiSelect: false,
+      },
+    ]);
+  });
+
+  it("rejects question sets that cannot cross the canonical contract", () => {
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions(
+        Array.from(
+          { length: PROVIDER_RUNTIME_MAX_USER_INPUT_QUESTIONS + 1 },
+          () => freeformQuestion,
+        ),
+      ),
+      undefined,
+    );
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions([
+        { ...freeformQuestion, id: "x".repeat(PROVIDER_RUNTIME_USER_INPUT_ID_MAX_LENGTH + 1) },
+      ]),
+      undefined,
+    );
+    NodeAssert.equal(
+      normalizeCodexUserInputQuestions([
+        {
+          ...freeformQuestion,
+          options: Array.from(
+            { length: PROVIDER_RUNTIME_MAX_USER_INPUT_OPTIONS + 1 },
+            (_, index) => ({ label: `option-${index}`, description: "description" }),
+          ),
+        },
+      ]),
+      undefined,
+    );
+  });
+});
+
+describe("isTerminalCodexChildNotification", () => {
+  it("settles closed and non-retrying children only", () => {
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "thread/closed", params: {} }),
+      true,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "error", params: { willRetry: false } }),
+      true,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "error", params: { willRetry: true } }),
+      false,
+    );
+    NodeAssert.equal(
+      isTerminalCodexChildNotification({ method: "turn/completed", params: {} }),
+      false,
     );
   });
 });
@@ -108,6 +207,7 @@ describe("buildTurnStartParams", () => {
         model: "gpt-5.3-codex",
         effort: "medium",
         interactionMode: "plan",
+        browserToolsAvailable: true,
       }),
     );
 
@@ -131,10 +231,14 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("plan", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions(
+            "plan",
+            {
+              model: "gpt-5.3-codex",
+              reasoningEffort: "medium",
+            },
+            true,
+          ),
         },
       },
     });
@@ -148,6 +252,7 @@ describe("buildTurnStartParams", () => {
         prompt: "Implement it",
         model: "gpt-5.3-codex",
         interactionMode: "default",
+        browserToolsAvailable: true,
         attachments: [
           {
             type: "image",
@@ -180,10 +285,14 @@ describe("buildTurnStartParams", () => {
         settings: {
           model: "gpt-5.3-codex",
           reasoning_effort: "medium",
-          developer_instructions: buildCodexDeveloperInstructions("default", {
-            model: "gpt-5.3-codex",
-            reasoningEffort: "medium",
-          }),
+          developer_instructions: buildCodexDeveloperInstructions(
+            "default",
+            {
+              model: "gpt-5.3-codex",
+              reasoningEffort: "medium",
+            },
+            true,
+          ),
         },
       },
     });
@@ -256,6 +365,208 @@ describe("buildTurnStartParams", () => {
   });
 });
 
+describe("Codex MCP elicitation approvals", () => {
+  const request = {
+    mode: "form",
+    message: "Allow ChatGPT to use Safari?",
+    serverName: "computer-use",
+    threadId: "provider-thread-1",
+    turnId: "turn-1",
+    _meta: {
+      app_name: "Safari",
+      persist: ["session", "always"],
+    },
+    requestedSchema: {
+      type: "object",
+      properties: {
+        approval: {
+          type: "string",
+          oneOf: [
+            { const: "once", title: "Allow once" },
+            { const: "session", title: "Allow for this session" },
+            { const: "always", title: "Always allow Safari" },
+          ],
+        },
+      },
+      required: ["approval"],
+    },
+  } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+  it("preserves the app name and advertised persistence choices", () => {
+    NodeAssert.deepStrictEqual(describeMcpElicitation(request), {
+      appName: "Safari",
+      options: [
+        { decision: "cancel", label: "Cancel" },
+        { decision: "decline", label: "Decline" },
+        { decision: "acceptForSession", label: "Allow for this session" },
+        { decision: "acceptAlways", label: "Always allow Safari" },
+        { decision: "accept", label: "Approve" },
+      ],
+    });
+  });
+
+  it("extracts the app name from a Computer Use request without metadata", () => {
+    const { _meta, ...requestWithoutMetadata } = request;
+
+    NodeAssert.equal(describeMcpElicitation(requestWithoutMetadata).appName, "Safari");
+  });
+
+  it("returns the accepted form option to Codex", () => {
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(request, "accept"), {
+      action: "accept",
+      content: { approval: "once" },
+    });
+  });
+
+  it("returns session-scoped approval in the MCP response", () => {
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(request, "acceptForSession"), {
+      action: "accept",
+      _meta: { persist: "session" },
+      content: { approval: "session" },
+    });
+  });
+
+  it("returns persistent approval in the MCP response", () => {
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(request, "acceptAlways"), {
+      action: "accept",
+      _meta: { persist: "always" },
+      content: { approval: "always" },
+    });
+  });
+
+  it("returns rejection without form content", () => {
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(request, "decline"), {
+      action: "decline",
+    });
+  });
+
+  it("returns cancellation without form content", () => {
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(request, "cancel"), {
+      action: "cancel",
+    });
+  });
+
+  it("supports boolean permanent-approval fields", () => {
+    const booleanRequest = {
+      ...request,
+      _meta: { app_name: "Safari" },
+      requestedSchema: {
+        type: "object",
+        properties: {
+          always: { type: "boolean", title: "Always allow Safari" },
+        },
+      },
+    } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+    NodeAssert.ok(
+      describeMcpElicitation(booleanRequest).options.some(
+        (option) => option.decision === "acceptAlways",
+      ),
+    );
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(booleanRequest, "acceptAlways"), {
+      action: "accept",
+      _meta: { persist: "always" },
+      content: { always: true },
+    });
+  });
+
+  it("preserves valid nullable MCP form fields and persistence choices", () => {
+    const nullableRequest = {
+      ...request,
+      _meta: {
+        app_name: null,
+        appName: "Safari",
+        connector_name: null,
+        persist: null,
+        target: null,
+        tool_params: null,
+      },
+      requestedSchema: {
+        type: "object",
+        properties: {
+          approval: {
+            type: "string",
+            title: null,
+            description: null,
+            default: null,
+            enum: ["once", "always"],
+            enumNames: null,
+          },
+        },
+        required: ["approval"],
+      },
+    } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+    NodeAssert.equal(describeMcpElicitation(nullableRequest).appName, "Safari");
+    NodeAssert.ok(
+      describeMcpElicitation(nullableRequest).options.some(
+        (option) => option.decision === "acceptAlways",
+      ),
+    );
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(nullableRequest, "acceptAlways"), {
+      action: "accept",
+      _meta: { persist: "always" },
+      content: { approval: "always" },
+    });
+  });
+
+  it("declines required form fields that an approval prompt cannot collect", () => {
+    const inputRequest = {
+      ...request,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          email: { type: "string", format: "email" },
+        },
+        required: ["email"],
+      },
+    } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(inputRequest, "accept"), {
+      action: "decline",
+    });
+  });
+
+  it("does not approve URL elicitations without opening their requested URL", () => {
+    const urlRequest = {
+      mode: "url",
+      message: "Finish signing in to continue.",
+      serverName: "computer-use",
+      threadId: "provider-thread-1",
+      turnId: "turn-1",
+      elicitationId: "sign-in-1",
+      url: "https://example.com/authorize",
+    } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+    NodeAssert.deepStrictEqual(toMcpElicitationResponse(urlRequest, "accept"), {
+      action: "decline",
+    });
+  });
+
+  it("omits persistence choices that cannot satisfy required form fields", () => {
+    const onceOnlyRequest = {
+      ...request,
+      _meta: { app_name: "Safari", persist: ["session", "always"] },
+      requestedSchema: {
+        type: "object",
+        properties: {
+          approval: {
+            type: "string",
+            enum: ["once"],
+          },
+        },
+        required: ["approval"],
+      },
+    } satisfies EffectCodexSchema.McpServerElicitationRequestParams;
+
+    NodeAssert.deepStrictEqual(describeMcpElicitation(onceOnlyRequest).options, [
+      { decision: "cancel", label: "Cancel" },
+      { decision: "decline", label: "Decline" },
+      { decision: "accept", label: "Approve" },
+    ]);
+  });
+});
+
 describe("buildCodexDeveloperInstructions", () => {
   it("appends runtime info after the mode instructions", () => {
     const instructions = buildCodexDeveloperInstructions("default", {
@@ -263,7 +574,7 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "high",
     });
 
-    NodeAssert.ok(instructions.startsWith(codexDefaultModeDeveloperInstructions(true)));
+    NodeAssert.ok(instructions.startsWith(codexDefaultModeDeveloperInstructions(false)));
     NodeAssert.match(instructions, /T3 Code/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
@@ -275,7 +586,7 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "medium",
     });
 
-    NodeAssert.ok(instructions.startsWith(codexPlanModeDeveloperInstructions(true)));
+    NodeAssert.ok(instructions.startsWith(codexPlanModeDeveloperInstructions(false)));
     NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
   });
 
@@ -341,6 +652,21 @@ describe("T3 browser developer instructions", () => {
       /preview_open/,
     );
   });
+
+  it.effect("defaults to no browser instructions without an explicit preview capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-computer-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /preview_open/,
+      );
+    }),
+  );
 });
 
 describe("hasConfiguredMcpServer", () => {
@@ -352,6 +678,36 @@ describe("hasConfiguredMcpServer", () => {
       true,
     );
   });
+});
+
+describe("T3 computer developer instructions", () => {
+  it("tracks the turn's attached computer-use capability", () => {
+    const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+    const enabled = buildCodexDeveloperInstructions("default", runtime, false, true);
+    const disabled = buildCodexDeveloperInstructions("default", runtime, false, false);
+
+    NodeAssert.match(enabled, /t3-code-computer/);
+    NodeAssert.match(enabled, /computer_screen_info/);
+    NodeAssert.match(enabled, /Quartz global display coordinates/);
+    NodeAssert.doesNotMatch(disabled, /t3-code-computer/);
+    NodeAssert.doesNotMatch(disabled, /computer_screen_info/);
+  });
+
+  it.effect("defaults to no computer instructions without an explicit capability", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-preview-only",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        browserToolsAvailable: true,
+      });
+
+      NodeAssert.doesNotMatch(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /t3-code-computer/,
+      );
+    }),
+  );
 });
 
 function makeThreadStartedNotification(
@@ -773,6 +1129,45 @@ const turnMethods = (peer: SteerPeer) =>
 // it.live: the runtime drives a real child process, and it.effect's TestClock
 // freezes the transport's own timers.
 describe("CodexSessionRuntime sendTurn steering", () => {
+  it.live("infers built-in tool instructions from MCP config after resume", () =>
+    Effect.gen(function* () {
+      const peer = makeSteerPeer({ rejectSteer: false });
+      yield* Effect.addFinalizer(() => Effect.sync(peer.cleanup));
+
+      const runtime = yield* makeCodexSessionRuntime({
+        threadId: ThreadId.make("thread-codex-resume-tools"),
+        binaryPath: peer.binaryPath,
+        cwd: "/tmp",
+        runtimeMode: "full-access",
+        environment: peer.environment,
+        resumeCursor: { threadId: "provider-thread-resume-tools" },
+        appServerArgs: [
+          "-c",
+          "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+          "-c",
+          "mcp_servers.t3-code-computer.url=http://127.0.0.1/mcp/computer-use",
+        ],
+      });
+
+      yield* runtime.start();
+      yield* runtime.sendTurn({ input: "inspect the desktop", interactionMode: "default" });
+
+      const turnStart = peer.requests().find((request) => request.method === "turn/start");
+      const params = turnStart?.params as
+        | {
+            readonly collaborationMode?: {
+              readonly settings?: { readonly developer_instructions?: string };
+            };
+          }
+        | undefined;
+      const instructions = params?.collaborationMode?.settings?.developer_instructions ?? "";
+      NodeAssert.match(instructions, /preview_open/);
+      NodeAssert.match(instructions, /t3-code-computer/);
+
+      yield* runtime.close;
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.live("steers the active turn instead of starting a second one mid-turn", () =>
     Effect.gen(function* () {
       const peer = makeSteerPeer({ rejectSteer: false });
