@@ -966,6 +966,7 @@ export function ThemeEditorPanel({
       <span className="text-sm font-medium">Theme name</span>
       <Input
         autoFocus
+        size="sm"
         onChange={(event) => {
           setName(event.currentTarget.value);
           // Most save failures are name collisions; retyping is the fix, so
@@ -987,6 +988,7 @@ export function ThemeEditorPanel({
       <Button
         aria-disabled={lockReason !== null}
         aria-pressed={isActive}
+        size="sm"
         className={lockReason !== null ? "opacity-50" : undefined}
         style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
         variant={isActive ? "secondary" : "outline"}

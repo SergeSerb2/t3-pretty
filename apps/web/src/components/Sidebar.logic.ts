@@ -6,8 +6,10 @@ import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/c
 import {
   activeThreadAnchorTimestampMs,
   getThreadSortTimestamp,
+  resolveSettledThreadTimestamp,
   sortThreads,
   toSortableTimestamp,
+  type SettledThreadTimestampInput,
   type ThreadSortInput,
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
@@ -725,44 +727,16 @@ export function reduceSidebarProjectScopeMenuState(
   }
 }
 
-type SettledTimestampInput = Pick<
-  SidebarThreadSummary,
-  "settledAt" | "latestUserMessageAt" | "latestTurn" | "updatedAt"
->;
-
-/** The timestamp a settled row sorts and labels by: settledAt when stamped,
-    otherwise the latest message or turn stamp. updatedAt is the final net. */
-export function resolveSettledTimestamp(thread: SettledTimestampInput): string | null {
-  const settledAt = firstValidTimestamp(thread.settledAt);
-  if (settledAt !== null) return settledAt;
-  let latest: string | null = null;
-  let latestMs = Number.NEGATIVE_INFINITY;
-  for (const candidate of [
-    thread.latestUserMessageAt,
-    thread.latestTurn?.requestedAt,
-    thread.latestTurn?.startedAt,
-    thread.latestTurn?.completedAt,
-  ]) {
-    if (candidate == null) continue;
-    const parsed = Date.parse(candidate);
-    if (!Number.isNaN(parsed) && parsed > latestMs) {
-      latest = candidate;
-      latestMs = parsed;
-    }
-  }
-  return latest ?? firstValidTimestamp(thread.updatedAt);
-}
-
 /** Whether a settled thread has been settled (or quiet, for auto-settled
     threads with no settledAt stamp) long enough to auto-archive. Uses the
     same timestamp the settled tail sorts and labels by, so a row never
     archives before the age its label shows. A thread with no resolvable
     timestamp never auto-archives. */
 export function isSettledThreadPastArchiveAge(
-  thread: SettledTimestampInput,
+  thread: SettledThreadTimestampInput,
   input: { nowMs: number; afterDays: number },
 ): boolean {
-  const timestamp = resolveSettledTimestamp(thread);
+  const timestamp = resolveSettledThreadTimestamp(thread);
   if (timestamp === null) return false;
   const parsed = Date.parse(timestamp);
   return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
@@ -802,7 +776,7 @@ export function reserveSettledArchiveAttempts(
     restored keys stay unreserved so they can still auto-archive later. */
 export function reserveUndonePastArchiveAgeAttempts(
   attemptedKeys: Set<string>,
-  restored: readonly { threadKey: string; thread: SettledTimestampInput }[],
+  restored: readonly { threadKey: string; thread: SettledThreadTimestampInput }[],
   input: { nowMs: number; afterDays: number | null },
 ): void {
   if (input.afterDays === null) return;
@@ -817,10 +791,10 @@ export function reserveUndonePastArchiveAgeAttempts(
 // Settled rows are history, so they order by when the work ENDED, not when
 // the thread was created or last touched.
 export function sortSettledThreadsForSidebar<
-  T extends SettledTimestampInput & { readonly id: string },
+  T extends SettledThreadTimestampInput & { readonly id: string },
 >(threads: readonly T[]): T[] {
   const timestampMs = (thread: T) => {
-    const timestamp = resolveSettledTimestamp(thread);
+    const timestamp = resolveSettledThreadTimestamp(thread);
     return timestamp === null ? 0 : Date.parse(timestamp);
   };
   return [...threads].toSorted(

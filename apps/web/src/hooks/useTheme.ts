@@ -379,8 +379,7 @@ function applyTheme(
   const root = document.documentElement;
   const releaseTransitions = () => {
     // Force a reflow so the no-transitions class takes effect before removal
-    // oxlint-disable-next-line no-unused-expressions
-    root.offsetHeight;
+    void root.offsetHeight;
     requestAnimationFrame(() => {
       root.classList.remove("no-transitions");
     });

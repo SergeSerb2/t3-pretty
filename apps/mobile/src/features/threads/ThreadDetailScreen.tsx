@@ -2,6 +2,7 @@ import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
+import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useIsFocused } from "@react-navigation/native";
@@ -496,9 +497,12 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const selectedInstanceId = props.selectedThread.modelSelection.instanceId;
   useStreamingHaptics(props.selectedThread.id, props.selectedThreadFeed, isFocused);
   const selectedProviderSkills = useMemo(() => {
-    const skills =
-      props.serverConfig?.providers.find((provider) => provider.instanceId === selectedInstanceId)
-        ?.skills ?? [];
+    const provider = props.serverConfig?.providers.find(
+      (candidate) => candidate.instanceId === selectedInstanceId,
+    );
+    const skills = provider
+      ? resolveProviderSkillsForCwd(provider, props.threadCwd ?? props.projectWorkspaceRoot)
+      : [];
     // Mentions of names outside the token grammar are inserted folded; the
     // chip must recognise that spelling too.
     return skills.flatMap((skill) => {
@@ -507,7 +511,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         ? [skill]
         : [skill, { name: token, displayName: skill.displayName ?? skill.name }];
     });
-  }, [props.serverConfig, selectedInstanceId]);
+  }, [props.projectWorkspaceRoot, props.serverConfig, props.threadCwd, selectedInstanceId]);
 
   useLayoutEffect(() => {
     selectedThreadKeyRef.current = selectedThreadKey;
@@ -871,7 +875,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 isDeliveringQueuedMessage={props.isDeliveringQueuedMessage}
                 activeThreadBusy={props.activeThreadBusy}
                 environmentId={props.environmentId}
-                projectCwd={props.projectWorkspaceRoot}
+                projectCwd={props.threadCwd ?? props.projectWorkspaceRoot}
                 bottomInset={composerBottomInset}
                 onChangeDraftMessage={props.onChangeDraftMessage}
                 onPickDraftImages={props.onPickDraftImages}

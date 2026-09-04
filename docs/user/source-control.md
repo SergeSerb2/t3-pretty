@@ -42,18 +42,33 @@ T3 Code works with the platforms your team already uses:
 - For open GitHub PRs, open the git menu beside the PR action to see Codex Auto Review's public
   state: running, complete, feedback, an earlier result, or no public signal
 - Open several reviews from the **Pull requests** page as tabs in the right panel
+- By default, see passing and approved reviews first, passing reviews awaiting approval next, and
+  conflicting reviews last. Smaller changes come first within each readiness group, and finished
+  reviews follow open work when all states are visible.
 - Filter the list by author or labels, rank authors by merges in the loaded results, see label and
-  change-size context on each row, and sort the results currently shown by update time, creation
-  time, or change size
-- List filters stay where you left them when you come back. **Reset filters** in the filter
+  change-size context on each row, and sort the results currently shown by readiness, update time,
+  creation time, or change size
+- Your filters, search, scope, and sort are restored when you return. **Reset filters** in the filter
   menu returns the list to open pull requests across every project. On iPhone and iPad the
   list is always one server, so clear also returns to your preferred server
 - On iPhone and iPad, open **Pull Requests** from the home header or sidebar to browse, review,
   merge, comment, and resolve conflicts in the app. A thread's git controls and pull request
   links in the conversation open the same native manager instead of the host in the browser
+- Merge now, or on GitHub, GitLab, and Azure DevOps, leave an auto-merge instruction with a chosen
+  strategy while checks are outstanding; see the completed state in the same control after the
+  pull request merges
+- On GitHub, approve fork workflows that are waiting to run and open a revert pull request for a
+  merged change
+- Timeline line counts stay hidden on merge commits, where GitHub's totals include upstream changes
+  brought in from the base branch
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation. Origin pull requests at `cursor.com/codebase` open there the same
   way GitHub pull requests do
+- Show a file tree next to a review's **Code** tab, or a thread's **Diff** panel, to browse the
+  changed files as folders and jump straight to any of them. The toolbar toggle remembers your
+  choice.
+- Enable **Settings → General → Proactive panels** to open a newly linked review automatically and
+  switch to the completed turn's diff when agent work finishes
 - On Origin pull requests, Grok auto-review summary cards stay hidden so the conversation shows
   findings and discussion. Use **Show auto-review summaries** when you want the write-ups
 - **Fix all** on an open pull request starts a thread that works through every unresolved review
@@ -84,11 +99,15 @@ of truth for that configuration.
 
 **Fix what you wrote, in place**
 
+- Comment while closing an open pull request or reopening a closed one when the host offers that
+  action
 - Rewrite a pull request's title and description from the review itself, in Markdown, with a
   preview before you save
 - Rewrite your own comments the same way, wherever they are shown
 - Works on GitHub, GitLab, Bitbucket, and Origin. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
+- On GitHub, put a label on a pull request or take one off from the **Labels** row of the review.
+  Changing labels needs triage access or better on the repository
 
 ### Know Your Setup at a Glance
 

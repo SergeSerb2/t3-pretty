@@ -1,6 +1,6 @@
 import { SymbolView } from "../components/AppSymbol";
 import { videoMimeType } from "@t3tools/shared/video";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 
@@ -8,6 +8,15 @@ import { AppText as Text } from "./AppText";
 import type { DraftComposerAttachment, DraftComposerFileAttachment } from "../lib/composerImages";
 import { VideoAttachmentTile } from "./VideoAttachmentTile";
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
+import type { MediaActionsSource } from "../lib/mediaActions";
+import { PresentationSource } from "./NativePresentation";
+import type { FilePreviewSource } from "./FilePreviewModal";
+import { isPdfFile } from "../lib/filePreview";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  retryComposerAttachmentUpload,
+  useComposerAttachmentUploadState,
+} from "../state/composer-attachment-uploads";
 
 export type ComposerAttachmentPreview = DraftComposerAttachment & {
   /** True while the attachment is still being read or the message is sending. */
@@ -144,45 +153,15 @@ function ComposerVideoAttachment(props: {
   const { attachment } = props;
   const sourceIdentifier = `draft:${attachment.id}`;
   const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
-  const shareRef = useRef<AbortController | null>(null);
-  const [sharing, setSharing] = useState(false);
-  useEffect(
-    () => () => {
-      shareRef.current?.abort();
-      shareRef.current = null;
-    },
-    [],
+  const actionsSource = useMemo<MediaActionsSource>(
+    () => ({
+      name: attachment.name,
+      mimeType: videoMimeType(attachment) ?? attachment.mimeType,
+      sourceIdentifier,
+      attachment,
+    }),
+    [attachment, sourceIdentifier],
   );
-
-  const onShare = () => {
-    if (shareRef.current || props.preparing === true) return;
-    const controller = new AbortController();
-    shareRef.current = controller;
-    setSharing(true);
-    void (async () => {
-      const preview = await loadLocalAttachmentPreview(attachment, controller.signal);
-      if (!preview) return;
-      try {
-        await preview.share(controller.signal, sourceIdentifier);
-      } finally {
-        preview.dispose();
-      }
-    })()
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          Alert.alert(
-            "Could not share video",
-            error instanceof Error ? error.message : "Try again.",
-          );
-        }
-      })
-      .finally(() => {
-        if (shareRef.current === controller) {
-          shareRef.current = null;
-          setSharing(false);
-        }
-      });
-  };
 
   return (
     <VideoAttachmentTile
@@ -191,8 +170,8 @@ function ComposerVideoAttachment(props: {
       thumbnailSource={attachment}
       compact={props.compact}
       onPress={() => props.onPressVideo(attachment, sourceIdentifier)}
-      onShare={onShare}
-      disabled={sharing || props.preparing === true}
+      actionsSource={actionsSource}
+      disabled={props.preparing === true}
       style={style}
     />
   );

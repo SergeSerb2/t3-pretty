@@ -15,7 +15,6 @@ describe("diffPanelStore", () => {
     useDiffPanelStore.setState({
       byThreadKey: {},
       branchBaseRefByThreadKey: {},
-      diffRenderMode: "stacked",
     }),
   );
 

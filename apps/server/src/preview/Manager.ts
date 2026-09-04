@@ -134,6 +134,7 @@ const buildLoadingSnapshot = (input: {
   readonly url: string;
   readonly title: string;
   readonly viewport: PreviewViewportSetting;
+  readonly profileId?: string | undefined;
   readonly updatedAt: string;
 }): PreviewSessionSnapshot => ({
   threadId: input.threadId,
@@ -142,6 +143,7 @@ const buildLoadingSnapshot = (input: {
   canGoBack: false,
   canGoForward: false,
   viewport: input.viewport,
+  ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
   updatedAt: input.updatedAt,
 });
 
@@ -149,6 +151,7 @@ const buildIdleSnapshot = (input: {
   readonly threadId: string;
   readonly tabId: string;
   readonly viewport: PreviewViewportSetting;
+  readonly profileId?: string | undefined;
   readonly updatedAt: string;
 }): PreviewSessionSnapshot => ({
   threadId: input.threadId,
@@ -157,6 +160,7 @@ const buildIdleSnapshot = (input: {
   canGoBack: false,
   canGoForward: false,
   viewport: input.viewport,
+  ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
   updatedAt: input.updatedAt,
 });
 
@@ -240,9 +244,16 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             url: yield* normalizeUrl(input.url),
             title: "",
             viewport,
+            profileId: input.profileId,
             updatedAt,
           })
-        : buildIdleSnapshot({ threadId: input.threadId, tabId, viewport, updatedAt });
+        : buildIdleSnapshot({
+            threadId: input.threadId,
+            tabId,
+            viewport,
+            profileId: input.profileId,
+            updatedAt,
+          });
       yield* SynchronizedRef.modifyEffect(stateRef, (state) =>
         Effect.gen(function* () {
           if (state.sessions.size >= PREVIEW_SESSIONS_MAX_TOTAL) {
@@ -298,6 +309,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             canGoBack: session.snapshot.canGoBack,
             canGoForward: session.snapshot.canGoForward,
             viewport: session.snapshot.viewport ?? FILL_PREVIEW_VIEWPORT,
+            ...(session.snapshot.profileId === undefined
+              ? {}
+              : { profileId: session.snapshot.profileId }),
             updatedAt,
           };
           return {
@@ -331,6 +345,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           canGoBack: input.canGoBack,
           canGoForward: input.canGoForward,
           viewport: session.snapshot.viewport ?? FILL_PREVIEW_VIEWPORT,
+          ...(session.snapshot.profileId === undefined
+            ? {}
+            : { profileId: session.snapshot.profileId }),
           updatedAt,
         };
         const emit: PreviewEventDraft =

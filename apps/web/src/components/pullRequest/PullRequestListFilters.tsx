@@ -1,5 +1,4 @@
 import type {
-  EnvironmentId,
   ProjectId,
   PullRequestInvolvement,
   PullRequestListFilters,
@@ -26,7 +25,6 @@ import { type ElementType, type ReactNode, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Button } from "../ui/button";
 
@@ -60,6 +58,7 @@ export interface PullRequestFilterOption<Value extends string> {
    * uncoloured, which lets the item's selected state stay the thing the eye follows.
    */
   readonly Icon: ElementType<{ className?: string }>;
+
   /** Why it cannot be chosen, carried onto the item as its title. */
   readonly unavailable?: string | undefined;
 }
@@ -574,6 +573,8 @@ export function PullRequestFiltersMenu({
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   }>;
   projectId: ProjectId | undefined;
   /**
@@ -620,6 +621,33 @@ export function PullRequestFiltersMenu({
         ([, held]) => held !== undefined,
       ),
     ) as PullRequestListFilters;
+  const projectValue =
+    projectId === undefined || projectEnvironmentId === undefined
+      ? ALL_PROJECTS_VALUE
+      : pullRequestProjectKey({ id: projectId, environmentId: projectEnvironmentId });
+  const projectOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
+    { value: ALL_PROJECTS_VALUE, label: "All projects", Icon: LayersIcon },
+    ...projects
+      .toSorted(
+        (left, right) =>
+          Number(unavailable.has(pullRequestProjectKey(left))) -
+          Number(unavailable.has(pullRequestProjectKey(right))),
+      )
+      .map((project) => ({
+        value: pullRequestProjectKey(project),
+        label: project.title,
+        Icon: FolderGit2Icon,
+        favicon: {
+          environmentId: project.environmentId,
+          cwd: project.workspaceRoot,
+          faviconPath: project.faviconPath ?? null,
+          projectIcon: project.projectIcon ?? null,
+        },
+        ...(unavailable.has(pullRequestProjectKey(project))
+          ? { unavailable: unavailable.get(pullRequestProjectKey(project)) }
+          : {}),
+      })),
+  ];
   return (
     <Menu
       onOpenChange={onOpenChange}
