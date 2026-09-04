@@ -287,44 +287,74 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
     assertValidResolvedSource({ path, source });
     return;
   }
-  const materialized = materializeResolutionProgressDetails({ path, source, forkSide });
-  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
-  const diagnosticIsProvisionalCrossConflict = (error) => {
-    const position = Number.isSafeInteger(error?.pos)
-      ? error.pos
-      : Number.isSafeInteger(error?.loc?.index)
-        ? error.loc.index
-        : undefined;
-    return (
-      error?.reasonCode === "VarRedeclaration" &&
-      position !== undefined &&
-      materialized.unresolvedSpans.some(({ start, end }) => position >= start && position < end)
-    );
-  };
-  try {
-    const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
-    if (path.endsWith(".tsx")) plugins.push("jsx");
-    // A valid cross-conflict composition can temporarily redeclare a binding
-    // until a later marker removes the fork's old declaration. Suppress only
-    // that recoverable diagnostic when its duplicate token came from a
-    // still-unresolved side; every other parser error is model-owned poison.
-    // The marker-free result is still validated strictly above.
-    const parsed = parseJavaScript(materialized.source, {
-      sourceFilename: path,
-      sourceType: "unambiguous",
-      plugins,
-      errorRecovery: true,
-    });
-    const resolvedSourceError = parsed.errors.find(
-      (error) => !diagnosticIsProvisionalCrossConflict(error),
-    );
-    if (resolvedSourceError) throw resolvedSourceError;
-  } catch (error) {
-    throw new Error(
-      `${path} partial resolution has invalid resolved TypeScript: ${oneLine(error instanceof Error ? error.message : String(error))}`,
-      { cause: error },
-    );
+  const preferredForkSide =
+    forkSide ?? (process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours");
+  if (preferredForkSide !== "ours" && preferredForkSide !== "theirs") {
+    throw new Error(`${path} has an invalid fork side for partial validation`);
   }
+  const candidateForkSides = [preferredForkSide, preferredForkSide === "ours" ? "theirs" : "ours"];
+  const preferredMaterialized = materializeResolutionProgressDetails({
+    path,
+    source,
+    forkSide: preferredForkSide,
+  });
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
+  const candidateErrors = [];
+  for (const candidateForkSide of candidateForkSides) {
+    try {
+      const materialized =
+        candidateForkSide === preferredForkSide
+          ? preferredMaterialized
+          : materializeResolutionProgressDetails({
+              path,
+              source,
+              forkSide: candidateForkSide,
+            });
+      const diagnosticIsProvisionalCrossConflict = (error) => {
+        const position = Number.isSafeInteger(error?.pos)
+          ? error.pos
+          : Number.isSafeInteger(error?.loc?.index)
+            ? error.loc.index
+            : undefined;
+        return (
+          error?.reasonCode === "VarRedeclaration" &&
+          position !== undefined &&
+          materialized.unresolvedSpans.some(({ start, end }) => position >= start && position < end)
+        );
+      };
+      const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
+      if (path.endsWith(".tsx")) plugins.push("jsx");
+      // An unresolved side can be structurally coupled to a later conflict, so
+      // validate both complete projections. A valid cross-conflict composition
+      // can also temporarily redeclare a binding until a later marker removes
+      // the fork's old declaration. Suppress only that recoverable diagnostic
+      // when its duplicate token came from a still-unresolved side. Poison in
+      // already-resolved text fails both projections, and the marker-free result
+      // is still validated strictly above.
+      const parsed = parseJavaScript(materialized.source, {
+        sourceFilename: path,
+        sourceType: "unambiguous",
+        plugins,
+        errorRecovery: true,
+      });
+      const resolvedSourceError = parsed.errors.find(
+        (error) => !diagnosticIsProvisionalCrossConflict(error),
+      );
+      if (resolvedSourceError) throw resolvedSourceError;
+      return;
+    } catch (error) {
+      candidateErrors.push({ forkSide: candidateForkSide, error });
+    }
+  }
+  throw new Error(
+    `${path} partial resolution has invalid resolved TypeScript on both complete projections: ${candidateErrors
+      .map(
+        ({ forkSide: candidateForkSide, error }) =>
+          `${candidateForkSide}: ${oneLine(error instanceof Error ? error.message : String(error))}`,
+      )
+      .join("; ")}`,
+    { cause: candidateErrors[0]?.error },
+  );
 }
 
 export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_DIR }) {
