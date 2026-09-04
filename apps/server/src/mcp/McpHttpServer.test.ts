@@ -1,3 +1,4 @@
+import { ComputerUseToolkit } from "./toolkits/computerUse/tools.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -5,7 +6,7 @@ import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3to
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
+import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -286,4 +287,17 @@ it.effect("registers annotated tools and preserves authenticated request context
       }
     }),
   ).pipe(Effect.provide(TestLayer)),
+);
+
+it.effect("advertises object input schemas accepted by strict MCP clients", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    expect(server.tools.length).toBeGreaterThan(0);
+    for (const { tool } of server.tools) {
+      expect(tool.inputSchema.type, tool.name).toBe("object");
+    }
+    for (const tool of Object.values(ComputerUseToolkit.tools)) {
+      expect(Tool.getJsonSchema(tool).type, tool.name).toBe("object");
+    }
+  }).pipe(Effect.provide(TestLayer)),
 );
