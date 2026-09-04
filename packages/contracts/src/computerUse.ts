@@ -30,7 +30,8 @@ const QuartzCoordinate = Schema.Number.annotate({
     "Coordinate in Quartz global display space, origin at the top-left of the main display. Use screen-info coordinates directly; do not multiply by scaleFactor.",
 });
 
-export const ComputerScreenInfoInput = Schema.Struct({});
+// An empty Struct also accepts primitives in Effect; MCP inputs must be objects.
+export const ComputerScreenInfoInput = Schema.Record(Schema.String, Schema.Never);
 export type ComputerScreenInfoInput = typeof ComputerScreenInfoInput.Type;
 
 export const ComputerScreenInfoResult = Schema.Struct({
