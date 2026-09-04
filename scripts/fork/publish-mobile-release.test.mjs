@@ -204,11 +204,28 @@ function extractEasJsonCleanupTrap() {
   return match[0];
 }
 
-function makeFingerprintIpa(fingerprint) {
+function makeFingerprintIpa({ fingerprint, runtimeVersion } = {}) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ios-fingerprint-ipa-"));
-  const updates = NodePath.join(root, "Payload", "T3PrettyInternal.app", "EXUpdates.bundle");
-  NodeFS.mkdirSync(updates, { recursive: true });
-  NodeFS.writeFileSync(NodePath.join(updates, "fingerprint"), fingerprint);
+  const app = NodePath.join(root, "Payload", "T3PrettyInternal.app");
+  NodeFS.mkdirSync(app, { recursive: true });
+  if (fingerprint !== undefined) {
+    const updates = NodePath.join(app, "EXUpdates.bundle");
+    NodeFS.mkdirSync(updates);
+    NodeFS.writeFileSync(NodePath.join(updates, "fingerprint"), fingerprint);
+  }
+  if (runtimeVersion !== undefined) {
+    NodeFS.writeFileSync(
+      NodePath.join(app, "Expo.plist"),
+      [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0"><dict>',
+        "<key>EXUpdatesRuntimeVersion</key>",
+        `<string>${runtimeVersion}</string>`,
+        "</dict></plist>",
+      ].join("\n"),
+    );
+  }
   const ipa = NodePath.join(root, "T3PrettyInternal.ipa");
   NodeChildProcess.execFileSync("zip", ["-q", "-r", ipa, "Payload"], {
     cwd: root,
@@ -711,18 +728,52 @@ describe("iOS embedded runtime fingerprint", () => {
     );
   });
 
-  it("accepts a matching embedded fingerprint and fails closed on a mismatch", () => {
+  it("accepts a matching EXUpdates fingerprint sidecar", () => {
     const embedded = "4ed986f84d740653c1ff27b32a3e0c0a7c139efc";
-    const { root, ipa } = makeFingerprintIpa(embedded);
+    const { root, ipa } = makeFingerprintIpa({
+      fingerprint: embedded,
+      runtimeVersion: "plist-must-not-override-the-sidecar",
+    });
     try {
       const matching = verifyIpaFingerprint(ipa, embedded);
       assert.equal(matching.status, 0);
       assert.equal(matching.stdout.trim(), embedded);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
 
+  it("falls back to a matching Expo.plist runtime version", () => {
+    const embedded = "a21dfbf91ea34506691ef12e24f26e9ddb36b901";
+    const { root, ipa } = makeFingerprintIpa({ runtimeVersion: embedded });
+    try {
+      const matching = verifyIpaFingerprint(ipa, embedded);
+      assert.equal(matching.status, 0);
+      assert.equal(matching.stdout.trim(), embedded);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the embedded runtime version does not match", () => {
+    const embedded = "4ed986f84d740653c1ff27b32a3e0c0a7c139efc";
+    const { root, ipa } = makeFingerprintIpa({ runtimeVersion: embedded });
+    try {
       const mismatched = verifyIpaFingerprint(ipa, "f4da50b3d2326db6b7f34aa680546943796adc3b");
       assert.notEqual(mismatched.status, 0);
       assert.include(mismatched.stderr, "Embedded iOS runtime fingerprint mismatch");
       assert.include(mismatched.stderr, "Refusing TestFlight submit");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when neither embedded runtime representation is present", () => {
+    const { root, ipa } = makeFingerprintIpa();
+    try {
+      const missing = verifyIpaFingerprint(ipa, "f4da50b3d2326db6b7f34aa680546943796adc3b");
+      assert.notEqual(missing.status, 0);
+      assert.include(missing.stderr, "neither EXUpdates.bundle/fingerprint nor Expo.plist");
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }
