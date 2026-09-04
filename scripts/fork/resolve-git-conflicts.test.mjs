@@ -14,6 +14,7 @@ import {
   buildConflictPrompt,
   buildValidationRetryPrompt,
   conflictResolutionEfforts,
+  deduplicateExactUnconflictedImports,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
@@ -1478,6 +1479,59 @@ ${">".repeat(7)} theirs
     } finally {
       NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("removes exact duplicate imports introduced outside conflict markers", () => {
+    const duplicateImport = 'import * as Queue from "effect/Queue";\n';
+    const source = [
+      duplicateImport,
+      'import * as Ref from "effect/Ref";\n',
+      duplicateImport,
+      'import "./side-effect";\n',
+      'import "./side-effect";\n',
+      "<<<<<<< OURS\n",
+      'export const side = "fork";\n',
+      "||||||| BASE\n",
+      'export const side = "base";\n',
+      "=======\n",
+      'export const side = "parent";\n',
+      ">>>>>>> THEIRS\n",
+    ].join("");
+
+    assert.throws(
+      () =>
+        assertValidResolutionProgressSource({
+          path: "apps/server/src/server.test.ts",
+          source,
+          forkSide: "ours",
+        }),
+      /partial resolution has invalid resolved TypeScript/u,
+    );
+
+    const result = deduplicateExactUnconflictedImports(source);
+
+    assert.equal(result.removed, 1);
+    assert.equal(result.source.match(/effect\/Queue/gu)?.length, 1);
+    assert.equal(result.source.match(/\.\/side-effect/gu)?.length, 2);
+    assert.doesNotThrow(() =>
+      assertValidResolutionProgressSource({
+        path: "apps/server/src/server.test.ts",
+        source: result.source,
+        forkSide: "ours",
+      }),
+    );
+
+    const conflictArmImports = [
+      "<<<<<<< OURS\n",
+      duplicateImport,
+      "=======\n",
+      duplicateImport,
+      ">>>>>>> THEIRS\n",
+    ].join("");
+    assert.deepEqual(deduplicateExactUnconflictedImports(conflictArmImports), {
+      source: conflictArmImports,
+      removed: 0,
+    });
   });
 
   it("regenerates a poisoned completed checkpoint instead of replaying it", async () => {
