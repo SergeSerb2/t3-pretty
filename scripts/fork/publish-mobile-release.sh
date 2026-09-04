@@ -463,6 +463,7 @@ verify_ipa_fingerprint() {
   local ipa_path="$1"
   local expected_fingerprint="$2"
   local fingerprint_entry
+  local runtime_plist_entry
   local embedded_fingerprint
   if ! command -v unzip >/dev/null; then
     echo "unzip is required to verify the iOS runtime fingerprint before TestFlight submit." >&2
@@ -476,11 +477,31 @@ verify_ipa_fingerprint() {
     /^Payload\/[^\/]+\.app\/EXUpdates\.bundle\/fingerprint$/ && !entry { entry = $0 }
     END { print entry }
   ')"
-  if [[ -z "$fingerprint_entry" ]]; then
-    echo "Cannot verify iOS runtime fingerprint: EXUpdates.bundle/fingerprint is missing." >&2
-    return 1
+  if [[ -n "$fingerprint_entry" ]]; then
+    embedded_fingerprint="$(unzip -p "$ipa_path" "$fingerprint_entry" 2>/dev/null | tr -d '[:space:]')"
+  else
+    runtime_plist_entry="$({ unzip -Z1 "$ipa_path" 2>/dev/null || true; } | awk '
+      /^Payload\/[^\/]+\.app\/Expo\.plist$/ && !entry { entry = $0 }
+      END { print entry }
+    ')"
+    if [[ -z "$runtime_plist_entry" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: neither EXUpdates.bundle/fingerprint nor Expo.plist is present." >&2
+      return 1
+    fi
+    if ! command -v plutil >/dev/null; then
+      echo "plutil is required to read the iOS runtime version from Expo.plist." >&2
+      return 1
+    fi
+    embedded_fingerprint="$(
+      unzip -p "$ipa_path" "$runtime_plist_entry" 2>/dev/null |
+        plutil -extract EXUpdatesRuntimeVersion raw -expect string -o - -- - 2>/dev/null |
+        tr -d '[:space:]'
+    )"
+    if [[ -z "$embedded_fingerprint" ]]; then
+      echo "Cannot verify iOS runtime fingerprint: Expo.plist has no valid EXUpdatesRuntimeVersion." >&2
+      return 1
+    fi
   fi
-  embedded_fingerprint="$(unzip -p "$ipa_path" "$fingerprint_entry" 2>/dev/null | tr -d '[:space:]')"
   if [[ -z "$embedded_fingerprint" ]]; then
     echo "Cannot verify iOS runtime fingerprint: embedded fingerprint is empty." >&2
     return 1
