@@ -312,7 +312,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               >
                 <ChevronDownIcon className="size-3.5" />
               </MenuTrigger>
-              <MenuPopup align="end" side="top">
+              <MenuPopup align="end" side="top" {...composerFloatingLayerProps}>
                 <MenuItem disabled={sendActionsDisabled} onClick={() => onQueueSend()}>
                   Queue for next turn
                   <span className="text-muted-foreground ml-auto pl-3 text-xs">⌥⏎</span>

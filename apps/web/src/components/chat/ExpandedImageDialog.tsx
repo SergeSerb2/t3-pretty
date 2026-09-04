@@ -1,4 +1,5 @@
 import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import type { ExpandedImageItem, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -59,6 +60,22 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const index = (preview.index + imageOffset + preview.images.length) % preview.images.length;
+  const item = preview.images[index];
+  const source: MediaActionSource = item?.actionsSource ?? {
+    kind: item?.type === "video" ? "video" : "image",
+    name: item?.name ?? "Media",
+    src: item?.src ?? null,
+  };
+  const openFile = source.onOpenFile;
+  const actionsSource: MediaActionSource = openFile
+    ? {
+        ...source,
+        onOpenFile: () => {
+          openFile();
+          onClose();
+        },
+      }
+    : source;
 
   const navigateImage = useCallback((direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
@@ -77,6 +94,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || isContextMenuOpen()) return;
       if (event.key === "Tab") {
         const dialog = dialogRef.current;
         if (dialog === null) return;
@@ -121,16 +139,20 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [navigateImage, onClose, preview.images.length]);
 
-  const item = preview.images[index];
   if (!item) return null;
+  const mediaLabel = item.type === "video" ? "video" : "image";
+  const openOriginalLink =
+    item.originalUrl && resolveExternalWebLinkHost(item.originalUrl) !== null ? (
+      <OpenMediaLink originalUrl={item.originalUrl} />
+    ) : null;
 
-  return (
+  return createPortal(
     <div
       ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 [-webkit-app-region:no-drag]"
       role="dialog"
       aria-modal="true"
-      aria-label="Expanded image preview"
+      aria-label={`Expanded ${mediaLabel} preview`}
       tabIndex={-1}
       // Chat's type-to-focus guard bails on floating layers by this slot.
       data-slot="dialog"
@@ -139,7 +161,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         type="button"
         tabIndex={-1}
         className="absolute inset-0 z-0 cursor-zoom-out"
-        aria-label="Close image preview"
+        aria-label={`Close ${mediaLabel} preview`}
         onClick={onClose}
       />
       {preview.images.length > 1 && (
@@ -205,6 +227,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <ChevronRightIcon className="size-5" />
         </Button>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 });

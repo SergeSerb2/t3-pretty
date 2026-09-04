@@ -18,7 +18,15 @@ import type {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import {
   CheckIcon,
@@ -97,7 +105,7 @@ import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
 import { useOpenLink } from "~/browser/useOpenLink";
-import { openPullRequestLink, useOpenPrLink } from "~/lib/openPullRequestLink";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { subscribeSecondTick } from "~/lib/secondTicker";
 import {
   AutomatedReviewStatusIcon,
@@ -1050,6 +1058,7 @@ export default function GitActionsControl({
     () => (activeThreadRef ? { threadRef: activeThreadRef } : undefined),
     [activeThreadRef],
   );
+  const openPrLink = useOpenPrLink(activeThreadRef ?? undefined);
   const openLink = useOpenLink(activeThreadRef);
   const activeDraftThread = useComposerDraftStore((store) =>
     draftId
@@ -1518,7 +1527,7 @@ export default function GitActionsControl({
       const toastCta = actionResult.toast.cta;
       let toastActionProps: {
         children: string;
-        onClick: () => void;
+        onClick: (event: MouseEvent<HTMLButtonElement>) => void;
       } | null = null;
       if (toastCta.kind === "run_action") {
         toastActionProps = {
@@ -1533,20 +1542,9 @@ export default function GitActionsControl({
       } else if (toastCta.kind === "open_pr") {
         toastActionProps = {
           children: toastCta.label,
-          onClick: () => {
-            const api = readLocalApi();
-            if (!api) return;
+          onClick: (event) => {
             closeResultToast();
-            void openPullRequestLink(api.shell, toastCta.url).catch((error) => {
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Unable to open pull request link",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                  ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
-                }),
-              );
-            });
+            openPrLink(event, toastCta.url);
           },
         };
       }

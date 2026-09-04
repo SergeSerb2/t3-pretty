@@ -177,7 +177,7 @@ describe("timeline and lightbox contract", () => {
 
   it("the minimap preview and lightbox still carry their hooks", () => {
     expect(messagesTimelineSource).toContain("data-minimap-preview");
-    expect(expandedImageSource).toContain('aria-label="Expanded image preview"');
+    expect(expandedImageSource).toContain("aria-label={`Expanded ${mediaLabel} preview`}");
     expect(expandedImageSource).toContain('<div className="relative isolate z-10');
   });
 });

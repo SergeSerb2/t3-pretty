@@ -1056,31 +1056,32 @@ export function PullRequestDetailPanel({
         });
       }
     }
-    const perform = async (
-      action: PullRequestAction,
-      method?: PullRequestMergeMethod,
-      updateMethod?: PullRequestUpdateMethod,
-    ) => finishAction(action, method, updateMethod);
+  };
 
-    const performCommentAction = async (body: string, action: "close" | "reopen") => {
-      let commentPosted = false;
-      const actionSucceeded = await finishAction(action, undefined, undefined, async () => {
-        const commentResult = await postComment({
-          environmentId,
-          input: { ...reference, body },
-        });
-        if (commentResult._tag === "Failure") {
-          toastManager.add({ type: "error", title: "Could not post the comment" });
-          return false;
-        }
-        commentPosted = true;
-        return true;
+  const perform = async (
+    action: PullRequestAction,
+    method?: PullRequestMergeMethod,
+    updateMethod?: PullRequestUpdateMethod,
+  ) => finishAction(action, method, updateMethod);
+
+  const performCommentAction = async (body: string, action: "close" | "reopen") => {
+    let commentPosted = false;
+    const actionSucceeded = await finishAction(action, undefined, undefined, async () => {
+      const commentResult = await postComment({
+        environmentId,
+        input: { ...reference, body },
       });
-      // The comment is durable even if the state change was refused, so make it visible while the
-      // shared action failure explains why the pull request stayed where it was.
-      if (commentPosted && !actionSucceeded) refreshDetail();
-      return { commentPosted };
-    };
+      if (commentResult._tag === "Failure") {
+        toastManager.add({ type: "error", title: "Could not post the comment" });
+        return false;
+      }
+      commentPosted = true;
+      return true;
+    });
+    // The comment is durable even if the state change was refused, so make it visible while the
+    // shared action failure explains why the pull request stayed where it was.
+    if (commentPosted && !actionSucceeded) refreshDetail();
+    return { commentPosted };
   };
 
   const saveTitle = async (next: string) => {

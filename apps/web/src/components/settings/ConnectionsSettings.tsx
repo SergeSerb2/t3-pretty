@@ -1802,24 +1802,6 @@ export function ConnectionsSettings() {
       ),
     [savedEnvironments],
   );
-  const savedDesktopSshEnvironmentsByAlias = useMemo(
-    () =>
-      savedEnvironments.reduce<Record<string, EnvironmentPresentation>>(
-        (accumulator, environment) => {
-          const profile = environment.entry.profile;
-          if (
-            environment.entry.target._tag === "SshConnectionTarget" &&
-            Option.isSome(profile) &&
-            profile.value._tag === "SshConnectionProfile"
-          ) {
-            accumulator[profile.value.target.alias] = environment;
-          }
-          return accumulator;
-        },
-        {},
-      ),
-    [savedEnvironments],
-  );
   const savedDesktopSshEnvironmentKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const environment of savedEnvironments) {
@@ -1837,8 +1819,6 @@ export function ConnectionsSettings() {
     }
     return keys;
   }, [savedEnvironments]);
-  const [connectingSshHostAlias, setConnectingSshHostAlias] = useState<string | null>(null);
-
   const [desktopServerExposureMutationError, setDesktopServerExposureMutationError] = useState<
     string | null
   >(null);
@@ -1924,8 +1904,7 @@ export function ConnectionsSettings() {
   const desktopNetworkAccess = useEnvironmentQuery(
     canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
   );
-  const isSshDiscoveryActive =
-    desktopBridge !== undefined && addBackendDialogOpen && savedBackendMode === "ssh";
+  const isSshDiscoveryActive = desktopBridge !== undefined && addBackendDialogOpen;
   const desktopSshHosts = useEnvironmentQuery(
     desktopBridge && addBackendDialogOpen ? desktopSshHostsStateAtom : null,
   );
@@ -2199,8 +2178,6 @@ export function ConnectionsSettings() {
         return;
       }
 
-      setSavedBackendHost("");
-      setSavedBackendPairingCode("");
       setSavedBackendSshHost("");
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
@@ -2413,37 +2390,6 @@ export function ConnectionsSettings() {
       relaySession,
       removeEnvironment,
     ],
-  );
-
-  const handleConnectSshHost = useCallback(
-    async (target: DesktopSshEnvironmentTarget, label?: string) => {
-      setConnectingSshHostAlias(target.alias);
-      setSavedBackendError(null);
-      const result = await connectSshEnvironment({
-        target,
-        ...(label === undefined ? {} : { label }),
-      });
-      setConnectingSshHostAlias(null);
-      if (result._tag === "Success") {
-        setSavedBackendSshHost("");
-        setSavedBackendSshUsername("");
-        setSavedBackendSshPort("");
-        setAddBackendDialogOpen(false);
-        toastManager.add({
-          type: "success",
-          title: savedDesktopSshEnvironmentsByAlias[target.alias]
-            ? "Environment reconnected"
-            : "Environment connected",
-          description: `${label?.trim() || target.alias} is ready over an SSH-managed tunnel.`,
-        });
-        return;
-      }
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setSavedBackendError(formatDesktopSshConnectionError(error));
-      }
-    },
-    [connectSshEnvironment, savedDesktopSshEnvironmentsByAlias],
   );
 
   const visibleDesktopPairingLinks = desktopPairingLinks;

@@ -1,5 +1,7 @@
 import type {
+  EnvironmentId,
   ProjectId,
+  ProjectIconOverride,
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
@@ -25,6 +27,7 @@ import { type ElementType, type ReactNode, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Button } from "../ui/button";
 
@@ -397,6 +400,8 @@ interface PullRequestProjectFilterProps {
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   }>;
   readonly projectId: ProjectId | undefined;
   readonly projectEnvironmentId: EnvironmentId | undefined;
@@ -426,6 +431,9 @@ function PullRequestProjectFilter({
             <ProjectFavicon
               environmentId={selectedProject.environmentId}
               cwd={selectedProject.workspaceRoot}
+              projectName={selectedProject.title}
+              faviconPath={selectedProject.faviconPath}
+              projectIcon={selectedProject.projectIcon}
               fallbackIcon={FolderGit2Icon}
               className="size-3.5 shrink-0"
             />
@@ -489,6 +497,9 @@ function PullRequestProjectFilter({
                     <ProjectFavicon
                       environmentId={project.environmentId}
                       cwd={project.workspaceRoot}
+                      projectName={project.title}
+                      faviconPath={project.faviconPath}
+                      projectIcon={project.projectIcon}
                       fallbackIcon={FolderGit2Icon}
                       className="size-3.5 shrink-0"
                     />
@@ -621,33 +632,6 @@ export function PullRequestFiltersMenu({
         ([, held]) => held !== undefined,
       ),
     ) as PullRequestListFilters;
-  const projectValue =
-    projectId === undefined || projectEnvironmentId === undefined
-      ? ALL_PROJECTS_VALUE
-      : pullRequestProjectKey({ id: projectId, environmentId: projectEnvironmentId });
-  const projectOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: ALL_PROJECTS_VALUE, label: "All projects", Icon: LayersIcon },
-    ...projects
-      .toSorted(
-        (left, right) =>
-          Number(unavailable.has(pullRequestProjectKey(left))) -
-          Number(unavailable.has(pullRequestProjectKey(right))),
-      )
-      .map((project) => ({
-        value: pullRequestProjectKey(project),
-        label: project.title,
-        Icon: FolderGit2Icon,
-        favicon: {
-          environmentId: project.environmentId,
-          cwd: project.workspaceRoot,
-          faviconPath: project.faviconPath ?? null,
-          projectIcon: project.projectIcon ?? null,
-        },
-        ...(unavailable.has(pullRequestProjectKey(project))
-          ? { unavailable: unavailable.get(pullRequestProjectKey(project)) }
-          : {}),
-      })),
-  ];
   return (
     <Menu
       onOpenChange={onOpenChange}

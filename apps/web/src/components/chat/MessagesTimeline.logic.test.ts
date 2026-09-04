@@ -9,7 +9,6 @@ import {
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
   type MessagesTimelineRow,
-  workEntryDisplayLabel,
 } from "./MessagesTimeline.logic";
 
 function minimapMessageRow(
@@ -1733,6 +1732,7 @@ describe("computeStableMessagesTimelineRows", () => {
       groupId: "work-group:1",
       hiddenCount: 1,
       expanded: false,
+      onlyToolEntries: true,
       summary: "Used Browser",
       summaryKind: "other",
       toolSurface: "browser",

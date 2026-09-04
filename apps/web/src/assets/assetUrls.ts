@@ -1,4 +1,4 @@
-import { useAtomQueryRunner, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import {
   type AssetUrlState,
   assetUrlStateFromResult,
@@ -12,6 +12,7 @@ import { useCallback, useMemo } from "react";
 
 import { assetEnvironment } from "~/state/assets";
 import { usePreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 export { resolveAssetUrl, type AssetUrlState } from "@t3tools/client-runtime/state/assets";
 

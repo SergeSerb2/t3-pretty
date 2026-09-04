@@ -8,7 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { parse as parseJavaScript } from "@babel/parser";
-import { parseSync as parseOxc } from "vite-plus/binding";
+import { parseSync as parseOxc } from "vite-plus";
 
 import {
   redactCliProxyDiagnostic,

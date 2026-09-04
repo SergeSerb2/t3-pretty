@@ -156,7 +156,6 @@ import {
   reserveSettledArchiveAttempts,
   reserveUndonePastArchiveAgeAttempts,
   retainSettledAutoArchiveAttempts,
-  resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
   shouldCreateNewThreadInCurrentProject,
