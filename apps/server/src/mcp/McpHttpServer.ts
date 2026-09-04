@@ -1,6 +1,5 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -30,33 +29,6 @@ import {
 export const MCP_HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
 const MCP_HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(MCP_HTTP_MAX_REQUEST_BODY_BYTES);
 
-export class McpRequestBodyTooLarge extends Data.TaggedError("McpRequestBodyTooLarge")<{
-  readonly maxBytes: number;
-  readonly observedBytes: number;
-}> {}
-
-export function collectMcpRequestTextWithinByteLimit<E, R>(
-  stream: Stream.Stream<Uint8Array, E, R>,
-  maxBytes = MCP_HTTP_MAX_REQUEST_BODY_BYTES,
-): Effect.Effect<string, E | McpRequestBodyTooLarge, R> {
-  return Effect.gen(function* () {
-    const body = yield* stream.pipe(
-      Stream.runFoldEffect(
-        () => ({ chunks: [] as Array<Uint8Array<ArrayBufferLike>>, bytes: 0 }),
-        (state, chunk) => {
-          const observedBytes = state.bytes + chunk.byteLength;
-          if (observedBytes > maxBytes) {
-            return Effect.fail(new McpRequestBodyTooLarge({ maxBytes, observedBytes }));
-          }
-          state.chunks.push(chunk);
-          return Effect.succeed({ chunks: state.chunks, bytes: observedBytes });
-        },
-      ),
-    );
-    return Buffer.concat(body.chunks, body.bytes).toString("utf8");
-  });
-}
-
 export function mcpDeclaredContentLengthExceedsLimit(
   contentLength: string | undefined,
   maxBytes = MCP_HTTP_MAX_REQUEST_BODY_BYTES,
@@ -64,19 +36,6 @@ export function mcpDeclaredContentLengthExceedsLimit(
   if (contentLength === undefined) return false;
   const parsed = Number(contentLength);
   return Number.isFinite(parsed) && parsed > maxBytes;
-}
-
-function withBoundedMcpRequestBody(
-  request: HttpServerRequest.HttpServerRequest,
-): HttpServerRequest.HttpServerRequest {
-  const text = collectMcpRequestTextWithinByteLimit(request.stream);
-  return new Proxy(request, {
-    get(target, property) {
-      if (property === "text") return text;
-      const value = Reflect.get(target, property, target) as unknown;
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
 }
 
 const mcpPayloadTooLargeResponse = HttpServerResponse.jsonUnsafe(
@@ -170,17 +129,13 @@ const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =
             return unauthorized;
           }
           if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
-          const boundedRequest = withBoundedMcpRequestBody(request);
+          // Keep the platform request's cached body reader. Building a second reader from
+          // `request.stream` races the router's reader and can turn valid JSON into an empty body.
           return yield* httpEffect.pipe(
-            Effect.provideService(HttpServerRequest.HttpServerRequest, boundedRequest),
+            Effect.provideService(HttpServerRequest.HttpServerRequest, request),
             Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
             Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
             Effect.map(normalizeMcpHttpResponse),
-            Effect.catchDefect((defect) =>
-              defect instanceof McpRequestBodyTooLarge
-                ? Effect.succeed(mcpPayloadTooLargeResponse)
-                : Effect.die(defect),
-            ),
           );
         }),
     ),

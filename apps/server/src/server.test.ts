@@ -1789,6 +1789,92 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("completes the authenticated provider MCP handshake", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const issued = yield* McpSessionRegistry.issueActiveMcpCredential({
+        threadId: ThreadId.make("thread-provider-mcp"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        capabilities: new Set(["preview"] as const),
+      });
+      assert.ok(issued);
+
+      const mcpUrl = yield* getHttpServerUrl("/mcp");
+      const postMcp = (payload: unknown, headers: Readonly<Record<string, string>> = {}) =>
+        fetchEffect(mcpUrl, {
+          method: "POST",
+          headers: {
+            ...headers,
+            accept: "application/json, text/event-stream",
+            authorization: issued!.config.authorizationHeader,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+      const response = yield* postMcp({
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "codex-mcp-client", version: "0.153.0" },
+        },
+      });
+
+      const body = yield* responseJsonEffect<{
+        readonly jsonrpc: string;
+        readonly id: number;
+        readonly result: {
+          readonly protocolVersion: string;
+          readonly capabilities: { readonly tools?: { readonly listChanged: boolean } };
+        };
+      }>(response);
+      assert.equal(response.status, 200);
+      assert.equal(body.jsonrpc, "2.0");
+      assert.equal(body.id, 0);
+      assert.equal(body.result.protocolVersion, "2025-06-18");
+      assert.isTrue(body.result.capabilities.tools?.listChanged);
+      const sessionId = response.headers["mcp-session-id"];
+      assert.ok(sessionId);
+
+      const sessionHeaders = {
+        "mcp-protocol-version": "2025-06-18",
+        "mcp-session-id": sessionId!,
+      };
+      const initialized = yield* postMcp(
+        {
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        },
+        sessionHeaders,
+      );
+      assert.equal(initialized.status, 202);
+
+      const tools = yield* postMcp(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/list",
+          params: {},
+        },
+        sessionHeaders,
+      );
+      const toolsBody = yield* responseJsonEffect<{
+        readonly jsonrpc: string;
+        readonly id: number;
+        readonly result: { readonly tools: ReadonlyArray<{ readonly name: string }> };
+      }>(tools);
+      assert.equal(tools.status, 200);
+      assert.equal(toolsBody.id, 1);
+      assert.includeMembers(
+        toolsBody.result.tools.map(({ name }) => name),
+        ["preview_status", "preview_snapshot"],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("serves the public environment descriptor without requiring auth", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest();
