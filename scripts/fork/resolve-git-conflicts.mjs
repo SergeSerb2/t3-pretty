@@ -266,6 +266,38 @@ export function materializeResolutionProgressForValidation({
   return materializeResolutionProgressDetails({ path, source, forkSide }).source;
 }
 
+export function deduplicateExactUnconflictedImports(source) {
+  if (typeof source !== "string") {
+    throw new Error("conflicted source must be a string");
+  }
+
+  const seen = new Set();
+  let insideConflict = false;
+  let removed = 0;
+  const lines = source.split(/(?<=\n)/u);
+  const deduplicated = lines.filter((line) => {
+    if (line.startsWith("<<<<<<<")) {
+      insideConflict = true;
+      return true;
+    }
+    if (insideConflict) {
+      if (line.startsWith(">>>>>>>")) insideConflict = false;
+      return true;
+    }
+
+    const statement = line.replace(/\r?\n$/u, "");
+    if (!/^\s*import\s.+\sfrom\s+["'][^"']+["'];?\s*$/u.test(statement)) return true;
+    if (seen.has(statement)) {
+      removed += 1;
+      return false;
+    }
+    seen.add(statement);
+    return true;
+  });
+
+  return { source: deduplicated.join(""), removed };
+}
+
 function materializeResolutionProgressDetails({
   path,
   source,
@@ -1607,7 +1639,17 @@ async function resolveConflict(path, token) {
     return resolveBinaryConflict(path);
   }
 
-  const { conflictedSource, deleteConflict } = conflictSourceForPath(path);
+  const conflict = conflictSourceForPath(path);
+  const deduplicated = TYPESCRIPT_SOURCE_PATTERN.test(path)
+    ? deduplicateExactUnconflictedImports(conflict.conflictedSource)
+    : { source: conflict.conflictedSource, removed: 0 };
+  const conflictedSource = deduplicated.source;
+  const { deleteConflict } = conflict;
+  if (deduplicated.removed > 0) {
+    process.stdout.write(
+      `[fork-sync] removed ${deduplicated.removed} exact duplicate unconflicted import(s) from ${oneLine(path)}\n`,
+    );
+  }
   // A parent deletion is judged against where the behavior went upstream;
   // attach that evidence before the prompt is built.
   if (deleteConflict?.deletedSide === "theirs") {
