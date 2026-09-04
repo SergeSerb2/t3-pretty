@@ -219,6 +219,64 @@ function isInsideRoot(path: Path.Path, root: string, candidate: string): boolean
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+const canonicalizeNearestExistingAncestor = Effect.fn(
+  "AntigravityAdapter.canonicalizeNearestExistingAncestor",
+)(function* (input: {
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly path: Path.Path;
+  readonly candidate: string;
+  readonly requestPath: string;
+}) {
+  const { fileSystem, path } = input;
+  const unresolvedSegments: Array<string> = [];
+  let ancestor = path.resolve(input.candidate);
+
+  while (true) {
+    const canonical = yield* fileSystem.realPath(ancestor).pipe(
+      Effect.map(Option.some),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          error.reason._tag === "NotFound"
+            ? Effect.succeed(Option.none<string>())
+            : EffectAcpErrors.AcpRequestError.internalError(
+                `Could not safely resolve '${input.requestPath}'.`,
+              ),
+      }),
+    );
+    if (Option.isSome(canonical)) {
+      return path.join(canonical.value, ...unresolvedSegments);
+    }
+
+    // A broken symlink also reports NotFound from realPath. Fail closed rather
+    // than rebuilding it lexically and allowing a later write through it.
+    const unresolvedLink = yield* fileSystem.readLink(ancestor).pipe(
+      Effect.map(Option.some),
+      Effect.catchTags({
+        PlatformError: (error) =>
+          error.reason._tag === "NotFound"
+            ? Effect.succeed(Option.none<string>())
+            : EffectAcpErrors.AcpRequestError.internalError(
+                `Could not safely resolve '${input.requestPath}'.`,
+              ),
+      }),
+    );
+    if (Option.isSome(unresolvedLink)) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Path '${input.requestPath}' could not be safely resolved.`,
+      );
+    }
+
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        `Path '${input.requestPath}' could not be safely resolved.`,
+      );
+    }
+    unresolvedSegments.unshift(path.basename(ancestor));
+    ancestor = parent;
+  }
+});
+
 /** Resolves an agent-supplied path and rejects anything outside the session roots. */
 const resolveClientFilePath = Effect.fn("AntigravityAdapter.resolveClientFilePath")(
   function* (input: {
@@ -229,13 +287,12 @@ const resolveClientFilePath = Effect.fn("AntigravityAdapter.resolveClientFilePat
   }) {
     const { path } = input;
     const resolved = path.resolve(input.requestPath);
-    // Follow symlinks on the parent so a link out of the workspace cannot escape it.
-    const parent = yield* input.fileSystem
-      .realPath(path.dirname(resolved))
-      .pipe(Effect.orElseSucceed(() => path.dirname(resolved)));
-    const real = path.join(parent, path.basename(resolved));
-    const roots = yield* Effect.forEach(input.allowedRoots, (root) =>
-      input.fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
+    const real = yield* canonicalizeNearestExistingAncestor({
+      ...input,
+      candidate: resolved,
+    });
+    const roots = yield* Effect.forEach(input.allowedRoots, (candidate) =>
+      canonicalizeNearestExistingAncestor({ ...input, candidate }),
     );
     if (!roots.some((root) => isInsideRoot(path, root, real))) {
       return yield* EffectAcpErrors.AcpRequestError.invalidParams(

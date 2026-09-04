@@ -1247,6 +1247,16 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       });
       expect(yield* fs.readFileString(path.join(cwd, "nested", "new.txt"))).toBe("created");
 
+      const linkedOutside = path.join(cwd, "linked-outside");
+      yield* fs.symlink(outside, linkedOutside);
+      const linkedEscape = yield* write({
+        sessionId: nativeSessionId,
+        path: path.join(linkedOutside, "nested", "escape.txt"),
+        content: "nope",
+      }).pipe(Effect.flip);
+      expect(linkedEscape._tag).toBe("AcpRequestError");
+      expect(yield* fs.exists(path.join(outside, "nested", "escape.txt"))).toBe(false);
+
       const escape = yield* write({
         sessionId: nativeSessionId,
         path: path.join(outside, "escape.txt"),
