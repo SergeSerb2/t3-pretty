@@ -33,6 +33,12 @@ const SERVICE_TIER = process.env.CLI_PROXY_SERVICE_TIER ?? "priority";
 // more conflicts piled onto the same unintegrated merge.
 const MAX_CONFLICTS_PER_REQUEST = 1;
 export const MAX_BATCHES_PER_FILE = 32;
+// A partially resolved file can need different sides of separate unresolved
+// conflicts before it becomes syntactically whole. Keep validation bounded:
+// try the two uniform projections, then every single-conflict neighbor that
+// fits this budget. A miss is a safe false negative (the batch is retried),
+// while every accepted checkpoint still has a complete parseable projection.
+export const MAX_PARTIAL_VALIDATION_PROJECTIONS = 128;
 const MAX_CHECKPOINTED_BATCHES_PER_FILE = 100_000;
 export const MAX_VALIDATION_ATTEMPTS = 3;
 export const MAX_PROVIDER_AVAILABILITY_ATTEMPTS = 8;
@@ -264,6 +270,7 @@ function materializeResolutionProgressDetails({
   path,
   source,
   forkSide = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours",
+  flippedConflictIndex,
 }) {
   if (typeof path !== "string" || typeof source !== "string") {
     throw new Error("partial resolution did not contain a source path and string");
@@ -280,7 +287,13 @@ function materializeResolutionProgressDetails({
   const unresolvedSpans = [];
   for (const conflict of source.matchAll(MATERIALIZABLE_CONFLICT_PATTERN)) {
     const prefix = source.slice(sourceOffset, conflict.index);
-    const selectedSource = forkSide === "theirs" ? conflict[2] : conflict[1];
+    const selectedForkSide =
+      materializedConflicts === flippedConflictIndex
+        ? forkSide === "ours"
+          ? "theirs"
+          : "ours"
+        : forkSide;
+    const selectedSource = selectedForkSide === "theirs" ? conflict[2] : conflict[1];
     pieces.push(prefix, selectedSource);
     outputOffset += prefix.length;
     unresolvedSpans.push({ start: outputOffset, end: outputOffset + selectedSource.length });
@@ -293,7 +306,7 @@ function materializeResolutionProgressDetails({
   if (materializedConflicts === 0 || LEFTOVER_MARKER_PATTERN.test(materialized)) {
     throw new Error(`${path} contains malformed partial conflict markers`);
   }
-  return { source: materialized, unresolvedSpans };
+  return { source: materialized, unresolvedSpans, conflictCount: materializedConflicts };
 }
 
 export function assertValidResolutionProgressSource({ path, source, forkSide } = {}) {
@@ -306,23 +319,45 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
   if (preferredForkSide !== "ours" && preferredForkSide !== "theirs") {
     throw new Error(`${path} has an invalid fork side for partial validation`);
   }
-  const candidateForkSides = [preferredForkSide, preferredForkSide === "ours" ? "theirs" : "ours"];
+  const oppositeForkSide = preferredForkSide === "ours" ? "theirs" : "ours";
   const preferredMaterialized = materializeResolutionProgressDetails({
     path,
     source,
     forkSide: preferredForkSide,
   });
   if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
+  const candidatePlans = [
+    { label: preferredForkSide, forkSide: preferredForkSide },
+    { label: oppositeForkSide, forkSide: oppositeForkSide },
+  ];
+  if (preferredMaterialized.conflictCount > 1) {
+    for (const forkSideCandidate of [preferredForkSide, oppositeForkSide]) {
+      for (
+        let conflictIndex = 0;
+        conflictIndex < preferredMaterialized.conflictCount &&
+        candidatePlans.length < MAX_PARTIAL_VALIDATION_PROJECTIONS;
+        conflictIndex += 1
+      ) {
+        candidatePlans.push({
+          label: `${forkSideCandidate} except conflict ${conflictIndex + 1}`,
+          forkSide: forkSideCandidate,
+          flippedConflictIndex: conflictIndex,
+        });
+      }
+    }
+  }
   const candidateErrors = [];
-  for (const candidateForkSide of candidateForkSides) {
+  for (const candidatePlan of candidatePlans) {
     try {
       const materialized =
-        candidateForkSide === preferredForkSide
+        candidatePlan.forkSide === preferredForkSide &&
+        candidatePlan.flippedConflictIndex === undefined
           ? preferredMaterialized
           : materializeResolutionProgressDetails({
               path,
               source,
-              forkSide: candidateForkSide,
+              forkSide: candidatePlan.forkSide,
+              flippedConflictIndex: candidatePlan.flippedConflictIndex,
             });
       const diagnosticIsProvisionalCrossConflict = (error) => {
         const position = Number.isSafeInteger(error?.pos)
@@ -358,14 +393,15 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
       if (resolvedSourceError) throw resolvedSourceError;
       return;
     } catch (error) {
-      candidateErrors.push({ forkSide: candidateForkSide, error });
+      candidateErrors.push({ label: candidatePlan.label, error });
     }
   }
   throw new Error(
-    `${path} partial resolution has invalid resolved TypeScript on both complete projections: ${candidateErrors
+    `${path} partial resolution has invalid resolved TypeScript on both complete projections and ${candidatePlans.length - 2} bounded mixed projections: ${candidateErrors
+      .slice(0, 2)
       .map(
-        ({ forkSide: candidateForkSide, error }) =>
-          `${candidateForkSide}: ${oneLine(error instanceof Error ? error.message : String(error))}`,
+        ({ label, error }) =>
+          `${label}: ${oneLine(error instanceof Error ? error.message : String(error))}`,
       )
       .join("; ")}`,
     { cause: candidateErrors[0]?.error },

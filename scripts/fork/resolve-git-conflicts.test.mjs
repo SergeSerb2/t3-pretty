@@ -20,6 +20,7 @@ import {
   isForkDeletionConflict,
   isProviderAvailabilityFailure,
   MAX_BATCHES_PER_FILE,
+  MAX_PARTIAL_VALIDATION_PROJECTIONS,
   MAX_PROVIDER_AVAILABILITY_ATTEMPTS,
   MAX_VALIDATION_ATTEMPTS,
   materializeResolutionProgressForValidation,
@@ -1333,6 +1334,60 @@ ${">".repeat(7)} theirs
           }),
         /partial resolution has invalid resolved TypeScript/u,
       );
+
+      const mixedProjectionRequired = [
+        "<<<<<<< OURS",
+        'const content = "fork";',
+        "||||||| BASE",
+        'const baseContent = "base";',
+        "=======",
+        'const forkOnly = "parent";',
+        ">>>>>>> THEIRS",
+        'const content = "resolved";',
+        "export function MixedProjection() {",
+        "  return (",
+        "<<<<<<< OURS",
+        "    <div />",
+        "||||||| BASE",
+        "    <span />",
+        "=======",
+        "    <div>",
+        ">>>>>>> THEIRS",
+        "  );",
+        "}",
+        "",
+      ].join("\n");
+      for (const uniformForkSide of ["ours", "theirs"]) {
+        assert.throws(
+          () =>
+            assertValidResolvedSource({
+              path: "apps/web/src/MixedProjection.tsx",
+              source: materializeResolutionProgressForValidation({
+                path: "apps/web/src/MixedProjection.tsx",
+                source: mixedProjectionRequired,
+                forkSide: uniformForkSide,
+              }),
+            }),
+          /not syntactically valid TypeScript/u,
+        );
+      }
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/MixedProjection.tsx",
+          source: mixedProjectionRequired,
+          forkSide: "ours",
+        }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/MixedProjection.tsx",
+            source: `export const broken = (\n${mixedProjectionRequired}`,
+            forkSide: "ours",
+          }),
+        /partial resolution has invalid resolved TypeScript/u,
+      );
+      assert.equal(MAX_PARTIAL_VALIDATION_PROJECTIONS, 128);
 
       for (const poisonedPrefix of ["export const broken = (", "export const broken = value."]) {
         assert.throws(
