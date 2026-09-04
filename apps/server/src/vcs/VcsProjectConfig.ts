@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 
 import { VcsDriverKind, type VcsDriverKind as VcsDriverKindType } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { readFilePrefix } from "../boundedFileRead.ts";
 
 const ProjectVcsConfig = Schema.Struct({
   vcs: Schema.optional(
@@ -19,6 +20,7 @@ const ProjectVcsConfig = Schema.Struct({
 });
 const ProjectVcsConfigJson = fromLenientJson(ProjectVcsConfig);
 const decodeProjectVcsConfigJson = Schema.decodeUnknownEffect(ProjectVcsConfigJson);
+const PROJECT_VCS_CONFIG_MAX_BYTES = 64 * 1024;
 
 type ProjectVcsConfigFile = typeof ProjectVcsConfig.Type;
 
@@ -102,7 +104,11 @@ export const make = Effect.gen(function* () {
     cwd: string,
     configPath: string,
   ) {
-    const raw = yield* fileSystem.readFileString(configPath).pipe(
+    const raw = yield* readFilePrefix(
+      fileSystem,
+      configPath,
+      PROJECT_VCS_CONFIG_MAX_BYTES + 1,
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new VcsProjectConfigError({
@@ -113,7 +119,15 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    const parsed = yield* decodeProjectVcsConfigJson(raw).pipe(
+    if (raw.byteLength > PROJECT_VCS_CONFIG_MAX_BYTES) {
+      return yield* new VcsProjectConfigError({
+        operation: "read",
+        cwd,
+        configPath,
+        cause: new Error(`VCS project config exceeds ${PROJECT_VCS_CONFIG_MAX_BYTES} bytes.`),
+      });
+    }
+    const parsed = yield* decodeProjectVcsConfigJson(new TextDecoder().decode(raw)).pipe(
       Effect.mapError(
         (cause) =>
           new VcsProjectConfigError({

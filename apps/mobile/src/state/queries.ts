@@ -18,6 +18,11 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
+import {
+  limitMobileSearchQuery,
+  MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH,
+  MOBILE_VCS_SEARCH_QUERY_MAX_LENGTH,
+} from "../lib/searchQuery";
 import { orchestrationEnvironment } from "./orchestration";
 import { projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
@@ -85,7 +90,7 @@ export function useThreadSearch(
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isPending: boolean;
 } {
-  const normalizedQuery = query.trim();
+  const normalizedQuery = limitMobileSearchQuery(query.trim(), MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH);
   const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
   const canSearch = environmentIds.length > 0 && normalizedQuery.length >= 2;
   const settledQuery = canSearch && normalizedQuery === debouncedQuery ? debouncedQuery : null;
@@ -121,7 +126,10 @@ export function useBranches(input: {
   readonly cwd: string | null;
   readonly query?: string | null;
 }) {
-  const query = input.query?.trim() ?? "";
+  const query = limitMobileSearchQuery(
+    input.query?.trim() ?? "",
+    MOBILE_VCS_SEARCH_QUERY_MAX_LENGTH,
+  );
   return useEnvironmentQuery(
     input.environmentId !== null && input.cwd !== null
       ? vcsEnvironment.listRefs({
@@ -137,7 +145,10 @@ export function useBranches(input: {
 }
 
 export function usePaginatedBranches(target: VcsRefTarget) {
-  const query = target.query?.trim() ?? "";
+  const query = limitMobileSearchQuery(
+    target.query?.trim() ?? "",
+    MOBILE_VCS_SEARCH_QUERY_MAX_LENGTH,
+  );
   const targetKey =
     target.environmentId !== null && target.cwd !== null
       ? JSON.stringify([target.environmentId, target.cwd, query])

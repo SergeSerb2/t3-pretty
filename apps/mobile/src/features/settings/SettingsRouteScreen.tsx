@@ -20,7 +20,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
@@ -30,12 +30,26 @@ import {
   subscribeAgentAwarenessRegistrationStatus,
 } from "../agent-awareness/remoteRegistration";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
+import { readClerkTokenWithDeadline } from "../cloud/clerkToken";
 import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { WorkspaceSidebarToolbar } from "../layout/workspace-sidebar-toolbar";
 import { runtime } from "../../lib/runtime";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useEnvironments } from "../../state/environments";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  type ServerSettingsPatch,
+} from "@t3tools/contracts";
+import {
+  findSharedSettingsMismatches,
+  pickSharedServerSettings,
+  supportsSharedSettingsSync,
+} from "@t3tools/client-runtime/state/shared-settings";
 import { useThreadListV2Enabled } from "../threads/use-thread-list-v2-enabled";
 import { openWhatsNew } from "../whats-new/whatsNewController";
 import {
@@ -159,6 +173,8 @@ function ConfiguredSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
+  const [liveActivityMutationPending, setLiveActivityMutationPending] = useState(false);
+  const liveActivityMutationPendingRef = useRef(false);
   const deviceRegistered = useDeviceRegistered();
   const liveActivitiesPreferenceEnabled = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.liveActivitiesEnabled !== false
@@ -287,73 +303,93 @@ function ConfiguredSettingsRouteScreen() {
     );
   }, [navigation]);
 
+  const beginLiveActivityMutation = useCallback(() => {
+    if (liveActivityMutationPendingRef.current) return false;
+    liveActivityMutationPendingRef.current = true;
+    setLiveActivityMutationPending(true);
+    return true;
+  }, []);
+  const finishLiveActivityMutation = useCallback(() => {
+    liveActivityMutationPendingRef.current = false;
+    setLiveActivityMutationPending(false);
+  }, []);
+
   const linkEnvironments = useCallback(async () => {
     if (!isSignedIn) {
       promptSignIn();
       return;
     }
+    if (!beginLiveActivityMutation()) return;
 
-    setLiveActivityStatus("linking");
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-    if (tokenResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      const error = squashAtomCommandFailure(tokenResult);
-      Alert.alert(
-        "Live Activities unavailable",
-        error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+    try {
+      setLiveActivityStatus("linking");
+      const tokenResult = await settlePromise(() =>
+        readClerkTokenWithDeadline(() => getToken(resolveRelayClerkTokenOptions())),
       );
-      return;
-    }
-    if (!tokenResult.value) {
-      promptSignIn();
-      setLiveActivityStatus("signed-out");
-      return;
-    }
-
-    const updateResult = await settleAsyncResult(() =>
-      runtime.runPromiseExit(
-        setLiveActivityUpdatesEnabled({
-          enabled: true,
-          previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: tokenResult.value,
-          connections,
-        }),
-      ),
-    );
-    if (updateResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      if (!isAtomCommandInterrupted(updateResult)) {
-        const error = squashAtomCommandFailure(updateResult);
+      if (tokenResult._tag === "Failure") {
+        setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+        const error = squashAtomCommandFailure(tokenResult);
         Alert.alert(
           "Live Activities unavailable",
           error instanceof Error ? error.message : "Could not enable Live Activity updates.",
         );
+        return;
       }
-      return;
-    }
+      if (!tokenResult.value) {
+        promptSignIn();
+        setLiveActivityStatus("signed-out");
+        return;
+      }
 
-    savePreferences({ liveActivitiesEnabled: true });
-    refreshManagedRelayEnvironments();
-    setLiveActivityStatus("enabled");
-    // The environment link can succeed while this device's own registration
-    // (the push-to-start token the relay needs) has not — don't claim Live
-    // Activities are live until the device is actually registered.
-    if (getAgentAwarenessRegistrationStatus() === "registered") {
-      Alert.alert(
-        "Live Activities enabled",
-        environmentCount > 0
-          ? `${environmentCount} environment${environmentCount === 1 ? "" : "s"} linked for Live Activity updates.`
-          : "Live Activity updates are enabled. Add an environment to start receiving updates.",
+      const updateResult = await settleAsyncResult(() =>
+        runtime.runPromiseExit(
+          setLiveActivityUpdatesEnabled({
+            enabled: true,
+            previousEnabled: liveActivitiesPreferenceEnabled,
+            clerkToken: tokenResult.value,
+            connections,
+          }),
+        ),
       );
-    } else {
-      Alert.alert(
-        "Couldn't finish enabling Live Activities",
-        `This device could not be registered with ${SURGE_CONNECT_NAME}, so Live Activities won't appear yet. They'll start once registration succeeds.`,
-      );
+      if (updateResult._tag === "Failure") {
+        setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+        if (!isAtomCommandInterrupted(updateResult)) {
+          const error = squashAtomCommandFailure(updateResult);
+          Alert.alert(
+            "Live Activities unavailable",
+            error instanceof Error ? error.message : "Could not enable Live Activity updates.",
+          );
+        }
+        return;
+      }
+
+      savePreferences({ liveActivitiesEnabled: true });
+      refreshManagedRelayEnvironments();
+      setLiveActivityStatus("enabled");
+      // The environment link can succeed while this device's own registration
+      // (the push-to-start token the relay needs) has not — don't claim Live
+      // Activities are live until the device is actually registered.
+      if (getAgentAwarenessRegistrationStatus() === "registered") {
+        Alert.alert(
+          "Live Activities enabled",
+          environmentCount > 0
+            ? `${environmentCount} environment${environmentCount === 1 ? "" : "s"} linked for Live Activity updates.`
+            : "Live Activity updates are enabled. Add an environment to start receiving updates.",
+        );
+      } else {
+        Alert.alert(
+          "Couldn't finish enabling Live Activities",
+          `This device could not be registered with ${SURGE_CONNECT_NAME}, so Live Activities won't appear yet. They'll start once registration succeeds.`,
+        );
+      }
+    } finally {
+      finishLiveActivityMutation();
     }
   }, [
+    beginLiveActivityMutation,
     connections,
     environmentCount,
+    finishLiveActivityMutation,
     getToken,
     isSignedIn,
     liveActivitiesPreferenceEnabled,
@@ -383,41 +419,47 @@ function ConfiguredSettingsRouteScreen() {
   const handleLiveActivitiesChange = useCallback(
     (enabled: boolean) => {
       if (!enabled) {
+        if (!beginLiveActivityMutation()) return;
         setLiveActivityStatus("disabled");
         void (async () => {
-          let token: string | null = null;
-          if (isSignedIn) {
-            const tokenResult = await settlePromise(() =>
-              getToken(resolveRelayClerkTokenOptions()),
+          try {
+            let token: string | null = null;
+            if (isSignedIn) {
+              const tokenResult = await settlePromise(() =>
+                readClerkTokenWithDeadline(() => getToken(resolveRelayClerkTokenOptions())),
+              );
+              if (tokenResult._tag === "Failure") {
+                setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+                reportAtomCommandResult(tokenResult, {
+                  label: "live activity disable token lookup",
+                });
+                return;
+              }
+              token = tokenResult.value;
+            }
+
+            const updateResult = await settleAsyncResult(() =>
+              runtime.runPromiseExit(
+                setLiveActivityUpdatesEnabled({
+                  enabled: false,
+                  previousEnabled: liveActivitiesPreferenceEnabled,
+                  clerkToken: token,
+                  connections,
+                }),
+              ),
             );
-            if (tokenResult._tag === "Failure") {
-              reportAtomCommandResult(tokenResult, {
-                label: "live activity disable token lookup",
+            if (updateResult._tag === "Failure") {
+              setLiveActivityStatus(liveActivitiesPreferenceEnabled ? "enabled" : "disabled");
+              reportAtomCommandResult(updateResult, {
+                label: "live activity disable",
               });
               return;
             }
-            token = tokenResult.value;
+            savePreferences({ liveActivitiesEnabled: false });
+            refreshManagedRelayEnvironments();
+          } finally {
+            finishLiveActivityMutation();
           }
-
-          const updateResult = await settleAsyncResult(() =>
-            runtime.runPromiseExit(
-              setLiveActivityUpdatesEnabled({
-                enabled: false,
-                previousEnabled: liveActivitiesPreferenceEnabled,
-                clerkToken: token,
-                connections,
-              }),
-            ),
-          );
-          if (updateResult._tag === "Failure") {
-            setLiveActivityStatus("enabled");
-            reportAtomCommandResult(updateResult, {
-              label: "live activity disable",
-            });
-            return;
-          }
-          savePreferences({ liveActivitiesEnabled: false });
-          refreshManagedRelayEnvironments();
         })();
         return;
       }
@@ -430,7 +472,9 @@ function ConfiguredSettingsRouteScreen() {
       void linkEnvironments();
     },
     [
+      beginLiveActivityMutation,
       connections,
+      finishLiveActivityMutation,
       getToken,
       isSignedIn,
       linkEnvironments,
@@ -500,6 +544,7 @@ function ConfiguredSettingsRouteScreen() {
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
               !isLoaded ||
+              liveActivityMutationPending ||
               liveActivityStatus === "checking" ||
               liveActivityStatus === "linking"
             }
@@ -541,6 +586,7 @@ function GeneralSettingsSection() {
   return (
     <SettingsSection title="General">
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
+      <AutoSettleSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
       <SettingsRow
         icon="server.rack"
@@ -548,6 +594,130 @@ function GeneralSettingsSection() {
         target="SettingsEnvironmentStorage"
       />
     </SettingsSection>
+  );
+}
+
+const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_SERVER_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
+
+/**
+ * Inactive-thread auto-settlement is a user preference that every eligible
+ * sync target has to hold. Mobile has no primary environment, so the first
+ * eligible sync target provides the reference value. Edits fan out to every
+ * eligible target, and a mismatch row lets the user push the reference out.
+ * T3 Pretty deliberately does not expose the merged-thread setting.
+ */
+function AutoSettleSettingsRows() {
+  const { environments } = useEnvironments();
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    label: "server settings update",
+    reportFailure: true,
+  });
+
+  const syncTargets = environments.filter(supportsSharedSettingsSync);
+  const reference = syncTargets[0] ?? null;
+  const referenceSettings = reference?.serverConfig?.settings ?? null;
+
+  const [daysDraft, setDaysDraft] = useState<string | null>(null);
+
+  if (reference === null || referenceSettings === null) {
+    return null;
+  }
+
+  const writeToAll = (patch: ServerSettingsPatch) => {
+    for (const environment of syncTargets) {
+      void updateSettings({ environmentId: environment.environmentId, input: { patch } });
+    }
+  };
+
+  const afterDays = referenceSettings.sidebarAutoSettleAfterDays;
+  const mismatches = findSharedSettingsMismatches({
+    primaryEnvironmentId: reference.environmentId,
+    primarySettings: referenceSettings,
+    environments: environments.map((environment) => {
+      const settings = environment.serverConfig?.settings ?? null;
+      return {
+        environmentId: environment.environmentId,
+        label: environment.label,
+        syncEligible: supportsSharedSettingsSync(environment),
+        settings:
+          settings === null
+            ? null
+            : {
+                ...referenceSettings,
+                sidebarAutoSettleAfterDays: settings.sidebarAutoSettleAfterDays,
+              },
+      };
+    }),
+  });
+
+  const commitDays = () => {
+    const draft = (daysDraft ?? "").trim();
+    setDaysDraft(null);
+    // Whole-string check so "3.5" and "3days" are rejected instead of
+    // silently becoming 3 on every eligible sync target.
+    const parsed = /^\d+$/.test(draft) ? Number(draft) : Number.NaN;
+    if (
+      Number.isInteger(parsed) &&
+      parsed >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
+      parsed <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
+      parsed !== afterDays
+    ) {
+      writeToAll({ sidebarAutoSettleAfterDays: parsed });
+    }
+  };
+
+  return (
+    <>
+      <SettingsSwitchRow
+        icon="clock"
+        label="Auto-settle inactive threads"
+        subtitle={afterDays === null ? undefined : `After ${afterDays} days without activity`}
+        value={afterDays !== null}
+        onValueChange={(value) =>
+          writeToAll({ sidebarAutoSettleAfterDays: value ? AUTO_SETTLE_DEFAULT_DAYS : null })
+        }
+      />
+      {afterDays !== null ? (
+        <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
+          <Text className="flex-1 text-lg text-foreground">Days before auto-settle</Text>
+          <TextInput
+            className="min-h-10 w-20 rounded-xl px-3 py-2 text-center text-base"
+            keyboardType="number-pad"
+            returnKeyType="done"
+            value={daysDraft ?? String(afterDays)}
+            onChangeText={setDaysDraft}
+            onBlur={commitDays}
+            onSubmitEditing={commitDays}
+            accessibilityLabel="Days before auto-settle"
+          />
+        </View>
+      ) : null}
+      {mismatches.length > 0 ? (
+        <View className="flex-row items-center gap-4 border-t border-border-subtle p-4">
+          <View className="min-w-0 flex-1">
+            <Text className="text-lg text-foreground">Settings differ</Text>
+            <Text className="text-sm text-foreground-muted">
+              {mismatches.map((mismatch) => mismatch.label).join(", ")}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              const { sidebarAutoSettleAfterDays } = pickSharedServerSettings(referenceSettings);
+              for (const mismatch of mismatches) {
+                void updateSettings({
+                  environmentId: mismatch.environmentId,
+                  input: { patch: { sidebarAutoSettleAfterDays } },
+                });
+              }
+            }}
+            className="rounded-full bg-subtle px-4 py-2 active:opacity-70"
+          >
+            <Text className="text-base font-t3-medium text-foreground">Apply to all</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </>
   );
 }
 
@@ -588,7 +758,6 @@ function LegacySettingsSection() {
 }
 
 function AppSettingsSection() {
-  const icon = useThemeColor("--color-icon");
   const [updateState, setUpdateState] = useState<AppUpdateCheckState>("idle");
   const updateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
@@ -658,7 +827,7 @@ function AppSettingsSection() {
       <SymbolView
         name="info.circle"
         size={22}
-        tintColor={icon}
+        tintColorClassName={"accent-icon"}
         type="monochrome"
         weight="regular"
       />

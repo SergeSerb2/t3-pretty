@@ -14,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 
@@ -48,6 +49,11 @@ export interface ProviderRegistryShape {
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
+  readonly refreshWorkspaceSnapshot: (input: {
+    readonly instanceId: ProviderInstanceId;
+    readonly cwd: string;
+  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
   /**
    * Resolve the maintenance capabilities owned by one live provider instance.
    * Falls back to manual-only capabilities when the instance is not live.
@@ -74,6 +80,13 @@ export interface ProviderRegistryShape {
    * change. The array contains the full current state.
    */
   readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
+
+  /** Acquire the change subscription synchronously before reading a snapshot. */
+  readonly subscribeChanges: Effect.Effect<
+    Stream.Stream<ReadonlyArray<ServerProvider>>,
+    never,
+    Scope.Scope
+  >;
 }
 
 export class ProviderRegistry extends Context.Service<ProviderRegistry, ProviderRegistryShape>()(

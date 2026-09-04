@@ -16,6 +16,7 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
   SkillId,
+  ThreadLinkedPullRequest,
   ThreadId,
   ThreadSubagentPolicy,
   ThreadSceneryAssignment,
@@ -42,12 +43,14 @@ export const ProjectionThread = Schema.Struct({
   branchHeadOwner: Schema.optional(Schema.NullOr(Schema.String)),
   branchHeadIsCrossRepository: Schema.optional(Schema.NullOr(NonNegativeInt)),
   worktreePath: Schema.NullOr(Schema.String),
+  linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime),
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])),
   settledAt: Schema.NullOr(IsoDateTime),
+  unsettledAt: Schema.NullOr(IsoDateTime),
   snoozedUntil: Schema.NullOr(IsoDateTime),
   snoozedAt: Schema.NullOr(IsoDateTime),
   pinnedAt: Schema.NullOr(IsoDateTime),
@@ -108,6 +111,13 @@ export interface ProjectionThreadRepositoryShape {
   readonly getById: (
     input: GetProjectionThreadInput,
   ) => Effect.Effect<Option.Option<ProjectionThread>, ProjectionRepositoryError>;
+
+  /**
+   * List every projected thread row.
+   *
+   * Returned in deterministic creation order.
+   */
+  readonly listAll: () => Effect.Effect<ReadonlyArray<ProjectionThread>, ProjectionRepositoryError>;
 
   /**
    * List projected threads for a project.

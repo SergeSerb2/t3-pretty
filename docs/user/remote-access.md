@@ -78,6 +78,11 @@ The desktop app repairs links left on an older relay or signed in to a different
 synchronizes the mesh. Managed SSH backends launched by the desktop app inherit that build's public
 T3 Connect configuration instead of silently joining another relay deployment.
 
+After updating, the desktop repairs an older missing host registration once when that host's local
+T3 Connect setting is still on. A host deregistered later from **Manage account** stays off after the
+account list refreshes; turn T3 Connect on once on that host to register it again. Older desktop
+builds require turning T3 Connect off and back on manually.
+
 Use **Manage account** on the T3 account row to inspect or change the signed-in account.
 **Publish agent activity** is a separate setting for mobile notifications and Live Activities; it
 does not need the T3 Connect tunnel to be on. The iOS Live Activity lists your threads by name —
@@ -85,6 +90,25 @@ what each one is doing, a live elapsed timer while it works, and how long anythi
 waiting — with threads that need you first. Tap it to open the thread that needs attention, or the
 first working thread. If the account row says **Unavailable**, that build does not include T3 Connect
 configuration.
+
+### Move a Thread to Another Environment
+
+When two updated environments are connected to the same T3 Connect or Surge Connect account, open a
+thread's menu and choose **Move to connection…**. On mobile, open the thread settings sheet first.
+Choose the destination, then select **Move and open**.
+
+T3 Code copies the project workspace and conversation directly between the two environments into
+the destination's T3-managed projects folder, then opens a new thread there. The original project
+and thread stay unchanged. Regular Git metadata is included for a normal repository.
+
+Dependency folders, generated build caches, message attachments, and worktree-only Git metadata are
+skipped. Reinstall dependencies on the destination before running the project. Compressed transfers
+larger than 96 MB are rejected.
+
+The source thread must be idle, both environments must be online, and both servers must advertise
+transfer support. The first new turn on the destination receives a bounded copy of the transferred
+conversation so the local provider can continue with context even though provider sessions do not
+move between machines.
 
 ## Enabling Network Access
 
@@ -99,6 +123,11 @@ If you are already running the desktop app and want to make it reachable from ot
 2. Under **This environment**, toggle **Network access** on. This will restart the app and run the backend on all network interfaces.
 3. The settings panel will show the default reachable endpoint, with a `+N` control when more endpoints are available. Expand it to inspect alternatives such as loopback, LAN, private-network, or HTTPS endpoints.
 4. Use **Create Link** to generate a pairing link you can share with another device.
+
+Pairing codes and share links are available only in the client that created them,
+while its Connections page remains open. After you leave the page or reload it,
+create a new link to share. Other clients can see the active link's name, scopes,
+and expiry, and can revoke it if they have access management permission.
 
 The default endpoint controls the QR code and primary copy action for pairing links. You can change it from the expanded endpoint list. The preference is stored by endpoint type, so choosing the local LAN endpoint survives normal IP address changes when you move between networks.
 
@@ -242,12 +271,29 @@ With mise, asdf, fnm, or nodenv, make sure the tool's shim directory is installe
 
 If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.t3/ssh-launch` or kill `t3` processes manually.
 
+## Antigravity Google sign-in
+
+Antigravity runs and saves its Google credentials on the selected environment. You can install
+it and sign in from a remote web, desktop, or mobile client without an SSH login.
+
+Start in **Settings** > **Providers** on web or desktop. On mobile, open **Settings** >
+**Environments**, expand the environment, then choose **Set up Antigravity**.
+
+After Google sign-in, a remote browser usually reaches a `127.0.0.1` page that cannot load.
+Copy that full address into the return URL field in the same T3 Code client. Choose
+**Continue** on web or desktop, or **Complete sign-in** on mobile. Keep the address unchanged.
+Do not paste the return URL into a thread or bug report.
+
+See [Antigravity setup](./providers-antigravity.md) for installation, expiry, and account changes.
+
 ## Updating a Remote Server
 
 When the T3 Code web or desktop app and a remote server use different versions, a warning appears in
 the conversation and in **Settings** → **Connections**. Follow the action shown there: T3 Code may
 be able to update and reconnect the server for you, or it may ask you to update the desktop app or
 run a copied command on the server machine.
+
+If T3 Connect cannot connect, check the date and time on both devices, then try again.
 
 Finish active work before updating because the server restarts briefly. For step-by-step guidance,
 see [Keeping T3 Code in Sync](./updating.md).

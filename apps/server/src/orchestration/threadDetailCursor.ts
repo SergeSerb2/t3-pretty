@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import { ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH, type ThreadId } from "@t3tools/contracts";
 
 /**
  * Opaque, exclusive cursor for windowed thread detail reads. Encodes the thread
@@ -35,6 +35,9 @@ export function encodeThreadDetailPageCursor(cursor: ThreadDetailPageCursor): st
  * a malformed or foreign-thread cursor to a first-page request.
  */
 export function decodeThreadDetailPageCursor(encoded: string): ThreadDetailPageCursor | null {
+  if (encoded.length > ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH) {
+    return null;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));

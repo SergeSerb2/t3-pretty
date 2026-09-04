@@ -63,11 +63,26 @@ export class BootstrapEnvelopeDecodeError extends Schema.TaggedErrorClass<Bootst
   }
 }
 
+export const BOOTSTRAP_ENVELOPE_MAX_BYTES = 64 * 1024;
+
+export class BootstrapEnvelopeTooLargeError extends Schema.TaggedErrorClass<BootstrapEnvelopeTooLargeError>()(
+  "BootstrapEnvelopeTooLargeError",
+  {
+    fd: Schema.Number,
+    maxBytes: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return `Bootstrap envelope from file descriptor ${this.fd} exceeded ${this.maxBytes} bytes.`;
+  }
+}
+
 export const BootstrapError = Schema.Union([
   BootstrapFdStatError,
   BootstrapInputStreamOpenError,
   BootstrapEnvelopeReadError,
   BootstrapEnvelopeDecodeError,
+  BootstrapEnvelopeTooLargeError,
 ]);
 export type BootstrapError = typeof BootstrapError.Type;
 
@@ -87,15 +102,18 @@ export const readBootstrapEnvelope = Effect.fn("readBootstrapEnvelope")(function
 
   return yield* Effect.callback<
     Option.Option<A>,
-    BootstrapEnvelopeReadError | BootstrapEnvelopeDecodeError
+    BootstrapEnvelopeReadError | BootstrapEnvelopeDecodeError | BootstrapEnvelopeTooLargeError
   >((resume) => {
     const input = NodeReadline.createInterface({
       input: stream,
       crlfDelay: Infinity,
     });
+    let firstLineBytes = 0;
+    let firstLineEnded = false;
 
     const cleanup = () => {
       stream.removeListener("error", handleError);
+      stream.removeListener("data", handleData);
       input.removeListener("line", handleLine);
       input.removeListener("close", handleClose);
       input.close();
@@ -112,6 +130,31 @@ export const readBootstrapEnvelope = Effect.fn("readBootstrapEnvelope")(function
           new BootstrapEnvelopeReadError({
             fd,
             cause: error,
+          }),
+        ),
+      );
+    };
+
+    const handleData = (chunk: string | Buffer) => {
+      if (firstLineEnded) return;
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const lineFeedIndex = text.indexOf("\n");
+      const carriageReturnIndex = text.indexOf("\r");
+      const terminatorIndex =
+        lineFeedIndex === -1
+          ? carriageReturnIndex
+          : carriageReturnIndex === -1
+            ? lineFeedIndex
+            : Math.min(lineFeedIndex, carriageReturnIndex);
+      const firstLineChunk = terminatorIndex === -1 ? text : text.slice(0, terminatorIndex);
+      firstLineBytes += Buffer.byteLength(firstLineChunk, "utf8");
+      firstLineEnded = terminatorIndex !== -1;
+      if (firstLineBytes <= BOOTSTRAP_ENVELOPE_MAX_BYTES) return;
+      resume(
+        Effect.fail(
+          new BootstrapEnvelopeTooLargeError({
+            fd,
+            maxBytes: BOOTSTRAP_ENVELOPE_MAX_BYTES,
           }),
         ),
       );
@@ -138,6 +181,10 @@ export const readBootstrapEnvelope = Effect.fn("readBootstrapEnvelope")(function
     };
 
     stream.once("error", handleError);
+    // readline's internal line buffer has no maximum. Run this listener first
+    // so an unterminated bootstrap record is rejected before readline retains
+    // more than the bounded prefix.
+    stream.prependListener("data", handleData);
     input.once("line", handleLine);
     input.once("close", handleClose);
 

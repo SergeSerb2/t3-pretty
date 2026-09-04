@@ -11,6 +11,9 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "../apps/mobile/app-identity.ts";
+import { loadRepoEnv, resolveBuildFlavor } from "./lib/public-config.ts";
+
 import showcaseConfig, {
   type ShowcaseAppearance,
   type ShowcaseAndroidDevice,
@@ -33,8 +36,20 @@ import {
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
-const ANDROID_PACKAGE = "com.t3tools.t3code";
-const APP_SCHEME = "t3code";
+const SHOWCASE_REPO_ENV = loadRepoEnv({
+  baseEnv: {
+    ...NodeProcess.env,
+    APP_VARIANT: NodeProcess.env.APP_VARIANT ?? "production",
+  },
+});
+const SHOWCASE_APP_VARIANT = resolveMobileAppVariant(SHOWCASE_REPO_ENV.APP_VARIANT);
+const SHOWCASE_APP_IDENTITY = resolveMobileAppIdentity(
+  SHOWCASE_APP_VARIANT,
+  resolveBuildFlavor(SHOWCASE_REPO_ENV),
+);
+const ANDROID_PACKAGE = SHOWCASE_APP_IDENTITY.androidPackage;
+const IOS_BUNDLE_IDENTIFIER = SHOWCASE_APP_IDENTITY.iosBundleIdentifier;
+const APP_SCHEME = SHOWCASE_APP_IDENTITY.scheme;
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
@@ -58,9 +73,9 @@ export function resolveAndroidSdkRoot(
 
 const ANDROID_SDK_ROOT = resolveAndroidSdkRoot(NodeProcess.env);
 const MOBILE_BUILD_ENV = {
-  ...NodeProcess.env,
+  ...SHOWCASE_REPO_ENV,
   ANDROID_HOME: ANDROID_SDK_ROOT,
-  APP_VARIANT: "production",
+  APP_VARIANT: SHOWCASE_APP_VARIANT,
   EXPO_NO_GIT_STATUS: "1",
   // Lets the capture build require full screen on iPad so the app can rotate
   // itself to landscape (see app.config.ts).
@@ -806,6 +821,47 @@ async function ensureIosSimulator(device: ShowcaseIosDevice): Promise<{
   };
 }
 
+async function iosSimulatorDataPath(udid: string): Promise<string> {
+  const parsed = JSON.parse(await commandOutput("xcrun", ["simctl", "list", "devices", "-j"])) as {
+    readonly devices: Readonly<
+      Record<string, ReadonlyArray<SimctlDevice & { readonly dataPath: string }>>
+    >;
+  };
+  const dataPath = Object.values(parsed.devices)
+    .flat()
+    .find((device) => device.udid === udid)?.dataPath;
+  if (!dataPath) throw new Error(`Could not resolve the data path of iOS simulator ${udid}.`);
+  return dataPath;
+}
+
+// generativeexperiencesd posts a "Ready for Apple Intelligence" follow-up
+// banner on an eligible device's first boot, and CoreFollowUp re-surfaces it
+// on every boot until the user dismisses it. Stamping the readiness marker
+// before boot makes the daemon skip the post, and dropping the CoreFollowUp
+// store clears a banner that a previous boot already queued. Runs while the
+// device is shut down so the files are read fresh on the next boot.
+async function suppressIosSystemFollowUps(udid: string): Promise<void> {
+  const dataPath = await iosSimulatorDataPath(udid);
+  const preferences = NodePath.join(dataPath, "Library/Preferences");
+  await NodeFSP.mkdir(preferences, { recursive: true });
+  await NodeFSP.writeFile(
+    NodePath.join(preferences, "com.apple.generativeexperiences.corefollowup.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>DateOfLastAppleIntelligenceReadinessCFU</key>
+\t<date>2020-01-01T00:00:00Z</date>
+</dict>
+</plist>
+`,
+  );
+  await NodeFSP.rm(NodePath.join(dataPath, "Library/CoreFollowUp"), {
+    recursive: true,
+    force: true,
+  });
+}
+
 async function normalizeIosSimulator(appearance: ShowcaseAppearance, udid: string): Promise<void> {
   await runCommand("xcrun", ["simctl", "ui", udid, "appearance", appearance]);
   await runCommand("xcrun", [
@@ -882,7 +938,13 @@ async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
 
 async function iosAppContainer(udid: string): Promise<string> {
   return (
-    await commandOutput("xcrun", ["simctl", "get_app_container", udid, ANDROID_PACKAGE, "data"])
+    await commandOutput("xcrun", [
+      "simctl",
+      "get_app_container",
+      udid,
+      IOS_BUNDLE_IDENTIFIER,
+      "data",
+    ])
   ).trim();
 }
 
@@ -922,6 +984,7 @@ async function captureIos(
     // confirmations, keyboards) without erasing the developer's simulator.
     await runCommand("xcrun", ["simctl", "shutdown", simulator.udid]);
   }
+  await suppressIosSystemFollowUps(simulator.udid);
   await runCommand("xcrun", ["simctl", "boot", simulator.udid]);
   await runCommand("xcrun", ["simctl", "bootstatus", simulator.udid, "-b"]);
   if (capture.device.orientation === "landscape") {
@@ -929,7 +992,7 @@ async function captureIos(
   }
   await normalizeIosSimulator(capture.appearance, simulator.udid);
   if (appPath) {
-    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, ANDROID_PACKAGE]).catch(
+    await runCommand("xcrun", ["simctl", "uninstall", simulator.udid, IOS_BUNDLE_IDENTIFIER]).catch(
       () => undefined,
     );
     await runCommand("xcrun", ["simctl", "install", simulator.udid, appPath]);
@@ -946,7 +1009,7 @@ async function captureIos(
       simulator.udid,
       "defaults",
       "write",
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       key,
       "-bool",
       value,
@@ -970,7 +1033,7 @@ async function captureIos(
       "launch",
       ...(terminateRunningProcess ? ["--terminate-running-process"] : []),
       simulator.udid,
-      ANDROID_PACKAGE,
+      IOS_BUNDLE_IDENTIFIER,
       "--initialUrl",
       metroUrl,
       "--showcasePairingUrl",

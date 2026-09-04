@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
@@ -5,10 +6,11 @@ import {
   SourceControlProviderError,
   SourceControlProviderInfo,
 } from "./sourceControl.ts";
-import { VcsDriverKind } from "./vcs.ts";
+import { VCS_WORKSPACE_FILES_MAX_COUNT, VcsDriverKind } from "./vcs.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
-const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
+export const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
+export const GIT_ACTION_PROGRESS_PHASE_MAX_COUNT = 4;
 
 // Domain Types
 
@@ -120,7 +122,10 @@ export const GitRunStackedActionInput = Schema.Struct({
   commitMessage: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(10_000))),
   featureBranch: Schema.optional(Schema.Boolean),
   filePaths: Schema.optional(
-    Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
+    Schema.Array(TrimmedNonEmptyStringSchema).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(VCS_WORKSPACE_FILES_MAX_COUNT),
+    ),
   ),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;
@@ -201,6 +206,8 @@ const VcsStatusChangeRequest = Schema.Struct({
   baseRef: TrimmedNonEmptyStringSchema,
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
+  /** Optional for compatibility with older servers and providers. */
+  isDraft: Schema.optional(Schema.Boolean),
   /**
    * Public review activity observed on the hosting provider. `null` means the
    * provider was checked and left no visible signal; `undefined` means this
@@ -272,7 +279,7 @@ export const VcsStatusStreamEvent = Schema.Union([
 export type VcsStatusStreamEvent = typeof VcsStatusStreamEvent.Type;
 
 export const VcsListRefsResult = Schema.Struct({
-  refs: Schema.Array(VcsRef),
+  refs: Schema.Array(VcsRef).check(Schema.isMaxLength(GIT_LIST_BRANCHES_MAX_LIMIT)),
   isRepo: Schema.Boolean,
   hasPrimaryRemote: Schema.Boolean,
   nextCursor: NonNegativeInt.pipe(Schema.NullOr),
@@ -299,7 +306,7 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
    * holding local commits or uncommitted changes keeps its own state, so the code being handed
    * over is older than the pull request.
    */
-  isOnPullRequestHead: Schema.Boolean,
+  isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
 
@@ -420,7 +427,9 @@ const GitActionProgressBase = Schema.Struct({
 const GitActionStartedEvent = Schema.Struct({
   ...GitActionProgressBase.fields,
   kind: Schema.Literal("action_started"),
-  phases: Schema.Array(GitActionProgressPhase),
+  phases: Schema.Array(GitActionProgressPhase).check(
+    Schema.isMaxLength(GIT_ACTION_PROGRESS_PHASE_MAX_COUNT),
+  ),
 });
 const GitActionPhaseStartedEvent = Schema.Struct({
   ...GitActionProgressBase.fields,

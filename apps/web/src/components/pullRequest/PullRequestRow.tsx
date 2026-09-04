@@ -6,7 +6,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
-import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
+import { pullRequestLabelColor, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import {
   PullRequestActorLabel,
@@ -14,6 +14,50 @@ import {
   PullRequestMetaLine,
   PullRequestStateGlyph,
 } from "./pullRequestPresentation";
+
+/**
+ * Each slot past the first only appears once the meta line is wide enough to hold it, so a
+ * narrow row shows one label and a "+N" while a wide one spreads out up to three. The "+N"
+ * rides on whichever pill is the last visible one, and is hidden as soon as the next slot shows.
+ */
+const LABEL_SLOTS = [
+  { pill: "", overflow: "@xl/pr-row-meta:hidden" },
+  { pill: "hidden @xl/pr-row-meta:inline-flex", overflow: "@3xl/pr-row-meta:hidden" },
+  { pill: "hidden @3xl/pr-row-meta:inline-flex", overflow: "" },
+] as const;
+
+function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry["labels"] }) {
+  if (labels.length === 0) return null;
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      {LABEL_SLOTS.map((slot, index) => {
+        const label = labels[index];
+        if (!label) return null;
+        const dot = pullRequestLabelColor(label.color);
+        const remaining = labels.length - index - 1;
+        return (
+          <span
+            key={label.name}
+            className={cn(
+              "inline-flex max-w-40 min-w-0 items-center gap-1 rounded-full border border-border/70 bg-muted/40 py-0 pl-1 pr-1.5 text-[10px] leading-3.5 text-muted-foreground",
+              slot.pill,
+            )}
+          >
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-muted-foreground"
+              {...(dot ? { style: { backgroundColor: dot } } : {})}
+            />
+            <span className="truncate">{label.name}</span>
+            {remaining > 0 ? (
+              <span className={cn("shrink-0", slot.overflow)}>+{remaining}</span>
+            ) : null}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 function PullRequestRowImpl({
   entry,
@@ -93,6 +137,7 @@ function PullRequestRowImpl({
           {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
           {environmentLabel ? <span className="max-w-32 truncate">{environmentLabel}</span> : null}
           <PullRequestActorLabel actor={entry.author} className="max-w-40" />
+          {entry.labels.length > 0 ? <PullRequestRowLabels labels={entry.labels} /> : null}
           {/* Only a verdict somebody has actually given: "review required" is the absence of
               one, and saying so on every unreviewed row would say nothing. */}
           {entry.reviewDecision === "approved" || entry.reviewDecision === "changes-requested" ? (

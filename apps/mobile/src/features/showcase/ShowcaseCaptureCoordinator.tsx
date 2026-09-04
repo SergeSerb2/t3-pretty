@@ -36,8 +36,8 @@ import {
   isShowcaseNativeContentReady,
   subscribeToShowcaseRenderSignal,
 } from "./showcaseRenderSignal";
+import { SHOWCASE_ENABLED } from "./showcaseEnabled";
 
-const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 const SHOWCASE_THREAD_ID = "remote-command-center";
 
 type ShowcaseResetRoute = PartialState<NavigationState>["routes"][number];
@@ -160,16 +160,17 @@ export function ShowcaseCaptureCoordinator(props: { readonly pathname: string })
     if (!SHOWCASE_ENABLED || pairingUrls.length === 0) return;
     let cancelled = false;
     void (async () => {
-      await Promise.all(
-        pairingUrls.map(async (pairingUrl) => {
-          if (cancelled || attemptedPairingRef.current.has(pairingUrl)) return;
-          const paired = await retryShowcaseOperation(
-            async () => AsyncResult.isSuccess(await connectPairingUrl(pairingUrl)),
-            { isCancelled: () => cancelled },
-          );
-          if (paired) attemptedPairingRef.current.add(pairingUrl);
-        }),
-      );
+      // Connection enrollment mutates one shared environment registry. Pairing
+      // in parallel lets the last write discard the other showcase hosts.
+      for (const pairingUrl of pairingUrls) {
+        if (cancelled) return;
+        if (attemptedPairingRef.current.has(pairingUrl)) continue;
+        const paired = await retryShowcaseOperation(
+          async () => AsyncResult.isSuccess(await connectPairingUrl(pairingUrl)),
+          { isCancelled: () => cancelled },
+        );
+        if (paired) attemptedPairingRef.current.add(pairingUrl);
+      }
     })();
     return () => {
       cancelled = true;

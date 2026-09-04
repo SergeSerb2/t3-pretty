@@ -2,12 +2,19 @@ import type { UsageProviderKind } from "@t3tools/contracts";
 import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
+import {
+  type DailyTotals,
+  type HourlyTotals,
+  USAGE_MERGE_MAX_ENVIRONMENTS,
+} from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { useStatusPulse } from "../../hooks/useStatusPulse";
 import { cn } from "../../lib/utils";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -24,6 +31,7 @@ import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarInset } from "../ui/sidebar";
+import { Skeleton } from "../ui/skeleton";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   WorkspaceBreadcrumb,
@@ -32,8 +40,20 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { UsageLimitsSection } from "./UsageLimits";
 import { UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
-import { PROVIDER_ORDER, PROVIDER_PRESENTATION } from "./usageProviders";
+import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
+
+type UsageMetric = UsageChartMetric | "limits";
+const METRIC_OPTIONS = [
+  { value: "cost", label: "Cost" },
+  { value: "tokens", label: "Tokens" },
+  { value: "limits", label: "Limits" },
+] as const satisfies readonly { value: UsageMetric; label: string }[];
+
+function isUsageMetric(value: string | null | undefined): value is UsageMetric {
+  return METRIC_OPTIONS.some((option) => option.value === value);
+}
 
 const WINDOW_OPTIONS = [
   { days: 1, label: "Past 24h" },
@@ -47,11 +67,17 @@ export function UsagePage() {
     days: 30,
     window: makeWindow(30),
   }));
-  const [metric, setMetric] = useState<UsageChartMetric>("cost");
+  const [metric, setMetric] = useState<UsageMetric>("cost");
+  const showingLimits = metric === "limits";
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, isPartial, omittedEnvironmentCount, refresh } =
+    useUsage(window);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
 
   // Hold the content until every connected environment is terminal. Rendering
   // merged totals while devices are still answering makes every number on the
@@ -76,6 +102,17 @@ export function UsagePage() {
     () => (isPast24Hours ? merged.hourly : merged.daily).toReversed(),
     [isPast24Hours, merged.daily, merged.hourly],
   );
+  const breakdownModels = useMemo(
+    () =>
+      breakdown === "model" && metric === "tokens"
+        ? merged.models.toSorted(
+            (left, right) => right.totalTokens - left.totalTokens || right.costUsd - left.costUsd,
+          )
+        : merged.models,
+    [breakdown, merged.models, metric],
+  );
+  const activeProviders = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);
+  const timeValueColumnWidth = `${60 / (activeProviders.length + 2)}%`;
 
   const selectWindow = (days: number) => {
     setWindowSelection({
@@ -84,6 +121,15 @@ export function UsagePage() {
     });
   };
   const refreshWindow = () => {
+    // On Limits the button re-probes every provider (and usage-limit source)
+    // on the primary environment; the live snapshots then flow in over the
+    // config stream, so nothing else needs to move.
+    if (showingLimits) {
+      if (primaryEnvironmentId) {
+        void refreshProviders({ environmentId: primaryEnvironmentId, input: {} });
+      }
+      return;
+    }
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
     if (
       nextWindow.sinceDay === window.sinceDay &&
@@ -106,10 +152,14 @@ export function UsagePage() {
         <WorkspaceBreadcrumbItem current>
           <h1>Usage</h1>
         </WorkspaceBreadcrumbItem>
-        <WorkspaceBreadcrumbSeparator className="hidden md:flex" />
-        <WorkspaceBreadcrumbItem className="hidden min-w-0 shrink md:flex">
-          <span className="truncate">{windowLabel}</span>
-        </WorkspaceBreadcrumbItem>
+        {showingLimits ? null : (
+          <>
+            <WorkspaceBreadcrumbSeparator className="hidden md:flex" />
+            <WorkspaceBreadcrumbItem className="hidden min-w-0 shrink md:flex">
+              <span className="truncate">{windowLabel}</span>
+            </WorkspaceBreadcrumbItem>
+          </>
+        )}
       </WorkspaceBreadcrumb>
       <div className="ms-auto hidden min-w-0 items-center justify-end gap-2 lg:flex">
         <ToggleGroup
@@ -118,19 +168,22 @@ export function UsagePage() {
           value={[metric]}
           onValueChange={(next) => {
             const value = next[0];
-            if (value === "cost" || value === "tokens") setMetric(value);
+            if (isUsageMetric(value)) setMetric(value);
           }}
         >
-          {(["cost", "tokens"] as const).map((option) => (
-            <Toggle key={option} value={option}>
-              {option === "cost" ? "Cost" : "Tokens"}
+          {METRIC_OPTIONS.map((option) => (
+            <Toggle key={option.value} value={option.value}>
+              {option.label}
             </Toggle>
           ))}
         </ToggleGroup>
+        {/* The period does not apply to Limits, so it stays in place but
+            disabled; unmounting it shifted the metric toggle ~300px. */}
         <ToggleGroup
           aria-label="Usage period"
           variant="segmented"
           value={[String(windowDays)]}
+          disabled={showingLimits}
           onValueChange={(next) => {
             const value = next[0];
             if (value) selectWindow(Number(value));
@@ -142,7 +195,12 @@ export function UsagePage() {
             </Toggle>
           ))}
         </ToggleGroup>
-        <Button onClick={refreshWindow} aria-label="Refresh usage" size="icon-sm" variant="ghost">
+        <Button
+          onClick={refreshWindow}
+          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+          size="icon-sm"
+          variant="ghost"
+        >
           <RefreshCwIcon className="size-3.5" />
         </Button>
       </div>
@@ -150,7 +208,7 @@ export function UsagePage() {
         <Select
           value={metric}
           onValueChange={(value) => {
-            if (value === "cost" || value === "tokens") setMetric(value);
+            if (isUsageMetric(value)) setMetric(value);
           }}
         >
           <SelectTrigger
@@ -159,14 +217,23 @@ export function UsagePage() {
             variant="ghost"
             className="w-auto min-w-0"
           >
-            <SelectValue>{metric === "cost" ? "Cost" : "Tokens"}</SelectValue>
+            <SelectValue>
+              {METRIC_OPTIONS.find((option) => option.value === metric)?.label}
+            </SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
-            <SelectItem value="cost">Cost</SelectItem>
-            <SelectItem value="tokens">Tokens</SelectItem>
+            {METRIC_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
           </SelectPopup>
         </Select>
-        <Select value={String(windowDays)} onValueChange={(value) => selectWindow(Number(value))}>
+        <Select
+          value={String(windowDays)}
+          disabled={showingLimits}
+          onValueChange={(value) => selectWindow(Number(value))}
+        >
           <SelectTrigger
             aria-label="Usage period"
             size="compact"
@@ -185,7 +252,12 @@ export function UsagePage() {
             ))}
           </SelectPopup>
         </Select>
-        <Button onClick={refreshWindow} aria-label="Refresh usage" size="icon-sm" variant="ghost">
+        <Button
+          onClick={refreshWindow}
+          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+          size="icon-sm"
+          variant="ghost"
+        >
           <RefreshCwIcon className="size-3.5" />
         </Button>
       </div>
@@ -199,7 +271,9 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <WorkspacePageContainer width="wide">
-            {settling ? (
+            {showingLimits ? (
+              <UsageLimitsSection />
+            ) : settling ? (
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
                 <UsageSkeleton />
@@ -210,9 +284,12 @@ export function UsagePage() {
                   environments={environments}
                   duplicateSources={merged.duplicateSources}
                   staleEnvironments={merged.staleEnvironments}
+                  sourceWarnings={merged.sourceWarnings}
+                  omittedEnvironmentCount={omittedEnvironmentCount}
+                  coverageWarningsOmitted={merged.coverageWarningsOmitted}
                 />
 
-                <section className="grid gap-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+                <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
                   <div className="flex min-w-0 flex-col gap-5">
                     <div className="flex flex-col gap-1">
                       <span className="text-4xl font-semibold text-foreground tabular-nums">
@@ -227,7 +304,7 @@ export function UsagePage() {
                       </span>
                     </div>
 
-                    {PROVIDER_ORDER.map((provider) => {
+                    {activeProviders.map((provider) => {
                       const totals = merged.providers.find((entry) => entry.provider === provider);
                       const share =
                         metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
@@ -278,6 +355,7 @@ export function UsagePage() {
                       {metric === "tokens" ? "processed tokens" : "cost"}
                     </h2>
                     <UsageProviderChart
+                      providers={activeProviders}
                       days={days}
                       daily={merged.daily}
                       hours={hours}
@@ -333,7 +411,13 @@ export function UsagePage() {
                   </div>
 
                   {breakdown === "model" ? (
-                    <table className="w-full text-sm">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-2/5" />
+                        <col className="w-1/5" />
+                        <col className="w-1/5" />
+                        <col className="w-1/5" />
+                      </colgroup>
                       <thead>
                         <tr className="border-b border-border text-left text-xs text-muted-foreground">
                           <th className="py-2 font-normal">Model</th>
@@ -343,14 +427,14 @@ export function UsagePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {merged.models.length === 0 ? (
+                        {breakdownModels.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="py-6 text-center text-muted-foreground">
                               No activity in this window.
                             </td>
                           </tr>
                         ) : (
-                          merged.models.map((model) => (
+                          breakdownModels.map((model) => (
                             <tr
                               key={`${model.provider}:${model.model}`}
                               className="border-b border-border/50 transition-colors hover:bg-muted/50"
@@ -376,11 +460,19 @@ export function UsagePage() {
                       </tbody>
                     </table>
                   ) : (
-                    <table className="w-full text-sm">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup>
+                        <col className="w-2/5" />
+                        {activeProviders.map((provider) => (
+                          <col key={provider} style={{ width: timeValueColumnWidth }} />
+                        ))}
+                        <col style={{ width: timeValueColumnWidth }} />
+                        <col style={{ width: timeValueColumnWidth }} />
+                      </colgroup>
                       <thead>
                         <tr className="border-b border-border text-left text-xs text-muted-foreground">
                           <th className="py-2 font-normal">{isPast24Hours ? "Hour" : "Day"}</th>
-                          {PROVIDER_ORDER.map((provider) => (
+                          {activeProviders.map((provider) => (
                             <th key={provider} className="py-2 text-right font-normal">
                               {PROVIDER_PRESENTATION[provider].label}
                             </th>
@@ -393,7 +485,7 @@ export function UsagePage() {
                         {breakdownPeriods.length === 0 ? (
                           <tr>
                             <td
-                              colSpan={PROVIDER_ORDER.length + 3}
+                              colSpan={activeProviders.length + 3}
                               className="py-6 text-center text-muted-foreground"
                             >
                               No activity in this window.
@@ -410,7 +502,7 @@ export function UsagePage() {
                                   ? formatHourShort(period.hourStart, window.timeZone)
                                   : formatDayShort(period.day)}
                               </td>
-                              {PROVIDER_ORDER.map((provider) => (
+                              {activeProviders.map((provider) => (
                                 <td
                                   key={provider}
                                   className="py-2 text-right text-muted-foreground tabular-nums"
@@ -471,16 +563,29 @@ function UsageCoverageNotice({
   environments,
   duplicateSources,
   staleEnvironments,
+  sourceWarnings,
+  omittedEnvironmentCount,
+  coverageWarningsOmitted,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly duplicateSources: readonly string[];
   readonly staleEnvironments: readonly string[];
+  readonly sourceWarnings: readonly string[];
+  readonly omittedEnvironmentCount: number;
+  readonly coverageWarningsOmitted: number;
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
   const stale = environments.filter((environment) =>
     staleEnvironments.includes(environment.environmentId),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  if (
+    failed.length === 0 &&
+    stale.length === 0 &&
+    duplicateSources.length === 0 &&
+    sourceWarnings.length === 0 &&
+    omittedEnvironmentCount === 0 &&
+    coverageWarningsOmitted === 0
+  ) {
     return null;
   }
 
@@ -494,10 +599,26 @@ function UsageCoverageNotice({
           {environment.label} runs an older server version and is excluded from totals.
         </span>
       ))}
+      {omittedEnvironmentCount > 0 ? (
+        <span>
+          {omittedEnvironmentCount} additional environment
+          {omittedEnvironmentCount === 1 ? " was" : "s were"} not queried because usage is limited
+          to {USAGE_MERGE_MAX_ENVIRONMENTS} environments at once.
+        </span>
+      ) : null}
+      {sourceWarnings.map((warning) => (
+        <span key={warning}>{warning}</span>
+      ))}
       {duplicateSources.length > 0 ? (
         <span>
           Counted once across environments sharing a transcript directory:{" "}
           {duplicateSources.join(", ")}
+        </span>
+      ) : null}
+      {coverageWarningsOmitted > 0 ? (
+        <span>
+          {coverageWarningsOmitted} additional coverage notice
+          {coverageWarningsOmitted === 1 ? " was" : "s were"} omitted.
         </span>
       ) : null}
     </div>
@@ -559,42 +680,39 @@ function UsageDeviceStrip({
 }
 
 /**
- * Static stand-in with the loaded page's shape. No shimmer; blocks fill in
- * exactly once when the last device answers.
+ * Stand-in with the loaded page's shape, using the shared `Skeleton` bars so it
+ * breathes with the same `animate-skeleton` pulse as every other loading state.
+ * Blocks fill in exactly once when the last device answers.
  */
 function UsageSkeleton() {
   return (
     <>
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1">
-            <div className="h-10 w-36 rounded-sm bg-muted" />
-            <div className="h-4 w-32 rounded-sm bg-muted" />
+            <Skeleton className="h-10 w-36" />
+            <Skeleton className="h-4 w-32" />
           </div>
           {PROVIDER_ORDER.map((provider) => (
             <div key={provider} className="flex flex-col gap-1">
               <div className="flex min-h-5 items-center justify-between gap-4">
                 <span className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: PROVIDER_PRESENTATION[provider].color }}
-                  />
-                  <ProviderMark provider={provider} className="size-4" />
-                  <div className="h-3.5 w-20 rounded-sm bg-muted" />
+                  <Skeleton className="size-2 shrink-0 rounded-full" />
+                  <Skeleton className="size-4 shrink-0 rounded-full" />
+                  <Skeleton className="h-3.5 w-20" />
                 </span>
-                <div className="h-3.5 w-14 rounded-sm bg-muted" />
+                <Skeleton className="h-3.5 w-14" />
               </div>
-              <div className="h-4 w-36 rounded-sm bg-muted" />
+              <Skeleton className="h-4 w-36" />
             </div>
           ))}
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="h-5 w-24 rounded-sm bg-muted" />
+          <Skeleton className="h-5 w-24" />
           <div className="flex flex-col gap-1">
-            <div className="ml-16 h-56 rounded-sm bg-muted/35" />
-            <div className="ml-16 h-3 rounded-sm bg-muted/35" />
+            <Skeleton className="ml-16 h-56 bg-muted-foreground/10" />
+            <Skeleton className="ml-16 h-4 bg-muted-foreground/10" />
           </div>
         </div>
       </section>
@@ -606,11 +724,19 @@ function UsageSkeleton() {
             (label) => (
               <div key={label} className="flex flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground">{label}</span>
-                <div className="my-0.5 h-4 w-16 rounded-sm bg-muted" />
+                <Skeleton className="h-6 w-16" />
               </div>
             ),
           )}
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
+          <Skeleton className="h-7 w-28 rounded-lg" />
+        </div>
+        <Skeleton className="h-44 bg-muted-foreground/10" />
       </section>
     </>
   );

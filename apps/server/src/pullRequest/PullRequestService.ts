@@ -1,10 +1,16 @@
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import {
   PullRequestOperationError,
   PullRequestUnavailableError,
@@ -37,6 +43,8 @@ import {
   type PullRequestReviewVerdict,
   type PullRequestReviewerCandidateList,
   type PullRequestReviewerRequestInput,
+  type PullRequestLabelCandidateList,
+  type PullRequestLabelChangeInput,
   type PullRequestSubmitReviewInput,
   type PullRequestThreadReplyInput,
   type PullRequestThreadResolutionInput,
@@ -58,6 +66,10 @@ import {
   PullRequestProviderError,
 } from "./PullRequestProvider.ts";
 import { PullRequestProviderRegistry } from "./PullRequestProviderRegistry.ts";
+
+export interface PullRequestMergeEvent extends PullRequestRef {
+  readonly mergedAt: string;
+}
 
 /**
  * Rows per repository when the client does not ask for a page size, and rows per slice when a
@@ -104,17 +116,11 @@ const DIFF_CACHE_TTL = Duration.seconds(60);
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
 /** Sized like the client's own stale time; a row's counts move only when somebody pushes. */
 const LIST_STATS_CACHE_TTL = Duration.seconds(60);
-/**
- * How long a cache's last success may still be served while a fresh read runs behind it.
- * Bounded by one host round-trip: longer than that, and a view that re-reads while open is
- * handed yesterday's answer and never the background fetch that replaced it. An explicit
- * refresh or a mutation bumps the epochs and skips held answers entirely.
- */
-const LIST_STALE_WINDOW = Duration.minutes(10);
-const DETAIL_STALE_WINDOW = Duration.seconds(60);
-const DIFF_STALE_WINDOW = Duration.seconds(20);
+/** A diff can stay interactive while its next cached value is fetched off the critical path. */
+const DIFF_STALE_WINDOW = Duration.minutes(10);
 /** How long one host's signed-in login is believed without asking its CLI again. */
 const VIEWER_CACHE_TTL = Duration.minutes(10);
+const VIEWER_CACHE_CAPACITY = 256;
 const LIST_CACHE_CAPACITY = 64;
 const LIST_STATS_CACHE_CAPACITY = 32;
 const DETAIL_CACHE_CAPACITY = 128;
@@ -131,6 +137,13 @@ export class PullRequestService extends Context.Service<
     readonly listStats: (
       input: PullRequestListStatsInput,
     ) => Effect.Effect<PullRequestListStatsResult, PullRequestError>;
+    readonly subscribeMerges: Effect.Effect<
+      Stream.Stream<PullRequestMergeEvent>,
+      never,
+      Scope.Scope
+    >;
+    readonly subscribeRefreshes: Stream.Stream<number>;
+    readonly refreshAfterTurn: Effect.Effect<void>;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
     readonly activity: (
       input: PullRequestRef,
@@ -168,6 +181,12 @@ export class PullRequestService extends Context.Service<
     readonly requestReviewers: (
       input: PullRequestReviewerRequestInput,
     ) => Effect.Effect<void, PullRequestError>;
+    readonly labelCandidates: (
+      input: PullRequestRef,
+    ) => Effect.Effect<PullRequestLabelCandidateList, PullRequestError>;
+    readonly setLabels: (
+      input: PullRequestLabelChangeInput,
+    ) => Effect.Effect<void, PullRequestError>;
     readonly invalidate: (input: PullRequestInvalidateInput) => Effect.Effect<void>;
   }
 >()("t3/pullRequest/PullRequestService") {}
@@ -200,6 +219,9 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
     "You need write access on this repository to have it merged for you once it is ready.",
   "disable-auto-merge":
     "You need write access on this repository to stop it being merged for you once it is ready.",
+  revert: "You need write access on this repository to open a revert pull request.",
+  "approve-workflows":
+    "You need write access on this repository to approve workflows from a fork pull request.",
 };
 
 /**
@@ -208,6 +230,7 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
  * sentence is only ever the answer where a host said no.
  */
 const REVIEWER_REQUEST_REFUSAL = "You need write access on this repository to ask for a review.";
+const LABEL_CHANGE_REFUSAL = "You need triage access on this repository to change its labels.";
 
 /** A project this page can read: its remote is on a host with an implementation. */
 interface SupportedProject {
@@ -463,6 +486,10 @@ function withRateLimitBackoff(
     submitReview: interactive("submitReview", api.submitReview),
     listReviewerCandidates: interactive("listReviewerCandidates", api.listReviewerCandidates),
     setReviewerRequest: interactive("setReviewerRequest", api.setReviewerRequest),
+    ...(api.listLabelCandidates === undefined
+      ? {}
+      : { listLabelCandidates: interactive("listLabelCandidates", api.listLabelCandidates) }),
+    ...(api.setLabels === undefined ? {} : { setLabels: interactive("setLabels", api.setLabels) }),
     replyToThread: interactive("replyToThread", api.replyToThread),
     setReaction: interactive("setReaction", api.setReaction),
     setThreadResolution: interactive("setThreadResolution", api.setThreadResolution),
@@ -494,10 +521,15 @@ export function repositoryIdentityOf(project: OrchestrationProjectShell): string
 }
 
 export const make = Effect.gen(function* () {
+  const mergedPullRequests = yield* PubSub.sliding<PullRequestMergeEvent>(64);
+  const pullRequestRefreshes = yield* SubscriptionRef.make(0);
   const registry = yield* PullRequestProviderRegistry;
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const backgroundRefreshScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
 
   const refineUnknownProjectKinds = (
     projects: ReadonlyArray<OrchestrationProjectShell>,
@@ -706,6 +738,14 @@ export const make = Effect.gen(function* () {
   // "is this host set up" answer the provider switcher shows, and holding it would keep saying
   // signed-out after the reader has signed in.
   const viewersByHost = new Map<string, { readonly at: number; readonly result: ResolvedViewer }>();
+  const recordViewer = (host: string, at: number, result: ResolvedViewer) => {
+    viewersByHost.delete(host);
+    if (viewersByHost.size >= VIEWER_CACHE_CAPACITY) {
+      const oldest = viewersByHost.keys().next().value;
+      if (oldest !== undefined) viewersByHost.delete(oldest);
+    }
+    viewersByHost.set(host, { at, result });
+  };
 
   const resolveViewers = (
     projects: ReadonlyArray<SupportedProject>,
@@ -717,8 +757,11 @@ export const make = Effect.gen(function* () {
         Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<ResolvedViewer> => {
           const held = viewersByHost.get(host);
           if (held !== undefined && now - held.at <= Duration.toMillis(VIEWER_CACHE_TTL)) {
+            viewersByHost.delete(host);
+            viewersByHost.set(host, held);
             return Effect.succeed(held.result);
           }
+          viewersByHost.delete(host);
           const forHost = projects.filter((project) => project.host === host);
           const api = forHost[0]!.api;
           // Every checkout on the host, not just the ones that survived de-duplication: one
@@ -733,7 +776,7 @@ export const make = Effect.gen(function* () {
               error: null as PullRequestProviderError | null,
             })),
             Effect.tap((result) =>
-              Effect.map(Clock.currentTimeMillis, (at) => viewersByHost.set(host, { at, result })),
+              Effect.map(Clock.currentTimeMillis, (at) => recordViewer(host, at, result)),
             ),
             Effect.catch((error) => Effect.succeed({ host, kind: api.kind, viewer: null, error })),
           );
@@ -756,8 +799,8 @@ export const make = Effect.gen(function* () {
     viewer: string,
   ): boolean => {
     if (filters === undefined) return true;
-    const labels = item.labels.map((label) => label.name.trim().toLowerCase());
-    const holds = (label: string) => labels.includes(label.trim().toLowerCase());
+    const labels = new Set(item.labels.map((label) => label.name.trim().toLowerCase()));
+    const holds = (label: string) => labels.has(label.trim().toLowerCase());
     return (
       (filters.draft === undefined || item.isDraft === (filters.draft === "only")) &&
       // Judged on the provider row rather than the entry, because the two absences mean
@@ -977,21 +1020,19 @@ export const make = Effect.gen(function* () {
               }),
               // One unreachable repository must not blank the page. A host-level failure is
               // already reported through `providers`, so it degrades the same way here.
-              Effect.orElseSucceed(
-                (): RepositoryBatch => ({
-                  key,
-                  entries: [],
-                  errors: [
-                    {
-                      projectId: project.project.id,
-                      projectTitle: project.project.title,
-                      message: `${project.repository} could not be read.`,
-                    },
-                  ],
-                  truncated: false,
-                  nextCursor: null,
-                }),
-              ),
+              Effect.orElseSucceed((): RepositoryBatch => ({
+                key,
+                entries: [],
+                errors: [
+                  {
+                    projectId: project.project.id,
+                    projectTitle: project.project.title,
+                    message: `${project.repository} could not be read.`,
+                  },
+                ],
+                truncated: false,
+                nextCursor: null,
+              })),
             );
         }
       };
@@ -1170,46 +1211,50 @@ export const make = Effect.gen(function* () {
           ],
           { concurrency: 2 },
         ).pipe(
-          Effect.map(
-            ([changeRequest, viewer]): PullRequestDetail => ({
-              provider: project.api.kind,
-              capabilities: project.api.capabilities,
-              projectId: project.project.id,
-              projectTitle: project.project.title,
-              workspaceRoot: project.project.workspaceRoot,
-              repository: project.repository,
-              number: changeRequest.number,
-              title: changeRequest.title,
-              body: changeRequest.body,
-              url: changeRequest.url,
-              author: changeRequest.author,
-              state: changeRequest.state,
-              isDraft: changeRequest.isDraft,
-              mergeability: changeRequest.mergeability,
-              additions: changeRequest.additions,
-              deletions: changeRequest.deletions,
-              changedFiles: changeRequest.changedFiles,
-              headBranch: changeRequest.headBranch,
-              baseBranch: changeRequest.baseBranch,
-              createdAt: changeRequest.createdAt,
-              updatedAt: changeRequest.updatedAt,
-              mergedAt: changeRequest.mergedAt,
-              closedAt: changeRequest.closedAt,
-              reviewers: changeRequest.reviewers,
-              labels: changeRequest.labels,
-              checks: changeRequest.checks,
-              mergeCapabilities: changeRequest.mergeCapabilities,
-              viewerPermissions: changeRequest.viewerPermissions,
-              ...(viewer === null || viewer.trim().length === 0 ? {} : { viewer }),
-              ...(changeRequest.baseComparison === undefined
-                ? {}
-                : { baseComparison: changeRequest.baseComparison }),
-              ...(changeRequest.behindBy === undefined ? {} : { behindBy: changeRequest.behindBy }),
-              ...(changeRequest.autoMergeEnabled === undefined
-                ? {}
-                : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
-            }),
-          ),
+          Effect.map(([changeRequest, viewer]): PullRequestDetail => ({
+            provider: project.api.kind,
+            capabilities: project.api.capabilities,
+            projectId: project.project.id,
+            projectTitle: project.project.title,
+            workspaceRoot: project.project.workspaceRoot,
+            repository: project.repository,
+            number: changeRequest.number,
+            title: changeRequest.title,
+            body: changeRequest.body,
+            url: changeRequest.url,
+            author: changeRequest.author,
+            state: changeRequest.state,
+            isDraft: changeRequest.isDraft,
+            mergeability: changeRequest.mergeability,
+            additions: changeRequest.additions,
+            deletions: changeRequest.deletions,
+            changedFiles: changeRequest.changedFiles,
+            headBranch: changeRequest.headBranch,
+            baseBranch: changeRequest.baseBranch,
+            createdAt: changeRequest.createdAt,
+            updatedAt: changeRequest.updatedAt,
+            mergedAt: changeRequest.mergedAt,
+            closedAt: changeRequest.closedAt,
+            reviewers: changeRequest.reviewers,
+            labels: changeRequest.labels,
+            checks: changeRequest.checks,
+            mergeCapabilities: changeRequest.mergeCapabilities,
+            viewerPermissions: changeRequest.viewerPermissions,
+            ...(viewer === null || viewer.trim().length === 0 ? {} : { viewer }),
+            ...(changeRequest.baseComparison === undefined
+              ? {}
+              : { baseComparison: changeRequest.baseComparison }),
+            ...(changeRequest.behindBy === undefined ? {} : { behindBy: changeRequest.behindBy }),
+            ...(changeRequest.autoMergeEnabled === undefined
+              ? {}
+              : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
+            ...(changeRequest.autoMergeMethod === undefined
+              ? {}
+              : { autoMergeMethod: changeRequest.autoMergeMethod }),
+            ...(changeRequest.workflowApprovalsRequired === undefined
+              ? {}
+              : { workflowApprovalsRequired: changeRequest.workflowApprovalsRequired }),
+          })),
         ),
       ),
     );
@@ -1226,18 +1271,16 @@ export const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.mapError(toPullRequestError("activity")),
-            Effect.map(
-              (activity): PullRequestActivity => ({
-                ...(activity.author === undefined ? {} : { author: activity.author }),
-                ...(activity.reviewers === undefined ? {} : { reviewers: activity.reviewers }),
-                comments: activity.comments,
-                commentCount: activity.commentCount,
-                commentsTruncated: activity.commentsTruncated,
-                reviewThreads: activity.reviewThreads,
-                commits: activity.commits,
-                ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
-              }),
-            ),
+            Effect.map((activity): PullRequestActivity => ({
+              ...(activity.author === undefined ? {} : { author: activity.author }),
+              ...(activity.reviewers === undefined ? {} : { reviewers: activity.reviewers }),
+              comments: activity.comments,
+              commentCount: activity.commentCount,
+              commentsTruncated: activity.commentsTruncated,
+              reviewThreads: activity.reviewThreads,
+              commits: activity.commits,
+              ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
+            })),
           ),
       ),
     );
@@ -1314,9 +1357,9 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const runAction: PullRequestService["Service"]["runAction"] = (input) =>
+  const runAction = (input: PullRequestActionInput): Effect.Effect<string, PullRequestError> =>
     requireProject(input).pipe(
-      Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
+      Effect.flatMap((project): Effect.Effect<string, PullRequestError> => {
         // The surface hides what a host cannot do, and this refuses it as well: a request that
         // reached here anyway must not be handed to a provider that never claimed the action.
         if (!project.api.capabilities.actions.includes(input.action)) {
@@ -1358,7 +1401,7 @@ export const make = Effect.gen(function* () {
         // have to say yes. The second is asked last, because it costs a request and the checks
         // above do not.
         return viewerPermissionsOf(project, input, "runAction").pipe(
-          Effect.flatMap((viewer): Effect.Effect<void, PullRequestError> => {
+          Effect.flatMap((viewer): Effect.Effect<string, PullRequestError> => {
             if (!viewer.actions.includes(input.action)) {
               return Effect.fail(
                 new PullRequestOperationError({
@@ -1388,7 +1431,10 @@ export const make = Effect.gen(function* () {
                 ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
                 ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
               })
-              .pipe(Effect.mapError(toPullRequestError("runAction")));
+              .pipe(
+                Effect.mapError(toPullRequestError("runAction")),
+                Effect.as(project.repository),
+              );
           }),
         );
       }),
@@ -1753,6 +1799,77 @@ export const make = Effect.gen(function* () {
     );
 
   /**
+   * The labels, like the reviewer candidates, are wanted only by somebody about to change them,
+   * so the same permission guards the list and the change.
+   */
+  const labelCandidates: PullRequestService["Service"]["labelCandidates"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<PullRequestLabelCandidateList, PullRequestError> => {
+        const list = project.api.listLabelCandidates;
+        if (project.api.capabilities.labels !== true || list === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "labelCandidates",
+              detail: "This host cannot change the labels on a change request.",
+            }),
+          );
+        }
+        return viewerPermissionsOf(project, input, "labelCandidates").pipe(
+          Effect.flatMap(
+            (viewer): Effect.Effect<PullRequestLabelCandidateList, PullRequestError> =>
+              viewer.labels === false
+                ? Effect.fail(
+                    new PullRequestOperationError({
+                      operation: "labelCandidates",
+                      detail: LABEL_CHANGE_REFUSAL,
+                    }),
+                  )
+                : list({
+                    cwd: project.project.workspaceRoot,
+                    repository: project.repository,
+                    host: project.host,
+                    number: input.number,
+                  }).pipe(Effect.mapError(toPullRequestError("labelCandidates"))),
+          ),
+        );
+      }),
+    );
+
+  const setLabels: PullRequestService["Service"]["setLabels"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
+        const change = project.api.setLabels;
+        if (project.api.capabilities.labels !== true || change === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "setLabels",
+              detail: "This host cannot change the labels on a change request.",
+            }),
+          );
+        }
+        return viewerPermissionsOf(project, input, "setLabels").pipe(
+          Effect.flatMap((viewer): Effect.Effect<void, PullRequestError> =>
+            viewer.labels === false
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "setLabels",
+                    detail: LABEL_CHANGE_REFUSAL,
+                  }),
+                )
+              : change({
+                  cwd: project.project.workspaceRoot,
+                  repository: project.repository,
+                  host: project.host,
+                  number: input.number,
+                  labels: input.labels,
+                  applied: input.applied,
+                }).pipe(Effect.mapError(toPullRequestError("setLabels"))),
+          ),
+        );
+      }),
+    );
+
+  /**
    * The line counts for rows already on the page, which the listing left out because on GitHub
    * they cost more than everything else on the row put together.
    *
@@ -1839,45 +1956,38 @@ export const make = Effect.gen(function* () {
       return { stats: stats.flat() };
     });
 
-  const context = yield* Effect.context<never>();
-  const runFork = Effect.runForkWith(context);
-
   /**
-   * Stale answers served while a fresh one is fetched behind them. Every read here leaves the
-   * process for a CLI whose wall clock is the host's — seconds on a good day, tens of them on a
-   * slow network — and the short cache windows below mean almost every page visit pays that
-   * clock again. The last success per key is therefore held a while longer: a read inside the
-   * window answers with it at once and refreshes the cache in the background, so the next read
-   * is fresh without anyone having waited on it.
-   *
-   * Correctness leans on the epochs: an explicit refresh or a mutation bumps them, the epoch is
-   * part of every key, and a held answer under the old key is simply never asked for again — so
-   * "give me truly fresh" still means exactly that.
+   * The diff is not live-polled and is expensive enough to keep its stale-while-revalidate path.
+   * Explicit refreshes and mutations still strand held values through the reference epoch.
    */
-  const staleWhileRevalidate = <A>(staleFor: Duration.Duration, capacity: number) => {
-    const staleMs = Duration.toMillis(staleFor);
-    const held = new Map<string, { readonly at: number; readonly value: A }>();
-    const record = (key: string, value: A) =>
+  const staleDiff = (() => {
+    const staleMs = Duration.toMillis(DIFF_STALE_WINDOW);
+    const held = new Map<string, { readonly at: number; readonly value: PullRequestDiffResult }>();
+    const record = (key: string, value: PullRequestDiffResult) =>
       Effect.map(Clock.currentTimeMillis, (at) => {
         held.delete(key);
-        if (held.size >= capacity) {
+        if (held.size >= DIFF_CACHE_CAPACITY) {
           const oldest = held.keys().next().value;
           if (oldest !== undefined) held.delete(oldest);
         }
         held.set(key, { at, value });
       });
-    return <E>(key: string, read: Effect.Effect<A, E>): Effect.Effect<A, E> => {
+    return <E>(key: string, read: Effect.Effect<PullRequestDiffResult, E>) => {
       const recorded = read.pipe(Effect.tap((value) => record(key, value)));
       return Effect.flatMap(Clock.currentTimeMillis, (now) => {
         const snapshot = held.get(key);
         if (snapshot === undefined || now - snapshot.at > staleMs) return recorded;
-        // Run as its own fiber rather than a child: the caller is answered and gone before the
-        // refresh lands. The read still coalesces on the cache key, so ten stale reads in one
-        // window cost one host request — and a failed refresh costs nothing but the retry.
-        return Effect.sync(() => runFork(Effect.ignore(recorded))).pipe(Effect.as(snapshot.value));
+        // Run in the service-owned scope rather than the caller scope: the caller is answered and
+        // gone before the refresh lands, while service teardown can still interrupt and await it.
+        // The read coalesces on the cache key, so ten stale reads cost one host request.
+        return recorded.pipe(
+          Effect.ignore,
+          Effect.forkIn(backgroundRefreshScope),
+          Effect.as(snapshot.value),
+        );
       });
     };
-  };
+  })();
 
   // Epochs are the invalidation mechanism: a key carries its scope's epoch, so bumping the
   // epoch strands every entry made under the old one — no enumerating a cache whose keys
@@ -1885,10 +1995,12 @@ export const make = Effect.gen(function* () {
   // scope re-entering `refEpochs` after eviction can never mint a key an old entry still has.
   let epochCounter = 0;
   let listingsEpoch = 0;
+  let turnRefreshEpoch = 0;
   const refEpochs = new Map<string, number>();
   const REF_EPOCH_CAPACITY = 2_048;
   const refScope = (ref: PullRequestRef) => `${ref.projectId} ${ref.repository} ${ref.number}`;
-  const refEpoch = (ref: PullRequestRef) => refEpochs.get(refScope(ref)) ?? 0;
+  const refEpoch = (ref: PullRequestRef) =>
+    Math.max(turnRefreshEpoch, refEpochs.get(refScope(ref)) ?? 0);
   const bumpRefEpoch = (ref: PullRequestRef) => {
     const scope = refScope(ref);
     if (!refEpochs.has(scope) && refEpochs.size >= REF_EPOCH_CAPACITY) {
@@ -1963,10 +2075,6 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? LIST_CACHE_TTL : Duration.zero),
     },
   );
-  const staleList = staleWhileRevalidate<PullRequestListResult>(
-    LIST_STALE_WINDOW,
-    LIST_CACHE_CAPACITY,
-  );
   const list: PullRequestService["Service"]["list"] = (input) => {
     const key = JSON.stringify([
       listingsEpoch,
@@ -1993,7 +2101,7 @@ export const make = Effect.gen(function* () {
         ? null
         : Object.entries(input.cursors).toSorted(([left], [right]) => left.localeCompare(right)),
     ]);
-    return staleList(key, Cache.get(listCache, key));
+    return Cache.get(listCache, key);
   };
 
   const detailCache = yield* Cache.makeWith(
@@ -2006,13 +2114,43 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
     },
   );
-  const staleDetail = staleWhileRevalidate<PullRequestDetail>(
-    DETAIL_STALE_WINDOW,
-    DETAIL_CACHE_CAPACITY,
-  );
+  const summaryFromDetail = (detail: PullRequestDetail): PullRequestSummary => ({
+    provider: detail.provider,
+    projectId: detail.projectId,
+    repository: detail.repository,
+    number: detail.number,
+    title: detail.title,
+    url: detail.url,
+    state: detail.state,
+    ...(detail.isDraft === true ? { isDraft: true } : {}),
+    headBranch: detail.headBranch,
+    baseBranch: detail.baseBranch,
+    updatedAt: detail.updatedAt,
+  });
+  const shouldReplaceHeldSummary = (key: string, next: PullRequestSummary) => {
+    const current = lastGoodSummary.peek(key);
+    if (current === undefined) return true;
+    if (current.state === "merged" && next.state !== "merged") return false;
+    return next.updatedAt >= current.updatedAt;
+  };
   const detail: PullRequestService["Service"]["detail"] = (input) => {
     const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
-    return staleDetail(key, Cache.get(detailCache, key));
+    // Record the summary from a host or cache read, not the stale value
+    // `serveHeld` returns immediately. Skip the write when that read is older
+    // than a later strict summary — display reuse would otherwise keep the
+    // regression and never ask the host again.
+    return lastGoodDetail.serveHeld(
+      key,
+      Cache.get(detailCache, key).pipe(
+        Effect.tap((value) => {
+          const summary = summaryFromDetail(value);
+          return shouldReplaceHeldSummary(key, summary)
+            ? lastGoodSummary.record(key, summary)
+            : Effect.void;
+        }),
+      ),
+      "revalidate",
+    );
   };
 
   const activityCache = yield* Cache.makeWith(
@@ -2025,13 +2163,9 @@ export const make = Effect.gen(function* () {
       timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
     },
   );
-  const staleActivity = staleWhileRevalidate<PullRequestActivity>(
-    DETAIL_STALE_WINDOW,
-    DETAIL_CACHE_CAPACITY,
-  );
   const activity: PullRequestService["Service"]["activity"] = (input) => {
     const key = JSON.stringify([refEpoch(input), input.projectId, input.repository, input.number]);
-    return staleActivity(key, Cache.get(activityCache, key));
+    return Cache.get(activityCache, key);
   };
 
   const diffCache = yield* Cache.makeWith(
@@ -2061,10 +2195,6 @@ export const make = Effect.gen(function* () {
       },
     },
   );
-  const staleDiff = staleWhileRevalidate<PullRequestDiffResult>(
-    DIFF_STALE_WINDOW,
-    DIFF_CACHE_CAPACITY,
-  );
   const diff: PullRequestService["Service"]["diff"] = (input) => {
     const key = JSON.stringify([
       refEpoch(input),
@@ -2093,10 +2223,6 @@ export const make = Effect.gen(function* () {
   // shares between clients like every other read. Refs are sorted so one page's worth of rows
   // is one key however the client assembled them, and the listings epoch rides along so the
   // refresh that forgets the listing forgets its decorations with it.
-  const staleListStats = staleWhileRevalidate<PullRequestListStatsResult>(
-    LIST_STALE_WINDOW,
-    LIST_STATS_CACHE_CAPACITY,
-  );
   const listStats: PullRequestService["Service"]["listStats"] = (input) => {
     if (input.refs.length === 0) return Effect.succeed({ stats: [] });
     const key = JSON.stringify([
@@ -2107,7 +2233,7 @@ export const make = Effect.gen(function* () {
           `${left[0]} ${left[1]} ${left[2]}`.localeCompare(`${right[0]} ${right[1]} ${right[2]}`),
         ),
     ]);
-    return staleListStats(key, Cache.get(listStatsCache, key));
+    return Cache.get(listStatsCache, key);
   };
 
   const invalidate: PullRequestService["Service"]["invalidate"] = (input) =>
@@ -2121,6 +2247,11 @@ export const make = Effect.gen(function* () {
       }
       bumpRefEpoch(input.reference);
     });
+
+  const refreshAfterTurn: PullRequestService["Service"]["refreshAfterTurn"] = Effect.suspend(() => {
+    turnRefreshEpoch = listingsEpoch = ++epochCounter;
+    return SubscriptionRef.set(pullRequestRefreshes, turnRefreshEpoch);
+  });
 
   // A mutation's own client re-reads right after it, and every other client's next read must
   // see the action too — so a write forgets the change request it touched and the listings its
@@ -2138,16 +2269,38 @@ export const make = Effect.gen(function* () {
           }),
         ),
       );
+  const runActionAndInvalidate: PullRequestService["Service"]["runAction"] = Effect.fn(
+    "PullRequestService.runActionAndInvalidate",
+  )(function* (input) {
+    const repository = yield* runAction(input);
+    bumpRefEpoch({ ...input, repository });
+    listingsEpoch = ++epochCounter;
+    if (input.action === "merge") {
+      yield* PubSub.publish(mergedPullRequests, {
+        projectId: input.projectId,
+        repository,
+        number: input.number,
+        mergedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+    }
+  });
 
   return PullRequestService.of({
     list,
     listStats,
+    subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
+      Effect.map((subscription) => Stream.fromSubscription(subscription)),
+    ),
+    subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
+      Stream.filter((revision) => revision > 0),
+    ),
+    refreshAfterTurn,
     detail,
     activity,
     threadComments,
     diff,
     diffFileContents,
-    runAction: invalidatedByMutation(runAction),
+    runAction: runActionAndInvalidate,
     update: invalidatedByMutation(update),
     comment: invalidatedByMutation(comment),
     updateComment: invalidatedByMutation(updateComment),
@@ -2158,6 +2311,8 @@ export const make = Effect.gen(function* () {
     // The candidate list is deliberately read fresh per menu-open, so it stays uncached.
     reviewerCandidates,
     requestReviewers: invalidatedByMutation(requestReviewers),
+    labelCandidates,
+    setLabels: invalidatedByMutation(setLabels),
     invalidate,
   });
 });

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ChangedFilesCard, ChangedFilesTree } from "./ChangedFilesTree";
 
 describe("ChangedFilesCard", () => {
-  it("keeps its compact header sticky while preserving singular labels", () => {
+  it("keeps its compact header sticky on the card glass while preserving singular labels", () => {
     const markup = renderToStaticMarkup(
       <ChangedFilesCard
         turnId={TurnId.make("turn-1")}
@@ -21,18 +21,10 @@ describe("ChangedFilesCard", () => {
     );
 
     expect(markup).toContain('data-changed-files-state="expanded"');
+    expect(markup).toContain("sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900");
+    expect(markup).not.toContain("var(--contrast-foreground)_2.5%");
+    expect(markup).not.toContain("backdrop-blur-md");
     expect(markup).toContain('aria-expanded="true"');
-    expect(markup).toContain("whitespace-nowrap");
-    expect(markup).toContain('class="group flex min-w-0 flex-1 items-center rounded-xl');
-    expect(markup).not.toMatch(/class="group flex min-w-0 flex-1 items-center[^"]*overflow-hidden/);
-    expect(markup).toContain('class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"');
-    expect(markup).toContain('class="flex shrink-0 items-center gap-1 whitespace-nowrap');
-    expect(markup).toContain('class="ml-1 hidden min-w-0 flex-1 truncate');
-    expect(markup).toContain("@[24rem]/changed-files:inline");
-    expect(markup).not.toContain("sm:inline");
-    expect(markup).toContain('class="flex shrink-0 items-center gap-1.5 pr-1"');
-    expect(markup).toContain("!size-[22px]");
-    expect(markup).toContain("size-3");
     expect(markup).toContain('aria-label="Collapse all folders"');
     expect(markup).toContain('aria-label="Open diff"');
     expect(markup).toContain('role="group" aria-label="2 additions, 1 deletions"');

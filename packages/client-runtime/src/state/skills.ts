@@ -14,6 +14,7 @@ import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  environmentRpcKey,
 } from "./runtime.ts";
 
 const EMPTY_GLOBALLY_ENABLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
@@ -71,12 +72,11 @@ export function createSkillAtoms<R, E>(
   const hostSkillsStateAtom = (environmentId: EnvironmentId) =>
     hostSkills({ environmentId, input: {} });
   const globallyEnabledSkillsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make(
-      (get): ReadonlyArray<InstalledSkill> =>
-        globallyEnabledSkills(
-          get(options.settingsValueAtom(environmentId)),
-          Option.getOrNull(AsyncResult.value(get(skillsStateAtom(environmentId)))),
-        ),
+    Atom.make((get): ReadonlyArray<InstalledSkill> =>
+      globallyEnabledSkills(
+        get(options.settingsValueAtom(environmentId)),
+        Option.getOrNull(AsyncResult.value(get(skillsStateAtom(environmentId)))),
+      ),
     ).pipe(Atom.withLabel(`environment-data:skills:globally-enabled:${environmentId}`)),
   );
   // Installs flip the `installed` flag on marketplace skills, so store
@@ -114,7 +114,7 @@ export function createSkillAtoms<R, E>(
       // Per repo: refreshing one source must not swallow a refresh of another.
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) => `${environmentId}:${input.repo ?? ""}`,
+        key: environmentRpcKey,
       },
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => {

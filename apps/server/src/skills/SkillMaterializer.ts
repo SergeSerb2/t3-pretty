@@ -24,7 +24,12 @@
  *
  * @module skills/SkillMaterializer
  */
-import { SkillsError, type SkillId } from "@t3tools/contracts";
+import {
+  SKILL_DOCUMENT_MAX_BYTES,
+  SKILL_ID_MAX_LENGTH,
+  SkillsError,
+  type SkillId,
+} from "@t3tools/contracts";
 import { SKILL_FRONTMATTER_PATTERN } from "@t3tools/shared/skillFrontmatter";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -36,11 +41,13 @@ import * as Result from "effect/Result";
 import { HOST_SKILL_DISABLED_FILE, HostSkills, parseHostSkillId } from "./HostSkills.ts";
 import * as SkillStore from "./SkillStore.ts";
 import { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 
 export { SKILL_MANAGED_MARKER_FILE } from "./SkillStore.ts";
 /** Written into every managed directory so git ignores the copy wholesale. */
 const SKILL_MANAGED_GITIGNORE = "*\n";
 const SKILL_FILE = "SKILL.md";
+const SKILL_MANAGED_MARKER_MAX_BYTES = SKILL_ID_MAX_LENGTH * 4;
 /** Workspace roots provider CLIs scan for project skills, in write order. */
 const WORKSPACE_SKILL_ROOTS = [
   [".claude", "skills"],
@@ -213,9 +220,23 @@ const make = Effect.gen(function* () {
       return undefined;
     }
     const filePath = info.type === "Directory" ? path.join(location, SKILL_FILE) : location;
-    const contents = yield* fileSystem
-      .readFileString(filePath)
-      .pipe(Effect.orElseSucceed(() => undefined));
+    const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => undefined));
+    if (!fileInfo || fileInfo.type !== "File") {
+      return undefined;
+    }
+    if (fileInfo.size > BigInt(SKILL_DOCUMENT_MAX_BYTES)) {
+      yield* Effect.logWarning("Skipping oversized skill document", {
+        path: filePath,
+        sizeBytes: fileInfo.size.toString(),
+        maximumBytes: SKILL_DOCUMENT_MAX_BYTES,
+      });
+      return undefined;
+    }
+    const contents = yield* readTextWithinLimit(
+      fileSystem,
+      filePath,
+      SKILL_DOCUMENT_MAX_BYTES,
+    ).pipe(Effect.orElseSucceed(() => undefined));
     if (contents === undefined) {
       return undefined;
     }
@@ -347,9 +368,11 @@ const make = Effect.gen(function* () {
           }
           const target = path.join(root, dirName);
           if (hostDiscoveryFailed) {
-            const markerId = yield* fileSystem
-              .readFileString(path.join(target, SKILL_MANAGED_MARKER_FILE))
-              .pipe(Effect.orElseSucceed(() => undefined));
+            const markerId = yield* readTextWithinLimit(
+              fileSystem,
+              path.join(target, SKILL_MANAGED_MARKER_FILE),
+              SKILL_MANAGED_MARKER_MAX_BYTES,
+            ).pipe(Effect.orElseSucceed(() => undefined));
             if (markerId !== undefined && requestedHostIdSet.has(markerId)) {
               continue;
             }

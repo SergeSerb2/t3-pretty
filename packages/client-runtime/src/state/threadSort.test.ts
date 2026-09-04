@@ -1,11 +1,30 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  compareIsoDateTimes,
   planPinnedMove,
+  resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
   sortThreads,
   type ThreadSortInput,
 } from "./threadSort.ts";
+
+describe("compareIsoDateTimes", () => {
+  it("orders mixed fractional precision and timezone offsets chronologically", () => {
+    expect(compareIsoDateTimes("2026-01-01T00:00:00.9Z", "2026-01-01T00:00:00Z")).toBeGreaterThan(
+      0,
+    );
+    expect(
+      compareIsoDateTimes("2025-12-31T16:00:01-08:00", "2026-01-01T00:00:00.900Z"),
+    ).toBeGreaterThan(0);
+    expect(compareIsoDateTimes("2026-01-01T00:00:00Z", "2025-12-31T16:00:00-08:00")).toBe(0);
+  });
+
+  it("sorts invalid legacy values before valid timestamps", () => {
+    expect(compareIsoDateTimes("not-a-date", "2026-01-01T00:00:00Z")).toBeLessThan(0);
+    expect(compareIsoDateTimes("invalid-b", "invalid-a")).toBeGreaterThan(0);
+  });
+});
 
 type TestThread = { readonly id: string } & ThreadSortInput;
 
@@ -19,6 +38,38 @@ function makeThread(overrides: Partial<TestThread> = {}): TestThread {
     ...overrides,
   };
 }
+
+describe("resolveSettledThreadTimestamp", () => {
+  it("prefers the persisted settlement stamp over later activity", () => {
+    expect(
+      resolveSettledThreadTimestamp({
+        settledAt: "2026-03-09T10:00:00.000Z",
+        latestUserMessageAt: "2026-03-09T11:00:00.000Z",
+        latestTurn: null,
+        updatedAt: "2026-03-09T12:00:00.000Z",
+      }),
+    ).toBe("2026-03-09T10:00:00.000Z");
+  });
+
+  it("falls back to the latest activity when the stamp is missing or malformed", () => {
+    expect(
+      resolveSettledThreadTimestamp({
+        settledAt: "invalid",
+        latestUserMessageAt: "2026-03-09T11:00:00.000Z",
+        latestTurn: null,
+        updatedAt: "2026-03-09T12:00:00.000Z",
+      }),
+    ).toBe("2026-03-09T11:00:00.000Z");
+    expect(
+      resolveSettledThreadTimestamp({
+        settledAt: null,
+        latestUserMessageAt: null,
+        latestTurn: null,
+        updatedAt: "2026-03-09T12:00:00.000Z",
+      }),
+    ).toBe("2026-03-09T12:00:00.000Z");
+  });
+});
 
 describe("sortThreads", () => {
   it("falls back to updatedAt and createdAt when latestUserMessageAt is invalid and there are no messages", () => {

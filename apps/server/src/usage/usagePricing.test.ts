@@ -71,6 +71,24 @@ describe("lookupRate", () => {
   });
 });
 
+describe("lookupRate", () => {
+  it("prices a bracketed context-tier variant at the base model's rate", () => {
+    const table = parseRateTable({
+      "claude-fable-5-1": {
+        input_cost_per_token: 1e-5,
+        output_cost_per_token: 2.5e-7,
+      },
+    });
+
+    expect(lookupRate(table, "claude-fable-5-1[1m]")).toEqual(
+      lookupRate(table, "claude-fable-5-1"),
+    );
+    expect(lookupRate(table, "anthropic/Claude-Fable-5-1[1m]")).toEqual(
+      lookupRate(table, "claude-fable-5-1"),
+    );
+  });
+});
+
 describe("priceUsage", () => {
   it("charges Kimi uncached input, cache reads, cache writes, and output separately", () => {
     const priced = priceUsage(emptyTable, "k3", totals, null);
@@ -93,5 +111,52 @@ describe("priceUsage", () => {
       0.95 + 0.19 + 0.95 + 4,
       9,
     );
+  });
+
+  it("rejects negative external rates and never reports negative cache savings", () => {
+    const table = parseRateTable({
+      "negative-model": {
+        input_cost_per_token: -1,
+        output_cost_per_token: 1,
+      },
+      "expensive-cache-model": {
+        input_cost_per_token: 0.25,
+        output_cost_per_token: 0.25,
+        cache_read_input_token_cost: 0.5,
+      },
+      "oversized-rate-model": {
+        input_cost_per_token: 2,
+        output_cost_per_token: 1,
+      },
+      ["x".repeat(513)]: {
+        input_cost_per_token: 1,
+        output_cost_per_token: 1,
+      },
+    });
+
+    expect(lookupRate(table, "negative-model")).toBeNull();
+    expect(lookupRate(table, "oversized-rate-model")).toBeNull();
+    expect(cacheSavingsUsd(table, "expensive-cache-model", totals)).toBe(0);
+    expect(table.has("x".repeat(513))).toBe(false);
+  });
+
+  it("degrades overflowing external pricing to unpriced usage", () => {
+    const table: RateTable = new Map([
+      [
+        "overflow-model",
+        {
+          inputCostPerToken: Number.MAX_VALUE,
+          outputCostPerToken: Number.MAX_VALUE,
+          cacheReadCostPerToken: Number.MAX_VALUE,
+          cacheCreationCostPerToken: Number.MAX_VALUE,
+        },
+      ],
+    ]);
+
+    expect(priceUsage(table, "overflow-model", totals, null)).toEqual({
+      costUsd: 0,
+      costSource: "unpriced",
+    });
+    expect(cacheSavingsUsd(table, "overflow-model", totals)).toBe(0);
   });
 });

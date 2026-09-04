@@ -7,6 +7,12 @@ export type ShowcaseScene = (typeof SHOWCASE_SCENES)[number];
 
 export type ShowcaseOrientation = "portrait" | "landscape";
 
+const SHOWCASE_PAIRING_URL_MAX_COUNT = 16;
+const SHOWCASE_PAIRING_URL_MAX_LENGTH = 8_192;
+const SHOWCASE_PAIRING_JSON_MAX_LENGTH =
+  SHOWCASE_PAIRING_URL_MAX_COUNT * (SHOWCASE_PAIRING_URL_MAX_LENGTH + 8);
+const SHOWCASE_PAIRING_ENCODED_PAYLOAD_MAX_LENGTH = SHOWCASE_PAIRING_JSON_MAX_LENGTH * 3;
+
 interface NativeShowcaseControls {
   readonly getShowcasePairingUrl?: () => string | null;
   readonly getShowcaseScene?: () => string | null;
@@ -22,29 +28,47 @@ function nativeShowcaseControls(): NativeShowcaseControls | null {
   return requireOptionalNativeModule<NativeShowcaseControls>("T3NativeControls");
 }
 
+function normalizeShowcasePairingUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > SHOWCASE_PAIRING_URL_MAX_LENGTH) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= SHOWCASE_PAIRING_URL_MAX_LENGTH ? trimmed : null;
+}
+
+export function parseNativeShowcasePairingUrls(
+  value: string | null | undefined,
+): ReadonlyArray<string> {
+  let raw = value?.trim();
+  if (!raw || raw.length > SHOWCASE_PAIRING_ENCODED_PAYLOAD_MAX_LENGTH) return [];
+  if (raw.startsWith("json-uri:")) {
+    try {
+      raw = decodeURIComponent(raw.slice("json-uri:".length));
+    } catch {
+      return [];
+    }
+  }
+  if (raw.length > SHOWCASE_PAIRING_JSON_MAX_LENGTH) return [];
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const urls: string[] = [];
+      for (const candidate of parsed) {
+        const url = normalizeShowcasePairingUrl(candidate);
+        if (url !== null) urls.push(url);
+        if (urls.length >= SHOWCASE_PAIRING_URL_MAX_COUNT) break;
+      }
+      return urls;
+    }
+  } catch {
+    // Older runners pass a single URL rather than a JSON array.
+  }
+  const url = normalizeShowcasePairingUrl(raw);
+  return url === null ? [] : [url];
+}
+
 export function getNativeShowcasePairingUrls(): ReadonlyArray<string> {
   try {
-    let raw = nativeShowcaseControls()?.getShowcasePairingUrl?.()?.trim();
-    if (!raw) return [];
-    if (raw.startsWith("json-uri:")) {
-      try {
-        raw = decodeURIComponent(raw.slice("json-uri:".length));
-      } catch {
-        return [];
-      }
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (candidate): candidate is string =>
-            typeof candidate === "string" && candidate.trim().length > 0,
-        );
-      }
-    } catch {
-      // Older runners pass a single URL rather than a JSON array.
-    }
-    return [raw];
+    return parseNativeShowcasePairingUrls(nativeShowcaseControls()?.getShowcasePairingUrl?.());
   } catch {
     return [];
   }

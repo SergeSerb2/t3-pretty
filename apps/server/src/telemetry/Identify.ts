@@ -8,7 +8,11 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
+
+const TELEMETRY_PROVIDER_IDENTITY_MAX_BYTES = 1024 * 1024;
+const TELEMETRY_ANONYMOUS_ID_MAX_BYTES = 1024;
 
 const CodexAuthJsonSchema = Schema.Struct({
   tokens: Schema.Struct({
@@ -131,7 +135,13 @@ const readIdentityFile = (
   source: TelemetryIdentitySource,
   filePath: string,
 ) =>
-  fileSystem.readFileString(filePath).pipe(
+  readTextWithinLimit(
+    fileSystem,
+    filePath,
+    source === "anonymous"
+      ? TELEMETRY_ANONYMOUS_ID_MAX_BYTES
+      : TELEMETRY_PROVIDER_IDENTITY_MAX_BYTES,
+  ).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -144,6 +154,14 @@ const readIdentityFile = (
                 cause,
               }),
             ),
+      FileSizeLimitExceededError: (cause) =>
+        Effect.fail(
+          new TelemetryIdentityReadError({
+            source,
+            filePath,
+            cause,
+          }),
+        ),
     }),
   );
 

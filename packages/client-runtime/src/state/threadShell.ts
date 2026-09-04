@@ -48,7 +48,11 @@ export function createEnvironmentThreadShellAtoms(input: {
       if (threads.length === 0) {
         return EMPTY_THREAD_INDEX;
       }
-      return new Map(threads.map((thread) => [thread.id, thread] as const));
+      const index = new Map<ThreadId, OrchestrationThreadShell>();
+      for (const thread of threads) {
+        index.set(thread.id, thread);
+      }
+      return index;
     }).pipe(Atom.withLabel(`environment-thread-index:${environmentId}`)),
   );
 
@@ -150,7 +154,9 @@ export function createEnvironmentThreadShellAtoms(input: {
   const threadRefsAtom = Atom.make((get) => {
     const refs: ScopedThreadRef[] = [];
     for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
-      refs.push(...get(environmentThreadRefsAtom(environmentId)));
+      for (const ref of get(environmentThreadRefsAtom(environmentId))) {
+        refs.push(ref);
+      }
     }
     if (threadRefsEqual(previousThreadRefs, refs)) {
       return previousThreadRefs;
@@ -161,10 +167,13 @@ export function createEnvironmentThreadShellAtoms(input: {
 
   let previousThreadShells: ReadonlyArray<EnvironmentThreadShell> = [];
   const threadShellsAtom = Atom.make((get) => {
-    const next = get(threadRefsAtom).flatMap((ref) => {
+    const next: EnvironmentThreadShell[] = [];
+    for (const ref of get(threadRefsAtom)) {
       const thread = get(threadShellAtomFamily(threadKey(ref)));
-      return thread === null ? [] : [thread];
-    });
+      if (thread !== null) {
+        next.push(thread);
+      }
+    }
     if (arrayElementsEqual(previousThreadShells, next)) {
       return previousThreadShells;
     }

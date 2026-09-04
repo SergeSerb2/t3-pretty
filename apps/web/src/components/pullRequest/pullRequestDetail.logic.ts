@@ -1,23 +1,100 @@
-import type {
-  PullRequestAction,
-  PullRequestActor,
-  PullRequestBaseComparison,
-  PullRequestCheck,
-  PullRequestComment,
-  PullRequestCommit,
-  PullRequestDetailView,
-  PullRequestMergeability,
-  PullRequestReaction,
-  PullRequestReviewThread,
-  PullRequestState,
-  PullRequestUpdateMethod,
-  SourceControlProviderKind,
-  VcsRef,
+import * as Schema from "effect/Schema";
+
+import {
+  PullRequestDetail,
+  type PullRequestAction,
+  type PullRequestActor,
+  type PullRequestBaseComparison,
+  type PullRequestCheck,
+  type PullRequestChecksState,
+  type PullRequestComment,
+  type PullRequestCommit,
+  type PullRequestDetailView,
+  type PullRequestMergeability,
+  type PullRequestReaction,
+  type PullRequestReviewThread,
+  type PullRequestState,
+  type PullRequestUpdateMethod,
+  type SourceControlProviderKind,
+  type VcsRef,
 } from "@t3tools/contracts";
 
 import { firstGrokReviewFinding, parseGrokReviewFinding } from "@t3tools/shared/sourceControl";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
+import { compareIsoDateTimes } from "../../lib/threadSort";
+
+const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
+const bitbucketRepositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export type PullRequestPrimaryControl =
+  | "resolve"
+  | "ready"
+  | "merge"
+  | "enable-auto-merge"
+  | "auto-merge-armed"
+  | "merged"
+  | "closed"
+  | null;
+
+/** The one merge-area state shown in the header, including terminal and deferred states. */
+export function resolvePullRequestPrimaryControl(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly checksState: PullRequestChecksState | null;
+  readonly autoMergeEnabled: boolean | undefined;
+  readonly hasMergeMethod: boolean;
+  readonly canMerge: boolean;
+  readonly canMarkReady: boolean;
+  readonly canEnableAutoMerge: boolean;
+}): PullRequestPrimaryControl {
+  if (input.state === "merged") return "merged";
+  if (input.state === "closed") return "closed";
+  if (input.mergeability === "conflicting") return "resolve";
+  if (input.isDraft) return input.canMarkReady ? "ready" : null;
+  if (input.autoMergeEnabled) return "auto-merge-armed";
+  if (!input.hasMergeMethod) return null;
+  if (
+    input.autoMergeEnabled === false &&
+    input.checksState !== null &&
+    input.checksState !== "passing" &&
+    input.canEnableAutoMerge
+  ) {
+    return "enable-auto-merge";
+  }
+  return input.canMerge ? "merge" : null;
+}
+
+export function pullRequestCheckoutCommand(
+  provider: SourceControlProviderKind,
+  number: number,
+  headBranch: string,
+  headRepositoryNameWithOwner?: string | null,
+): string | null {
+  switch (provider) {
+    case "github":
+      return `gh pr checkout ${number}`;
+    case "gitlab":
+      return `glab mr checkout ${number}`;
+    case "azure-devops":
+      return `az repos pr checkout --id ${number}`;
+    case "bitbucket": {
+      if (
+        !headRepositoryNameWithOwner ||
+        !bitbucketRepositoryName.test(headRepositoryNameWithOwner) ||
+        !safeShellArgument.test(headBranch)
+      ) {
+        return null;
+      }
+      return `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git t3code-pr-${number}`;
+    }
+    case "origin":
+      return `origin pr checkout ${number}`;
+    case "unknown":
+      return null;
+  }
+}
 
 /** Activity changes only when the same host resource reports a newer revision. */
 export function shouldRefreshPullRequestActivity(
@@ -194,7 +271,7 @@ export function groupPullRequestConversation(
     ...items,
     ...unseenThreads.map((thread) => ({ kind: "thread" as const, thread })),
   ].toSorted((left, right) => {
-    const cmp = activityAt(left).localeCompare(activityAt(right));
+    const cmp = compareIsoDateTimes(activityAt(left), activityAt(right));
     return order === "newest" ? -cmp : cmp;
   });
 }
@@ -204,8 +281,8 @@ function threadActivityAt(thread: PullRequestReviewThread, order: "newest" | "ol
   const times = thread.comments.map((comment) => comment.createdAt);
   if (times.length === 0) return "";
   return order === "newest"
-    ? times.reduce((latest, at) => (at > latest ? at : latest))
-    : times.reduce((earliest, at) => (at < earliest ? at : earliest));
+    ? times.reduce((latest, at) => (compareIsoDateTimes(at, latest) > 0 ? at : latest))
+    : times.reduce((earliest, at) => (compareIsoDateTimes(at, earliest) < 0 ? at : earliest));
 }
 
 export function countUnresolvedReviewThreads(
@@ -396,18 +473,20 @@ export function groupPullRequestTimelineConversations(
   events: ReadonlyArray<PullRequestTimelineEvent>,
 ): ReadonlyArray<PullRequestTimelineRow> {
   const rows: PullRequestTimelineRow[] = [];
+  let commentBatch: PullRequestTimelineEvent[] | null = null;
   for (const event of events) {
     if (
       (event.kind === "comment" || event.kind === "review") &&
       pullRequestReviewOutcome(event.reviewState) === null
     ) {
-      const last = rows.at(-1);
-      if (last?.kind === "comments") {
-        rows[rows.length - 1] = { kind: "comments", events: [...last.events, event] };
-      } else {
-        rows.push({ kind: "comments", events: [event] });
+      if (commentBatch !== null) {
+        commentBatch.push(event);
+        continue;
       }
+      commentBatch = [event];
+      rows.push({ kind: "comments", events: commentBatch });
     } else {
+      commentBatch = null;
       rows.push({ kind: "event", event });
     }
   }
@@ -536,7 +615,7 @@ export function buildPullRequestTimeline(
           },
         ]
       : []),
-  ].toSorted((left, right) => right.at.localeCompare(left.at));
+  ].toSorted((left, right) => compareIsoDateTimes(right.at, left.at));
 }
 
 const FINDING_LIMIT = 20;
@@ -786,6 +865,59 @@ export function countFixableFindings(input: {
   return collected.threads.length + collected.remarks.length + collected.failingChecks.length;
 }
 
+/** Fix all needs a current finding; continuous can start on pending CI with none. */
+export function canStartContinuousFix(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+}): boolean {
+  return (
+    countFixableFindings(input) > 0 || input.checks.some((check) => check.status === "pending")
+  );
+}
+
+/** Unresolved review conversations — not leftover review summaries, checks, or pending CI. */
+export function countActionableComments(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): number {
+  const { threads, remarks } = collectFixableFindings({ ...input, checks: [] });
+  return (
+    threads.length +
+    remarks.filter(
+      (comment) => comment.kind !== "review" || parseGrokReviewFinding(comment.body) !== null,
+    ).length
+  );
+}
+
+export function hasActionableComments(input: {
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): boolean {
+  return countActionableComments(input) > 0;
+}
+
+/** Header Fix actions: open pull request, and still has unresolved review comments. */
+export function shouldOfferFixActions(input: {
+  readonly state: PullRequestState;
+  readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly comments: ReadonlyArray<PullRequestComment>;
+}): boolean {
+  return input.state === "open" && hasActionableComments(input);
+}
+
+/** Keep in sync with `@[32rem]/pr-header` on the detail header. */
+export const PR_HEADER_FIX_ACTIONS_MIN_REM = 32;
+
+export function headerFitsFixActions(widthPx: number, remPx = 16): boolean {
+  return widthPx >= PR_HEADER_FIX_ACTIONS_MIN_REM * remPx;
+}
+
+/** Header when it fits; overflow menu only when it does not. Never both. */
+export function shouldShowFixActionsInMenu(offer: boolean, headerFits: boolean): boolean {
+  return offer && !headerFits;
+}
+
 /**
  * The task for handing a pull request's review findings to a fresh thread. Everything derived
  * from the pull request is explicitly marked untrusted: review bodies and check output are
@@ -805,6 +937,7 @@ export function buildFixFindingsHandoff(input: {
   readonly comments: ReadonlyArray<PullRequestComment>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly commentsTruncated: boolean;
+  readonly continuous?: boolean;
   /**
    * Whether this viewer may resolve review threads on the host — host capability and
    * `viewerPermissions.resolve` together, matching the Resolve control.
@@ -871,6 +1004,11 @@ export function buildFixFindingsHandoff(input: {
       includedRemarks.length === 0
         ? [
             "No unresolved review findings were returned; inspect the pull request and its failing checks before changing code.",
+          ]
+        : []),
+      ...(input.continuous
+        ? [
+            "Keep working until the pull request is green on its latest commit. After every push, wait for the next automated review cycle when configured and all required checks for that exact head to finish, then refresh the host's review and check state. Fix each new valid actionable finding or code-caused failure, resolve the conversations you address when permitted, push, and repeat. Do not stop while an expected latest-head review or required check is pending or failing, or while actionable feedback remains unresolved. If an external failure or missing permission blocks progress, report the evidence instead of changing unrelated code.",
           ]
         : []),
       // Checks and top-level review remarks are not resolvable threads — only threaded findings are.
@@ -1197,11 +1335,9 @@ export function resolveBaseFreshness(detail: {
 }
 
 /**
- * Whether a completed action leaves the diff atom pointed at a comparison that no longer exists,
- * the same staleness the manual refresh button fixes. Only `update-branch` moves the head commit;
- * a merge moves the branch too, but it also closes the pull request, where the diff is no longer
- * what anyone is looking at. Written as a `Record` so a new `PullRequestAction` fails to compile
- * here until somebody decides which side of the diff it belongs on.
+ * Whether a completed action needs the uncached host read rather than the cheaper detail refresh.
+ * Updating a branch moves the diff's head. Approving workflows changes data GitHub omits from the
+ * normal pull-request detail. Written as a `Record` so every new action makes that choice here.
  */
 const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "update-branch": true,
@@ -1212,6 +1348,8 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   reopen: false,
   "enable-auto-merge": false,
   "disable-auto-merge": false,
+  revert: false,
+  "approve-workflows": true,
 };
 
 export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): boolean {
@@ -1229,4 +1367,76 @@ export function pullRequestDiffIdentity(detail: {
   readonly changedFiles: number;
 }): string {
   return `${detail.additions}:${detail.deletions}:${detail.changedFiles}`;
+}
+
+type SnapshotStorage = Pick<Storage, "getItem" | "setItem">;
+
+export interface PullRequestDetailSnapshotRef {
+  readonly projectId: string;
+  readonly repository: string;
+  readonly number: number;
+}
+
+const pullRequestDetailSnapshotKey = (
+  environmentId: string,
+  reference: PullRequestDetailSnapshotRef,
+) =>
+  `t3.pullRequests.detail:${environmentId}:${reference.projectId}:${reference.repository}#${reference.number}`;
+
+const decodeDetailSnapshot = Schema.decodeUnknownOption(PullRequestDetail);
+
+/**
+ * The last detail answered for this change request, brought back across a reload. The registry
+ * the queries live in is recreated with the renderer, so without this a reopen cold-starts
+ * into a full-tab ghost even though the title, author, and the rest barely moved. Hydrated,
+ * the chrome stays and the live read replaces fields in place — line counts included.
+ */
+export function readPullRequestDetailSnapshot(
+  storage: SnapshotStorage | undefined,
+  environmentId: string,
+  reference: PullRequestDetailSnapshotRef,
+): PullRequestDetail | null {
+  try {
+    const raw = storage?.getItem(pullRequestDetailSnapshotKey(environmentId, reference));
+    if (!raw) return null;
+    const decoded = decodeDetailSnapshot(JSON.parse(raw));
+    return decoded._tag === "Some" ? decoded.value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writePullRequestDetailSnapshot(
+  storage: SnapshotStorage | undefined,
+  environmentId: string,
+  reference: PullRequestDetailSnapshotRef,
+  detail: PullRequestDetail,
+): void {
+  try {
+    storage?.setItem(
+      pullRequestDetailSnapshotKey(environmentId, reference),
+      JSON.stringify(detail),
+    );
+  } catch {
+    // Quota or a private-mode store: the next open waits on the live read, which is the
+    // cold start this snapshot exists to avoid, not a failure of its own.
+  }
+}
+
+/** Live host state wins; a snapshot is only the same change request, never a neighbour's. */
+export function resolveDisplayedPullRequestDetail(input: {
+  readonly live: PullRequestDetail | null;
+  readonly cached: PullRequestDetail | null;
+  readonly reference: PullRequestDetailSnapshotRef;
+}): PullRequestDetail | null {
+  if (input.live !== null) return input.live;
+  if (
+    input.cached !== null &&
+    input.cached.projectId === input.reference.projectId &&
+    input.cached.repository.toLowerCase() === input.reference.repository.toLowerCase() &&
+    input.cached.number === input.reference.number
+  ) {
+    return input.cached;
+  }
+  return null;
 }

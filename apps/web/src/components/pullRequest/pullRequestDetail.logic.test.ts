@@ -2,6 +2,7 @@ import {
   PullRequestAction,
   type PullRequestCheck,
   type PullRequestComment,
+  type PullRequestDetail,
   type PullRequestDetailView,
   type PullRequestReviewThread,
 } from "@t3tools/contracts";
@@ -13,7 +14,13 @@ import {
   buildExplainPullRequestHandoff,
   buildFixFindingHandoff,
   buildFixFindingsHandoff,
+  canStartContinuousFix,
+  countActionableComments,
   countFixableFindings,
+  hasActionableComments,
+  shouldOfferFixActions,
+  headerFitsFixActions,
+  shouldShowFixActionsInMenu,
   countResolvedReviewThreads,
   countUnresolvedReviewThreads,
   describePullRequestConversationSummary,
@@ -34,19 +41,41 @@ import {
   pullRequestDiffIdentity,
   pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
+  pullRequestCheckoutCommand,
   pullRequestComposerTarget,
   pullRequestConversationFinding,
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   pullRequestReviewOutcome,
   readableFailure,
+  readPullRequestDetailSnapshot,
+  resolveDisplayedPullRequestDetail,
+  resolvePullRequestPrimaryControl,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
   buildPullRequestTimeline,
   describePullRequestState,
   editPullRequestThreadComment,
+  writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+
+describe("pull request checkout commands", () => {
+  it.each([
+    ["github", "feature", null, "gh pr checkout 42"],
+    ["gitlab", "feature", null, "glab mr checkout 42"],
+    ["azure-devops", "feature", null, "az repos pr checkout --id 42"],
+    [
+      "bitbucket",
+      "feature/checkout",
+      "maria/t3code",
+      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/t3code.git t3code-pr-42",
+    ],
+    ["unknown", "feature", null, null],
+  ] as const)("builds the %s command", (provider, branch, repository, expected) => {
+    expect(pullRequestCheckoutCommand(provider, 42, branch, repository)).toBe(expected);
+  });
+});
 
 const TIMELINE_SOURCE: Pick<
   PullRequestDetailView,
@@ -135,6 +164,54 @@ describe("review thread comment pages", () => {
 describe("pull request action menu", () => {
   it("keeps the group divider when auto-merge is the only action", () => {
     expect(pullRequestActionMenuHasGroup(false, true, false)).toBe(true);
+  });
+});
+
+describe("pull request primary control", () => {
+  const open = {
+    state: "open" as const,
+    isDraft: false,
+    mergeability: "mergeable" as const,
+    checksState: "passing" as const,
+    autoMergeEnabled: false,
+    hasMergeMethod: true,
+    canMerge: true,
+    canMarkReady: true,
+    canEnableAutoMerge: true,
+  };
+
+  it("moves pending and failing checks to auto-merge", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, checksState: "pending" })).toBe(
+      "enable-auto-merge",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, checksState: "failing" })).toBe(
+      "enable-auto-merge",
+    );
+  });
+
+  it("does not offer auto-merge while the host state is unknown", () => {
+    expect(
+      resolvePullRequestPrimaryControl({
+        ...open,
+        checksState: "pending",
+        autoMergeEnabled: undefined,
+      }),
+    ).toBe("merge");
+  });
+
+  it("keeps armed and terminal states in the merge button slot", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, autoMergeEnabled: true })).toBe(
+      "auto-merge-armed",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, state: "merged" })).toBe("merged");
+    expect(resolvePullRequestPrimaryControl({ ...open, state: "closed" })).toBe("closed");
+  });
+
+  it("keeps conflicts and drafts actionable before merge", () => {
+    expect(resolvePullRequestPrimaryControl({ ...open, mergeability: "conflicting" })).toBe(
+      "resolve",
+    );
+    expect(resolvePullRequestPrimaryControl({ ...open, isDraft: true })).toBe("ready");
   });
 });
 
@@ -599,6 +676,31 @@ describe("pull request timeline", () => {
     ]);
   });
 
+  it("orders mixed-precision instants chronologically", () => {
+    const source = {
+      ...TIMELINE_SOURCE,
+      createdAt: "2026-07-01T00:00:00Z",
+      commits: [
+        {
+          ...TIMELINE_SOURCE.commits[0]!,
+          committedDate: "2026-07-01T00:00:00.8Z",
+        },
+      ],
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          createdAt: "2026-07-01T00:00:00.9Z",
+        },
+      ],
+    };
+
+    expect(buildPullRequestTimeline(source).map((event) => event.id)).toEqual([
+      "c1",
+      "1baf7bdcafe",
+      "created",
+    ]);
+  });
+
   it("carries the comment url, and leaves the events the host cannot address without one", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,
@@ -1012,13 +1114,91 @@ describe("fix findings handoff", () => {
       "",
       "Keep the hook on one node.",
     ].join("\n");
+    const reviewThreads = [
+      thread("please rename this"),
+      thread("already done", { id: "t-resolved", isResolved: true }),
+      thread(grokBody, { id: "t-grok", path: null, line: null }),
+    ];
+    const comments = [
+      {
+        id: "c-review",
+        kind: "review" as const,
+        author: { login: "reviewer", name: null, avatarUrl: null },
+        body: "Also drop the unused export.",
+        createdAt: "2026-07-03T00:00:00Z",
+        url: null,
+        path: null,
+        reviewState: "CHANGES_REQUESTED" as const,
+      },
+    ];
     expect(
       countFixableFindings({
-        reviewThreads: [
-          thread("please rename this"),
-          thread("already done", { id: "t-resolved", isResolved: true }),
-          thread(grokBody, { id: "t-grok", path: null, line: null }),
+        reviewThreads,
+        comments,
+        checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(4);
+    expect(countActionableComments({ reviewThreads, comments })).toBe(2);
+  });
+
+  it("lets a continuous fix start on pending checks with no current findings", () => {
+    const pendingOnly = {
+      reviewThreads: [] as PullRequestReviewThread[],
+      comments: [] as PullRequestComment[],
+      checks: [{ name: "build", status: "pending" as const, description: null, url: null }],
+    };
+    expect(countFixableFindings(pendingOnly)).toBe(0);
+    expect(canStartContinuousFix(pendingOnly)).toBe(true);
+    expect(canStartContinuousFix({ ...pendingOnly, checks: [] })).toBe(false);
+    expect(
+      canStartContinuousFix({
+        ...pendingOnly,
+        checks: [{ name: "build", status: "success", description: null, url: null }],
+      }),
+    ).toBe(false);
+    expect(
+      canStartContinuousFix({
+        reviewThreads: [],
+        comments: [],
+        checks: [failingCheck],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions unless a PR has unresolved review comments", () => {
+    expect(hasActionableComments({ reviewThreads: [], comments: [] })).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-talk",
+            kind: "issue-comment",
+            author: { login: "octocat", name: null, avatarUrl: null },
+            body: "please also update the docs",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: null,
+            reviewState: null,
+          },
         ],
+      }),
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [thread("please rename this")],
+        comments: [],
+      }),
+    ).toBe(true);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
         comments: [
           {
             id: "c-review",
@@ -1031,9 +1211,50 @@ describe("fix findings handoff", () => {
             reviewState: "CHANGES_REQUESTED",
           },
         ],
-        checks: [failingCheck, { name: "build", status: "success", description: null, url: null }],
       }),
-    ).toBe(4);
+    ).toBe(false);
+    expect(
+      hasActionableComments({
+        reviewThreads: [],
+        comments: [
+          {
+            id: "c-inline",
+            kind: "review-comment",
+            author: { login: "reviewer", name: null, avatarUrl: null },
+            body: "Rename this helper.",
+            createdAt: "2026-07-03T00:00:00Z",
+            url: null,
+            path: "apps/web/src/page.tsx",
+            reviewState: null,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("hides Fix actions on a merged or closed pull request", () => {
+    const unresolved = {
+      reviewThreads: [thread("please rename this")],
+      comments: [] as PullRequestComment[],
+    };
+    expect(shouldOfferFixActions({ state: "open", ...unresolved })).toBe(true);
+    expect(shouldOfferFixActions({ state: "merged", ...unresolved })).toBe(false);
+    expect(shouldOfferFixActions({ state: "closed", ...unresolved })).toBe(false);
+    expect(
+      shouldOfferFixActions({
+        state: "open",
+        reviewThreads: [thread("already done", { isResolved: true })],
+        comments: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("puts Fix actions in the header or the overflow menu, never both", () => {
+    expect(headerFitsFixActions(511)).toBe(false);
+    expect(headerFitsFixActions(512)).toBe(true);
+    expect(shouldShowFixActionsInMenu(true, true)).toBe(false);
+    expect(shouldShowFixActionsInMenu(true, false)).toBe(true);
+    expect(shouldShowFixActionsInMenu(false, false)).toBe(false);
   });
 
   it("still hands a Grok finding whose file was parsed from the body", () => {
@@ -1068,6 +1289,26 @@ describe("fix findings handoff", () => {
     expect(handoff.reviewComments).toEqual([]);
     // A check is CI, not a conversation — resolving review threads does not apply.
     expect(handoff.prompt).not.toContain("resolveReviewThread");
+  });
+
+  it("keeps a continuous sweep on the latest head until reviews and checks are green", () => {
+    const continuous = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+      continuous: true,
+    });
+    const once = buildFixFindingsHandoff({
+      ...base,
+      reviewThreads: [],
+      checks: [failingCheck],
+    });
+
+    expect(continuous.prompt).toContain("green on its latest commit");
+    expect(continuous.prompt).toContain("wait for the next automated review cycle");
+    expect(continuous.prompt).toContain("required checks for that exact head");
+    expect(continuous.prompt).toContain("while actionable feedback remains unresolved");
+    expect(once.prompt).not.toContain("green on its latest commit");
   });
 
   it("leaves out a resolved conversation, and one nobody wrote in", () => {
@@ -1692,7 +1933,9 @@ describe("which actions need the host read again after they run", () => {
     // Imported from the contract rather than hand-listed, so a new PullRequestAction fails this
     // test until somebody decides which side of the diff it belongs on.
     expect(PullRequestAction.literals.map(pullRequestActionNeedsHostRefresh)).toEqual(
-      PullRequestAction.literals.map((action) => action === "update-branch"),
+      PullRequestAction.literals.map(
+        (action) => action === "update-branch" || action === "approve-workflows",
+      ),
     );
   });
 
@@ -1709,12 +1952,12 @@ describe("which actions need the host read again after they run", () => {
       "enable-auto-merge",
       "disable-auto-merge",
       "merge",
+      "revert",
     ] as const) {
       expect(pullRequestActionNeedsHostRefresh(action)).toBe(false);
     }
   });
 });
-
 describe("whether a live re-read should rebuild the diff", () => {
   it("stays put when only metadata moved", () => {
     expect(pullRequestDiffIdentity({ additions: 4, deletions: 1, changedFiles: 2 })).toBe(
@@ -1726,5 +1969,105 @@ describe("whether a live re-read should rebuild the diff", () => {
     expect(pullRequestDiffIdentity({ additions: 4, deletions: 1, changedFiles: 2 })).not.toBe(
       pullRequestDiffIdentity({ additions: 12, deletions: 1, changedFiles: 3 }),
     );
+  });
+});
+
+describe("cached pull request detail", () => {
+  const reference = { projectId: "project-1", repository: "acme/web", number: 7 };
+  const detail = (overrides: Partial<PullRequestDetail> = {}): PullRequestDetail =>
+    ({
+      provider: "github",
+      capabilities: {
+        diff: true,
+        comment: true,
+        actions: ["merge"],
+        mergeMethods: ["merge"],
+        search: true,
+        review: {
+          inlineComment: true,
+          reply: true,
+          resolve: true,
+          verdicts: ["comment", "approve", "request-changes"],
+        },
+        reviewers: { request: true, listCandidates: true },
+      },
+      viewerPermissions: {
+        actions: ["merge"],
+        comment: true,
+        resolve: true,
+        verdicts: ["comment", "approve", "request-changes"],
+        requestReviewers: true,
+      },
+      projectId: "project-1",
+      projectTitle: "web",
+      workspaceRoot: "/repo",
+      repository: "acme/web",
+      number: 7,
+      title: "Cache the title",
+      body: "who made it",
+      url: "https://github.com/acme/web/pull/7",
+      author: { login: "octocat", name: null, avatarUrl: "https://avatars.example/octocat" },
+      state: "open",
+      isDraft: false,
+      mergeability: "mergeable",
+      additions: 12,
+      deletions: 3,
+      changedFiles: 2,
+      headBranch: "feat/cache",
+      baseBranch: "main",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:00:00.000Z",
+      mergedAt: null,
+      closedAt: null,
+      reviewers: [],
+      labels: [],
+      checks: [],
+      mergeCapabilities: { merge: true, squash: true, rebase: true },
+      ...overrides,
+    }) as PullRequestDetail;
+
+  const makeStorage = () => {
+    const held = new Map<string, string>();
+    return {
+      getItem: (key: string) => held.get(key) ?? null,
+      setItem: (key: string, value: string) => void held.set(key, value),
+    };
+  };
+
+  it("hydrates the last title, author, and counts so a reopen does not ghost the tab", () => {
+    const storage = makeStorage();
+    writePullRequestDetailSnapshot(storage, "env-1", reference, detail());
+    const snapshot = readPullRequestDetailSnapshot(storage, "env-1", reference);
+    expect(snapshot?.title).toBe("Cache the title");
+    expect(snapshot?.author?.login).toBe("octocat");
+    expect(snapshot?.additions).toBe(12);
+    expect(snapshot?.deletions).toBe(3);
+  });
+
+  it("keeps a cached tab painted while the live read replaces the counts", () => {
+    const cached = detail();
+    const live = detail({ additions: 40, deletions: 9, title: "Cache the title" });
+    expect(resolveDisplayedPullRequestDetail({ live, cached, reference })?.additions).toBe(40);
+    expect(resolveDisplayedPullRequestDetail({ live: null, cached, reference })?.additions).toBe(
+      12,
+    );
+  });
+
+  it("does not paint another change request's snapshot", () => {
+    expect(
+      resolveDisplayedPullRequestDetail({
+        live: null,
+        cached: detail({ number: 8 }),
+        reference,
+      }),
+    ).toBeNull();
+    expect(readPullRequestDetailSnapshot(makeStorage(), "env-2", reference)).toBeNull();
+  });
+
+  it("shrugs off corrupt storage and no storage at all", () => {
+    const storage = makeStorage();
+    storage.setItem("t3.pullRequests.detail:env-1:project-1:acme/web#7", "{not json");
+    expect(readPullRequestDetailSnapshot(storage, "env-1", reference)).toBeNull();
+    expect(readPullRequestDetailSnapshot(undefined, "env-1", reference)).toBeNull();
   });
 });

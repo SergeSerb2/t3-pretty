@@ -37,7 +37,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-const PROVIDER_SLUG_MAX_CHARS = 64;
+export const PROVIDER_SLUG_MAX_CHARS = 64;
+export const PROVIDER_INSTANCE_MAX_COUNT = 128;
+export const PROVIDER_INSTANCE_ENVIRONMENT_MAX_COUNT = 256;
+export const PROVIDER_INSTANCE_ENVIRONMENT_VALUE_MAX_LENGTH = 64 * 1024;
+export const PROVIDER_INSTANCE_DISPLAY_NAME_MAX_LENGTH = 512;
+export const PROVIDER_INSTANCE_ACCENT_COLOR_MAX_LENGTH = 128;
 /**
  * Slug pattern shared by driver kinds and instance ids — letters, digits,
  * dashes, underscores. The first character must be a letter so slugs remain
@@ -54,6 +59,8 @@ const slugSchema = TrimmedNonEmptyString.check(
   Schema.isMaxLength(PROVIDER_SLUG_MAX_CHARS),
   Schema.isPattern(PROVIDER_SLUG_PATTERN),
 );
+export const ProviderInstanceSlug = slugSchema;
+export type ProviderInstanceSlug = typeof ProviderInstanceSlug.Type;
 
 /**
  * `ProviderDriverKind` — open branded slug naming a driver implementation.
@@ -67,7 +74,7 @@ const slugSchema = TrimmedNonEmptyString.check(
  * That check belongs to the runtime registry, which downgrades unknown
  * drivers gracefully (see module docs).
  */
-export const ProviderDriverKind = slugSchema.pipe(Schema.brand("ProviderDriverKind"));
+export const ProviderDriverKind = ProviderInstanceSlug.pipe(Schema.brand("ProviderDriverKind"));
 export type ProviderDriverKind = typeof ProviderDriverKind.Type;
 
 const isProviderDriverKindValue = Schema.is(ProviderDriverKind);
@@ -79,7 +86,7 @@ export const isProviderDriverKind = (value: unknown): value is ProviderDriverKin
  * instance. Same slug rules as `ProviderDriverKind`; branded separately so the
  * type system cannot confuse the two.
  */
-export const ProviderInstanceId = slugSchema.pipe(Schema.brand("ProviderInstanceId"));
+export const ProviderInstanceId = ProviderInstanceSlug.pipe(Schema.brand("ProviderInstanceId"));
 export type ProviderInstanceId = typeof ProviderInstanceId.Type;
 
 /**
@@ -103,13 +110,17 @@ export type ProviderInstanceEnvironmentVariableName =
 
 export const ProviderInstanceEnvironmentVariable = Schema.Struct({
   name: ProviderInstanceEnvironmentVariableName,
-  value: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  value: Schema.String.check(
+    Schema.isMaxLength(PROVIDER_INSTANCE_ENVIRONMENT_VALUE_MAX_LENGTH),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   sensitive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   valueRedacted: Schema.optionalKey(Schema.Boolean),
 });
 export type ProviderInstanceEnvironmentVariable = typeof ProviderInstanceEnvironmentVariable.Type;
 
-export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable);
+export const ProviderInstanceEnvironment = Schema.Array(ProviderInstanceEnvironmentVariable).check(
+  Schema.isMaxLength(PROVIDER_INSTANCE_ENVIRONMENT_MAX_COUNT),
+);
 export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Type;
 
 /**
@@ -123,8 +134,12 @@ export type ProviderInstanceEnvironment = typeof ProviderInstanceEnvironment.Typ
  */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,
-  displayName: Schema.optional(TrimmedNonEmptyString),
-  accentColor: Schema.optional(TrimmedNonEmptyString),
+  displayName: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_INSTANCE_DISPLAY_NAME_MAX_LENGTH)),
+  ),
+  accentColor: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_INSTANCE_ACCENT_COLOR_MAX_LENGTH)),
+  ),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),
@@ -135,7 +150,10 @@ export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;
  * Map shape for `ServerSettings.providerInstances`. Keyed by
  * `ProviderInstanceId`, values are envelopes the registry feeds to drivers.
  */
-export const ProviderInstanceConfigMap = Schema.Record(ProviderInstanceId, ProviderInstanceConfig);
+export const ProviderInstanceConfigMap = Schema.Record(
+  ProviderInstanceId,
+  ProviderInstanceConfig,
+).check(Schema.isMaxProperties(PROVIDER_INSTANCE_MAX_COUNT));
 export type ProviderInstanceConfigMap = typeof ProviderInstanceConfigMap.Type;
 
 /**

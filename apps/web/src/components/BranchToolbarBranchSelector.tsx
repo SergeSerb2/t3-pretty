@@ -34,6 +34,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import { parsePullRequestReference } from "../pullRequestReference";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
+import { composerFloatingLayerProps } from "./chat/composerEventScope";
 import {
   deriveLocalBranchNameFromRemoteRef,
   resolveBranchTriggerLabel,
@@ -374,9 +375,14 @@ export function BranchToolbarBranchSelector({
       const items: ContextMenuItem<"copy-branch-name">[] = [
         { id: "copy-branch-name", label: "Copy branch name", icon: "copy" },
       ];
-      void api.contextMenu.show(items, { x: event.clientX, y: event.clientY }).then((action) => {
-        if (action === "copy-branch-name") copyBranchName(branchName);
-      });
+      void api.contextMenu
+        .show(items, { x: event.clientX, y: event.clientY })
+        .then((action) => {
+          if (action === "copy-branch-name") copyBranchName(branchName);
+        })
+        .catch(() => {
+          // A menu that could not be shown has already consumed the right-click.
+        });
     },
     [copyBranchName],
   );
@@ -745,7 +751,17 @@ export function BranchToolbarBranchSelector({
               }
             >
               <ChangeRequestStatusIcon className="size-3" />
-              <span>#{branchPr.number}</span>
+              <span
+                data-composer-label
+                className="min-w-0 max-w-12 overflow-hidden group-data-[compact]/composer-context:max-w-0"
+              >
+                <span
+                  data-composer-label-motion
+                  className="block w-full min-w-0 max-w-12 origin-left truncate transition-[opacity,transform] duration-180 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-[compact]/composer-context:[transform:translateX(-0.25rem)_scaleX(0.95)] group-data-[compact]/composer-context:opacity-0 motion-reduce:transform-none motion-reduce:transition-opacity"
+                >
+                  #{branchPr.number}
+                </span>
+              </span>
             </TooltipTrigger>
             <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-snug">
               {branchPrTooltip}
@@ -761,7 +777,7 @@ export function BranchToolbarBranchSelector({
         >
           <ComboboxTrigger
             render={<Button variant="ghost" size="xs" />}
-            className="min-w-0 max-w-full text-muted-foreground/70 hover:text-foreground/80"
+            className="min-w-0 max-w-full font-normal text-muted-foreground/70 text-xs! hover:text-foreground/80"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
             <GitBranchIcon className="size-3 shrink-0 opacity-70" />
@@ -780,7 +796,12 @@ export function BranchToolbarBranchSelector({
           </ComboboxTrigger>
         </span>
       </div>
-      <ComboboxPopup align="end" side="top" className="flex w-80 flex-col">
+      <ComboboxPopup
+        align="end"
+        side="top"
+        className="flex w-80 flex-col"
+        {...composerFloatingLayerProps}
+      >
         <div className="shrink-0 px-3 pt-2.5">
           <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
             <SearchIcon
@@ -852,7 +873,7 @@ export function BranchToolbarBranchSelector({
                     <Switch
                       id={startFromOriginSwitchId}
                       checked={startFromOrigin}
-                      className="[--thumb-size:--spacing(3.5)]"
+                      size="sm"
                       aria-label="Start worktree from origin"
                       onCheckedChange={(checked) => onStartFromOriginChange(Boolean(checked))}
                     />

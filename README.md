@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and Google Antigravity.
+  Once configured, T3 Pretty can control them.
+</p>
+
+<p align="center">
   🌄 World Scenery &nbsp;·&nbsp; 🪟 Frosted glass &nbsp;·&nbsp; 🖥️ Desktop &nbsp;·&nbsp; 🌐 Web &nbsp;·&nbsp; 📱 Mobile &nbsp;·&nbsp; MIT
 </p>
 
@@ -34,6 +39,15 @@
 
 T3 Pretty is an **agent harness control surface**. It runs the coding-agent CLIs already on your
 machine and gives you one place to steer them — from a desktop window, a browser, or a phone.
+
+> [!WARNING]
+> T3 Pretty currently supports Codex, Claude, Cursor, Grok Build, and Antigravity. Install and authenticate at least one provider before use:
+>
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
+> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
 It keeps T3 Code's workflow, providers, remote access, and data paths. The fork's job is the
 look: **World Scenery** puts a real landscape behind frosted chrome, so the app reads as a place

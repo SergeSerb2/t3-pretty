@@ -1,11 +1,22 @@
-import { describe, expect, it } from "@effect/vitest";
+import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 
 import {
   projectThreadContentPresentation,
+  scheduleThreadLoadingVisibility,
   shouldShowThreadFeedLoadingOverlay,
+  threadLoadingPhase,
 } from "./threadContentPresentation";
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("thread content presentation", () => {
+  it("clears the loading phase as soon as conversation content is ready", () => {
+    expect(threadLoadingPhase({ kind: "loading" })).toBe("loading");
+    expect(threadLoadingPhase({ kind: "ready" })).toBeNull();
+  });
+
   it("renders cached detail while its environment reconnects", () => {
     expect(
       projectThreadContentPresentation({
@@ -120,5 +131,22 @@ describe("thread feed loading overlay", () => {
         listReady: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("thread loading visibility", () => {
+  it("cancels a pending loading label when loading finishes during its delay", () => {
+    vi.useFakeTimers();
+    const visibility: boolean[] = [];
+    const cleanup = scheduleThreadLoadingVisibility(true, 300, (visible) =>
+      visibility.push(visible),
+    );
+
+    cleanup?.();
+    vi.advanceTimersByTime(300);
+
+    expect(visibility).toEqual([]);
+    scheduleThreadLoadingVisibility(false, 300, (visible) => visibility.push(visible));
+    expect(visibility).toEqual([false]);
   });
 });

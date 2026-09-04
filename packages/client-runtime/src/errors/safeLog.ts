@@ -2,6 +2,8 @@ const SAFE_ERROR_LABEL =
   /^(?:Error|EvalError|RangeError|ReferenceError|SyntaxError|TypeError|URIError|AggregateError|DOMException|[A-Za-z][A-Za-z0-9]*(?:Error|Failure))$/;
 const SAFE_TRACE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const STACK_FRAME_LIMIT = 32;
+const STACK_SOURCE_MAX_LENGTH = 64 * 1024;
+const TRACE_CAUSE_LIMIT = 128;
 
 export interface SafeErrorLogAttributes {
   readonly errorType: "error" | "array" | "null" | "object" | "primitive";
@@ -24,7 +26,7 @@ function sanitizeStackUrl(value: string): string {
     url.hash = "";
     return url.toString();
   } catch {
-    return value;
+    return value.replace(/[?#][\s\S]*$/u, "").replace(/^((?:https?|file):\/\/)[^/@\s]*@/iu, "$1");
   }
 }
 
@@ -34,12 +36,20 @@ function sanitizeStackFrame(frame: string): string {
 
 function readSafeStack(error: Error): string | undefined {
   try {
-    const frames = error.stack
-      ?.split(/\r?\n/)
-      .filter((line) => /^\s*at\s+/.test(line) || /^[^@\s]+@(?:https?|file):\/\//.test(line))
-      .slice(0, STACK_FRAME_LIMIT)
-      .map(sanitizeStackFrame);
-    return frames && frames.length > 0 ? frames.join("\n") : undefined;
+    const stack = error.stack;
+    if (typeof stack !== "string") {
+      return undefined;
+    }
+    const frames: string[] = [];
+    for (const line of stack.slice(0, STACK_SOURCE_MAX_LENGTH).split(/\r?\n/)) {
+      if (/^\s*at\s+/.test(line) || /^[^@\s]+@(?:https?|file):\/\//.test(line)) {
+        frames.push(sanitizeStackFrame(line));
+        if (frames.length >= STACK_FRAME_LIMIT) {
+          break;
+        }
+      }
+    }
+    return frames.length > 0 ? frames.join("\n") : undefined;
   } catch {
     return undefined;
   }
@@ -60,9 +70,16 @@ function readTraceId(error: unknown): string | undefined {
   try {
     const seen = new Set<object>();
     let current: unknown = error;
+    let visited = 0;
 
-    while (typeof current === "object" && current !== null && !seen.has(current)) {
+    while (
+      typeof current === "object" &&
+      current !== null &&
+      !seen.has(current) &&
+      visited < TRACE_CAUSE_LIMIT
+    ) {
       seen.add(current);
+      visited += 1;
       const record = current as { readonly cause?: unknown; readonly traceId?: unknown };
       if (typeof record.traceId === "string" && SAFE_TRACE_ID.test(record.traceId)) {
         return record.traceId;

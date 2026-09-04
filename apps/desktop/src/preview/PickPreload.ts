@@ -1,19 +1,38 @@
-// @effect-diagnostics globalDate:off - This isolated Electron preload does not run inside an Effect runtime.
+// @effect-diagnostics globalDate:off globalTimers:off - This isolated Electron preload does not run inside an Effect runtime.
 import { ipcRenderer } from "electron";
 import { getElementContext } from "react-grab/primitives";
-import type {
-  DesktopPreviewAnnotationTheme,
-  PickedElementPayload,
-  PickedElementStackFrame,
-  PreviewAnnotationPayload,
-  PreviewAnnotationPoint,
-  PreviewAnnotationRect,
-  PreviewAnnotationRegionTarget,
-  PreviewAnnotationStrokeTarget,
-  PreviewAnnotationStyleChange,
-  PreviewAnnotationSubmission,
+import {
+  PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH,
+  PICKED_ELEMENT_MAX_HTML_LENGTH,
+  PICKED_ELEMENT_MAX_SELECTOR_LENGTH,
+  PICKED_ELEMENT_MAX_STACK_FRAME_FILE_LENGTH,
+  PICKED_ELEMENT_MAX_STACK_FRAME_NAME_LENGTH,
+  PICKED_ELEMENT_MAX_STACK_FRAMES,
+  PICKED_ELEMENT_MAX_STYLES_LENGTH,
+  PICKED_ELEMENT_MAX_TAG_NAME_LENGTH,
+  PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH,
+  PICKED_ELEMENT_MAX_TITLE_LENGTH,
+  PICKED_ELEMENT_MAX_URL_LENGTH,
+  PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH,
+  PREVIEW_ANNOTATION_MAX_CSS_VALUE_LENGTH,
+  PREVIEW_ANNOTATION_MAX_ELEMENTS,
+  PREVIEW_ANNOTATION_MAX_REGIONS,
+  PREVIEW_ANNOTATION_MAX_STROKES,
+  PREVIEW_ANNOTATION_MAX_STROKE_POINTS,
+  PREVIEW_ANNOTATION_MAX_STYLE_CHANGES,
+  PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH,
+  PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS,
+  type DesktopPreviewAnnotationTheme,
+  type PickedElementPayload,
+  type PickedElementStackFrame,
+  type PreviewAnnotationPayload,
+  type PreviewAnnotationPoint,
+  type PreviewAnnotationRect,
+  type PreviewAnnotationRegionTarget,
+  type PreviewAnnotationStrokeTarget,
+  type PreviewAnnotationStyleChange,
+  type PreviewAnnotationSubmission,
 } from "@t3tools/contracts";
-
 import { resolveAnnotationSubmission } from "./AnnotationKeyboard.ts";
 import { previewAnnotationStyles } from "./AnnotationStyles.generated.ts";
 import {
@@ -30,6 +49,9 @@ const Z_INDEX_OVERLAY = 2147483646;
 const PRIMARY = "var(--t3-primary)";
 const PRIMARY_FILL = "color-mix(in srgb, var(--t3-primary) 10%, transparent)";
 const MAX_MARQUEE_ELEMENTS = 20;
+const MAX_MARQUEE_SCANNED_ELEMENTS = 5_000;
+/** Upper bound on one element's React context lookup during submit. */
+const ELEMENT_CONTEXT_TIMEOUT_MS = 5_000;
 const CONTENT_LAYER_Z_INDEX = 1;
 const CHROME_LAYER_Z_INDEX = 10;
 
@@ -51,6 +73,10 @@ interface AnnotationSession {
 let activeSession: AnnotationSession | null = null;
 let idSequence = 0;
 let annotationTheme: DesktopPreviewAnnotationTheme | null = null;
+
+const truncate = (value: string, maxLength: number): string => value.slice(0, maxLength);
+const truncateNullable = (value: string | null | undefined, maxLength: number): string | null =>
+  value === null || value === undefined ? null : truncate(value, maxLength);
 
 const applyAnnotationTheme = (
   host: HTMLElement,
@@ -272,32 +298,87 @@ function toStackFrame(frame: {
   columnNumber?: number;
 }): PickedElementStackFrame {
   return {
-    functionName: frame.functionName ?? null,
-    fileName: frame.fileName ?? null,
+    functionName:
+      frame.functionName === undefined
+        ? null
+        : truncate(frame.functionName, PICKED_ELEMENT_MAX_STACK_FRAME_NAME_LENGTH),
+    fileName:
+      frame.fileName === undefined
+        ? null
+        : truncate(frame.fileName, PICKED_ELEMENT_MAX_STACK_FRAME_FILE_LENGTH),
     lineNumber: frame.lineNumber ?? null,
     columnNumber: frame.columnNumber ?? null,
   };
 }
 
-async function captureElement(element: Element): Promise<PickedElementPayload | null> {
+/**
+ * Resolves to `null` instead of hanging when `promise` outlives `millis`.
+ * `getElementContext` walks the inspected page's React internals, and some
+ * pages leave it pending forever. Without a bound, the whole submit chain
+ * stalls and the overlay sits on "Capturing…".
+ */
+function withCaptureTimeout<A>(promise: Promise<A>, millis: number): Promise<A | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), millis);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Truncation for the DOM-only preview used when React context is unavailable. */
+const HTML_PREVIEW_MAX_CHARS = 500;
+
+/**
+ * Describes a picked element. The React context lookup can stall or throw on
+ * some pages, so the element is never dropped: without context it still
+ * carries its tag, a short HTML preview, and its rect so the crop stays on the
+ * pick instead of falling back to the whole viewport.
+ */
+async function captureElement(element: Element): Promise<PickedElementPayload> {
+  const base = {
+    pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
+    pageTitle: document.title
+      ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
+      : null,
+    tagName: truncate(element.tagName.toLowerCase(), PICKED_ELEMENT_MAX_TAG_NAME_LENGTH),
+    pickedAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
+  };
   try {
-    const context = await getElementContext(element);
-    const stack = (context.stack ?? []).map(toStackFrame);
-    return {
-      pageUrl: location.href,
-      pageTitle: document.title?.trim() || null,
-      tagName: element.tagName.toLowerCase(),
-      selector: context.selector,
-      htmlPreview: context.htmlPreview ?? "",
-      componentName: context.componentName,
-      source: stack[0] ?? null,
-      stack,
-      styles: context.styles ?? "",
-      pickedAt: new Date().toISOString(),
-    };
+    const context = await withCaptureTimeout(
+      Promise.resolve(getElementContext(element)),
+      ELEMENT_CONTEXT_TIMEOUT_MS,
+    );
+    if (context) {
+      const stack = (context.stack ?? [])
+        .slice(0, PICKED_ELEMENT_MAX_STACK_FRAMES)
+        .map(toStackFrame);
+      return {
+        ...base,
+        selector: truncateNullable(context.selector, PICKED_ELEMENT_MAX_SELECTOR_LENGTH),
+        htmlPreview: truncate(context.htmlPreview ?? "", PICKED_ELEMENT_MAX_HTML_LENGTH),
+        componentName: truncateNullable(
+          context.componentName,
+          PICKED_ELEMENT_MAX_COMPONENT_NAME_LENGTH,
+        ),
+        source: stack[0] ?? null,
+        stack,
+        styles: truncate(context.styles ?? "", PICKED_ELEMENT_MAX_STYLES_LENGTH),
+      };
+    }
   } catch {
-    return null;
+    // Fall through to the DOM-only payload.
   }
+  return {
+    ...base,
+    selector: null,
+    htmlPreview: element.outerHTML.slice(0, HTML_PREVIEW_MAX_CHARS),
+    componentName: null,
+    source: null,
+    stack: [],
+    styles: "",
+  };
 }
 
 function createButton(label: string, title: string): HTMLButtonElement {
@@ -451,6 +532,7 @@ function startAnnotation(): void {
   const comment = document.createElement("textarea");
   comment.placeholder = "Describe the change…";
   comment.rows = 1;
+  comment.maxLength = PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH;
   comment.className =
     "min-h-8 max-h-24 min-w-0 flex-1 resize-none overflow-y-hidden border-0 border-b border-b-transparent bg-transparent px-0 py-1.5 font-sans text-sm leading-5 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus:border-b-primary focus:outline-none focus:ring-0";
   composerRow.appendChild(comment);
@@ -481,13 +563,48 @@ function startAnnotation(): void {
   const toolButtons = new Map<AnnotationTool, HTMLButtonElement>();
   let tool: AnnotationTool = "select";
   let dragStart: PreviewAnnotationPoint | null = null;
-  let activeStroke: { target: PreviewAnnotationStrokeTarget; path: SVGPathElement } | null = null;
+  let activeStroke: {
+    target: PreviewAnnotationStrokeTarget;
+    path: SVGPathElement;
+    points: PreviewAnnotationPoint[];
+  } | null = null;
   let pendingCapture = false;
   let editorExpanded = false;
   let editorWasShown = false;
   let editorPosition: { left: number; top: number } | null = null;
   let editorDrag: { pointerId: number; offsetX: number; offsetY: number } | null = null;
   let editorLayoutFrame: number | null = null;
+
+  const stylePayloadLength = (change: PreviewAnnotationStyleChange): number =>
+    change.targetId.length +
+    (change.selector?.length ?? 0) +
+    change.property.length +
+    change.previousValue.length +
+    change.value.length;
+
+  const totalStylePayloadLength = (): number => {
+    let total = 0;
+    for (const change of styleChanges.values()) total += stylePayloadLength(change);
+    return total;
+  };
+
+  const boundedStyleChanges = (): PreviewAnnotationStyleChange[] => {
+    const bounded: PreviewAnnotationStyleChange[] = [];
+    let total = 0;
+    for (const change of styleChanges.values()) {
+      const nextTotal = total + stylePayloadLength(change);
+      if (nextTotal > PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH) continue;
+      bounded.push(change);
+      total = nextTotal;
+    }
+    return bounded;
+  };
+
+  const completedStrokePointCount = (): number => {
+    let total = 0;
+    for (const stroke of strokes) total += stroke.points.length;
+    return total;
+  };
 
   const resizeComment = (): void => {
     const maxHeight = 96;
@@ -542,7 +659,7 @@ function startAnnotation(): void {
   };
 
   const addSelected = (element: Element): void => {
-    if (selected.has(element)) return;
+    if (selected.has(element) || selected.size >= PREVIEW_ANNOTATION_MAX_ELEMENTS) return;
     const target: SelectedElement = {
       id: nextId("element"),
       element,
@@ -580,17 +697,30 @@ function startAnnotation(): void {
         target.baselineStyles.set(property, target.element.style.getPropertyValue(property));
       }
       const key = `${target.id}:${property}`;
+      if (!styleChanges.has(key) && styleChanges.size >= PREVIEW_ANNOTATION_MAX_STYLE_CHANGES)
+        continue;
       const previousValue =
         styleChanges.get(key)?.previousValue ??
         getComputedStyle(target.element).getPropertyValue(property).trim();
-      target.element.style.setProperty(property, value, "important");
-      styleChanges.set(key, {
+      const boundedValue = truncate(value, PREVIEW_ANNOTATION_MAX_CSS_VALUE_LENGTH);
+      const nextChange = {
         targetId: target.id,
         selector: null,
         property,
-        previousValue,
-        value,
-      });
+        previousValue: truncate(previousValue, PREVIEW_ANNOTATION_MAX_CSS_VALUE_LENGTH),
+        value: boundedValue,
+      } satisfies PreviewAnnotationStyleChange;
+      const existingChange = styleChanges.get(key);
+      if (
+        totalStylePayloadLength() -
+          (existingChange ? stylePayloadLength(existingChange) : 0) +
+          stylePayloadLength(nextChange) >
+        PREVIEW_ANNOTATION_MAX_STYLE_PAYLOAD_LENGTH
+      ) {
+        continue;
+      }
+      target.element.style.setProperty(property, boundedValue, "important");
+      styleChanges.set(key, nextChange);
       updateSelectedVisual(target);
     }
   };
@@ -1014,8 +1144,14 @@ function startAnnotation(): void {
   };
 
   const selectElementsInRect = (rect: PreviewAnnotationRect): number => {
-    const candidates = Array.from(document.querySelectorAll("body *"))
-      .filter((element) => !isAnnotationNode(element))
+    const scanned: Element[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    let node = walker.nextNode();
+    while (node && scanned.length < MAX_MARQUEE_SCANNED_ELEMENTS) {
+      if (node instanceof Element && !isAnnotationNode(node)) scanned.push(node);
+      node = walker.nextNode();
+    }
+    const candidates = scanned
       .map((element) => ({ element, rect: element.getBoundingClientRect() }))
       .filter(({ rect: candidate }) => {
         if (candidate.width < 2 || candidate.height < 2) return false;
@@ -1072,15 +1208,24 @@ function startAnnotation(): void {
       return;
     }
     if (tool === "draw" && activeStroke) {
-      activeStroke.target.points = [
-        ...activeStroke.target.points,
-        { x: event.clientX, y: event.clientY },
-      ];
-      activeStroke.target.bounds = strokeBounds(
-        activeStroke.target.points,
-        activeStroke.target.width,
-      );
-      activeStroke.path.setAttribute("d", pathFromPoints(activeStroke.target.points));
+      if (
+        activeStroke.points.length >= PREVIEW_ANNOTATION_MAX_STROKE_POINTS ||
+        completedStrokePointCount() + activeStroke.points.length >=
+          PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS
+      ) {
+        return;
+      }
+      const previous = activeStroke.points.at(-1);
+      if (
+        previous &&
+        Math.abs(previous.x - event.clientX) < 1 &&
+        Math.abs(previous.y - event.clientY) < 1
+      ) {
+        return;
+      }
+      activeStroke.points.push({ x: event.clientX, y: event.clientY });
+      activeStroke.target.bounds = strokeBounds(activeStroke.points, activeStroke.target.width);
+      activeStroke.path.setAttribute("d", pathFromPoints(activeStroke.points));
     }
   };
 
@@ -1099,11 +1244,19 @@ function startAnnotation(): void {
     }
     dragStart = { x: event.clientX, y: event.clientY };
     if (tool === "draw") {
+      if (
+        strokes.length >= PREVIEW_ANNOTATION_MAX_STROKES ||
+        completedStrokePointCount() >= PREVIEW_ANNOTATION_MAX_TOTAL_STROKE_POINTS
+      ) {
+        dragStart = null;
+        return;
+      }
+      const points = [dragStart];
       const stroke: PreviewAnnotationStrokeTarget = {
         id: nextId("stroke"),
         color: annotationTheme?.primary ?? "#2563eb",
         width: 4,
-        points: [dragStart],
+        points,
         bounds: { x: dragStart.x, y: dragStart.y, width: 1, height: 1 },
       };
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1115,7 +1268,7 @@ function startAnnotation(): void {
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-linejoin", "round");
       svg.appendChild(path);
-      activeStroke = { target: stroke, path };
+      activeStroke = { target: stroke, path, points };
     }
   };
 
@@ -1128,7 +1281,7 @@ function startAnnotation(): void {
       marqueeBox.style.display = "none";
       if (isUsableRect(rect)) {
         const found = selectElementsInRect(rect);
-        if (found === 0) {
+        if (found === 0 && regions.length < PREVIEW_ANNOTATION_MAX_REGIONS) {
           const region: PreviewAnnotationRegionTarget = { id: nextId("region"), rect };
           regions.push(region);
           const regionBox = createBox(
@@ -1225,12 +1378,20 @@ function startAnnotation(): void {
     pendingCapture = true;
     submit.disabled = true;
     submit.textContent = "Capturing…";
+    // Snapshot everything the annotation will carry before the capture runs.
+    // The element context lookup can take up to its timeout, and the user can
+    // keep editing meanwhile; the annotation must describe what they submitted.
+    const submittedComment = comment.value.trim();
+    const submittedRegions = [...regions];
+    const submittedStrokes = [...strokes];
+    const submittedStyleChanges = boundedStyleChanges().map((change) => ({ ...change }));
     void Promise.all(
       Array.from(selected.values()).map(async (target) => {
         const element = await captureElement(target.element);
-        if (!element) return null;
-        for (const change of styleChanges.values()) {
-          if (change.targetId === target.id) change.selector = element.selector;
+        for (const change of submittedStyleChanges) {
+          if (change.targetId === target.id && element.selector !== null) {
+            change.selector = element.selector;
+          }
         }
         return {
           id: target.id,
@@ -1238,30 +1399,42 @@ function startAnnotation(): void {
           rect: rectFromDomRect(target.element.getBoundingClientRect()),
         };
       }),
-    ).then((captured) => {
-      const elements = captured.filter((target) => target !== null);
-      const annotation: PreviewAnnotationPayload = {
-        id: nextId("annotation"),
-        pageUrl: location.href,
-        pageTitle: document.title?.trim() || null,
-        comment: comment.value.trim(),
-        elements,
-        regions: [...regions],
-        strokes: [...strokes],
-        styleChanges: Array.from(styleChanges.values()),
-        screenshot: null,
-        createdAt: new Date().toISOString(),
-      };
-      editor.style.display = "none";
-      toolbar.style.display = "none";
-      hoverOutline.style.display = "none";
-      const screenshotRect = unionRects([
-        ...elements.map((target) => target.rect),
-        ...regions.map((region) => region.rect),
-        ...strokes.map((stroke) => stroke.bounds),
-      ]);
-      ipcRenderer.send(ELEMENT_PICKED_CHANNEL, annotation, screenshotRect, submission);
-    });
+    )
+      .then((captured) => {
+        // The overlay may have been cancelled or replaced while the capture
+        // ran. A late submit must not deliver into the next pick's listener.
+        if (finished) return;
+        const elements = captured.filter((target) => target !== null);
+        const annotation: PreviewAnnotationPayload = {
+          id: nextId("annotation"),
+          pageUrl: truncate(location.href, PICKED_ELEMENT_MAX_URL_LENGTH),
+          pageTitle: document.title
+            ? truncate(document.title.trim(), PICKED_ELEMENT_MAX_TITLE_LENGTH) || null
+            : null,
+          comment: truncate(submittedComment, PREVIEW_ANNOTATION_MAX_COMMENT_LENGTH),
+          elements,
+          regions: submittedRegions,
+          strokes: submittedStrokes,
+          styleChanges: submittedStyleChanges,
+          screenshot: null,
+          createdAt: truncate(new Date().toISOString(), PICKED_ELEMENT_MAX_TIMESTAMP_LENGTH),
+        };
+        editor.style.display = "none";
+        toolbar.style.display = "none";
+        hoverOutline.style.display = "none";
+        const screenshotRect = unionRects([
+          ...elements.map((target) => target.rect),
+          ...submittedRegions.map((region) => region.rect),
+          ...submittedStrokes.map((stroke) => stroke.bounds),
+        ]);
+        ipcRenderer.send(ELEMENT_PICKED_CHANNEL, annotation, screenshotRect, submission);
+      })
+      .catch(() => {
+        // Last resort. Main is waiting on this message, so hand it an empty
+        // pick rather than leaving the button stuck on "Capturing…" and the
+        // renderer's pick promise pending. teardown is a no-op once finished.
+        teardown(true);
+      });
   };
   submit.addEventListener("click", () => submitAnnotation("attach"));
   root.addEventListener("keydown", (event) => {

@@ -54,7 +54,7 @@ export function ComposerSendIndicator(props: { readonly color: string; readonly 
         easing: Easing.linear,
         reduceMotion: ReduceMotion.System,
       }),
-      -1,
+      4,
       false,
     );
     return () => {

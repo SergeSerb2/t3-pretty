@@ -128,4 +128,34 @@ describe("desktop local bootstraps store", () => {
     unsubscribe();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("publishes async source changes immediately and detaches with the last subscriber", () => {
+    const visibility = makeVisibilityHarness();
+    const initial = [makeBootstrap()];
+    let sourceListener:
+      | ((bootstraps: ReadonlyArray<DesktopEnvironmentBootstrap>) => void)
+      | undefined;
+    const detachSource = vi.fn();
+    const listener = vi.fn();
+    const store = createDesktopLocalBootstrapsStore({
+      read: () => initial,
+      isVisible: visibility.isVisible,
+      subscribeVisibility: visibility.subscribeVisibility,
+      subscribeSource: (nextListener) => {
+        sourceListener = nextListener;
+        return detachSource;
+      },
+      pollIntervalMs: POLL_INTERVAL_MS,
+    });
+
+    expect(store.getSnapshot()).toBe(initial);
+    const unsubscribe = store.subscribe(listener);
+    const updated = [makeBootstrap({ label: "Ubuntu on WSL" })];
+    sourceListener?.(updated);
+
+    expect(store.getSnapshot()).toBe(updated);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    expect(detachSource).toHaveBeenCalledTimes(1);
+  });
 });

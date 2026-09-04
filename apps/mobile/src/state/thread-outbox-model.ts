@@ -1,4 +1,8 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
+import {
+  clampFileAttachmentUploadBytes,
+  fileAttachmentTooLargeMessage,
+} from "@t3tools/client-runtime/state/attachments";
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import {
   CommandId,
@@ -8,6 +12,8 @@ import {
   ModelSelection,
   ProjectId,
   ProviderInteractionMode,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   RuntimeMode,
   SkillId,
   ThreadId,
@@ -17,12 +23,15 @@ import {
   type ProviderInteractionMode as ProviderInteractionModeType,
   type RuntimeMode as RuntimeModeType,
   type SkillId as SkillIdType,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { DraftComposerImageAttachmentSchema } from "../lib/composer-image-schema";
-import type { DraftComposerImageAttachment } from "../lib/composerImages";
+import { DraftComposerAttachmentSchema } from "../lib/composer-image-schema";
+import type { DraftComposerAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
+import { compareTimestamps } from "../lib/time";
+import { resolveProviderInteractionMode } from "../features/threads/legacy-plan-mode";
 
 const THREAD_OUTBOX_SCHEMA_VERSION = 3;
 const THREAD_OUTBOX_MAX_RETRY_DELAY_MS = 16_000;
@@ -46,8 +55,10 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   commandId: CommandId,
-  text: Schema.String,
-  attachments: Schema.Array(DraftComposerImageAttachmentSchema),
+  text: Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  attachments: Schema.Array(DraftComposerAttachmentSchema).check(
+    Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
@@ -81,7 +92,7 @@ export interface QueuedThreadMessage {
   readonly messageId: MessageId;
   readonly commandId: CommandId;
   readonly text: string;
-  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly modelSelection?: ModelSelectionType;
   readonly runtimeMode?: RuntimeModeType;
   readonly interactionMode?: ProviderInteractionModeType;
@@ -99,11 +110,19 @@ export interface ThreadSettingsSnapshot {
 export function resolveQueuedThreadSettings(
   message: QueuedThreadMessage,
   thread: ThreadSettingsSnapshot,
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "showInteractionModeToggle">> = [],
 ): ThreadSettingsSnapshot {
+  const modelSelection = message.modelSelection ?? thread.modelSelection;
+  const provider = providers.find(
+    (candidate) => candidate.instanceId === modelSelection.instanceId,
+  );
   return {
-    modelSelection: message.modelSelection ?? thread.modelSelection,
+    modelSelection,
     runtimeMode: message.runtimeMode ?? thread.runtimeMode,
-    interactionMode: message.interactionMode ?? thread.interactionMode,
+    interactionMode: resolveProviderInteractionMode(
+      provider,
+      message.interactionMode ?? thread.interactionMode,
+    ),
   };
 }
 
@@ -141,7 +160,7 @@ export function groupQueuedThreadMessages(
     (grouped[threadKey] ??= []).push(message);
   }
   for (const queue of Object.values(grouped)) {
-    queue.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    queue.sort((left, right) => compareTimestamps(left.createdAt, right.createdAt));
   }
   return grouped;
 }
@@ -190,6 +209,46 @@ export function resolveThreadOutboxDeliveryAction(input: {
   return input.environmentConnected ? "send" : "wait";
 }
 
+export type ThreadOutboxDispatchStep =
+  | { readonly step: "wait" }
+  | { readonly step: "remove" }
+  | { readonly step: "retry" }
+  | { readonly step: "restore"; readonly reason: string }
+  | { readonly step: "send" };
+
+/**
+ * Wait for provider and file capabilities before sending. Cleanup does not
+ * need config: a creation whose thread exists, or a message whose thread is
+ * gone, can still be removed while config loads.
+ */
+export function resolveThreadOutboxDispatchStep(input: {
+  readonly deliveryAction: ThreadOutboxDeliveryAction;
+  readonly fileAttachments: ReadonlyArray<{ readonly name: string; readonly sizeBytes: number }>;
+  /** Null while the environment's server config has not synced yet. */
+  readonly serverConfig: { readonly maxFileUploadBytes: number | undefined } | null;
+}): ThreadOutboxDispatchStep {
+  if (input.deliveryAction !== "send") {
+    return { step: input.deliveryAction };
+  }
+  if (input.serverConfig === null) {
+    return { step: "retry" };
+  }
+  if (input.fileAttachments.length === 0) {
+    return { step: "send" };
+  }
+  const maxBytes = input.serverConfig.maxFileUploadBytes;
+  if (maxBytes === undefined) {
+    return { step: "restore", reason: "This server does not support file attachments." };
+  }
+  const effectiveMaxBytes = clampFileAttachmentUploadBytes(maxBytes);
+  const oversized = input.fileAttachments.find(
+    (attachment) => attachment.sizeBytes > effectiveMaxBytes,
+  );
+  return oversized
+    ? { step: "restore", reason: fileAttachmentTooLargeMessage(oversized.name, effectiveMaxBytes) }
+    : { step: "send" };
+}
+
 /**
  * A queued creation can only be dispatched once its payload would pass server
  * validation; incomplete payloads stay pending until the user edits them.
@@ -227,7 +286,7 @@ export function shouldRetryThreadOutboxDelivery(error: unknown): boolean {
 }
 
 export type ThreadOutboxCommandStage = "settings-sync" | "start-turn";
-export type ThreadOutboxFailureAction = "retry" | "discard";
+export type ThreadOutboxFailureAction = "retry" | "restore";
 
 export function resolveThreadOutboxFailureAction(input: {
   readonly stage: ThreadOutboxCommandStage;
@@ -241,5 +300,5 @@ export function resolveThreadOutboxFailureAction(input: {
   ) {
     return "retry";
   }
-  return "discard";
+  return "restore";
 }

@@ -27,6 +27,16 @@ export function overlayIdsForTarget<T extends string>(
   return sameIdMembers(overlay.ids, serverIds) ? null : overlay.ids;
 }
 
+export function resetOptimisticOverlayForFailedIds<T extends string>(
+  overlay: OptimisticIdOverlay<T> | null,
+  targetKey: string,
+  failedIds?: ReadonlyArray<T>,
+): OptimisticIdOverlay<T> | null {
+  if (overlay === null || overlay.targetKey !== targetKey) return overlay;
+  if (failedIds !== undefined && !sameIdMembers(overlay.ids, failedIds)) return overlay;
+  return null;
+}
+
 /**
  * Overlay for a server-owned id list that is written by full replacement.
  *
@@ -36,8 +46,8 @@ export function overlayIdsForTarget<T extends string>(
  * silently drops the first. The overlay also moves the switch immediately.
  * It is keyed by `targetKey` (thread, environment, …) so a route change
  * cannot apply one target's pending list to another. It clears itself once
- * the server reports the same set; call `reset` when a write fails so the
- * UI falls back to the truth.
+ * the server reports the same set; call `reset` with the failed write's ids
+ * so an older failure cannot roll back a newer optimistic edit.
  */
 export function useOptimisticIdList<T extends string>(
   serverIds: ReadonlyArray<T>,
@@ -60,9 +70,12 @@ export function useOptimisticIdList<T extends string>(
     },
     [targetKey],
   );
-  const reset = useCallback(() => {
-    setOverlay((current) => (current !== null && current.targetKey === targetKey ? null : current));
-  }, [targetKey]);
+  const reset = useCallback(
+    (failedIds?: ReadonlyArray<T>) => {
+      setOverlay((current) => resetOptimisticOverlayForFailedIds(current, targetKey, failedIds));
+    },
+    [targetKey],
+  );
   return {
     ids: pendingIds ?? serverIds,
     setIds,

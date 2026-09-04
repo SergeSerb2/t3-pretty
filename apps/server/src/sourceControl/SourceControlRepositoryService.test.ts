@@ -195,6 +195,31 @@ it.effect("clones a looked-up repository into the requested destination", () =>
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("rejects an existing non-empty clone destination", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({
+      prefix: "t3-source-control-nonempty-parent-",
+    });
+    const destinationPath = `${parent}/t3code`;
+    yield* fs.makeDirectory(destinationPath);
+    yield* fs.writeFileString(`${destinationPath}/keep.txt`, "keep\n");
+
+    const error = yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      return yield* Effect.flip(
+        service.cloneRepository({
+          remoteUrl: CLONE_URLS.sshUrl,
+          destinationPath,
+        }),
+      );
+    }).pipe(Effect.provide(makeLayer({})));
+
+    assert.strictEqual(error.operation, "cloneRepository");
+    assert.strictEqual(error.detail, "Destination path already exists and is not empty.");
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("preserves destination probe failures instead of treating them as missing paths", () => {
   const fileSystemCause = PlatformError.systemError({
     _tag: "PermissionDenied",

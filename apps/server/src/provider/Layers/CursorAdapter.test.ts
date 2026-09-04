@@ -168,6 +168,47 @@ const cursorAdapterTestLayer = it.layer(
 );
 
 cursorAdapterTestLayer("CursorAdapterLive", (it) => {
+  it.effect("loads an imported native Cursor session", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-native-resume-thread");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-native-resume-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      const argvLogPath = NodePath.join(tempDir, "argv.txt");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const session = yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        nativeSessionId: "native-cursor-session",
+        runtimeMode: "full-access",
+      });
+
+      assert.deepStrictEqual(session.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "native-cursor-session",
+      });
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      assert.isTrue(
+        requests.some(
+          (entry) =>
+            entry.method === "session/load" &&
+            (entry.params as { sessionId?: string } | undefined)?.sessionId ===
+              "native-cursor-session",
+        ),
+      );
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("starts a session and maps mock ACP prompt flow to runtime events", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
@@ -247,6 +288,52 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       }
 
       yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("sends selected project skills in Cursor's native slash form", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-skill-dispatch");
+      const workspace = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-skill-dispatch-")),
+      );
+      const requestLogPath = NodePath.join(workspace, "requests.ndjson");
+      const argvLogPath = NodePath.join(workspace, "argv.txt");
+      const skillDirectory = NodePath.join(workspace, ".cursor", "skills", "review");
+      yield* Effect.promise(() => NodeFSP.mkdir(skillDirectory, { recursive: true }));
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(NodePath.join(skillDirectory, "SKILL.md"), "# Review\n", "utf8"),
+      );
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: workspace,
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "please $review this",
+        attachments: [],
+      });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const promptRequests = requests.filter((entry) => entry.method === "session/prompt");
+      assert.deepStrictEqual(
+        promptRequests.map(
+          (request) => (request.params as Record<string, unknown> | undefined)?.prompt,
+        ),
+        [[{ type: "text", text: "please /review this" }]],
+      );
     }),
   );
 
@@ -820,6 +907,9 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         );
         assert.isDefined(permissionResponse);
 
+        const argvRuns = yield* Effect.promise(() => readArgvLog(argvLogPath));
+        assert.deepStrictEqual(argvRuns, [["--force", "acp"]]);
+
         yield* adapter.stopSession(threadId);
       }),
   );
@@ -1260,7 +1350,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
 
       const argvRuns = yield* Effect.promise(() => readArgvLog(argvLogPath));
       assert.lengthOf(argvRuns, 1, "session should not restart — only one spawn");
-      assert.deepStrictEqual(argvRuns[0], ["acp"]);
+      assert.deepStrictEqual(argvRuns[0], ["--force", "acp"]);
 
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
       const setConfigRequests = requests.filter(

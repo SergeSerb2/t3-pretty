@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Predicate from "effect/Predicate";
 
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
 import {
@@ -17,9 +18,11 @@ import {
   ThreadActivityAppendedPayload,
   ThreadArchivedPayload,
   ThreadCreatedPayload,
+  ThreadTransferredPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
   ThreadMetaUpdatedPayload,
+  ThreadNativeResumeRequestedPayload,
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
   ThreadSettledPayload,
@@ -41,6 +44,28 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
+
+// Async questions can stay open while the agent produces more activity.
+// Match the database snapshot's pending-question retention.
+function retainThreadActivities(activities: OrchestrationThread["activities"]) {
+  const recentStart = activities.length - 500;
+  if (recentStart <= 0) return activities;
+  const pending = new Map<string, OrchestrationThread["activities"][number]>();
+  for (const activity of activities) {
+    if (!Predicate.isObject(activity.payload)) continue;
+    const requestId = activity.payload.requestId;
+    if (typeof requestId !== "string") continue;
+    if (activity.kind === "user-input.requested" && activity.payload.responseMode === "message") {
+      pending.set(requestId, activity);
+    } else if (activity.kind === "user-input.resolved") {
+      pending.delete(requestId);
+    }
+  }
+  const pendingActivities = new Set(pending.values());
+  return activities.filter(
+    (activity, index) => index >= recentStart || pendingActivities.has(activity),
+  );
+}
 
 function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error") {
   if (status === "error") return "error" as const;
@@ -217,8 +242,10 @@ export function projectEvent(
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
-            defaultThreadEnvMode: null,
+            defaultThreadEnvMode: payload.defaultThreadEnvMode ?? null,
+            autoPull: false,
             faviconPath: payload.faviconPath ?? null,
+            projectIcon: payload.projectIcon ?? null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -254,8 +281,12 @@ export function projectEvent(
                   ...(payload.defaultThreadEnvMode !== undefined
                     ? { defaultThreadEnvMode: payload.defaultThreadEnvMode }
                     : {}),
+                  ...(payload.autoPull !== undefined ? { autoPull: payload.autoPull } : {}),
                   ...(payload.faviconPath !== undefined
                     ? { faviconPath: payload.faviconPath }
+                    : {}),
+                  ...(payload.projectIcon !== undefined
+                    ? { projectIcon: payload.projectIcon }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,
@@ -311,6 +342,7 @@ export function projectEvent(
             archivedAt: null,
             settledOverride: null,
             settledAt: null,
+            unsettledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
             deletedAt: null,
@@ -330,6 +362,20 @@ export function projectEvent(
             : [...nextBase.threads, thread],
         };
       });
+
+    case "thread.transferred":
+      return decodeForEvent(ThreadTransferredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const thread = { ...payload.thread, branchEventId: event.eventId };
+          const existing = nextBase.threads.find((entry) => entry.id === thread.id);
+          return {
+            ...nextBase,
+            threads: existing
+              ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
+              : [...nextBase.threads, thread],
+          };
+        }),
+      );
 
     case "thread.deleted":
       return decodeForEvent(ThreadDeletedPayload, event.payload, event.type, "payload").pipe(
@@ -372,6 +418,7 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             settledOverride: "settled",
             settledAt: payload.settledAt,
+            unsettledAt: null,
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -379,14 +426,24 @@ export function projectEvent(
 
     case "thread.unsettled":
       return decodeForEvent(ThreadUnsettledPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            settledOverride: payload.reason === "user" ? "active" : null,
-            settledAt: null,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
+        Effect.map((payload) => {
+          const existing = nextBase.threads.find((thread) => thread.id === payload.threadId);
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              settledOverride: payload.reason === "user" ? "active" : null,
+              settledAt: null,
+              // Re-entry stamp for active-list ordering. A thread already
+              // pinned active keeps its stamp: the activity reset that clears
+              // the pin is not a re-entry and must not reorder the list.
+              unsettledAt:
+                existing?.settledOverride === "active"
+                  ? (existing.unsettledAt ?? null)
+                  : payload.updatedAt,
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
       );
 
     case "thread.snoozed":
@@ -509,6 +566,9 @@ export function projectEvent(
               ? { branch: payload.branch, branchEventId: event.eventId }
               : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.linkedPullRequest !== undefined
+              ? { linkedPullRequest: payload.linkedPullRequest }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -602,6 +662,42 @@ export function projectEvent(
         };
       });
 
+    case "thread.native-resume-requested":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadNativeResumeRequestedPayload,
+          event.payload,
+          event.type,
+          "payload",
+        );
+        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!thread) {
+          return nextBase;
+        }
+        const session = yield* decodeForEvent(
+          OrchestrationSession,
+          {
+            threadId: payload.threadId,
+            status: "starting",
+            providerName: null,
+            providerInstanceId: thread.modelSelection.instanceId,
+            runtimeMode: thread.runtimeMode,
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: payload.createdAt,
+          },
+          event.type,
+          "session",
+        );
+        return {
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            session,
+            updatedAt: event.occurredAt,
+          }),
+        };
+      });
+
     case "thread.session-set":
       return Effect.gen(function* () {
         const payload = yield* decodeForEvent(
@@ -625,6 +721,11 @@ export function projectEvent(
         // Leaving the "running" session status is the turn-end signal: settle
         // a still-running latest turn so its duration reflects the whole turn.
         const settledTurnState = settledTurnStateForSessionStatus(session.status);
+        const activeUserMessageId =
+          payload.activeUserMessageId ??
+          (thread.latestTurn?.turnId === session.activeTurnId
+            ? thread.latestTurn.userMessageId
+            : undefined);
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
@@ -633,6 +734,9 @@ export function projectEvent(
               session.status === "running" && session.activeTurnId !== null
                 ? {
                     turnId: session.activeTurnId,
+                    ...(activeUserMessageId !== undefined
+                      ? { userMessageId: activeUserMessageId }
+                      : {}),
                     state: "running",
                     requestedAt:
                       thread.latestTurn?.turnId === session.activeTurnId
@@ -836,12 +940,12 @@ export function projectEvent(
             return nextBase;
           }
 
-          const activities = [
-            ...thread.activities.filter((entry) => entry.id !== payload.activity.id),
-            payload.activity,
-          ]
-            .toSorted(compareThreadActivities)
-            .slice(-500);
+          const activities = retainThreadActivities(
+            [
+              ...thread.activities.filter((entry) => entry.id !== payload.activity.id),
+              payload.activity,
+            ].toSorted(compareThreadActivities),
+          );
 
           return {
             ...nextBase,

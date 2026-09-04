@@ -331,6 +331,1200 @@ describe("RpcSessionFactory", () => {
     }),
   );
 
+  /*
+  it.effect("replays current config and broadcasts updates to every subscriber", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const collectTwo = session
+          .subscribeServerConfig({})
+          .pipe(Stream.take(2), Stream.runCollect);
+        const firstSubscriber = yield* Effect.forkChild(collectTwo);
+        const secondSubscriber = yield* Effect.forkChild(collectTwo);
+        yield* Effect.yieldNow;
+
+        const shortcut = {
+          key: "k",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: true,
+        };
+        const request = yield* awaitRequest(socket);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Chunk",
+            requestId: request.id,
+            values: [
+              {
+                version: 1,
+                type: "keybindingsUpdated",
+                payload: {
+                  keybindings: [{ command: "terminal.toggle", shortcut }],
+                  issues: [],
+                },
+              },
+            ],
+          }),
+        );
+
+        const firstEvents = Array.from(yield* Fiber.join(firstSubscriber));
+        const secondEvents = Array.from(yield* Fiber.join(secondSubscriber));
+        expect(firstEvents.map((event) => event.type)).toEqual(["snapshot", "keybindingsUpdated"]);
+        expect(secondEvents).toEqual(firstEvents);
+
+        const replay = yield* session.subscribeServerConfig({}).pipe(Stream.runHead);
+        expect(replay).toMatchObject({
+          _tag: "Some",
+          value: {
+            type: "snapshot",
+            config: { keybindings: [{ command: "terminal.toggle", shortcut }] },
+          },
+        });
+      }),
+    ),
+  );
+
+  it.effect("shares only a config subscription with the same theme opt-in", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const shared = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(Stream.runHead);
+        expect(shared).toMatchObject({ _tag: "Some", value: { type: "snapshot" } });
+        expect(socket.sent.map((message) => decodeJson(message)).filter(isRpcRequest)).toHaveLength(
+          1,
+        );
+
+        const fallbackFiber = yield* session
+          .subscribeServerConfig({})
+          .pipe(Stream.runHead, Effect.forkChild);
+        const fallbackRequest = yield* awaitRequest(socket, 1);
+        expect(fallbackRequest).toMatchObject({
+          tag: WS_METHODS.subscribeServerConfig,
+          payload: {},
+        });
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Chunk",
+            requestId: fallbackRequest.id,
+            values: [
+              {
+                version: 1,
+                type: "snapshot",
+                config: ENCODED_THEME_SERVER_CONFIG,
+              },
+            ],
+          }),
+        );
+        expect(yield* Fiber.join(fallbackFiber)).toMatchObject({
+          _tag: "Some",
+          value: { type: "snapshot" },
+        });
+      }),
+    ),
+  );
+
+  it.effect("replays theme updates and deletion as authoritative events", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const firstThemes = [
+          {
+            id: "nightfall",
+            name: "Nightfall",
+            appearance: "dark" as const,
+            canvas: "#1a1b26",
+            accent: "#7aa2f7",
+          },
+        ];
+        const replacementThemes = [
+          {
+            id: "midnight",
+            name: "Midnight",
+            appearance: "dark" as const,
+            canvas: "#000000",
+            accent: "#ffffff",
+          },
+        ];
+        const subscriberStarted = yield* Deferred.make<void>();
+        const subscriber = yield* session.subscribeServerConfig({ environmentThemes: true }).pipe(
+          Stream.mapEffect((event) =>
+            Deferred.succeed(subscriberStarted, undefined).pipe(Effect.as(event)),
+          ),
+          Stream.take(4),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Deferred.await(subscriberStarted);
+        yield* publishConfigEvents(socket, [
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: firstThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: replacementThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: [] },
+          },
+        ]);
+
+        const liveEvents = Array.from(yield* Fiber.join(subscriber));
+        expect(liveEvents.map((event) => event.type)).toEqual([
+          "snapshot",
+          "environmentThemesUpdated",
+          "environmentThemesUpdated",
+          "environmentThemesUpdated",
+        ]);
+        expect(liveEvents[2]).toMatchObject({ payload: { themes: replacementThemes } });
+
+        const replay = Array.from(
+          yield* session
+            .subscribeServerConfig({ environmentThemes: true })
+            .pipe(Stream.take(2), Stream.runCollect),
+        );
+        expect(replay.map((event) => event.type)).toEqual(["snapshot", "environmentThemesUpdated"]);
+        expect(replay[1]).toMatchObject({ payload: { themes: [] } });
+
+        let projection = applyServerConfigProjection(Option.none(), {
+          version: 1,
+          type: "snapshot",
+          config: THEME_SERVER_CONFIG,
+        });
+        projection = applyServerConfigProjection(projection, {
+          version: 1,
+          type: "environmentThemesUpdated",
+          payload: { themes: firstThemes },
+        });
+        for (const event of replay) {
+          projection = applyServerConfigProjection(projection, event);
+        }
+        expect(Option.getOrThrow(projection).config.environmentThemes).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("recovers a slow subscriber after it misses theme deletion", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const slowSubscriberStarted = yield* Deferred.make<void>();
+        const releaseSlowSubscriber = yield* Deferred.make<void>();
+        let firstEvent = true;
+        const slowSubscriber = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(
+            Stream.mapEffect((event) => {
+              if (!firstEvent) return Effect.succeed(event);
+              firstEvent = false;
+              return Deferred.succeed(slowSubscriberStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSlowSubscriber)),
+                Effect.as(event),
+              );
+            }),
+            Stream.take(3),
+            Stream.runCollect,
+            Effect.forkChild,
+          );
+        yield* Deferred.await(slowSubscriberStarted);
+
+        const firstThemes = [
+          {
+            id: "nightfall",
+            name: "Nightfall",
+            appearance: "dark" as const,
+            canvas: "#1a1b26",
+            accent: "#7aa2f7",
+          },
+        ];
+        const themeEvents: ServerConfigStreamEventType[] = [
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: firstThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: {
+              themes: [{ ...firstThemes[0]!, name: "Nightfall 2" }],
+            },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: [] },
+          },
+        ];
+        const settingsEvents = Array.from(
+          { length: 65 },
+          (): ServerConfigStreamEventType => ({
+            version: 1,
+            type: "settingsUpdated",
+            payload: { settings: DEFAULT_SERVER_SETTINGS },
+          }),
+        );
+        const allEvents = [...themeEvents, ...settingsEvents];
+        const observedByFastSubscriber = yield* Queue.unbounded<ServerConfigStreamEventType>();
+        yield* session.subscribeServerConfig({ environmentThemes: true }).pipe(
+          Stream.runForEach((event) => Queue.offer(observedByFastSubscriber, event)),
+          Effect.forkChild,
+        );
+        expect((yield* Queue.take(observedByFastSubscriber)).type).toBe("snapshot");
+        for (const event of allEvents) {
+          yield* publishConfigEvents(socket, [event]);
+          expect(yield* Queue.take(observedByFastSubscriber)).toEqual(event);
+        }
+        yield* Deferred.succeed(releaseSlowSubscriber, undefined);
+
+        const recovered = Array.from(yield* Fiber.join(slowSubscriber));
+        expect(recovered.map((event) => event.type)).toEqual([
+          "snapshot",
+          "snapshot",
+          "environmentThemesUpdated",
+        ]);
+        expect(recovered[2]).toMatchObject({ payload: { themes: [] } });
+
+        let projection = applyServerConfigProjection(Option.none(), {
+          version: 1,
+          type: "snapshot",
+          config: THEME_SERVER_CONFIG,
+        });
+        projection = applyServerConfigProjection(projection, themeEvents[0]!);
+        for (const event of recovered.slice(1)) {
+          projection = applyServerConfigProjection(projection, event);
+        }
+        expect(Option.getOrThrow(projection).config.environmentThemes).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("closes the session when the config source dies", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* session.closed.pipe(Effect.exit, Effect.forkChild);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Defect",
+            defect: encodeDefect(new Error("config stream died")),
+          }),
+        );
+
+        const closed = yield* Fiber.join(closedFiber);
+        expect(Exit.isFailure(closed)).toBe(true);
+        if (Exit.isFailure(closed)) {
+          expect(Cause.hasDies(closed.cause)).toBe(true);
+        }
+      }),
+    ),
+  );
+
+  it.effect.each([{ failure: "defect" as const }, { failure: "typed" as const }])(
+    "keeps durable config state alive after an owned $failure failure",
+    ({ failure }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+          const firstSession = yield* factory.connect(PREPARED);
+          const firstReady = yield* Effect.forkChild(firstSession.ready);
+          const firstSocket = yield* awaitSocket(sockets);
+          firstSocket.open();
+          yield* completeInitialConfig(firstSocket, ENCODED_THEME_SERVER_CONFIG, {
+            environmentThemes: true,
+          });
+          yield* Fiber.join(firstReady);
+
+          const activeSession = yield* SubscriptionRef.make(Option.some(firstSession));
+          const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+            target: TARGET,
+            state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+            session: activeSession,
+            prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+            connect: Effect.void,
+            disconnect: Effect.void,
+            retryNow: Effect.void,
+          } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+          const cache = Persistence.EnvironmentCacheStore.of({
+            loadShell: () => Effect.succeed(Option.none()),
+            saveShell: () => Effect.void,
+            loadThread: () => Effect.succeed(Option.none()),
+            saveThread: () => Effect.void,
+            removeThread: () => Effect.void,
+            loadServerConfig: () => Effect.succeed(Option.none()),
+            saveServerConfig: () => Effect.void,
+            loadVcsRefs: () => Effect.succeed(Option.none()),
+            saveVcsRefs: () => Effect.void,
+            removeVcsRefs: () => Effect.void,
+            clearVcsRefs: () => Effect.void,
+            clear: () => Effect.void,
+          });
+          const configState = yield* makeEnvironmentServerConfigState(true).pipe(
+            Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+            Effect.provideService(Persistence.EnvironmentCacheStore, cache),
+          );
+          const awaitConfig = (predicate: (config: ServerConfigType) => boolean) =>
+            SubscriptionRef.changes(configState).pipe(
+              Stream.filter(Option.isSome),
+              Stream.map((projection) => projection.value.config),
+              Stream.filter(predicate),
+              Stream.runHead,
+              Effect.map(Option.getOrThrow),
+            );
+
+          const firstThemes = [
+            {
+              id: "first-theme",
+              name: "First theme",
+              appearance: "dark" as const,
+              canvas: "#111111",
+              accent: "#ffffff",
+            },
+          ];
+          const firstThemeState = yield* awaitConfig(
+            (config) => config.environmentThemes?.[0]?.id === "first-theme",
+          ).pipe(Effect.forkChild);
+          yield* publishConfigEvents(firstSocket, [
+            {
+              version: 1,
+              type: "environmentThemesUpdated",
+              payload: { themes: firstThemes },
+            },
+          ]);
+          expect((yield* Fiber.join(firstThemeState)).environmentThemes).toEqual(firstThemes);
+
+          const firstClosed = yield* firstSession.closed.pipe(Effect.exit, Effect.forkChild);
+          const firstRequest = yield* awaitRequest(firstSocket);
+          firstSocket.serverMessage(
+            failure === "defect"
+              ? encodeJson({
+                  _tag: "Defect",
+                  defect: encodeDefect(new Error("config stream died")),
+                })
+              : encodeJson({
+                  _tag: "Exit",
+                  requestId: firstRequest.id,
+                  exit: {
+                    _tag: "Failure",
+                    cause: [
+                      {
+                        _tag: "Fail",
+                        error: {
+                          _tag: "EnvironmentAuthorizationError",
+                          message: "config subscription rejected",
+                          requiredScope: "orchestration:read",
+                        },
+                      },
+                    ],
+                  },
+                }),
+          );
+          const firstClosedExit = yield* Fiber.join(firstClosed);
+          expect(Exit.isFailure(firstClosedExit)).toBe(true);
+          if (failure === "typed" && Exit.isFailure(firstClosedExit)) {
+            expect(Cause.squash(firstClosedExit.cause)).toBeInstanceOf(ConnectionBlockedError);
+            expect(Cause.squash(firstClosedExit.cause)).toMatchObject({ reason: "permission" });
+          }
+          yield* SubscriptionRef.set(activeSession, Option.none());
+
+          const recoveredConfig = {
+            ...THEME_SERVER_CONFIG,
+            environment: {
+              ...THEME_SERVER_CONFIG.environment,
+              label: "Recovered environment",
+            },
+          } satisfies ServerConfigType;
+          const secondSession = yield* factory.connect(PREPARED);
+          const secondReady = yield* Effect.forkChild(secondSession.ready);
+          const secondSocket = yield* awaitSocket(sockets, 1);
+          secondSocket.open();
+          yield* completeInitialConfig(secondSocket, encodeServerConfig(recoveredConfig), {
+            environmentThemes: true,
+          });
+          yield* Fiber.join(secondReady);
+
+          const recoveredState = yield* awaitConfig(
+            (config) => config.environment.label === "Recovered environment",
+          ).pipe(Effect.forkChild);
+          yield* SubscriptionRef.set(activeSession, Option.some(secondSession));
+          expect((yield* Fiber.join(recoveredState)).environmentThemes).toEqual(firstThemes);
+
+          const recoveredThemes = [
+            {
+              id: "recovered-theme",
+              name: "Recovered theme",
+              appearance: "dark" as const,
+              canvas: "#000000",
+              accent: "#eeeeee",
+            },
+          ];
+          const liveRecoveredState = yield* awaitConfig(
+            (config) => config.environmentThemes?.[0]?.id === "recovered-theme",
+          ).pipe(Effect.forkChild);
+          yield* publishConfigEvents(secondSocket, [
+            {
+              version: 1,
+              type: "environmentThemesUpdated",
+              payload: { themes: recoveredThemes },
+            },
+          ]);
+          expect((yield* Fiber.join(liveRecoveredState)).environmentThemes).toEqual(
+            recoveredThemes,
+          );
+        }),
+      ),
+  );
+
+  it.effect.each<{
+    readonly event: ServerConfigStreamEventType;
+    readonly expectedConfig: Partial<ServerConfigType>;
+  }>([
+    {
+      event: {
+        version: 1,
+        type: "providerStatuses",
+        payload: {
+          providers: [
+            {
+              instanceId: ProviderInstanceId.make("codex"),
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              installed: true,
+              version: "1.0.0",
+              status: "ready",
+              auth: { status: "authenticated" },
+              checkedAt: "2026-08-27T00:00:00.000Z",
+              models: [],
+              slashCommands: [],
+              skills: [],
+            },
+          ],
+        },
+      },
+      expectedConfig: {
+        providers: [
+          {
+            instanceId: ProviderInstanceId.make("codex"),
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            installed: true,
+            version: "1.0.0",
+            status: "ready",
+            auth: { status: "authenticated" },
+            checkedAt: "2026-08-27T00:00:00.000Z",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          },
+        ],
+      },
+    },
+    {
+      event: {
+        version: 1,
+        type: "settingsUpdated",
+        payload: {
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            newWorktreesStartFromOrigin: !DEFAULT_SERVER_SETTINGS.newWorktreesStartFromOrigin,
+          },
+        },
+      },
+      expectedConfig: {
+        settings: {
+          ...DEFAULT_SERVER_SETTINGS,
+          newWorktreesStartFromOrigin: !DEFAULT_SERVER_SETTINGS.newWorktreesStartFromOrigin,
+        },
+      },
+    },
+  ])(
+    "preserves $event.type events and includes them in replay snapshots",
+    ({ event, expectedConfig }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { factory, sockets } = yield* makeFactory();
+          const session = yield* factory.connect(PREPARED);
+          const readyFiber = yield* Effect.forkChild(session.ready);
+          const socket = yield* awaitSocket(sockets);
+          socket.open();
+          yield* completeInitialConfig(socket);
+          yield* Fiber.join(readyFiber);
+
+          const subscriber = yield* session
+            .subscribeServerConfig({})
+            .pipe(Stream.take(2), Stream.runCollect, Effect.forkChild);
+          yield* Effect.yieldNow;
+
+          const request = yield* awaitRequest(socket);
+          socket.serverMessage(
+            encodeJson({
+              _tag: "Chunk",
+              requestId: request.id,
+              values: [encodeServerConfigStreamEvent(event)],
+            }),
+          );
+
+          const events = Array.from(yield* Fiber.join(subscriber));
+          expect(events[1]).toEqual(event);
+
+          const replay = yield* session.subscribeServerConfig({}).pipe(Stream.runHead);
+          expect(replay).toMatchObject({
+            _tag: "Some",
+            value: {
+              type: "snapshot",
+              config: expectedConfig,
+            },
+          });
+        }),
+      ),
+  );
+
+
+  it.effect("replays current config and broadcasts updates to every subscriber", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const collectTwo = session
+          .subscribeServerConfig({})
+          .pipe(Stream.take(2), Stream.runCollect);
+        const firstSubscriber = yield* Effect.forkChild(collectTwo);
+        const secondSubscriber = yield* Effect.forkChild(collectTwo);
+        yield* Effect.yieldNow;
+
+        const shortcut = {
+          key: "k",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: true,
+        };
+        const request = yield* awaitRequest(socket);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Chunk",
+            requestId: request.id,
+            values: [
+              {
+                version: 1,
+                type: "keybindingsUpdated",
+                payload: {
+                  keybindings: [{ command: "terminal.toggle", shortcut }],
+                  issues: [],
+                },
+              },
+            ],
+          }),
+        );
+
+        const firstEvents = Array.from(yield* Fiber.join(firstSubscriber));
+        const secondEvents = Array.from(yield* Fiber.join(secondSubscriber));
+        expect(firstEvents.map((event) => event.type)).toEqual(["snapshot", "keybindingsUpdated"]);
+        expect(secondEvents).toEqual(firstEvents);
+
+        const replay = yield* session.subscribeServerConfig({}).pipe(Stream.runHead);
+        expect(replay).toMatchObject({
+          _tag: "Some",
+          value: {
+            type: "snapshot",
+            config: { keybindings: [{ command: "terminal.toggle", shortcut }] },
+          },
+        });
+      }),
+    ),
+  );
+
+  it.effect("shares only a config subscription with the same theme opt-in", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const shared = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(Stream.runHead);
+        expect(shared).toMatchObject({ _tag: "Some", value: { type: "snapshot" } });
+        expect(socket.sent.map((message) => decodeJson(message)).filter(isRpcRequest)).toHaveLength(
+          1,
+        );
+
+        const fallbackFiber = yield* session
+          .subscribeServerConfig({})
+          .pipe(Stream.runHead, Effect.forkChild);
+        const fallbackRequest = yield* awaitRequest(socket, 1);
+        expect(fallbackRequest).toMatchObject({
+          tag: WS_METHODS.subscribeServerConfig,
+          payload: {},
+        });
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Chunk",
+            requestId: fallbackRequest.id,
+            values: [
+              {
+                version: 1,
+                type: "snapshot",
+                config: ENCODED_THEME_SERVER_CONFIG,
+              },
+            ],
+          }),
+        );
+        expect(yield* Fiber.join(fallbackFiber)).toMatchObject({
+          _tag: "Some",
+          value: { type: "snapshot" },
+        });
+      }),
+    ),
+  );
+
+  it.effect("replays theme updates and deletion as authoritative events", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const firstThemes = [
+          {
+            id: "nightfall",
+            name: "Nightfall",
+            appearance: "dark" as const,
+            canvas: "#1a1b26",
+            accent: "#7aa2f7",
+          },
+        ];
+        const replacementThemes = [
+          {
+            id: "midnight",
+            name: "Midnight",
+            appearance: "dark" as const,
+            canvas: "#000000",
+            accent: "#ffffff",
+          },
+        ];
+        const subscriberStarted = yield* Deferred.make<void>();
+        const subscriber = yield* session.subscribeServerConfig({ environmentThemes: true }).pipe(
+          Stream.mapEffect((event) =>
+            Deferred.succeed(subscriberStarted, undefined).pipe(Effect.as(event)),
+          ),
+          Stream.take(4),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Deferred.await(subscriberStarted);
+        yield* publishConfigEvents(socket, [
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: firstThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: replacementThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: [] },
+          },
+        ]);
+
+        const liveEvents = Array.from(yield* Fiber.join(subscriber));
+        expect(liveEvents.map((event) => event.type)).toEqual([
+          "snapshot",
+          "environmentThemesUpdated",
+          "environmentThemesUpdated",
+          "environmentThemesUpdated",
+        ]);
+        expect(liveEvents[2]).toMatchObject({ payload: { themes: replacementThemes } });
+
+        const replay = Array.from(
+          yield* session
+            .subscribeServerConfig({ environmentThemes: true })
+            .pipe(Stream.take(2), Stream.runCollect),
+        );
+        expect(replay.map((event) => event.type)).toEqual(["snapshot", "environmentThemesUpdated"]);
+        expect(replay[1]).toMatchObject({ payload: { themes: [] } });
+
+        let projection = applyServerConfigProjection(Option.none(), {
+          version: 1,
+          type: "snapshot",
+          config: THEME_SERVER_CONFIG,
+        });
+        projection = applyServerConfigProjection(projection, {
+          version: 1,
+          type: "environmentThemesUpdated",
+          payload: { themes: firstThemes },
+        });
+        for (const event of replay) {
+          projection = applyServerConfigProjection(projection, event);
+        }
+        expect(Option.getOrThrow(projection).config.environmentThemes).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("recovers a slow subscriber after it misses theme deletion", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
+          environmentThemes: true,
+        });
+        yield* Fiber.join(readyFiber);
+
+        const slowSubscriberStarted = yield* Deferred.make<void>();
+        const releaseSlowSubscriber = yield* Deferred.make<void>();
+        let firstEvent = true;
+        const slowSubscriber = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(
+            Stream.mapEffect((event) => {
+              if (!firstEvent) return Effect.succeed(event);
+              firstEvent = false;
+              return Deferred.succeed(slowSubscriberStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSlowSubscriber)),
+                Effect.as(event),
+              );
+            }),
+            Stream.take(3),
+            Stream.runCollect,
+            Effect.forkChild,
+          );
+        yield* Deferred.await(slowSubscriberStarted);
+
+        const firstThemes = [
+          {
+            id: "nightfall",
+            name: "Nightfall",
+            appearance: "dark" as const,
+            canvas: "#1a1b26",
+            accent: "#7aa2f7",
+          },
+        ];
+        const themeEvents: ServerConfigStreamEventType[] = [
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: firstThemes },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: {
+              themes: [{ ...firstThemes[0]!, name: "Nightfall 2" }],
+            },
+          },
+          {
+            version: 1,
+            type: "environmentThemesUpdated",
+            payload: { themes: [] },
+          },
+        ];
+        const settingsEvents = Array.from({ length: 65 }, (): ServerConfigStreamEventType => ({
+          version: 1,
+          type: "settingsUpdated",
+          payload: { settings: DEFAULT_SERVER_SETTINGS },
+        }));
+        const allEvents = [...themeEvents, ...settingsEvents];
+        const observedByFastSubscriber = yield* Queue.unbounded<ServerConfigStreamEventType>();
+        yield* session.subscribeServerConfig({ environmentThemes: true }).pipe(
+          Stream.runForEach((event) => Queue.offer(observedByFastSubscriber, event)),
+          Effect.forkChild,
+        );
+        expect((yield* Queue.take(observedByFastSubscriber)).type).toBe("snapshot");
+        for (const event of allEvents) {
+          yield* publishConfigEvents(socket, [event]);
+          expect(yield* Queue.take(observedByFastSubscriber)).toEqual(event);
+        }
+        yield* Deferred.succeed(releaseSlowSubscriber, undefined);
+
+        const recovered = Array.from(yield* Fiber.join(slowSubscriber));
+        expect(recovered.map((event) => event.type)).toEqual([
+          "snapshot",
+          "snapshot",
+          "environmentThemesUpdated",
+        ]);
+        expect(recovered[2]).toMatchObject({ payload: { themes: [] } });
+
+        let projection = applyServerConfigProjection(Option.none(), {
+          version: 1,
+          type: "snapshot",
+          config: THEME_SERVER_CONFIG,
+        });
+        projection = applyServerConfigProjection(projection, themeEvents[0]!);
+        for (const event of recovered.slice(1)) {
+          projection = applyServerConfigProjection(projection, event);
+        }
+        expect(Option.getOrThrow(projection).config.environmentThemes).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("closes the session when the config source dies", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* session.closed.pipe(Effect.exit, Effect.forkChild);
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Defect",
+            defect: encodeDefect(new Error("config stream died")),
+          }),
+        );
+
+        const closed = yield* Fiber.join(closedFiber);
+        expect(Exit.isFailure(closed)).toBe(true);
+        if (Exit.isFailure(closed)) {
+          expect(Cause.hasDies(closed.cause)).toBe(true);
+        }
+      }),
+    ),
+  );
+
+  it.effect.each([{ failure: "defect" as const }, { failure: "typed" as const }])(
+    "keeps durable config state alive after an owned $failure failure",
+    ({ failure }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { factory, sockets } = yield* makeFactory({ environmentThemes: true });
+          const firstSession = yield* factory.connect(PREPARED);
+          const firstReady = yield* Effect.forkChild(firstSession.ready);
+          const firstSocket = yield* awaitSocket(sockets);
+          firstSocket.open();
+          yield* completeInitialConfig(firstSocket, ENCODED_THEME_SERVER_CONFIG, {
+            environmentThemes: true,
+          });
+          yield* Fiber.join(firstReady);
+
+          const activeSession = yield* SubscriptionRef.make(Option.some(firstSession));
+          const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+            target: TARGET,
+            state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+            session: activeSession,
+            prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+            connect: Effect.void,
+            disconnect: Effect.void,
+            retryNow: Effect.void,
+          } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+          const cache = Persistence.EnvironmentCacheStore.of({
+            loadShell: () => Effect.succeed(Option.none()),
+            saveShell: () => Effect.void,
+            loadThread: () => Effect.succeed(Option.none()),
+            saveThread: () => Effect.void,
+            removeThread: () => Effect.void,
+            loadServerConfig: () => Effect.succeed(Option.none()),
+            saveServerConfig: () => Effect.void,
+            loadVcsRefs: () => Effect.succeed(Option.none()),
+            saveVcsRefs: () => Effect.void,
+            removeVcsRefs: () => Effect.void,
+            clearVcsRefs: () => Effect.void,
+            clear: () => Effect.void,
+          });
+          const configState = yield* makeEnvironmentServerConfigState({
+            environmentThemes: true,
+          }).pipe(
+            Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+            Effect.provideService(Persistence.EnvironmentCacheStore, cache),
+          );
+          const awaitConfig = (predicate: (config: ServerConfigType) => boolean) =>
+            SubscriptionRef.changes(configState).pipe(
+              Stream.filter(Option.isSome),
+              Stream.map((projection) => projection.value.config),
+              Stream.filter(predicate),
+              Stream.runHead,
+              Effect.map(Option.getOrThrow),
+            );
+
+          const firstThemes = [
+            {
+              id: "first-theme",
+              name: "First theme",
+              appearance: "dark" as const,
+              canvas: "#111111",
+              accent: "#ffffff",
+            },
+          ];
+          const firstThemeState = yield* awaitConfig(
+            (config) => config.environmentThemes?.[0]?.id === "first-theme",
+          ).pipe(Effect.forkChild);
+          yield* publishConfigEvents(firstSocket, [
+            {
+              version: 1,
+              type: "environmentThemesUpdated",
+              payload: { themes: firstThemes },
+            },
+          ]);
+          expect((yield* Fiber.join(firstThemeState)).environmentThemes).toEqual(firstThemes);
+
+          const firstClosed = yield* firstSession.closed.pipe(Effect.exit, Effect.forkChild);
+          const firstRequest = yield* awaitRequest(firstSocket);
+          firstSocket.serverMessage(
+            failure === "defect"
+              ? encodeJson({
+                  _tag: "Defect",
+                  defect: encodeDefect(new Error("config stream died")),
+                })
+              : encodeJson({
+                  _tag: "Exit",
+                  requestId: firstRequest.id,
+                  exit: {
+                    _tag: "Failure",
+                    cause: [
+                      {
+                        _tag: "Fail",
+                        error: {
+                          _tag: "EnvironmentAuthorizationError",
+                          message: "config subscription rejected",
+                          requiredScope: "orchestration:read",
+                        },
+                      },
+                    ],
+                  },
+                }),
+          );
+          const firstClosedExit = yield* Fiber.join(firstClosed);
+          expect(Exit.isFailure(firstClosedExit)).toBe(true);
+          if (failure === "typed" && Exit.isFailure(firstClosedExit)) {
+            expect(Cause.squash(firstClosedExit.cause)).toBeInstanceOf(ConnectionBlockedError);
+            expect(Cause.squash(firstClosedExit.cause)).toMatchObject({ reason: "permission" });
+          }
+          yield* SubscriptionRef.set(activeSession, Option.none());
+
+          const recoveredConfig = {
+            ...THEME_SERVER_CONFIG,
+            environment: {
+              ...THEME_SERVER_CONFIG.environment,
+              label: "Recovered environment",
+            },
+          } satisfies ServerConfigType;
+          const secondSession = yield* factory.connect(PREPARED);
+          const secondReady = yield* Effect.forkChild(secondSession.ready);
+          const secondSocket = yield* awaitSocket(sockets, 1);
+          secondSocket.open();
+          yield* completeInitialConfig(secondSocket, encodeServerConfig(recoveredConfig), {
+            environmentThemes: true,
+          });
+          yield* Fiber.join(secondReady);
+
+          const recoveredState = yield* awaitConfig(
+            (config) => config.environment.label === "Recovered environment",
+          ).pipe(Effect.forkChild);
+          yield* SubscriptionRef.set(activeSession, Option.some(secondSession));
+          expect((yield* Fiber.join(recoveredState)).environmentThemes).toEqual(firstThemes);
+
+          const recoveredThemes = [
+            {
+              id: "recovered-theme",
+              name: "Recovered theme",
+              appearance: "dark" as const,
+              canvas: "#000000",
+              accent: "#eeeeee",
+            },
+          ];
+          const liveRecoveredState = yield* awaitConfig(
+            (config) => config.environmentThemes?.[0]?.id === "recovered-theme",
+          ).pipe(Effect.forkChild);
+          yield* publishConfigEvents(secondSocket, [
+            {
+              version: 1,
+              type: "environmentThemesUpdated",
+              payload: { themes: recoveredThemes },
+            },
+          ]);
+          expect((yield* Fiber.join(liveRecoveredState)).environmentThemes).toEqual(
+            recoveredThemes,
+          );
+        }),
+      ),
+  );
+
+  it.effect.each<{
+    readonly event: ServerConfigStreamEventType;
+    readonly expectedConfig: Partial<ServerConfigType>;
+  }>([
+    {
+      event: {
+        version: 1,
+        type: "providerStatuses",
+        payload: {
+          providers: [
+            {
+              instanceId: ProviderInstanceId.make("codex"),
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              installed: true,
+              version: "1.0.0",
+              status: "ready",
+              auth: { status: "authenticated" },
+              checkedAt: "2026-08-27T00:00:00.000Z",
+              models: [],
+              slashCommands: [],
+              skills: [],
+            },
+          ],
+        },
+      },
+      expectedConfig: {
+        providers: [
+          {
+            instanceId: ProviderInstanceId.make("codex"),
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
+            installed: true,
+            version: "1.0.0",
+            status: "ready",
+            auth: { status: "authenticated" },
+            checkedAt: "2026-08-27T00:00:00.000Z",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          },
+        ],
+      },
+    },
+    {
+      event: {
+        version: 1,
+        type: "settingsUpdated",
+        payload: {
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            newWorktreesStartFromOrigin: !DEFAULT_SERVER_SETTINGS.newWorktreesStartFromOrigin,
+          },
+        },
+      },
+      expectedConfig: {
+        settings: {
+          ...DEFAULT_SERVER_SETTINGS,
+          newWorktreesStartFromOrigin: !DEFAULT_SERVER_SETTINGS.newWorktreesStartFromOrigin,
+        },
+      },
+    },
+  ])(
+    "preserves $event.type events and includes them in replay snapshots",
+    ({ event, expectedConfig }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { factory, sockets } = yield* makeFactory();
+          const session = yield* factory.connect(PREPARED);
+          const readyFiber = yield* Effect.forkChild(session.ready);
+          const socket = yield* awaitSocket(sockets);
+          socket.open();
+          yield* completeInitialConfig(socket);
+          yield* Fiber.join(readyFiber);
+
+          const subscriber = yield* session
+            .subscribeServerConfig({})
+            .pipe(Stream.take(2), Stream.runCollect, Effect.forkChild);
+          yield* Effect.yieldNow;
+
+          const request = yield* awaitRequest(socket);
+          socket.serverMessage(
+            encodeJson({
+              _tag: "Chunk",
+              requestId: request.id,
+              values: [encodeServerConfigStreamEvent(event)],
+            }),
+          );
+
+          const events = Array.from(yield* Fiber.join(subscriber));
+          expect(events[1]).toEqual(event);
+
+          const replay = yield* session.subscribeServerConfig({}).pipe(Stream.runHead);
+          expect(replay).toMatchObject({
+            _tag: "Some",
+            value: {
+              type: "snapshot",
+              config: expectedConfig,
+            },
+          });
+        }),
+      ),
+  );
+
+*/
   it.effect("tolerates two missed pong windows before closing the session", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();

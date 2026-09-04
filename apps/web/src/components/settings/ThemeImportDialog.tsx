@@ -30,6 +30,7 @@ import { ThemeSearchSection } from "./ThemeSearchSection";
  * locks the UI for as long as that takes.
  */
 export const MAX_THEME_FILE_BYTES = 256 * 1024;
+export const MAX_THEME_IMPORT_FILES = 64;
 
 /** Highlighting rebuilds the whole markup on every keystroke, so oversized
  *  pastes fall back to plain text instead of freezing the editor. */
@@ -266,6 +267,12 @@ export function ThemeImportDialog({
   const readThemeFiles = useCallback(
     (files: ReadonlyArray<ImportableThemeFile>) => {
       if (files.length === 0) return;
+      if (files.length > MAX_THEME_IMPORT_FILES) {
+        importRequestRef.current += 1;
+        setIsReading(false);
+        setError(`Choose at most ${MAX_THEME_IMPORT_FILES} theme files at once.`);
+        return;
+      }
       if (files.length === 1) void readThemeFile(files[0]!);
       else void readThemeBatch(files);
     },
@@ -278,16 +285,24 @@ export function ThemeImportDialog({
   const openFilePicker = useCallback(() => {
     const bridge = window.desktopBridge;
     if (bridge?.pickThemeFiles) {
-      void bridge.pickThemeFiles().then((picked) => {
-        if (!picked || picked.length === 0) return;
-        readThemeFiles(
-          picked.map((file) => ({
-            name: file.name,
-            size: file.size,
-            text: () => Promise.resolve(file.text),
-          })),
-        );
-      });
+      const requestId = ++importRequestRef.current;
+      void bridge.pickThemeFiles().then(
+        (picked) => {
+          if (requestId !== importRequestRef.current || !picked || picked.length === 0) return;
+          readThemeFiles(
+            picked.map((file) => ({
+              name: file.name,
+              size: file.size,
+              text: () => Promise.resolve(file.text),
+            })),
+          );
+        },
+        () => {
+          if (requestId === importRequestRef.current) {
+            setError("Could not open the theme file picker.");
+          }
+        },
+      );
       return;
     }
     fileInputRef.current?.click();

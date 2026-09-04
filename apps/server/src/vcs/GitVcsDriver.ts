@@ -11,6 +11,11 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   GitCommandError,
+  VCS_REMOTE_MAX_COUNT,
+  VCS_REMOTE_NAME_MAX_LENGTH,
+  VCS_REMOTE_URL_MAX_LENGTH,
+  VCS_WORKSPACE_FILES_MAX_COUNT,
+  type VcsRemote,
   VcsProcessExitError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
@@ -30,7 +35,11 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { makeGitVcsDriverCore } from "./GitVcsDriverCore.ts";
+import {
+  makeGitVcsDriverCore,
+  PATCH_RENDER_PREFIX_ARGS,
+  splitNullSeparatedGitStdoutPaths,
+} from "./GitVcsDriverCore.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
@@ -204,6 +213,10 @@ export interface GitRemoteExistsInput {
   remoteName: string;
 }
 
+export interface GitRemoteBranchExistsInput extends GitRemoteExistsInput {
+  refName: string;
+}
+
 export interface GitResolveRemoteTrackingCommitInput {
   cwd: string;
   refName: string;
@@ -295,6 +308,9 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<string | null, GitCommandError>;
     readonly fetchRemote: (input: GitFetchRemoteInput) => Effect.Effect<void, GitCommandError>;
     readonly remoteExists: (input: GitRemoteExistsInput) => Effect.Effect<boolean, GitCommandError>;
+    readonly remoteBranchExists: (
+      input: GitRemoteBranchExistsInput,
+    ) => Effect.Effect<boolean, GitCommandError>;
     readonly resolveRemoteTrackingCommit: (
       input: GitResolveRemoteTrackingCommitInput,
     ) => Effect.Effect<GitResolveRemoteTrackingCommitResult, GitCommandError>;
@@ -310,6 +326,10 @@ export class GitVcsDriver extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    /** Drops worktree admin entries whose directory is already gone (`git worktree prune`). */
+    readonly pruneWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<void, GitCommandError>;
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
@@ -343,16 +363,36 @@ const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
   };
 });
 
-function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
-  const parts = input.split("\0");
-  if (parts.length === 0) return [];
+export function splitNullSeparatedPathsBounded(
+  input: string,
+  inputTruncated: boolean,
+  maxPaths: number,
+): { readonly paths: string[]; readonly truncated: boolean } {
+  const paths: string[] = [];
+  let start = 0;
 
-  if (truncated && parts[parts.length - 1]?.length) {
-    parts.pop();
+  while (start < input.length) {
+    const separator = input.indexOf("\0", start);
+    if (separator < 0) {
+      if (!inputTruncated && start < input.length) {
+        if (paths.length >= maxPaths) return { paths, truncated: true };
+        paths.push(input.slice(start));
+      }
+      break;
+    }
+
+    if (separator > start) {
+      if (paths.length >= maxPaths) return { paths, truncated: true };
+      paths.push(input.slice(start, separator));
+    }
+    start = separator + 1;
   }
 
-  return parts.filter((value) => value.length > 0);
+  return { paths, truncated: inputTruncated };
 }
+
+const splitNullSeparatedPaths = (input: string, truncated: boolean): string[] =>
+  splitNullSeparatedPathsBounded(input, truncated, Number.POSITIVE_INFINITY).paths;
 
 function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): string[][] {
   const chunks: string[][] = [];
@@ -414,6 +454,37 @@ function parseGitRemoteVerboseOutput(
     remotes.set(name, remote);
   }
   return remotes;
+}
+
+export function collectBoundedGitRemotes(
+  parsed: ReadonlyMap<string, { readonly url?: string; readonly pushUrl?: string }>,
+  inputTruncated: boolean,
+): { readonly remotes: ReadonlyArray<VcsRemote>; readonly truncated: boolean } {
+  const remotes: VcsRemote[] = [];
+  let truncated = inputTruncated;
+
+  for (const [name, remote] of parsed) {
+    if (!remote.url) continue;
+    if (name.length > VCS_REMOTE_NAME_MAX_LENGTH || remote.url.length > VCS_REMOTE_URL_MAX_LENGTH) {
+      truncated = true;
+      continue;
+    }
+    if (remotes.length >= VCS_REMOTE_MAX_COUNT) {
+      truncated = true;
+      break;
+    }
+
+    const pushUrl =
+      remote.pushUrl && remote.pushUrl.length <= VCS_REMOTE_URL_MAX_LENGTH
+        ? Option.some(remote.pushUrl)
+        : Option.none<string>();
+    if (remote.pushUrl && Option.isNone(pushUrl)) {
+      truncated = true;
+    }
+    remotes.push({ name, url: remote.url, pushUrl, isPrimary: name === "origin" });
+  }
+
+  return { remotes, truncated };
 }
 
 const gitCommand = (
@@ -536,9 +607,14 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         result.exitCode === 0
           ? Effect.gen(function* () {
               const freshness = yield* nowFreshness();
+              const parsed = splitNullSeparatedPathsBounded(
+                result.stdout,
+                result.stdoutTruncated,
+                VCS_WORKSPACE_FILES_MAX_COUNT,
+              );
               return {
-                paths: splitNullSeparatedPaths(result.stdout, result.stdoutTruncated),
-                truncated: result.stdoutTruncated,
+                paths: parsed.paths,
+                truncated: parsed.truncated,
                 freshness,
               };
             })
@@ -578,23 +654,14 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         });
       }
 
-      const parsed = parseGitRemoteVerboseOutput(result.stdout);
-      const remotes = Array.from(parsed.entries()).flatMap(([name, remote]) => {
-        if (!remote.url) {
-          return [];
-        }
-        return [
-          {
-            name,
-            url: remote.url,
-            pushUrl: remote.pushUrl ? Option.some(remote.pushUrl) : Option.none(),
-            isPrimary: name === "origin",
-          },
-        ];
-      });
+      const parsed = collectBoundedGitRemotes(
+        parseGitRemoteVerboseOutput(result.stdout),
+        result.stdoutTruncated,
+      );
 
       return {
-        remotes,
+        remotes: parsed.remotes,
+        ...(parsed.truncated ? { remotesTruncated: true } : {}),
         freshness: yield* nowFreshness(),
       };
     },
@@ -869,6 +936,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           "--no-color",
           "--no-ext-diff",
           "--no-textconv",
+          ...PATCH_RENDER_PREFIX_ARGS,
           ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
           `${fromRevision}^{commit}`,
           `${input.toCheckpointRef}^{commit}`,

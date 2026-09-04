@@ -26,6 +26,3306 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260903.1267001537",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001532",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001529",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001523",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001521",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001518",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001515",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001511",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260903.1267001508",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001505",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001502",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001499",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001497",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001494",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001490",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001486",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001484",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001481",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001479",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001474",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001473",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001469",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001467",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001446",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001435",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001430",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001425",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001421",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001418",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001413",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001409",
+    date: "2026-09-03",
+    items: [
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001397",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001394",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001391",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001389",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001387",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001378",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1260001370",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1257001367",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260902.1257001362",
+    date: "2026-09-02",
+    items: [
+      {
+        kind: "fixed",
+        title: "clear stale loading messages",
+      },
+      {
+        kind: "fixed",
+        title: "let composer glass frost the scenery photo",
+      },
+      {
+        kind: "fixed",
+        title: "pull latest models from CLI catalog",
+      },
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1227001282",
+    date: "2026-08-31",
+    items: [
+      {
+        kind: "improved",
+        title: "remove duplicate composer attach button",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1227001272",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth refresh icon rebound",
+      },
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1227001268",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1226001265",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "settle refresh icon at rest",
+      },
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1226001263",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth refresh icon return to rest",
+      },
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260830.1226001262",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.37-nightly.20260829.1224001259",
+    date: "2026-08-30",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001240",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001238",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001235",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001229",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001227",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001222",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "fixed",
+        title: "fetch Origin PR source branches",
+      },
+      {
+        kind: "fixed",
+        title: "start refresh spin from the hover tilt",
+      },
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001212",
+    date: "2026-08-29",
+    items: [
+      {
+        kind: "new",
+        title: "transfer threads between environments",
+      },
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001203",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "fixed",
+        title: "reuse paginated PR worktrees",
+      },
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001201",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "fixed",
+        title: "repair stale desktop membership",
+      },
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1210001200",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1209001193",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore Origin pull request loading",
+      },
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1209001190",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1209001188",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260828.1208001184",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260827.1207001181",
+    date: "2026-08-28",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260827.1206001156",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "new",
+        title: "resume native sessions in T3 threads",
+      },
+      {
+        kind: "fixed",
+        title: "restore missing desktop membership",
+      },
+      {
+        kind: "new",
+        title: "expand file-change rows with a compact diff",
+      },
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260827.1206001152",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260827.1206001149",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+    ],
+  },
+  {
+    version: "0.0.36-nightly.20260827.1206001145",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore sidebar default export",
+      },
+      {
+        kind: "fixed",
+        title: "keep tool call icons visible",
+      },
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001114",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001110",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001107",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate sidebar chrome icons on hover",
+      },
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001095",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+      {
+        kind: "fixed",
+        title: "smooth composer hover glow",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001093",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep changed-files sticky without the scenery-plate slab",
+      },
+      {
+        kind: "fixed",
+        title: "keep completed Cursor turns settled",
+      },
+      {
+        kind: "fixed",
+        title: "update standalone Codex natively",
+      },
+      {
+        kind: "fixed",
+        title: "frost PR section headings instead of white slabs",
+      },
+      {
+        kind: "new",
+        title: "animate interactive icons",
+      },
+      {
+        kind: "fixed",
+        title: "smooth composer hover glow",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001069",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "smooth composer hover glow",
+      },
+      {
+        kind: "fixed",
+        title: "restore native computer controls",
+      },
+      {
+        kind: "fixed",
+        title: "keep packaged SSH Node probe valid",
+      },
+      {
+        kind: "fixed",
+        title: "hide PR Fix buttons until review comments exist",
+      },
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001065",
+    date: "2026-08-27",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore native computer controls",
+      },
+      {
+        kind: "fixed",
+        title: "keep packaged SSH Node probe valid",
+      },
+      {
+        kind: "fixed",
+        title: "hide PR Fix buttons until review comments exist",
+      },
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001057",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore native computer controls",
+      },
+      {
+        kind: "fixed",
+        title: "keep packaged SSH Node probe valid",
+      },
+      {
+        kind: "fixed",
+        title: "hide PR Fix buttons until review comments exist",
+      },
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001053",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "reveal settled Clear only on header hover",
+      },
+      {
+        kind: "new",
+        title: "add read-aloud for final responses",
+      },
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001043",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001022",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001006",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195001002",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "match composer hover glow leave to enter",
+      },
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195000998",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore storage inventory reads",
+      },
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195000996",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "let the Pull Requests page be left again",
+      },
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1195000993",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1194000990",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1193000987",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "show queued messages in composer",
+      },
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1193000979",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+    ],
+  },
+  {
+    version: "0.0.35-nightly.20260826.1193000977",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the Pull Requests page from reopening a closed PR panel",
+      },
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260826.1191000971",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260826.1189000969",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260826.1189000966",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260826.1189000964",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260826.1188000960",
+    date: "2026-08-26",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000950",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "retry fingerprint branch pushes",
+      },
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000945",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "accept the current Xcode beta",
+      },
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000942",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000937",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "avoid unsupported beta Xcode uploads",
+      },
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000933",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000929",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "new",
+        title: "keep fixing PR feedback until green",
+      },
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000926",
+    date: "2026-08-25",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop stale worktree entries from blocking pull request checkouts",
+      },
+      {
+        kind: "new",
+        title: "make agent browser activity watchable across providers",
+      },
+      {
+        kind: "fixed",
+        title: "stop the TestFlight gate from rejecting the real fingerprint dump",
+      },
+      {
+        kind: "fixed",
+        title: "commit the migration for the delivery and credential indexes",
+      },
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000891",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "harden cross-surface reliability",
+      },
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000888",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep menus alive while a submenu flyout is open",
+      },
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260824.1173000864",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000859",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop open PR menus from trapping navigation",
+      },
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000853",
+    date: "2026-08-24",
+    items: [
+      {
+        kind: "new",
+        title: "clear settled button and auto-archive of settled threads",
+      },
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000839",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "ease composer hover glow in more gradually",
+      },
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000834",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "stop the screen flash when a new thread starts",
+      },
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000830",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "animate tool dropdown collapse in threads",
+      },
+      {
+        kind: "fixed",
+        title: "stop PR filter menu from trapping the desktop UI",
+      },
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000821",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "bundle real brand icons for connected apps",
+      },
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000817",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1170000814",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260823.1166000811",
+    date: "2026-08-23",
+    items: [
+      {
+        kind: "fixed",
+        title: "remember pull request list filters",
+      },
+      {
+        kind: "fixed",
+        title: "align composer task drawer hover chrome",
+      },
+      {
+        kind: "fixed",
+        title: "warm thread state across machine handoffs",
+      },
+      {
+        kind: "fixed",
+        title: "sync thread animations with web",
+      },
+      {
+        kind: "new",
+        title: "rework model picker into one instant-apply panel",
+      },
+      {
+        kind: "new",
+        title: "show live thread details in activities",
+      },
+    ],
+  },
+  {
     version: "0.0.34-nightly.20260823.1166000802",
     date: "2026-08-23",
     items: [
@@ -786,6 +4086,36 @@ export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
       {
         kind: "fixed",
         title: "make the iOS Live Activity glanceable",
+      },
+    ],
+  },
+  {
+    version: "0.0.34-nightly.20260817.1119000228",
+    date: "2026-08-17",
+    items: [
+      {
+        kind: "new",
+        title: "make review verdicts legible in the pull request detail (#7077)",
+      },
+      {
+        kind: "fixed",
+        title: "put World Scenery behind the new-task sheet",
+      },
+      {
+        kind: "fixed",
+        title: "make the iOS Live Activity glanceable",
+      },
+      {
+        kind: "new",
+        title: "redesign pull request menu and conversation",
+      },
+      {
+        kind: "new",
+        title: "start new threads immediately and show thinking",
+      },
+      {
+        kind: "new",
+        title: "settle, snooze, and PR in the thread header",
       },
     ],
   },

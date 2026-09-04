@@ -11,6 +11,7 @@ import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-ro
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { persistedPullRequestListSearch } from "../pullRequest/pullRequestListFiltersPersistence";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -29,6 +30,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -89,29 +91,31 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <img
-        alt=""
-        aria-hidden="true"
-        className={cn(
-          "h-5 w-auto shrink-0 object-contain",
-          // The sage mark carries the brand on plain chrome in both themes. Over
-          // scenery photo backdrops it washes out, so fall back to a white glyph.
-          onBackdrop && "brightness-0 invert",
-        )}
-        src="/t3-pretty-mark.png"
-      />
-      <span
-        className={cn(
-          "-translate-y-px truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
-        Pretty
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <img
+          alt=""
+          aria-hidden="true"
+          className={cn(
+            "h-5 w-auto shrink-0 object-contain",
+            // The sage mark carries the brand on plain chrome in both themes. Over
+            // scenery photo backdrops it washes out, so fall back to a white glyph.
+            onBackdrop && "brightness-0 invert",
+          )}
+          src="/t3-pretty-mark.png"
+        />
+        <span
+          className={cn(
+            "truncate text-sm font-medium tracking-tight",
+            onBackdrop ? "text-white/70" : "text-muted-foreground",
+          )}
+        >
+          Pretty
+        </span>
       </span>
     </Link>
   );
@@ -131,7 +135,12 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              data-animate-ui-icons
+              onClick={onClick}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
@@ -150,11 +159,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) =>
       /^\/settings(?:\/|$)/.test(location.pathname)
         ? "settings"
-        : location.pathname === "/usage"
-          ? "usage"
-          : location.pathname === "/pull-requests"
-            ? "pull-requests"
-            : null,
+        : /^\/projects\/[^/]+\/?$/.test(location.pathname)
+          ? "project-settings"
+          : location.pathname === "/usage"
+            ? "usage"
+            : location.pathname === "/pull-requests"
+              ? "pull-requests"
+              : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -169,7 +180,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [isMobile, setOpenMobile]);
   const handlePullRequestsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+    void navigate({
+      to: "/pull-requests",
+      search: readPullRequestListPreferences(),
+    });
   }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();

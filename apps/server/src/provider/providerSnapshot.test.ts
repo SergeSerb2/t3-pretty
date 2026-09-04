@@ -10,10 +10,25 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
+  buildServerProvider,
+  extractAuthBoolean,
   isCommandMissingCause,
+  NATIVE_RESUME_SLASH_COMMAND,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
+
+describe("extractAuthBoolean", () => {
+  it("handles cyclic and deeply nested provider payloads within a finite work budget", () => {
+    const cyclic: { auth?: unknown; session?: unknown } = {};
+    cyclic.auth = cyclic;
+    expect(extractAuthBoolean(cyclic)).toBeUndefined();
+
+    let nested: unknown = { authenticated: true };
+    for (let index = 0; index < 5_000; index += 1) nested = { auth: nested };
+    expect(extractAuthBoolean(nested)).toBeUndefined();
+  });
+});
 
 const CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [
@@ -128,5 +143,27 @@ describe("ProviderCommandNotFoundError", () => {
       expect(error).not.toHaveProperty("stderr");
       expect(error.message).not.toContain("secret-token-value");
     });
+  });
+});
+
+describe("buildServerProvider", () => {
+  it("advertises native resume only for providers that support it", () => {
+    const build = (supportsNativeResume: boolean) =>
+      buildServerProvider({
+        presentation: { displayName: "Provider", supportsNativeResume },
+        enabled: true,
+        checkedAt: "2026-08-27T00:00:00.000Z",
+        models: [],
+        slashCommands: [{ name: "help" }],
+        probe: {
+          installed: true,
+          version: "1.0.0",
+          status: "ready",
+          auth: { status: "authenticated" },
+        },
+      });
+
+    expect(build(true).slashCommands).toEqual([NATIVE_RESUME_SLASH_COMMAND, { name: "help" }]);
+    expect(build(false).slashCommands).toEqual([{ name: "help" }]);
   });
 });

@@ -25,7 +25,6 @@ import {
   applyCreatePullRequestSuffix,
   stripCreatePullRequestSuffix,
 } from "@t3tools/shared/createPullRequestPrompt";
-import { applyAttachedFilePathsSuffix } from "../scenery/attachFiles";
 
 function makeContext(overrides?: Partial<TerminalContextDraft>): TerminalContextDraft {
   return {
@@ -143,28 +142,6 @@ describe("terminalContext", () => {
     expect(displayed.copyText).not.toContain("create_pull_request_instructions");
     expect(displayed.copyText).toContain("<terminal_context>");
     expect(displayed.contextCount).toBe(1);
-  });
-
-  it("hides attached filepath blocks while keeping the visible summary", () => {
-    const prompt = applyAttachedFilePathsSuffix("Please review", [
-      {
-        id: "f1",
-        name: "notes.pdf",
-        path: "/tmp/notes.pdf",
-        mimeType: "application/pdf",
-        sizeBytes: 12,
-      },
-    ]);
-    const withPr = applyCreatePullRequestSuffix({
-      text: prompt,
-      autoCreatePullRequest: true,
-      threadHasStarted: false,
-    });
-    const displayed = deriveDisplayedUserMessageState(withPr);
-    expect(displayed.visibleText).toBe("Please review\n\nAttached `notes.pdf`.");
-    expect(displayed.copyText).toBe("Please review\n\nAttached `notes.pdf`.");
-    expect(displayed.copyText).not.toContain("attached_file_paths");
-    expect(displayed.copyText).not.toContain("/tmp/notes.pdf");
   });
 
   it("preserves prompt text when no trailing terminal context block exists", () => {

@@ -11,7 +11,6 @@
 import { lazy, Suspense, useEffect } from "react";
 
 import { useTheme } from "../hooks/useTheme";
-import { ComposerAttachControl } from "./ComposerAttachControl";
 import { shouldForceWorldSceneryTheme } from "./productTheme";
 import { useSceneryThemeActive } from "./useHtmlAttributes";
 import { ensureWorldSceneryThemeInstalled, WORLD_SCENERY_THEME_ID } from "./worldSceneryTheme";
@@ -32,8 +31,6 @@ export function SceneryHost() {
 
   return (
     <>
-      {/* Theme-independent fork feature: the composer attach button. */}
-      <ComposerAttachControl />
       {/* Theme-independent fork feature: thread motion.
           Lazy so the observer and motion.css stay out of the startup chunk. */}
       <Suspense fallback={null}>

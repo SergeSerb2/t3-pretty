@@ -321,6 +321,24 @@ export function setThreadChangedFilesExpanded(
   };
 }
 
+export function removeThreadUiState(state: UiState, threadKey: string): UiState {
+  if (
+    !(threadKey in state.threadLastVisitedAtById) &&
+    !(threadKey in state.threadChangedFilesExpandedById)
+  ) {
+    return state;
+  }
+  const { [threadKey]: _removedVisitedAt, ...threadLastVisitedAtById } =
+    state.threadLastVisitedAtById;
+  const { [threadKey]: _removedChangedFiles, ...threadChangedFilesExpandedById } =
+    state.threadChangedFilesExpandedById;
+  return {
+    ...state,
+    threadLastVisitedAtById,
+    threadChangedFilesExpandedById,
+  };
+}
+
 export function setAutoCreatePullRequest(
   state: UiState,
   envMode: AutoCreatePullRequestEnvMode,
@@ -430,6 +448,7 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  removeThread: (threadKey: string) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setAutoCreatePullRequest: (envMode: AutoCreatePullRequestEnvMode, enabled: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -448,6 +467,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  removeThread: (threadKey) => set((state) => removeThreadUiState(state, threadKey)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setAutoCreatePullRequest: (envMode, enabled) =>
@@ -460,10 +480,20 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     ),
 }));
 
-useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+const unsubscribeUiStatePersistence = useUiStateStore.subscribe((state) =>
+  debouncedPersistState.maybeExecute(state),
+);
+const flushUiState = () => {
+  debouncedPersistState.flush();
+};
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("beforeunload", () => {
-    debouncedPersistState.flush();
+  window.addEventListener("pagehide", flushUiState);
+  window.addEventListener("beforeunload", flushUiState);
+  import.meta.hot?.dispose(() => {
+    unsubscribeUiStatePersistence();
+    flushUiState();
+    window.removeEventListener("pagehide", flushUiState);
+    window.removeEventListener("beforeunload", flushUiState);
   });
 }

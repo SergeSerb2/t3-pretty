@@ -10,6 +10,7 @@ import {
   decodeServiceState,
   isExactServiceVersion,
   SERVICE_LAUNCHER_PROTOCOL,
+  SERVICE_STATE_MAX_BYTES,
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
 
@@ -89,6 +90,20 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
 
       yield* Effect.promise(() => writeServiceState(statePath, state));
       assert.deepEqual(yield* Effect.promise(() => readServiceState(statePath)), state);
+    }),
+  );
+
+  it.effect("rejects oversized launcher state before parsing it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-service-launcher-test-" });
+      const statePath = path.join(root, "service-state.json");
+      yield* fs.writeFileString(statePath, "x".repeat(SERVICE_STATE_MAX_BYTES + 1));
+
+      const error = yield* Effect.tryPromise(() => readServiceState(statePath)).pipe(Effect.flip);
+      assert.instanceOf(error, Error);
+      assert.match(error.message, /exceeds the supported size/);
     }),
   );
 

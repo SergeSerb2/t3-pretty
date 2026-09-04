@@ -109,6 +109,8 @@ export function useCopyToClipboard<TContext = void>({
   const onErrorRef = React.useRef(onError);
   const targetRef = React.useRef(target);
   const timeoutRef = React.useRef(timeout);
+  const mountedRef = React.useRef(false);
+  const requestVersionRef = React.useRef(0);
 
   onCopyRef.current = onCopy;
   onErrorRef.current = onError;
@@ -116,9 +118,12 @@ export function useCopyToClipboard<TContext = void>({
   timeoutRef.current = timeout;
 
   const copyToClipboard = React.useCallback((value: string, ctx: TContext): void => {
+    const requestVersion = ++requestVersionRef.current;
+    const isCurrentRequest = () =>
+      mountedRef.current && requestVersionRef.current === requestVersion;
     void writeTextToClipboard(value, targetRef.current).then(
       (didCopy) => {
-        if (!didCopy) return;
+        if (!didCopy || !isCurrentRequest()) return;
         if (timeoutIdRef.current) {
           clearTimeout(timeoutIdRef.current);
         }
@@ -134,6 +139,7 @@ export function useCopyToClipboard<TContext = void>({
         }
       },
       (error) => {
+        if (!isCurrentRequest()) return;
         console.error(error);
         onErrorRef.current?.(error, ctx);
       },
@@ -142,9 +148,13 @@ export function useCopyToClipboard<TContext = void>({
 
   // Cleanup timeout on unmount
   React.useEffect(() => {
+    mountedRef.current = true;
     return (): void => {
+      mountedRef.current = false;
+      requestVersionRef.current += 1;
       if (timeoutIdRef.current) {
         clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
       }
     };
   }, []);

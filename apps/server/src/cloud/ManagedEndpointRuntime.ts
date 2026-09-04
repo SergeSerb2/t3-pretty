@@ -1,6 +1,8 @@
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as RelayClient from "@t3tools/shared/relayClient";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -15,6 +17,61 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG, decodeRuntimeConfig } from "./config.ts";
+
+export const RELAY_CLIENT_OUTPUT_MAX_LINE_BYTES = 64 * 1024;
+export const RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER = "[t3 relay output truncated]";
+const RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER_BYTES = new TextEncoder().encode(
+  RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER,
+);
+
+export interface RelayOutputLineState {
+  readonly trailingBytes: number;
+  readonly truncated: boolean;
+}
+
+export function boundRelayOutputChunk(
+  state: RelayOutputLineState,
+  chunk: Uint8Array,
+  maxLineBytes = RELAY_CLIENT_OUTPUT_MAX_LINE_BYTES,
+): readonly [RelayOutputLineState, ReadonlyArray<Uint8Array>] {
+  let trailingBytes = state.trailingBytes;
+  let truncated = state.truncated;
+  let cursor = 0;
+  const output: Uint8Array[] = [];
+
+  while (cursor < chunk.byteLength) {
+    const carriageReturnIndex = chunk.indexOf(0x0d, cursor);
+    const lineFeedIndex = chunk.indexOf(0x0a, cursor);
+    const terminatorIndex =
+      carriageReturnIndex === -1
+        ? lineFeedIndex
+        : lineFeedIndex === -1
+          ? carriageReturnIndex
+          : Math.min(carriageReturnIndex, lineFeedIndex);
+    const segmentEnd = terminatorIndex === -1 ? chunk.byteLength : terminatorIndex;
+    const segmentBytes = segmentEnd - cursor;
+    if (!truncated) {
+      const availableBytes = Math.max(0, maxLineBytes - trailingBytes);
+      const retainedBytes = Math.min(segmentBytes, availableBytes);
+      if (retainedBytes > 0) {
+        output.push(chunk.subarray(cursor, cursor + retainedBytes));
+      }
+      trailingBytes += retainedBytes;
+      truncated = retainedBytes < segmentBytes;
+    }
+
+    if (terminatorIndex === -1) break;
+    if (truncated) {
+      output.push(RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER_BYTES);
+    }
+    output.push(chunk.subarray(terminatorIndex, terminatorIndex + 1));
+    trailingBytes = 0;
+    truncated = false;
+    cursor = terminatorIndex + 1;
+  }
+
+  return [{ trailingBytes, truncated }, output];
+}
 
 function bytesToString(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
@@ -66,7 +123,17 @@ interface ActiveConnector {
   readonly scope: Scope.Closeable;
   readonly configKey: string;
   readonly config: RelayManagedEndpointRuntimeConfig;
+  readonly startedAtMillis: number;
 }
+
+// A connector that exits before running this long is treated as part of a
+// crash loop; one that stays up at least this long earns an immediate restart
+// again. Without the backoff below, a relay client that fails instantly (a
+// stale version-manager shim, a bad binary) respawns ~100 times per second
+// until the accumulated tracing exhausts the V8 heap.
+const RELAY_RESTART_STABLE_UPTIME_MS = 30_000;
+const RELAY_RESTART_BACKOFF_BASE_MS = 1_000;
+const RELAY_RESTART_BACKOFF_MAX_MS = 60_000;
 
 export function classifyRelayClientOutput(line: string): "connected" | "warning" | "debug" {
   if (/\bRegistered tunnel connection\b/iu.test(line)) {
@@ -102,9 +169,11 @@ const stopConnector = (connector: ActiveConnector | null) =>
 export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const relayClient = yield* RelayClient.RelayClient;
+  const runtimeScope = yield* Effect.scope;
   const activeRef = yield* Ref.make<ActiveConnector | null>(null);
   const desiredConfigRef = yield* Ref.make<RelayManagedEndpointRuntimeConfig | null>(null);
   const reconcileSemaphore = yield* Semaphore.make(1);
+  const restartDelayRef = yield* Ref.make(0);
   let reconcileConfig: CloudManagedEndpointRuntime["Service"]["applyConfig"];
 
   const stopActive = Effect.gen(function* () {
@@ -115,6 +184,39 @@ export const make = Effect.gen(function* () {
   const superviseConnector = (connector: ActiveConnector) =>
     Effect.gen(function* () {
       const result = yield* Effect.result(connector.child.exitCode);
+      const activeAtExit = yield* Ref.get(activeRef);
+      if (
+        activeAtExit?.child.pid !== connector.child.pid ||
+        activeAtExit.configKey !== connector.configKey
+      ) {
+        return;
+      }
+      const uptimeMillis = (yield* Clock.currentTimeMillis) - connector.startedAtMillis;
+      // The first crash restarts immediately; every further crash inside the
+      // stable-uptime window doubles the wait, up to the cap. The delay runs
+      // before the semaphore so a user config change is never blocked behind
+      // it, and reconcileConfig re-checks the desired config afterwards.
+      const restartDelayMillis = yield* Ref.modify(restartDelayRef, (current) => {
+        if (uptimeMillis >= RELAY_RESTART_STABLE_UPTIME_MS) {
+          return [0, 0];
+        }
+        return [
+          current,
+          current === 0
+            ? RELAY_RESTART_BACKOFF_BASE_MS
+            : Math.min(current * 2, RELAY_RESTART_BACKOFF_MAX_MS),
+        ];
+      });
+      if (restartDelayMillis > 0) {
+        yield* Effect.logWarning("Relay client is crash-looping; delaying restart", {
+          pid: Number(connector.child.pid),
+          uptimeMillis,
+          restartDelayMillis,
+          tunnelId: connector.config.tunnelId,
+          tunnelName: connector.config.tunnelName,
+        });
+        yield* Effect.sleep(Duration.millis(restartDelayMillis));
+      }
       yield* reconcileSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const active = yield* Ref.get(activeRef);
@@ -153,12 +255,21 @@ export const make = Effect.gen(function* () {
 
   const observeConnectorOutput = (connector: ActiveConnector) =>
     connector.child.all.pipe(
+      Stream.mapAccum(
+        (): RelayOutputLineState => ({ trailingBytes: 0, truncated: false }),
+        (state, chunk) => boundRelayOutputChunk(state, chunk),
+        {
+          onHalt: (state) => (state.truncated ? [RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER_BYTES] : []),
+        },
+      ),
       Stream.decodeText(),
       Stream.splitLines,
       Stream.map((line) => line.trim()),
       Stream.filter((line) => line.length > 0),
       Stream.runForEach((line) => {
-        const output = line.replaceAll(connector.config.connectorToken, "<redacted>");
+        const output = line.includes(RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER)
+          ? RELAY_CLIENT_OUTPUT_TRUNCATION_MARKER
+          : line.replaceAll(connector.config.connectorToken, "<redacted>");
         const attributes = {
           pid: Number(connector.child.pid),
           tunnelId: connector.config.tunnelId,
@@ -256,7 +367,7 @@ export const make = Effect.gen(function* () {
             Effect.as({
               status: "failed",
               providerKind: "cloudflare_tunnel",
-              reason: String(cause),
+              reason: "The relay client could not be started.",
               ...(config.tunnelId ? { tunnelId: config.tunnelId } : {}),
               ...(config.tunnelName ? { tunnelName: config.tunnelName } : {}),
             } satisfies CloudManagedEndpointRuntimeStatus),
@@ -274,10 +385,16 @@ export const make = Effect.gen(function* () {
         scope: connectorScope,
         configKey: nextConfigKey,
         config,
+        startedAtMillis: yield* Clock.currentTimeMillis,
       } satisfies ActiveConnector;
       yield* Ref.set(activeRef, connector);
       yield* Effect.forkIn(observeConnectorOutput(connector), connectorScope);
-      yield* Effect.forkIn(superviseConnector(connector), connectorScope);
+      // The supervisor closes connectorScope after a natural process exit so
+      // the child and output observer are released before it reconciles a
+      // replacement. Keep that supervisor in the runtime scope: a fiber cannot
+      // reliably close the same scope that owns and interrupts it, and doing so
+      // can strand the desired connector without reaching the restart.
+      yield* Effect.forkIn(superviseConnector(connector), runtimeScope);
       return {
         status: "running",
         providerKind: "cloudflare_tunnel",
@@ -299,7 +416,11 @@ export const make = Effect.gen(function* () {
   const applyConfig = Effect.fn("CloudManagedEndpointRuntime.applyConfig")(
     (config: RelayManagedEndpointRuntimeConfig | null) =>
       reconcileSemaphore.withPermits(1)(
-        Ref.set(desiredConfigRef, config).pipe(Effect.andThen(reconcileConfig(config))),
+        // An explicit config change starts over with a fresh backoff.
+        Ref.set(restartDelayRef, 0).pipe(
+          Effect.andThen(Ref.set(desiredConfigRef, config)),
+          Effect.andThen(reconcileConfig(config)),
+        ),
       ),
   );
 

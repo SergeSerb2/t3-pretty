@@ -18,14 +18,22 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
-import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import {
+  mergeUsage,
+  type EnvironmentUsage,
+  type MergedUsage,
+  USAGE_MERGE_MAX_ENVIRONMENTS,
+} from "@t3tools/shared/usageMerge";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { appAtomRegistry } from "./atom-registry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
+
+const USAGE_WINDOW_IDLE_TTL_MS = 5 * 60_000;
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
@@ -34,6 +42,16 @@ export interface EnvironmentUsageStatus {
   readonly error: string | null;
   readonly summary: UsageSummary | null;
 }
+
+interface UsageEnvironmentSnapshot {
+  readonly environments: readonly EnvironmentUsageStatus[];
+  readonly omittedEnvironmentCount: number;
+}
+
+const INACTIVE_USAGE_ENVIRONMENTS_ATOM = Atom.make<UsageEnvironmentSnapshot>({
+  environments: [],
+  omittedEnvironmentCount: 0,
+}).pipe(Atom.withLabel("mobile-usage:inactive"));
 
 /**
  * Reads each connected environment's summary for one window.
@@ -47,16 +65,20 @@ export interface EnvironmentUsageStatus {
  * same window.
  */
 const usageByWindowAtom = Atom.family((windowKey: string) =>
-  Atom.make((get): readonly EnvironmentUsageStatus[] => {
+  Atom.make((get): UsageEnvironmentSnapshot => {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
     const presentations = get(environmentPresentations.presentationsAtom);
 
     const statuses: EnvironmentUsageStatus[] = [];
-    for (const [environmentId, presentation] of presentations) {
+    const candidates = [...presentations].flatMap(([environmentId, presentation]) => {
       const plan = usageConnectionPlan(presentation.connection.phase);
-      if (plan === "skip") {
-        continue;
-      }
+      return plan === "skip" ? [] : [{ environmentId, presentation, plan }];
+    });
+    const omittedEnvironmentCount = Math.max(0, candidates.length - USAGE_MERGE_MAX_ENVIRONMENTS);
+    for (const { environmentId, presentation, plan } of candidates.slice(
+      0,
+      USAGE_MERGE_MAX_ENVIRONMENTS,
+    )) {
       if (plan === "await-connect") {
         statuses.push({
           environmentId,
@@ -76,8 +98,11 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         summary: Option.getOrNull(AsyncResult.value(result)),
       });
     }
-    return statuses;
-  }).pipe(Atom.withLabel(`mobile-usage:window:${windowKey}`)),
+    return { environments: statuses, omittedEnvironmentCount };
+  }).pipe(
+    Atom.setIdleTTL(USAGE_WINDOW_IDLE_TTL_MS),
+    Atom.withLabel(`mobile-usage:window:${windowKey}`),
+  ),
 );
 
 export interface UsageView {
@@ -91,10 +116,11 @@ export interface UsageView {
    * improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
+  readonly omittedEnvironmentCount: number;
   readonly refresh: () => void;
 }
 
-export function useUsage(input: UsageSummaryInput): UsageView {
+export function useUsage(input: UsageSummaryInput, enabled = true): UsageView {
   const windowKey = useMemo(
     () =>
       JSON.stringify({
@@ -115,17 +141,32 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     ],
   );
   const atom = usageByWindowAtom(windowKey);
-  const environments = useAtomValue(atom);
+  const observedSnapshot = useAtomValue(enabled ? atom : INACTIVE_USAGE_ENVIRONMENTS_ATOM);
+  const retainedSnapshotRef = useRef(observedSnapshot);
+  if (enabled) {
+    retainedSnapshotRef.current = observedSnapshot;
+  }
+  const snapshot = enabled ? observedSnapshot : retainedSnapshotRef.current;
+  const environments = snapshot.environments;
 
   // Refreshing only the derived atom would re-read the per-environment SWR
   // queries within their stale window and change nothing. Refresh each
   // environment's query so pull-to-refresh always rescans.
+  //
+  // Each environment refetches model pricing first, so a model released since
+  // its last daily fetch gets priced by the rescan. The rescan runs whether or
+  // not the refetch succeeds: an offline environment still recounts tokens.
   const refresh = useCallback(() => {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
     for (const environment of environments) {
-      appAtomRegistry.refresh(
-        serverEnvironment.usageSummary({ environmentId: environment.environmentId, input }),
-      );
+      const { environmentId } = environment;
+      const query = serverEnvironment.usageSummary({ environmentId, input });
+      void runAtomCommand(
+        appAtomRegistry,
+        serverEnvironment.refreshUsageRates,
+        { environmentId, input: {} },
+        { reportFailure: false },
+      ).finally(() => appAtomRegistry.refresh(query));
     }
   }, [environments, windowKey]);
 
@@ -154,6 +195,7 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     environments,
     isPending: answeredCount === 0 && stillReporting > 0,
     isPartial: answeredCount > 0 && stillReporting > 0,
+    omittedEnvironmentCount: snapshot.omittedEnvironmentCount + merged.omittedEnvironmentCount,
     refresh,
   };
 }

@@ -67,6 +67,7 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
+import { SettingsProviderSetupRouteScreen } from "./features/settings/SettingsProviderSetupRouteScreen";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
@@ -86,6 +87,7 @@ import { FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPT
 import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
 import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
+import { useComposerAttachmentUploadWorker } from "./state/composer-attachment-uploads";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -203,6 +205,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "environment-new",
       options: {
         title: "Add Environment",
+      },
+    }),
+    SettingsProviderSetup: createNativeStackScreen({
+      screen: SettingsProviderSetupRouteScreen,
+      linking: "providers/:environmentId/:instanceId",
+      options: {
+        title: "Antigravity",
       },
     }),
     SettingsArchive: createNativeStackScreen({
@@ -444,6 +453,7 @@ function ThreadOutboxDrainWorker() {
 
 function ThreadOutboxDrainWorkerInner() {
   useThreadOutboxDrain();
+  useComposerAttachmentUploadWorker();
   return null;
 }
 

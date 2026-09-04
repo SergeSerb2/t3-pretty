@@ -14,7 +14,7 @@ interface Props {
 
 const {
   title = "T3 Code",
-  description = "T3 Code — The open-source control plane for coding agents.",
+  description = "T3 Code. The open-source control plane for coding agents.",
   pageClass,
 } = Astro.props;
 ---
@@ -67,7 +67,7 @@ const {
       <footer class="footer">
         <div class="footer-inner">
           <div class="footer-brand">
-            <img src="/icon.webp" alt="" />
+            <img src="/icon.webp" alt="" width="20" height="20" />
             <span>&copy; {new Date().getFullYear()} T3 Tools Inc · MIT licensed</span>
           </div>
           <div class="footer-links">
@@ -86,13 +86,26 @@ const {
 
     <script>
       const nav = document.querySelector(".nav");
-      const onScroll = () => {
+      let frame = 0;
+      const updateNav = () => {
+        frame = 0;
         if (!nav) return;
         if (window.scrollY > 12) nav.classList.add("is-scrolled");
         else nav.classList.remove("is-scrolled");
       };
+      const onScroll = () => {
+        frame ||= window.requestAnimationFrame(updateNav);
+      };
       window.addEventListener("scroll", onScroll, { passive: true });
-      onScroll();
+      updateNav();
+      window.addEventListener(
+        "pagehide",
+        () => {
+          if (frame) window.cancelAnimationFrame(frame);
+          window.removeEventListener("scroll", onScroll);
+        },
+        { once: true },
+      );
     </script>
   </body>
 </html>
@@ -124,6 +137,20 @@ const {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto !important;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
   }
 
   html {
@@ -268,21 +295,17 @@ const {
     }
   }
 
-  @keyframes pulse {
-    50% { opacity: 0.4; }
+  /* Page-load sequence: [data-rise] plays once with delay --d. */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
   }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  [data-rise] {
+    animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--d, 0ms);
   }
-
-  @keyframes floatDrift {
-    0%, 100% { translate: 0 0; }
-    50%      { translate: 0 -10px; }
-  }
-
-  @keyframes blink {
-    50% { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    [data-rise] { animation: none; }
   }
 </style>
 

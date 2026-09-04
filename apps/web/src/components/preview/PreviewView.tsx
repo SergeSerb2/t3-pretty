@@ -3,7 +3,10 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type PreviewAnnotationPayload,
   type PreviewViewportSetting,
   type ScopedThreadRef,
@@ -19,7 +22,9 @@ import {
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
-import { previewAnnotationScreenshotFile } from "~/lib/previewAnnotation";
+import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
+import { compressImageToByteLimit } from "~/lib/imageCompression";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureLocalApi } from "~/localApi";
 import {
   rememberPreviewUrl,
@@ -48,6 +53,7 @@ import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { PreviewUnreachable } from "./PreviewUnreachable";
 import { revealInFileExplorerLabel } from "./fileExplorerLabel";
 import { shouldShowPreviewEmptyState } from "./previewEmptyStateLogic";
+import { Badge } from "~/components/ui/badge";
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { usePreviewSession } from "./usePreviewSession";
@@ -55,11 +61,13 @@ import { ZoomIndicator } from "./ZoomIndicator";
 import { AgentBrowserCursor } from "./AgentBrowserCursor";
 import {
   findActiveBrowserRecordingRuntimeTabId,
+  isBrowserRecordingStartCancelledError,
   startBrowserRecording,
   stopBrowserRecording,
   useActiveBrowserRecordingTabIds,
 } from "~/browser/browserRecording";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 interface Props {
   threadRef: ScopedThreadRef;
@@ -72,7 +80,26 @@ interface Props {
   ) => void;
 }
 
+export function previewProfileName(
+  profiles: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+  profileId: string,
+): string {
+  return profiles.find((profile) => profile.id === profileId)?.name ?? "Removed profile";
+}
+
 const localApi = typeof window === "undefined" ? null : ensureLocalApi();
+
+function runPreviewControl(operation: () => Promise<unknown>): void {
+  void Promise.resolve()
+    .then(operation)
+    .catch((error) => {
+      toastManager.add({
+        type: "error",
+        title: "Preview action failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+    });
+}
 
 /**
  * Single-tab preview surface: chrome row on top, one webview below, empty
@@ -143,6 +170,14 @@ export function PreviewView({
   const controller = desktopOverlay?.controller ?? "none";
   const viewport = snapshot?.viewport ?? FILL_PREVIEW_VIEWPORT;
   const browserDefaults = useBrowserDefaults();
+  // A tab created before profiles existed carries no profile of its own. It
+  // runs in the built-in `default` partition — the scope the browser used
+  // before profiles — not in whatever profile is configured as the default
+  // now, so that is what its label names and its clear actions target.
+  // Passing the snapshot's raw `undefined` through would reach the IPC layer
+  // as "every profile".
+  const activeProfileId = snapshot?.profileId ?? DEFAULT_BROWSER_PROFILE_ID;
+  const activeProfileName = previewProfileName(browserDefaults.profiles, activeProfileId);
   const panelRect = useBrowserSurfaceStore((state) =>
     runtimeTabId ? (state.byTabId[runtimeTabId]?.rect ?? null) : null,
   );
@@ -201,19 +236,31 @@ export function PreviewView({
   );
 
   const handleRefresh = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.refresh(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleZoomIn = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.zoomIn(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.zoomIn(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleZoomOut = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.zoomOut(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.zoomOut(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleResetZoom = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.resetZoom(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.resetZoom(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleViewportChange = useCallback(
@@ -264,11 +311,17 @@ export function PreviewView({
   }, [handleViewportChange, runtimeTabId]);
 
   const handleBack = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.goBack(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.goBack(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleForward = useCallback(() => {
-    if (previewBridge && runtimeTabId) void previewBridge.goForward(runtimeTabId);
+    const bridge = previewBridge;
+    if (bridge && runtimeTabId) {
+      runPreviewControl(() => bridge.goForward(runtimeTabId));
+    }
   }, [runtimeTabId]);
 
   const handleOpenInBrowser = useCallback(() => {
@@ -279,10 +332,12 @@ export function PreviewView({
   const handlePictureInPicture = useCallback(() => {
     if (!tabId) return;
     if (miniPlayer?.tabId === tabId) {
-      usePreviewMiniPlayerStore.getState().close(threadRef);
+      usePreviewMiniPlayerStore.getState().dismiss(threadRef, tabId);
       return;
     }
-    usePreviewMiniPlayerStore.getState().open(threadRef, tabId);
+    const miniPlayers = usePreviewMiniPlayerStore.getState();
+    miniPlayers.undismiss(threadRef, tabId);
+    miniPlayers.open(threadRef, tabId);
     useRightPanelStore.getState().close(threadRef);
   }, [miniPlayer?.tabId, tabId, threadRef]);
 
@@ -312,20 +367,7 @@ export function PreviewView({
             let toastId: ReturnType<typeof toastManager.add>;
 
             const copyPath = () => {
-              if (!navigator.clipboard?.writeText) {
-                toastManager.update(
-                  toastId,
-                  stackedThreadToast({
-                    type: "error",
-                    title: "Unable to copy recording path",
-                    description: "Clipboard API unavailable.",
-                    actionProps: revealAction,
-                  }),
-                );
-                return;
-              }
-
-              void navigator.clipboard.writeText(artifact.path).then(
+              void writeTextToClipboard(artifact.path, "recording path").then(
                 () => {
                   pathCopied = true;
                   updateRecordingToast();
@@ -398,10 +440,12 @@ export function PreviewView({
       }
       if (record) {
         void startBrowserRecording(runtimeTabId, threadRef, tabId).catch((error) => {
+          const description = error instanceof Error ? error.message : "An error occurred.";
+          if (isBrowserRecordingStartCancelledError(error)) return;
           toastManager.add({
             type: "error",
             title: "Unable to start recording",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            description,
           });
         });
         return;
@@ -453,16 +497,7 @@ export function PreviewView({
           };
 
           const copyPath = () => {
-            if (!navigator.clipboard?.writeText) {
-              updateScreenshotToast(
-                "error",
-                "Unable to copy screenshot path",
-                "Clipboard API unavailable.",
-              );
-              return;
-            }
-
-            void navigator.clipboard.writeText(artifact.path).then(
+            void writeTextToClipboard(artifact.path, "screenshot path").then(
               () => {
                 pathCopied = true;
                 updateScreenshotToast();
@@ -558,16 +593,51 @@ export function PreviewView({
       try {
         const result = await previewBridge.pickElement(runtimeTabId);
         if (!result) return;
-        const { annotation, submission } = result;
+        const { annotation: picked, submission, screenshotFailed = false } = result;
+        // The structured annotation is still sendable when its optional crop
+        // stalls or fails, so tell the user what they lost and keep going
+        // instead of holding the composer for an attachment that never lands.
+        // The stored copy drops the screenshot on failure, otherwise the prompt
+        // would tell the agent a crop is attached when none was sent.
+        const capture = await capturePreviewAnnotationScreenshot(picked);
+        // Main reports a crop that failed or timed out on its side; the local
+        // conversion can fail too. Either way the user should hear about it.
+        const cropDropped = screenshotFailed || capture.status === "failed";
+        const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
         addPreviewAnnotation(threadRef, annotation);
-        let screenshotFile: File | null = null;
-        try {
-          screenshotFile = await previewAnnotationScreenshotFile(annotation);
-        } catch {
-          // The structured annotation is still sendable when converting its
-          // optional screenshot into a composer attachment fails.
+        if (cropDropped) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not capture the picked element",
+              // The send path reports its own outcome, so only say what this
+              // handler knows: the crop was dropped.
+              description: "The annotation was kept without the screenshot.",
+            }),
+          );
         }
-        const image =
+        let screenshotFile: File | null = null;
+        if (capture.status === "captured") {
+          try {
+            const compressed = await compressImageToByteLimit(
+              capture.file,
+              PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+            );
+            if (compressed.ok) {
+              screenshotFile = compressed.file;
+            } else {
+              toastManager.add({
+                type: "warning",
+                title: "Annotation attached without screenshot",
+                description: "The screenshot is too large to attach safely.",
+              });
+            }
+          } catch {
+            // The structured annotation is still sendable when preparing its
+            // optional screenshot as a composer attachment fails.
+          }
+        }
+        let image =
           screenshotFile && annotation.screenshot
             ? ({
                 type: "image",
@@ -575,12 +645,19 @@ export function PreviewView({
                 name: screenshotFile.name,
                 mimeType: screenshotFile.type,
                 sizeBytes: screenshotFile.size,
-                previewUrl: annotation.screenshot.dataUrl,
+                previewUrl: URL.createObjectURL(screenshotFile),
                 file: screenshotFile,
               } satisfies ComposerImageAttachment)
             : null;
         if (image) {
-          addImage(threadRef, image);
+          if (!addImage(threadRef, image)) {
+            image = null;
+            toastManager.add({
+              type: "warning",
+              title: "Annotation attached without screenshot",
+              description: `A message can carry ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images. Remove one to attach this screenshot.`,
+            });
+          }
         }
         if (submission === "send") {
           onSendAnnotation?.(annotation, image);
@@ -683,9 +760,32 @@ export function PreviewView({
         pickDisabledReason={
           isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
         }
+        leadingActions={
+          // Only when it differs from the default: labelling every tab
+          // "Default" would be noise on the common case, while a tab in
+          // another profile is exactly what needs calling out.
+          activeProfileId !== browserDefaults.profileId ? (
+            // Capped: profile names run to 48 characters, and an unbounded
+            // badge in this row takes its width from the URL input, the only
+            // flexible element in the compact chrome. The cap sits on the
+            // badge and the truncation on an inner span, because `Badge` is an
+            // `inline-flex` with `whitespace-nowrap` — `text-overflow` never
+            // reaches a bare text node inside it, so the name would be cut off
+            // at both ends with no ellipsis.
+            <Tooltip>
+              <TooltipTrigger render={<Badge variant="outline" className="max-w-28 shrink-0" />}>
+                <span className="truncate">{activeProfileName}</span>
+              </TooltipTrigger>
+              <TooltipPopup side="top">{activeProfileName}</TooltipPopup>
+            </Tooltip>
+          ) : null
+        }
         trailingActions={
           previewBridge ? (
             <PreviewMoreMenu
+              environmentId={threadRef.environmentId}
+              profileId={activeProfileId}
+              profileName={activeProfileName}
               tabId={runtimeTabId}
               hasWebContents={desktopOverlay?.hasWebContents ?? false}
               zoomFactor={desktopOverlay?.zoomFactor ?? 1}
