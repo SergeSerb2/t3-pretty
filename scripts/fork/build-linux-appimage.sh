@@ -117,7 +117,8 @@ export DEBIAN_FRONTEND=noninteractive
 if command -v sudo >/dev/null && command -v apt-get >/dev/null; then
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends \
-    python3 make g++ gcc file imagemagick xz-utils ca-certificates
+    python3 make g++ gcc file imagemagick xz-utils ca-certificates \
+    libsecret-1-dev pkg-config
   sudo apt-get install -y --no-install-recommends libfuse2 ||
     sudo apt-get install -y --no-install-recommends libfuse2t64 ||
     true
