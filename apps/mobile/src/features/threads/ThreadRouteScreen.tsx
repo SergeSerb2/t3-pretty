@@ -43,6 +43,7 @@ import {
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { GitActionProgressOverlay } from "./GitActionProgressOverlay";
+import { useOpenNativePullRequest } from "../pull-requests/useOpenNativePullRequest";
 import { useThreadListActions } from "../home/useThreadListActions";
 import { ThreadDetailScreen } from "./ThreadDetailScreen";
 import { ThreadGitControls, useThreadDetailHeaderActionItems } from "./ThreadGitControls";
@@ -211,6 +212,7 @@ function ThreadRouteContent(
   const composer = useThreadComposerState();
   const gitOperationLabel = useSelectedThreadGitOperationLabel();
   const gitActions = useSelectedThreadGitActions({ loadInitialState: false });
+  const openNativePullRequest = useOpenNativePullRequest();
   const requests = useSelectedThreadRequests();
   const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
   const [threadLifecycleTick, bumpThreadLifecycleTick] = useState(0);
@@ -789,7 +791,11 @@ function ThreadRouteContent(
     <>
       <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
 
-      <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
+      <GitActionProgressOverlay
+        progress={gitActionProgress}
+        onDismiss={dismissGitActionResult}
+        onOpenPullRequest={(url) => void openNativePullRequest({ url })}
+      />
 
       <View className="flex-1 bg-screen">
         {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
