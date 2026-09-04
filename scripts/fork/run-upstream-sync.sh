@@ -210,6 +210,22 @@ install_resolution_cache() {
   return 2
 }
 
+retain_local_only_resolution_progress() {
+  local restored_cache="$1"
+  local entry entry_name
+  for entry in "$SYNC_RESOLUTION_CACHE_DIR"/*.json; do
+    [[ -f "$entry" ]] || continue
+    entry_name="${entry##*/}"
+    [[ "$entry_name" =~ ^[0-9a-f]{64}[.]json$ ]] || continue
+    # The fetched cache branch is the authoritative history. Preserve active
+    # local work only when that exact conflict key is absent remotely; copying
+    # a stale local collision here would silently undo a reviewed correction.
+    [[ -e "$restored_cache/$entry_name" ]] && continue
+    cp -p "$entry" "$restored_cache/$entry_name" || return 1
+  done
+  return 0
+}
+
 run_conflict_resolver() {
   local resolver_status=0
   node scripts/fork/resolve-git-conflicts.mjs &
@@ -420,7 +436,7 @@ fi
 # or timed out mid-merge reruns only the files that never finished.
 load_resolution_cache() {
   local restore_root restore_cache cache_names cache_mtimes
-  local remote_entry_count restored_entry_count install_status copy_ok entry
+  local remote_entry_count restored_entry_count install_status
   RESOLUTION_CACHE_LOADED=0
   restore_root="$(mktemp -d "${SYNC_RESOLUTION_CACHE_DIR}.restore.XXXXXX")" || return 0
   restore_cache="$restore_root/cache"
@@ -451,13 +467,9 @@ load_resolution_cache() {
         SYNC_RESOLUTION_CACHE_DIR="$restore_cache" \
           node scripts/fork/resolve-git-conflicts.mjs --restore-and-prune-cache < "$cache_mtimes"; then
         # The steady-state bound applies to restored history, never to work from
-        # the active run. Layer local progress onto the bounded remote candidate.
-        copy_ok=1
-        for entry in "$SYNC_RESOLUTION_CACHE_DIR"/*.json "$SYNC_RESOLUTION_CACHE_DIR/active-upstream-tag"; do
-          [[ -f "$entry" ]] || continue
-          cp -p "$entry" "$restore_cache/" || copy_ok=0
-        done
-        if [[ "$copy_ok" == 1 ]]; then
+        # the active run. Layer only local-only progress onto the bounded remote
+        # candidate so reviewed remote entries win exact-key collisions.
+        if retain_local_only_resolution_progress "$restore_cache"; then
           printf '%s\n' "$UPSTREAM_TAG" > "$restore_cache/active-upstream-tag"
           if install_resolution_cache "$restore_cache"; then
             RESOLUTION_CACHE_LOADED=1

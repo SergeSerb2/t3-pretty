@@ -162,6 +162,54 @@ describe("T3 Pretty upstream conflict resolver", () => {
     }
   });
 
+  it("keeps authoritative remote cache entries while retaining local-only progress", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-cache-precedence-"),
+    );
+    try {
+      const localCache = NodePath.join(directory, "local");
+      const restoredCache = NodePath.join(directory, "restored");
+      NodeFS.mkdirSync(localCache);
+      NodeFS.mkdirSync(restoredCache);
+
+      const collision = `${"a".repeat(64)}.json`;
+      const localOnly = `${"b".repeat(64)}.json`;
+      NodeFS.writeFileSync(NodePath.join(localCache, collision), "stale local\n");
+      NodeFS.writeFileSync(NodePath.join(localCache, localOnly), "active local progress\n");
+      NodeFS.writeFileSync(NodePath.join(localCache, "not-a-cache-key.json"), "ignored\n");
+      NodeFS.writeFileSync(NodePath.join(restoredCache, collision), "reviewed remote\n");
+
+      const syncScript = NodeFS.readFileSync(syncScriptPath, "utf8");
+      const functionSource = syncScript.match(
+        /retain_local_only_resolution_progress\(\) \{\n[\s\S]*?\n\}/u,
+      )?.[0];
+      assert.isString(functionSource);
+      NodeChildProcess.execFileSync(
+        "bash",
+        [
+          "-c",
+          `${functionSource}\nSYNC_RESOLUTION_CACHE_DIR="$1"\nretain_local_only_resolution_progress "$2"`,
+          "cache-precedence-test",
+          localCache,
+          restoredCache,
+        ],
+        { encoding: "utf8" },
+      );
+
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(restoredCache, collision), "utf8"),
+        "reviewed remote\n",
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(restoredCache, localOnly), "utf8"),
+        "active local progress\n",
+      );
+      assert.isFalse(NodeFS.existsSync(NodePath.join(restoredCache, "not-a-cache-key.json")));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("uses NUL-delimited Git output for potentially unusual conflict paths", () => {
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, '["diff", "--name-only", "--diff-filter=U", "-z"]');
@@ -1291,51 +1339,6 @@ ${">".repeat(7)} theirs
         NodeFS.existsSync(NodePath.join(temporaryDirectory, `${asymmetricKey}.invalid`)),
       );
 
-      const provisionalDuplicate = [
-        'const activeThreadShell = "upstream";',
-        "<<<<<<< OURS",
-        'const activeThreadShell = "fork";',
-        "||||||| BASE",
-        'const activeThreadShell = "base";',
-        "=======",
-        'const legacyThreadShell = "parent";',
-        ">>>>>>> THEIRS",
-        "",
-      ].join("\n");
-      assert.doesNotThrow(() =>
-        assertValidResolutionProgressSource({
-          path: "apps/web/src/Partial.tsx",
-          source: provisionalDuplicate,
-          forkSide: "ours",
-        }),
-      );
-      assert.throws(
-        () =>
-          assertValidResolvedSource({
-            path: "apps/web/src/Partial.tsx",
-            source: materializeResolutionProgressForValidation({
-              path: "apps/web/src/Partial.tsx",
-              source: provisionalDuplicate,
-              forkSide: "ours",
-            }),
-          }),
-        /not syntactically valid TypeScript/u,
-      );
-
-      const resolvedDuplicate = provisionalDuplicate.replace(
-        'const activeThreadShell = "upstream";',
-        "const duplicate = 1;\nconst duplicate = 2;",
-      );
-      assert.throws(
-        () =>
-          assertValidResolutionProgressSource({
-            path: "apps/web/src/Partial.tsx",
-            source: resolvedDuplicate,
-            forkSide: "theirs",
-          }),
-        /partial resolution has invalid resolved TypeScript/u,
-      );
-
       const mixedProjectionRequired = [
         "<<<<<<< OURS",
         'const content = "fork";',
@@ -1479,6 +1482,99 @@ ${">".repeat(7)} theirs
     } finally {
       NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("allows provisional redeclarations in either conflict order", () => {
+    const secondDeclarationInsideConflict = [
+      'const activeThreadShell = "upstream";',
+      "<<<<<<< OURS",
+      'const activeThreadShell = "fork";',
+      "||||||| BASE",
+      'const activeThreadShell = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "",
+    ].join("\n");
+    const firstDeclarationInsideConflict = [
+      "<<<<<<< OURS",
+      'const selectedInstanceId = "fork";',
+      "||||||| BASE",
+      'const selectedInstanceId = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      'const selectedInstanceId = "upstream";',
+      "",
+    ].join("\n");
+
+    for (const source of [secondDeclarationInsideConflict, firstDeclarationInsideConflict]) {
+      assert.doesNotThrow(() =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source,
+          forkSide: "ours",
+        }),
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/Partial.tsx",
+            source: materializeResolutionProgressForValidation({
+              path: "apps/web/src/Partial.tsx",
+              source,
+              forkSide: "ours",
+            }),
+          }),
+        /not syntactically valid TypeScript/u,
+      );
+    }
+
+    const resolvedDuplicate = [
+      "const duplicate = 1;",
+      "const duplicate = 2;",
+      "<<<<<<< OURS",
+      'const unrelated = "fork";',
+      "||||||| BASE",
+      'const unrelated = "base";',
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "",
+    ].join("\n");
+    assert.throws(
+      () =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: resolvedDuplicate,
+          forkSide: "theirs",
+        }),
+      /partial resolution has invalid resolved TypeScript/u,
+    );
+
+    const unrelatedScopedDeclaration = [
+      "const duplicate = 1;",
+      "<<<<<<< OURS",
+      "function nested() {",
+      '  const duplicate = "unrelated";',
+      "}",
+      "||||||| BASE",
+      "function nested() {}",
+      "=======",
+      "const invalidParentProjection = ;",
+      ">>>>>>> THEIRS",
+      "const duplicate = 2;",
+      "",
+    ].join("\n");
+    assert.throws(
+      () =>
+        assertValidResolutionProgressSource({
+          path: "apps/web/src/Partial.tsx",
+          source: unrelatedScopedDeclaration,
+          forkSide: "ours",
+        }),
+      /partial resolution has invalid resolved TypeScript/u,
+    );
   });
 
   it("removes exact duplicate imports introduced outside conflict markers", () => {
