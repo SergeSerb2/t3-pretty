@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { parse as parseJavaScript } from "@babel/parser";
+import { parseSync as parseOxc } from "vite-plus/binding";
 
 import {
   redactCliProxyDiagnostic,
@@ -73,6 +74,15 @@ const REPORT_PATH = ".t3-fork/upstream-sync-report.md";
 // for all of its earlier batches again. A new nightly changes the conflicted
 // content, so stale entries simply never match.
 const RESOLUTION_CACHE_DIR = process.env.SYNC_RESOLUTION_CACHE_DIR ?? ".git/sync-resolution-cache";
+
+function assertOxcParserAcceptsSource({ path, source }) {
+  const parsed = parseOxc(path, source, { sourceType: "unambiguous" });
+  // The native result exposes consumptive getters, so read errors exactly once.
+  const diagnostics = parsed.errors;
+  const diagnostic = diagnostics.find((entry) => entry.severity === "Error");
+  if (!diagnostic) return;
+  throw new SyntaxError(diagnostic.message);
+}
 
 export function readTextFileBounded(path, maxBytes, label) {
   const safeLabel = oneLine(label) || "file";
@@ -223,6 +233,10 @@ export function assertValidResolvedSource({ path, source }) {
   }
   if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return;
   try {
+    // Babel accepts some formatter-invalid JSX as text (for example, a stray
+    // `/>` child). Oxc enforces the same syntax boundary as the formatter,
+    // while Babel still catches duplicate declarations that Oxc parses.
+    assertOxcParserAcceptsSource({ path, source });
     const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
     if (path.endsWith(".tsx")) plugins.push("jsx");
     parseJavaScript(source, {
@@ -331,6 +345,7 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
       // when its duplicate token came from a still-unresolved side. Poison in
       // already-resolved text fails both projections, and the marker-free result
       // is still validated strictly above.
+      assertOxcParserAcceptsSource({ path, source: materialized.source });
       const parsed = parseJavaScript(materialized.source, {
         sourceFilename: path,
         sourceType: "unambiguous",

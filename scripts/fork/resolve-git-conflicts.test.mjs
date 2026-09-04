@@ -1042,6 +1042,32 @@ ${">".repeat(7)} theirs
       );
       assert.isTrue(NodeFS.existsSync(NodePath.join(temporaryDirectory, `${miskeyedKey}.invalid`)));
 
+      const formatterRejectedSource = [
+        "export function Timeline() {",
+        "  return <span>",
+        "    <ToolActivityIconView />",
+        "    />",
+        "  </span>;",
+        "}",
+        "",
+      ].join("\n");
+      const formatterPoisonedKey = "f".repeat(64);
+      NodeFS.writeFileSync(
+        NodePath.join(temporaryDirectory, `${formatterPoisonedKey}.json`),
+        `${JSON.stringify({
+          ...poisonedEntry,
+          path: "apps/web/src/MessagesTimeline.tsx",
+          resolvedSource: formatterRejectedSource,
+        })}\n`,
+      );
+      assert.equal(
+        readCachedResolution({ key: formatterPoisonedKey, cacheDir: temporaryDirectory }),
+        undefined,
+      );
+      assert.isTrue(
+        NodeFS.existsSync(NodePath.join(temporaryDirectory, `${formatterPoisonedKey}.invalid`)),
+      );
+
       const rejectedKey = "b".repeat(64);
       assert.isFalse(
         writeCachedResolution({
@@ -1049,7 +1075,7 @@ ${">".repeat(7)} theirs
           cacheDir: temporaryDirectory,
           entry: {
             ...poisonedEntry,
-            resolvedSource: "export function Component() { return <div />; }\n};\n",
+            resolvedSource: formatterRejectedSource,
           },
         }),
       );
@@ -1067,6 +1093,12 @@ ${">".repeat(7)} theirs
           source: "class State { @tracked accessor value = 1; }\n",
         }),
       );
+      assert.doesNotThrow(() =>
+        assertValidResolvedSource({
+          path: "apps/web/src/IntentionalText.tsx",
+          source: 'export const IntentionalText = () => <span>{"/>"}</span>;\n',
+        }),
+      );
       assert.throws(
         () =>
           assertValidResolvedSource({
@@ -1082,6 +1114,14 @@ ${">".repeat(7)} theirs
             source: 'import { value } from "./value";\n} from "./value";\n',
           }),
         /not syntactically valid TypeScript/u,
+      );
+      assert.throws(
+        () =>
+          assertValidResolvedSource({
+            path: "apps/web/src/MessagesTimeline.tsx",
+            source: formatterRejectedSource,
+          }),
+        /Unexpected token/u,
       );
       assert.equal(
         quarantineCachedResolution({ key: "invalid", cacheDir: temporaryDirectory }),
@@ -1305,6 +1345,31 @@ ${">".repeat(7)} theirs
           /partial resolution has invalid resolved TypeScript/u,
         );
       }
+
+      const formatterRejectedPartial = [
+        "export function Timeline() {",
+        "  return <span>",
+        "    <ToolActivityIconView />",
+        "    />",
+        "<<<<<<< OURS",
+        "    <ForkStatus />",
+        "||||||| BASE",
+        "    <BaseStatus />",
+        "=======",
+        "    <ParentStatus />",
+        ">>>>>>> THEIRS",
+        "  </span>;",
+        "}",
+        "",
+      ].join("\n");
+      assert.throws(
+        () =>
+          assertValidResolutionProgressSource({
+            path: "apps/web/src/MessagesTimeline.tsx",
+            source: formatterRejectedPartial,
+          }),
+        /partial resolution has invalid resolved TypeScript on both complete projections/u,
+      );
 
       const poisonedKey = "d".repeat(64);
       const poisonedEntry = {
