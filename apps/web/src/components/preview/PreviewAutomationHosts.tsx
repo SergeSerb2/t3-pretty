@@ -21,7 +21,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
@@ -31,7 +31,6 @@ import {
   updatePreviewServerSnapshot,
 } from "~/previewStateStore";
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
-import { useRightPanelStore } from "~/rightPanelStore";
 import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
 import {
   readActiveBrowserRecordingTargets,
@@ -63,12 +62,12 @@ import {
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
 import {
-  AUTO_PRESENT_AUTOMATION_OPERATIONS,
+  explicitlySuppressesPreviewMiniPlayer,
   previewAutomationDesktopStatusReady,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
+  shouldAutoShowPreviewForAutomationUse,
   shouldOpenPreviewMiniPlayer,
-  shouldPresentAutomationActivity,
 } from "./previewAutomationOpenReadiness";
 import { settlePreviewAutomationBeforeDeadline } from "./previewAutomationDeadline";
 import {
@@ -86,37 +85,6 @@ import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
 
 const PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS = 500;
-
-/**
- * Pops the floating player when the agent acts on a tab the human cannot
- * see, so browser automation is watchable by default across every provider.
- * Fire-and-forget: presentation must never delay or fail the action itself.
- */
-async function maybePresentAutomationActivity(
-  threadRef: ScopedThreadRef,
-  tabId: string,
-  operation: PreviewAutomationRequest["operation"],
-): Promise<void> {
-  if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(operation)) return;
-  const autoShowFloatingPreview = (await resolveBrowserDefaults()).autoShowFloatingPreview;
-  const threadKey = scopedThreadKey(threadRef);
-  const miniPlayers = usePreviewMiniPlayerStore.getState();
-  const panelState = useRightPanelStore.getState().byThreadKey[threadKey];
-  const panelSurface = panelState?.isOpen
-    ? panelState.surfaces.find((surface) => surface.id === panelState.activeSurfaceId)
-    : undefined;
-  const shouldPresent = shouldPresentAutomationActivity({
-    operation,
-    autoShowFloatingPreview,
-    tabId,
-    dismissedTabIds: miniPlayers.dismissedTabIdsByThreadKey[threadKey] ?? [],
-    miniPlayerTabId: miniPlayers.byThreadKey[threadKey]?.tabId ?? null,
-    panelPreviewTabId: panelSurface?.kind === "preview" ? (panelSurface.resourceId ?? null) : null,
-  });
-  if (shouldPresent) {
-    usePreviewMiniPlayerStore.getState().openIfNotDismissed(threadRef, tabId);
-  }
-}
 
 const waitForPreviewPresentation = async (runtimeTabId: string): Promise<void> => {
   const deadline = Date.now() + PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS;
@@ -366,6 +334,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
   );
   const [automationConnectionAtom] = useState(() => Atom.make<string | null>(null));
   const automationConnectionId = useAtomValue(automationConnectionAtom);
+  const presentationSuppressedRuntimeTabsRef = useRef(new Map<string, Set<string>>());
 
   const handleRequest = useCallback(
     async (request: PreviewAutomationRequest): Promise<unknown> => {
@@ -412,6 +381,21 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             }
             const readyState = readThreadPreviewState(threadRef);
             const runtimeTabId = previewRuntimeTabId(threadRef, readyState.serverEpoch, readyTabId);
+            if (request.operation !== "open") {
+              const { autoShowFloatingPreview } = await resolveBrowserDefaults();
+              if (
+                shouldAutoShowPreviewForAutomationUse({
+                  operation: request.operation,
+                  autoShowFloatingPreview,
+                  presentationSuppressed:
+                    presentationSuppressedRuntimeTabsRef.current
+                      .get(request.threadId)
+                      ?.has(runtimeTabId) ?? false,
+                })
+              ) {
+                usePreviewMiniPlayerStore.getState().open(threadRef, readyTabId);
+              }
+            }
             browserActivity.release ??= acquireBrowserSurfaceActivity(runtimeTabId);
             await waitForDesktopOverlay(
               threadRef,
@@ -420,9 +404,6 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               runtimeTabId,
               request.operation,
               request.timeoutMs,
-            );
-            void maybePresentAutomationActivity(threadRef, readyTabId, request.operation).catch(
-              () => {},
             );
             return {
               bridge,

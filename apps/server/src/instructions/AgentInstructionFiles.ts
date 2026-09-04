@@ -224,17 +224,15 @@ export const make = Effect.gen(function* () {
         new AgentInstructionsError({ failure: "invalid_project_root", operationPath: projectCwd }),
       );
     }
-    return PROJECT_CONVENTIONS.map(
-      (convention): InstructionTarget => ({
-        id: `project:${convention.fileName}`,
-        scope: "project",
-        fileName: convention.fileName,
-        absolutePath: path.join(projectCwd, convention.fileName),
-        displayPath: abbreviateHome(path.join(projectCwd, convention.fileName)),
-        title: convention.title,
-        description: convention.description,
-      }),
-    );
+    return PROJECT_CONVENTIONS.map((convention): InstructionTarget => ({
+      id: `project:${convention.fileName}`,
+      scope: "project",
+      fileName: convention.fileName,
+      absolutePath: path.join(projectCwd, convention.fileName),
+      displayPath: abbreviateHome(path.join(projectCwd, convention.fileName)),
+      title: convention.title,
+      description: convention.description,
+    }));
   });
 
   const resolveTarget = Effect.fn("AgentInstructionFiles.resolveTarget")(function* (

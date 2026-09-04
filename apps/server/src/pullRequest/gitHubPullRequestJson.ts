@@ -1749,19 +1749,17 @@ export function reviewThreadConversation(
   threads: ReadonlyArray<PullRequestReviewThread>,
 ): ReadonlyArray<PullRequestComment> {
   return threads.flatMap((thread) =>
-    thread.comments.map(
-      (comment): PullRequestComment => ({
-        id: comment.id,
-        kind: "review-comment",
-        author: comment.author,
-        body: comment.body,
-        createdAt: comment.createdAt,
-        url: comment.url,
-        path: thread.path,
-        reviewState: null,
-        reactions: comment.reactions ?? [],
-      }),
-    ),
+    thread.comments.map((comment): PullRequestComment => ({
+      id: comment.id,
+      kind: "review-comment",
+      author: comment.author,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      url: comment.url,
+      path: thread.path,
+      reviewState: null,
+      reactions: comment.reactions ?? [],
+    })),
   );
 }
 

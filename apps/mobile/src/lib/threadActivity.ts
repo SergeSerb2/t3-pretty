@@ -66,7 +66,7 @@ export interface PendingUserInput {
 }
 
 export interface PendingUserInputDraftAnswer {
-  readonly selectedOptionLabels?: ReadonlyArray<string>;
+  readonly selectedOptionValues?: ReadonlyArray<string>;
   readonly customAnswer?: string;
 }
 
@@ -210,6 +210,15 @@ export type ThreadFeedLatestTurn = Pick<
   "turnId" | "state" | "startedAt" | "completedAt"
 >;
 
+export function isContextCompactionActivityGroup(
+  entry: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
+): boolean {
+  return (
+    entry.activities.length === 1 &&
+    entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
+  );
+}
+
 function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":
@@ -275,10 +284,11 @@ function parseUserInputQuestions(
           return {
             label: record.label,
             description: record.description,
+            ...(typeof record.value === "string" ? { value: record.value } : {}),
           };
         })
         .filter((option): option is UserInputQuestion["options"][number] => option !== null);
-      if (options.length === 0) {
+      if (options.length === 0 && question.allowCustomAnswer === false) {
         return null;
       }
       return {
@@ -287,6 +297,9 @@ function parseUserInputQuestions(
         question: question.question,
         options,
         multiSelect: question.multiSelect === true,
+        ...(typeof question.allowCustomAnswer === "boolean"
+          ? { allowCustomAnswer: question.allowCustomAnswer }
+          : {}),
       };
     })
     .filter((question): question is UserInputQuestion => question !== null);
@@ -302,7 +315,23 @@ function normalizeDraftAnswer(value: string | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeSelectedOptionLabels(
+function resolvePendingUserInputOptionValue(
+  question: UserInputQuestion,
+  value: string,
+): string | null {
+  if (question.options.some((option) => option.value === value)) {
+    return value;
+  }
+
+  const label = value.trim();
+  return label.length > 0 &&
+    question.options.some((option) => option.value === undefined && option.label.trim() === label)
+    ? label
+    : null;
+}
+
+function normalizeSelectedOptionValues(
+  question: UserInputQuestion,
   value: ReadonlyArray<string> | undefined,
 ): ReadonlyArray<string> {
   if (!Array.isArray(value)) {
@@ -310,7 +339,11 @@ function normalizeSelectedOptionLabels(
   }
 
   return Array.from(
-    new Set(value.map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
+    new Set(
+      value
+        .map((entry) => resolvePendingUserInputOptionValue(question, entry))
+        .filter((entry): entry is string => entry !== null),
+    ),
   );
 }
 
@@ -318,29 +351,28 @@ function resolvePendingUserInputAnswer(
   question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
 ): string | ReadonlyArray<string> | null {
-  const customAnswer = normalizeDraftAnswer(draft?.customAnswer);
+  const customAnswer =
+    question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
   if (customAnswer) {
     return customAnswer;
   }
 
-  const selectedOptionLabels = normalizeSelectedOptionLabels(draft?.selectedOptionLabels);
+  const selectedOptionValues = normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   if (question.multiSelect) {
-    return selectedOptionLabels.length > 0 ? selectedOptionLabels : null;
+    return selectedOptionValues.length > 0 ? selectedOptionValues : null;
   }
-  return selectedOptionLabels[0] ?? null;
+  return selectedOptionValues[0] ?? null;
 }
 
-/** Codex children settle via task.updated (idle/failed/interrupted), never
- * task.completed — these rows are mobile's only terminal signal for them. */
+/** Some providers settle agents through task.updated instead of task.completed. */
 const MOBILE_TERMINAL_UPDATE_STATUSES: ReadonlySet<string> = new Set([
-  "idle",
   "completed",
   "failed",
   "cancelled",
   "interrupted",
 ]);
 
-function isTerminalBypassUpdate(activity: OrchestrationThreadActivity): boolean {
+function isTerminalTaskUpdate(activity: OrchestrationThreadActivity): boolean {
   if (activity.kind !== "task.updated") {
     return false;
   }
@@ -349,9 +381,9 @@ function isTerminalBypassUpdate(activity: OrchestrationThreadActivity): boolean 
       ? (activity.payload as Record<string, unknown>)
       : null;
   return (
-    payload?.timelineBypass === true &&
-    typeof payload.status === "string" &&
-    MOBILE_TERMINAL_UPDATE_STATUSES.has(payload.status)
+    typeof payload?.status === "string" &&
+    (MOBILE_TERMINAL_UPDATE_STATUSES.has(payload.status) ||
+      (payload.timelineBypass === true && payload.status === "idle"))
   );
 }
 
@@ -360,8 +392,7 @@ function isTerminalBypassUpdate(activity: OrchestrationThreadActivity): boolean 
  * activity lives in the Agents sheet, not the work log. Terminal rows are
  * kept — with no Agents surface on mobile they are the terminal signal
  * (a surface that hides rows must keep its own terminal signal). That means
- * task.completed (Claude) AND terminal bypassed task.updated (Codex, whose
- * children never emit task.completed — review finding).
+ * task.completed and terminal task.updated, including Antigravity cancellation.
  */
 function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean {
   const payload =
@@ -371,7 +402,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   if (!payload) {
     return false;
   }
-  const isTerminalTaskRow = activity.kind === "task.completed" || isTerminalBypassUpdate(activity);
+  const isTerminalTaskRow = activity.kind === "task.completed" || isTerminalTaskUpdate(activity);
   if (payload.timelineBypass === true && !isTerminalTaskRow) {
     return true;
   }
@@ -394,8 +425,8 @@ function deriveWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkL
   // Generated live-status headlines feed the web work-live row, never the log.
   if (activity.kind === "turn.headline") return null;
   if (activity.kind === "task.started") return null;
-  // Terminal bypassed updates pass: Codex children's only terminal signal.
-  if (activity.kind === "task.updated" && !isTerminalBypassUpdate(activity)) return null;
+  // Terminal task updates pass: some providers use them as their only terminal signal.
+  if (activity.kind === "task.updated" && !isTerminalTaskUpdate(activity)) return null;
   if (activity.kind === "tool.progress") return null;
   if (activity.kind === "context-window.updated") return null;
   if (activity.summary === "Checkpoint captured") return null;
@@ -451,9 +482,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const changedFiles = extractChangedFiles(payload);
   const title = extractToolTitle(payload);
   const toolPresentation = extractToolActivityPresentation(payload);
-  // task.updated included: terminal bypassed updates (Codex children's only
-  // terminal signal) must carry task identity so they collapse per child
-  // instead of stacking anonymous "Task idle" rows.
+  // Terminal task updates carry identity so they replace each child's progress row.
   const isTaskActivity =
     activity.kind === "task.progress" ||
     activity.kind === "task.completed" ||
@@ -508,6 +537,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
         data,
       });
     if (detail && !repeatsCommand) entry.detail = detail;
+  }
+  if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
+    entry.detail = payload.error;
   }
   if (viewedImagePath) {
     entry.viewedImagePath = viewedImagePath;
@@ -1034,6 +1066,11 @@ function unwrapCommandRemainder(value: string, wrapperFlagPattern: RegExp): stri
     return null;
   }
 
+  const openingQuote = command[0];
+  if ((openingQuote === "'" || openingQuote === '"') && !command.endsWith(openingQuote)) {
+    return null;
+  }
+
   const unwrapped = trimMatchingOuterQuotes(command);
   return unwrapped.length > 0 ? unwrapped : null;
 }
@@ -1138,6 +1175,8 @@ function extractWorkLogToolLifecycleStatus(
   payload: Record<string, unknown> | null,
 ): WorkLogToolLifecycleStatus | undefined {
   const status = payload?.status;
+  if (status === "pending" || status === "running" || status === "waiting") return "inProgress";
+  if (status === "cancelled" || status === "interrupted") return "stopped";
   if (
     status === "inProgress" ||
     status === "completed" ||
@@ -1333,6 +1372,18 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
       continue;
     }
 
+    if (entry.activity.workEntry.sourceActivityKind === "context-compaction") {
+      grouped.push({
+        type: "activity-group",
+        id: entry.id,
+        createdAt: entry.createdAt,
+        turnId: entry.turnId,
+        activities: [entry.activity],
+      });
+      openGroupActivities = null;
+      continue;
+    }
+
     if (openGroupActivities !== null && openGroupTurnId === entry.turnId) {
       openGroupActivities.push(entry.activity);
       continue;
@@ -1410,6 +1461,9 @@ function deriveThreadFeedTurnFolds(
   for (const entry of feed) {
     if (entry.type === "message" && entry.message.role === "user") {
       pendingUserBoundary = entry.message.createdAt;
+      continue;
+    }
+    if (entry.type === "activity-group" && isContextCompactionActivityGroup(entry)) {
       continue;
     }
     const turnId =
@@ -1670,6 +1724,10 @@ function appendPresentedFeedEntry(
     result.push(entry);
     return;
   }
+  if (isContextCompactionActivityGroup(entry)) {
+    result.push(entry);
+    return;
+  }
 
   let presented = presentedActivityGroupCache.get(entry);
   if (presented === undefined) {
@@ -1850,54 +1908,72 @@ export function derivePendingUserInputs(
 }
 
 export function setPendingUserInputCustomAnswer(
+  question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
   customAnswer: string,
 ): PendingUserInputDraftAnswer {
-  const selectedOptionLabels =
+  if (question.allowCustomAnswer === false) {
+    return draft ?? {};
+  }
+
+  const selectedOptionValues =
     customAnswer.trim().length > 0
       ? undefined
-      : normalizeSelectedOptionLabels(draft?.selectedOptionLabels);
+      : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   return {
     customAnswer,
-    ...(selectedOptionLabels && selectedOptionLabels.length > 0 ? { selectedOptionLabels } : {}),
+    ...(selectedOptionValues && selectedOptionValues.length > 0 ? { selectedOptionValues } : {}),
   };
 }
 
 export function isPendingUserInputOptionSelected(
+  question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
-  optionLabel: string,
+  optionValue: string,
 ): boolean {
-  if (normalizeDraftAnswer(draft?.customAnswer)) {
+  if (question.allowCustomAnswer !== false && normalizeDraftAnswer(draft?.customAnswer)) {
     return false;
   }
 
-  return normalizeSelectedOptionLabels(draft?.selectedOptionLabels).includes(optionLabel.trim());
+  const resolvedOptionValue = resolvePendingUserInputOptionValue(question, optionValue);
+  return (
+    resolvedOptionValue !== null &&
+    normalizeSelectedOptionValues(question, draft?.selectedOptionValues).includes(
+      resolvedOptionValue,
+    )
+  );
 }
 
 export function togglePendingUserInputOptionSelection(
   question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
-  optionLabel: string,
+  optionValue: string,
 ): PendingUserInputDraftAnswer {
-  const normalizedOptionLabel = optionLabel.trim();
+  const resolvedOptionValue = resolvePendingUserInputOptionValue(question, optionValue);
+  if (resolvedOptionValue === null) {
+    return draft ?? {};
+  }
 
   if (question.multiSelect) {
-    const selectedOptionLabels = normalizeSelectedOptionLabels(draft?.selectedOptionLabels);
-    const nextSelectedOptionLabels = selectedOptionLabels.includes(normalizedOptionLabel)
-      ? selectedOptionLabels.filter((label) => label !== normalizedOptionLabel)
-      : [...selectedOptionLabels, normalizedOptionLabel];
+    const selectedOptionValues = normalizeSelectedOptionValues(
+      question,
+      draft?.selectedOptionValues,
+    );
+    const nextSelectedOptionValues = selectedOptionValues.includes(resolvedOptionValue)
+      ? selectedOptionValues.filter((value) => value !== resolvedOptionValue)
+      : [...selectedOptionValues, resolvedOptionValue];
 
     return {
       customAnswer: "",
-      ...(nextSelectedOptionLabels.length > 0
-        ? { selectedOptionLabels: nextSelectedOptionLabels }
+      ...(nextSelectedOptionValues.length > 0
+        ? { selectedOptionValues: nextSelectedOptionValues }
         : {}),
     };
   }
 
   return {
     customAnswer: "",
-    selectedOptionLabels: [normalizedOptionLabel],
+    selectedOptionValues: [resolvedOptionValue],
   };
 }
 
@@ -1909,7 +1985,7 @@ export function buildPendingUserInputAnswers(
 
   for (const question of questions) {
     const answer = resolvePendingUserInputAnswer(question, draftAnswers[question.id]);
-    if (!answer) {
+    if (answer === null) {
       return null;
     }
     answers[question.id] = answer;

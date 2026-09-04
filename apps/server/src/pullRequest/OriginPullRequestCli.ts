@@ -394,13 +394,11 @@ export const make = Effect.gen(function* () {
           timeoutMs: 60_000,
         })
         .pipe(
-          Effect.map(
-            (result): ProviderDiffSlice => ({
-              patch: result.stdout,
-              truncated: result.stdoutTruncated,
-              nextCursor: null,
-            }),
-          ),
+          Effect.map((result): ProviderDiffSlice => ({
+            patch: result.stdout,
+            truncated: result.stdoutTruncated,
+            nextCursor: null,
+          })),
         ),
 
     runAction: (input) => {

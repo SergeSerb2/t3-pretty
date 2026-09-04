@@ -526,8 +526,7 @@ export function createThreadLifecyclePendingValueAtom<R, E>(
     )
     .pipe(Atom.keepAlive, Atom.withLabel("thread-lifecycle-outbox:pending"));
 
-  return Atom.make(
-    (get): ThreadLifecyclePendingByEnvironment =>
-      Option.getOrElse(AsyncResult.value(get(pendingAtom)), () => EMPTY_THREAD_LIFECYCLE_PENDING),
+  return Atom.make((get): ThreadLifecyclePendingByEnvironment =>
+    Option.getOrElse(AsyncResult.value(get(pendingAtom)), () => EMPTY_THREAD_LIFECYCLE_PENDING),
   ).pipe(Atom.withLabel("thread-lifecycle-outbox:pending-value"));
 }

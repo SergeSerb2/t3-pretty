@@ -19,8 +19,10 @@ import { scopedThreadKey } from "../lib/scopedEntities";
 import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn";
 import { toUploadChatImageAttachments } from "../lib/composerImages";
 import { randomHex } from "../lib/uuid";
+import { isModelSelectionUnavailable } from "../lib/modelOptions";
 import { appAtomRegistry } from "./atom-registry";
 import { useProjects, useThreadShells } from "./entities";
+import { serverEnvironment } from "./server";
 import { confirmThreadOutboxMessageQueued, removeThreadOutboxMessage } from "./thread-outbox";
 import {
   isQueuedThreadCreationSendable,
@@ -36,16 +38,14 @@ import {
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
 import {
+  dispatchingQueuedMessageIdAtom,
   editingQueuedMessageIdsAtom,
   useThreadOutboxMessages,
   useThreadOutboxShellStatuses,
 } from "./use-thread-outbox";
 import { useRemoteConnectionStatus } from "./use-remote-environment-registry";
 
-export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
-);
+export { dispatchingQueuedMessageIdAtom };
 
 /** Message ids waiting out a delivery backoff; not currently being sent. */
 export const retryingQueuedMessageIdsAtom = Atom.make<Readonly<Record<MessageId, true>>>({}).pipe(
@@ -70,7 +70,6 @@ function clearQueuedMessageRetrying(queuedMessageId: MessageId): void {
   delete next[queuedMessageId];
   appAtomRegistry.set(retryingQueuedMessageIdsAtom, next);
 }
-
 function beginDispatchingQueuedMessage(queuedMessageId: MessageId): void {
   clearQueuedMessageRetrying(queuedMessageId);
   appAtomRegistry.set(dispatchingQueuedMessageIdAtom, queuedMessageId);
@@ -192,7 +191,17 @@ export function useThreadOutboxDrain(): void {
 
   const sendQueuedMessage = useCallback(
     async (queuedMessage: QueuedThreadMessage, thread: EnvironmentThreadShell) => {
-      const settings = resolveQueuedThreadSettings(queuedMessage, thread);
+      const serverConfig = appAtomRegistry.get(
+        serverEnvironment.configValueAtom(queuedMessage.environmentId),
+      );
+      if (!serverConfig) return false;
+      const settings = resolveQueuedThreadSettings(queuedMessage, thread, serverConfig.providers);
+      if (isModelSelectionUnavailable(serverConfig, settings.modelSelection)) {
+        return restoreQueuedMessage(
+          queuedMessage,
+          "Antigravity model unavailable. Open model settings to finish setup or choose another model.",
+        );
+      }
       const { reportFailure, completeDelivery } = makeDeliveryHelpers(queuedMessage);
 
       if (!modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
@@ -242,6 +251,21 @@ export function useThreadOutboxDrain(): void {
         }
       }
 
+      const currentConfig = appAtomRegistry.get(
+        serverEnvironment.configValueAtom(queuedMessage.environmentId),
+      );
+      if (!currentConfig) return false;
+      if (isModelSelectionUnavailable(currentConfig, settings.modelSelection)) {
+        return restoreQueuedMessage(
+          queuedMessage,
+          "Antigravity model unavailable. Open model settings to finish setup or choose another model.",
+        );
+      }
+      const sendSettings = resolveQueuedThreadSettings(
+        queuedMessage,
+        settings,
+        currentConfig.providers,
+      );
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: {
@@ -253,9 +277,9 @@ export function useThreadOutboxDrain(): void {
             text: queuedMessage.text,
             attachments: toUploadChatImageAttachments(queuedMessage.attachments),
           },
-          modelSelection: settings.modelSelection,
-          runtimeMode: settings.runtimeMode,
-          interactionMode: settings.interactionMode,
+          modelSelection: sendSettings.modelSelection,
+          runtimeMode: sendSettings.runtimeMode,
+          interactionMode: sendSettings.interactionMode,
           createdAt: queuedMessage.createdAt,
           ...(queuedMessage.delivery ? { delivery: queuedMessage.delivery } : {}),
         },
@@ -268,6 +292,7 @@ export function useThreadOutboxDrain(): void {
       setThreadRuntimeMode,
       startTurn,
       updateThreadMetadata,
+      restoreQueuedMessage,
     ],
   );
 
@@ -282,6 +307,25 @@ export function useThreadOutboxDrain(): void {
         return false;
       }
       const { completeDelivery } = makeDeliveryHelpers(queuedMessage);
+      const serverConfig = appAtomRegistry.get(
+        serverEnvironment.configValueAtom(queuedMessage.environmentId),
+      );
+      if (!serverConfig) return false;
+      const sendSettings = resolveQueuedThreadSettings(
+        queuedMessage,
+        {
+          modelSelection,
+          runtimeMode: DEFAULT_RUNTIME_MODE,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        },
+        serverConfig.providers,
+      );
+      if (isModelSelectionUnavailable(serverConfig, sendSettings.modelSelection)) {
+        return restoreQueuedMessage(
+          queuedMessage,
+          "Antigravity model unavailable. Open model settings to finish setup or choose another model.",
+        );
+      }
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: buildProjectThreadStartTurnInput({
@@ -293,9 +337,9 @@ export function useThreadOutboxDrain(): void {
           createdAt: queuedMessage.createdAt,
           text: queuedMessage.text.trim(),
           attachments: queuedMessage.attachments,
-          modelSelection,
-          runtimeMode: queuedMessage.runtimeMode ?? DEFAULT_RUNTIME_MODE,
-          interactionMode: queuedMessage.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+          modelSelection: sendSettings.modelSelection,
+          runtimeMode: sendSettings.runtimeMode,
+          interactionMode: sendSettings.interactionMode,
           workspaceMode: creation.workspaceMode,
           branch: creation.branch,
           worktreePath: creation.worktreePath,
@@ -306,7 +350,7 @@ export function useThreadOutboxDrain(): void {
       });
       return completeDelivery(deliveryResult);
     },
-    [makeDeliveryHelpers, startTurn],
+    [makeDeliveryHelpers, restoreQueuedMessage, startTurn],
   );
 
   useEffect(() => {
@@ -358,7 +402,24 @@ export function useThreadOutboxDrain(): void {
         environmentConnected: environment?.connectionState === "connected",
         threadBusy: thread?.session?.status === "running" || thread?.session?.status === "starting",
       });
-      if (deliveryAction === "wait") {
+      // The delivery action resolves first; capability checks apply only to
+      // a message that will send. Checking earlier would restore a
+      // creation whose startTurn already made the thread as a duplicate draft
+      // instead of removing it.
+      const serverConfig = serverConfigs.get(nextQueuedMessage.environmentId);
+      const dispatchStep = resolveThreadOutboxDispatchStep({
+        deliveryAction,
+        fileAttachments: nextQueuedMessage.attachments.filter(
+          (attachment) => attachment.type === "file",
+        ),
+        serverConfig: serverConfig
+          ? {
+              maxFileUploadBytes:
+                serverConfig.environment.capabilities.fileAttachments?.maxUploadBytes,
+            }
+          : null,
+      });
+      if (dispatchStep.step === "wait") {
         continue;
       }
       // The live project shell is preferred for the workspace path, with the

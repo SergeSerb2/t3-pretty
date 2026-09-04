@@ -112,7 +112,7 @@ function utf8CodePointSizeAt(
 
 function utf8ByteLength(value: string): number {
   let byteLength = 0;
-  for (let index = 0; index < value.length; ) {
+  for (let index = 0; index < value.length;) {
     const next = utf8CodePointSizeAt(value, index);
     index += next.codeUnits;
     byteLength += next.byteLength;

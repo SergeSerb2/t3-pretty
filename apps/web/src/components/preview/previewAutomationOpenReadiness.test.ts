@@ -3,53 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   DEFAULT_PREVIEW_AUTOMATION_VIEWPORT,
+  explicitlySuppressesPreviewMiniPlayer,
   previewAutomationDesktopStatusReady,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
+  shouldAutoShowPreviewForAutomationUse,
   shouldOpenPreviewMiniPlayer,
-  shouldPresentAutomationActivity,
 } from "./previewAutomationOpenReadiness";
-
-describe("shouldPresentAutomationActivity", () => {
-  const base = {
-    operation: "click",
-    autoShowFloatingPreview: true,
-    tabId: "tab-1",
-    dismissedTabIds: [],
-    miniPlayerTabId: null,
-    panelPreviewTabId: null,
-  } as const;
-
-  it("presents input actions on a hidden tab", () => {
-    for (const operation of ["click", "type", "press", "scroll"]) {
-      expect(shouldPresentAutomationActivity({ ...base, operation })).toBe(true);
-    }
-  });
-
-  it("ignores passive operations", () => {
-    for (const operation of ["status", "snapshot", "navigate", "open", "evaluate", "waitFor"]) {
-      expect(shouldPresentAutomationActivity({ ...base, operation })).toBe(false);
-    }
-  });
-
-  it("respects the auto-show preference, dismissal, and visible surfaces", () => {
-    expect(shouldPresentAutomationActivity({ ...base, autoShowFloatingPreview: false })).toBe(
-      false,
-    );
-    expect(shouldPresentAutomationActivity({ ...base, dismissedTabIds: ["tab-1"] })).toBe(false);
-    expect(shouldPresentAutomationActivity({ ...base, miniPlayerTabId: "tab-1" })).toBe(false);
-    expect(shouldPresentAutomationActivity({ ...base, panelPreviewTabId: "tab-1" })).toBe(false);
-    // Another tab's dismissal or surface never blocks this tab.
-    expect(
-      shouldPresentAutomationActivity({
-        ...base,
-        dismissedTabIds: ["tab-2"],
-        miniPlayerTabId: "tab-2",
-        panelPreviewTabId: "tab-2",
-      }),
-    ).toBe(true);
-  });
-});
 
 const snapshot = (navStatus: PreviewSessionSnapshot["navStatus"]): PreviewSessionSnapshot => ({
   threadId: "thread-1",
@@ -142,5 +102,50 @@ describe("shouldOpenPreviewMiniPlayer with the floating-preview preference", () 
     expect(shouldOpenPreviewMiniPlayer({ open: true }, false)).toBe(true);
     expect(shouldOpenPreviewMiniPlayer({ open: false }, true)).toBe(false);
     expect(shouldOpenPreviewMiniPlayer({ show: true }, false)).toBe(true);
+  });
+
+  it("distinguishes an explicit background request from a disabled preference", () => {
+    expect(explicitlySuppressesPreviewMiniPlayer({ open: false })).toBe(true);
+    expect(explicitlySuppressesPreviewMiniPlayer({ show: false })).toBe(true);
+    expect(explicitlySuppressesPreviewMiniPlayer({})).toBe(false);
+  });
+});
+
+describe("auto-show for existing automation tabs", () => {
+  it("records floating-preview intent whenever an agent uses the tab", () => {
+    expect(
+      shouldAutoShowPreviewForAutomationUse({
+        operation: "navigate",
+        autoShowFloatingPreview: true,
+        presentationSuppressed: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves explicit opens and background-only tabs alone", () => {
+    expect(
+      shouldAutoShowPreviewForAutomationUse({
+        operation: "open",
+        autoShowFloatingPreview: true,
+        presentationSuppressed: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoShowPreviewForAutomationUse({
+        operation: "click",
+        autoShowFloatingPreview: true,
+        presentationSuppressed: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("honours the auto-show preference for reused tabs", () => {
+    expect(
+      shouldAutoShowPreviewForAutomationUse({
+        operation: "snapshot",
+        autoShowFloatingPreview: false,
+        presentationSuppressed: false,
+      }),
+    ).toBe(false);
   });
 });

@@ -262,9 +262,8 @@ export const detectRemoteSshPlatform = Effect.fn("ssh/tunnel.detectRemoteSshPlat
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
     ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
   }).pipe(
-    Effect.map(
-      (result): RemoteSshPlatform =>
-        getLastNonEmptyOutputLine(result.stdout)?.toLowerCase() === "win32" ? "windows" : "posix",
+    Effect.map((result): RemoteSshPlatform =>
+      getLastNonEmptyOutputLine(result.stdout)?.toLowerCase() === "win32" ? "windows" : "posix",
     ),
     Effect.catch((cause) =>
       isSshAuthFailure(cause) ? Effect.fail(cause) : Effect.succeed<RemoteSshPlatform>("posix"),

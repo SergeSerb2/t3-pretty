@@ -206,6 +206,8 @@ const VcsStatusChangeRequest = Schema.Struct({
   baseRef: TrimmedNonEmptyStringSchema,
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
+  /** Optional for compatibility with older servers and providers. */
+  isDraft: Schema.optional(Schema.Boolean),
   /**
    * Public review activity observed on the hosting provider. `null` means the
    * provider was checked and left no visible signal; `undefined` means this

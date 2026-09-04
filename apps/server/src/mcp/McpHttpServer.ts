@@ -106,38 +106,37 @@ export const normalizeMcpHttpResponse = (
 
 const makeMcpAuthMiddleware = (capability: McpInvocationContext.McpCapability) =>
   McpSessionRegistry.McpSessionRegistry.pipe(
-    Effect.map(
-      (registry): McpAuthMiddleware =>
-        Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          if (mcpDeclaredContentLengthExceedsLimit(request.headers["content-length"])) {
-            return mcpPayloadTooLargeResponse;
-          }
-          const authorization = request.headers.authorization;
-          const token =
-            authorization?.startsWith("Bearer ") === true
-              ? authorization.slice("Bearer ".length).trim()
-              : "";
-          const invocation = yield* registry.resolve(token);
-          if (!invocation) {
-            // Without this the only symptom of a dead credential is the agent
-            // quietly losing the whole `t3-code` toolkit for the rest of its
-            // session, with nothing on the server to explain why.
-            yield* Effect.logWarning("rejected MCP request with an unusable credential", {
-              reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
-            });
-            return unauthorized;
-          }
-          if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
-          // Keep the platform request's cached body reader. Building a second reader from
-          // `request.stream` races the router's reader and can turn valid JSON into an empty body.
-          return yield* httpEffect.pipe(
-            Effect.provideService(HttpServerRequest.HttpServerRequest, request),
-            Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
-            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-            Effect.map(normalizeMcpHttpResponse),
-          );
-        }),
+    Effect.map((registry): McpAuthMiddleware =>
+      Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        if (mcpDeclaredContentLengthExceedsLimit(request.headers["content-length"])) {
+          return mcpPayloadTooLargeResponse;
+        }
+        const authorization = request.headers.authorization;
+        const token =
+          authorization?.startsWith("Bearer ") === true
+            ? authorization.slice("Bearer ".length).trim()
+            : "";
+        const invocation = yield* registry.resolve(token);
+        if (!invocation) {
+          // Without this the only symptom of a dead credential is the agent
+          // quietly losing the whole `t3-code` toolkit for the rest of its
+          // session, with nothing on the server to explain why.
+          yield* Effect.logWarning("rejected MCP request with an unusable credential", {
+            reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
+          });
+          return unauthorized;
+        }
+        if (!McpInvocationContext.hasMcpCapability(invocation, capability)) return forbidden;
+        // Keep the platform request's cached body reader. Building a second reader from
+        // `request.stream` races the router's reader and can turn valid JSON into an empty body.
+        return yield* httpEffect.pipe(
+          Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+          Effect.provideService(HttpServerRequest.MaxBodySize, MCP_HTTP_MAX_REQUEST_BODY_SIZE),
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.map(normalizeMcpHttpResponse),
+        );
+      }),
     ),
     Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
   );

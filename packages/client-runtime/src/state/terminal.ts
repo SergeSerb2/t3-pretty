@@ -23,7 +23,7 @@ export const TERMINAL_STATE_IDLE_TTL_MS = 60_000;
 export function splitTerminalWriteData(data: string): ReadonlyArray<string> {
   if (data.length <= TERMINAL_WRITE_MAX_LENGTH) return [data];
   const chunks: string[] = [];
-  for (let start = 0; start < data.length; ) {
+  for (let start = 0; start < data.length;) {
     let end = Math.min(start + TERMINAL_WRITE_MAX_LENGTH, data.length);
     const trailing = data.charCodeAt(end - 1);
     const following = data.charCodeAt(end);

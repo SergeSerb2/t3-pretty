@@ -108,6 +108,7 @@ export interface ThreadDetailScreenProps {
   readonly environmentLabel: string | null;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly activeWorkStartedAt: string | null;
+  readonly isCompacting: boolean;
   readonly activePendingApproval: PendingApproval | null;
   readonly respondingApprovalId: ApprovalRequestId | null;
   readonly activePendingUserInput: PendingUserInput | null;
@@ -153,7 +154,7 @@ export interface ThreadDetailScreenProps {
   readonly onSelectUserInputOption: (
     requestId: ApprovalRequestId,
     question: UserInputQuestion,
-    label: string,
+    value: string,
   ) => void;
   readonly onChangeUserInputCustomAnswer: (
     requestId: ApprovalRequestId,
@@ -322,7 +323,42 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   // Transport reconciliation can restart after the conversation is already
   // present. Only describe content as loading while there is nothing to show.
   const threadSyncPhase = threadLoadingPhase(props.contentPresentation);
+  const threadSyncLabel =
+    threadSyncPhase !== null && contentPresentationKind === "loading"
+      ? "Loading messages..."
+      : null;
+  // One floating pill above the composer: it reads the initial loading state,
+  // then compacting or the working timer once the feed is settled.
+  const floatingStatus = ((): FloatingWorkingStatus | null => {
+    if (
+      props.connectionStateLabel !== "connected" ||
+      props.activePendingApproval !== null ||
+      props.activePendingUserInput !== null
+    ) {
+      return null;
+    }
+    if (threadSyncLabel !== null) {
+      return { kind: "syncing", label: threadSyncLabel };
+    }
+    if (props.isCompacting && contentPresentationKind === "ready") {
+      return { kind: "compacting" };
+    }
+    if (props.activeWorkStartedAt !== null && contentPresentationKind === "ready") {
+      return { kind: "working", startedAt: props.activeWorkStartedAt };
+    }
+    return null;
+  })();
+  const showWorkingControl = floatingStatus !== null;
   const selectedThreadFeed = props.selectedThreadFeed;
+  const hasCompactableConversation =
+    selectedThreadFeed.some(
+      (entry) =>
+        entry.type === "message" &&
+        entry.message.role === "user" &&
+        ((entry.message.attachments?.length ?? 0) > 0 ||
+          entry.message.text.trim().toLowerCase() !== "/compact"),
+    ) ||
+    (Boolean(props.loadEarlier) && props.selectedThread.latestUserMessageAt !== null);
   const composerChrome = composerExpanded ? COMPOSER_EXPANDED_CHROME : COMPOSER_COLLAPSED_CHROME;
   const composerOverlapHeight = composerChrome + composerBottomInset;
   // While a user-input request is pending, the questionnaire owns the
@@ -768,7 +804,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               list's bottom inset, so any padding above the pill/composer
               pushes the resting content floor up by the same amount. */}
           <View collapsable={false} onLayout={onComposerLayout} className="w-full">
-            {showScrollToEndButton ? (
+            {floatingStatus ? (
+              <FloatingWorkingControl
+                colorScheme={isDarkMode ? "dark" : "light"}
+                status={floatingStatus}
+                showScrollToEnd={showScrollToEndButton}
+                onScrollToEnd={handleScrollToEnd}
+              />
+            ) : null}
+            {showScrollToEndButton && !floatingStatus ? (
               <Animated.View
                 pointerEvents="box-none"
                 className="absolute -top-11 left-0 right-0 z-20 items-center"
@@ -868,6 +912,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 environmentLabel={props.environmentLabel}
                 threadSyncPhase={threadSyncPhase}
                 selectedThread={props.selectedThread}
+                hasCompactableConversation={hasCompactableConversation && !props.isCompacting}
                 serverConfig={props.serverConfig}
                 queueCount={props.selectedThreadQueueCount}
                 headQueuedMessageId={props.headQueuedMessageId}

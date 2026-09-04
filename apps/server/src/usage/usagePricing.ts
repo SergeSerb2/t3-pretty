@@ -101,6 +101,20 @@ export function normalizeModelName(model: string): string {
   return slash === -1 ? trimmed : trimmed.slice(slash + 1);
 }
 
+function normalizeRateKey(model: string): string {
+  return model.trim().toLowerCase();
+}
+
+/**
+ * Drops a bracketed variant suffix such as `claude-fable-5-1[1m]`, which
+ * Claude Code writes for the 1M context tier. The rate table only knows the
+ * base name, and we price at the base tier anyway.
+ */
+function stripVariantSuffix(key: string): string {
+  const bracket = key.indexOf("[");
+  return bracket === -1 ? key : key.slice(0, bracket);
+}
+
 /**
  * Models we never price, regardless of the table.
  *
@@ -167,7 +181,8 @@ const KIMI_MODEL_ALIASES: Readonly<Record<string, string>> = {
 };
 
 export function lookupRate(table: RateTable, model: string): ModelRate | null {
-  const normalized = normalizeModelName(model);
+  const key = stripVariantSuffix(normalizeRateKey(model));
+  const normalized = normalizeModelName(key);
   if (normalized.length === 0 || UNPRICEABLE_MODELS.has(normalized)) return null;
   const canonical = KIMI_MODEL_ALIASES[normalized] ?? normalized;
   return (
@@ -175,6 +190,7 @@ export function lookupRate(table: RateTable, model: string): ModelRate | null {
     table.get(canonical) ??
     KIMI_API_RATES[canonical] ??
     KIMI_API_RATES[normalized] ??
+    table.get(key) ??
     null
   );
 }

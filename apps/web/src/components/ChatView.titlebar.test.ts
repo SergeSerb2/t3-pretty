@@ -62,9 +62,11 @@ describe("thread titlebar layout controls", () => {
     const tabbarClose = tabs.indexOf("</div>", layoutControlsIndex);
 
     expect(layoutControlsIndex).toBeGreaterThanOrEqual(0);
+    expect(tabs).toContain('ownsDesktopTitleBar && "relative drag-region"');
     expect(tabs).toContain(
-      "relative drag-region wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
+      'props.layoutControls\n              ? "wco:pr-[var(--workspace-native-controls-inset)]"',
     );
+    expect(tabs).toContain(': "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]"');
     expect(tabs).toContain("data-right-panel-tabbar");
     expect(holeIndex).toBeGreaterThan(layoutControlsIndex);
     expect(holeIndex).toBeLessThan(tabbarClose);

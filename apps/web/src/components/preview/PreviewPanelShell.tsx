@@ -69,9 +69,9 @@ export function PreviewPanelShell(props: {
 }) {
   const useDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
   const isInline = props.mode === "inline";
-  const maximized = props.maximized === true;
   const collapsible = isInline && props.open !== undefined;
   const open = props.open ?? true;
+  const maximized = props.maximized ?? false;
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
   // container measurement (and its re-renders) everywhere else.
@@ -83,26 +83,43 @@ export function PreviewPanelShell(props: {
     maxWidth,
     edge: "left",
   });
-  const previousLayoutRef = useRef({ open, width });
+  // Derive suppression before the layout commits so the browser never creates
+  // a width transition for resize or maximize changes.
+  const [layoutTransition, setLayoutTransition] = useState(() => ({
+    open,
+    width,
+    maximized,
+    suppressed: false,
+  }));
+  if (
+    layoutTransition.open !== open ||
+    layoutTransition.width !== width ||
+    layoutTransition.maximized !== maximized
+  ) {
+    setLayoutTransition({
+      open,
+      width,
+      maximized,
+      suppressed:
+        collapsible &&
+        layoutTransition.open === open &&
+        (layoutTransition.width !== width || layoutTransition.maximized !== maximized),
+    });
+  }
+  const suppressWidthTransition = layoutTransition.suppressed;
   useLayoutEffect(() => {
-    const previous = previousLayoutRef.current;
-    previousLayoutRef.current = { open, width };
-    if (!collapsible || previous.open !== open || previous.width === width) return;
-    const host = hostRef.current;
-    if (!host?.closest("[data-panel-animations=true]")) return;
-    host.style.setProperty("transition-duration", "0ms");
+    if (!suppressWidthTransition) return;
     let restoreFrame = 0;
     const paintFrame = window.requestAnimationFrame(() => {
       restoreFrame = window.requestAnimationFrame(() => {
-        host.style.removeProperty("transition-duration");
+        setLayoutTransition((current) => ({ ...current, suppressed: false }));
       });
     });
     return () => {
       window.cancelAnimationFrame(paintFrame);
       window.cancelAnimationFrame(restoreFrame);
-      host.style.removeProperty("transition-duration");
     };
-  }, [collapsible, open, width]);
+  }, [suppressWidthTransition]);
 
   const panelContents = (
     <>
@@ -134,7 +151,12 @@ export function PreviewPanelShell(props: {
               : "right-panel-inline-maximized-exit absolute inset-0 z-40"
             : "right-panel-inline-gap shrink-0",
         )}
-        style={maximized ? undefined : ({ "--right-panel-width": `${width}px` } as CSSProperties)}
+        style={
+          {
+            "--right-panel-width": maximized ? undefined : `${width}px`,
+            transitionDuration: suppressWidthTransition ? "0ms" : undefined,
+          } as CSSProperties
+        }
         data-preview-panel-mode={props.mode}
         data-preview-panel-maximized={maximized ? "true" : "false"}
         data-right-panel-open={open ? "true" : "false"}

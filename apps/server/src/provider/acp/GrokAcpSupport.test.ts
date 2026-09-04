@@ -189,7 +189,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: undefined });
     }),
   );
 
@@ -205,7 +205,7 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
-      expect(result).toBe("grok-4.6");
+      expect(result).toEqual({ modelId: "grok-4.6", reasoningEffort: "xhigh" });
     }),
   );
 

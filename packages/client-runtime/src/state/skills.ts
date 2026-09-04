@@ -72,12 +72,11 @@ export function createSkillAtoms<R, E>(
   const hostSkillsStateAtom = (environmentId: EnvironmentId) =>
     hostSkills({ environmentId, input: {} });
   const globallyEnabledSkillsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make(
-      (get): ReadonlyArray<InstalledSkill> =>
-        globallyEnabledSkills(
-          get(options.settingsValueAtom(environmentId)),
-          Option.getOrNull(AsyncResult.value(get(skillsStateAtom(environmentId)))),
-        ),
+    Atom.make((get): ReadonlyArray<InstalledSkill> =>
+      globallyEnabledSkills(
+        get(options.settingsValueAtom(environmentId)),
+        Option.getOrNull(AsyncResult.value(get(skillsStateAtom(environmentId)))),
+      ),
     ).pipe(Atom.withLabel(`environment-data:skills:globally-enabled:${environmentId}`)),
   );
   // Installs flip the `installed` flag on marketplace skills, so store

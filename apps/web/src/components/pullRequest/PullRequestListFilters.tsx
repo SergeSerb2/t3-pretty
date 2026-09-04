@@ -13,7 +13,6 @@ import {
   CircleSlashIcon,
   CircleXIcon,
   EyeOffIcon,
-  FolderGit2Icon,
   GitPullRequestDraftIcon,
   LayersIcon,
   ListFilterIcon,
@@ -434,7 +433,6 @@ function PullRequestProjectFilter({
               projectName={selectedProject.title}
               faviconPath={selectedProject.faviconPath}
               projectIcon={selectedProject.projectIcon}
-              fallbackIcon={FolderGit2Icon}
               className="size-3.5 shrink-0"
             />
           ) : (
@@ -500,7 +498,6 @@ function PullRequestProjectFilter({
                       projectName={project.title}
                       faviconPath={project.faviconPath}
                       projectIcon={project.projectIcon}
-                      fallbackIcon={FolderGit2Icon}
                       className="size-3.5 shrink-0"
                     />
                     <span className="min-w-0 flex-1 truncate">{project.title}</span>
