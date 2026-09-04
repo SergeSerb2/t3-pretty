@@ -175,6 +175,9 @@ interface ManagedEndpointTunnel {
   readonly name?: string | null;
 }
 
+export const MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT = 100;
+export const MANAGED_ENDPOINT_CAUSE_MAX_DEPTH = 16;
+
 const ManagedEndpointTunnelClientOperation = Schema.Literals([
   "list",
   "create",
@@ -333,17 +336,32 @@ function isLoopbackOrigin(origin: RelayManagedEndpointOrigin): boolean {
   );
 }
 
-function isNotFoundCause(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) {
-    return false;
+function ownDataProperty(value: object, key: PropertyKey): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
   }
-  if ("_tag" in cause && cause._tag === "NotFound") {
-    return true;
+}
+
+export function isNotFoundCause(cause: unknown): boolean {
+  const seen = new WeakSet<object>();
+  let current = cause;
+  for (let depth = 0; depth < MANAGED_ENDPOINT_CAUSE_MAX_DEPTH; depth += 1) {
+    if (typeof current !== "object" || current === null || seen.has(current)) {
+      return false;
+    }
+    seen.add(current);
+    if (ownDataProperty(current, "_tag") === "NotFound") {
+      return true;
+    }
+    if (ownDataProperty(current, "status") === 404) {
+      return true;
+    }
+    current = ownDataProperty(current, "cause");
   }
-  if ("status" in cause && cause.status === 404) {
-    return true;
-  }
-  return "cause" in cause && isNotFoundCause(cause.cause);
+  return false;
 }
 
 type ManagedEndpointClientError = ManagedEndpointTunnelClientError | ManagedEndpointDnsClientError;
@@ -869,17 +887,23 @@ export const layerCloudflareBindings = (
       Layer.mergeAll(
         layerTunnelClient({
           list: (request) =>
-            tunnelClient.list(request).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ManagedEndpointTunnelClientError({
-                    operation: "list",
-                    tunnelName: request.name,
-                    cause,
-                  }),
+            tunnelClient
+              .list({ ...request, perPage: MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT })
+              .pipe(
+                Effect.map((response) => ({
+                  ...response,
+                  result: response.result.slice(0, MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT),
+                })),
+                Effect.mapError(
+                  (cause) =>
+                    new ManagedEndpointTunnelClientError({
+                      operation: "list",
+                      tunnelName: request.name,
+                      cause,
+                    }),
+                ),
+                Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
               ),
-              Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
-            ),
           create: (request) =>
             tunnelClient.create(request).pipe(
               Effect.mapError(
@@ -931,24 +955,31 @@ export const layerCloudflareBindings = (
         }),
         layerDnsClient({
           listRecords: (hostname) =>
-            dnsClient.listDnsRecords({ search: hostname }).pipe(
-              Effect.map((response) =>
-                response.result.filter(
-                  (record): record is typeof record & { readonly id: string } =>
-                    typeof record.id === "string" &&
-                    normalizeHostname(record.name) === normalizeHostname(hostname),
+            dnsClient
+              .listDnsRecords({
+                name: { exact: hostname },
+                perPage: MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT,
+              })
+              .pipe(
+                Effect.map((response) =>
+                  response.result
+                    .slice(0, MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT)
+                    .filter(
+                      (record): record is typeof record & { readonly id: string } =>
+                        typeof record.id === "string" &&
+                        normalizeHostname(record.name) === normalizeHostname(hostname),
+                    ),
                 ),
+                Effect.mapError(
+                  (cause) =>
+                    new ManagedEndpointDnsClientError({
+                      operation: "list-records",
+                      hostname,
+                      cause,
+                    }),
+                ),
+                Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
               ),
-              Effect.mapError(
-                (cause) =>
-                  new ManagedEndpointDnsClientError({
-                    operation: "list-records",
-                    hostname,
-                    cause,
-                  }),
-              ),
-              Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
-            ),
           createRecord: (request) =>
             dnsClient.createDnsRecord(request).pipe(
               Effect.map((response) => ({ id: response.id })),

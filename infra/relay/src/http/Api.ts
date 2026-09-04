@@ -30,6 +30,7 @@ import {
   RelayAgentActivityPublishProofInvalidError,
   RelayClientAuth,
   RelayClientPrincipal,
+  RelayCloudUserId,
   RelayAccessTokenType,
   RelayDpopClientAuth,
   RelayEnvironmentConnectScope,
@@ -37,6 +38,7 @@ import {
   RelayMobileRegistrationScope,
   RelayAuthInvalidError,
   type RelayAuthInvalidReason,
+  type RelayDpopFailureReason,
   RelayEnvironmentAuth,
   RelayEnvironmentConnectNotAuthorizedError,
   RelayEnvironmentEndpointTimedOutError,
@@ -71,6 +73,8 @@ import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublis
 import * as MobileRegistrations from "../agentActivity/MobileRegistrations.ts";
 import { withSpanAttributes } from "../observability.ts";
 import * as RelayDb from "../db.ts";
+
+const isRelayCloudUserId = Schema.is(RelayCloudUserId);
 
 const relayCorsAllowedMethods = ["GET", "POST", "DELETE", "OPTIONS"] as const;
 const relayCorsAllowedHeaders = [
@@ -290,9 +294,9 @@ export const relayClientAuthLayer = Layer.effect(
           ),
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub) {
+        if (!isRelayCloudUserId(verified.sub)) {
           yield* Effect.annotateCurrentSpan({
-            "relay.auth.clerk_verification_failure": "missing_subject",
+            "relay.auth.clerk_verification_failure": "invalid_subject",
           });
           return yield* relayAuthInvalidError("invalid_bearer");
         }
@@ -363,7 +367,7 @@ export const relayDpopClientAuthLayer = Layer.effect(
           token,
           nowEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
         });
-        if (!verified) {
+        if (!verified || !isRelayCloudUserId(verified.sub)) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         yield* Effect.annotateCurrentSpan({
@@ -748,7 +752,10 @@ export const tokenApi = HttpApiBuilder.group(
         const verified = yield* verifyClerkBearerToken(config, args.payload.subject_token).pipe(
           Effect.catch(() => relayAuthInvalidError("invalid_bearer")),
         );
-        if (!verified.sub || !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)) {
+        if (
+          !isRelayCloudUserId(verified.sub) ||
+          !hasExpectedClerkAudience(verified.aud, config.clerkJwtAudience)
+        ) {
           return yield* relayAuthInvalidError("invalid_bearer");
         }
         const proofKeyThumbprint = yield* requireDpopProof().pipe(
@@ -1060,6 +1067,7 @@ class ClerkTokenVerificationFailed extends Schema.TaggedErrorClass<ClerkTokenVer
 }
 
 const isHttpUnauthorized = Schema.is(HttpApiError.Unauthorized);
+const isDpopProofRejected = Schema.is(DpopProofs.DpopProofRejected);
 
 const currentTraceId = Effect.currentParentSpan.pipe(
   Effect.map((span) => span.traceId),
@@ -1072,7 +1080,6 @@ const RelayCommonPersistenceError = Schema.Union([
   Devices.DeviceListPersistenceError,
   LiveActivities.LiveActivityRegistrationPersistenceError,
   EnvironmentLinks.EnvironmentLinkUserListPersistenceError,
-  EnvironmentLinks.EnvironmentPublicKeyListPersistenceError,
   EnvironmentLinks.EnvironmentLinkListPersistenceError,
   EnvironmentLinks.EnvironmentLinkLookupPersistenceError,
   EnvironmentLinks.EnvironmentLinkRevokePersistenceError,
@@ -1091,9 +1098,36 @@ type RelayCommonPersistenceError = typeof RelayCommonPersistenceError.Type;
 const isRelayCommonPersistenceError = Schema.is(RelayCommonPersistenceError);
 
 type MapRelayCommonApiError<E> =
-  | Exclude<E, HttpApiError.Unauthorized | RelayCommonPersistenceError>
+  | Exclude<
+      E,
+      HttpApiError.Unauthorized | DpopProofs.DpopProofRejected | RelayCommonPersistenceError
+    >
   | (Extract<E, HttpApiError.Unauthorized> extends never ? never : RelayAuthInvalidError)
+  | (Extract<E, DpopProofs.DpopProofRejected> extends never ? never : RelayAuthInvalidError)
   | (Extract<E, RelayCommonPersistenceError> extends never ? never : RelayInternalError);
+
+export function relayDpopFailureReason(
+  code: DpopProofs.DpopProofFailureCode,
+): RelayDpopFailureReason {
+  switch (code) {
+    case "time_window":
+      return "time_window";
+    case "key_mismatch":
+      return "key_mismatch";
+    case "method_mismatch":
+    case "url_mismatch":
+      return "request_mismatch";
+    case "access_token_hash_mismatch":
+      return "token_mismatch";
+    case "replayed":
+      return "replay";
+    case "missing_proof":
+    case "malformed_proof":
+    case "invalid_signature":
+    case "invalid_proof":
+      return "invalid_proof";
+  }
+}
 
 function relayInternalErrorResponse(reason: RelayInternalError["reason"]) {
   return currentTraceId.pipe(
@@ -1106,11 +1140,32 @@ function relayInternalErrorResponse(reason: RelayInternalError["reason"]) {
 function mapRelayCommonApiErrors(authReason: RelayAuthInvalidReason) {
   const mapError = Effect.fnUntraced(function* <E>(error: E) {
     const traceId = yield* currentTraceId;
-    if (isHttpUnauthorized(error)) {
+    if (isDpopProofRejected(error)) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.dpop.failure_code": error.code,
+      });
       return yield* Effect.fail(
         new RelayAuthInvalidError({
           code: "auth_invalid",
           reason: authReason,
+          ...(authReason === "invalid_dpop"
+            ? { dpopFailureReason: relayDpopFailureReason(error.code) }
+            : {}),
+          traceId,
+        }) as MapRelayCommonApiError<E>,
+      );
+    }
+    if (isHttpUnauthorized(error)) {
+      if (authReason === "invalid_dpop") {
+        yield* Effect.annotateCurrentSpan({
+          "relay.dpop.failure_code": "invalid_proof",
+        });
+      }
+      return yield* Effect.fail(
+        new RelayAuthInvalidError({
+          code: "auth_invalid",
+          reason: authReason,
+          ...(authReason === "invalid_dpop" ? { dpopFailureReason: "invalid_proof" } : {}),
           traceId,
         }) as MapRelayCommonApiError<E>,
       );

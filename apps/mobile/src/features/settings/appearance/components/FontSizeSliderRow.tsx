@@ -12,7 +12,6 @@ import Animated, {
 import type { ComponentProps } from "react";
 
 import { AppText as Text } from "../../../../components/AppText";
-import { useThemeColor } from "../../../../lib/useThemeColor";
 
 type SymbolName = ComponentProps<typeof SymbolView>["name"];
 
@@ -39,11 +38,6 @@ export function FontSizeSliderRow(props: {
   readonly iconMin?: SymbolName;
   readonly iconMax?: SymbolName;
 }) {
-  const icon = useThemeColor("--color-icon");
-  const iconMuted = String(useThemeColor("--color-icon-muted"));
-  const trackColor = String(useThemeColor("--color-secondary-border"));
-  const fillColor = String(useThemeColor("--color-primary"));
-
   const latest = useRef(props);
   latest.current = props;
 
@@ -144,7 +138,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.icon}
           size={22}
-          tintColor={icon}
+          tintColorClassName={"accent-icon"}
           type="monochrome"
           weight="regular"
         />
@@ -155,7 +149,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMin ?? "textformat.size.smaller"}
           size={15}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />
@@ -176,12 +170,12 @@ export function FontSizeSliderRow(props: {
             }}
           >
             <View
-              className="w-full rounded-full"
-              style={{ backgroundColor: trackColor, height: TRACK_HEIGHT }}
+              className="w-full rounded-full bg-secondary-border"
+              style={{ height: TRACK_HEIGHT }}
             >
               <Animated.View
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={[{ backgroundColor: fillColor }, fillStyle]}
+                className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                style={fillStyle}
               />
             </View>
             <Animated.View
@@ -207,7 +201,7 @@ export function FontSizeSliderRow(props: {
         <SymbolView
           name={props.iconMax ?? "textformat.size.larger"}
           size={22}
-          tintColor={iconMuted}
+          tintColorClassName={"accent-icon-muted"}
           type="monochrome"
           weight="regular"
         />

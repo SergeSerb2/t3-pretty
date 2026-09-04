@@ -70,6 +70,7 @@ export function PreviewPanelShell(props: {
   const useDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
   const isInline = props.mode === "inline";
   const maximized = props.maximized === true;
+  const collapsible = isInline && props.open !== undefined;
   const open = props.open ?? true;
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Only inline non-maximized mode applies `width`/`maxWidth`; skip the
@@ -82,11 +83,37 @@ export function PreviewPanelShell(props: {
     maxWidth,
     edge: "left",
   });
+  const previousLayoutRef = useRef({ open, width });
+  useLayoutEffect(() => {
+    const previous = previousLayoutRef.current;
+    previousLayoutRef.current = { open, width };
+    if (!collapsible || previous.open !== open || previous.width === width) return;
+    const host = hostRef.current;
+    if (!host?.closest("[data-panel-animations=true]")) return;
+    host.style.setProperty("transition-duration", "0ms");
+    let restoreFrame = 0;
+    const paintFrame = window.requestAnimationFrame(() => {
+      restoreFrame = window.requestAnimationFrame(() => {
+        host.style.removeProperty("transition-duration");
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(paintFrame);
+      window.cancelAnimationFrame(restoreFrame);
+      host.style.removeProperty("transition-duration");
+    };
+  }, [collapsible, open, width]);
 
   const panelContents = (
     <>
       {isInline && !maximized ? (
-        <RightPanelResizeHandle key="resize-handle" handlers={handlers} />
+        <RightPanelResizeHandle
+          key="resize-handle"
+          handlers={handlers}
+          width={width}
+          minWidth={PREVIEW_PANEL_MIN_WIDTH}
+          maxWidth={maxWidth}
+        />
       ) : null}
       {useDragRegion ? (
         <div key="drag-region" className="electron-drag-region h-0 w-full" aria-hidden />
@@ -175,7 +202,8 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
   const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
   const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!enabled || typeof window === "undefined") return;
+    setVw(window.innerWidth);
     let frame = 0;
     const onResize = () => {
       // Coalesce rapid resize events into one rAF tick.
@@ -190,7 +218,7 @@ function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: 
       window.removeEventListener("resize", onResize);
       if (frame !== 0) window.cancelAnimationFrame(frame);
     };
-  }, []);
+  }, [enabled]);
   useLayoutEffect(() => {
     if (!enabled) return;
     const parent = hostRef.current?.parentElement;

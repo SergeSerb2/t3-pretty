@@ -2,8 +2,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@t3tools/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
@@ -21,10 +23,15 @@ const textEncoder = new TextEncoder();
 const decodeConnectionCatalog = Schema.decodeEffect(
   Schema.fromJsonString(ConnectionCatalogDocument),
 );
-function makeSafeStorageLayer(available: boolean, failDecrypt: Ref.Ref<boolean> | null = null) {
+function makeSafeStorageLayer(
+  available: boolean,
+  failDecrypt: Ref.Ref<boolean> | null = null,
+  beforeEncrypt: (value: string) => Effect.Effect<void> = () => Effect.void,
+) {
   return Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, {
     isEncryptionAvailable: Effect.succeed(available),
-    encryptString: (value) => Effect.succeed(textEncoder.encode(`encrypted:${value}`)),
+    encryptString: (value) =>
+      beforeEncrypt(value).pipe(Effect.as(textEncoder.encode(`encrypted:${value}`))),
     decryptString: (value) => {
       return Effect.gen(function* () {
         const decoded = textDecoder.decode(value);
@@ -48,6 +55,7 @@ function makeLayer(
   encryptionAvailable = true,
   failDecrypt: Ref.Ref<boolean> | null = null,
   fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = NodeServices.layer,
+  beforeEncrypt: (value: string) => Effect.Effect<void> = () => Effect.void,
 ) {
   const environmentLayer = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
@@ -64,7 +72,7 @@ function makeLayer(
       Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir })),
     ),
   );
-  const safeStorageLayer = makeSafeStorageLayer(encryptionAvailable, failDecrypt);
+  const safeStorageLayer = makeSafeStorageLayer(encryptionAvailable, failDecrypt, beforeEncrypt);
   const dependencies = Layer.mergeAll(
     environmentLayer,
     safeStorageLayer,
@@ -117,6 +125,63 @@ describe("DesktopConnectionCatalogStore", () => {
         assert.deepStrictEqual(yield* store.get, Option.none());
       }),
       false,
+    ),
+  );
+
+  it.effect("serializes catalog writes in renderer request order", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-connection-catalog-serialization-test-",
+      });
+      const firstEncryptStarted = yield* Deferred.make<void>();
+      const releaseFirstEncrypt = yield* Deferred.make<void>();
+      const encryptOrder = yield* Ref.make<string[]>([]);
+      const beforeEncrypt = (value: string) =>
+        Ref.update(encryptOrder, (order) => [...order, value]).pipe(
+          Effect.andThen(
+            value === "first"
+              ? Deferred.succeed(firstEncryptStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseFirstEncrypt)),
+                )
+              : Effect.void,
+          ),
+        );
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(makeLayer(baseDir, true, null, NodeServices.layer, beforeEncrypt)),
+      );
+
+      const firstWrite = yield* store
+        .set("first")
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(firstEncryptStarted);
+      const secondWrite = yield* store
+        .set("second")
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Effect.yieldNow;
+      assert.deepEqual(yield* Ref.get(encryptOrder), ["first"]);
+
+      yield* Deferred.succeed(releaseFirstEncrypt, undefined);
+      assert.isTrue(yield* Fiber.join(firstWrite));
+      assert.isTrue(yield* Fiber.join(secondWrite));
+      assert.deepEqual(yield* Ref.get(encryptOrder), ["first", "second"]);
+      assert.deepStrictEqual(yield* store.get, Option.some("second"));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("rejects a catalog whose persisted envelope would exceed the read limit", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
+        const error = yield* store.set("界".repeat(5_500_000)).pipe(Effect.flip);
+
+        assert.instanceOf(
+          error,
+          DesktopConnectionCatalogStore.DesktopConnectionCatalogStoreWriteError,
+        );
+        assert.equal(error.operation, "encode-document");
+        assert.deepStrictEqual(yield* store.get, Option.none());
+      }),
     ),
   );
 

@@ -4,19 +4,21 @@ import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
+  activeThreadAnchorTimestampMs,
   getThreadSortTimestamp,
+  resolveSettledThreadTimestamp,
   sortThreads,
   toSortableTimestamp,
+  type SettledThreadTimestampInput,
   type ThreadSortInput,
 } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
-import { resolveServerBackedAppStageLabel } from "../branding.logic";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
-export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
+export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
 // nearby thread usually reuses an already-hot subscription. Each prewarmed
 // thread holds a live, fully hydrated detail subscription (all messages and
@@ -24,6 +26,57 @@ export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
 // so this limit is a direct renderer-heap and server-load multiplier — keep
 // it small; cold opens still render instantly from the cached snapshot.
 export const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
+// A small buffer keeps the next few rows warm without leasing every row that
+// content-visibility leaves mounted below the scroll viewport.
+export const SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX = 160;
+
+export function useSidebarRowSubscriptionLease(isActive: boolean): {
+  readonly leaseLiveStatus: boolean;
+  readonly rowRef: React.Dispatch<React.SetStateAction<HTMLElement | null>>;
+} {
+  const [row, setRow] = React.useState<HTMLElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = React.useState(isActive);
+
+  React.useEffect(() => {
+    if (isActive) {
+      setIsNearViewport(true);
+      return;
+    }
+    if (row === null) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+
+    const scrollRoot = row.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsNearViewport(entry?.isIntersecting === true),
+      {
+        root: scrollRoot,
+        rootMargin: `${SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX}px 0px`,
+      },
+    );
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [isActive, row]);
+
+  return {
+    leaseLiveStatus: isActive || isNearViewport,
+    rowRef: setRow,
+  };
+}
+
+// A row keeps the last live value it rendered so a released lease never
+// blanks its badge. The value is bound to `key`, so a different worktree or
+// linked pull request cannot reuse the previous one.
+export function useRetainedValue<T>(key: string | null, value: T | null): T | null {
+  const retained = React.useRef<{ readonly key: string; readonly value: T } | null>(null);
+  if (key !== null && value !== null) {
+    retained.current = { key, value };
+  }
+  if (value !== null) return value;
+  return key !== null && retained.current?.key === key ? retained.current.value : null;
+}
 
 // The list already reaches its destination through sortable transforms while
 // the pointer is down. dnd-kit's default also animates the committed DOM order
@@ -90,6 +143,31 @@ export async function archiveSelectedThreadEntries<
   }
 
   return { archivedThreadKeys, mutationFailure: null, followupFailures };
+}
+
+export async function unarchiveSelectedThreadEntries<
+  TEntry,
+  TResult extends { readonly _tag: "Success" | "Failure" },
+>(input: {
+  entries: readonly TEntry[];
+  unarchive: (entry: TEntry) => Promise<TResult>;
+}): Promise<{
+  restored: readonly TEntry[];
+  failures: readonly Extract<TResult, { readonly _tag: "Failure" }>[];
+}> {
+  const restored: TEntry[] = [];
+  const failures: Extract<TResult, { readonly _tag: "Failure" }>[] = [];
+
+  for (const entry of input.entries) {
+    const result = await input.unarchive(entry);
+    if (result._tag === "Success") {
+      restored.push(entry);
+      continue;
+    }
+    failures.push(result as Extract<TResult, { readonly _tag: "Failure" }>);
+  }
+
+  return { restored, failures };
 }
 
 export function buildMultiSelectThreadContextMenuItems(input: {
@@ -168,13 +246,6 @@ type ThreadStatusInput = Pick<
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
   dispose: () => void;
-}
-
-export function resolveSidebarStageBadgeLabel(input: {
-  primaryServerVersion: string | null | undefined;
-  fallbackStageLabel: string;
-}): string {
-  return resolveServerBackedAppStageLabel(input);
 }
 
 export function createThreadJumpHintVisibilityController(input: {
@@ -574,16 +645,23 @@ export function firstValidTimestamp(
   return null;
 }
 
-// Sidebar sort: static creation order, newest thread on top. Activity NEVER
-// reorders the list — a row holds its position from open until settled, so
-// the screen only moves at lifecycle transitions. Status (including pending
-// approval) is carried by each card's edge strip, not by position.
+// Sidebar sort: static order, newest anchor on top. Activity NEVER reorders
+// the list — a row holds its position between lifecycle transitions, so the
+// screen only moves when a thread enters or leaves the active list. The
+// anchor is creation time until an un-settle re-anchors it (see
+// activeThreadAnchorTimestampMs), so an un-settled thread surfaces at the
+// top instead of sinking back to its creation-order slot. Status (including
+// pending approval) is carried by each card's edge strip, not by position.
 export function sortThreadsForSidebar<
-  T extends { readonly id: string; readonly createdAt: string },
+  T extends {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly unsettledAt?: string | null | undefined;
+  },
 >(threads: readonly T[]): T[] {
   return [...threads].toSorted(
     (left, right) =>
-      parseTimestampMs(right.createdAt) - parseTimestampMs(left.createdAt) ||
+      activeThreadAnchorTimestampMs(right) - activeThreadAnchorTimestampMs(left) ||
       left.id.localeCompare(right.id),
   );
 }
@@ -611,44 +689,112 @@ export function searchSidebarThreadsByTitle<T extends { readonly title: string }
   return threads.filter((thread) => thread.title.toLowerCase().includes(normalizedQuery));
 }
 
-type SettledTimestampInput = Pick<
-  SidebarThreadSummary,
-  "settledAt" | "latestUserMessageAt" | "latestTurn" | "updatedAt"
->;
+export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
+  items: readonly TItem[];
+  activeScopeKey: string | null;
+  query: string;
+  matches: (item: TItem, query: string) => boolean;
+}): readonly TItem[] {
+  const projectItems = input.items.filter((item) => item.value !== "all");
+  const query = input.query.trim();
+  if (query.length > 0) {
+    return projectItems.filter((item) => input.matches(item, query));
+  }
+  return input.activeScopeKey === null ? projectItems : input.items;
+}
 
-/** The timestamp a settled row sorts and labels by: settledAt when stamped
-    (explicit settles), otherwise last activity — the same candidates
-    threadLastActivityAt feeds the auto-settle window (user message plus all
-    latestTurn stamps), so a thread whose last activity was a turn completion
-    doesn't sort by an older message time. updatedAt is the final net. */
-export function resolveSettledTimestamp(thread: SettledTimestampInput): string | null {
-  const settledAt = firstValidTimestamp(thread.settledAt);
-  if (settledAt !== null) return settledAt;
-  let latest: string | null = null;
-  let latestMs = Number.NEGATIVE_INFINITY;
-  for (const candidate of [
-    thread.latestUserMessageAt,
-    thread.latestTurn?.requestedAt,
-    thread.latestTurn?.startedAt,
-    thread.latestTurn?.completedAt,
-  ]) {
-    if (candidate == null) continue;
-    const parsed = Date.parse(candidate);
-    if (!Number.isNaN(parsed) && parsed > latestMs) {
-      latest = candidate;
-      latestMs = parsed;
+export interface SidebarProjectScopeMenuState {
+  readonly open: boolean;
+  readonly query: string;
+}
+
+export type SidebarProjectScopeMenuAction =
+  | { readonly type: "query-changed"; readonly query: string }
+  | { readonly type: "open-changed"; readonly open: boolean }
+  | { readonly type: "project-settings-opened" };
+
+export function reduceSidebarProjectScopeMenuState(
+  state: SidebarProjectScopeMenuState,
+  action: SidebarProjectScopeMenuAction,
+): SidebarProjectScopeMenuState {
+  switch (action.type) {
+    case "query-changed":
+      return { ...state, query: action.query };
+    case "open-changed":
+      return { open: action.open, query: "" };
+    case "project-settings-opened":
+      return { open: false, query: "" };
+  }
+}
+
+/** Whether a settled thread has been settled (or quiet, for auto-settled
+    threads with no settledAt stamp) long enough to auto-archive. Uses the
+    same timestamp the settled tail sorts and labels by, so a row never
+    archives before the age its label shows. A thread with no resolvable
+    timestamp never auto-archives. */
+export function isSettledThreadPastArchiveAge(
+  thread: SettledThreadTimestampInput,
+  input: { nowMs: number; afterDays: number },
+): boolean {
+  const timestamp = resolveSettledThreadTimestamp(thread);
+  if (timestamp === null) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
+}
+
+/** Drop auto-archive attempts that have left the settled tail so a later
+    unarchive (Clear undo, archived list) can be attempted again. Keys still
+    in the tail stay, covering projection lag after a successful archive. */
+export function retainSettledAutoArchiveAttempts(
+  attemptedKeys: ReadonlySet<string>,
+  settledThreadKeys: ReadonlySet<string>,
+): Set<string> {
+  const retained = new Set<string>();
+  for (const key of attemptedKeys) {
+    if (settledThreadKeys.has(key)) retained.add(key);
+  }
+  return retained;
+}
+
+/** Claim keys that are not already reserved so Clear and auto-archive cannot
+    mutate the same thread concurrently. Returns the newly reserved keys. */
+export function reserveSettledArchiveAttempts(
+  attemptedKeys: Set<string>,
+  threadKeys: readonly string[],
+): string[] {
+  const reserved: string[] = [];
+  for (const key of threadKeys) {
+    if (attemptedKeys.has(key)) continue;
+    attemptedKeys.add(key);
+    reserved.push(key);
+  }
+  return reserved;
+}
+
+/** After Clear undo, re-reserve only restored keys already past archive
+    age so a minute sweep cannot immediately reverse the undo. Younger
+    restored keys stay unreserved so they can still auto-archive later. */
+export function reserveUndonePastArchiveAgeAttempts(
+  attemptedKeys: Set<string>,
+  restored: readonly { threadKey: string; thread: SettledThreadTimestampInput }[],
+  input: { nowMs: number; afterDays: number | null },
+): void {
+  if (input.afterDays === null) return;
+  const afterDays = input.afterDays;
+  for (const entry of restored) {
+    if (isSettledThreadPastArchiveAge(entry.thread, { nowMs: input.nowMs, afterDays })) {
+      attemptedKeys.add(entry.threadKey);
     }
   }
-  return latest ?? firstValidTimestamp(thread.updatedAt);
 }
 
 // Settled rows are history, so they order by when the work ENDED, not when
 // the thread was created or last touched.
 export function sortSettledThreadsForSidebar<
-  T extends SettledTimestampInput & { readonly id: string },
+  T extends SettledThreadTimestampInput & { readonly id: string },
 >(threads: readonly T[]): T[] {
   const timestampMs = (thread: T) => {
-    const timestamp = resolveSettledTimestamp(thread);
+    const timestamp = resolveSettledThreadTimestamp(thread);
     return timestamp === null ? 0 : Date.parse(timestamp);
   };
   return [...threads].toSorted(

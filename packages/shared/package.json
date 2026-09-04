@@ -43,6 +43,10 @@
       "types": "./src/createPullRequestPrompt.ts",
       "import": "./src/createPullRequestPrompt.ts"
     },
+    "./nativeResume": {
+      "types": "./src/nativeResume.ts",
+      "import": "./src/nativeResume.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"
@@ -79,6 +83,10 @@
       "types": "./src/Net.ts",
       "import": "./src/Net.ts"
     },
+    "./networkHost": {
+      "types": "./src/networkHost.ts",
+      "import": "./src/networkHost.ts"
+    },
     "./DrainableWorker": {
       "types": "./src/DrainableWorker.ts",
       "import": "./src/DrainableWorker.ts"
@@ -102,6 +110,10 @@
     "./imageTool": {
       "types": "./src/imageTool.ts",
       "import": "./src/imageTool.ts"
+    },
+    "./favicon": {
+      "types": "./src/favicon.ts",
+      "import": "./src/favicon.ts"
     },
     "./Struct": {
       "types": "./src/Struct.ts",
@@ -199,6 +211,10 @@
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
     },
+    "./threadReference": {
+      "types": "./src/threadReference.ts",
+      "import": "./src/threadReference.ts"
+    },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
@@ -206,6 +222,10 @@
     "./composerInlineTokens": {
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"
+    },
+    "./assistantCitations": {
+      "types": "./src/assistantCitations.ts",
+      "import": "./src/assistantCitations.ts"
     },
     "./terminalLabels": {
       "types": "./src/terminalLabels.ts",
@@ -230,6 +250,10 @@
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"
+    },
+    "./video": {
+      "types": "./src/video.ts",
+      "import": "./src/video.ts"
     },
     "./chatList": {
       "types": "./src/chatList.ts",
@@ -259,6 +283,10 @@
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
     },
+    "./desktopAppControl": {
+      "types": "./src/desktopAppControl.ts",
+      "import": "./src/desktopAppControl.ts"
+    },
     "./skillFrontmatter": {
       "types": "./src/skillFrontmatter.ts",
       "import": "./src/skillFrontmatter.ts"
@@ -266,6 +294,14 @@
     "./skillTool": {
       "types": "./src/skillTool.ts",
       "import": "./src/skillTool.ts"
+    },
+    "./claudeCompaction": {
+      "types": "./src/claudeCompaction.ts",
+      "import": "./src/claudeCompaction.ts"
+    },
+    "./nodeSqliteClient": {
+      "types": "./src/nodeSqliteClient.ts",
+      "import": "./src/nodeSqliteClient.ts"
     }
   },
   "scripts": {

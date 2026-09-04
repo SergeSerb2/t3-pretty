@@ -28,6 +28,9 @@ const closeServer = (server: NodeNet.Server) => {
   }
 };
 
+const isValidPort = (port: number): boolean =>
+  Number.isInteger(port) && port >= 0 && port <= 65_535;
+
 export interface NetServiceShape {
   /**
    * Returns true when a TCP server can bind to {host, port}.
@@ -70,85 +73,91 @@ export const make = () => {
    * loopback availability checks.
    */
   const canListenOnHost = (port: number, host: string): Effect.Effect<boolean> =>
-    Effect.callback<boolean>((resume) => {
-      const server = NodeNet.createServer();
-      let settled = false;
+    !isValidPort(port)
+      ? Effect.succeed(false)
+      : Effect.callback<boolean>((resume) => {
+          const server = NodeNet.createServer();
+          let settled = false;
 
-      const settle = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resume(Effect.succeed(value));
-      };
+          const settle = (value: boolean) => {
+            if (settled) return;
+            settled = true;
+            resume(Effect.succeed(value));
+          };
 
-      server.unref();
+          server.unref();
 
-      server.once("error", (cause) => {
-        if (isErrnoExceptionWithCode(cause) && cause.code === "EADDRNOTAVAIL") {
-          settle(true);
-          return;
-        }
-        settle(false);
-      });
+          server.once("error", (cause) => {
+            if (isErrnoExceptionWithCode(cause) && cause.code === "EADDRNOTAVAIL") {
+              settle(true);
+              return;
+            }
+            settle(false);
+          });
 
-      server.once("listening", () => {
-        server.close(() => {
-          settle(true);
+          server.once("listening", () => {
+            server.close(() => {
+              settle(true);
+            });
+          });
+
+          server.listen({ host, port });
+
+          return Effect.sync(() => {
+            closeServer(server);
+          });
         });
-      });
-
-      server.listen({ host, port });
-
-      return Effect.sync(() => {
-        closeServer(server);
-      });
-    });
 
   const hasListenerOnHost = (port: number, host: string): Effect.Effect<boolean> =>
-    Effect.callback<boolean>((resume) => {
-      const socket = NodeNet.createConnection({ host, port });
-      let settled = false;
+    !isValidPort(port)
+      ? Effect.succeed(false)
+      : Effect.callback<boolean>((resume) => {
+          const socket = NodeNet.createConnection({ host, port });
+          let settled = false;
 
-      const settle = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        resume(Effect.succeed(value));
-      };
+          const settle = (value: boolean) => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            resume(Effect.succeed(value));
+          };
 
-      socket.unref();
-      socket.setTimeout(250);
-      socket.once("connect", () => {
-        settle(true);
-      });
-      socket.once("error", () => {
-        settle(false);
-      });
-      socket.once("timeout", () => {
-        settle(false);
-      });
+          socket.unref();
+          socket.setTimeout(250);
+          socket.once("connect", () => {
+            settle(true);
+          });
+          socket.once("error", () => {
+            settle(false);
+          });
+          socket.once("timeout", () => {
+            settle(false);
+          });
 
-      return Effect.sync(() => {
-        socket.destroy();
-      });
-    });
+          return Effect.sync(() => {
+            socket.destroy();
+          });
+        });
 
   const isPortAvailableOnLoopback = (port: number): Effect.Effect<boolean> =>
-    Effect.gen(function* () {
-      const hasListener = yield* Effect.zipWith(
-        hasListenerOnHost(port, "127.0.0.1"),
-        hasListenerOnHost(port, "::1"),
-        (ipv4, ipv6) => ipv4 || ipv6,
-      );
-      if (hasListener) {
-        return false;
-      }
+    !isValidPort(port)
+      ? Effect.succeed(false)
+      : Effect.gen(function* () {
+          const hasListener = yield* Effect.zipWith(
+            hasListenerOnHost(port, "127.0.0.1"),
+            hasListenerOnHost(port, "::1"),
+            (ipv4, ipv6) => ipv4 || ipv6,
+          );
+          if (hasListener) {
+            return false;
+          }
 
-      return yield* Effect.zipWith(
-        canListenOnHost(port, "127.0.0.1"),
-        canListenOnHost(port, "::1"),
-        (ipv4, ipv6) => ipv4 && ipv6,
-      );
-    });
+          return yield* Effect.zipWith(
+            canListenOnHost(port, "127.0.0.1"),
+            canListenOnHost(port, "::1"),
+            (ipv4, ipv6) => ipv4 && ipv6,
+          );
+        });
 
   /**
    * Reserve an ephemeral loopback port and release it immediately.
@@ -193,7 +202,11 @@ export const make = () => {
     reserveLoopbackPort,
     findAvailablePort: (preferred) =>
       Effect.gen(function* () {
-        if (preferred > 0 && (yield* isPortAvailableOnLoopback(preferred))) {
+        if (
+          isValidPort(preferred) &&
+          preferred > 0 &&
+          (yield* isPortAvailableOnLoopback(preferred))
+        ) {
           return preferred;
         }
         return yield* reserveLoopbackPort();

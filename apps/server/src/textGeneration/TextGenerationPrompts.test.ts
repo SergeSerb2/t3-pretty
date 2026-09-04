@@ -9,9 +9,13 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
-  normalizeCliError,
   sanitizeActivityHeadline,
+  appendBoundedTextGenerationOutput,
+  decodeBoundedTextGenerationOutput,
+  makeBoundedTextGenerationOutput,
+  normalizeCliError,
   sanitizeThreadTitle,
+  TEXT_GENERATION_RESULT_MAX_BYTES,
 } from "./TextGenerationUtils.ts";
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -152,7 +156,7 @@ describe("buildBranchNamePrompt", () => {
 });
 
 describe("buildThreadTitlePrompt", () => {
-  it("includes the user message in the prompt", () => {
+  it("includes the user message and the title guidance rules", () => {
     const result = buildThreadTitlePrompt({
       message: "Investigate reconnect regressions after session restore",
     });
@@ -193,6 +197,24 @@ describe("buildThreadTitlePrompt", () => {
     expect(result.prompt).toContain("image/png");
     expect(result.prompt).toContain("67890 bytes");
   });
+
+  it.each([
+    { mode: "initial", previousTitle: undefined },
+    { mode: "regeneration", previousTitle: "Open Projects in Desktop App" },
+  ])(
+    "tells the $mode prompt not to title linked PRs from local git history",
+    ({ previousTitle }) => {
+      const result = buildThreadTitlePrompt({
+        message: "$takeover https://github.com/pingdotgg/t3code/pull/8588",
+        ...(previousTitle === undefined ? {} : { previousTitle }),
+      });
+
+      expect(result.prompt).toContain(
+        "Local git history is not evidence of what a linked PR or issue is about.",
+      );
+      expect(result.prompt).toContain('such as "Take Over PR 8588"');
+    },
+  );
 
   it("regenerates from recent thread contents and identifies the previous title", () => {
     const result = buildThreadTitlePrompt({
@@ -358,5 +380,28 @@ describe("normalizeCliError", () => {
 
     expect(result.detail).toBe("Failed to generate a commit message");
     expect(result.message).not.toContain("secret-token");
+  });
+});
+
+describe("bounded text-generation output", () => {
+  it("reassembles streamed output without repeated whole-string copies", () => {
+    let output = makeBoundedTextGenerationOutput();
+    output = appendBoundedTextGenerationOutput(output, "hello ");
+    output = appendBoundedTextGenerationOutput(output, "world");
+
+    expect(output.truncated).toBe(false);
+    expect(decodeBoundedTextGenerationOutput(output)).toBe("hello world");
+  });
+
+  it("stops retaining streamed output at the byte limit", () => {
+    let output = makeBoundedTextGenerationOutput();
+    output = appendBoundedTextGenerationOutput(
+      output,
+      "a".repeat(TEXT_GENERATION_RESULT_MAX_BYTES - 2),
+    );
+    output = appendBoundedTextGenerationOutput(output, "🌍");
+
+    expect(output.truncated).toBe(true);
+    expect(output.byteLength).toBe(TEXT_GENERATION_RESULT_MAX_BYTES);
   });
 });

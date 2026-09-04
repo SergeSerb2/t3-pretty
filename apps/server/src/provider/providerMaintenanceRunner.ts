@@ -237,7 +237,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               instanceIds,
               (instanceId) => providerRegistry.refreshInstance(instanceId),
               {
-                concurrency: "unbounded",
+                concurrency: 4,
                 discard: true,
               },
             ).pipe(Effect.andThen(providerRegistry.getProviders)),
@@ -260,15 +260,13 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               maintenanceCapabilities,
             ).pipe(Effect.provideService(HttpClient.HttpClient, httpClient)),
           {
-            concurrency: "unbounded",
+            concurrency: 4,
           },
         ).pipe(
-          Effect.map(
-            (verifiedProviders): VerifiedProviderRefresh => ({
-              providers,
-              verifiedProviders,
-            }),
-          ),
+          Effect.map((verifiedProviders): VerifiedProviderRefresh => ({
+            providers,
+            verifiedProviders,
+          })),
           Effect.catchCause((cause) =>
             Effect.logWarning("Provider post-update version verification failed", {
               provider,

@@ -58,6 +58,11 @@ interface Props {
    * to mount the three-dot menu (hard reload, devtools, zoom, clear data).
    */
   trailingActions?: ReactNode;
+  /**
+   * Slot between the nav buttons and the URL input. The preview view uses it
+   * to name the tab's browser profile, which is otherwise invisible.
+   */
+  leadingActions?: ReactNode;
 }
 
 const NOOP = () => {};
@@ -86,6 +91,7 @@ export function PreviewChromeRow({
   pickDisabled,
   pickDisabledReason,
   trailingActions,
+  leadingActions,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState(url);
@@ -96,6 +102,11 @@ export function PreviewChromeRow({
     const node = inputRef.current;
     if (!node) return;
     node.focus();
+    queueMicrotask(() => {
+      if (inputRef.current === node && document.activeElement === node) {
+        node.select();
+      }
+    });
   }, [focusUrlNonce]);
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
@@ -156,16 +167,18 @@ export function PreviewChromeRow({
                   size="icon-xs"
                   onClick={refreshDisabled ? NOOP : onRefresh}
                   disabled={refreshDisabled}
-                  aria-label={loading ? "Stop" : "Refresh"}
+                  aria-label="Refresh"
                   type="button"
                 />
               }
             >
               <RotateCw className={cn(loading && "animate-spin")} />
             </TooltipTrigger>
-            <TooltipPopup>{loading ? "Loading…" : "Refresh"}</TooltipPopup>
+            <TooltipPopup>Refresh</TooltipPopup>
           </Tooltip>
         </div>
+
+        {leadingActions}
 
         <InputGroup variant="ghost" className="group/address h-7 flex-1">
           <Tooltip>

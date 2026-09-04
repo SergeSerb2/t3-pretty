@@ -58,11 +58,15 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { requireEnvironmentScope } from "../auth/http.ts";
+import { readTextWithinLimit } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import {
   SERVICE_STATE_FILE,
+  SERVICE_STATE_MAX_BYTES,
   SERVICE_STOP_MARKER_FILE,
   serviceStateHasPendingUpdate,
 } from "./serviceProtocol.ts";
@@ -92,6 +96,9 @@ const CLOUD_HEALTH_NONCE_PREFIX = "cloud-health-nonce-";
 const CLOUD_HEALTH_JTI_PREFIX = "cloud-health-jti-";
 const CLOUD_PROOF_MAX_LIFETIME_SECONDS = 5 * 60;
 const CLOUD_PROOF_CLOCK_SKEW_SECONDS = 60;
+export const RELAY_CLIENT_RESPONSE_MAX_BYTES = 1024 * 1024;
+const RELAY_CLIENT_REQUEST_TIMEOUT = Duration.seconds(15);
+const CLOUD_LEGACY_REPLAY_CLAIM_PATTERN = /^[A-Za-z0-9_-]+$/;
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const CLOUD_CREDENTIAL_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -148,6 +155,23 @@ export function consumeCloudReplayGuards(input: {
     ),
     { concurrency: input.names.length },
   ).pipe(Effect.map((created) => created.every(Boolean)));
+}
+
+export function cloudReplayGuardName(prefix: string, claimValue: string): string {
+  const digest = NodeCrypto.createHash("sha256").update(claimValue, "utf8").digest("base64url");
+  return `${prefix}${digest}`;
+}
+
+export function cloudReplayGuardNames(
+  prefix: string,
+  claimValue: string,
+  includeLegacy = true,
+): ReadonlyArray<string> {
+  const hashed = cloudReplayGuardName(prefix, claimValue);
+  const legacy = `${prefix}${claimValue}`;
+  return includeLegacy && CLOUD_LEGACY_REPLAY_CLAIM_PATTERN.test(claimValue) && legacy !== hashed
+    ? [hashed, legacy]
+    : [hashed];
 }
 
 function normalizePemForSignedPayload(value: string): string {
@@ -526,16 +550,49 @@ const relayClientRequest = <A>(
     HttpClientRequest.bearerToken(input.token),
     HttpClientRequest.bodyJson(input.payload),
     Effect.flatMap(dependencies.httpClient.execute),
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
+    Effect.flatMap((response) => decodeRelayClientResponse(response, input.schema)),
+    Effect.timeout(RELAY_CLIENT_REQUEST_TIMEOUT),
     Effect.mapError(
-      (cause) =>
+      () =>
         new EnvironmentHttpInternalServerError({
-          message: `T3 Connect relay request failed: ${String(cause)}`,
+          message: "T3 Connect relay request failed.",
         }),
     ),
     withRelayClientTracing,
   );
+
+const decodeRelayClientResponse = <A>(
+  response: HttpClientResponse.HttpClientResponse,
+  schema: Schema.Decoder<A>,
+) =>
+  Effect.gen(function* () {
+    if (response.status < 200 || response.status >= 300) {
+      yield* releaseHttpClientResponseBody(response);
+      return yield* new EnvironmentHttpInternalServerError({
+        message: "T3 Connect relay returned a non-success response.",
+      });
+    }
+    const declaredLength = Number(response.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > RELAY_CLIENT_RESPONSE_MAX_BYTES) {
+      yield* releaseHttpClientResponseBody(response);
+      return yield* new EnvironmentHttpInternalServerError({
+        message: "Relay response exceeded the configured body limit.",
+      });
+    }
+    const collected = yield* collectUint8StreamText({
+      stream: response.stream,
+      maxBytes: RELAY_CLIENT_RESPONSE_MAX_BYTES,
+      drainAfterTruncation: false,
+    });
+    if (collected.truncated || collected.invalidUtf8) {
+      return yield* new EnvironmentHttpInternalServerError({
+        message: collected.truncated
+          ? "Relay response exceeded the configured body limit."
+          : "Relay response was not valid UTF-8.",
+      });
+    }
+    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(collected.text);
+  });
 
 const reconcileDesiredCloudLinkWith = Effect.fn("environment.cloud.reconcileDesiredLinkWith")(
   function* (dependencies: CloudHttpDependencies, localOrigin: string) {
@@ -642,9 +699,11 @@ export const pendingServiceUpdateExists = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runtimeDir = path.join(config.baseDir, "runtime");
-  const stateText = yield* fs
-    .readFileString(path.join(runtimeDir, SERVICE_STATE_FILE))
-    .pipe(Effect.option);
+  const stateText = yield* readTextWithinLimit(
+    fs,
+    path.join(runtimeDir, SERVICE_STATE_FILE),
+    SERVICE_STATE_MAX_BYTES,
+  ).pipe(Effect.option);
   return Option.isSome(stateText) && serviceStateHasPendingUpdate(stateText.value);
 });
 
@@ -720,8 +779,14 @@ export const releaseManagedTunnelOnShutdown = Effect.fn(
   ).pipe(
     HttpClientRequest.bearerToken(token.value.accessToken),
     dependencies.httpClient.execute,
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(RelayOkResponse)),
+    Effect.flatMap((response) => decodeRelayClientResponse(response, RelayOkResponse)),
+    Effect.timeout(RELAY_CLIENT_REQUEST_TIMEOUT),
+    Effect.mapError(
+      () =>
+        new EnvironmentHttpInternalServerError({
+          message: "T3 Connect relay tunnel release failed.",
+        }),
+    ),
     withRelayClientTracing,
   );
   // ok:false means the relay skipped deletion because a concurrent provision
@@ -881,11 +946,12 @@ const cloudEnvironmentHealthHandler = Effect.fn("environment.cloud.health")(
     }
     const proof = proofOption.value;
 
-    const jtiSecretName = `${CLOUD_HEALTH_JTI_PREFIX}${proof.jti}`;
-    const nonceSecretName = `${CLOUD_HEALTH_NONCE_PREFIX}${proof.nonce}`;
     const consumedReplayGuards = yield* consumeCloudReplayGuards({
       secrets: dependencies.secrets,
-      names: [jtiSecretName, nonceSecretName],
+      names: [
+        ...cloudReplayGuardNames(CLOUD_HEALTH_JTI_PREFIX, proof.jti),
+        ...cloudReplayGuardNames(CLOUD_HEALTH_NONCE_PREFIX, proof.nonce),
+      ],
       value: stringToBytes(DateTime.formatIso(now)),
     });
     if (!consumedReplayGuards) {
@@ -1000,11 +1066,12 @@ const cloudMintCredentialHandler = Effect.fn("environment.cloud.mintCredential")
     }
     const proof = proofOption.value;
 
-    const jtiSecretName = `${CLOUD_MINT_JTI_PREFIX}${proof.jti}`;
-    const nonceSecretName = `${CLOUD_MINT_NONCE_PREFIX}${proof.nonce}`;
     const consumedReplayGuards = yield* consumeCloudReplayGuards({
       secrets: dependencies.secrets,
-      names: [jtiSecretName, nonceSecretName],
+      names: [
+        ...cloudReplayGuardNames(CLOUD_MINT_JTI_PREFIX, proof.jti),
+        ...cloudReplayGuardNames(CLOUD_MINT_NONCE_PREFIX, proof.nonce),
+      ],
       value: stringToBytes(DateTime.formatIso(now)),
     });
     if (!consumedReplayGuards) {

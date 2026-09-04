@@ -8,6 +8,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
@@ -18,6 +19,7 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "transfer"
   | "copy"
   | "copy-conversation"
   | "copy-path"
@@ -48,6 +50,7 @@ export interface ThreadActionMenuState {
     readonly snooze: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly projectTransfer: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -141,6 +144,16 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail" },
+    ...(state.supports.projectTransfer
+      ? [
+          {
+            id: "transfer" as const,
+            label: "Move to connection…",
+            icon: "arrow-right-left",
+            disabled: state.isRunning,
+          },
+        ]
+      : []),
   ];
 
   const copy: ContextMenuItem<ThreadActionMenuId> = {
@@ -156,6 +169,12 @@ export function buildThreadActionMenuItems(
         : []),
       { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
     ],
+  };
+
+  const projectSettings: ContextMenuItem<ThreadActionMenuId> = {
+    id: "project-settings",
+    label: "Project settings",
+    icon: "settings",
   };
 
   const danger: ContextMenuItem<ThreadActionMenuId>[] = [
@@ -174,5 +193,5 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  return joinGroups([lifecycle, edit, [copy], danger]);
+  return joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
 }

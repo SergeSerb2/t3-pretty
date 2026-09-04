@@ -1,4 +1,10 @@
-import { WS_METHODS, type PullRequestDiffInput } from "@t3tools/contracts";
+import {
+  WS_METHODS,
+  type PullRequestDetail,
+  type PullRequestDiffInput,
+  type PullRequestSummary,
+  type VcsStatusResult,
+} from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -15,7 +21,12 @@ import { PullRequestDiffLoader } from "./pullRequestDiffHttp.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 
-export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequestDiffHttp.ts";
+export {
+  type PullRequestDiffLoadError,
+  PullRequestDiffCredentialRejectedError,
+  PullRequestDiffLoader,
+  pullRequestDiffLoaderLayer,
+} from "./pullRequestDiffHttp.ts";
 
 /**
  * How often an open pull-request view re-reads the host. One change request, not a
@@ -25,10 +36,40 @@ export { PullRequestDiffLoader, pullRequestDiffLoaderLayer } from "./pullRequest
  * GitHub in the app down with it.
  */
 export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
+export const PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS = 60_000;
 
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
+
+export const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
+
+/** Refresh only the live fields a linked thread renders. */
+export function createLinkedPullRequestSummaryAtomFamily<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pull-requests:linked-summary",
+    tag: WS_METHODS.pullRequestsSummary,
+    staleTimeMs: 60_000,
+    refreshIntervalMs: 60_000,
+    idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
+  });
+}
+
+export function pullRequestDetailToVcsStatus(
+  detail: PullRequestDetail | PullRequestSummary,
+): NonNullable<VcsStatusResult["pr"]> {
+  return {
+    number: detail.number,
+    title: detail.title,
+    url: detail.url,
+    baseRef: detail.baseBranch,
+    headRef: detail.headBranch,
+    state: detail.state,
+    updatedAt: detail.updatedAt,
+  };
+}
 
 /**
  * Every read shells out to the GitHub CLI, so results are reused for a short while and
@@ -43,6 +84,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   } as const;
+  const activity = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pull-requests:activity",
+    tag: WS_METHODS.pullRequestsActivity,
+    staleTimeMs: 20_000,
+    idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
+  });
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list",
@@ -65,11 +112,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsDetail,
       staleTimeMs: 20_000,
     }),
-    activity: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:activity",
-      tag: WS_METHODS.pullRequestsActivity,
-      staleTimeMs: 20_000,
-    }),
+    activity,
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
       tag: WS_METHODS.pullRequestsThreadComments,
@@ -83,6 +126,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
       staleTimeMs: 60_000,
+      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {
           const supervisor = yield* EnvironmentSupervisor;
@@ -138,6 +182,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsUpdateComment,
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
+      onSuccess: ({ environmentId, input: { projectId, repository, number } }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(activity({ environmentId, input: { projectId, repository, number } })),
+        ),
     }),
     submitReview: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:submit-review",
@@ -165,6 +213,18 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
       tag: WS_METHODS.pullRequestsRequestReviewers,
+      scheduler: commandScheduler,
+      concurrency: serialPerEnvironment,
+    }),
+    /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
+    labelCandidates: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:label-candidates",
+      tag: WS_METHODS.pullRequestsLabelCandidates,
+      staleTimeMs: 60_000,
+    }),
+    setLabels: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:set-labels",
+      tag: WS_METHODS.pullRequestsSetLabels,
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),

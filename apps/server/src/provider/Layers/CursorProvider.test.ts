@@ -15,16 +15,25 @@ import {
   buildCursorProviderSnapshot,
   buildCursorCapabilitiesFromConfigOptions,
   checkCursorProviderStatus,
+  cursorCliVariantBaseSlug,
   discoverCursorModelsViaAcp,
   enrichCursorAutoModelCapabilities,
   getCursorFallbackModels,
   getCursorParameterizedModelPickerUnsupportedMessage,
+  mergeCursorCliModelsIntoDiscoveredModels,
   parseCursorAboutOutput,
   parseCursorCliConfigChannel,
+  parseCursorListModelsOutput,
   parseCursorVersionDate,
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
 } from "./CursorProvider.ts";
+import {
+  discoverCursorSkills,
+  hasCursorSkillMention,
+  probeCursorSkills,
+  rewriteCursorSkillMentions,
+} from "../Drivers/CursorSkills.ts";
 
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 
@@ -104,6 +113,15 @@ const makeMockAgentWithAboutWrapper = Effect.fn("makeMockAgentWithAboutWrapper")
 if [ "$1" = "about" ]; then
   printf 'CLI Version         2026.04.09-f2b0fcd\\n'
   printf 'User Email          cursor@example.com\\n'
+  exit 0
+fi
+if [ "$1" = "--list-models" ] || [ "$1" = "models" ]; then
+  printf 'Available models\\n'
+  printf 'auto - Auto (default)\\n'
+  printf 'composer-2 - Composer 2\\n'
+  printf 'gpt-5.4 - GPT-5.4\\n'
+  printf 'claude-opus-4-6 - Opus 4.6\\n'
+  printf 'glm-5.3-flash - GLM 5.3 Flash\\n'
   exit 0
 fi
 exec ${mockAgentCommand} "$@"
@@ -315,6 +333,98 @@ const cursorCliCommandMissingMessage = [
   "See https://cursor.com/docs/cli/installation.",
 ].join(" ");
 
+describe("Cursor skills", () => {
+  it("discovers recursive project skills with project precedence", async () =>
+    await runNode(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const userHome = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-skills-home-",
+        });
+        const workspace = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-skills-workspace-",
+        });
+        const writeSkill = Effect.fn("writeCursorSkill")(function* (
+          root: string,
+          name: string,
+          contents: string,
+        ) {
+          const skillDirectory = path.join(root, name);
+          yield* fileSystem.makeDirectory(skillDirectory, { recursive: true });
+          yield* fileSystem.writeFileString(path.join(skillDirectory, "SKILL.md"), contents);
+        });
+
+        yield* writeSkill(
+          path.join(userHome, ".cursor", "skills"),
+          "review",
+          "---\ndescription: user review\n---\n",
+        );
+        yield* writeSkill(
+          path.join(workspace, ".agents", "skills", "nested"),
+          "review",
+          "---\nname: Review changes\ndescription: project review\n---\n",
+        );
+        yield* writeSkill(
+          path.join(workspace, ".cursor", "skills"),
+          "internal",
+          "---\nuser-invocable: false\n---\n",
+        );
+        yield* writeSkill(
+          path.join(workspace, ".cursor", "skills"),
+          "oversized",
+          "x".repeat(1_000_001),
+        );
+        yield* fileSystem.makeDirectory(path.join(userHome, ".codex"), { recursive: true });
+        yield* fileSystem.writeFileString(
+          path.join(userHome, ".codex", "skills"),
+          "not a directory",
+        );
+
+        const skills = yield* discoverCursorSkills(workspace, { HOME: userHome });
+        expect(skills).toEqual([
+          {
+            name: "internal",
+            path: path.join(workspace, ".cursor", "skills", "internal", "SKILL.md"),
+            scope: "project",
+            enabled: true,
+            userInvocable: false,
+          },
+          {
+            name: "oversized",
+            path: path.join(workspace, ".cursor", "skills", "oversized", "SKILL.md"),
+            scope: "project",
+            enabled: true,
+          },
+          {
+            name: "review",
+            displayName: "Review changes",
+            description: "project review",
+            path: path.join(workspace, ".agents", "skills", "nested", "review", "SKILL.md"),
+            scope: "project",
+            enabled: true,
+          },
+        ]);
+        expect(
+          (yield* probeCursorSkills(workspace, { HOME: userHome }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
+      }),
+    ));
+
+  it("rewrites only discovered skill mentions into Cursor slash invocations", () => {
+    expect(hasCursorSkillMention("use $Review_Pr:V2 here")).toBe(true);
+    expect(hasCursorSkillMention("please $review this")).toBe(true);
+    expect(
+      rewriteCursorSkillMentions("use $review, keep $HOME and 5$review", new Set(["review"])),
+    ).toBe("use $review, keep $HOME and 5$review");
+    expect(rewriteCursorSkillMentions("please $review this", new Set(["review"]))).toBe(
+      "please /review this",
+    );
+  });
+});
+
 describe("getCursorFallbackModels", () => {
   it("does not publish any built-in cursor models before ACP discovery", () => {
     expect(
@@ -342,6 +452,33 @@ describe("buildCursorProviderSnapshot", () => {
       status: "warning",
       message: "Cursor ACP model discovery timed out after 15000ms.",
       models: [],
+    });
+  });
+
+  it("keeps ACP discovery warnings when CLI fill-in still produced models", () => {
+    expect(
+      buildCursorProviderSnapshot({
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        cursorSettings: baseCursorSettings,
+        parsed: {
+          version: "2026.04.09-f2b0fcd",
+          status: "ready",
+          auth: { status: "authenticated", type: "Team", label: "Cursor Team Subscription" },
+        },
+        discoveredModels: [
+          {
+            slug: "glm-5.3-flash",
+            name: "GLM 5.3 Flash",
+            isCustom: false,
+            capabilities: EMPTY_CAPABILITIES,
+          },
+        ],
+        discoveryWarning: "Cursor ACP model discovery timed out after 15000ms.",
+      }),
+    ).toMatchObject({
+      status: "warning",
+      message: "Cursor ACP model discovery timed out after 15000ms.",
+      models: [{ slug: "glm-5.3-flash" }],
     });
   });
 
@@ -529,6 +666,7 @@ describe("checkCursorProviderStatus", () => {
       "composer-2",
       "gpt-5.4",
       "claude-opus-4-6",
+      "glm-5.3-flash",
     ]);
     await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
   });
@@ -660,11 +798,18 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(parseCursorCliConfigChannel("not-json")).toBeUndefined();
   });
 
-  it("returns no warning when the preview requirements are met", () => {
+  it("returns no warning when the Cursor Agent is new enough", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.08-c4e73a3",
-        channel: "lab",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("does not require the lab channel for model discovery", () => {
+    expect(
+      getCursorParameterizedModelPickerUnsupportedMessage({
+        version: "2026.08.11-e8db854",
       }),
     ).toBeUndefined();
   });
@@ -673,18 +818,81 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.07-c4e73a3",
-        channel: "lab",
       }),
     ).toContain("too old");
   });
+});
 
-  it("explains when the Cursor Agent channel is not lab", () => {
+describe("cursor CLI model list parsing", () => {
+  it("parses `cursor-agent --list-models` output including glm-5.3-flash", () => {
     expect(
-      getCursorParameterizedModelPickerUnsupportedMessage({
-        version: "2026.04.08-c4e73a3",
-        channel: "stable",
-      }),
-    ).toContain("lab channel");
+      parseCursorListModelsOutput(`Available models
+
+auto - Auto (default)
+glm-5.2-high - GLM 5.2
+glm-5.2-max - GLM 5.2 Max
+glm-5.3-flash - GLM 5.3 Flash
+composer-2.5-fast - Composer 2.5 Fast
+`),
+    ).toEqual([
+      { slug: "default", name: "Auto" },
+      { slug: "glm-5.2-high", name: "GLM 5.2" },
+      { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+      { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+      { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
+    ]);
+  });
+
+  it("strips CLI effort/fast suffixes without treating flash as a variant", () => {
+    expect(cursorCliVariantBaseSlug("glm-5.3-flash")).toBe("glm-5.3-flash");
+    expect(cursorCliVariantBaseSlug("glm-5.2-high")).toBe("glm-5.2");
+    expect(cursorCliVariantBaseSlug("gpt-5.5-extra-high-fast")).toBe("gpt-5.5");
+    expect(cursorCliVariantBaseSlug("claude-opus-5-thinking-high-fast")).toBe("claude-opus-5");
+    expect(cursorCliVariantBaseSlug("composer-2.5-fast")).toBe("composer-2.5");
+    expect(cursorCliVariantBaseSlug("gemini-3.7-flash")).toBe("gemini-3.7-flash");
+  });
+
+  it("adds CLI-only families without duplicating ACP parameterized bases", () => {
+    const merged = mergeCursorCliModelsIntoDiscoveredModels(
+      [
+        {
+          slug: "glm-5.2",
+          name: "GLM 5.2",
+          isCustom: false,
+          capabilities: EMPTY_CAPABILITIES,
+        },
+        {
+          slug: "default",
+          name: "Auto",
+          isCustom: false,
+          capabilities: EMPTY_CAPABILITIES,
+        },
+      ],
+      [
+        { slug: "default", name: "Auto" },
+        { slug: "glm-5.2-high", name: "GLM 5.2" },
+        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+      ],
+    );
+    expect(merged.map((model) => model.slug)).toEqual(["glm-5.2", "default", "glm-5.3-flash"]);
+  });
+
+  it("keeps advertised CLI ids when ACP omitted the family", () => {
+    const merged = mergeCursorCliModelsIntoDiscoveredModels(
+      [],
+      [
+        { slug: "glm-5.2-high", name: "GLM 5.2" },
+        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
+        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
+        { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
+      ],
+    );
+    expect(merged.map((model) => model.slug)).toEqual([
+      "glm-5.2-high",
+      "glm-5.3-flash",
+      "composer-2.5-fast",
+    ]);
   });
 });
 

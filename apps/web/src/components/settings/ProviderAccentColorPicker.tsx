@@ -1,7 +1,7 @@
 "use client";
 
 import { PipetteIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 
 import { ColorSelector } from "../color-selector";
 import { Button } from "../ui/button";
@@ -85,14 +85,22 @@ function ProviderCustomColorPanel(props: {
   readonly onCommit: (value: string) => void;
 }) {
   const { onCommit } = props;
-  const initialHsv = useMemo(() => hexToHsv(props.value), [props.value]);
-  const [hsv, setHsv] = useState(initialHsv);
+  const [hsv, setHsv] = useState(() => hexToHsv(props.value));
   const currentColor = hsvToHex(hsv.h, hsv.s, hsv.v);
+  const [hexDraft, setHexDraft] = useState(currentColor);
+
+  useEffect(() => {
+    const nextHsv = hexToHsv(props.value);
+    setHsv(nextHsv);
+    setHexDraft(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v));
+  }, [props.value]);
 
   const commitHsv = useCallback(
     (nextHsv: typeof hsv) => {
+      const nextColor = hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v);
       setHsv(nextHsv);
-      onCommit(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v));
+      setHexDraft(nextColor);
+      onCommit(nextColor);
     },
     [onCommit],
   );
@@ -162,15 +170,18 @@ function ProviderCustomColorPanel(props: {
           />
         </div>
         <input
-          value={currentColor}
+          value={hexDraft}
           onChange={(event) => {
             const nextColor = event.currentTarget.value;
+            setHexDraft(nextColor);
             if (!/^#[\da-f]{6}$/i.test(nextColor)) return;
             setHsv(hexToHsv(nextColor));
             props.onCommit(nextColor);
           }}
+          onBlur={() => setHexDraft(currentColor)}
           className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs text-foreground outline-none transition-colors focus:border-ring"
           aria-label="Custom hex accent color"
+          maxLength={7}
           spellCheck={false}
         />
       </div>
@@ -228,8 +239,17 @@ export function ProviderAccentColorPicker(props: {
   readonly onCommit: (value: string) => void;
   readonly description?: string;
   readonly commitDelayMs?: number;
+  /** `inline` renders only the swatch row, for callers that supply their own label. */
+  readonly layout?: "stacked" | "inline";
 }) {
-  const { commitDelayMs = 0, description, displayName, onCommit, value } = props;
+  const {
+    commitDelayMs = 0,
+    description,
+    displayName,
+    layout = "stacked",
+    onCommit,
+    value,
+  } = props;
   const [optimisticValue, setOptimisticValue] = useState(() => value ?? "");
   const commitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCommitRef = useRef<string | null>(null);
@@ -295,40 +315,52 @@ export function ProviderAccentColorPicker(props: {
       : "";
   const customSelected = Boolean(normalized && selectedValue === "");
 
+  const swatchRow = (
+    <div
+      role="group"
+      aria-label="Accent color"
+      className="flex min-w-0 flex-wrap items-center gap-2"
+    >
+      <ProviderCustomColorPicker
+        displayName={displayName}
+        value={normalized}
+        selected={customSelected}
+        onCommit={commitAccentColor}
+      />
+      <ColorSelector
+        key={selectedValue}
+        colors={[...PROVIDER_ACCENT_SWATCHES]}
+        defaultValue={selectedValue}
+        size="lg"
+        onColorSelect={commitAccentColor}
+        className="flex-wrap gap-1.5"
+      />
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className={cn(
+          "size-7 shrink-0 text-muted-foreground transition-opacity",
+          normalized ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        onClick={() => commitAccentColor("")}
+        aria-label={`Clear accent color for ${displayName}`}
+        aria-hidden={!normalized}
+        tabIndex={normalized ? 0 : -1}
+      >
+        <XIcon className="size-3.5" aria-hidden />
+      </Button>
+    </div>
+  );
+
+  if (layout === "inline") {
+    return swatchRow;
+  }
+
   return (
     <div className="grid gap-2">
       <span className="text-xs font-medium text-foreground">Accent color</span>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <ProviderCustomColorPicker
-          displayName={displayName}
-          value={normalized}
-          selected={customSelected}
-          onCommit={commitAccentColor}
-        />
-        <ColorSelector
-          key={selectedValue}
-          colors={[...PROVIDER_ACCENT_SWATCHES]}
-          defaultValue={selectedValue}
-          size="lg"
-          onColorSelect={commitAccentColor}
-          className="flex-wrap gap-1.5"
-        />
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className={cn(
-            "size-7 shrink-0 text-muted-foreground transition-opacity",
-            normalized ? "opacity-100" : "pointer-events-none opacity-0",
-          )}
-          onClick={() => commitAccentColor("")}
-          aria-label={`Clear accent color for ${displayName}`}
-          aria-hidden={!normalized}
-          tabIndex={normalized ? 0 : -1}
-        >
-          <XIcon className="size-3.5" aria-hidden />
-        </Button>
-      </div>
+      {swatchRow}
       {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
     </div>
   );

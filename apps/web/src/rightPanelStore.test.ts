@@ -1,7 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
+import { usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
 import {
   migratePersistedRightPanelState,
   pullRequestSurfaceId,
@@ -9,7 +10,6 @@ import {
   selectActiveRightPanelSurface,
   selectSelectedRightPanelSurface,
   selectThreadRightPanelState,
-  updatePullRequestTabStatus,
   useRightPanelStore,
 } from "./rightPanelStore";
 
@@ -18,6 +18,7 @@ const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"))
 
 beforeEach(() => {
   useRightPanelStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {}, dismissedTabIdsByThreadKey: {} });
 });
 
 describe("rightPanelStore", () => {
@@ -73,6 +74,43 @@ describe("rightPanelStore", () => {
         },
       },
     });
+  });
+
+  it("bounds persisted and runtime terminal groups to the supported pane limit", () => {
+    const persisted = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "terminal:term-1",
+          surfaces: [
+            {
+              id: "terminal:term-1",
+              kind: "terminal",
+              resourceId: "term-1",
+              terminalIds: ["term-1", "term-2", "term-3", "term-4", "term-5"],
+              activeTerminalId: "term-5",
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      persisted.byThreadKey["env-1:thread-A"]?.surfaces[0]?.kind === "terminal"
+        ? persisted.byThreadKey["env-1:thread-A"].surfaces[0].terminalIds
+        : [],
+    ).toEqual(["term-1", "term-2", "term-3", "term-4"]);
+
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    for (const terminalId of ["term-2", "term-3", "term-4", "term-5"]) {
+      useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", terminalId);
+    }
+    const surface = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(surface?.kind === "terminal" ? surface.terminalIds : []).toEqual([
+      "term-1",
+      "term-2",
+      "term-3",
+      "term-4",
+    ]);
   });
 
   it("upgrades saved file surfaces with neutral reveal state", () => {
@@ -212,6 +250,35 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("drops malformed surfaces and canonicalizes duplicate persisted tabs", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "diff",
+            surfaces: [
+              null,
+              "diff",
+              { id: "not-diff", kind: "diff", retainedGarbage: "ignored" },
+              { id: "diff", kind: "diff" },
+              { id: "browser:tab-a", kind: "preview", resourceId: 42 },
+              { id: "file:README.md", kind: "file", relativePath: null },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        },
+      },
+    });
+  });
+
   it("open sets the active panel for a thread", () => {
     useRightPanelStore.getState().open(refA, "preview");
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("preview");
@@ -280,6 +347,50 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("opens an attachment as a file surface without the standalone explorer", () => {
+    const attachment = {
+      type: "file" as const,
+      id: "thread-A-attachment-pdf",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 42,
+    };
+    useRightPanelStore.getState().open(refA, "files");
+    useRightPanelStore.getState().openAttachment(refA, attachment);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "attachment:thread-A-attachment-pdf",
+      surfaces: [
+        {
+          id: "attachment:thread-A-attachment-pdf",
+          kind: "file",
+          relativePath: "report.pdf",
+          revealLine: null,
+          revealRequestId: 0,
+          attachment,
+        },
+      ],
+    });
+  });
+
+  it("keeps attachment and workspace file ids disjoint", () => {
+    useRightPanelStore.getState().openFile(refA, "attachment:shared-id");
+    useRightPanelStore.getState().openAttachment(refA, {
+      type: "file",
+      id: "shared-id",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 42,
+    });
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+        (surface) => surface.id,
+      ),
+    ).toEqual(["file:attachment:shared-id", "attachment:shared-id"]);
+  });
+
   it("updates line reveal requests when reopening a file surface", () => {
     useRightPanelStore.getState().openFile(refA, "src/index.ts", 42);
     useRightPanelStore.getState().openFile(refA, "src/index.ts", 87);
@@ -337,6 +448,35 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps attachment previews when their workspace is unavailable", () => {
+    const attachment = {
+      type: "file" as const,
+      id: "thread-A-attachment-pdf",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 42,
+    };
+    useRightPanelStore.getState().openFile(refA, "README.md");
+    useRightPanelStore.getState().openAttachment(refA, attachment);
+
+    useRightPanelStore.getState().reconcileFileSurfaces(refA, false);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "attachment:thread-A-attachment-pdf",
+      surfaces: [
+        {
+          id: "attachment:thread-A-attachment-pdf",
+          kind: "file",
+          relativePath: "report.pdf",
+          revealLine: null,
+          revealRequestId: 0,
+          attachment,
+        },
+      ],
+    });
+  });
+
   it("close hides the panel without clearing its selected surface", () => {
     useRightPanelStore.getState().open(refA, "agents");
     useRightPanelStore.getState().close(refA);
@@ -390,6 +530,20 @@ describe("rightPanelStore", () => {
   it("close on never-opened thread is a no-op", () => {
     useRightPanelStore.getState().close(refA);
     expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+  });
+
+  it("undismisses that tab's floating preview when opening the browser panel", () => {
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-b");
+
+    useRightPanelStore.getState().openBrowser(refA, "tab-a");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-b"],
+    });
+    expect(usePreviewMiniPlayerStore.getState().byThreadKey[scopedThreadKey(refA)]).toBeUndefined();
   });
 
   it("tracks one surface per browser session", () => {
@@ -483,62 +637,6 @@ describe("rightPanelStore", () => {
         refAfterServerADisconnects,
       ).surfaces,
     ).toEqual([]);
-  });
-
-  describe("updatePullRequestTabStatus", () => {
-    const status = (isDraft: boolean) => ({
-      projectId: "project-a",
-      repository: "pingdotgg/t3code",
-      number: 4909,
-      state: "open" as const,
-      isDraft,
-    });
-
-    // Regression for the tab wearing no state: this failed when the status was written under a
-    // key rebuilt from the pull request while the tab strip reads it under the surface's own id.
-    it("keys a status under the same id a surface opened from an environment carries", () => {
-      const target = {
-        environmentId: "remote",
-        projectId: "project-a",
-        repository: "pingdotgg/t3code",
-        number: 4909,
-      };
-      useRightPanelStore.getState().openPullRequest(refA, target);
-      const surface = selectSelectedRightPanelSurface(
-        useRightPanelStore.getState().byThreadKey,
-        refA,
-      );
-      expect(surface).not.toBeNull();
-
-      const statuses = updatePullRequestTabStatus({}, surface!.id, status(false));
-      expect(statuses[surface!.id]).toEqual(status(false));
-    });
-
-    it("keys a status under the same id a thread surface with no environment carries", () => {
-      const target = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4909 };
-      useRightPanelStore.getState().openPullRequest(refA, target);
-      const surface = selectSelectedRightPanelSurface(
-        useRightPanelStore.getState().byThreadKey,
-        refA,
-      );
-      expect(surface).not.toBeNull();
-
-      const statuses = updatePullRequestTabStatus({}, surface!.id, status(false));
-      expect(statuses[surface!.id]).toEqual(status(false));
-    });
-
-    it("returns the identical map when the tab's state and draft flag are unchanged", () => {
-      const first = updatePullRequestTabStatus({}, "pull-request:1", status(false));
-      const second = updatePullRequestTabStatus(first, "pull-request:1", status(false));
-      expect(second).toBe(first);
-    });
-
-    it("replaces the entry when the draft flag changes", () => {
-      const first = updatePullRequestTabStatus({}, "pull-request:1", status(false));
-      const second = updatePullRequestTabStatus(first, "pull-request:1", status(true));
-      expect(second).not.toBe(first);
-      expect(second["pull-request:1"]).toEqual(status(true));
-    });
   });
 
   it("tracks one surface per terminal session", () => {

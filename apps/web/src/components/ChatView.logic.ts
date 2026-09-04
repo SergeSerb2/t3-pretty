@@ -6,6 +6,7 @@ import {
   ProjectId,
   type MessageId,
   type ModelSelection,
+  type ProviderInteractionMode,
   type ProviderDriverKind,
   type RuntimeMode,
   type ServerProvider,
@@ -15,7 +16,18 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
-import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
+import {
+  appendCodexArtifactTemplateUsePrompt,
+  codexArtifactTemplateUsePrompt,
+  type CodexArtifactTemplate,
+} from "@t3tools/client-runtime/codex-artifact-templates";
+import {
+  type ChatMessage,
+  isImageAttachment,
+  type SessionPhase,
+  type Thread,
+  type ThreadShell,
+} from "../types";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -28,13 +40,136 @@ import {
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 import type { ComposerSubmissionIntent } from "../composer-logic";
 import type { TimelineEntry } from "../session-logic";
+import type { DesktopPreviewOverlay } from "../previewStateStore";
+import type { RightPanelSurface } from "../rightPanelStore";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 3;
 export const MAX_HIDDEN_MOUNTED_PREVIEW_THREADS = 3;
 export const ENVIRONMENT_RECONNECT_WARNING_GRACE_MS = 2_000;
 
+export function shoulderTabReserve(overlay: HTMLElement): number {
+  if (overlay.querySelector(".chat-composer-tasks-tab")) return 0;
+  const tab = overlay.querySelector<HTMLElement>(".chat-composer-shoulder-tab");
+  const surface = overlay.querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]');
+  if (!tab || !surface) return 0;
+  return Math.max(
+    0,
+    Math.round(surface.getBoundingClientRect().top - tab.getBoundingClientRect().top),
+  );
+}
+
+export interface QueuedComposerMessage {
+  readonly id: MessageId;
+  readonly text: string;
+  readonly attachmentCount: number;
+}
+
+/** Identify the queued message whose server turn has started. */
+export function startedQueuedComposerMessageId(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): MessageId | null {
+  if (input.queuedMessages.length === 0 || input.latestTurn === null) return null;
+  const queuedIds = new Set(input.queuedMessages.map((message) => message.id));
+  if (input.latestTurn.userMessageId !== undefined) {
+    return queuedIds.has(input.latestTurn.userMessageId) ? input.latestTurn.userMessageId : null;
+  }
+  return (
+    input.serverMessages.find(
+      (message) => queuedIds.has(message.id) && message.createdAt === input.latestTurn?.requestedAt,
+    )?.id ?? null
+  );
+}
+
+/** Keep queued copy at the composer until the server starts its turn. */
+export function reconcileQueuedComposerMessages(input: {
+  queuedMessages: ReadonlyArray<QueuedComposerMessage>;
+  serverMessages: ReadonlyArray<ChatMessage>;
+  latestTurn: Thread["latestTurn"] | null;
+}): ReadonlyArray<QueuedComposerMessage> {
+  const startedMessageId = startedQueuedComposerMessageId(input);
+  const startedIndex = input.queuedMessages.findIndex((message) => message.id === startedMessageId);
+  return startedIndex < 0 ? input.queuedMessages : input.queuedMessages.slice(startedIndex + 1);
+}
+
+export interface ChatViewRouteIdentity {
+  readonly routeKind: "draft" | "server";
+  readonly routeThreadKey: string;
+  readonly draftId: string | null;
+}
+
+export function shouldResetComposerQueueForRouteChange(
+  previous: ChatViewRouteIdentity,
+  current: ChatViewRouteIdentity,
+): boolean {
+  const unchanged =
+    previous.routeKind === current.routeKind &&
+    previous.routeThreadKey === current.routeThreadKey &&
+    previous.draftId === current.draftId;
+  const promoted =
+    previous.routeKind === "draft" &&
+    current.routeKind === "server" &&
+    previous.routeThreadKey === current.routeThreadKey;
+  return !unchanged && !promoted;
+}
+
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+
+export function agentControlledBrowserCloseConfirmation(
+  surfaces: readonly RightPanelSurface[],
+  desktopByTabId: Readonly<Record<string, Pick<DesktopPreviewOverlay, "controller"> | undefined>>,
+): string | null {
+  const activeBrowserCount = surfaces.filter(
+    (surface) =>
+      surface.kind === "preview" &&
+      surface.resourceId !== null &&
+      desktopByTabId[surface.resourceId]?.controller === "agent",
+  ).length;
+  if (activeBrowserCount === 0) return null;
+  if (activeBrowserCount === 1) {
+    return [
+      "Close browser while the agent is using it?",
+      "The agent is actively controlling this browser. Closing it may interrupt the current browser action.",
+    ].join("\n");
+  }
+  return [
+    `Close ${activeBrowserCount} browsers while the agent is using them?`,
+    "The agent is actively controlling these browsers. Closing them may interrupt the current browser actions.",
+  ].join("\n");
+}
+
+export function shouldOpenProactivePullRequest(
+  previousTargetKey: string | null | undefined,
+  targetKey: string | null,
+): boolean {
+  return previousTargetKey !== undefined && targetKey !== null && targetKey !== previousTargetKey;
+}
+
+export function shouldOpenProactiveTurnDiff(input: {
+  previousRunningTurnId: TurnId | null | undefined;
+  runningTurnId: TurnId | null;
+  settledTurnId: TurnId | null;
+  turnCompleted: boolean;
+}): boolean {
+  return (
+    input.previousRunningTurnId !== undefined &&
+    input.previousRunningTurnId !== null &&
+    input.runningTurnId === null &&
+    input.turnCompleted &&
+    input.settledTurnId === input.previousRunningTurnId
+  );
+}
+
+export function codexArtifactTemplatePromptToAppend(
+  currentDraft: string,
+  template: CodexArtifactTemplate,
+): string | null {
+  return appendCodexArtifactTemplateUsePrompt(currentDraft, template) === currentDraft
+    ? null
+    : codexArtifactTemplateUsePrompt(template);
+}
 
 export function shouldDockDraftHeroForSubmission(input: {
   isDraftHeroState: boolean;
@@ -73,6 +208,22 @@ export function shouldReleaseTimelineAnchorForToolActivity(input: {
   });
 }
 
+export function toolGroupConsumesUpwardNavigation(target: EventTarget | null): boolean {
+  const elementTarget = target instanceof Element ? target : null;
+  const group = elementTarget?.closest<HTMLElement>("[data-tool-group-scroll]");
+  if (!group) return false;
+
+  // A nested result or the group itself can consume an upward scroll.
+  for (let element = elementTarget; element; element = element.parentElement) {
+    if (element.scrollTop > 0) {
+      const overflowY = getComputedStyle(element).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    if (element === group) break;
+  }
+  return false;
+}
+
 export function resolveDraftHeroState(input: {
   isLocalDraftThread: boolean;
   hasTimelineEntries: boolean;
@@ -93,13 +244,19 @@ export function resolveDraftHeroState(input: {
 
 export function resolveDraftPromotionNavigationTarget(input: {
   serverThreadRef: ScopedThreadRef | null;
-  serverThreadStarted: boolean;
+  serverThread: Pick<Thread, "latestTurn" | "session"> | null | undefined;
   backgroundSubmissionPending: boolean;
 }): ScopedThreadRef | null {
   if (input.backgroundSubmissionPending) {
     return null;
   }
-  return input.serverThreadStarted ? input.serverThreadRef : null;
+  const sessionStatus = input.serverThread?.session?.status;
+  const turnStarted = input.serverThread?.latestTurn?.startedAt != null;
+  const startupStopped =
+    sessionStatus === "error" || sessionStatus === "stopped" || sessionStatus === "interrupted";
+  // Keep local preparation feedback mounted until the server can render the
+  // running turn or its startup error on the canonical thread route.
+  return turnStarted || startupStopped ? input.serverThreadRef : null;
 }
 
 export function scheduleEnvironmentReconnectWarning(showWarning: () => void): () => void {
@@ -346,12 +503,18 @@ export function revokeBlobPreviewUrl(previewUrl: string | undefined): void {
   URL.revokeObjectURL(previewUrl);
 }
 
+export async function loadVideoPreviewUrl(url: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(url, signal ? { signal } : {});
+  if (!response.ok) throw new Error(`Could not load video (${response.status}).`);
+  return URL.createObjectURL(await response.blob());
+}
+
 export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
   if (message.role !== "user" || !message.attachments) {
     return;
   }
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") {
+    if (!isImageAttachment(attachment)) {
       continue;
     }
     revokeBlobPreviewUrl(attachment.previewUrl);
@@ -364,7 +527,7 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   }
   const previewUrls: string[] = [];
   for (const attachment of message.attachments) {
-    if (attachment.type !== "image") continue;
+    if (!isImageAttachment(attachment)) continue;
     if (!attachment.previewUrl || !attachment.previewUrl.startsWith("blob:")) continue;
     previewUrls.push(attachment.previewUrl);
   }
@@ -444,12 +607,6 @@ export function deriveComposerSendState(options: {
    * contexts do: a prompt of just element chips is still a valid send.
    */
   elementContextCount?: number;
-  /**
-   * Pending non-image path attachments from the scenery attach control. A
-   * chip-only draft is still sendable — the filepath is baked into the
-   * outgoing prompt at send time.
-   */
-  fileAttachmentCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -461,7 +618,6 @@ export function deriveComposerSendState(options: {
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
   const elementContextCount = options.elementContextCount ?? 0;
-  const fileAttachmentCount = options.fileAttachmentCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -470,8 +626,7 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0 ||
-      fileAttachmentCount > 0,
+      elementContextCount > 0,
   };
 }
 
@@ -521,12 +676,34 @@ export function shouldShowBranchMismatchBanner(input: {
   return input.composerHasContent || input.wasShownForCurrentMismatch;
 }
 
+export function shouldShowPlanFollowUpPrompt(input: {
+  pendingUserInputCount: number;
+  interactionMode: ProviderInteractionMode;
+  latestTurnSettled: boolean;
+  hasActionableProposedPlan: boolean;
+  hasComposerAttachments: boolean;
+}): boolean {
+  return (
+    input.pendingUserInputCount === 0 &&
+    input.interactionMode === "plan" &&
+    input.latestTurnSettled &&
+    input.hasActionableProposedPlan &&
+    !input.hasComposerAttachments
+  );
+}
+
 // Session-scoped (module-level so it survives ChatView remounts, e.g. route
 // changes). Durable cross-device dismissal is planned as a server-side ack.
 const sessionDismissedBranchMismatchKeys = new Set<string>();
+const MAX_SESSION_DISMISSED_BRANCH_MISMATCHES = 256;
 
 export function dismissBranchMismatchForSession(key: string): void {
+  sessionDismissedBranchMismatchKeys.delete(key);
   sessionDismissedBranchMismatchKeys.add(key);
+  if (sessionDismissedBranchMismatchKeys.size > MAX_SESSION_DISMISSED_BRANCH_MISMATCHES) {
+    const oldest = sessionDismissedBranchMismatchKeys.values().next().value;
+    if (oldest !== undefined) sessionDismissedBranchMismatchKeys.delete(oldest);
+  }
 }
 
 export function isBranchMismatchDismissedForSession(key: string | null): boolean {

@@ -52,9 +52,20 @@ export function PairingRouteSurface({
   const [errorMessage, setErrorMessage] = useState(initialErrorMessage ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const autoSubmitAttemptedRef = useRef(false);
+  const submissionInFlightRef = useRef(false);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const submitCredential = useCallback(
     async (nextCredential: string) => {
+      if (submissionInFlightRef.current) return;
+      submissionInFlightRef.current = true;
       setIsSubmitting(true);
       setErrorMessage("");
 
@@ -63,13 +74,21 @@ export function PairingRouteSurface({
         (error) => errorMessageFromUnknown(error),
       );
 
-      setIsSubmitting(false);
+      if (!mountedRef.current) {
+        submissionInFlightRef.current = false;
+        return;
+      }
 
       if (submitError) {
+        submissionInFlightRef.current = false;
+        setIsSubmitting(false);
         setErrorMessage(submitError);
         return;
       }
 
+      // A successful one-time credential is not submitted again while the
+      // authenticated route transition is settling. The component unmount
+      // releases this ref with the rest of the surface.
       startTransition(() => {
         onAuthenticated();
       });

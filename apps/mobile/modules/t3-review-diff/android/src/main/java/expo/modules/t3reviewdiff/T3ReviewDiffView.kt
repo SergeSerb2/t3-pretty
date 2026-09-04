@@ -77,14 +77,14 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
   fun setTokensResetKey(value: String) {
     if (tokensResetKey == value) return
     tokensResetKey = value
-    canvasView.tokensByRowId = emptyMap()
+    canvasView.clearTokens()
   }
 
   fun setContentResetKey(value: String) {
     if (contentResetKey == value) return
     contentResetKey = value
     tokensDecodeGeneration += 1
-    canvasView.tokensByRowId = emptyMap()
+    canvasView.clearTokens()
     lastVisibleFileId = null
     pendingInitialScroll = true
     canvasView.setVerticalOffset(0)
@@ -161,7 +161,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
       val decodedTokens = parseTokensObject(value)
       post {
         if (generation != tokensDecodeGeneration) return@post
-        canvasView.tokensByRowId = decodedTokens
+        canvasView.replaceTokens(decodedTokens)
       }
     }
   }
@@ -177,7 +177,7 @@ class T3ReviewDiffView(context: Context, appContext: AppContext) : ExpoView(cont
         post {
           if (resetKey.isNotEmpty() && resetKey != tokensResetKey) return@post
           if (decodedTokens.isNotEmpty()) {
-            canvasView.tokensByRowId = canvasView.tokensByRowId + decodedTokens
+            canvasView.mergeTokens(decodedTokens)
           }
         }
       } catch (_: Exception) {
@@ -696,11 +696,7 @@ private class DiffCanvasView(context: Context) : View(context) {
       )
       rebuildOffsets()
     }
-  var tokensByRowId: Map<String, List<DiffToken>> = emptyMap()
-    set(value) {
-      field = value
-      invalidate()
-    }
+  private val tokensByRowId = mutableMapOf<String, List<DiffToken>>()
   var viewedFileIds: Set<String> = emptySet()
     set(value) {
       field = value
@@ -741,6 +737,24 @@ private class DiffCanvasView(context: Context) : View(context) {
     }
   var onRowTap: ((DiffRow, String, RowTapTarget) -> Unit)? = null
   var onVisibleRowsChanged: ((Int, Int) -> Unit)? = null
+
+  fun clearTokens() {
+    if (tokensByRowId.isEmpty()) return
+    tokensByRowId.clear()
+    invalidate()
+  }
+
+  fun replaceTokens(tokens: Map<String, List<DiffToken>>) {
+    tokensByRowId.clear()
+    tokensByRowId.putAll(tokens)
+    invalidate()
+  }
+
+  fun mergeTokens(tokens: Map<String, List<DiffToken>>) {
+    if (tokens.isEmpty()) return
+    tokensByRowId.putAll(tokens)
+    invalidate()
+  }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     setMeasuredDimension(

@@ -211,7 +211,7 @@ function useSkillsPickerState(props: SkillsPickerProps) {
         input: { threadId: props.threadRef.threadId, enabledSkillIds: next },
       }).then((result) => {
         if (result._tag === "Failure") {
-          resetThreadSkillIds();
+          resetThreadSkillIds(next);
         }
       });
     }

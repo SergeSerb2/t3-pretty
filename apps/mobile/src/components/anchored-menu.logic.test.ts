@@ -20,7 +20,7 @@ describe("flattenMenuActions", () => {
 
     expect(rows).toEqual([
       { type: "action", action: { id: "visible", title: "Pin" } },
-      { type: "header", title: "Codex" },
+      { type: "header", key: "header:root:group", title: "Codex" },
       { type: "action", action: { id: "a", title: "Opus" } },
     ]);
   });

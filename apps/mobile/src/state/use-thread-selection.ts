@@ -71,16 +71,28 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     detailFallbackRef?.threadId ?? null,
   );
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
-  const selectedThread = useMemo(
-    () =>
-      resolveSelectedThreadShell(
-        selectedThreadRef,
-        selectedThreadShell,
-        selectedThreadDetail,
-        localStartingShell,
-      ),
-    [localStartingShell, selectedThreadDetail, selectedThreadRef, selectedThreadShell],
-  );
+  const selectedThread = useMemo(() => {
+    const resolvedThread = resolveSelectedThreadShell(
+      selectedThreadRef,
+      selectedThreadShell,
+      selectedThreadDetail,
+      localStartingShell,
+    );
+    if (resolvedThread === null || detailFallbackRef === null || selectedThreadDetail === null) {
+      return resolvedThread;
+    }
+
+    return {
+      ...resolvedThread,
+      linkedPullRequest: selectedThreadDetail.linkedPullRequest ?? null,
+    };
+  }, [
+    detailFallbackRef,
+    localStartingShell,
+    selectedThreadDetail,
+    selectedThreadRef,
+    selectedThreadShell,
+  ]);
   const selectedProjectRef = useMemo<ScopedProjectRef | null>(
     () =>
       selectedThread === null

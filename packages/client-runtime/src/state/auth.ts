@@ -11,6 +11,8 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { subscribe } from "../rpc/client.ts";
 import { createEnvironmentSubscriptionAtomFamily } from "./runtime.ts";
 
+export const AUTH_ACCESS_IDLE_TTL_MS = 60_000;
+
 export const EMPTY_AUTH_ACCESS_SNAPSHOT: AuthAccessSnapshot = {
   pairingLinks: [],
   clientSessions: [],
@@ -81,6 +83,7 @@ export function createAuthEnvironmentAtoms<R, E>(
   return {
     accessChanges: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:auth-access-changes",
+      idleTtlMs: AUTH_ACCESS_IDLE_TTL_MS,
       subscribe: (_input: null) =>
         subscribe(WS_METHODS.subscribeAuthAccess, {}).pipe(
           Stream.mapAccum(() => EMPTY_AUTH_ACCESS_SNAPSHOT, projectAuthAccessSnapshot),

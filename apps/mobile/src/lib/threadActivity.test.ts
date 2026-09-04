@@ -16,6 +16,7 @@ import {
   buildPendingUserInputAnswers,
   buildThreadFeed,
   createThreadFeedBuilder,
+  derivePendingApprovals,
   deriveThreadFeedPresentation,
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
@@ -140,6 +141,59 @@ describe("pending user input answers", () => {
         "  Orders  ",
       ),
     ).toBe(false);
+  });
+});
+
+describe("pending approvals", () => {
+  it("keeps app access approvals and persistence choices from remote environments", () => {
+    const options = [
+      { decision: "decline", label: "Decline" },
+      { decision: "acceptAlways", label: "Always allow Safari" },
+      { decision: "accept", label: "Approve" },
+    ];
+    const activity = makeActivity({
+      id: EventId.make("approval-safari"),
+      kind: "approval.requested",
+      summary: "App access approval requested",
+      createdAt: "2026-08-24T00:00:00.000Z",
+      payload: {
+        requestId: "req-safari",
+        requestType: "mcp_elicitation_approval",
+        detail: "Allow ChatGPT to use Safari?",
+        appName: "Safari",
+        options,
+      },
+    });
+
+    expect(derivePendingApprovals([activity])).toEqual([
+      {
+        requestId: "req-safari",
+        requestKind: "mcp-elicitation",
+        createdAt: "2026-08-24T00:00:00.000Z",
+        detail: "Allow ChatGPT to use Safari?",
+        appName: "Safari",
+        options,
+      },
+    ]);
+  });
+
+  it("removes an app access approval after a remote client rejects it", () => {
+    const requested = makeActivity({
+      id: EventId.make("approval-safari-open"),
+      kind: "approval.requested",
+      summary: "App access approval requested",
+      createdAt: "2026-08-24T00:00:00.000Z",
+      payload: { requestId: "req-safari", requestKind: "mcp-elicitation" },
+    });
+    const resolved = makeActivity({
+      id: EventId.make("approval-safari-resolved"),
+      kind: "approval.resolved",
+      summary: "Approval resolved",
+      createdAt: "2026-08-24T00:00:01.000Z",
+      payload: { requestId: "req-safari", decision: "decline" },
+    });
+
+    expect(derivePendingApprovals([requested, resolved])).toEqual([]);
   });
 });
 
@@ -474,6 +528,83 @@ describe("buildThreadFeed", () => {
     ]);
   });
 
+  it("keeps setup failures visible without routine setup notices before or after a turn", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-worktree-setup"),
+      projectId: ProjectId.make("project-1"),
+      title: "Worktree setup",
+      activities: [
+        makeActivity({
+          id: EventId.make("setup-requested"),
+          kind: "setup-script.requested",
+          summary: "Starting setup script",
+          createdAt: "2026-08-30T00:00:00.000Z",
+        }),
+        makeActivity({
+          id: EventId.make("setup-started"),
+          kind: "setup-script.started",
+          summary: "Setup script started",
+          createdAt: "2026-08-30T00:00:01.000Z",
+        }),
+        makeActivity({
+          id: EventId.make("setup-failed"),
+          kind: "setup-script.failed",
+          summary: "Setup script failed to start",
+          createdAt: "2026-08-30T00:00:02.000Z",
+          tone: "error",
+          payload: { detail: "Setup command was not found" },
+        }),
+      ],
+    });
+    const latestTurn = {
+      turnId: TurnId.make("turn-after-setup"),
+      state: "running" as const,
+      requestedAt: "2026-08-30T00:00:03.000Z",
+      startedAt: "2026-08-30T00:00:04.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+
+    for (const currentTurn of [null, latestTurn]) {
+      const feed = buildThreadFeed({ ...thread, latestTurn: currentTurn });
+      expect(feed).toMatchObject([
+        {
+          type: "activity-group",
+          activities: [{ id: "setup-failed", status: "failure" }],
+        },
+      ]);
+      const group = feed[0];
+      if (group?.type !== "activity-group") throw new Error("Expected the setup failure group");
+      expect(group.activities[0]?.getCopyText()).toContain("Setup command was not found");
+    }
+  });
+
+  it.each(["setup-script.requested", "setup-script.started"])(
+    "keeps error-toned %s notices visible",
+    (kind) => {
+      const feed = buildThreadFeed(
+        makeThread({
+          id: ThreadId.make("thread-setup-error"),
+          projectId: ProjectId.make("project-1"),
+          title: "Setup error",
+          activities: [
+            makeActivity({
+              id: EventId.make("setup-error"),
+              kind,
+              summary: "Setup failed",
+              createdAt: "2026-08-30T00:00:00.000Z",
+              tone: "error",
+            }),
+          ],
+        }),
+      );
+
+      expect(feed).toMatchObject([
+        { type: "activity-group", activities: [{ id: "setup-error", status: "failure" }] },
+      ]);
+    },
+  );
+
   it("keeps older local feedback before newer messages returned by the server", () => {
     const submission = {
       id: MessageId.make("feedback-command-ordering"),
@@ -564,6 +695,38 @@ describe("buildThreadFeed", () => {
     ]);
   });
 
+  it("drops runtime warnings with no displayable content", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-noise"),
+      projectId: ProjectId.make("project-1"),
+      title: "Warning noise thread",
+      activities: [
+        makeActivity({
+          id: EventId.make("activity-noise"),
+          kind: "runtime.warning",
+          summary: "Claude system message 'background_tasks_changed' (no displayable text content)",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId: TurnId.make("turn-1"),
+        }),
+        makeActivity({
+          id: EventId.make("activity-signal"),
+          kind: "runtime.warning",
+          summary: "Reconnecting... 2/5",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          turnId: TurnId.make("turn-1"),
+        }),
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    expect(feed).toMatchObject([
+      {
+        type: "activity-group",
+        activities: [{ id: "activity-signal" }],
+      },
+    ]);
+  });
+
   it("collapses matching tool lifecycle rows like desktop", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-2"),
@@ -619,8 +782,8 @@ describe("buildThreadFeed", () => {
 
     expect(group.activities).toHaveLength(1);
     expect(group.activities[0]).toMatchObject({
-      id: "tool-completed",
-      createdAt: "2026-04-01T00:00:02.000Z",
+      id: "tool-updated",
+      createdAt: "2026-04-01T00:00:01.000Z",
       turnId: "turn-1",
       summary: "Run tests",
       detail: "bun run test",
@@ -701,6 +864,20 @@ describe("buildThreadFeed", () => {
           payload: {
             title: "Call repository tool",
             itemType: "mcp_tool_call",
+            toolSurface: "computer",
+            toolIcon: {
+              _tag: "native-app",
+              app: { _tag: "app-id", appId: "com.example.Editor" },
+            },
+            toolSource: {
+              key: "native-app:com.example.editor",
+              name: "Computer Use",
+              kind: "computer",
+              icon: {
+                _tag: "native-app",
+                app: { _tag: "app-id", appId: "com.example.Editor" },
+              },
+            },
             detail: "repository.search",
             status: "completed",
             data: {
@@ -721,10 +898,170 @@ describe("buildThreadFeed", () => {
       return;
     }
 
-    expect(group.activities[0]?.icon).toBe("wrench");
+    expect(group.activities[0]?.icon).toBe("computer");
+    expect(group.activities[0]?.workEntry.toolSurface).toBe("computer");
+    expect(group.activities[0]?.workEntry.toolIcon).toEqual({
+      _tag: "native-app",
+      app: { _tag: "app-id", appId: "com.example.Editor" },
+    });
+    expect(group.activities[0]?.workEntry.toolSource).toEqual({
+      key: "native-app:com.example.editor",
+      name: "Computer Use",
+      kind: "computer",
+      icon: {
+        _tag: "native-app",
+        app: { _tag: "app-id", appId: "com.example.Editor" },
+      },
+    });
     expect(group.activities[0]?.getFullDetail()).toContain('"query": "work log"');
     expect(group.activities[0]?.getFullDetail()).toContain("repository.search");
   });
+
+  it.each([
+    {
+      source: "raw MCP browser identity",
+      label: "Call MCP tool",
+      title: "Call MCP tool",
+      item: { server: "t3-code", tool: "preview_navigate" },
+      status: "inProgress",
+      displayName: "Navigating the preview browser",
+      icon: "browser",
+    },
+    {
+      source: "raw MCP orchestration identity",
+      label: "Call MCP tool",
+      title: "Call MCP tool",
+      item: { server: "t3-code", tool: "task_status" },
+      status: "inProgress",
+      displayName: "Getting delegated task status",
+      icon: "t3-code",
+    },
+    {
+      source: "provider-qualified title",
+      label: "Call MCP tool",
+      title: "mcp__t3-code__preview_snapshot",
+      item: undefined,
+      status: "inProgress",
+      displayName: "Taking a snapshot of the preview page",
+      icon: "browser",
+    },
+    {
+      source: "provider-qualified label",
+      label: "mcp__t3-code__task_status",
+      title: undefined,
+      item: undefined,
+      status: "inProgress",
+      displayName: "Getting delegated task status",
+      icon: "t3-code",
+    },
+    {
+      source: "browser identity without lifecycle status",
+      label: "Call MCP tool",
+      title: "Call MCP tool",
+      item: { server: "t3-code", tool: "preview_click" },
+      status: undefined,
+      displayName: "Clicking in the preview browser",
+      liveDisplayName: "Clicking in the preview browser",
+      settledDisplayName: "Clicked in the preview browser",
+      icon: "browser",
+    },
+    {
+      source: "orchestration identity without lifecycle status",
+      label: "Call MCP tool",
+      title: "Call MCP tool",
+      item: { server: "t3-code", tool: "task_status" },
+      status: undefined,
+      displayName: "Getting delegated task status",
+      liveDisplayName: "Getting delegated task status",
+      settledDisplayName: "Got delegated task status",
+      icon: "t3-code",
+    },
+  ])(
+    "uses friendly row and running labels from $source",
+    ({ label, title, item, status, displayName, liveDisplayName, settledDisplayName, icon }) => {
+      const turnId = TurnId.make("turn-friendly-mcp");
+      const rawCommand = "node mcp-call.js";
+      const rawDetail = '{"provider":"raw MCP output"}';
+      const thread = makeThread({
+        id: ThreadId.make("thread-friendly-mcp"),
+        projectId: ProjectId.make("project-1"),
+        title: "Friendly MCP labels",
+        latestTurn: {
+          turnId,
+          state: "running",
+          requestedAt: "2026-04-01T00:00:00.000Z",
+          startedAt: "2026-04-01T00:00:01.000Z",
+          completedAt: null,
+          assistantMessageId: null,
+        },
+        activities: [
+          makeActivity({
+            id: EventId.make("friendly-mcp"),
+            kind: "tool.updated",
+            tone: "tool",
+            summary: label,
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId,
+            payload: {
+              title,
+              itemType: "mcp_tool_call",
+              detail: rawDetail,
+              status,
+              data: { item, command: rawCommand },
+            },
+          }),
+        ],
+      });
+
+      const feed = buildThreadFeed(thread);
+      const group = feed[0];
+      expect(group).toMatchObject({
+        type: "activity-group",
+        activities: [{ summary: displayName, detail: rawCommand }],
+      });
+      if (!group || group.type !== "activity-group") return;
+      const activity = group.activities[0]!;
+      expect(activity.getFullDetail()).toContain(rawCommand);
+      expect(activity.getFullDetail()).toContain(rawDetail);
+      expect(activity.getCopyText()).toContain(rawCommand);
+      expect(activity.getCopyText()).toContain(rawDetail);
+      expect(activity.getCopyText()).not.toContain(displayName);
+      if (item) expect(activity.getFullDetail()).toContain(JSON.stringify(item, null, 2));
+      expect(
+        deriveThreadFeedPresentation(
+          feed,
+          thread.latestTurn,
+          new Set(),
+          new Set(),
+          thread.latestTurn!.startedAt,
+        ),
+      ).toMatchObject([
+        {
+          type: "work-toggle",
+          summary: liveDisplayName ?? displayName,
+          summaryToolIcon: icon,
+          live: true,
+        },
+      ]);
+      if (settledDisplayName) {
+        const settledRows = deriveThreadFeedPresentation(
+          feed,
+          {
+            ...thread.latestTurn!,
+            state: "completed",
+            completedAt: "2026-04-01T00:00:03.000Z",
+          },
+          new Set([turnId]),
+          new Set(),
+        );
+        expect(settledRows.find((entry) => entry.type === "work-toggle")).toMatchObject({
+          summary: settledDisplayName,
+          summaryToolIcon: icon,
+          live: false,
+        });
+      }
+    },
+  );
 
   it("renders skill-loaded activities as package tool rows", () => {
     const turnId = TurnId.make("turn-skill");
@@ -795,28 +1132,224 @@ describe("buildThreadFeed", () => {
         },
       }),
     );
-    const thread = makeThread({
-      id: ThreadId.make("thread-large-tools"),
-      projectId: ProjectId.make("project-1"),
-      title: "Large tools",
-      activities,
-    });
 
-    const feed = buildThreadFeed(thread);
+    const feed = buildThreadFeed(makeThread({ activities }));
     expect(serializedToolOutputs).toBe(0);
 
     const group = feed[0];
     expect(group).toMatchObject({ type: "activity-group" });
-    if (!group || group.type !== "activity-group") {
-      return;
-    }
+    if (!group || group.type !== "activity-group") return;
 
     expect(group.activities).toHaveLength(5_000);
-    expect(group.activities[0]?.getFullDetail()).toContain('"output"');
+    expect(group.activities[0]!.getFullDetail()).toContain("x");
     expect(serializedToolOutputs).toBe(1);
-    expect(group.activities[0]?.getCopyText()).toContain('"output"');
+    expect(group.activities[0]!.getCopyText()).toContain("x");
     expect(serializedToolOutputs).toBe(1);
+    expect(group.activities[1]!.getCopyText()).toContain("x");
+    expect(serializedToolOutputs).toBe(2);
   });
+
+  it.each([
+    {
+      status: "completed",
+      displayName: "Clicked in the preview browser",
+      liveDisplayName: "Clicking in the preview browser",
+      detail: "Clicked Continue",
+      hasFailure: false,
+    },
+    {
+      status: "failed",
+      displayName: "Failed to click in the preview browser",
+      liveDisplayName: "Failed to click in the preview browser",
+      detail: "Timed out waiting for Continue",
+      hasFailure: true,
+    },
+  ])(
+    "uses the browser call label once its action settles as $status",
+    ({ status, displayName, liveDisplayName, detail, hasFailure }) => {
+      const turnId = TurnId.make("turn-preview-lifecycle");
+      const toolCallId = "preview-click";
+      const groupId = `work-group:tool:${turnId}:${toolCallId}`;
+      const toolData = {
+        server: "t3-code",
+        tool: "preview_click",
+        arguments: { locator: { role: "button", name: "Continue" } },
+      };
+      const thread = makeThread({
+        id: ThreadId.make("thread-preview-lifecycle"),
+        projectId: ProjectId.make("project-1"),
+        title: "Browser tool lifecycle",
+        latestTurn: {
+          turnId,
+          state: "running",
+          requestedAt: "2026-04-01T00:00:00.000Z",
+          startedAt: "2026-04-01T00:00:01.000Z",
+          completedAt: null,
+          assistantMessageId: null,
+        },
+        activities: [
+          makeActivity({
+            id: EventId.make("preview-click-started"),
+            kind: "tool.updated",
+            tone: "tool",
+            summary: "MCP tool call",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId,
+            payload: {
+              title: "MCP tool call",
+              itemType: "mcp_tool_call",
+              status: "inProgress",
+              toolCallId,
+              data: { item: toolData },
+            },
+          }),
+        ],
+      });
+      const present = (currentThread: OrchestrationThread) =>
+        deriveThreadFeedPresentation(
+          buildThreadFeed(currentThread),
+          currentThread.latestTurn,
+          new Set([turnId]),
+          new Set([groupId]),
+          currentThread.latestTurn?.state === "running" ? currentThread.latestTurn.startedAt : null,
+        );
+
+      expect(present(thread)).toMatchObject([
+        {
+          type: "work-toggle",
+          groupId,
+          hiddenCount: 1,
+          expanded: true,
+          summary: "Clicking in the preview browser",
+          summaryToolIcon: "browser",
+          live: true,
+          shimmer: true,
+        },
+        {
+          type: "activity-group",
+          id: `work-details:${groupId}`,
+          activities: [
+            {
+              id: "preview-click-started",
+              summary: "Clicking in the preview browser",
+              lifecycleStatus: "inProgress",
+              live: true,
+            },
+          ],
+        },
+      ]);
+
+      const terminalThread = {
+        ...thread,
+        activities: [
+          ...thread.activities,
+          makeActivity({
+            id: EventId.make("preview-click-completed"),
+            kind: "tool.completed",
+            tone: "tool",
+            summary: "MCP tool call completed",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId,
+            payload: { itemType: "mcp_tool_call", toolCallId, status, detail },
+          }),
+        ],
+      };
+      const terminalRows = present(terminalThread);
+      expect(terminalRows).toMatchObject([
+        {
+          type: "work-toggle",
+          groupId,
+          hiddenCount: 1,
+          expanded: true,
+          summary: liveDisplayName,
+          summaryToolIcon: "browser",
+          hasFailure,
+          live: true,
+          shimmer: false,
+        },
+        {
+          type: "activity-group",
+          id: `work-details:${groupId}`,
+          activities: [
+            {
+              id: "preview-click-started",
+              summary: displayName,
+              lifecycleStatus: status,
+              live: false,
+            },
+          ],
+        },
+      ]);
+      const terminalGroup = terminalRows[1];
+      if (terminalGroup?.type !== "activity-group") return;
+      const activity = terminalGroup.activities[0]!;
+      const fullDetail = `MCP call\n${JSON.stringify(toolData, null, 2)}\n\n${detail}`;
+      expect(activity.workEntry.toolData).toBe(toolData);
+      expect(activity.getFullDetail()).toBe(fullDetail);
+      expect(activity.getCopyText()).toBe(`MCP tool call\n${detail}\n${fullDetail}`);
+
+      const settledRows = present({
+        ...terminalThread,
+        latestTurn: {
+          ...thread.latestTurn!,
+          state: "completed",
+          completedAt: "2026-04-01T00:00:04.000Z",
+        },
+      });
+      expect(settledRows.find((entry) => entry.type === "work-toggle")).toMatchObject({
+        groupId,
+        hiddenCount: 1,
+        expanded: true,
+        summary: displayName,
+        summaryKind: "browser",
+        hasFailure,
+        live: false,
+      });
+      expect(settledRows.find((entry) => entry.type === "activity-group")).toMatchObject({
+        id: `work-details:${groupId}`,
+        activities: [{ id: "preview-click-started", summary: displayName, live: false }],
+      });
+    },
+  );
+
+  it.each([
+    [0, "Used browser 3 times", "browser"],
+    [2, "Ran 2 commands and used browser 3 times", "mixed"],
+  ] as const)(
+    "separates browser counts from %s completed commands",
+    (commandCount, summary, summaryKind) => {
+      const thread = makeThread({
+        id: ThreadId.make("thread-browser-counts"),
+        projectId: ProjectId.make("project-1"),
+        title: "Browser group counts",
+        activities: Array.from({ length: commandCount + 3 }, (_, index) =>
+          makeActivity({
+            id: EventId.make(`browser-count-${index}`),
+            createdAt: new Date(Date.UTC(2026, 3, 1, 0, 0, index)).toISOString(),
+            kind: "tool.completed",
+            tone: "tool",
+            summary: index < commandCount ? "Ran command" : "MCP tool call",
+            payload: {
+              toolCallId: `browser-count-${index}`,
+              status: "completed",
+              ...(index < commandCount
+                ? {
+                    itemType: "command_execution",
+                    data: { item: { command: "/bin/bash -lc 'vp test run'" } },
+                  }
+                : {
+                    itemType: "mcp_tool_call",
+                    data: { item: { server: "t3-code", tool: "preview_click" } },
+                  }),
+            },
+          }),
+        ),
+      });
+      expect(
+        deriveThreadFeedPresentation(buildThreadFeed(thread), null, new Set(), new Set()),
+      ).toMatchObject([{ type: "work-toggle", summary, summaryKind, live: false }]);
+    },
+  );
 
   it("keeps the first and terminal assistant messages visible around settled work", () => {
     const turnId = TurnId.make("turn-1");
@@ -886,7 +1419,7 @@ describe("buildThreadFeed", () => {
     expect(expanded.map((entry) => entry.id)).toEqual([
       "assistant-first",
       "turn-fold:turn-1",
-      "tool-completed",
+      "work-toggle:work-group:tool-completed",
       "assistant-final",
     ]);
   });
@@ -1040,6 +1573,20 @@ describe("buildThreadFeed", () => {
       },
       activities: [
         makeActivity({
+          id: EventId.make("tool-succeeded"),
+          kind: "tool.completed",
+          tone: "tool",
+          summary: "Run command",
+          createdAt: "2026-04-01T00:00:04.000Z",
+          turnId,
+          payload: {
+            title: "Run command",
+            itemType: "command_execution",
+            detail: "done",
+            status: "completed",
+          },
+        }),
+        makeActivity({
           id: EventId.make("tool-failed"),
           kind: "tool.completed",
           tone: "tool",
@@ -1057,25 +1604,26 @@ describe("buildThreadFeed", () => {
     });
 
     const feed = buildThreadFeed(thread);
-    expect(deriveThreadFeedPresentation(feed, thread.latestTurn, new Set())).toEqual(feed);
-    expect(feed[0]).toMatchObject({
-      type: "activity-group",
-      activities: [{ status: "failure" }],
-    });
-  });
-
-  it("appends active work as a normal timeline row", () => {
-    const startedAt = "2026-04-01T00:00:01.000Z";
-    const presented = deriveThreadFeedPresentation([], null, new Set(), new Set(), startedAt);
-
-    expect(presented).toEqual([
+    expect(deriveThreadFeedPresentation(feed, thread.latestTurn, new Set())).toMatchObject([
       {
-        type: "working",
-        id: "working-indicator-row",
-        createdAt: startedAt,
+        type: "work-toggle",
+        summary: "Ran 2 commands",
+        hiddenCount: 2,
+        hasFailure: true,
       },
     ]);
-    expect(deriveThreadFeedPresentation(presented, null, new Set())).toEqual([]);
+    expect(feed[0]).toMatchObject({
+      type: "activity-group",
+      activities: [{ status: "success" }, { status: "failure" }],
+    });
+    expect(
+      deriveThreadFeedPresentation(
+        feed,
+        thread.latestTurn,
+        new Set(),
+        new Set(["work-group:tool-succeeded"]),
+      ).map((entry) => entry.id),
+    ).toEqual(["work-toggle:work-group:tool-succeeded", "tool-succeeded", "tool-failed"]);
   });
 
   it("suppresses the working row while assistant commentary signals activity", () => {
@@ -1338,6 +1886,8 @@ describe("buildThreadFeed", () => {
       id: string,
       createdAt: string,
       status: ThreadFeedActivity["status"] = "success",
+      toolSurface?: "browser" | "computer",
+      toolIcon?: import("@t3tools/contracts").ToolActivityIcon,
     ): ThreadFeedActivity => ({
       id,
       createdAt,
@@ -1350,6 +1900,88 @@ describe("buildThreadFeed", () => {
       icon: "command",
       toolLike: true,
       status,
+      workEntry: {
+        id,
+        createdAt,
+        turnId: null,
+        label: `Tool ${id}`,
+        command: `command ${id}`,
+        tone: "tool",
+        ...(toolSurface ? { toolSurface } : {}),
+        ...(toolIcon ? { toolIcon } : {}),
+      },
+    });
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "work-group-1",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId: null,
+        activities: [
+          activity("activity-1", "2026-04-01T00:00:01.000Z"),
+          activity("activity-neutral", "2026-04-01T00:00:02.000Z", "neutral"),
+          activity("activity-2", "2026-04-01T00:00:03.000Z", "success", "browser"),
+          activity("activity-3", "2026-04-01T00:00:04.000Z", "success", "computer", {
+            _tag: "native-app",
+            app: { _tag: "app-id", appId: "com.example.Editor" },
+          }),
+        ],
+      },
+    ];
+
+    const collapsed = deriveThreadFeedPresentation(feed, null, new Set());
+    expect(collapsed.map((entry) => entry.id)).toEqual(["activity-3", "work-toggle:work-group-1"]);
+    expect(collapsed[1]).toMatchObject({
+      type: "work-toggle",
+      groupId: "work-group-1",
+      hiddenCount: 2,
+      expanded: false,
+      summary: "Ran 3 commands",
+      toolSurface: "computer",
+      toolIcon: {
+        _tag: "native-app",
+        app: { _tag: "app-id", appId: "com.example.Editor" },
+      },
+    });
+
+    const expanded = deriveThreadFeedPresentation(feed, null, new Set(), new Set(["work-group-1"]));
+    expect(expanded.map((entry) => entry.id)).toEqual([
+      "activity-1",
+      "activity-2",
+      "activity-3",
+      "work-toggle:work-group-1",
+    ]);
+    expect(expanded.at(-1)).toMatchObject({
+      type: "work-toggle",
+      expanded: true,
+    });
+  });
+
+  it("models structured work-log overflow as command summary rows", () => {
+    const activity = (
+      id: string,
+      createdAt: string,
+      status: ThreadFeedActivity["status"] = "success",
+    ): ThreadFeedActivity => ({
+      id,
+      createdAt,
+      turnId: null,
+      summary: `Tool ${id}`,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: "command",
+      toolLike: true,
+      status,
+      workEntry: {
+        id,
+        createdAt,
+        turnId: null,
+        label: `Tool ${id}`,
+        command: `command ${id}`,
+        tone: "tool",
+      },
     });
     const feed: ThreadFeedEntry[] = [
       {
@@ -1367,26 +1999,121 @@ describe("buildThreadFeed", () => {
     ];
 
     const collapsed = deriveThreadFeedPresentation(feed, null, new Set());
-    expect(collapsed.map((entry) => entry.id)).toEqual(["activity-3", "work-toggle:work-group-1"]);
-    expect(collapsed[1]).toMatchObject({
+    expect(collapsed.map((entry) => entry.id)).toEqual(["work-toggle:work-group:activity-1"]);
+    expect(collapsed[0]).toMatchObject({
       type: "work-toggle",
-      groupId: "work-group-1",
-      hiddenCount: 2,
+      groupId: "work-group:activity-1",
+      hiddenCount: 3,
       expanded: false,
+      summary: "Ran 3 commands",
     });
 
-    const expanded = deriveThreadFeedPresentation(feed, null, new Set(), new Set(["work-group-1"]));
+    const expanded = deriveThreadFeedPresentation(
+      feed,
+      null,
+      new Set(),
+      new Set(["work-group:activity-1"]),
+    );
     expect(expanded.map((entry) => entry.id)).toEqual([
+      "work-toggle:work-group:activity-1",
       "activity-1",
       "activity-2",
       "activity-3",
-      "work-toggle:work-group-1",
     ]);
-    expect(expanded.at(-1)).toMatchObject({
+    expect(expanded[0]).toMatchObject({
       type: "work-toggle",
       expanded: true,
     });
   });
+
+  it.each(
+    [
+      "sudo -u root pnpm test",
+      "/bin/zsh -lc 'sudo -u root pnpm test'",
+      "/bin/bash -lc 'sudo -u root pnpm test'",
+    ].flatMap((command) =>
+      (
+        [
+          { lifecycleStatus: "inProgress", summary: "Running pnpm", shimmer: true },
+          { lifecycleStatus: "completed", summary: "Running pnpm", shimmer: false },
+          { lifecycleStatus: "failed", summary: "Failed pnpm", shimmer: false },
+          { lifecycleStatus: "declined", summary: "Declined pnpm", shimmer: false },
+          { lifecycleStatus: "stopped", summary: "Stopped pnpm", shimmer: false },
+        ] as const
+      ).map((state) => ({ command, ...state })),
+    ),
+  )(
+    "keeps the command summary in sync with $lifecycleStatus: $command",
+    ({ command, lifecycleStatus, summary, shimmer }) => {
+      const turnId = TurnId.make("turn-live-tools");
+      const activity = (
+        id: string,
+        status: ThreadFeedActivity["status"],
+        lifecycleStatus: ThreadFeedActivity["lifecycleStatus"],
+        tone: "tool" | "error" = "tool",
+        command?: string,
+      ): ThreadFeedActivity => ({
+        id,
+        createdAt: `2026-04-01T00:00:0${id.at(-1)}.000Z`,
+        turnId,
+        summary: `Tool ${id}`,
+        detail: lifecycleStatus === "stopped" ? "Exit code 130" : null,
+        canExpand: false,
+        getFullDetail: () => null,
+        getCopyText: () => id,
+        icon: "command",
+        toolLike: true,
+        status,
+        lifecycleStatus,
+        workEntry: {
+          id,
+          createdAt: `2026-04-01T00:00:0${id.at(-1)}.000Z`,
+          turnId,
+          label: `Tool ${id}`,
+          tone,
+          toolLifecycleStatus: lifecycleStatus,
+          ...(lifecycleStatus === "stopped" ? { detail: "Exit code 130" } : {}),
+          ...(command ? { command, itemType: "command_execution" as const } : {}),
+        },
+      });
+      const status: ThreadFeedActivity["status"] =
+        lifecycleStatus === "inProgress"
+          ? "running"
+          : lifecycleStatus === "failed"
+            ? "error"
+            : lifecycleStatus === "declined" || lifecycleStatus === "stopped"
+              ? "neutral"
+              : "success";
+      const presented = deriveThreadFeedPresentation(
+        [
+          {
+            type: "activity-group",
+            id: `work-group-${lifecycleStatus}`,
+            createdAt: "2026-04-01T00:00:01.000Z",
+            turnId,
+            activities: [
+              activity(
+                "activity-1",
+                status,
+                lifecycleStatus,
+                lifecycleStatus === "failed" ? "error" : "tool",
+                command,
+              ),
+            ],
+          },
+        ],
+        null,
+        new Set(),
+      );
+
+      expect(presented).toHaveLength(1);
+      expect(presented[0]).toMatchObject({
+        type: "work-toggle",
+        summary,
+        shimmer,
+      });
+    },
+  );
 
   it("keeps image generation rows visible without a zero-count toggle", () => {
     const activity = (
@@ -1832,6 +2559,209 @@ describe("buildThreadFeed", () => {
     );
     expect(withWorkingAgain.at(-1)).toBe(withWorking.at(-1));
   });
+
+  it("keeps live state on the active uninterrupted tool run", () => {
+    const turnId = TurnId.make("turn-live-tools");
+    const activity = (
+      id: string,
+      status: ThreadFeedActivity["status"],
+      lifecycleStatus: ThreadFeedActivity["lifecycleStatus"],
+      tone: "tool" | "error" = "tool",
+      command?: string,
+    ): ThreadFeedActivity => ({
+      id,
+      createdAt: `2026-04-01T00:00:0${id.at(-1)}.000Z`,
+      turnId,
+      summary: `Tool ${id}`,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: "command",
+      toolLike: true,
+      status,
+      lifecycleStatus,
+      workEntry: {
+        id,
+        createdAt: `2026-04-01T00:00:0${id.at(-1)}.000Z`,
+        turnId,
+        label: `Tool ${id}`,
+        tone,
+        toolLifecycleStatus: lifecycleStatus,
+        ...(command ? { command, itemType: "command_execution" as const } : {}),
+      },
+    });
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "activity-1",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId,
+        activities: [
+          activity("activity-1", "success", "completed"),
+          activity("activity-2", "failure", "failed", "error"),
+          activity("activity-3", "success", "completed", "tool", "sudo -u root pnpm test"),
+        ],
+      },
+    ];
+    const latestTurn = {
+      turnId,
+      state: "running" as const,
+      requestedAt: "2026-04-01T00:00:00.000Z",
+      startedAt: "2026-04-01T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+
+    const rows = deriveThreadFeedPresentation(
+      feed,
+      latestTurn,
+      new Set(),
+      new Set(),
+      latestTurn.startedAt,
+    );
+    expect(rows.slice(0, 3).map((entry) => [entry.id, entry.type])).toEqual([
+      ["work-toggle:work-group:activity-1", "work-toggle"],
+      ["activity-2", "activity-group"],
+      ["work-live:work-group:activity-3", "work-toggle"],
+    ]);
+    expect(rows.slice(0, 3).map((entry) => entry.type === "work-toggle" && entry.live)).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    expect(rows[2]).toMatchObject({
+      summary: "Running pnpm",
+      summaryKind: "command",
+      live: true,
+      shimmer: true,
+    });
+    expect(rows[0]).toMatchObject({ live: false, shimmer: false });
+
+    const stoppedRows = deriveThreadFeedPresentation(feed, latestTurn, new Set());
+    expect(stoppedRows.filter((entry) => entry.type === "work-toggle")).toMatchObject([
+      { live: false, shimmer: false },
+      { live: false, shimmer: false },
+    ]);
+
+    const completedRows = deriveThreadFeedPresentation(
+      feed,
+      { ...latestTurn, state: "completed", completedAt: "2026-04-01T00:00:04.000Z" },
+      new Set([turnId]),
+      new Set(),
+      latestTurn.startedAt,
+    );
+    expect(completedRows.filter((entry) => entry.type === "work-toggle")).toMatchObject([
+      { live: false, shimmer: false },
+      { live: false, shimmer: false },
+    ]);
+  });
+
+  it("does not revive cached in-progress tools after work stops", () => {
+    const turnId = TurnId.make("turn-stale-tool");
+    const feed: ThreadFeedEntry[] = [
+      {
+        type: "activity-group",
+        id: "stale-tool",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId,
+        activities: [
+          {
+            id: "stale-tool",
+            createdAt: "2026-04-01T00:00:01.000Z",
+            turnId,
+            summary: "Running tests",
+            detail: null,
+            canExpand: false,
+            getFullDetail: () => null,
+            getCopyText: () => "",
+            icon: "command",
+            toolLike: true,
+            status: "neutral",
+            lifecycleStatus: "inProgress",
+            workEntry: {
+              id: "stale-tool",
+              createdAt: "2026-04-01T00:00:01.000Z",
+              turnId,
+              label: "Running tests",
+              tone: "tool",
+              toolLifecycleStatus: "inProgress",
+            },
+          },
+        ],
+      },
+    ];
+    const latestTurn = {
+      turnId,
+      state: "running" as const,
+      requestedAt: "2026-04-01T00:00:00.000Z",
+      startedAt: "2026-04-01T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+
+    expect(deriveThreadFeedPresentation(feed, latestTurn, new Set())).toEqual([]);
+    expect(
+      deriveThreadFeedPresentation(feed, latestTurn, new Set(), new Set(), latestTurn.startedAt),
+    ).toMatchObject([{ type: "work-toggle", live: true, shimmer: true }]);
+  });
+
+  it("collapses interleaved tool lifecycles by call identity", () => {
+    const turnId = TurnId.make("turn-parallel-tools");
+    const toolActivity = (
+      id: string,
+      toolCallId: string,
+      kind: "tool.updated" | "tool.completed",
+      status: "inProgress" | "completed",
+      detail: string,
+      nestedId = false,
+    ) =>
+      makeActivity({
+        id: EventId.make(id),
+        kind,
+        tone: "tool",
+        summary: `Run ${toolCallId} command`,
+        createdAt: `2026-04-01T00:00:0${id.at(-1)}.000Z`,
+        turnId,
+        payload: {
+          ...(nestedId ? { data: { toolCallId } } : { toolCallId }),
+          itemType: "command_execution",
+          status,
+          detail,
+        },
+      });
+    const thread = makeThread({
+      id: ThreadId.make("thread-parallel-tools"),
+      projectId: ProjectId.make("project-1"),
+      title: "Parallel tools",
+      activities: [
+        toolActivity("call-a-1", "call-a", "tool.updated", "inProgress", "starting"),
+        toolActivity("call-b-2", "call-b", "tool.updated", "inProgress", "starting", true),
+        toolActivity("call-a-3", "call-a", "tool.completed", "completed", "first output"),
+        toolActivity("call-b-4", "call-b", "tool.completed", "completed", "second output", true),
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    const activityGroup = feed.find((entry) => entry.type === "activity-group");
+    expect(activityGroup).toMatchObject({
+      type: "activity-group",
+      activities: [
+        { id: "call-a-1", lifecycleStatus: "completed", detail: "first output" },
+        { id: "call-b-2", lifecycleStatus: "completed", detail: "second output" },
+      ],
+    });
+    expect(
+      deriveThreadFeedPresentation(feed, null, new Set([turnId])).find(
+        (entry) => entry.type === "work-toggle",
+      ),
+    ).toMatchObject({
+      type: "work-toggle",
+      hiddenCount: 2,
+      summary: "Ran 2 commands",
+      live: false,
+    });
+  });
 });
 
 describe("quiet timeline: nested agents", () => {
@@ -1867,5 +2797,8 @@ describe("quiet timeline: nested agents", () => {
     );
     expect(ids).toContain("nested-done");
     expect(ids).not.toContain("shell-done");
+    expect(deriveThreadFeedPresentation(feed, null, new Set())).toMatchObject([
+      { type: "activity-group", id: "nested-done" },
+    ]);
   });
 });

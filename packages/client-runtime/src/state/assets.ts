@@ -1,6 +1,11 @@
-import { AssetResource, EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  type AssetCreateUrlResult,
+  AssetResource,
+  EnvironmentId,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
@@ -37,10 +42,41 @@ export function parseAssetCollectionKey(
 
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    const baseUrl = new URL(httpBaseUrl);
+    const resolvedUrl = new URL(relativeUrl, baseUrl);
+    return resolvedUrl.origin === baseUrl.origin ? resolvedUrl.toString() : null;
   } catch {
     return null;
   }
+}
+
+export const EMPTY_ASSET_URL_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
+  Atom.withLabel("asset-url:empty"),
+);
+
+export type AssetUrlState =
+  | { readonly _tag: "Loading" }
+  | { readonly _tag: "Failure" }
+  | {
+      readonly _tag: "Success";
+      readonly url: string;
+      /** The host path the server chose to serve, when it differs from what was asked for. */
+      readonly sourcePath?: string;
+    };
+
+export function assetUrlStateFromResult(
+  result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
+  httpBaseUrl: string | null,
+): AssetUrlState {
+  if (result._tag === "Failure") return { _tag: "Failure" };
+  if (httpBaseUrl === null || result._tag !== "Success") return { _tag: "Loading" };
+  const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
+  if (url === null) return { _tag: "Failure" };
+  return {
+    _tag: "Success",
+    url,
+    ...(result.value.sourcePath !== undefined ? { sourcePath: result.value.sourcePath } : {}),
+  };
 }
 
 export function createAssetEnvironmentAtoms<R, E>(

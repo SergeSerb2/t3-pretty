@@ -34,7 +34,8 @@ const TestLayer = ElectronMenu.layer.pipe(
 const makeWindow = (zoomFactor = 1): Electron.BrowserWindow =>
   ({
     id: 7,
-    webContents: { getZoomFactor: () => zoomFactor },
+    isDestroyed: () => false,
+    webContents: { getZoomFactor: () => zoomFactor, isDestroyed: () => false },
   }) as unknown as Electron.BrowserWindow;
 
 describe("ElectronMenu", () => {
@@ -48,7 +49,7 @@ describe("ElectronMenu", () => {
     Effect.gen(function* () {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const selectedItemId = yield* electronMenu.showContextMenu({
-        window: {} as Electron.BrowserWindow,
+        window: makeWindow(),
         items: [],
         position: Option.none(),
       });
@@ -183,7 +184,7 @@ describe("ElectronMenu", () => {
 
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const popup = electronMenu.popupTemplate({
-        window: {} as Electron.BrowserWindow,
+        window: makeWindow(),
         template: [{ label: "Copy" }],
       });
 
@@ -235,7 +236,7 @@ describe("ElectronMenu", () => {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const exit = yield* Effect.exit(
         electronMenu.popupTemplate({
-          window: { id: 41 } as Electron.BrowserWindow,
+          window: { ...makeWindow(), id: 41 } as Electron.BrowserWindow,
           template: [{ label: "Copy" }],
         }),
       );
@@ -262,7 +263,7 @@ describe("ElectronMenu", () => {
       const electronMenu = yield* ElectronMenu.ElectronMenu;
       const exit = yield* Effect.exit(
         electronMenu.showContextMenu({
-          window: { id: 42 } as Electron.BrowserWindow,
+          window: { ...makeWindow(), id: 42 } as Electron.BrowserWindow,
           items: [{ id: "copy", label: "Copy" }],
           position: Option.none(),
         }),

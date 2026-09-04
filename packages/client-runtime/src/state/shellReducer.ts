@@ -1,6 +1,20 @@
 import * as Arr from "effect/Array";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
 
+function upsertById<A extends { readonly id: string }>(
+  entries: ReadonlyArray<A>,
+  next: A,
+): ReadonlyArray<A> {
+  const nextId = next.id;
+  let updated: A[] | null = null;
+  for (let index = 0; index < entries.length; index += 1) {
+    if (entries[index]!.id !== nextId) continue;
+    updated ??= entries.slice();
+    updated[index] = next;
+  }
+  return updated ?? Arr.append(entries, next);
+}
+
 /**
  * Reduce a single shell stream event into an existing snapshot, returning a new
  * snapshot with the event's changes applied. This is a pure reducer that both
@@ -17,9 +31,7 @@ export function applyShellStreamEvent(
 
   switch (event.kind) {
     case "project-upserted": {
-      const projects = snapshot.projects.some((p) => p.id === event.project.id)
-        ? Arr.map(snapshot.projects, (p) => (p.id === event.project.id ? event.project : p))
-        : Arr.append(snapshot.projects, event.project);
+      const projects = upsertById(snapshot.projects, event.project);
       return { ...snapshot, projects, snapshotSequence: event.sequence };
     }
     case "project-removed":
@@ -29,9 +41,7 @@ export function applyShellStreamEvent(
         snapshotSequence: event.sequence,
       };
     case "thread-upserted": {
-      const threads = snapshot.threads.some((t) => t.id === event.thread.id)
-        ? Arr.map(snapshot.threads, (t) => (t.id === event.thread.id ? event.thread : t))
-        : Arr.append(snapshot.threads, event.thread);
+      const threads = upsertById(snapshot.threads, event.thread);
       return { ...snapshot, threads, snapshotSequence: event.sequence };
     }
     case "thread-removed":

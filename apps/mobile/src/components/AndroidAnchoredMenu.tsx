@@ -1,6 +1,6 @@
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import type { MenuAction, MenuComponentProps } from "@react-native-menu/menu";
 import { BlurView } from "expo-blur";
+import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { appBlurTargetRef } from "../lib/appBlurTarget";
 import { useThemeColor } from "../lib/useThemeColor";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../native/native-glass";
 import { cn } from "../lib/cn";
 import { flattenMenuActions } from "./anchored-menu.logic";
 import { type AppSymbolName, SymbolView } from "./AppSymbol";
@@ -30,7 +31,7 @@ const MENU_WIDTH = 268;
 const MENU_RADIUS = 16;
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 8;
-const EDGE_BUTTON_SIZE = 44;
+const EDGE_BUTTON_SIZE = Platform.OS === "android" ? 48 : 44;
 const EDGE_INSET = 16;
 const BOTTOM_TOOLBAR_CLEARANCE = 56;
 
@@ -148,9 +149,6 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboardHeight = useKeyboardState((state) => state.height);
   const rippleColor = useThemeColor("--color-subtle");
-  const iconColor = useThemeColor("--color-icon");
-  const iconSubtleColor = useThemeColor("--color-icon-subtle");
-  const dangerColor = useThemeColor("--color-danger-foreground");
   const chromeFill = useThemeColor("--color-chrome-glass");
   const chromeBorder = useThemeColor("--color-chrome-glass-border");
 
@@ -282,10 +280,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
       {levelActions.map((row, index) => {
         if (row.type === "header") {
           return (
-            <View
-              key={`header-${row.title}-${index}`}
-              className={cn("px-3.5 pb-1", index === 0 ? "pt-2.5" : "pt-3")}
-            >
+            <View key={row.key} className={cn("px-3.5 pb-1", index === 0 ? "pt-2.5" : "pt-3")}>
               <Text className="text-3xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
                 {row.title}
               </Text>
@@ -304,7 +299,8 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
             android_ripple={Platform.OS === "android" ? { color: rippleColor } : undefined}
             disabled={disabled}
             className={cn(
-              "min-h-11 flex-row items-center gap-2.5 px-3.5 py-2.5",
+              "flex-row items-center gap-2.5 px-3.5 py-2.5",
+              Platform.OS === "android" ? "min-h-12" : "min-h-11",
               disabled && "opacity-45",
             )}
             style={({ pressed }) =>
@@ -328,16 +324,21 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
               <SymbolView
                 name="chevron.right"
                 size={13}
-                tintColor={iconSubtleColor}
+                tintColorClassName={"accent-icon-subtle"}
                 type="monochrome"
               />
             ) : action.state === "on" ? (
-              <SymbolView name="checkmark" size={15} tintColor={iconColor} type="monochrome" />
+              <SymbolView
+                name="checkmark"
+                size={15}
+                tintColorClassName={"accent-icon"}
+                type="monochrome"
+              />
             ) : action.image ? (
               <SymbolView
                 name={action.image as AppSymbolName}
                 size={15}
-                tintColor={destructive ? dangerColor : iconColor}
+                tintColorClassName={destructive ? "accent-danger-foreground" : "accent-icon"}
                 type="monochrome"
               />
             ) : null}
@@ -364,17 +365,22 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
 
   const overlayMenu =
     !placeable || local === null ? null : (
-      <Animated.View entering={MENU_ENTERING} style={menuFrameStyle}>
-        {Platform.OS === "ios" && isLiquidGlassSupported ? (
+      <Animated.View
+        accessibilityViewIsModal
+        entering={MENU_ENTERING}
+        onAccessibilityEscape={close}
+        style={menuFrameStyle}
+      >
+        {Platform.OS === "ios" && NATIVE_LIQUID_GLASS_SUPPORTED ? (
           <View style={{ backgroundColor: chromeFill, flexGrow: 1 }}>
-            <LiquidGlassView
+            <GlassView
               colorScheme={isDarkMode ? "dark" : "light"}
-              effect="regular"
-              interactive={false}
+              glassEffectStyle="regular"
+              isInteractive={false}
               style={{ flexGrow: 1, overflow: "hidden" }}
             >
               {menuBody}
-            </LiquidGlassView>
+            </GlassView>
           </View>
         ) : (
           <>

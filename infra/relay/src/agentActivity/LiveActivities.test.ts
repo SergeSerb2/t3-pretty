@@ -265,7 +265,11 @@ describe("LiveActivities", () => {
       }),
       select: () => ({
         from: () => ({
-          leftJoin: () => ({ where: () => Effect.fail(cause) }),
+          leftJoin: () => ({
+            where: () => ({
+              orderBy: () => ({ limit: () => Effect.fail(cause) }),
+            }),
+          }),
         }),
       }),
     } as unknown as RelayDb.RelayDb["Service"];

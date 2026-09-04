@@ -25,8 +25,14 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 }
 
 $env:buildkiteAgentToken = $token
+$agentVersion = if ($env:BUILDKITE_AGENT_VERSION) {
+  $env:BUILDKITE_AGENT_VERSION
+} else {
+  "3.137.2"
+}
+$env:buildkiteAgentVersion = $agentVersion
 Set-ExecutionPolicy Bypass -Scope Process -Force
-Invoke-Expression ((New-Object System.Net.WebClient).DownloadString("https://raw.githubusercontent.com/buildkite/agent/main/install.ps1"))
+Invoke-Expression ((New-Object System.Net.WebClient).DownloadString("https://raw.githubusercontent.com/buildkite/agent/v$agentVersion/install.ps1"))
 
 $cfg = "C:\buildkite-agent\buildkite-agent.cfg"
 if (-not (Test-Path $cfg)) {
@@ -84,16 +90,49 @@ if (-not $nssmCmd) {
   $nssm = $nssmCmd.Source
 }
 
-if (-not (Get-Service -Name "buildkite-t3-pretty" -ErrorAction SilentlyContinue)) {
-  & $nssm install buildkite-t3-pretty $agentExe start
+$serviceName = "buildkite-t3-pretty"
+$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if ($service -and $service.Status -ne "Stopped") {
+  Stop-Service -Name $serviceName
+  $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
 }
-& $nssm set buildkite-t3-pretty AppDirectory "C:\buildkite-agent"
-& $nssm set buildkite-t3-pretty AppStdout "C:\buildkite-agent\buildkite-agent.log"
-& $nssm set buildkite-t3-pretty AppStderr "C:\buildkite-agent\buildkite-agent.log"
-& $nssm set buildkite-t3-pretty Start SERVICE_AUTO_START
+$serviceAgentDir = "C:\buildkite-agent\service"
+$serviceAgentExe = Join-Path $serviceAgentDir "buildkite-agent.exe"
+New-Item -ItemType Directory -Force -Path $serviceAgentDir | Out-Null
+Copy-Item $agentExe $serviceAgentExe -Force
+$serviceAgentVersion = (& $serviceAgentExe --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $serviceAgentVersion.Contains($agentVersion)) {
+  throw "Expected Buildkite agent $agentVersion at $serviceAgentExe; got '$serviceAgentVersion'"
+}
+if (-not $service) {
+  & $nssm install $serviceName $serviceAgentExe start
+}
+& $nssm set $serviceName Application $serviceAgentExe
+& $nssm set $serviceName AppParameters "start --config `"$cfg`""
+& $nssm set $serviceName AppDirectory "C:\buildkite-agent"
+$agentLog = "C:\buildkite-agent\buildkite-agent.log"
+& $nssm set $serviceName AppStdout $agentLog
+& $nssm set $serviceName AppStderr $agentLog
+& $nssm set $serviceName Start SERVICE_AUTO_START
+& $nssm set $serviceName AppExit Default Restart
+& $nssm set $serviceName AppRestartDelay 5000
+& sc.exe failure $serviceName reset= 86400 actions= restart/5000/restart/30000/restart/60000
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to configure recovery for Buildkite Windows service $serviceName"
+}
+& sc.exe failureflag $serviceName 1
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to configure recovery flag for Buildkite Windows service $serviceName"
+}
 
 $hooksDir = "C:\buildkite-agent\hooks"
 New-Item -ItemType Directory -Force -Path $hooksDir | Out-Null
+$gitCmd = "C:\Program Files\Git\cmd"
+if (Test-Path $gitCmd) { $env:Path = "$gitCmd;$env:Path" }
+git config --system core.longpaths true
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to enable long paths for the Buildkite Windows agent"
+}
 $hookSrc = Join-Path $PSScriptRoot "windows-origin-git.ps1"
 if (Test-Path $hookSrc) {
   Copy-Item $hookSrc (Join-Path $hooksDir "windows-origin-git.ps1") -Force
@@ -108,6 +147,17 @@ if (Test-Path "C:\buildkite-agent\.git-credentials") {
   & (Join-Path $hooksDir "windows-origin-git.ps1")
 }
 
-Get-Process -Name buildkite-agent -ErrorAction SilentlyContinue | Stop-Process -Force
-& $nssm start buildkite-t3-pretty
+& $nssm start $serviceName
+if ($LASTEXITCODE -ne 0) {
+  throw "Buildkite Windows service $serviceName failed to start. Check $agentLog"
+}
+$service = Get-Service -Name $serviceName
+try {
+  $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+} catch {
+  throw "Buildkite Windows service $serviceName failed to start. Check $agentLog"
+}
+if ($service.Status -ne "Running") {
+  throw "Buildkite Windows service $serviceName failed to start. Check $agentLog"
+}
 Write-Host "Registered Buildkite Windows service $agentName on queue $queue"

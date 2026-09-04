@@ -24,7 +24,10 @@ import {
 } from "./background-activity-scopes";
 
 const REPORT_INTERVAL_MS = 25_000;
+const REPORT_REQUEST_TIMEOUT_MS = 10_000;
+const REPORT_CONCURRENCY = 4;
 const LEASE_TTL_MS = 45_000;
+const LEASE_RENEWAL_MS = Math.min(REPORT_INTERVAL_MS, Math.floor(LEASE_TTL_MS / 2));
 const BASELINE_SCOPES: ReadonlyArray<BackgroundScope> = [{ type: "provider-status" }];
 
 function normalizeAppState(
@@ -45,9 +48,10 @@ export const mobileBackgroundActivityReporterLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* EnvironmentRegistry;
     const storage = yield* MobileStorage.MobileStorage;
+    const ephemeralClientId = `ephemeral-mobile-client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     const clientId = yield* storage.loadOrCreateAgentAwarenessDeviceId.pipe(
       Effect.map((deviceId) => `mobile-${deviceId}`),
-      Effect.orElseSucceed(() => "ephemeral-mobile-client"),
+      Effect.orElseSucceed(() => ephemeralClientId),
     );
     const reportRequests = yield* Queue.sliding<void>(1);
     const requestReport = () => Queue.offerUnsafe(reportRequests, undefined);
@@ -83,7 +87,7 @@ export const mobileBackgroundActivityReporterLayer = Layer.effectDiscard(
             .run(environmentId, request(WS_METHODS.serverReportClientActivity, input))
             .pipe(Effect.ignore);
         },
-        { concurrency: "unbounded", discard: true },
+        { concurrency: REPORT_CONCURRENCY, discard: true },
       );
     }).pipe(Effect.withSpan("mobile.backgroundActivity.report"));
 

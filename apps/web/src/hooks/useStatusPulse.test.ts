@@ -17,6 +17,9 @@ const fakeDocument = {
     removeAttribute: (name: string) => attributes.delete(name),
   },
   addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+  removeEventListener: (type: string, listener: () => void) => {
+    if (listeners.get(type) === listener) listeners.delete(type);
+  },
 };
 
 const phase = () => attributes.get(STATUS_PULSE_ATTRIBUTE);

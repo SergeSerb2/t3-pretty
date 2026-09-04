@@ -387,20 +387,33 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     ).toEqual({ liveActivitiesEnabled: true, baseFontSize: 18 });
   });
 
-  it.effect("registers at most one listener while a Live Activity push token is pending", () => {
-    registerAgentAwarenessConnection(savedConnection());
-    const addPushTokenListener = vi.fn();
+  it.effect("owns one listener while a Live Activity push token is pending", () => {
+    const remove = vi.fn();
+    const addPushTokenListener = vi.fn(() => ({ remove }));
     const activity = {
       getPushToken: vi.fn(() => Promise.resolve(null)),
       addPushTokenListener,
     };
+    // expo-widgets returns a fresh JS wrapper for the same native instance on
+    // each getInstances() call, so object identity cannot deduplicate these.
+    const refreshedActivityWrapper = {
+      getPushToken: vi.fn(() => Promise.resolve(null)),
+      addPushTokenListener: vi.fn(() => ({ remove: vi.fn() })),
+    };
 
     return Effect.gen(function* () {
       expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(false);
-      expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(false);
+      expect(
+        yield* registerLiveActivityPushToken({ activity: refreshedActivityWrapper as never }),
+      ).toBe(false);
 
-      expect(activity.getPushToken).toHaveBeenCalledTimes(2);
+      expect(activity.getPushToken).toHaveBeenCalledTimes(1);
+      expect(refreshedActivityWrapper.getPushToken).toHaveBeenCalledTimes(1);
       expect(addPushTokenListener).toHaveBeenCalledTimes(1);
+      expect(refreshedActivityWrapper.addPushTokenListener).not.toHaveBeenCalled();
+
+      setAgentAwarenessRelayTokenProvider(null);
+      expect(remove).toHaveBeenCalledTimes(1);
     }).pipe(Effect.provide(relayTestLayer));
   });
 
@@ -464,6 +477,18 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(relayTestLayer));
     },
   );
+
+  it.effect("skips native Live Activity work when the binary omits the widget extension", () => {
+    Constants.expoConfig!.extra = { iosPersonalTeamBuild: true };
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+
+    return Effect.gen(function* () {
+      yield* runBackgroundOperations();
+
+      expect(appStateMock.listeners).toHaveLength(0);
+      expect(widgetMocks.getInstances).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(relayTestLayer));
+  });
 
   it.effect(
     "re-registers active Live Activity tokens when the app returns to the foreground",
@@ -955,6 +980,44 @@ describe("makeRelayDeviceRegistrationRequest", () => {
 
     expect(activity.update).toHaveBeenCalledTimes(1);
     expect(widgetMocks.start).not.toHaveBeenCalled();
+  });
+
+  it("retries identical Live Activity content after a native update rejects", async () => {
+    const activity = {
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn(),
+      update: vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new Error("native update failed"))
+        .mockResolvedValue(undefined),
+      end: vi.fn(() => Promise.resolve()),
+    };
+    widgetMocks.getInstances.mockReturnValue([activity] as never);
+    const props = {
+      title: "T3 Pretty",
+      subtitle: "Agent work in progress",
+      activeCount: 1,
+      updatedAt: "2026-06-02T00:00:00.000Z",
+      activities: [
+        {
+          environmentId: "env-1",
+          threadId: "thread-1",
+          projectTitle: "t3-pretty",
+          threadTitle: "Retry Live Activity",
+          modelTitle: "gpt-5.4",
+          phase: "running" as const,
+          status: "Working",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+          deepLink: "/threads/env-1/thread-1",
+        },
+      ],
+    };
+
+    applyLocalLiveActivityProps(props);
+    await Promise.resolve();
+    applyLocalLiveActivityProps(props);
+
+    expect(activity.update).toHaveBeenCalledTimes(2);
   });
 
   it("skips the native instance lookup when the Live Activity content is unchanged", () => {

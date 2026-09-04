@@ -231,6 +231,38 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     );
   });
 
+  it("bounds published-state deduplication by thread recency", () => {
+    let published = new Map<ThreadId, string>();
+    for (
+      let index = 0;
+      index <= AgentAwarenessRelay.AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES;
+      index += 1
+    ) {
+      published = AgentAwarenessRelay.upsertBoundedPublishedState(
+        published,
+        `thread-${index}` as ThreadId,
+        `state-${index}`,
+      );
+    }
+
+    expect(published.size).toBe(AgentAwarenessRelay.AGENT_AWARENESS_PUBLISHED_STATE_MAX_ENTRIES);
+    expect(published.has("thread-0" as ThreadId)).toBe(false);
+
+    published = AgentAwarenessRelay.upsertBoundedPublishedState(
+      published,
+      "thread-1" as ThreadId,
+      "refreshed",
+    );
+    published = AgentAwarenessRelay.upsertBoundedPublishedState(
+      published,
+      "thread-new" as ThreadId,
+      "new",
+    );
+
+    expect(published.get("thread-1" as ThreadId)).toBe("refreshed");
+    expect(published.has("thread-2" as ThreadId)).toBe(false);
+  });
+
   it("requires an explicit opt-in before publishing agent activity", () => {
     expect(AgentAwarenessRelay.isAgentActivityPublishingEnabled(null)).toBe(false);
     expect(AgentAwarenessRelay.isAgentActivityPublishingEnabled("false")).toBe(false);
@@ -371,58 +403,45 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     ).toEqual([activeThreadId]);
   });
 
-  it("signs the activity publish JWT and rejects tampering", async () => {
-    const keyPair = NodeCrypto.generateKeyPairSync("ed25519", {
-      privateKeyEncoding: { format: "pem", type: "pkcs8" },
-      publicKeyEncoding: { format: "pem", type: "spki" },
-    });
-    const payload = {
-      iss: "t3-env:env",
-      aud: "https://relay.example.test",
-      sub: "env",
-      jti: "nonce-1",
-      iat: 100,
-      exp: 200,
-      environmentId: state.environmentId,
-      threadId: state.threadId,
-      state,
-    } satisfies RelayAgentActivityPublishProofPayload;
-    const proof = await Effect.runPromise(
-      AgentAwarenessRelay.signRelayAgentActivityPublishProof({
+  it.effect("signs the activity publish JWT and rejects tampering", () =>
+    Effect.gen(function* () {
+      const keyPair = NodeCrypto.generateKeyPairSync("ed25519", {
+        privateKeyEncoding: { format: "pem", type: "pkcs8" },
+        publicKeyEncoding: { format: "pem", type: "spki" },
+      });
+      const payload = {
+        iss: "t3-env:env",
+        aud: "https://relay.example.test",
+        sub: "env",
+        jti: "nonce-1",
+        iat: 100,
+        exp: 200,
+        environmentId: state.environmentId,
+        threadId: state.threadId,
+        state,
+      } satisfies RelayAgentActivityPublishProofPayload;
+      const proof = yield* AgentAwarenessRelay.signRelayAgentActivityPublishProof({
         privateKey: keyPair.privateKey,
         payload,
-      }),
-    );
+      });
+      const verify = (token: string) =>
+        verifyRelayJwt({
+          publicKey: keyPair.publicKey,
+          token,
+          typ: RELAY_ACTIVITY_PUBLISH_TYP,
+          issuer: "t3-env:env",
+          audience: "https://relay.example.test",
+          nowEpochSeconds: 150,
+        });
 
-    await expect(
-      Effect.runPromise(
-        verifyRelayJwt({
-          publicKey: keyPair.publicKey,
-          token: proof,
-          typ: RELAY_ACTIVITY_PUBLISH_TYP,
-          issuer: "t3-env:env",
-          audience: "https://relay.example.test",
-          nowEpochSeconds: 150,
-        }),
-      ),
-    ).resolves.toMatchObject({ jti: "nonce-1", state });
-    await expect(
-      Effect.runPromise(
-        verifyRelayJwt({
-          publicKey: keyPair.publicKey,
-          token: (() => {
-            const [header, body, signature = ""] = proof.split(".");
-            const corruptedSignature = `${signature.startsWith("a") ? "b" : "a"}${signature.slice(1)}`;
-            return `${header}.${body}.${corruptedSignature}`;
-          })(),
-          typ: RELAY_ACTIVITY_PUBLISH_TYP,
-          issuer: "t3-env:env",
-          audience: "https://relay.example.test",
-          nowEpochSeconds: 150,
-        }),
-      ),
-    ).rejects.toBeDefined();
-  });
+      expect(yield* verify(proof)).toMatchObject({ jti: "nonce-1", state });
+
+      const [header, body, signature = ""] = proof.split(".");
+      const corruptedSignature = `${signature.startsWith("a") ? "b" : "a"}${signature.slice(1)}`;
+      const rejection = yield* Effect.flip(verify(`${header}.${body}.${corruptedSignature}`));
+      expect(rejection).toBeDefined();
+    }),
+  );
 
   it.effect("keeps the orchestration listener armed until relay config is installed", () =>
     Effect.scoped(
@@ -488,6 +507,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           readEvents: () => Stream.empty,
           dispatch: () => Effect.succeed({ sequence: 1 }),
           streamDomainEvents: Stream.fromQueue(events),
+          subscribeDomainEvents: Effect.succeed(Stream.fromQueue(events)),
           latestSequence: Effect.succeed(0),
         } satisfies OrchestrationEngineShape;
 
@@ -570,10 +590,11 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const originalFetch = globalThis.fetch;
-        const context = yield* Effect.context<never>();
-        const runFork = Effect.runForkWith(context);
         const events = yield* Queue.unbounded<OrchestrationEvent>();
-        const fetchSeen = yield* Deferred.make<URL>();
+        let resolveFetchSeen: (url: URL) => void = () => {};
+        const fetchSeen = new Promise<URL>((resolve) => {
+          resolveFetchSeen = resolve;
+        });
         const userSpans: Array<string> = [];
         const productSpans: Array<string> = [];
         const collectingTracer = (spans: Array<string>) =>
@@ -662,7 +683,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
               ? input
               : (input as unknown as { readonly url: string }).url,
           );
-          runFork(Deferred.succeed(fetchSeen, url));
+          resolveFetchSeen(url);
           return Promise.resolve(Response.json({ ok: true, deliveries: [] }));
         }) as unknown as typeof fetch;
         yield* Effect.addFinalizer(() =>
@@ -681,6 +702,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
             readEvents: () => Stream.empty,
             dispatch: () => Effect.succeed({ sequence: 1 }),
             streamDomainEvents: Stream.fromQueue(events),
+            subscribeDomainEvents: Effect.succeed(Stream.fromQueue(events)),
             latestSequence: Effect.succeed(0),
           } satisfies OrchestrationEngineShape),
           Layer.succeed(ProjectionSnapshotQuery, {
@@ -720,7 +742,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
             occurredAt: now,
           } as unknown as OrchestrationEvent);
 
-          const url = yield* Deferred.await(fetchSeen).pipe(Effect.timeout("2 seconds"));
+          const url = yield* Effect.promise(() => fetchSeen).pipe(Effect.timeout("2 seconds"));
           expect(url.origin).toBe("https://transport.example.test");
           expect(productSpans).toContain("makePublishProof");
           expect(userSpans).not.toContain("makePublishProof");

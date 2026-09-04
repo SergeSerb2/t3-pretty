@@ -66,6 +66,15 @@ export function clearReviewCommentTarget() {
   emitChange();
 }
 
+export function clearReviewCommentTargetIfCurrent(target: ReviewCommentTarget): boolean {
+  if (currentTarget !== target) {
+    return false;
+  }
+
+  clearReviewCommentTarget();
+  return true;
+}
+
 export function useReviewCommentTarget(): ReviewCommentTarget | null {
   return useSyncExternalStore(
     subscribeReviewCommentTarget,
@@ -82,16 +91,6 @@ export function getSelectedReviewCommentLines(
 
 export function getReviewUnifiedLineNumber(line: ReviewRenderableLineRow): number | null {
   return line.newLineNumber ?? line.oldLineNumber;
-}
-
-export function formatReviewLineLabel(line: ReviewRenderableLineRow): string {
-  if (line.newLineNumber !== null) {
-    return `new line ${line.newLineNumber}`;
-  }
-  if (line.oldLineNumber !== null) {
-    return `old line ${line.oldLineNumber}`;
-  }
-  return "file";
 }
 
 export function getReviewChangeMarker(change: ReviewRenderableLineRow["change"]): string {

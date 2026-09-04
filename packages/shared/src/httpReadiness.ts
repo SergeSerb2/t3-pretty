@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 export const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
@@ -13,27 +14,51 @@ export const DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS = 1_000;
  * message/cause) shape for Effect tagged errors while recursing through nested
  * `cause`/`reason` chains.
  */
-export function describeReadinessCause(cause: unknown): unknown {
-  if (cause instanceof Error) {
-    const tag = (cause as { readonly _tag?: unknown })._tag;
-    const nested = (cause as { readonly cause?: unknown }).cause;
-    return {
-      ...(typeof tag === "string" ? { _tag: tag } : { name: cause.name }),
-      message: cause.message,
-      ...(nested === undefined ? {} : { cause: describeReadinessCause(nested) }),
-    };
-  }
-  if (typeof cause !== "object" || cause === null) {
-    return cause;
-  }
+const READINESS_DIAGNOSTIC_MAX_DEPTH = 8;
+const READINESS_DIAGNOSTIC_MAX_TEXT_LENGTH = 1_024;
 
-  const record = cause as Readonly<Record<string, unknown>>;
-  return {
-    ...(typeof record._tag === "string" ? { _tag: record._tag } : {}),
-    ...(typeof record.message === "string" ? { message: record.message } : {}),
-    ...(record.reason === undefined ? {} : { reason: describeReadinessCause(record.reason) }),
-    ...(record.cause === undefined ? {} : { cause: describeReadinessCause(record.cause) }),
+function boundedDiagnosticText(value: string): string {
+  return value.length <= READINESS_DIAGNOSTIC_MAX_TEXT_LENGTH
+    ? value
+    : `${value.slice(0, READINESS_DIAGNOSTIC_MAX_TEXT_LENGTH)}…`;
+}
+
+export function describeReadinessCause(cause: unknown): unknown {
+  const seen = new WeakSet<object>();
+  const describe = (value: unknown, depth: number): unknown => {
+    try {
+      if (typeof value === "string") return boundedDiagnosticText(value);
+      if (typeof value !== "object" || value === null) return value;
+      if (seen.has(value)) return "[Circular]";
+      if (depth >= READINESS_DIAGNOSTIC_MAX_DEPTH) return "[Truncated]";
+      seen.add(value);
+
+      if (value instanceof Error) {
+        const tag = (value as { readonly _tag?: unknown })._tag;
+        const nested = (value as { readonly cause?: unknown }).cause;
+        return {
+          ...(typeof tag === "string"
+            ? { _tag: boundedDiagnosticText(tag) }
+            : { name: boundedDiagnosticText(value.name) }),
+          message: boundedDiagnosticText(value.message),
+          ...(nested === undefined ? {} : { cause: describe(nested, depth + 1) }),
+        };
+      }
+
+      const record = value as Readonly<Record<string, unknown>>;
+      return {
+        ...(typeof record._tag === "string" ? { _tag: boundedDiagnosticText(record._tag) } : {}),
+        ...(typeof record.message === "string"
+          ? { message: boundedDiagnosticText(record.message) }
+          : {}),
+        ...(record.reason === undefined ? {} : { reason: describe(record.reason, depth + 1) }),
+        ...(record.cause === undefined ? {} : { cause: describe(record.cause, depth + 1) }),
+      };
+    } catch {
+      return "[Unserializable]";
+    }
   };
+  return describe(cause, 0);
 }
 
 /**
@@ -103,6 +128,7 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
       Effect.gen(function* () {
         attempt += 1;
         const responseOption = yield* effect.pipe(
+          Effect.flatMap((response) => Stream.runDrain(response.stream).pipe(Effect.as(response))),
           Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
           Effect.mapError((cause) => fail(cause)),
         );
@@ -127,7 +153,6 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
         ),
       ),
     ),
-    HttpClient.tap((response) => response.text.pipe(Effect.ignore)),
     HttpClient.retry(retryPolicy),
   );
 

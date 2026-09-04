@@ -8,6 +8,10 @@ export function getRouter(history: RouterHistory, basepath = "/") {
     history,
     basepath: trimPathRight(basepath),
     context: {},
+    // Route components are split chunks (autoCodeSplitting in vite.config);
+    // fetching them on hover/focus intent hides the load from the first
+    // settings or pull-request navigation.
+    defaultPreload: "intent",
   });
 }
 

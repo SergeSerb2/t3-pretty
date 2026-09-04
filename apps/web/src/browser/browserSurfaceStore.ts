@@ -29,7 +29,9 @@ export interface BrowserSurfaceContentPresentation {
 }
 
 interface BrowserSurfaceStoreState {
+  readonly activityByTabId: Record<string, number>;
   readonly byTabId: Record<string, BrowserSurfacePresentation>;
+  readonly acquireActivity: (tabId: string) => () => void;
   readonly claim: (tabId: string, owner: symbol, fitSourceContent: boolean) => void;
   readonly present: (
     tabId: string,
@@ -40,6 +42,7 @@ interface BrowserSurfaceStoreState {
   ) => void;
   readonly presentContent: (tabId: string, content: BrowserSurfaceContentPresentation) => void;
   readonly release: (tabId: string, owner: symbol) => void;
+  readonly remove: (tabId: string) => void;
 }
 
 export interface BrowserSurfaceLease {
@@ -63,7 +66,28 @@ const rectEquals = (left: BrowserSurfaceRect | null, right: BrowserSurfaceRect):
   left.height === right.height;
 
 export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) => ({
+  activityByTabId: {},
   byTabId: {},
+  acquireActivity: (tabId) => {
+    let released = false;
+    set((state) => ({
+      activityByTabId: {
+        ...state.activityByTabId,
+        [tabId]: (state.activityByTabId[tabId] ?? 0) + 1,
+      },
+    }));
+    return () => {
+      if (released) return;
+      released = true;
+      set((state) => {
+        const count = state.activityByTabId[tabId] ?? 0;
+        const activityByTabId = { ...state.activityByTabId };
+        if (count <= 1) delete activityByTabId[tabId];
+        else activityByTabId[tabId] = count - 1;
+        return { activityByTabId };
+      });
+    };
+  },
   claim: (tabId, owner, fitSourceContent) =>
     set((state) => {
       const current = state.byTabId[tabId];
@@ -169,7 +193,16 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
         },
       };
     }),
+  remove: (tabId) =>
+    set((state) => {
+      if (!(tabId in state.byTabId)) return state;
+      const { [tabId]: _removed, ...byTabId } = state.byTabId;
+      return { byTabId };
+    }),
 }));
+
+export const acquireBrowserSurfaceActivity = (tabId: string): (() => void) =>
+  useBrowserSurfaceStore.getState().acquireActivity(tabId);
 
 export function acquireBrowserSurface(
   tabId: string,

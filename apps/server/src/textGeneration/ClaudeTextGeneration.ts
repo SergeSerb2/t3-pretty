@@ -18,6 +18,7 @@ import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shar
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import { TextGenerationError } from "@t3tools/contracts";
+import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   buildActivityHeadlinePrompt,
@@ -32,6 +33,9 @@ import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
+  TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES,
+  TEXT_GENERATION_RESULT_MAX_BYTES,
+  limitTextGenerationErrorDetail,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
 import {
@@ -39,12 +43,16 @@ import {
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
 import {
-  getClaudeModelCapabilities,
-  isClaudeUltracodeEffort,
-  normalizeClaudeCliEffort,
-  resolveClaudeApiModelId,
-  resolveClaudeEffort,
-} from "../provider/Layers/ClaudeProvider.ts";
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
+  getClaudeCatalogModelCapabilities,
+  isClaudeCatalogUltracodeEffort,
+  normalizeClaudeCatalogEffort,
+  resolveClaudeCatalogApiModelId,
+  resolveClaudeCatalogEffort,
+  resolveClaudeModelSlug,
+  scopeClaudeModelCatalog,
+} from "../provider/ClaudeModelCatalog.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
@@ -63,22 +71,39 @@ const decodeClaudeOutputEnvelope = Schema.decodeEffect(Schema.fromJsonString(Cla
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
+  modelCatalog: Effect.Effect<ClaudeModelCatalog> = Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG),
 ) {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
+  const scopedModelCatalog = modelCatalog.pipe(
+    Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)),
+  );
 
   const readStreamAsString = <E>(
     operation: string,
     stream: Stream.Stream<Uint8Array, E>,
+    input: {
+      readonly maxBytes: number;
+      readonly failWhenTruncated?: boolean;
+    },
   ): Effect.Effect<string, TextGenerationError> =>
-    stream.pipe(
-      Stream.decodeText(),
-      Stream.runFold(
-        () => "",
-        (acc, chunk) => acc + chunk,
-      ),
+    collectUint8StreamText({
+      stream,
+      maxBytes: input.maxBytes,
+      truncatedMarker: input.failWhenTruncated ? null : "\n[truncated]",
+    }).pipe(
       Effect.mapError((cause) =>
         normalizeCliError("claude", operation, cause, "Failed to collect process output"),
+      ),
+      Effect.flatMap((result) =>
+        result.truncated && input.failWhenTruncated
+          ? Effect.fail(
+              new TextGenerationError({
+                operation,
+                detail: "Claude returned structured output above the one MiB limit.",
+              }),
+            )
+          : Effect.succeed(result.text),
       ),
     );
 
@@ -125,21 +150,34 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     outputSchemaJson: S;
     modelSelection: ModelSelection;
   }): Effect.fn.Return<S["Type"], TextGenerationError, S["DecodingServices"]> {
+    const catalog = yield* scopedModelCatalog;
+    const resolvedModelSelection = {
+      ...modelSelection,
+      model: resolveClaudeModelSlug(catalog, modelSelection.model),
+    };
     const jsonSchemaStr = yield* encodeJsonForOperation(
       operation,
       toJsonSchemaObject(outputSchemaJson),
       "Failed to encode structured output schema.",
     );
-    const caps = getClaudeModelCapabilities(modelSelection.model);
+    const caps = getClaudeCatalogModelCapabilities(catalog, resolvedModelSelection.model);
     const descriptors = getProviderOptionDescriptors({
       caps,
-      selections: modelSelection.options,
+      selections: resolvedModelSelection.options,
     });
     const findDescriptor = (id: string) => descriptors.find((descriptor) => descriptor.id === id);
-    const rawEffortSelection = getModelSelectionStringOptionValue(modelSelection, "effort");
-    const resolvedEffort = resolveClaudeEffort(caps, rawEffortSelection);
-    const cliEffort = normalizeClaudeCliEffort(resolvedEffort, modelSelection.model);
-    const ultracode = isClaudeUltracodeEffort(resolvedEffort);
+    const rawEffortSelection = getModelSelectionStringOptionValue(resolvedModelSelection, "effort");
+    const resolvedEffort = resolveClaudeCatalogEffort(
+      catalog,
+      resolvedModelSelection.model,
+      rawEffortSelection,
+    );
+    const cliEffort = normalizeClaudeCatalogEffort(
+      catalog,
+      resolvedEffort,
+      resolvedModelSelection.model,
+    );
+    const ultracode = isClaudeCatalogUltracodeEffort(resolvedEffort);
     const thinkingDescriptor = findDescriptor("thinking");
     const fastModeDescriptor = findDescriptor("fastMode");
     const thinking =
@@ -170,7 +208,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--json-schema",
           jsonSchemaStr,
           "--model",
-          resolveClaudeApiModelId(modelSelection),
+          resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
           "--dangerously-skip-permissions",
@@ -196,8 +234,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
-          readStreamAsString(operation, child.stdout),
-          readStreamAsString(operation, child.stderr),
+          readStreamAsString(operation, child.stdout, {
+            maxBytes: TEXT_GENERATION_RESULT_MAX_BYTES,
+            failWhenTruncated: true,
+          }),
+          readStreamAsString(operation, child.stderr, {
+            maxBytes: TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES,
+          }),
           child.exitCode.pipe(
             Effect.mapError((cause) =>
               normalizeCliError("claude", operation, cause, "Failed to read Claude CLI exit code"),
@@ -210,7 +253,9 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       if (exitCode !== 0) {
         const stderrDetail = stderr.trim();
         const stdoutDetail = stdout.trim();
-        const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
+        const detail = limitTextGenerationErrorDetail(
+          stderrDetail.length > 0 ? stderrDetail : stdoutDetail,
+        );
         return yield* new TextGenerationError({
           operation,
           detail:

@@ -1,5 +1,5 @@
-// Node walk stays off the Effect FileSystem so a worktree is one syscall
-// batch, not one fiber per file.
+// Node walk stays off the Effect FileSystem so directory entries and file
+// metadata can be consumed in bounded batches instead of one fiber per file.
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
@@ -11,19 +11,29 @@ const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 /** Cap in-flight `stat` calls per directory so a flat tree cannot enqueue one promise per file. */
 const STAT_CONCURRENCY = 64;
 
+function safeByteCount(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(value));
+}
+
+function addByteCounts(left: number, right: number): number {
+  if (right >= Number.MAX_SAFE_INTEGER - left) return Number.MAX_SAFE_INTEGER;
+  return left + right;
+}
+
 export function parseDuKilobytes(stdout: string): number | null {
   const match = /^(\d+)\s/u.exec(stdout);
   if (match === null) return null;
   const kilobytes = Number(match[1]);
   if (!Number.isFinite(kilobytes) || kilobytes < 0) return null;
-  return kilobytes * 1024;
+  return safeByteCount(kilobytes * 1024);
 }
 
 function onDiskBytes(stat: { readonly size: number; readonly blocks?: number }): number {
   if (typeof stat.blocks === "number" && stat.blocks > 0) {
-    return stat.blocks * 512;
+    return safeByteCount(stat.blocks * 512);
   }
-  return stat.size;
+  return safeByteCount(stat.size);
 }
 
 export function isAbortError(error: unknown): boolean {
@@ -44,7 +54,6 @@ export async function walkDirectoryOnDiskBytes(
   root: string,
   signal?: AbortSignal,
 ): Promise<number> {
-  const visited = new Set<string>();
   const stack = [root];
   let total = 0;
 
@@ -52,48 +61,46 @@ export async function walkDirectoryOnDiskBytes(
     throwIfAborted(signal);
     const current = stack.pop();
     if (current === undefined) break;
-    const resolved = NodePath.resolve(current);
-    if (visited.has(resolved)) continue;
-    visited.add(resolved);
-
-    let entries;
-    try {
-      entries = await NodeFSP.readdir(current, {
-        withFileTypes: true,
-        ...(signal === undefined ? {} : { signal }),
-      });
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      continue;
-    }
-
+    let directory: Awaited<ReturnType<typeof NodeFSP.opendir>> | null = null;
     const files: string[] = [];
-    for (const entry of entries) {
-      if (entry.name === "." || entry.name === "..") continue;
-      if (entry.isSymbolicLink()) continue;
-      const child = NodePath.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(child);
-      } else if (entry.isFile()) {
-        files.push(child);
-      }
-    }
-
-    for (let i = 0; i < files.length; i += STAT_CONCURRENCY) {
+    const flushFiles = async () => {
+      if (files.length === 0) return;
       throwIfAborted(signal);
-      const chunk = files.slice(i, i + STAT_CONCURRENCY);
       const sizes = await Promise.all(
-        chunk.map(async (file) => {
+        files.splice(0).map(async (file) => {
           try {
             return onDiskBytes(await NodeFSP.stat(file));
           } catch (error) {
+            throwIfAborted(signal);
             if (isAbortError(error)) throw error;
             return 0;
           }
         }),
       );
-      for (const size of sizes) {
-        total += size;
+      for (const size of sizes) total = addByteCounts(total, size);
+    };
+    try {
+      directory = await NodeFSP.opendir(current);
+      while (true) {
+        throwIfAborted(signal);
+        const entry = await directory.read();
+        if (entry === null) break;
+        if (entry.name === "." || entry.name === ".." || entry.isSymbolicLink()) continue;
+        const child = NodePath.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(child);
+        } else if (entry.isFile()) {
+          files.push(child);
+          if (files.length >= STAT_CONCURRENCY) await flushFiles();
+        }
+      }
+      await flushFiles();
+    } catch (error) {
+      throwIfAborted(signal);
+      if (isAbortError(error)) throw error;
+    } finally {
+      if (directory !== null) {
+        await directory.close().catch(() => undefined);
       }
     }
   }

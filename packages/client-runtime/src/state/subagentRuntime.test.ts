@@ -636,6 +636,43 @@ describe("model and effort attribution", () => {
     expect(agents[0]!.effort).toBe("high");
   });
 
+  it("applies metadata-only updates without changing the current status", () => {
+    const waitingRows = [
+      activity("task.updated", {
+        taskId: "task-metadata",
+        title: "Check metadata",
+        status: "waiting",
+      }),
+      activity("task.updated", {
+        taskId: "task-metadata",
+        model: "gpt-5.6-sol",
+        effort: "high",
+      }),
+    ];
+    const waitingAgent = fold(waitingRows)[0]!;
+    expect(waitingAgent.status).toBe("waiting");
+    expect(formatSubagentModelLabel(waitingAgent.model, waitingAgent.effort)).toBe(
+      "gpt-5.6-sol · high",
+    );
+
+    const idleRows = [
+      ...waitingRows,
+      activity("task.updated", { taskId: "task-metadata", status: "idle" }),
+      activity("task.updated", { taskId: "task-metadata", model: "gpt-5.6-sol" }),
+    ];
+    expect(fold(idleRows)[0]!.status).toBe("idle");
+
+    const completedAgent = fold([
+      ...idleRows,
+      activity("task.progress", { taskId: "task-metadata", typedUsage: { totalTokens: 42 } }),
+      activity("task.completed", { taskId: "task-metadata", status: "completed" }),
+      activity("task.updated", { taskId: "task-metadata", effort: "high" }),
+    ])[0]!;
+    expect(completedAgent.status).toBe("completed");
+    expect(completedAgent.model).toBe("gpt-5.6-sol");
+    expect(completedAgent.effort).toBe("high");
+  });
+
   it("formatSubagentModelLabel compacts ids and appends effort", () => {
     expect(formatSubagentModelLabel("claude-sonnet-5[1m]", "high")).toBe("sonnet-5[1m] · high");
     expect(formatSubagentModelLabel("claude-opus-4-20250514", null)).toBe("opus-4");
@@ -873,6 +910,47 @@ describe("coordinator settle cascade", () => {
     ]);
     const member = agents.find((agent) => agent.id === "wf-2:wf:0");
     expect(member?.status).toBe("interrupted");
+  });
+
+  it("settles a large indexed workflow roster before applying the 100-agent cap", () => {
+    const rows: OrchestrationThreadActivity[] = [];
+    const workflowCount = 120;
+
+    for (let index = 0; index < workflowCount; index += 1) {
+      const workflowId = `large-wf-${index}`;
+      const at = (offset: number) => {
+        const seconds = index * 3 + offset;
+        const minute = String(Math.floor(seconds / 60)).padStart(2, "0");
+        const second = String(seconds % 60).padStart(2, "0");
+        return `2026-08-01T10:${minute}:${second}.000Z`;
+      };
+      rows.push(
+        activity("task.started", { taskId: workflowId, taskType: "local_workflow" }, at(0)),
+        activity(
+          "task.progress",
+          {
+            taskId: `${workflowId}:wf:0`,
+            parentAgentId: workflowId,
+            status: "running",
+          },
+          at(1),
+        ),
+        activity(
+          "task.completed",
+          { taskId: workflowId, taskType: "local_workflow", status: "completed" },
+          at(2),
+        ),
+      );
+    }
+
+    const agents = fold(rows);
+    expect(agents).toHaveLength(100);
+    expect(agents.every((agent) => agent.status === "completed")).toBe(true);
+    expect(agents.slice(0, 2).map((agent) => agent.id)).toEqual([
+      "large-wf-119",
+      "large-wf-119:wf:0",
+    ]);
+    expect(agents.slice(-2).map((agent) => agent.id)).toEqual(["large-wf-70", "large-wf-70:wf:0"]);
   });
 });
 

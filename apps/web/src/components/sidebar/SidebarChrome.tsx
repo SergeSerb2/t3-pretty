@@ -11,6 +11,7 @@ import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-ro
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
+import { persistedPullRequestListSearch } from "../pullRequest/pullRequestListFiltersPersistence";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -29,6 +30,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 
@@ -107,7 +109,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       />
       <span
         className={cn(
-          "-translate-y-px truncate text-sm font-medium tracking-tight",
+          "truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
@@ -131,7 +133,12 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton
+              aria-label={label}
+              data-animate-ui-icons
+              onClick={onClick}
+              size="icon"
+            >
               {icon}
             </SidebarMenuButton>
           }
@@ -150,11 +157,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     select: (location) =>
       /^\/settings(?:\/|$)/.test(location.pathname)
         ? "settings"
-        : location.pathname === "/usage"
-          ? "usage"
-          : location.pathname === "/pull-requests"
-            ? "pull-requests"
-            : null,
+        : /^\/projects\/[^/]+\/?$/.test(location.pathname)
+          ? "project-settings"
+          : location.pathname === "/usage"
+            ? "usage"
+            : location.pathname === "/pull-requests"
+              ? "pull-requests"
+              : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -169,7 +178,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [isMobile, setOpenMobile]);
   const handlePullRequestsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+    void navigate({
+      to: "/pull-requests",
+      search: readPullRequestListPreferences(),
+    });
   }, [closeMobileSidebar, navigate]);
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();

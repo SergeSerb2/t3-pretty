@@ -8,7 +8,7 @@
  * Targets are ordered most-reachable first (tailnet name works from anywhere
  * on the tailnet; `<hostname>.local` only on the same LAN).
  */
-import { type RemoteOpenTarget } from "@t3tools/contracts";
+import { REMOTE_OPEN_TARGET_HOST_MAX_LENGTH, type RemoteOpenTarget } from "@t3tools/contracts";
 import { HostProcessHostname } from "@t3tools/shared/hostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import { readTailscaleStatus } from "@t3tools/tailscale";
@@ -18,6 +18,13 @@ import * as Layer from "effect/Layer";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 const SSH_PORT = 22;
+
+const validRemoteOpenHost = (host: string): string | null => {
+  const normalized = host.trim();
+  return normalized.length > 0 && normalized.length <= REMOTE_OPEN_TARGET_HOST_MAX_LENGTH
+    ? normalized
+    : null;
+};
 
 export class RemoteOpenTargets extends Context.Service<
   RemoteOpenTargets,
@@ -51,16 +58,19 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => null),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
-    if (magicDnsName !== null) {
-      targets.push({ kind: "tailscale", host: magicDnsName });
+    const tailnetHost = magicDnsName === null ? null : validRemoteOpenHost(magicDnsName);
+    if (tailnetHost !== null) {
+      targets.push({ kind: "tailscale", host: tailnetHost });
     }
 
     // os.hostname() may already be an FQDN (macOS often reports
     // "Name.local"); mDNS names are always `<first-label>.local`.
     const hostname = yield* HostProcessHostname;
     const shortHostname = hostname.split(".")[0]?.trim();
-    if (shortHostname !== undefined && shortHostname.length > 0) {
-      targets.push({ kind: "mdns", host: `${shortHostname}.local` });
+    const mdnsHost =
+      shortHostname === undefined ? null : validRemoteOpenHost(`${shortHostname}.local`);
+    if (mdnsHost !== null) {
+      targets.push({ kind: "mdns", host: mdnsHost });
     }
 
     return targets;

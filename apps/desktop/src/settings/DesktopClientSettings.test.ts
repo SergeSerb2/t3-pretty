@@ -17,12 +17,20 @@ const clientSettings: ClientSettings = {
   browserDefaultViewport: { _tag: "preset", width: 1024, height: 600, presetId: "nest-hub" },
   browserDefaultZoomFactor: 1.25,
   browserDefaultAppearance: "dark",
+  browserRecordingFrameRate: 60,
+  browserLinkTarget: "app",
   browserAutoShowFloatingPreview: false,
-  confirmQuit: true,
+  browserProfiles: [{ id: "work", name: "Work", kind: "persistent" }],
+  browserDefaultProfileId: "work",
+  confirmQuit: "double-click",
   confirmThreadArchive: true,
   confirmThreadDelete: false,
+  confirmThreadUnpin: false,
+  continueThreadsAfterServerUpdate: true,
+  contextWindowMeterEnabled: false,
   dismissedProviderUpdateNotificationKeys: [],
   diffIgnoreWhitespace: true,
+  diffLayout: "stacked",
   environmentIdentificationMode: "artwork",
   favorites: [],
   favoriteSkillIds: [],
@@ -36,9 +44,13 @@ const clientSettings: ClientSettings = {
   fontSizeTerminal: 12,
   fontSmoothing: true,
   glassOpacity: 80,
+  panelAnimationDurationMs: 0,
   planModeEnabled: false,
+  proactivePanelsEnabled: true,
+  showSkillsInSlashMenu: false,
   providerModelPreferences: {},
   sidebarAutoSettleAfterDays: 3,
+  sidebarAutoArchiveSettledAfterDays: null,
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
@@ -149,6 +161,32 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("rejects settings documents larger than the matching read ceiling", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        const oversizedOverrides = Object.fromEntries(
+          Array.from({ length: 2_048 }, (_, index) => [
+            `${index}:${"x".repeat(1_000)}`,
+            "separate" as const,
+          ]),
+        );
+
+        const error = yield* settings
+          .set({
+            ...clientSettings,
+            sidebarProjectGroupingOverrides: oversizedOverrides,
+          })
+          .pipe(Effect.flip);
+
+        assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsWriteError);
+        assert.equal(error.operation, "encode-document");
+        assert.equal(error.path, environment.clientSettingsPath);
+      }),
+    ),
+  );
+
   it.effect("loads lenient direct client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {
@@ -212,7 +250,7 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
-  it.effect("treats malformed client settings documents as absent", () =>
+  it.effect("preserves malformed client settings documents as a read failure", () =>
     withClientSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -221,7 +259,10 @@ describe("DesktopClientSettings", () => {
         yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
         yield* fileSystem.writeFileString(environment.clientSettingsPath, "{not-json");
 
-        assert.isTrue(Option.isNone(yield* settings.get));
+        const error = yield* settings.get.pipe(Effect.flip);
+        assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsReadError);
+        assert.equal(error.operation, "decode-document");
+        assert.equal(error.path, environment.clientSettingsPath);
       }),
     ),
   );
