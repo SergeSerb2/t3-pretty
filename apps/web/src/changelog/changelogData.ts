@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260902.1260001505",
+    date: "2026-09-04",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+      {
+        kind: "fixed",
+        title: "make TestFlight runtime match OTA",
+      },
+      {
+        kind: "fixed",
+        title: "guard liquid glass startup probe",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260902.1260001502",
     date: "2026-09-04",
     items: [
