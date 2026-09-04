@@ -462,7 +462,12 @@ it.layer(layer)("AntigravityAdapter", (it) => {
         },
         rawPayload: {},
       });
-      yield* h.emitNative({ _tag: "ContentDelta", text: "The file says after.", rawPayload: {} });
+      yield* h.emitNative({
+        _tag: "ContentDelta",
+        streamKind: "assistant_text",
+        text: "The file says after.",
+        rawPayload: {},
+      });
       yield* Deferred.succeed(prompt.result, { stopReason: "end_turn" });
       const result = yield* Fiber.join(sending);
       yield* h.waitForEvent((event) => event.type === "turn.completed");
@@ -610,6 +615,7 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       expect(h.calls.slice(marker)).toEqual(["cancel:1"]);
       yield* h.emitNative({
         _tag: "ContentDelta",
+        streamKind: "assistant_text",
         text: "The first prompt stopped.",
         rawPayload: {},
       });

@@ -177,6 +177,7 @@ describe("OrchestrationEngine", () => {
             interactionMode: "default",
             branch: null,
             worktreePath: null,
+            enabledSkillIds: [],
             createdAt: now(),
           }),
         );
@@ -520,6 +521,7 @@ describe("OrchestrationEngine", () => {
         runtimeMode: "full-access",
         branch: null,
         worktreePath: null,
+        enabledSkillIds: [],
         createdAt,
       });
       yield* engine.dispatch({
@@ -597,6 +599,7 @@ describe("OrchestrationEngine", () => {
             runtimeMode: "full-access",
             branch: null,
             worktreePath: null,
+            enabledSkillIds: [],
             createdAt: now(),
           });
         }

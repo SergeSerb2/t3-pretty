@@ -675,8 +675,21 @@ describe("ProviderCommandReactor", () => {
     return {
       engine,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      readPendingTurnStarts: () =>
+        runtime!.runPromise(
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            return yield* sql<{ readonly threadId: string }>`
+              SELECT thread_id AS "threadId"
+              FROM projection_turns
+              WHERE turn_id IS NULL AND state = 'pending'
+            `;
+          }),
+        ),
+      tryHandlePromptCommand,
       startSession,
       sendTurn,
+      compactThread,
       interruptTurn,
       respondToRequest,
       respondToUserInput,
@@ -1146,6 +1159,11 @@ describe("ProviderCommandReactor", () => {
       }),
     );
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await waitFor(async () => {
+      const snapshot = await harness.readModel();
+      const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+      return thread?.activities.some((activity) => activity.kind === "skill.loaded") === true;
+    });
 
     await harness.runEffect(
       harness.engine.dispatch({
@@ -1692,7 +1710,7 @@ describe("ProviderCommandReactor", () => {
       });
       expect(harness.sendTurn).toHaveBeenCalledWith(
         expect.objectContaining({
-          input: text,
+          input: expect.stringContaining(text),
           ...(attachments.length > 0 ? { attachments } : {}),
         }),
       );
@@ -1764,7 +1782,7 @@ describe("ProviderCommandReactor", () => {
       expect(session.threadId).toBe(ThreadId.make("thread-1"));
       expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
         threadId: ThreadId.make("thread-1"),
-        input: "Start after activation",
+        input: expect.stringContaining("Start after activation"),
       });
     }),
   );
@@ -1826,6 +1844,12 @@ describe("ProviderCommandReactor", () => {
 
       yield* dispatchTurn("before-blocked-compact", "hello", now);
       yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
+          return thread?.session?.status === "running";
+        }),
+      );
       yield* harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-ready-before-blocked-compact"),
@@ -1932,6 +1956,12 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       });
       yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
+          return thread?.session?.status === "running";
+        }),
+      );
       yield* harness.engine.dispatch({
         type: "thread.session.set",
         commandId: CommandId.make("cmd-session-ready-before-compact"),
@@ -2984,7 +3014,9 @@ describe("ProviderCommandReactor", () => {
       thread?.messages.find((entry) => entry.id === asMessageId("user-message-title-formatted"))
         ?.text,
     ).toBe(prompt);
-    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: prompt });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining(prompt),
+    });
   });
 
   it("generates a worktree branch name for the first turn", async () => {

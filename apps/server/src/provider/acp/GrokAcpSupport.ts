@@ -35,6 +35,12 @@ const GROK_AUTH_METHOD_API_KEY = "xai.api_key";
 const GROK_AUTH_METHOD_CACHED_TOKEN = "cached_token";
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
+/**
+ * T3's built-in Grok slug is the CLI product name, not a model id accepted by ACP.
+ * Selecting it means to keep the versioned model advertised by the live session.
+ */
+export const GROK_DEFAULT_MODEL_SLUG = "grok-build";
+
 /** Composer option id for Grok reasoning effort. Same shape as Codex. */
 export const GROK_REASONING_EFFORT_OPTION_ID = "reasoningEffort";
 
@@ -182,8 +188,8 @@ export const makeGrokAcpRuntime = (
 
 export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
-  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-build";
-  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-build";
+  const base = trimmed && trimmed.length > 0 ? trimmed : GROK_DEFAULT_MODEL_SLUG;
+  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? GROK_DEFAULT_MODEL_SLUG;
 }
 
 const GROK_REASONING_EFFORT_TOKEN = /^[a-z0-9][a-z0-9._-]{0,31}$/i;
@@ -458,8 +464,9 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly requestedReasoningEffort?: string | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<GrokAcpSelection, E> {
-  const modelChanged =
-    input.requestedModelId !== undefined && input.requestedModelId !== input.currentModelId;
+  const requestedModelId =
+    input.requestedModelId === GROK_DEFAULT_MODEL_SLUG ? undefined : input.requestedModelId;
+  const modelChanged = requestedModelId !== undefined && requestedModelId !== input.currentModelId;
   const reasoningProvided = input.requestedReasoningEffort !== undefined;
   const requestedReasoningEffort = reasoningProvided
     ? normalizeGrokReasoningEffort(input.requestedReasoningEffort)
@@ -469,7 +476,7 @@ export function applyGrokAcpModelSelection<E>(input: {
     : input.currentReasoningEffort;
   const reasoningEffortChanged =
     reasoningProvided && reasoningEffort !== input.currentReasoningEffort;
-  const targetModelId = input.requestedModelId ?? input.currentModelId;
+  const targetModelId = requestedModelId ?? input.currentModelId;
   if ((!modelChanged && !reasoningEffortChanged) || targetModelId === undefined) {
     return Effect.succeed({ modelId: input.currentModelId, reasoningEffort });
   }

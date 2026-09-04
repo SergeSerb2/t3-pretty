@@ -4706,7 +4706,7 @@
 - `apps/web/src/components/chat/CompactComposerControlsMenu.tsx` — Preserved externally controlled menu operation through the existing open and onOpenChange props; setOpen continues forwarding changes to the fork-provided callback.
 - `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Preserved T3 Pretty's existing React import organization and the useRef dependency required by its dialog focus-management refs.
 - `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Preserved the dialogRef attachment required by T3 Pretty's focus trap and keyboard accessibility behavior.
-- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Preserved T3 Pretty's z-50 expanded-preview stacking level instead of reverting it to z-[60].
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Restored the upstream z-[60] expanded-preview stacking level so the dialog remains above composer menus.
 - `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved T3 Pretty regression coverage that adjacent active tool calls are consolidated into one replacing activity row, including the fork's more specific test description.
 - `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — Preserved T3 Pretty's timeline behavior that omits the redundant standalone `working` indicator while concrete message and live-work rows are already visible, protecting the fork's duplicate-thinking/working-indicator fix.
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Preserved T3 Pretty's split `isExpandedToolGroupEntry` and `isLastExpandedToolGroupEntry` flags, which distinguish expanded entries and the final entry rather than reverting to the parent's single group-level flag.
@@ -4726,8 +4726,8 @@
 - `apps/web/src/components/chat/providerIconUtils.ts` — Preserved the Kimi ACP provider icon import and `kimi` provider-to-icon mapping.
 - `apps/web/src/components/chat/providerIconUtils.ts` — Preserved use of the fork's `PROVIDER_OPTIONS` source for deriving available provider options.
 - `apps/web/src/components/chat/providerIconUtils.ts` — Preserved the explicit T3 Pretty cleanup that removed the unused OpenCode provider icon import.
-- `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — T3 Pretty's right-panel-aware automation presentation logic remains supported through useRightPanelStore.
-- `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — T3 Pretty's watchable automation behavior remains supported through AUTO_PRESENT_AUTOMATION_OPERATIONS.
+- `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — Removed the stale right-panel selector after presentation moved to the unified mini-player readiness path.
+- `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — Removed the obsolete fixed operation allowlist so the integrated readiness policy governs automation presentation.
 - `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — T3 Pretty's desktop preview automation readiness behavior remains supported through previewAutomationDesktopStatusReady.
 - `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — The existing per-thread dismissal and open-if-not-dismissed mini-player behavior remains intact.
 - `apps/web/src/components/preview/PreviewAutomationHosts.tsx` — Preserved T3 Pretty's post-session-sync tab selection, including fallback to the current preview snapshot when the request does not specify a tab.
@@ -5097,10 +5097,10 @@
 - `apps/server/src/usage/UsageService.ts` — Added the parent pricing snapshot helper, including ISO-formatted fetch time and the current known-model count.
 - `apps/server/src/usage/UsageService.ts` — Integrated the nightly parent’s explicit ensureRates(false) behavior at T3 Pretty’s existing relocated rate-initialization point.
 - `apps/server/src/usage/usagePricing.test.ts` — Added coverage that an unqualified bracketed context-tier model name resolves to the base model's rate.
-- `apps/server/src/usage/usagePricing.test.ts` — Added coverage that the qualified `anthropic/Claude-Fable-5-1[1m]` form remains unpriced for this bare-only table.
+- `apps/server/src/usage/usagePricing.test.ts` — Added coverage that both bare and provider-qualified bracketed context-tier names preserve T3 Pretty's provider-independent base-model lookup.
 - `apps/server/src/usage/usagePricing.test.ts` — Adapted the upstream test fixture from its unavailable `rate` helper to the equivalent `parseRateTable` input object used by this file.
 - `apps/server/src/usage/usagePricing.ts` — Bracketed model variant suffixes such as [1m] are stripped before lookup, allowing transcript variants to use their base model's rate.
-- `apps/server/src/usage/usagePricing.ts` — The upstream normalized exact table key, including a provider prefix when present, is retained as a fallback when T3 Pretty's bare-name, canonical, and Kimi lookups do not resolve a rate.
+- `apps/server/src/usage/usagePricing.ts` — Restored normalized-key handling before suffix stripping while preserving T3 Pretty's bare-name, canonical, and Kimi lookup precedence.
 - `apps/server/src/vcs/GitVcsDriver.ts` — Imported PATCH_RENDER_PREFIX_ARGS for the parent’s standardized Git patch rendering behavior.
 - `apps/server/src/vcs/GitVcsDriver.ts` — Imported splitNullSeparatedGitStdoutPaths for the parent’s null-delimited Git path parsing behavior.
 - `apps/server/src/vcs/GitVcsDriverCore.test.ts` — Integrated the parent regression test proving forced worktree removal may run beyond the default 30-second command timeout and still complete successfully.
@@ -5398,7 +5398,7 @@
 - `apps/web/src/components/ChatView.tsx` — The parent side retains the runtimeMode fallback calculation from composerRuntimeMode, the active thread, or DEFAULT_RUNTIME_MODE.. Reason: OURS intentionally removed this calculation as part of T3 Pretty's runtime-baseline behavior; restoring it would undo the fork change.
 - `apps/web/src/components/ChatView.tsx` — The upstream fixed, invisible Electron no-drag span shown whenever rightPanelControlsAtRoot is true.. Reason: T3 Pretty already provides context-sensitive no-drag holes for its root-parked title-bar control cluster. Adding the upstream fixed w-28 no-drag region would overlap that fork-specific mechanism and unnecessarily weaken draggable title-bar space.
 - `apps/web/src/components/Icons.tsx` — Retain OpenCodeIcon and add data-opencode-hole="true" metadata to its light- and dark-theme inner paths.. Reason: T3 Pretty deliberately removed the unused OpenCode provider and its icon. Applying this metadata would require restoring fork-removed provider presentation and would regress that cleanup.
-- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Retain the parent's z-[60] stacking level for the expanded image dialog.. Reason: T3 Pretty intentionally changed this surface to z-50 as part of its fork-specific visual and overlay layering behavior; restoring z-[60] would regress that behavior.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Restored the parent's z-[60] stacking level after validation showed it is required to keep expanded media above composer floating layers.
 - `apps/web/src/components/chat/MessagesTimeline.logic.test.ts` — The upstream expectation that a leading `working` row appears before the completed tool, assistant message, and live tool rows.. Reason: T3 Pretty intentionally suppresses that redundant working/thinking indicator; restoring it would regress the fork's established duplicate-indicator behavior.
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — The parent row shape's required `isExpandedToolGroup` field was not restored.. Reason: T3 Pretty intentionally replaced that coarse group-level state with the more precise `isExpandedToolGroupEntry` and `isLastExpandedToolGroupEntry` flags; restoring the legacy field would regress the fork's expanded tool-group rendering contract.
 - `apps/web/src/components/chat/MessagesTimeline.logic.ts` — Allow non-tool, non-error work-log entries to remain inside the active live-tool collection.. Reason: T3 Pretty intentionally treats non-tool entries as a grouping boundary so its live activity row contains only tool-like activity; removing this boundary would regress the fork's activity presentation.

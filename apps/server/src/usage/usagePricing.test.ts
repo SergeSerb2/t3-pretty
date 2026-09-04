@@ -83,7 +83,9 @@ describe("lookupRate", () => {
     expect(lookupRate(table, "claude-fable-5-1[1m]")).toEqual(
       lookupRate(table, "claude-fable-5-1"),
     );
-    expect(lookupRate(table, "anthropic/Claude-Fable-5-1[1m]")).toBeNull();
+    expect(lookupRate(table, "anthropic/Claude-Fable-5-1[1m]")).toEqual(
+      lookupRate(table, "claude-fable-5-1"),
+    );
   });
 });
 

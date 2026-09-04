@@ -101,6 +101,10 @@ export function normalizeModelName(model: string): string {
   return slash === -1 ? trimmed : trimmed.slice(slash + 1);
 }
 
+function normalizeRateKey(model: string): string {
+  return model.trim().toLowerCase();
+}
+
 /**
  * Drops a bracketed variant suffix such as `claude-fable-5-1[1m]`, which
  * Claude Code writes for the 1M context tier. The rate table only knows the

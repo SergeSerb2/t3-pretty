@@ -10167,6 +10167,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 interactionMode: "default",
                 branch: null,
                 worktreePath: null,
+                enabledSkillIds: [],
                 createdAt,
               }),
             );
@@ -10208,6 +10209,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     interactionMode: "default",
                     branch: null,
                     worktreePath: null,
+                    enabledSkillIds: [],
                     createdAt,
                   },
                   runSetupScript: false,

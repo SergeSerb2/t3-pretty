@@ -675,7 +675,7 @@ const make = Effect.gen(function* () {
 
   const resolveThread = Effect.fnUntraced(function* (threadId: ThreadId) {
     return yield* projectionSnapshotQuery
-      .getThreadDetailById(threadId, { activityKinds: [] })
+      .getThreadDetailById(threadId, { activityKinds: ["skill.loaded", "tool.completed"] })
       .pipe(Effect.map(Option.getOrUndefined));
   });
 

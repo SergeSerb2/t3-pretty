@@ -20,14 +20,16 @@ import { type AcpError, AcpRequestError } from "effect-acp/errors";
 import { applyAntigravityAcpModelSelection } from "../provider/acp/AntigravityAcpSupport.ts";
 import { removeAntigravitySessionFiles } from "../provider/acp/AntigravitySessionFiles.ts";
 import type { AcpSessionRuntime } from "../provider/acp/AcpSessionRuntime.ts";
-import type * as TextGeneration from "./TextGeneration.ts";
+import * as TextGeneration from "./TextGeneration.ts";
 import {
+  buildActivityHeadlinePrompt,
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
+  sanitizeActivityHeadline,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -401,10 +403,30 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       return { title: sanitizeThreadTitle(generated.title) };
     });
 
+  const generateActivityHeadline: TextGeneration.TextGeneration["Service"]["generateActivityHeadline"] =
+    Effect.fn("AntigravityTextGeneration.generateActivityHeadline")(function* (input) {
+      const { prompt, outputSchema } = buildActivityHeadlinePrompt({
+        summary: input.summary,
+        command: input.command,
+        detail: input.detail,
+      });
+      const generated = yield* runAntigravityJson({
+        operation: "generateActivityHeadline",
+        prompt,
+        outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return {
+        headline: sanitizeActivityHeadline(generated.headline),
+      } satisfies TextGeneration.ActivityHeadlineGenerationResult;
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateActivityHeadline,
+    generateProjectIcon: TextGeneration.unsupportedProjectIconGeneration("Antigravity"),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

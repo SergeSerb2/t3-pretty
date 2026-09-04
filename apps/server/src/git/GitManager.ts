@@ -1346,11 +1346,16 @@ export const make = Effect.gen(function* () {
       defaultBranch?: string | null;
       isDefaultBranch: boolean;
     },
+    refreshMissingPullRequest = false,
   ) {
-    return (yield* lookupStatusPrObservation(cwd, {
-      ...details,
-      defaultBranch: details.defaultBranch ?? (details.isDefaultBranch ? details.branch : null),
-    })).pr;
+    return (yield* lookupStatusPrObservation(
+      cwd,
+      {
+        ...details,
+        defaultBranch: details.defaultBranch ?? (details.isDefaultBranch ? details.branch : null),
+      },
+      refreshMissingPullRequest,
+    )).pr;
   });
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (
     cwd: string,
@@ -2353,13 +2358,18 @@ export const make = Effect.gen(function* () {
     const defaultBranch = yield* gitCore
       .resolveDefaultBranchName(cacheCwd, defaultRemoteName)
       .pipe(Effect.orElseSucceed(() => null));
-    const cacheKey = prLookupCacheKey(cacheCwd, {
-      branch,
-      upstreamRef,
-      defaultBranch,
-      localBranchExists,
-      ...(localBranchExists ? {} : { remoteName }),
-    });
+    const cacheKey = prLookupCacheKey(
+      cacheCwd,
+      {
+        branch,
+        upstreamRef,
+        defaultBranch,
+        localBranchExists,
+        ...(localBranchExists ? {} : { remoteName }),
+      },
+      !localBranchExists,
+      "prefer-open",
+    );
     let cached = yield* Cache.get(prLookupCache, cacheKey);
     // The cached head context may have resolved on a different remote than
     // the saved upstream: a branch tracking origin/main but pushed to a fork
