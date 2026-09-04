@@ -235,6 +235,24 @@ describe("makeQuitShortcutHandler", () => {
     expect(harness.notifications).toEqual([]);
   });
 
+  it("cancels a released pending quit when another shortcut interrupts it", async () => {
+    let resolveMode: ((mode: QuitConfirmationMode) => void) | undefined;
+    const harness = makeHarness({
+      getMode: () =>
+        new Promise((resolve) => {
+          resolveMode = resolve;
+        }),
+    });
+    await harness.send(makeInput({}));
+    await harness.send(makeInput({ type: "keyUp" }));
+    await harness.send(makeInput({ key: "c" }));
+    resolveMode?.("direct");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(harness.quit).not.toHaveBeenCalled();
+    expect(harness.notifications).toEqual([]);
+  });
+
   it("does not arm hold mode after a released key's mode read settles", async () => {
     let resolveMode: ((mode: QuitConfirmationMode) => void) | undefined;
     const harness = makeHarness({
