@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type ModelSelection,
   type PullRequestAction,
+  type PullRequestListEntry,
   type PullRequestMergeMethod,
   type PullRequestUpdateMethod,
   type PullRequestRef,
@@ -67,7 +68,11 @@ import { useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
-import { pullRequestEnvironment, useSharedPullRequestSummary } from "~/state/pullRequests";
+import {
+  pullRequestEnvironment,
+  usePullRequestTurnRefresh,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -496,6 +501,7 @@ export function PullRequestDetailPanel({
   environmentId,
   threadRef = null,
   reference,
+  listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   onActed,
   onClose,
@@ -513,6 +519,8 @@ export function PullRequestDetailPanel({
    */
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
+  /** Row fields already loaded by the pull-request list, used while richer detail arrives. */
+  listEntry?: PullRequestListEntry | null;
   /**
    * Bumped by whatever holds the panel when a reader asks for everything on screen to be read
    * again. The panel owns its own reads, so the page cannot refresh them for it — it says when,
@@ -552,6 +560,12 @@ export function PullRequestDetailPanel({
     reference.repository,
     reference.number,
   ]);
+  const matchingListEntry =
+    listEntry?.projectId === reference.projectId &&
+    listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    listEntry.number === reference.number
+      ? listEntry
+      : null;
   const activePullRequestKeyRef = useRef(pullRequestKey);
   const mountedRef = useRef(false);
   activePullRequestKeyRef.current = pullRequestKey;
@@ -727,7 +741,13 @@ export function PullRequestDetailPanel({
     () =>
       resolvedCoreDetail === null || sharedSummary === null || sharedSummary === resolvedCoreDetail
         ? resolvedCoreDetail
-        : { ...resolvedCoreDetail, ...sharedSummary },
+        : {
+            ...resolvedCoreDetail,
+            ...sharedSummary,
+            // A summary from an older server may omit draft state. Preserve the complete
+            // detail value so downstream pull-request controls still receive a boolean.
+            isDraft: sharedSummary.isDraft ?? resolvedCoreDetail.isDraft,
+          },
     [resolvedCoreDetail, sharedSummary],
   );
   const activity = activityQuery.data;
@@ -818,6 +838,8 @@ export function PullRequestDetailPanel({
   // busting the cache every tick spent GitHub's budget on one open panel.
   const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
   const [refreshToken, setRefreshToken] = useState(0);
+  const turnRefresh = usePullRequestTurnRefresh(environmentId);
+  const codeRefreshToken = refreshToken + (turnRefresh ?? 0);
   const wantDiffReset = useRef(false);
   const hostRefreshInFlight = useRef(false);
   const hostRefreshScopeRef = useRef<string | null>(null);
@@ -1670,7 +1692,7 @@ export function PullRequestDetailPanel({
   // A reopen already has last time's title, author, and counts. Keep them on screen
   // and let the live read replace fields — especially the diff counts — in place.
   if (detailQuery.isPending && !detail) {
-    return <PullRequestDetailGhost />;
+    return <PullRequestDetailGhost seed={matchingListEntry} />;
   }
 
   return (
@@ -2797,7 +2819,7 @@ export function PullRequestDetailPanel({
                     canFixInThisThread={attachTarget !== null}
                     onFixFinding={startFixFinding}
                     onRefresh={refreshDetail}
-                    refreshToken={refreshToken}
+                    refreshToken={codeRefreshToken}
                   />
                 </Suspense>
               </div>

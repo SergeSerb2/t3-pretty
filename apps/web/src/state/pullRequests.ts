@@ -14,6 +14,7 @@ import type {
   PullRequestRef,
   PullRequestSummary,
 } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useLayoutEffect, useMemo } from "react";
 

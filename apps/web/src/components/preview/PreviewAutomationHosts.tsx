@@ -30,8 +30,7 @@ import {
   reconcilePreviewServerSessions,
   updatePreviewServerSnapshot,
 } from "~/previewStateStore";
-import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
 import {
   readActiveBrowserRecordingTargets,
@@ -63,14 +62,12 @@ import {
   PreviewAutomationViewportTimeoutError,
 } from "./previewAutomationErrors";
 import {
-  AUTO_PRESENT_AUTOMATION_OPERATIONS,
   explicitlySuppressesPreviewMiniPlayer,
   previewAutomationDesktopStatusReady,
   previewAutomationDefaultViewport,
   previewAutomationOpenNeedsOverlay,
   shouldAutoShowPreviewForAutomationUse,
   shouldOpenPreviewMiniPlayer,
-  shouldPresentAutomationActivity,
 } from "./previewAutomationOpenReadiness";
 import { settlePreviewAutomationBeforeDeadline } from "./previewAutomationDeadline";
 import {
@@ -88,37 +85,6 @@ import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
 
 const PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS = 500;
-
-/**
- * Pops the floating player when the agent acts on a tab the human cannot
- * see, so browser automation is watchable by default across every provider.
- * Fire-and-forget: presentation must never delay or fail the action itself.
- */
-async function maybePresentAutomationActivity(
-  threadRef: ScopedThreadRef,
-  tabId: string,
-  operation: PreviewAutomationRequest["operation"],
-): Promise<void> {
-  if (!AUTO_PRESENT_AUTOMATION_OPERATIONS.has(operation)) return;
-  const autoShowFloatingPreview = (await resolveBrowserDefaults()).autoShowFloatingPreview;
-  const threadKey = scopedThreadKey(threadRef);
-  const miniPlayers = usePreviewMiniPlayerStore.getState();
-  const panelState = useRightPanelStore.getState().byThreadKey[threadKey];
-  const panelSurface = panelState?.isOpen
-    ? panelState.surfaces.find((surface) => surface.id === panelState.activeSurfaceId)
-    : undefined;
-  const shouldPresent = shouldPresentAutomationActivity({
-    operation,
-    autoShowFloatingPreview,
-    tabId,
-    dismissedTabIds: miniPlayers.dismissedTabIdsByThreadKey[threadKey] ?? [],
-    miniPlayerTabId: miniPlayers.byThreadKey[threadKey]?.tabId ?? null,
-    panelPreviewTabId: panelSurface?.kind === "preview" ? (panelSurface.resourceId ?? null) : null,
-  });
-  if (shouldPresent) {
-    usePreviewMiniPlayerStore.getState().openIfNotDismissed(threadRef, tabId);
-  }
-}
 
 const waitForPreviewPresentation = async (runtimeTabId: string): Promise<void> => {
   const deadline = Date.now() + PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS;
