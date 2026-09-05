@@ -348,8 +348,21 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
     // namespace one takes its braces along; a default beside a named list
     // stops at the opening brace.
     const named = (specifier) => specifier.type === "ImportSpecifier";
+    const namedSpecifiers = specifiers.filter(named);
+    const remaining = new Set(losers);
+    if (namedSpecifiers.length > 0 && namedSpecifiers.every((specifier) => losers.has(specifier))) {
+      // The whole `, { ... }` list goes; the surviving default or namespace stays.
+      const before = specifiers[specifiers.indexOf(namedSpecifiers[0]) - 1];
+      const last = namedSpecifiers.at(-1);
+      removals.push({
+        start: before.end,
+        end: materialized.source.indexOf("}", last.end) + 1,
+        count: namedSpecifiers.length,
+      });
+      for (const specifier of namedSpecifiers) remaining.delete(specifier);
+    }
     specifiers.forEach((specifier, index) => {
-      if (!losers.has(specifier)) return;
+      if (!remaining.has(specifier)) return;
       const next = specifiers[index + 1];
       const previous = specifiers[index - 1];
       let range;
@@ -367,12 +380,25 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
   }
   if (removals.length === 0) return unchanged;
 
+  // Adjacent losers (`{ a, X, X }`) produce overlapping cuts; merge them so
+  // every slice below uses offsets from the untouched materialized text.
+  const coalesced = [];
+  for (const removal of removals.toSorted((left, right) => left.start - right.start)) {
+    const last = coalesced.at(-1);
+    if (last && removal.start <= last.end) {
+      last.end = Math.max(last.end, removal.end);
+      last.count += removal.count;
+    } else {
+      coalesced.push({ ...removal });
+    }
+  }
+
   // Removed ranges sit outside every unresolved span, so each maps into one
   // untouched segment of the marker-bearing source. A range that does not
   // fit one segment is left for the model rather than guessed at.
   let deduplicated = source;
   let removed = 0;
-  for (const removal of removals.toSorted((left, right) => right.start - left.start)) {
+  for (const removal of coalesced.toReversed()) {
     const segment = materialized.segments.find(
       ({ out, length }) => removal.start >= out && removal.start < out + length,
     );
