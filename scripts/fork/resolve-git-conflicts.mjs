@@ -266,36 +266,113 @@ export function materializeResolutionProgressForValidation({
   return materializeResolutionProgressDetails({ path, source, forkSide }).source;
 }
 
-export function deduplicateExactUnconflictedImports(source) {
+// Both sides can add an import of the same binding at different lines, or
+// append the same specifier to one import block at different positions. Git
+// merges that cleanly, the parser then rejects the redeclaration outside every
+// conflict, and the model may only edit near a conflict, so the file can never
+// validate and the run defers forever. Collapse such bindings onto the fork's
+// copy (the one whose declaration text appears in `forkSource`), else the first
+// occurrence. Declarations touching unresolved conflict text are left alone.
+export function deduplicateUnconflictedImports({ path, source, forkSource, forkSide }) {
   if (typeof source !== "string") {
     throw new Error("conflicted source must be a string");
   }
+  const unchanged = { source, removed: 0 };
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return unchanged;
 
-  const seen = new Set();
-  let insideConflict = false;
+  let materialized;
+  let parsed;
+  try {
+    materialized = materializeResolutionProgressDetails({ path, source, forkSide });
+    const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
+    if (path.endsWith(".tsx")) plugins.push("jsx");
+    parsed = parseJavaScript(materialized.source, {
+      sourceType: "unambiguous",
+      plugins,
+      errorRecovery: true,
+    });
+  } catch {
+    return unchanged;
+  }
+
+  const overlapsUnresolved = (start, end) =>
+    materialized.unresolvedSpans.some((span) => start < span.end && end > span.start);
+  const owners = new Map();
+  for (const declaration of parsed.program.body) {
+    if (
+      declaration.type !== "ImportDeclaration" ||
+      declaration.specifiers.length === 0 ||
+      overlapsUnresolved(declaration.start, declaration.end)
+    ) {
+      continue;
+    }
+    const inFork =
+      typeof forkSource === "string" &&
+      forkSource.includes(materialized.source.slice(declaration.start, declaration.end));
+    for (const specifier of declaration.specifiers) {
+      const candidate = { declaration, specifier, inFork };
+      const owner = owners.get(specifier.local.name);
+      if (!owner) {
+        owners.set(specifier.local.name, { keep: candidate, losers: [] });
+      } else if (inFork && !owner.keep.inFork) {
+        owner.losers.push(owner.keep);
+        owner.keep = candidate;
+      } else {
+        owner.losers.push(candidate);
+      }
+    }
+  }
+
+  const losersByDeclaration = new Map();
+  for (const { losers } of owners.values()) {
+    for (const { declaration, specifier } of losers) {
+      if (!losersByDeclaration.has(declaration)) losersByDeclaration.set(declaration, new Set());
+      losersByDeclaration.get(declaration).add(specifier);
+    }
+  }
+
+  const removals = [];
+  for (const [declaration, losers] of losersByDeclaration) {
+    const { specifiers } = declaration;
+    if (losers.size === specifiers.length) {
+      const end =
+        materialized.source[declaration.end] === "\n" ? declaration.end + 1 : declaration.end;
+      removals.push({ start: declaration.start, end, count: losers.size });
+      continue;
+    }
+    // Partial removal only rewrites the `{ a, b }` list; a default or namespace
+    // specifier next to a named list would need the braces rewritten too.
+    if (!specifiers.every((specifier) => specifier.type === "ImportSpecifier")) continue;
+    specifiers.forEach((specifier, index) => {
+      if (!losers.has(specifier)) return;
+      const next = specifiers[index + 1];
+      const previous = specifiers[index - 1];
+      removals.push(
+        next
+          ? { start: specifier.start, end: next.start, count: 1 }
+          : { start: previous.end, end: specifier.end, count: 1 },
+      );
+    });
+  }
+  if (removals.length === 0) return unchanged;
+
+  // Removed ranges sit outside every unresolved span, so each maps into one
+  // untouched segment of the marker-bearing source.
+  const toSourceOffset = (offset) => {
+    const segment = materialized.segments.find(
+      ({ out, length }) => offset >= out && offset <= out + length,
+    );
+    return segment.src + (offset - segment.out);
+  };
+  let deduplicated = source;
   let removed = 0;
-  const lines = source.split(/(?<=\n)/u);
-  const deduplicated = lines.filter((line) => {
-    if (line.startsWith("<<<<<<<")) {
-      insideConflict = true;
-      return true;
-    }
-    if (insideConflict) {
-      if (line.startsWith(">>>>>>>")) insideConflict = false;
-      return true;
-    }
-
-    const statement = line.replace(/\r?\n$/u, "");
-    if (!/^\s*import\s.+\sfrom\s+["'][^"']+["'];?\s*$/u.test(statement)) return true;
-    if (seen.has(statement)) {
-      removed += 1;
-      return false;
-    }
-    seen.add(statement);
-    return true;
-  });
-
-  return { source: deduplicated.join(""), removed };
+  for (const removal of removals.toSorted((left, right) => right.start - left.start)) {
+    deduplicated =
+      deduplicated.slice(0, toSourceOffset(removal.start)) +
+      deduplicated.slice(toSourceOffset(removal.end));
+    removed += removal.count;
+  }
+  return { source: deduplicated, removed };
 }
 
 function materializeResolutionProgressDetails({
@@ -307,7 +384,9 @@ function materializeResolutionProgressDetails({
   if (typeof path !== "string" || typeof source !== "string") {
     throw new Error("partial resolution did not contain a source path and string");
   }
-  if (!LEFTOVER_MARKER_PATTERN.test(source)) return { source, unresolvedSpans: [] };
+  if (!LEFTOVER_MARKER_PATTERN.test(source)) {
+    return { source, unresolvedSpans: [], segments: [{ out: 0, src: 0, length: source.length }] };
+  }
   if (forkSide !== "ours" && forkSide !== "theirs") {
     throw new Error(`${path} has an invalid fork side for partial validation`);
   }
@@ -317,6 +396,9 @@ function materializeResolutionProgressDetails({
   let outputOffset = 0;
   const pieces = [];
   const unresolvedSpans = [];
+  // Unconflicted text copied verbatim: `out` offset in the materialized
+  // source, `src` offset in the marker-bearing source.
+  const segments = [];
   for (const conflict of source.matchAll(MATERIALIZABLE_CONFLICT_PATTERN)) {
     const prefix = source.slice(sourceOffset, conflict.index);
     const selectedForkSide =
@@ -327,18 +409,25 @@ function materializeResolutionProgressDetails({
         : forkSide;
     const selectedSource = selectedForkSide === "theirs" ? conflict[2] : conflict[1];
     pieces.push(prefix, selectedSource);
+    segments.push({ out: outputOffset, src: sourceOffset, length: prefix.length });
     outputOffset += prefix.length;
     unresolvedSpans.push({ start: outputOffset, end: outputOffset + selectedSource.length });
     outputOffset += selectedSource.length;
     sourceOffset = conflict.index + conflict[0].length;
     materializedConflicts += 1;
   }
+  segments.push({ out: outputOffset, src: sourceOffset, length: source.length - sourceOffset });
   pieces.push(source.slice(sourceOffset));
   const materialized = pieces.join("");
   if (materializedConflicts === 0 || LEFTOVER_MARKER_PATTERN.test(materialized)) {
     throw new Error(`${path} contains malformed partial conflict markers`);
   }
-  return { source: materialized, unresolvedSpans, conflictCount: materializedConflicts };
+  return {
+    source: materialized,
+    unresolvedSpans,
+    segments,
+    conflictCount: materializedConflicts,
+  };
 }
 
 function diagnosticPosition(error) {
@@ -1387,6 +1476,16 @@ function resolveBinaryConflict(path) {
 // an empty deleted side — so the same model contract decides keep-versus-delete
 // under the parent first-party replacement rule. An empty resolved file from
 // this shape means "follow the deletion".
+// Index stage blob (1 base, 2 ours, 3 theirs) of an unmerged path; "" when the
+// side deleted the file.
+function stageSource(path, stage) {
+  try {
+    return git(["show", `:${stage}:${path}`]);
+  } catch {
+    return "";
+  }
+}
+
 function conflictSourceForPath(path) {
   const stages = unmergedStages(path);
   const hasOurs = stages.has(2);
@@ -1406,21 +1505,14 @@ function conflictSourceForPath(path) {
     };
   }
 
-  const stageContent = (stage) => {
-    try {
-      return git(["show", `:${stage}:${path}`]);
-    } catch {
-      return "";
-    }
-  };
   const trimTrailingNewline = (value) => value.replace(/\n$/u, "");
   const conflictedSource = [
     `<<<<<<< OURS (T3 Pretty main${hasOurs ? "" : "; this side deleted the file"})`,
-    trimTrailingNewline(stageContent(2)),
+    trimTrailingNewline(stageSource(path, 2)),
     "||||||| BASE (last integrated parent nightly)",
-    trimTrailingNewline(stageContent(1)),
+    trimTrailingNewline(stageSource(path, 1)),
     "=======",
-    trimTrailingNewline(stageContent(3)),
+    trimTrailingNewline(stageSource(path, 3)),
     `>>>>>>> THEIRS (parent nightly${hasTheirs ? "" : "; this side deleted the file"})`,
     "",
   ].join("\n");
@@ -1750,14 +1842,18 @@ async function resolveConflict(path, token) {
   }
 
   const conflict = conflictSourceForPath(path);
-  const deduplicated = TYPESCRIPT_SOURCE_PATTERN.test(path)
-    ? deduplicateExactUnconflictedImports(conflict.conflictedSource)
-    : { source: conflict.conflictedSource, removed: 0 };
+  const forkSide = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours";
+  const deduplicated = deduplicateUnconflictedImports({
+    path,
+    source: conflict.conflictedSource,
+    forkSource: stageSource(path, forkSide === "theirs" ? 3 : 2),
+    forkSide,
+  });
   const conflictedSource = deduplicated.source;
   const { deleteConflict } = conflict;
   if (deduplicated.removed > 0) {
     process.stdout.write(
-      `[fork-sync] removed ${deduplicated.removed} exact duplicate unconflicted import(s) from ${oneLine(path)}\n`,
+      `[fork-sync] removed ${deduplicated.removed} duplicate unconflicted import binding(s) from ${oneLine(path)}\n`,
     );
   }
   // A parent deletion is judged against where the behavior went upstream;
