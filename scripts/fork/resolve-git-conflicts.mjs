@@ -306,9 +306,12 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
     ) {
       continue;
     }
+    // Whole statement at a line start, so a mention inside a comment or a
+    // longer declaration in the fork blob does not claim ownership.
+    const declarationText = materialized.source.slice(declaration.start, declaration.end);
     const inFork =
       typeof forkSource === "string" &&
-      forkSource.includes(materialized.source.slice(declaration.start, declaration.end));
+      (forkSource.startsWith(declarationText) || forkSource.includes(`\n${declarationText}`));
     for (const specifier of declaration.specifiers) {
       const candidate = { declaration, specifier, inFork };
       const owner = owners.get(specifier.local.name);
@@ -340,38 +343,46 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
       removals.push({ start: declaration.start, end, count: losers.size });
       continue;
     }
-    // Partial removal only rewrites the `{ a, b }` list; a default or namespace
-    // specifier next to a named list would need the braces rewritten too.
-    if (!specifiers.every((specifier) => specifier.type === "ImportSpecifier")) continue;
+    // Cut one specifier together with the separator that joined it to a
+    // neighbour of the same kind. A named specifier beside a default or
+    // namespace one takes its braces along; a default beside a named list
+    // stops at the opening brace.
+    const named = (specifier) => specifier.type === "ImportSpecifier";
     specifiers.forEach((specifier, index) => {
       if (!losers.has(specifier)) return;
       const next = specifiers[index + 1];
       const previous = specifiers[index - 1];
-      removals.push(
-        next
-          ? { start: specifier.start, end: next.start, count: 1 }
-          : { start: previous.end, end: specifier.end, count: 1 },
-      );
+      let range;
+      if (next && named(next) === named(specifier)) {
+        range = { start: specifier.start, end: next.start };
+      } else if (previous && named(previous) === named(specifier)) {
+        range = { start: previous.end, end: specifier.end };
+      } else if (named(specifier)) {
+        range = { start: previous.end, end: materialized.source.indexOf("}", specifier.end) + 1 };
+      } else {
+        range = { start: specifier.start, end: materialized.source.indexOf("{", specifier.end) };
+      }
+      removals.push({ ...range, count: 1 });
     });
   }
   if (removals.length === 0) return unchanged;
 
   // Removed ranges sit outside every unresolved span, so each maps into one
-  // untouched segment of the marker-bearing source.
-  const toSourceOffset = (offset) => {
-    const segment = materialized.segments.find(
-      ({ out, length }) => offset >= out && offset <= out + length,
-    );
-    return segment.src + (offset - segment.out);
-  };
+  // untouched segment of the marker-bearing source. A range that does not
+  // fit one segment is left for the model rather than guessed at.
   let deduplicated = source;
   let removed = 0;
   for (const removal of removals.toSorted((left, right) => right.start - left.start)) {
-    deduplicated =
-      deduplicated.slice(0, toSourceOffset(removal.start)) +
-      deduplicated.slice(toSourceOffset(removal.end));
+    const segment = materialized.segments.find(
+      ({ out, length }) => removal.start >= out && removal.start < out + length,
+    );
+    if (!segment || removal.end > segment.out + segment.length) continue;
+    const start = segment.src + (removal.start - segment.out);
+    const end = segment.src + (removal.end - segment.out);
+    deduplicated = deduplicated.slice(0, start) + deduplicated.slice(end);
     removed += removal.count;
   }
+  if (removed === 0) return unchanged;
   return { source: deduplicated, removed };
 }
 

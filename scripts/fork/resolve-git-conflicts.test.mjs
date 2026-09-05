@@ -1721,11 +1721,13 @@ ${">".repeat(7)} theirs
       "  resolveCommandPath,\n",
       '} from "./shell.ts";\n',
       'import Default, { CommandAvailability } from "./mixed";\n',
+      'import isCommandAvailable, { other } from "./mixed-default";\n',
+      'import Default, * as Namespace from "./mixed-namespace";\n',
       conflict,
     ].join("");
 
     const result = deduplicateUnconflictedImports({ path, source, forkSide: "ours" });
-    assert.equal(result.removed, 1);
+    assert.equal(result.removed, 4);
     assert.equal(
       result.source,
       [
@@ -1735,11 +1737,43 @@ ${">".repeat(7)} theirs
         "  isCommandAvailable,\n",
         "  resolveCommandPath,\n",
         '} from "./shell.ts";\n',
-        // A default specifier beside the named list is left for the model.
-        'import Default, { CommandAvailability } from "./mixed";\n',
+        'import Default from "./mixed";\n',
+        'import { other } from "./mixed-default";\n',
+        'import * as Namespace from "./mixed-namespace";\n',
         conflict,
       ].join(""),
     );
+    assert.doesNotThrow(() =>
+      assertValidResolutionProgressSource({ path, source: result.source, forkSide: "ours" }),
+    );
+  });
+
+  it("only credits the fork for a whole declaration at a line start", () => {
+    const path = "apps/web/src/Owner.ts";
+    const conflict = "<<<<<<< HEAD\nconst a = 1;\n=======\nconst b = 1;\n>>>>>>> nightly\n";
+    const parentImport = 'import { value } from "./parent";\n';
+    const forkImport = 'import { value } from "./fork";\n';
+    const source = `${parentImport}${forkImport}${conflict}`;
+
+    // A commented mention of the parent import must not make it fork-owned.
+    const forkSource = `// ${parentImport}${forkImport}`;
+    assert.equal(
+      deduplicateUnconflictedImports({ path, source, forkSource, forkSide: "ours" }).source,
+      `${forkImport}${conflict}`,
+    );
+  });
+
+  it("maps an import that directly follows an empty fork side back onto the markers", () => {
+    const path = "apps/web/src/Boundary.ts";
+    const conflict = "<<<<<<< HEAD\n=======\nconst parent = 1;\n>>>>>>> nightly\n";
+    const duplicate = 'import { value } from "./value";\n';
+    const source = `${duplicate}${conflict}${duplicate}export const use = value;\n`;
+
+    const result = deduplicateUnconflictedImports({ path, source, forkSide: "ours" });
+    assert.deepEqual(result, {
+      source: `${duplicate}${conflict}export const use = value;\n`,
+      removed: 1,
+    });
   });
 
   it("regenerates a poisoned completed checkpoint instead of replaying it", async () => {
