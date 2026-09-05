@@ -201,10 +201,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 > {
   switch (command.type) {
     case "project.transfer.import": {
-      if (command.thread.projectId !== command.project.id) {
+      const additionalThreads = command.additionalThreads ?? [];
+      const importedThreads = [
+        { thread: command.thread, sourceThreadId: command.sourceThreadId },
+        ...additionalThreads,
+      ];
+      for (const imported of importedThreads) {
+        if (imported.thread.projectId !== command.project.id) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: "Transferred thread must belong to the transferred project.",
+          });
+        }
+      }
+      const importedThreadIds = importedThreads.map((imported) => imported.thread.id);
+      if (new Set(importedThreadIds).size !== importedThreadIds.length) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
-          detail: "Transferred thread must belong to the transferred project.",
+          detail: "Transferred threads must have unique ids.",
         });
       }
       yield* requireProjectAbsent({
@@ -218,11 +232,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         workspaceRoot: command.project.workspaceRoot,
         exceptProjectId: command.project.id,
       });
-      yield* requireThreadAbsent({
-        readModel,
-        command,
-        threadId: command.thread.id,
-      });
+      for (const imported of importedThreads) {
+        yield* requireThreadAbsent({
+          readModel,
+          command,
+          threadId: imported.thread.id,
+        });
+      }
 
       return [
         {
@@ -246,22 +262,26 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             updatedAt: command.importedAt,
           },
         },
-        {
-          ...(yield* withEventBase({
-            aggregateKind: "thread",
-            aggregateId: command.thread.id,
-            occurredAt: command.importedAt,
-            commandId: command.commandId,
-          })),
-          type: "thread.transferred" as const,
-          payload: {
-            thread: command.thread,
-            sourceEnvironmentId: command.sourceEnvironmentId,
-            sourceThreadId: command.sourceThreadId,
-            includesGitMetadata: command.includesGitMetadata,
-            skippedAttachmentCount: command.skippedAttachmentCount,
-          },
-        },
+        ...(yield* Effect.forEach(importedThreads, (imported) =>
+          Effect.gen(function* () {
+            return {
+              ...(yield* withEventBase({
+                aggregateKind: "thread" as const,
+                aggregateId: imported.thread.id,
+                occurredAt: command.importedAt,
+                commandId: command.commandId,
+              })),
+              type: "thread.transferred" as const,
+              payload: {
+                thread: imported.thread,
+                sourceEnvironmentId: command.sourceEnvironmentId,
+                sourceThreadId: imported.sourceThreadId,
+                includesGitMetadata: command.includesGitMetadata,
+                skippedAttachmentCount: command.skippedAttachmentCount,
+              },
+            };
+          }),
+        )),
       ];
     }
 

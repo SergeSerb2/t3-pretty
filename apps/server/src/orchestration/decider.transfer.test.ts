@@ -123,4 +123,60 @@ it.layer(NodeServices.layer)("project transfer import", (it) => {
       expect(projected.threads[0]?.branchEventId).toBe(events[1]?.eventId);
     }),
   );
+
+  it.effect("imports additional sibling threads onto the same project", () =>
+    Effect.gen(function* () {
+      const siblingId = ThreadId.make("thread-transferred-sibling");
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.transfer.import",
+          commandId: CommandId.make("command-transfer-siblings"),
+          project: {
+            id: projectId,
+            title: "Aerospace Lingo",
+            workspaceRoot: "/tmp/projects/Aerospace-Lingo",
+            defaultModelSelection: null,
+            defaultThreadEnvMode: "local",
+            faviconPath: null,
+            scripts: [],
+            createdAt: SOURCE_TIME,
+            updatedAt: NOW,
+            deletedAt: null,
+          },
+          thread,
+          additionalThreads: [
+            {
+              thread: {
+                ...thread,
+                id: siblingId,
+                title: "Follow-up",
+                messages: [],
+                activities: [],
+              },
+              sourceThreadId: ThreadId.make("source-sibling"),
+            },
+          ],
+          sourceEnvironmentId: EnvironmentId.make("source-environment"),
+          sourceThreadId: ThreadId.make("source-thread"),
+          includesGitMetadata: true,
+          skippedAttachmentCount: 0,
+          importedAt: NOW,
+        },
+        readModel: createEmptyReadModel(NOW),
+      });
+
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((event) => event.type)).toEqual([
+        "project.created",
+        "thread.transferred",
+        "thread.transferred",
+      ]);
+
+      let projected = createEmptyReadModel(NOW);
+      for (const [index, event] of events.entries()) {
+        projected = yield* projectEvent(projected, { ...event, sequence: index + 1 });
+      }
+      expect(projected.threads.map((entry) => entry.id)).toEqual([threadId, siblingId]);
+    }),
+  );
 });

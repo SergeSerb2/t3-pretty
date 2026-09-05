@@ -28,6 +28,28 @@ type DraftThreadRouteState = {
 
 export type ThreadRouteRenderState = "loading" | "ready" | "missing";
 
+export const MISSING_THREAD_REDIRECT_GRACE_MS = 10_000;
+
+export function shouldRedirectMissingThreadRoute(input: {
+  readonly renderState: ThreadRouteRenderState;
+  readonly environmentHasAnyThreads: boolean;
+  readonly transferInProgress: boolean;
+  readonly threadDeleted: boolean;
+  readonly missingForMs: number;
+  readonly graceMs?: number;
+}): boolean {
+  if (input.renderState !== "missing" || !input.environmentHasAnyThreads) {
+    return false;
+  }
+  if (input.transferInProgress) {
+    return false;
+  }
+  if (input.threadDeleted) {
+    return true;
+  }
+  return input.missingForMs >= (input.graceMs ?? MISSING_THREAD_REDIRECT_GRACE_MS);
+}
+
 export function resolveThreadRouteRenderState(input: {
   bootstrapComplete: boolean;
   serverThreadShellExists: boolean;

@@ -118,24 +118,30 @@ waiting — with threads that need you first. Tap it to open the thread that nee
 first working thread. If the account row says **Unavailable**, that build does not include T3 Connect
 configuration.
 
-### Move a Thread to Another Environment
+### Copy or Move a Thread to Another Environment
 
 When two updated environments are connected to the same T3 Connect or Surge Connect account, open a
-thread's menu and choose **Move to connection…**. On mobile, open the thread settings sheet first.
-Choose the destination, then select **Move and open**.
+thread's menu and choose **Copy or move to connection…**. On mobile, open the thread settings sheet
+first. Choose **Copy** or **Move**, pick the destination, then confirm.
 
-T3 Code copies the project workspace and conversation directly between the two environments into
-the destination's T3-managed projects folder, then opens a new thread there. The original project
-and thread stay unchanged. Regular Git metadata is included for a normal repository.
+**Copy** duplicates this thread's conversation and the project files onto the destination. The
+original project and thread stay where they are.
 
-Dependency folders, generated build caches, message attachments, and worktree-only Git metadata are
-skipped. Reinstall dependencies on the destination before running the project. Compressed transfers
-larger than 96 MB are rejected.
+**Move** relocates the whole project: every thread plus the project files. After the destination has
+them, T3 removes the project from the source. Files on disk are deleted only when they live in that
+machine's T3-managed projects folder — a repo you opened from elsewhere stays on disk.
 
-The source thread must be idle, both environments must be online, and both servers must advertise
-transfer support. The first new turn on the destination receives a bounded copy of the transferred
-conversation so the local provider can continue with context even though provider sessions do not
-move between machines.
+The transfer dialog shows named stages while it works, then opens the destination copy of the
+thread you started from.
+
+Regular Git metadata is included for a normal repository. Dependency folders, generated build
+caches, message attachments, and worktree-only Git metadata are skipped. Reinstall dependencies on
+the destination before running the project. Compressed transfers larger than 96 MB are rejected.
+
+Every thread in the project must be idle for a move (the selected thread must be idle for a copy).
+Both environments must be online, and both servers must advertise transfer support. The first new
+turn on the destination receives a bounded copy of the transferred conversation so the local
+provider can continue with context even though provider sessions do not move between machines.
 
 ## Enabling Network Access
 

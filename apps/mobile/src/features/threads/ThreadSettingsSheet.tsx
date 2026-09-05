@@ -911,6 +911,7 @@ function ThreadSettingsHomeContent(props: {
   readonly onOpenSubmenu: (submenu: ThreadSettingsSubmenuPage) => void;
   readonly projectTransfer?: {
     readonly isPending: boolean;
+    readonly pendingLabel: string;
     readonly onPress: () => void;
   };
 }) {
@@ -964,13 +965,18 @@ function ThreadSettingsHomeContent(props: {
           <View className="mx-4 overflow-hidden rounded-2xl bg-card">
             <DisclosureRow
               disabled={props.projectTransfer.isPending}
-              label={props.projectTransfer.isPending ? "Moving thread…" : "Move to connection"}
+              label={
+                props.projectTransfer.isPending
+                  ? props.projectTransfer.pendingLabel
+                  : "Copy or move to connection"
+              }
               value={CONNECT_BRANDING.connectName}
               onPress={props.projectTransfer.onPress}
             />
           </View>
           <Text className="px-5 pt-2 text-xs leading-4 text-foreground-muted">
-            Copies this conversation and project files. The source stays unchanged.
+            Copy duplicates this thread. Move relocates the whole project and removes it from this
+            machine.
           </Text>
         </>
       ) : null}
@@ -1305,7 +1311,11 @@ function ThreadSettingsHomeScreen() {
         onOpenSubmenu={(submenu) => openThreadSettingsSubmenu(navigation, session, submenu)}
         projectTransfer={
           transfer.supported
-            ? { isPending: transfer.isPending, onPress: transfer.present }
+            ? {
+                isPending: transfer.isPending,
+                pendingLabel: transfer.pendingLabel,
+                onPress: transfer.present,
+              }
             : undefined
         }
       />

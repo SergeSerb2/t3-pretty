@@ -35,9 +35,11 @@ A server-side scan of **managed worktrees** under the environment's worktrees fo
 
 #### Project transfer
 
-A copy of one project workspace and one thread's durable conversation into another managed
-environment. The source remains unchanged. Workspace bytes stream server to server; provider
-sessions, checkpoints, attachments, dependencies, and build caches do not move. See [T3 Connect](./t3-connect.md#project-and-thread-transfer).
+A server-to-server copy of a project workspace into another managed environment. **Copy** transfers
+one thread's conversation and leaves the source unchanged. **Move** transfers every thread in the
+project, then deletes the source T3 project (and the workspace directory only when it lives under
+the source environment's managed projects folder). Provider sessions, checkpoints, attachments,
+dependencies, and build caches do not move. See [T3 Connect](./t3-connect.md#project-and-thread-transfer).
 
 ### Thread timeline
 

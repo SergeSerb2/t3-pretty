@@ -2184,7 +2184,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             ? [
                 {
                   id: "transfer",
-                  label: "Move to connection…",
+                  label: "Copy or move to connection…",
                   disabled:
                     thread.latestTurn?.state === "running" ||
                     thread.session?.status === "starting" ||
