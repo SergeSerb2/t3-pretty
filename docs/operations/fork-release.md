@@ -316,12 +316,15 @@ runner lived at
 `m1-dev-t3code-fork-2`) before that host moved to Linux. Do not give the agent pull-request queues.
 
 Origin git JWTs live about an hour. The agent's pre-checkout hook points git at
-`$HOME/.git-credentials`, and a single 401 makes git erase that store — after
-which every checkout fails until the file is repopulated. The setup script
-installs `scripts/fork/refresh-origin-git-credentials.sh` as a launchd periodic
-(`com.t3-pretty.origin-credential-refresh`, every 15 minutes) that re-mints the
-store through the Origin CLI. If checkouts fail with git exit 128, run the
-refresher once by hand and check `~/Library/Logs/t3-origin-credential-refresh.err.log`.
+`$HOME/.git-credentials` through a get-only helper: git's plain `store` helper
+erases the file on a 401, which once emptied it for every later job on both
+agents. The setup script installs `scripts/fork/refresh-origin-git-credentials.sh`
+as a launchd periodic (`com.t3-pretty.origin-credential-refresh`, every 15
+minutes) that re-mints the store through the Origin CLI, and the pre-checkout
+hook runs it again before each job. If checkouts fail with git exit 128 in under
+a minute, Origin rejected the token: the agent deletes the checkout and re-clones
+on retry, so once `origin credential-helper get` works again, retrying the jobs is
+enough. Check `~/Library/Logs/t3-origin-credential-refresh.err.log`.
 
 The Windows runner lives at `C:\actions-runner-t3code-fork`. The checked-in
 `scripts/fork/setup-windows-runner.ps1` can still recreate a GitHub Actions runner for rollback.

@@ -26,6 +26,11 @@ origin_cli_helper_ready() {
 }
 
 store="${ORIGIN_GIT_CREDENTIALS:-$HOME/.git-credentials}"
+# Read-only view of the store. git's plain `store` helper rewrites the file
+# on every `erase`, so one 401 (an expired JWT) emptied it for every later
+# job on both agents until the next refresh. Answer `get` only; swallow
+# `store`/`erase`.
+store_helper="!f() { if [ \"\$1\" = get ]; then git credential-store --file=$store get; else cat >/dev/null; fi; }; f"
 write_lock=""
 
 cleanup() {
@@ -40,7 +45,7 @@ helpers_ready() {
   [[ -s "$store" ]] || return 1
   for hostName in "${origin_hosts[@]}"; do
     current="$(git config --global --get-all "credential.${hostName}.helper" 2>/dev/null || true)"
-    printf '%s\n' "$current" | grep -Fxq "store --file=${store}" || return 1
+    printf '%s\n' "$current" | grep -Fxq "$store_helper" || return 1
   done
   return 0
 }
@@ -112,7 +117,7 @@ write_helpers() {
     while true; do
       git config --global --unset-all "credential.${hostName}.helper" >/dev/null 2>&1 || true
       if git config --global "credential.${hostName}.helper" "" \
-        && git config --global --add "credential.${hostName}.helper" "store --file=$store"; then
+        && git config --global --add "credential.${hostName}.helper" "$store_helper"; then
         break
       fi
       attempt=$((attempt + 1))
