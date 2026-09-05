@@ -423,15 +423,14 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(pipeline, "\n    secrets:");
   });
 
-  it("requires an explicit opt-in while Windows packaging is paused", () => {
+  it("releases Windows on every non-scheduled main build", () => {
     const windowsStep = pipeline.slice(
       pipeline.indexOf(":windows: Windows NSIS"),
       pipeline.indexOf(":linux: Linux x64 AppImage"),
     );
-    assert.include(windowsStep, 'build.branch == "main" && build.source != "schedule"');
-    assert.include(windowsStep, 'build.env("T3CODE_ENABLE_WINDOWS_RELEASE") == "1"');
+    assert.include(windowsStep, 'if: build.branch == "main" && build.source != "schedule"\n');
     assert.notInclude(windowsStep, "build.message");
-    assert.notInclude(pipeline, "T3CODE_ENABLE_WINDOWS_RELEASE: ");
+    assert.notInclude(windowsStep, "build.env(");
   });
 
   it("keeps the native Windows release unattended and repairs its Rust toolchain", () => {
