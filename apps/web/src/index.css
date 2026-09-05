@@ -1430,6 +1430,8 @@ html[data-window-inactive]
 
   .chat-composer-glass-shell {
     --chat-composer-attachment-overlap: calc(1rem + 1px);
+    /* ComposerSurface.ContextStrip insets itself by this per side. */
+    --chat-composer-drawer-inset: 1.375rem;
     --chat-composer-glass-surface: var(--card);
     --chat-composer-outline: rgb(0 0 0 / 8%);
     /* Light mode gets its own specular top edge; dark overrides below. */

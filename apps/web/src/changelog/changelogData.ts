@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260904.1280001572",
+    date: "2026-09-05",
+    items: [
+      {
+        kind: "new",
+        title: "copy or move threads between connections",
+      },
+      {
+        kind: "fixed",
+        title: "expose an object schema for screen info",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+      {
+        kind: "fixed",
+        title: "restore deferred projection runtime",
+      },
+      {
+        kind: "fixed",
+        title: "restore post-sync runtime baseline",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260904.1280001569",
     date: "2026-09-04",
     items: [
