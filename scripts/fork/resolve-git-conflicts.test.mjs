@@ -1723,11 +1723,13 @@ ${">".repeat(7)} theirs
       'import Default, { CommandAvailability } from "./mixed";\n',
       'import isCommandAvailable, { other } from "./mixed-default";\n',
       'import Default, * as Namespace from "./mixed-namespace";\n',
+      'import Other, { CommandAvailability, isCommandAvailable } from "./both";\n',
+      'import { tailOnly, isCommandAvailable, isCommandAvailable } from "./tail";\n',
       conflict,
     ].join("");
 
     const result = deduplicateUnconflictedImports({ path, source, forkSide: "ours" });
-    assert.equal(result.removed, 4);
+    assert.equal(result.removed, 8);
     assert.equal(
       result.source,
       [
@@ -1740,6 +1742,8 @@ ${">".repeat(7)} theirs
         'import Default from "./mixed";\n',
         'import { other } from "./mixed-default";\n',
         'import * as Namespace from "./mixed-namespace";\n',
+        'import Other from "./both";\n',
+        'import { tailOnly,  } from "./tail";\n',
         conflict,
       ].join(""),
     );
