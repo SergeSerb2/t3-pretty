@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260904.1280001584",
+    date: "2026-09-05",
+    items: [
+      {
+        kind: "fixed",
+        title: "restore the live activity shimmer styles",
+      },
+      {
+        kind: "fixed",
+        title: "inset the composer context strip to match upstream",
+      },
+      {
+        kind: "new",
+        title: "copy or move threads between connections",
+      },
+      {
+        kind: "fixed",
+        title: "expose an object schema for screen info",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update controls",
+      },
+      {
+        kind: "fixed",
+        title: "restore desktop update commit RPC",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260904.1280001582",
     date: "2026-09-05",
     items: [
