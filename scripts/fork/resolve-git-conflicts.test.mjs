@@ -14,7 +14,7 @@ import {
   buildConflictPrompt,
   buildValidationRetryPrompt,
   conflictResolutionEfforts,
-  deduplicateExactUnconflictedImports,
+  deduplicateUnconflictedImports,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
@@ -828,7 +828,7 @@ ${">".repeat(7)} theirs
       assert.include(script, "unset NO_COLOR");
       assert.include(script, "refs/heads/automation/upstream-*");
       assert.include(script, "Reusing the previously validated AI resolution on");
-      assert.include(script, "credential.https://origin.cursor.com.helper=store --file=");
+      assert.include(script, "credential.https://origin.cursor.com.helper=${helper}");
       assert.include(script, "SYNC_FAIL_REASON");
       assert.include(script, "merging origin/main and retrying once");
       assert.include(script, 'git checkout --ours -- "$path"');
@@ -1649,17 +1649,14 @@ ${">".repeat(7)} theirs
       /partial resolution has invalid resolved TypeScript/u,
     );
 
-    const result = deduplicateExactUnconflictedImports(source);
+    const path = "apps/server/src/server.test.ts";
+    const result = deduplicateUnconflictedImports({ path, source, forkSide: "ours" });
 
     assert.equal(result.removed, 1);
     assert.equal(result.source.match(/effect\/Queue/gu)?.length, 1);
     assert.equal(result.source.match(/\.\/side-effect/gu)?.length, 2);
     assert.doesNotThrow(() =>
-      assertValidResolutionProgressSource({
-        path: "apps/server/src/server.test.ts",
-        source: result.source,
-        forkSide: "ours",
-      }),
+      assertValidResolutionProgressSource({ path, source: result.source, forkSide: "ours" }),
     );
 
     const conflictArmImports = [
@@ -1669,10 +1666,80 @@ ${">".repeat(7)} theirs
       duplicateImport,
       ">>>>>>> THEIRS\n",
     ].join("");
-    assert.deepEqual(deduplicateExactUnconflictedImports(conflictArmImports), {
-      source: conflictArmImports,
-      removed: 0,
+    assert.deepEqual(
+      deduplicateUnconflictedImports({ path, source: conflictArmImports, forkSide: "ours" }),
+      { source: conflictArmImports, removed: 0 },
+    );
+  });
+
+  it("keeps the fork's import when both sides bind one name from different modules", () => {
+    const path = "apps/web/src/components/ChatMarkdown.tsx";
+    const conflict = [
+      "<<<<<<< HEAD\n",
+      "const url = faviconUrlForOrigin(host, 32);\n",
+      "=======\n",
+      "const url = faviconUrlForOrigin(host);\n",
+      ">>>>>>> nightly\n",
+    ].join("");
+    const parentImport = 'import { faviconUrlForOrigin } from "@t3tools/shared/favicon";\n';
+    const forkImport = 'import { faviconUrlForOrigin } from "../lib/favicon";\n';
+    const source = `${parentImport}import { other } from "./other";\n${forkImport}${conflict}`;
+    const forkSource = `import { other } from "./other";\n${forkImport}const url = faviconUrlForOrigin(host, 32);\n`;
+
+    assert.throws(() => assertValidResolutionProgressSource({ path, source, forkSide: "ours" }));
+    const result = deduplicateUnconflictedImports({ path, source, forkSource, forkSide: "ours" });
+    assert.deepEqual(result, {
+      source: `import { other } from "./other";\n${forkImport}${conflict}`,
+      removed: 1,
     });
+    assert.doesNotThrow(() =>
+      assertValidResolutionProgressSource({ path, source: result.source, forkSide: "ours" }),
+    );
+
+    // Without fork evidence the first declaration stays.
+    assert.equal(
+      deduplicateUnconflictedImports({ path, source, forkSide: "ours" }).source,
+      `${parentImport}import { other } from "./other";\n${conflict}`,
+    );
+  });
+
+  it("drops a specifier both sides appended to the same import block", () => {
+    const path = "packages/shared/src/shell.test.ts";
+    const conflict = [
+      "<<<<<<< HEAD\n",
+      "const fork = 1;\n",
+      "=======\n",
+      "const parent = 1;\n",
+      ">>>>>>> nightly\n",
+    ].join("");
+    const source = [
+      "import {\n",
+      "  CommandAvailability,\n",
+      "  CommandResolutionCache,\n",
+      "  isCommandAvailable,\n",
+      "  CommandResolutionCache,\n",
+      "  resolveCommandPath,\n",
+      '} from "./shell.ts";\n',
+      'import Default, { CommandAvailability } from "./mixed";\n',
+      conflict,
+    ].join("");
+
+    const result = deduplicateUnconflictedImports({ path, source, forkSide: "ours" });
+    assert.equal(result.removed, 1);
+    assert.equal(
+      result.source,
+      [
+        "import {\n",
+        "  CommandAvailability,\n",
+        "  CommandResolutionCache,\n",
+        "  isCommandAvailable,\n",
+        "  resolveCommandPath,\n",
+        '} from "./shell.ts";\n',
+        // A default specifier beside the named list is left for the model.
+        'import Default, { CommandAvailability } from "./mixed";\n',
+        conflict,
+      ].join(""),
+    );
   });
 
   it("regenerates a poisoned completed checkpoint instead of replaying it", async () => {
