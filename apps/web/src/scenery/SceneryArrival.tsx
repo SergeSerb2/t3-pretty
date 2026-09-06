@@ -323,7 +323,6 @@ export function SceneryArrival({
       }
     };
     // photo is read from this render when photoId changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sequenceKey, photoId, photoReady, threadKey]);
 
   if (phase === "idle" || phase === "settled") {
