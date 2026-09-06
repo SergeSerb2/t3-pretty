@@ -262,7 +262,12 @@ function SkillLibrarySection({
     [locations],
   );
   const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
-  // Server truth takes back over the moment the refreshed inventory agrees.
+  // Server truth takes back over the moment the refreshed inventory agrees; the
+  // state is pruned too, so a settled override cannot resurface when another
+  // device changes the same link later.
+  useEffect(() => {
+    setLinkOverrides((current) => pruneSettledLinkOverrides(current, skills));
+  }, [skills]);
   const activeOverrides = useMemo(
     () => pruneSettledLinkOverrides(linkOverrides, skills),
     [linkOverrides, skills],

@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, Skill, SkillId } from "@t3tools/contracts";
+import { normalizeSkillId } from "@t3tools/shared/skillTool";
 import * as Haptics from "expo-haptics";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -153,6 +154,11 @@ export function NewTaskSkillsPickerRouteScreen() {
   const insets = useSafeAreaInsets();
   const fontFamily = useFontFamily("regular");
   const [query, setQuery] = useState("");
+  // Picks saved before the skill library may hold store ids; fold them for the checkmarks.
+  const pickedIds = useMemo(
+    () => new Set(flow.selectedSkillIds.map(normalizeSkillId)),
+    [flow.selectedSkillIds],
+  );
 
   const environmentId = flow.selectedProject?.environmentId ?? null;
   const skillsQuery = useEnvironmentQuery(
@@ -176,11 +182,11 @@ export function NewTaskSkillsPickerRouteScreen() {
   );
   const dropSkillFromDraft = useCallback(
     (skillId: SkillId) => {
-      if (flow.selectedSkillIds.includes(skillId)) {
+      if (pickedIds.has(skillId)) {
         flow.toggleSkill(skillId);
       }
     },
-    [flow],
+    [flow, pickedIds],
   );
 
   const isPending = skillsQuery.isPending;
@@ -236,7 +242,7 @@ export function NewTaskSkillsPickerRouteScreen() {
             {skills.map((skill, index) => (
               <SkillPickerRow
                 key={skill.id}
-                checked={flow.selectedSkillIds.includes(skill.id)}
+                checked={pickedIds.has(skill.id)}
                 environmentId={environmentId}
                 isLast={index === skills.length - 1}
                 onToggle={toggleRow}

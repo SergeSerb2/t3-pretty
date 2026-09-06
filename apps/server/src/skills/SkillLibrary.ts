@@ -19,7 +19,8 @@
  *
  * On startup the service moves a pre-library T3 store
  * (`<state>/skills/<owner>--<repo>/…`) into the shared library, drops copies
- * of skills already there, and deletes the empty store.
+ * of skills already there, deletes the empty store, and turns back on any
+ * skill an older server had hidden by renaming its `SKILL.md`.
  *
  * @module skills/SkillLibrary
  */
@@ -96,8 +97,13 @@ const DRIVER_CONVENTIONS: ReadonlyArray<{
   readonly key: DriverKey;
   readonly title: string;
   readonly defaultHome: (home: string, environment: NodeJS.ProcessEnv) => string;
-  /** Other locations this CLI scans natively (verified per driver, see the discovery modules). */
-  readonly alsoReads: ReadonlyArray<string>;
+  /**
+   * Other skills folders this CLI scans natively, as segments below the home
+   * directory (verified per driver, see the discovery modules). Matching is by
+   * folder, so a Claude config dir moved with CLAUDE_CONFIG_DIR is not claimed
+   * as Cursor-visible.
+   */
+  readonly alsoReads: ReadonlyArray<ReadonlyArray<string>>;
 }> = [
   {
     key: "claudeAgent",
@@ -112,13 +118,17 @@ const DRIVER_CONVENTIONS: ReadonlyArray<{
     key: "codex",
     title: "Codex",
     defaultHome: (home) => `${home}/.codex`,
-    alsoReads: [SHARED_LOCATION_KEY],
+    alsoReads: [[".agents", "skills"]],
   },
   {
     key: "cursor",
     title: "Cursor",
     defaultHome: (home) => `${home}/.cursor`,
-    alsoReads: [SHARED_LOCATION_KEY, "codex", "claudeAgent"],
+    alsoReads: [
+      [".agents", "skills"],
+      [".codex", "skills"],
+      [".claude", "skills"],
+    ],
   },
   {
     key: "grok",
@@ -133,9 +143,18 @@ interface Location {
   readonly key: string;
   readonly title: string;
   readonly directory: string;
+  /** `directory` with symlinks resolved; two locations sharing it are one folder. */
+  readonly realDirectory: string;
   readonly driver?: ProviderDriverKind;
   readonly instanceId?: ProviderInstanceId;
+  /** Key of the earlier location whose folder this one is a symlink to; aliases are not scanned. */
+  readonly aliasOf?: string;
   readonly reads: ReadonlyArray<string>;
+}
+
+interface PendingLocation extends Omit<Location, "reads"> {
+  /** Folders this CLI also scans; resolved to location keys once every location is known. */
+  readonly alsoReads: ReadonlyArray<string>;
 }
 
 /**
@@ -282,7 +301,8 @@ function isNotSymlinkError(error: PlatformError.PlatformError): boolean {
 type EntryState =
   | { readonly _tag: "missing" }
   | { readonly _tag: "link" }
-  | { readonly _tag: "real" };
+  | { readonly _tag: "real" }
+  | { readonly _tag: "unreadable"; readonly cause: PlatformError.PlatformError };
 
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -319,7 +339,7 @@ export const make = Effect.gen(function* () {
             ? { _tag: "missing" }
             : isNotSymlinkError(error)
               ? { _tag: "real" }
-              : { _tag: "missing" },
+              : { _tag: "unreadable", cause: error },
         ),
       ),
     );
@@ -341,21 +361,38 @@ export const make = Effect.gen(function* () {
         skillsError(operation, "Failed to read server settings while listing skills.", { cause }),
       ),
     );
-    const locations: Array<Location> = [];
+    const pending: Array<PendingLocation> = [];
     const seenDirectories = new Set<string>();
-    const add = (location: Location) => {
-      if (seenDirectories.has(location.directory)) {
+    const canonicalByRealDirectory = new Map<string, string>();
+    // A CLI folder that is itself a symlink to another location (say
+    // `~/.claude/skills -> ../.agents/skills`) is an alias: it keeps its chip,
+    // reads the folder it points at, and is never scanned as a second copy.
+    const add = Effect.fn("SkillLibrary.addLocation")(function* (
+      candidate: Omit<PendingLocation, "realDirectory" | "aliasOf">,
+    ) {
+      if (seenDirectories.has(candidate.directory)) {
         return;
       }
-      seenDirectories.add(location.directory);
-      locations.push(location);
-    };
+      seenDirectories.add(candidate.directory);
+      const realDirectory = yield* fileSystem
+        .realPath(candidate.directory)
+        .pipe(Effect.orElseSucceed(() => candidate.directory));
+      const aliasOf = canonicalByRealDirectory.get(realDirectory);
+      if (aliasOf === undefined) {
+        canonicalByRealDirectory.set(realDirectory, candidate.key);
+      }
+      pending.push({
+        ...candidate,
+        realDirectory,
+        ...(aliasOf !== undefined ? { aliasOf } : {}),
+      });
+    });
 
-    add({
+    yield* add({
       key: SHARED_LOCATION_KEY,
       title: "Shared",
       directory: path.join(home, ".agents", "skills"),
-      reads: [SHARED_LOCATION_KEY],
+      alsoReads: [],
     });
     for (const convention of DRIVER_CONVENTIONS) {
       const driver = ProviderDriverKind.make(convention.key);
@@ -364,13 +401,14 @@ export const make = Effect.gen(function* () {
       // No tilde expansion: an env-provided config dir reaches the CLI
       // verbatim, so this must scan the same directory the CLI would.
       const defaultHome = path.resolve(convention.defaultHome(home, environment));
+      const alsoReads = convention.alsoReads.map((segments) => path.join(home, ...segments));
       if (yield* isDirectory(defaultHome)) {
-        add({
+        yield* add({
           key: convention.key,
           title: convention.title,
           directory: path.join(defaultHome, "skills"),
           driver,
-          reads: [convention.key, ...convention.alsoReads],
+          alsoReads,
         });
       }
       for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
@@ -391,40 +429,74 @@ export const make = Effect.gen(function* () {
         }
         const displayName = instance.displayName?.trim();
         const key = `${convention.key}:${instanceId}`;
-        add({
+        yield* add({
           key,
           title: displayName ? `${convention.title} · ${displayName}` : convention.title,
           directory: path.join(instanceHome, "skills"),
           driver,
           instanceId: ProviderInstanceId.make(instanceId),
-          reads: [key, ...convention.alsoReads],
+          alsoReads,
         });
       }
     }
-    return locations;
+    return pending.map(({ alsoReads, ...location }): Location => ({
+      ...location,
+      reads: [
+        ...new Set([
+          location.key,
+          ...(location.aliasOf !== undefined ? [location.aliasOf] : []),
+          ...pending
+            .filter((other) => other.key !== location.key && alsoReads.includes(other.directory))
+            .map((other) => other.key),
+        ]),
+      ],
+    }));
   });
 
+  const hasSkillDocument = (skillDir: string) => exists(path.join(skillDir, SKILL_FILE));
+
   /**
-   * Older servers hid a skill by renaming its document; a folder found in
-   * that state comes back as a normal skill. Returns whether a SKILL.md is now
-   * present.
+   * Older servers hid a skill from its CLI by renaming its document. Once, at
+   * startup, every such folder comes back as a normal skill; reads never
+   * touch the folders. Best-effort and logged.
    */
-  const ensureSkillDocument = Effect.fn("SkillLibrary.ensureSkillDocument")(function* (
-    skillDir: string,
-  ) {
-    const documentPath = path.join(skillDir, SKILL_FILE);
-    if (yield* exists(documentPath)) {
-      return true;
+  const reviveHiddenSkills = Effect.gen(function* () {
+    const locations = yield* collectLocations("migrate");
+    let revived = 0;
+    for (const location of locations) {
+      if (location.aliasOf !== undefined) {
+        continue;
+      }
+      const entries = yield* fileSystem
+        .readDirectory(location.directory)
+        .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+      for (const entry of entries) {
+        const skillDir = path.join(location.directory, entry);
+        const disabledPath = path.join(skillDir, LEGACY_DISABLED_SKILL_FILE);
+        if ((yield* hasSkillDocument(skillDir)) || !(yield* exists(disabledPath))) {
+          continue;
+        }
+        const renamed = yield* fileSystem
+          .rename(disabledPath, path.join(skillDir, SKILL_FILE))
+          .pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+        if (renamed) {
+          revived += 1;
+        }
+      }
     }
-    const disabledPath = path.join(skillDir, LEGACY_DISABLED_SKILL_FILE);
-    if (!(yield* exists(disabledPath))) {
-      return false;
+    if (revived > 0) {
+      yield* Effect.logInfo("Turned skills back on that an older server had hidden", { revived });
     }
-    return yield* fileSystem.rename(disabledPath, documentPath).pipe(
-      Effect.as(true),
-      Effect.orElseSucceed(() => false),
-    );
-  });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Could not check for skills hidden by an older server", {
+        detail: error.message,
+      }),
+    ),
+  );
 
   const readMetadata = (skillDir: string) =>
     readTextPrefix(
@@ -458,6 +530,9 @@ export const make = Effect.gen(function* () {
       }
     >();
     for (const location of locations) {
+      if (location.aliasOf !== undefined) {
+        continue;
+      }
       const entries = yield* fileSystem
         .readDirectory(location.directory)
         .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
@@ -466,10 +541,7 @@ export const make = Effect.gen(function* () {
           continue;
         }
         const entryPath = path.join(location.directory, entry);
-        if (!(yield* isDirectory(entryPath))) {
-          continue;
-        }
-        if (!(yield* ensureSkillDocument(entryPath))) {
+        if (!(yield* isDirectory(entryPath)) || !(yield* hasSkillDocument(entryPath))) {
           continue;
         }
         const state = yield* entryState(entryPath);
@@ -552,7 +624,7 @@ export const make = Effect.gen(function* () {
     if (path.relative(location.directory, entryPath) !== parsed.dirName) {
       return yield* skillsError(operation, `Invalid skill id: ${skillId}.`, { skillId });
     }
-    if (!(yield* isDirectory(entryPath)) || !(yield* ensureSkillDocument(entryPath))) {
+    if (!(yield* isDirectory(entryPath)) || !(yield* hasSkillDocument(entryPath))) {
       return yield* skillsError(operation, `Skill ${skillId} is not installed.`, { skillId });
     }
     const realPath = yield* fileSystem
@@ -652,7 +724,9 @@ export const make = Effect.gen(function* () {
 
     // Links are best-effort: a provider folder that refuses a link leaves the
     // skill available everywhere else, and the state shows where it landed.
+    // A link left over from an earlier copy of this skill is replaced.
     const realPath = yield* fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => target));
+    yield* removeDanglingLinks(locations, input.dirName);
     for (const location of locations) {
       if (location.key === SHARED_LOCATION_KEY || location.reads.includes(SHARED_LOCATION_KEY)) {
         continue;
@@ -695,6 +769,12 @@ export const make = Effect.gen(function* () {
       const locations = yield* collectLocations("uninstall");
       const skill = yield* resolveSkill("uninstall", skillId, locations);
       const state = yield* entryState(skill.entryPath);
+      if (state._tag === "unreadable") {
+        return yield* skillsError("uninstall", `Cannot read ${abbreviateHome(skill.entryPath)}.`, {
+          skillId,
+          cause: state.cause,
+        });
+      }
       // A home entry that is itself a link points outside every location:
       // dropping the link is the whole uninstall, the folder is not ours.
       yield* (
@@ -729,6 +809,9 @@ export const make = Effect.gen(function* () {
     const state = yield* entryState(linkPath);
     const failed = (message: string) => (cause: unknown) =>
       skillsError("set-location", message, { skillId: input.skillId, cause });
+    if (state._tag === "unreadable") {
+      return yield* failed(`Cannot read ${abbreviateHome(linkPath)}.`)(state.cause);
+    }
 
     if (location.key === skill.location.key) {
       if (input.enabled) {
@@ -955,6 +1038,7 @@ export const make = Effect.gen(function* () {
     const shared = locations.find((location) => location.key === SHARED_LOCATION_KEY)!;
     let moved = 0;
     let dropped = 0;
+    let failed = 0;
     const repoDirNames = yield* fileSystem
       .readDirectory(storeRoot)
       .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
@@ -985,6 +1069,7 @@ export const make = Effect.gen(function* () {
             ),
           );
           if (!placed) {
+            failed += 1;
             continue;
           }
           moved += 1;
@@ -995,6 +1080,15 @@ export const make = Effect.gen(function* () {
           .remove(skillDir, { recursive: true, force: true })
           .pipe(Effect.orElseSucceed(() => undefined));
       }
+    }
+    if (failed > 0) {
+      // Whatever did not copy stays where it is; the next start tries again.
+      yield* Effect.logWarning("Some legacy store skills could not be moved; keeping the store", {
+        moved,
+        failed,
+        store: abbreviateHome(storeRoot),
+      });
+      return;
     }
     const removed = yield* fileSystem.remove(storeRoot, { recursive: true, force: true }).pipe(
       Effect.as(true),
@@ -1015,6 +1109,7 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  yield* reviveHiddenSkills;
   yield* migrateLegacyStore;
 
   return SkillLibrary.of({

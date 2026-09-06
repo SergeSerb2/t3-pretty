@@ -431,6 +431,90 @@ it.layer(
     }),
   );
 
+  it.effect("treats a CLI folder symlinked to the library as an alias, not a second copy", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* tempHome(".claude");
+      yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
+      yield* fs.symlink("../.agents/skills", path.join(home, ".claude", "skills"));
+      const library = yield* makeLibrary(home);
+
+      const state = yield* library.getState;
+
+      const claude = state.locations.find((location) => location.key === "claudeAgent");
+      assert.deepEqual(claude?.reads, ["claudeAgent", "agents"]);
+      assert.deepEqual(
+        state.skills.map((skill) => [skill.id, skill.presentIn]),
+        [["host:agents:ponytail", ["agents"]]],
+      );
+    }),
+  );
+
+  it.effect("derives what Cursor reads from folders, not a moved Claude config dir", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const home = yield* tempHome(".cursor", ".codex", "claude-elsewhere");
+      const library = yield* make.pipe(
+        Effect.provideService(SkillLibraryHomeDirectory, home),
+        Effect.provideService(HostProcessEnvironment, {
+          CLAUDE_CONFIG_DIR: path.join(home, "claude-elsewhere"),
+        }),
+        Effect.provide(serverSettingsLayerTest({})),
+      );
+
+      const state = yield* library.getState;
+
+      const cursor = state.locations.find((location) => location.key === "cursor");
+      assert.deepEqual(cursor?.reads, ["cursor", "agents", "codex"]);
+      assert.equal(
+        state.locations.find((location) => location.key === "claudeAgent")?.displayPath,
+        "~/claude-elsewhere/skills",
+      );
+    }),
+  );
+
+  it.effect("keeps the legacy store when a skill cannot be moved", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const home = yield* tempHome();
+      const legacyDir = yield* writeSkill(
+        path.join(config.skillsDir, "acme--skills", "tdd"),
+        "---\nname: tdd\n---\n",
+      );
+      // ~/.agents as a file makes the library directory impossible to create.
+      yield* fs.writeFileString(path.join(home, ".agents"), "not a directory");
+
+      yield* makeLibrary(home);
+
+      assert.isTrue(yield* fs.exists(path.join(legacyDir, "SKILL.md")));
+      yield* fs.remove(legacyDir, { recursive: true });
+    }),
+  );
+
+  it.effect("replaces a dangling link when installing a skill of the same name", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* tempHome(".claude");
+      yield* fs.makeDirectory(path.join(home, ".claude", "skills"), { recursive: true });
+      yield* fs.symlink("../../gone/tdd", path.join(home, ".claude", "skills", "tdd"));
+      const source = yield* writeSkill(path.join(home, "download", "tdd"), "---\nname: tdd\n---\n");
+      const library = yield* makeLibrary(home);
+
+      const state = yield* library.installFromDirectory({
+        dirName: "tdd",
+        directory: source,
+        source: { repo: "octocat/skills", path: "tdd" },
+      });
+
+      assert.deepEqual(state.skills[0]!.presentIn, ["agents", "claudeAgent"]);
+      assert.isTrue(yield* fs.exists(path.join(home, ".claude", "skills", "tdd", "SKILL.md")));
+    }),
+  );
+
   it.effect("revives a skill an older server hid by renaming its document", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

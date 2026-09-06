@@ -48,6 +48,13 @@ call. If the agent loads a skill on its own, that shows up as another Skill row.
 On mobile, the new-task view has the same picker: tap **Skills** above the composer. From a skill's
 `⋯` menu you can also remove it from that machine.
 
+## Coming from an older version
+
+Skills you had switched on for every thread are now on for every provider instead; attach them to
+a thread when you want their instructions applied. A skill an older version hid from its CLI is
+turned back on the first time the new version starts. To keep a skill away from one CLI, remove it
+there or use that CLI's own skill settings.
+
 ## What happens on disk
 
 T3 Code never copies skills into your project. Provider CLIs discover skills from their own folders

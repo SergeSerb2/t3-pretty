@@ -21,7 +21,12 @@ import {
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
-import { extractSkillMentions, skillLoadIdKey, skillLoadNameKey } from "@t3tools/shared/skillTool";
+import {
+  extractSkillMentions,
+  normalizeSkillId,
+  skillLoadIdKey,
+  skillLoadNameKey,
+} from "@t3tools/shared/skillTool";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -159,7 +164,9 @@ function collectedSkillLoadKeys(
       continue;
     }
     if (typeof payload?.skillId === "string" && payload.skillId.trim().length > 0) {
-      keys.add(skillLoadIdKey(payload.skillId));
+      // Rows written before the skill library carry store ids; fold them so an
+      // upgraded thread does not resend a skill it already holds.
+      keys.add(skillLoadIdKey(normalizeSkillId(payload.skillId)));
       continue;
     }
     const nameCandidates = [payload?.detail, payload?.skillName];
@@ -791,7 +798,7 @@ const make = Effect.gen(function* () {
       ...loaded.map((skill) => ({
         document: skill,
         skillId: skill.id,
-        keys: [skillLoadIdKey(skill.id), ...nameKeys(skill.name)],
+        keys: [skillLoadIdKey(normalizeSkillId(skill.id)), ...nameKeys(skill.name)],
       })),
       ...mentioned.map((skill) => ({ document: skill, keys: nameKeys(skill.name) })),
     ];

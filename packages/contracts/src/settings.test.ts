@@ -23,7 +23,6 @@ import {
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
-import { SKILL_SETTINGS_MAX_ENABLED } from "./skills.ts";
 import { SUBAGENT_POLICY_MAX_CHILDREN } from "./subagentPolicy.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
@@ -652,16 +651,12 @@ describe("ServerSettings collection and string bounds", () => {
     expect(() => decodeServerSettingsPatch({ providers: { codex: { customModels } } })).toThrow();
   });
 
-  it("rejects oversized provider, skill, and subagent maps before persistence", () => {
+  it("rejects oversized provider and subagent maps before persistence", () => {
     const providerInstances = Object.fromEntries(
       Array.from({ length: PROVIDER_INSTANCE_MAX_COUNT + 1 }, (_, index) => [
         `provider${index}`,
         { driver: "codex" },
       ]),
-    );
-    const enabledSkillIds = Array.from(
-      { length: SKILL_SETTINGS_MAX_ENABLED + 1 },
-      (_, index) => `example/skills:skill-${index}`,
     );
     const children = Object.fromEntries(
       Array.from({ length: SUBAGENT_POLICY_MAX_CHILDREN + 1 }, (_, index) => [
@@ -671,7 +666,6 @@ describe("ServerSettings collection and string bounds", () => {
     );
 
     expect(() => decodeServerSettingsPatch({ providerInstances })).toThrow();
-    expect(() => decodeServerSettingsPatch({ skills: { enabledSkillIds } })).toThrow();
     expect(() => decodeServerSettingsPatch({ subagentPolicy: { children } })).toThrow();
   });
 
