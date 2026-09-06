@@ -297,6 +297,5 @@ ready.
 
 ## Linking files and skills
 
-Type `@` to link a workspace file or folder, or a skill the selected agent knows about. The
-menu splits into **Files** and **Skills**; a skill is inserted as a `$skill` mention, so `$`
-still works as a skills-only shortcut.
+Type `@` to link a workspace file or folder, or an app. Skills live behind `$`: type `$` to
+pick a skill the selected agent knows about, and it is inserted as a `$skill` mention.
