@@ -62,10 +62,17 @@ const isSymlink = (target: string) =>
     );
   });
 
-const tempHome = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
-  return yield* fs.makeTempDirectoryScoped({ prefix: "t3-skill-library-home-" });
-});
+/** A throwaway home with the given CLI home folders present (a CLI counts as installed when its folder exists). */
+const tempHome = (...cliHomes: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skill-library-home-" });
+    for (const cliHome of cliHomes) {
+      yield* fs.makeDirectory(path.join(home, cliHome), { recursive: true });
+    }
+    return home;
+  });
 
 it.layer(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-skill-library-test-" }).pipe(
@@ -94,7 +101,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
       yield* fs.makeDirectory(path.join(home, ".claude", "skills"), { recursive: true });
       yield* fs.symlink(
@@ -106,9 +113,10 @@ it.layer(
 
       const state = yield* library.getState;
 
+      // Only CLIs whose home folder exists are locations; this home has no Cursor or Grok.
       assert.deepEqual(
         state.locations.map((location) => location.key),
-        ["agents", "claudeAgent", "codex", "cursor", "grok"],
+        ["agents", "claudeAgent", "codex"],
       );
       assert.include(state.locations.find((location) => location.key === "codex")!.reads, "agents");
       assert.deepEqual(state.locations.find((location) => location.key === "claudeAgent")!.reads, [
@@ -146,7 +154,7 @@ it.layer(
   it.effect("lists a configured provider instance home under its own key", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const workHome = path.join(home, "codex-work");
       yield* writeSkill(path.join(workHome, "skills", "tdd"), "---\nname: tdd\n---\n");
       const library = yield* makeLibrary(home, {
@@ -171,7 +179,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome(".claude");
       const realDir = yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
       const library = yield* makeLibrary(home);
       const linkPath = path.join(home, ".claude", "skills", "ponytail");
@@ -212,7 +220,7 @@ it.layer(
   it.effect("refuses to link over a provider's own copy of the same name", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
       yield* writeSkill(path.join(home, ".grok", "skills", "ponytail"), "# grok copy\n");
       const library = yield* makeLibrary(home);
@@ -238,7 +246,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome(".claude", ".cursor");
       const realDir = yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
       const library = yield* makeLibrary(home);
       for (const key of ["claudeAgent", "cursor"]) {
@@ -264,7 +272,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const outside = yield* writeSkill(path.join(home, "dev", "my-skill"));
       yield* fs.makeDirectory(path.join(home, ".claude", "skills"), { recursive: true });
       yield* fs.symlink(outside, path.join(home, ".claude", "skills", "my-skill"));
@@ -286,7 +294,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome(".claude", ".codex", ".cursor", ".grok");
       const source = yield* writeSkill(path.join(home, "download", "tdd"), "---\nname: tdd\n---\n");
       yield* fs.writeFileString(path.join(source, "cheatsheet.md"), "red green refactor\n");
       const library = yield* makeLibrary(home);
@@ -336,7 +344,7 @@ it.layer(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const config = yield* ServerConfig.ServerConfig;
-      const home = yield* tempHome;
+      const home = yield* tempHome(".claude");
       const storeRoot = path.join(config.skillsDir);
       yield* writeSkill(
         path.join(storeRoot, "mattpocock--skills", "skills", "productivity", "grill-me"),
@@ -370,7 +378,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const realDir = yield* writeSkill(path.join(home, ".agents", "skills", "ponytail"));
       const library = yield* makeLibrary(home);
 
@@ -394,7 +402,7 @@ it.layer(
   it.effect("resolves $mentions from the workspace first, then provider candidates", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const cwd = path.join(home, "project");
       yield* writeSkill(
         path.join(cwd, ".claude", "skills", "tdd"),
@@ -427,7 +435,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const skillDir = path.join(home, ".grok", "skills", "asd");
       yield* fs.makeDirectory(skillDir, { recursive: true });
       yield* fs.writeFileString(path.join(skillDir, "SKILL.md.t3-disabled"), "# hidden\n");
@@ -447,7 +455,7 @@ it.layer(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* tempHome;
+      const home = yield* tempHome();
       const cwd = path.join(home, "project");
       const managed = yield* writeSkill(path.join(cwd, ".claude", "skills", "grill-me"));
       yield* fs.writeFileString(path.join(managed, LEGACY_MANAGED_MARKER_FILE), "x");

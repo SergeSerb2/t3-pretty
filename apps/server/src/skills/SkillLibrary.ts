@@ -359,15 +359,20 @@ export const make = Effect.gen(function* () {
     });
     for (const convention of DRIVER_CONVENTIONS) {
       const driver = ProviderDriverKind.make(convention.key);
-      add({
-        key: convention.key,
-        title: convention.title,
-        // No tilde expansion: an env-provided config dir reaches the CLI
-        // verbatim, so this must scan the same directory the CLI would.
-        directory: path.join(path.resolve(convention.defaultHome(home, environment)), "skills"),
-        driver,
-        reads: [convention.key, ...convention.alsoReads],
-      });
+      // A CLI counts as present when its home folder exists, so a machine
+      // with only Claude Code gets one chip and installs link only there.
+      // No tilde expansion: an env-provided config dir reaches the CLI
+      // verbatim, so this must scan the same directory the CLI would.
+      const defaultHome = path.resolve(convention.defaultHome(home, environment));
+      if (yield* isDirectory(defaultHome)) {
+        add({
+          key: convention.key,
+          title: convention.title,
+          directory: path.join(defaultHome, "skills"),
+          driver,
+          reads: [convention.key, ...convention.alsoReads],
+        });
+      }
       for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
         if (instance.driver !== convention.key || !isSafeSegment(instanceId)) {
           continue;
@@ -380,12 +385,16 @@ export const make = Effect.gen(function* () {
         if (homePath.length === 0) {
           continue;
         }
+        const instanceHome = path.resolve(expandHomePath(homePath));
+        if (!(yield* isDirectory(instanceHome))) {
+          continue;
+        }
         const displayName = instance.displayName?.trim();
         const key = `${convention.key}:${instanceId}`;
         add({
           key,
           title: displayName ? `${convention.title} · ${displayName}` : convention.title,
-          directory: path.join(path.resolve(expandHomePath(homePath)), "skills"),
+          directory: path.join(instanceHome, "skills"),
           driver,
           instanceId: ProviderInstanceId.make(instanceId),
           reads: [key, ...convention.alsoReads],

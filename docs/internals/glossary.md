@@ -221,7 +221,7 @@ The host's skill folders seen as one inventory: the shared `~/.agents/skills` (r
 
 #### Skill location
 
-One scanned folder, keyed `agents`, `<driver>`, or `<driver>:<instanceId>`. A location's `reads` lists the locations its CLI also scans natively, so a skill is _visible_ to a CLI when it is present in any of them and _linked_ when the CLI's own folder has an entry. Enabling a skill for a provider adds a relative symlink (a junction on Windows); disabling removes it. Nothing inside a skill folder is renamed or rewritten.
+One scanned folder, keyed `agents`, `<driver>`, or `<driver>:<instanceId>`; a provider location exists only while its CLI home folder (`~/.claude`, …) does. A location's `reads` lists the locations its CLI also scans natively, so a skill is _visible_ to a CLI when it is present in any of them and _linked_ when the CLI's own folder has an entry. Enabling a skill for a provider adds a relative symlink (a junction on Windows); disabling removes it. Nothing inside a skill folder is renamed or rewritten.
 
 #### Attached skill
 

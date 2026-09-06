@@ -9,7 +9,7 @@ every skill once, wherever it lives.
 ## See what you have
 
 Open **Settings → Skills**. Each row is one skill folder on the connected environment, with a chip
-per provider:
+for every provider CLI installed on that machine:
 
 - A filled chip means that provider can see the skill.
 - A dimmed chip means it cannot. Click it to turn the skill on for that provider.
