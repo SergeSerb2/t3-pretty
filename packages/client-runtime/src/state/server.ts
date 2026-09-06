@@ -460,7 +460,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
           ...subscriptionOptions,
           knownConfigDigest: snapshot.digest,
         })),
-        Effect.catch(() => Effect.succeed(subscriptionOptions)),
+        Effect.orElseSucceed(() => subscriptionOptions),
       ),
     ).pipe(
       Stream.runForEach((event) =>

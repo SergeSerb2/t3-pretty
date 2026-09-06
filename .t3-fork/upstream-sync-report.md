@@ -1117,3 +1117,6 @@
   - edited `packages/client-runtime/src/state/threads-atoms.test.ts`
   - edited `packages/client-runtime/src/state/threadRetention.ts`
   - edited `packages/client-runtime/src/connection/supervisor.ts`
+- `shared-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Fix the missing thread-state retention constant import and replace the redundant Effect catch/succeed recovery with `orElseSucceed`. These minimal edits clear the reported shared-typecheck diagnostics without changing T3 Pretty behavior.
+  - edited `packages/client-runtime/src/state/server.ts`
+  - edited `packages/client-runtime/src/state/threads.ts`
