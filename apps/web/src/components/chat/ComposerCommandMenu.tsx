@@ -116,7 +116,6 @@ function groupCommandItems(
   if (triggerKind === "path") {
     const groups: ComposerCommandGroup[] = [
       { id: "files", label: "Files", items: items.filter((item) => item.type === "path") },
-      { id: "skills", label: "Skills", items: items.filter((item) => item.type === "skill") },
       { id: "apps", label: "Apps", items: items.filter((item) => item.type === "app") },
     ].filter((group) => group.items.length > 0);
     // One kind of result needs no header; `@` is mostly files.
@@ -227,7 +226,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                   ? "Searching workspace files..."
                   : (props.emptyStateText ??
                     (props.triggerKind === "path"
-                      ? "No matching files, folders, or skills."
+                      ? "No matching files or folders."
                       : "No matching command."))}
               </p>
             )}
