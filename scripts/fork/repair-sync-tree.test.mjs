@@ -10,6 +10,7 @@ import {
   condenseLog,
   extractDiagnosticTargets,
   formatRepairReportSection,
+  loadRepairTargetFiles,
   MAX_TARGET_FILES,
 } from "./repair-sync-tree.mjs";
 
@@ -230,6 +231,58 @@ describe("applyRepairEdits", () => {
     });
     assert.include(updated.get("a.ts"), "const b = 3;");
   });
+
+  it("applies css and json repairs without the TypeScript parser", () => {
+    const sources = new Map([
+      ["apps/web/src/index.css", "body { color: red; }\n"],
+      ["package.json", '{"name":"t3"}\n'],
+    ]);
+    const updated = applyRepairEdits({
+      edits: [
+        { path: "apps/web/src/index.css", old_text: "color: red", new_text: "color: blue" },
+        { path: "package.json", old_text: '"name":"t3"', new_text: '"name":"t3-pretty"' },
+      ],
+      sources,
+      editable: new Set(["apps/web/src/index.css", "package.json"]),
+    });
+    assert.include(updated.get("apps/web/src/index.css"), "color: blue");
+    assert.include(updated.get("package.json"), "t3-pretty");
+  });
+});
+
+describe("loadRepairTargetFiles", () => {
+  it("skips unreadable targets without assuming Error, and returns empty when none load", () => {
+    const { files, skipped } = loadRepairTargetFiles(["a.ts", "b.ts"], {
+      readSource: (path) => {
+        if (path === "a.ts") throw "ENOENT";
+        throw { code: "EACCES" };
+      },
+      historyFor: () => ({ log: "", diff: "" }),
+    });
+    assert.deepEqual(files, []);
+    assert.deepEqual(
+      skipped.map((entry) => entry.message),
+      ["ENOENT", "[object Object]"],
+    );
+  });
+
+  it("keeps files that load and records only the ones that throw", () => {
+    const { files, skipped } = loadRepairTargetFiles(["ok.ts", "missing.ts"], {
+      readSource: (path) => {
+        if (path === "missing.ts") throw new Error("could not be opened as a regular file");
+        return "export const ok = 1;\n";
+      },
+      historyFor: (path) => ({ log: `- abc ${path}`, diff: "" }),
+    });
+    assert.deepEqual(
+      files.map((file) => file.path),
+      ["ok.ts"],
+    );
+    assert.equal(files[0].source, "export const ok = 1;\n");
+    assert.deepEqual(skipped, [
+      { path: "missing.ts", message: "could not be opened as a regular file" },
+    ]);
+  });
 });
 
 describe("condenseLog", () => {
@@ -301,6 +354,16 @@ describe("run-upstream-sync.sh repair loop", () => {
   it("re-validates after each committed repair and stops after a bounded number of rounds", () => {
     assert.include(script, "validate_sync_tree || exit 1");
     assert.include(script, 'repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP"');
+    assert.include(script, 'UPSTREAM_TAG="$UPSTREAM_TAG"');
+    assert.include(script, 'PREVIOUS_UPSTREAM_TAG="${PREVIOUS_UPSTREAM_TAG-}"');
+    assert.isBelow(
+      script.lastIndexOf('PREVIOUS_UPSTREAM_TAG="${PREVIOUS_UPSTREAM_TAG-}"'),
+      script.indexOf('repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP"'),
+    );
+    assert.include(script, "vp lint --fix apps/web/src || true");
+    assert.notInclude(script, "vp lint --fix apps/web/src >/dev/null");
+    assert.notInclude(script, "git add -u -- apps/web/src");
+    assert.include(script, 'git add -u -- "$lint_path"');
     assert.include(script, "SYNC_MAX_REPAIR_ROUNDS:-4");
     // The budget resets when a later step fails: progress must not be starved.
     assert.include(script, 'if [[ "$SYNC_FAIL_STEP" != "$repaired_step" ]]; then');

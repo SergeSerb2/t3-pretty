@@ -832,15 +832,28 @@ repair_sync_tree() {
       return 0
       ;;
     web-lint)
-      vp lint --fix apps/web/src >/dev/null 2>&1 || true
-      git add -u -- apps/web/src
+      vp lint --fix apps/web/src || true
+      local lint_path
+      # Stage only files the failed lint log named. Staging the whole web
+      # source tree would also commit leftover dirty files from the merge.
+      while IFS= read -r lint_path; do
+        [[ -n "$lint_path" ]] || continue
+        git add -u -- "$lint_path"
+      done < <(
+        grep -oE 'apps/web/src/[^[:space:]:]+' "$VALIDATION_LOG" |
+          sed 's/[]),]*$//' |
+          sort -u ||
+          true
+      )
       if ! git diff --cached --quiet; then
         commit_sync "chore(sync): apply lint fixes after merging $UPSTREAM_TAG"
         return 0
       fi
       ;;
   esac
-  node scripts/fork/repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP" ||
+  UPSTREAM_TAG="$UPSTREAM_TAG" \
+    PREVIOUS_UPSTREAM_TAG="${PREVIOUS_UPSTREAM_TAG-}" \
+    node scripts/fork/repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP" ||
     status=$?
   if (( status == 75 )); then
     SYNC_FAIL_REASON="The model-resolution window ended before the $SYNC_FAIL_STEP repair could run."

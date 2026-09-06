@@ -79,6 +79,27 @@ function oneLine(value) {
     .trim();
 }
 
+export function describeCaughtError(error) {
+  return oneLine(error instanceof Error ? error.message : String(error));
+}
+
+export function loadRepairTargetFiles(targets, { readSource, historyFor }) {
+  const files = [];
+  const skipped = [];
+  for (const path of targets) {
+    try {
+      files.push({
+        path,
+        source: readSource(path),
+        history: historyFor(path),
+      });
+    } catch (error) {
+      skipped.push({ path, message: describeCaughtError(error) });
+    }
+  }
+  return { files, skipped };
+}
+
 function git(args, options = {}) {
   return NodeChildProcess.execFileSync("git", args, {
     encoding: "utf8",
@@ -518,17 +539,17 @@ async function main(args) {
     if (!sources.has(path)) sources.set(path, readTextFileBounded(path, MAX_FILE_BYTES, path));
     return sources.get(path);
   };
-  const files = [];
-  for (const path of targets) {
-    try {
-      files.push({
-        path,
-        source: readSource(path),
-        history: forkHistoryForPath(path, previousUpstreamTag),
-      });
-    } catch (error) {
-      process.stdout.write(`[fork-sync] skipping ${path}: ${oneLine(error.message)}\n`);
-    }
+  const { files, skipped } = loadRepairTargetFiles(targets, {
+    readSource,
+    historyFor: (path) => forkHistoryForPath(path, previousUpstreamTag),
+  });
+  for (const { path, message } of skipped) {
+    process.stdout.write(`[fork-sync] skipping ${path}: ${message}\n`);
+  }
+  if (files.length === 0) {
+    process.stdout.write(`[fork-sync] the ${step} log names no repairable source file\n`);
+    process.exitCode = 2;
+    return;
   }
   const targetSet = new Set(files.map((file) => file.path));
   const windowFor = ({ path, line }) => {
@@ -630,7 +651,7 @@ async function main(args) {
 const invokedPath = process.argv[1] ? NodePath.resolve(process.argv[1]) : "";
 if (invokedPath === NodeURL.fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`[fork-sync] ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`[fork-sync] ${describeCaughtError(error)}\n`);
     process.exitCode = error?.syncDeferred === true ? 75 : 1;
   });
 }
