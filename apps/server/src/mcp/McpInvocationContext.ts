@@ -1,4 +1,5 @@
 import {
+  AutomationsError,
   ComputerUseError,
   type EnvironmentId,
   McpCapabilityUnavailableError,
@@ -8,7 +9,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "computer-use" | "preview";
+export type McpCapability = "automations" | "computer-use" | "preview";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -60,5 +61,15 @@ export const requireComputerUseCapability = () =>
       new ComputerUseError({
         reason: "capability-unavailable",
         message: "This MCP credential does not grant computer control.",
+      }),
+  );
+
+export const requireAutomationsCapability = () =>
+  requireMcpCapability(
+    "automations",
+    () =>
+      new AutomationsError({
+        operation: "capability",
+        message: "This MCP credential does not grant automation management.",
       }),
   );

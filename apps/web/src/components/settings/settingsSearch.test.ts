@@ -155,9 +155,12 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
+      hasAutomations: false,
     });
 
     const gatedIds = new Set<string>([
+      "pause-automations",
+      "automation-git-poll-interval",
       "follow-change-request-templates",
       "git-fetch-interval",
       "network-access",
@@ -183,6 +186,7 @@ describe("searchSettings", () => {
       canManageLocalBackend: false,
       isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: true,
+      hasAutomations: false,
     });
 
     expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([

@@ -291,6 +291,7 @@ describe("pending thread lifecycle overlay", () => {
       snapshotSequence: 4,
       projects: [],
       threads: [makeShell()],
+      automations: [],
       updatedAt: "2026-08-15T00:00:00.000Z",
     };
     expect(applyPendingThreadLifecycleToSnapshot(snapshot, [])).toBe(snapshot);
@@ -302,6 +303,7 @@ describe("pending thread lifecycle overlay", () => {
       snapshotSequence: 4,
       projects: [],
       threads: [makeShell(), makeShell({ id: OTHER_THREAD_ID, title: "Other" }), untouched],
+      automations: [],
       updatedAt: "2026-08-15T00:00:00.000Z",
     };
     const entries = [

@@ -24,8 +24,9 @@ User-facing doc: [Apps](../user/apps.md). This page is the architecture.
 - **Provider attach:** `ProviderService.prepareMcpSession` issues the usual provider-scoped
   MCP credential and lists the servers to attach in
   `McpProviderSessionConfig.servers`: `t3-code` for browser tools,
-  `t3-code-computer` at `${endpoint}/computer-use` for computer control, then one entry per
-  attachable app (`enabled && (auth === "none" || authorizedAt !== null)`) at
+  `t3-code-computer` at `${endpoint}/computer-use` for computer control,
+  `t3-code-automations` at `${endpoint}/automations` for [automations](./automations.md), then
+  one entry per attachable app (`enabled && (auth === "none" || authorizedAt !== null)`) at
   `${endpoint}/apps/<id>`. Each adapter maps that list into its own dialect (Claude
   `mcpServers` record, Codex `-c mcp_servers.<name>.*` with the shared
   `T3_MCP_BEARER_TOKEN` env var, ACP `mcpServers` array for Cursor/Grok/Kimi).

@@ -1,7 +1,11 @@
 import {
+  automationCreatePullRequestDefault,
   EventId,
   MessageId,
   UserInputRequestedPayload,
+  type Automation,
+  type AutomationRun,
+  type AutomationShell,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -12,6 +16,7 @@ import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -23,8 +28,11 @@ import {
   type OrchestrationCommandRejection,
 } from "./Errors.ts";
 import {
+  listAutomationsByProjectId,
   listThreadsByProjectId,
   requireActiveProjectWorkspaceRootAbsent,
+  requireAutomation,
+  requireAutomationAbsent,
   requireProject,
   requireProjectAbsent,
   requireThread,
@@ -37,6 +45,39 @@ import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeUserInputRequestedPayload = Schema.decodeUnknownOption(UserInputRequestedPayload);
+
+/** Opaque bearer for `/hooks/automations/:id/:token`; 32 random bytes, URL-safe. */
+const mintWebhookToken = Crypto.Crypto.pipe(
+  Effect.flatMap((crypto) => crypto.randomBytes(32)),
+  Effect.map(Encoding.encodeBase64Url),
+);
+
+const hasWebhookTrigger = (triggers: Automation["triggers"]) =>
+  triggers.some((trigger) => trigger.type === "webhook");
+
+/** The stored definition behind a projected shell row. */
+function automationFromShell(shell: AutomationShell): Automation {
+  return {
+    id: shell.id,
+    projectId: shell.projectId,
+    name: shell.name,
+    prompt: shell.prompt,
+    enabled: shell.enabled,
+    triggers: shell.triggers,
+    modelSelection: shell.modelSelection,
+    runtimeMode: shell.runtimeMode,
+    workspace: shell.workspace,
+    createPullRequest: shell.createPullRequest,
+    includeLastRunSummary: shell.includeLastRunSummary,
+    catchUpMissedRuns: shell.catchUpMissedRuns,
+    minIntervalSeconds: shell.minIntervalSeconds,
+    timeoutMinutes: shell.timeoutMinutes,
+    webhookToken: shell.webhookToken,
+    sourceThreadId: shell.sourceThreadId,
+    createdAt: shell.createdAt,
+    updatedAt: shell.updatedAt,
+  };
+}
 
 /**
  * Blocked-on-you work derived from the thread's retained activities: an
@@ -380,7 +421,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Project '${command.projectId}' is not empty and cannot be deleted without force=true.`,
         });
       }
-      if (activeThreads.length > 0) {
+      // Automations cascade with the project so the read model never holds an
+      // automation pointing at a deleted project.
+      const automations = listAutomationsByProjectId(readModel, command.projectId);
+      if (activeThreads.length > 0 || automations.length > 0) {
         return yield* decideCommandSequence({
           readModel,
           commands: [
@@ -389,6 +433,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
                 type: "thread.delete",
                 commandId: command.commandId,
                 threadId: thread.id,
+              }),
+            ),
+            ...automations.map(
+              (automation): Extract<OrchestrationCommand, { type: "automation.delete" }> => ({
+                type: "automation.delete",
+                commandId: command.commandId,
+                automationId: automation.id,
               }),
             ),
             {
@@ -448,6 +499,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.subagentPolicy !== undefined
             ? { subagentPolicy: command.subagentPolicy }
             : {}),
+          ...(command.automationRun != null ? { automationRun: command.automationRun } : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -1695,6 +1747,303 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       return [unsettledEvent, activityAppendedEvent];
+    }
+
+    case "automation.create": {
+      yield* requireProject({ readModel, command, projectId: command.projectId });
+      yield* requireAutomationAbsent({ readModel, command, automationId: command.automationId });
+      // Server time: `nextRunAt` derives from this, and a slow client clock
+      // would otherwise place it in the past and fire a catch-up run on save.
+      const occurredAt = yield* nowIso;
+      const automation: Automation = {
+        id: command.automationId,
+        projectId: command.projectId,
+        name: command.name,
+        prompt: command.prompt,
+        enabled: command.enabled,
+        triggers: command.triggers,
+        modelSelection: command.modelSelection,
+        runtimeMode: command.runtimeMode,
+        workspace: command.workspace,
+        createPullRequest:
+          command.createPullRequest ?? automationCreatePullRequestDefault(command.workspace),
+        includeLastRunSummary: command.includeLastRunSummary,
+        catchUpMissedRuns: command.catchUpMissedRuns,
+        minIntervalSeconds: command.minIntervalSeconds,
+        timeoutMinutes: command.timeoutMinutes,
+        webhookToken: hasWebhookTrigger(command.triggers) ? yield* mintWebhookToken : null,
+        sourceThreadId: command.sourceThreadId ?? null,
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+      };
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.created",
+        payload: { automation },
+      };
+    }
+
+    case "automation.update": {
+      const existing = automationFromShell(
+        yield* requireAutomation({ readModel, command, automationId: command.automationId }),
+      );
+      const patch = command.patch;
+      const occurredAt = yield* nowIso;
+      const merged: Automation = {
+        ...existing,
+        ...(patch.name !== undefined ? { name: patch.name } : {}),
+        ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
+        ...(patch.triggers !== undefined ? { triggers: patch.triggers } : {}),
+        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+        ...(patch.modelSelection !== undefined ? { modelSelection: patch.modelSelection } : {}),
+        ...(patch.runtimeMode !== undefined ? { runtimeMode: patch.runtimeMode } : {}),
+        ...(patch.workspace !== undefined ? { workspace: patch.workspace } : {}),
+        ...(patch.createPullRequest !== undefined
+          ? { createPullRequest: patch.createPullRequest }
+          : {}),
+        ...(patch.includeLastRunSummary !== undefined
+          ? { includeLastRunSummary: patch.includeLastRunSummary }
+          : {}),
+        ...(patch.catchUpMissedRuns !== undefined
+          ? { catchUpMissedRuns: patch.catchUpMissedRuns }
+          : {}),
+        ...(patch.minIntervalSeconds !== undefined
+          ? { minIntervalSeconds: patch.minIntervalSeconds }
+          : {}),
+        ...(patch.timeoutMinutes !== undefined ? { timeoutMinutes: patch.timeoutMinutes } : {}),
+        updatedAt: occurredAt,
+      };
+      // The token exists exactly while a webhook trigger does; rotation mints a
+      // fresh one. Rotated tokens stay in the event log (documented ceiling).
+      const webhookToken = !hasWebhookTrigger(merged.triggers)
+        ? null
+        : command.rotateWebhookToken === true || existing.webhookToken === null
+          ? yield* mintWebhookToken
+          : existing.webhookToken;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.updated",
+        payload: { automation: { ...merged, webhookToken } },
+      };
+    }
+
+    case "automation.delete": {
+      const existing = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.deleted",
+        payload: {
+          automationId: command.automationId,
+          projectId: existing.projectId,
+          deletedAt: occurredAt,
+        },
+      };
+    }
+
+    case "automation.run.request": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      const reject = (detail: string) =>
+        new OrchestrationCommandInvariantError({ commandType: command.type, detail });
+      const trigger = command.trigger;
+      const makeRun = (
+        status: AutomationRun["status"],
+        error: string | null = null,
+      ): AutomationRun => ({
+        id: command.runId,
+        automationId: automation.id,
+        projectId: automation.projectId,
+        threadId: null,
+        status,
+        trigger,
+        requestedAt: command.requestedAt,
+        startedAt: null,
+        finishedAt: status === "requested" ? null : command.requestedAt,
+        error,
+        summary: null,
+      });
+      const base = yield* withEventBase({
+        aggregateKind: "automation",
+        aggregateId: command.automationId,
+        occurredAt: command.requestedAt,
+        commandId: command.commandId,
+      });
+      const requested = () => ({
+        ...base,
+        type: "automation.run-requested" as const,
+        payload: { run: makeRun("requested") },
+      });
+
+      if (trigger.type === "manual") {
+        if (automation.activeRun !== null) {
+          return yield* reject("A run is already in progress.");
+        }
+        return requested();
+      }
+      if (!automation.enabled) {
+        return yield* reject(`Automation '${automation.name}' is paused.`);
+      }
+      if (trigger.type === "schedule") {
+        if (automation.nextRunAt !== null && trigger.scheduledFor < automation.nextRunAt) {
+          return yield* reject(`Schedule instant ${trigger.scheduledFor} was already handled.`);
+        }
+        if (automation.activeRun !== null) {
+          return {
+            ...base,
+            type: "automation.run-skipped" as const,
+            payload: { run: makeRun("skipped", "Previous run still running") },
+          };
+        }
+        return requested();
+      }
+      // event / git / webhook: debounce, then coalesce behind an active run.
+      if (
+        automation.lastRequestedAt !== null &&
+        Date.parse(command.requestedAt) - Date.parse(automation.lastRequestedAt) <
+          automation.minIntervalSeconds * 1000
+      ) {
+        return yield* reject(
+          `Debounced: a run was requested less than ${automation.minIntervalSeconds}s ago.`,
+        );
+      }
+      if (automation.activeRun !== null) {
+        return {
+          ...base,
+          type: "automation.run-coalesced" as const,
+          payload: { automationId: automation.id, trigger },
+        };
+      }
+      return requested();
+    }
+
+    case "automation.run.started": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      const active = automation.activeRun;
+      if (active === null || active.runId !== command.runId || active.threadId !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Run '${command.runId}' is not the pending active run of automation '${command.automationId}'.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt: command.startedAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.run-started",
+        payload: {
+          automationId: command.automationId,
+          runId: command.runId,
+          threadId: command.threadId,
+          startedAt: command.startedAt,
+        },
+      };
+    }
+
+    case "automation.run.finished": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      // Idempotent: a second finish for an already-finished run is a rejection,
+      // not a duplicate lastRun.
+      if (automation.activeRun?.runId !== command.runId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Run '${command.runId}' is not the active run of automation '${command.automationId}'.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt: command.finishedAt,
+          commandId: command.commandId,
+        })),
+        type: "automation.run-finished",
+        payload: {
+          automationId: command.automationId,
+          runId: command.runId,
+          status: command.status,
+          finishedAt: command.finishedAt,
+          error: command.error ?? null,
+          summary: command.summary ?? null,
+        },
+      };
+    }
+
+    case "automation.run.missed": {
+      const automation = yield* requireAutomation({
+        readModel,
+        command,
+        automationId: command.automationId,
+      });
+      if (!automation.enabled) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Automation '${automation.name}' is paused.`,
+        });
+      }
+      if (automation.nextRunAt !== null && command.scheduledFor < automation.nextRunAt) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Schedule instant ${command.scheduledFor} was already handled.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "automation",
+          aggregateId: command.automationId,
+          occurredAt: command.at,
+          commandId: command.commandId,
+        })),
+        type: "automation.run-missed",
+        payload: {
+          run: {
+            id: command.runId,
+            automationId: automation.id,
+            projectId: automation.projectId,
+            threadId: null,
+            status: "missed",
+            trigger: { type: "schedule", scheduledFor: command.scheduledFor, catchUp: false },
+            requestedAt: command.at,
+            startedAt: null,
+            finishedAt: command.at,
+            error: "Missed while the server was unavailable",
+            summary: null,
+          },
+        },
+      };
     }
 
     default: {

@@ -66,6 +66,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as AppsHttp from "./apps/AppsHttp.ts";
+import * as AutomationScheduler from "./automations/AutomationScheduler.ts";
+import * as AutomationWebhookHttp from "./automations/AutomationWebhookHttp.ts";
 import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as ComputerUseService from "./computerUse/ComputerUseService.ts";
@@ -359,6 +361,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProjectIconReactor.layer),
   Layer.provideMerge(ActivityHeadlineReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(AutomationScheduler.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -662,6 +665,8 @@ export const makeRoutesLayer = Layer.mergeAll(
   // `/mcp/apps/*` authenticates against the same registry through its
   // module-global accessor, so it needs no layer of its own.
   AppsHttp.layer,
+  // Token-in-path webhook trigger; outside environment auth like `/mcp`.
+  AutomationWebhookHttp.layer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.

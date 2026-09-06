@@ -1,4 +1,6 @@
 import {
+  AutomationId,
+  AutomationRunId,
   CheckpointRef,
   EventId,
   MessageId,
@@ -16,6 +18,7 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -2393,6 +2396,92 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         (yield* snapshotQuery.searchThreads({ query: "user needle" })).matches,
         [],
       );
+    }),
+  );
+
+  it.effect("serves automation shells in the shell snapshot and pages runs by cursor", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const automationId = AutomationId.make("automation-1");
+
+      yield* sql`
+        INSERT INTO projection_automations (
+          automation_id, project_id, name, prompt, enabled, triggers_json, model_selection_json,
+          runtime_mode, workspace, create_pull_request, include_last_run_summary,
+          catch_up_missed_runs, min_interval_seconds, timeout_minutes, webhook_token,
+          source_thread_id, next_run_at, active_run_json, last_run_json, last_requested_at,
+          pending_trigger_json, consecutive_failures, run_count, created_at, updated_at
+        )
+        VALUES (
+          ${automationId}, 'project-1', 'Nightly', 'Do the thing', 1, '[{"type":"webhook"}]', NULL,
+          'full-access', 'checkout', 0, 0, 1, 60, 120, 'token-1', NULL, NULL, NULL, NULL, NULL,
+          NULL, 0, 3, '2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z'
+        )
+      `;
+      for (const index of [1, 2, 3]) {
+        const trigger =
+          index === 1
+            ? '{"type":"webhook","deliveryId":"d-1","payload":"{\\"ref\\":\\"main\\"}"}'
+            : '{"type":"manual","byThreadId":null}';
+        yield* sql`
+          INSERT INTO projection_automation_runs (
+            run_id, automation_id, project_id, thread_id, status, trigger_json,
+            requested_at, started_at, finished_at, error, summary
+          )
+          VALUES (
+            ${`run-${index}`}, ${automationId}, 'project-1', NULL, 'completed',
+            ${trigger}, ${`2026-05-01T00:00:0${index}.000Z`},
+            NULL, NULL, NULL, NULL
+          )
+        `;
+      }
+
+      const shell = yield* snapshotQuery.getShellSnapshot();
+      assert.deepStrictEqual(
+        shell.automations.map((automation) => [automation.id, automation.webhookPath]),
+        [[automationId, `/hooks/automations/${automationId}/token-1`]],
+      );
+      const byId = yield* snapshotQuery.getAutomationShellById(automationId);
+      assert.strictEqual(Option.getOrNull(byId)?.runCount, 3);
+
+      const firstPage = yield* snapshotQuery.listAutomationRuns({ automationId, limit: 2 });
+      assert.deepStrictEqual(
+        firstPage.runs.map((run) => run.id),
+        ["run-3", "run-2"],
+      );
+      assert.strictEqual(firstPage.nextCursor, "2026-05-01T00:00:02.000Z|run-2");
+
+      const secondPage = yield* snapshotQuery.listAutomationRuns({
+        automationId,
+        limit: 2,
+        beforeCursor: firstPage.nextCursor!,
+      });
+      assert.deepStrictEqual(
+        secondPage.runs.map((run) => run.id),
+        ["run-1"],
+      );
+      assert.isNull(secondPage.nextCursor);
+      // The webhook payload stays off the list wire and on the single-run read.
+      assert.deepStrictEqual(secondPage.runs[0]!.trigger, {
+        type: "webhook",
+        deliveryId: "d-1",
+        payload: null,
+      });
+      const webhookRun = yield* snapshotQuery.getAutomationRunById(AutomationRunId.make("run-1"));
+      assert.deepStrictEqual(Option.getOrNull(webhookRun)?.trigger, {
+        type: "webhook",
+        deliveryId: "d-1",
+        payload: '{"ref":"main"}',
+      });
+
+      const malformed = yield* snapshotQuery
+        .listAutomationRuns({ automationId, limit: 2, beforeCursor: "nonsense" })
+        .pipe(Effect.flip);
+      assert.strictEqual(malformed._tag, "PersistenceDecodeError");
+
+      const run = yield* snapshotQuery.getAutomationRunById(AutomationRunId.make("run-1"));
+      assert.strictEqual(Option.getOrNull(run)?.status, "completed");
     }),
   );
 });

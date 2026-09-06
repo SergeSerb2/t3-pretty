@@ -386,6 +386,19 @@ works for a server that was wiped or is no longer reachable. Device-local connec
 controls remain in **Settings** → **Connections** on web and desktop or **Settings** →
 **Environments** on mobile.
 
+## Automation webhooks
+
+An [automation](./automations.md) with a webhook trigger gets its own URL, and whatever you paste it
+into — GitHub, a CI job, Zapier — has to be able to reach the server that hosts the project. A
+`localhost` or `127.0.0.1` address only works from that machine, so use the host you already reach
+the server by: a Tailscale address for a machine on your tailnet, or the T3 Connect host for a
+machine behind one. T3 Code warns you when the URL it shows you is loopback-only.
+
+The token in that URL is the only thing protecting the automation, so treat it like a pairing token:
+rotate it from the automation's page after pasting it into a third-party interface you no longer
+trust, and again if it ever appears in a screenshot or a log. Rotating mints a new URL and kills the
+old one immediately.
+
 ## Security Notes
 
 - Treat pairing URLs and pairing tokens like passwords.

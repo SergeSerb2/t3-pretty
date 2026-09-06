@@ -10,7 +10,10 @@ import {
   type RelayAgentActivityPublishProofPayload,
   type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
+import {
+  projectThreadAwareness,
+  type ProjectThreadAwarenessInput,
+} from "@t3tools/shared/agentAwareness";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
@@ -264,6 +267,30 @@ export function describeThreadShellForAwareness(
   };
 }
 
+const AUTOMATION_RUN_PUBLISHED_PHASES: ReadonlySet<RelayAgentActivityState["phase"]> = new Set([
+  "failed",
+  "waiting_for_approval",
+  "waiting_for_input",
+]);
+
+/**
+ * Awareness state for one thread, with automation run threads muted unless
+ * they need a human: an hourly automation must not push "Done" to phones
+ * every hour, but a failed or blocked run still deserves the alert.
+ */
+export function awarenessForRelayThread(input: {
+  readonly environmentId: EnvironmentId;
+  readonly project: Pick<OrchestrationProjectShell, "title">;
+  readonly thread: ProjectThreadAwarenessInput["thread"] &
+    Pick<OrchestrationThreadShell, "automationRun">;
+}): RelayAgentActivityState | null {
+  const state = projectThreadAwareness(input);
+  if (state !== null && input.thread.automationRun != null) {
+    return AUTOMATION_RUN_PUBLISHED_PHASES.has(state.phase) ? state : null;
+  }
+  return state;
+}
+
 export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -272,7 +299,7 @@ export function resolveAgentAwarenessRelayPublishSnapshot(input: {
 }): {
   readonly projectId: string | null;
   readonly state: RelayAgentActivityState | null;
-  readonly reason: "snapshot" | "thread-not-found" | "project-not-found";
+  readonly reason: "snapshot" | "thread-not-found" | "project-not-found" | "automation-run";
 } {
   if (Option.isNone(input.thread)) {
     return {
@@ -288,16 +315,16 @@ export function resolveAgentAwarenessRelayPublishSnapshot(input: {
       reason: "project-not-found",
     };
   }
+  const state = awarenessForRelayThread({
+    environmentId: input.environmentId,
+    project: input.project.value,
+    thread: input.thread.value,
+  });
   return {
     projectId: input.thread.value.projectId,
-    state: sanitizeRelayAgentActivityState(
-      projectThreadAwareness({
-        environmentId: input.environmentId,
-        project: input.project.value,
-        thread: input.thread.value,
-      }),
-    ),
-    reason: "snapshot",
+    state: sanitizeRelayAgentActivityState(state),
+    reason:
+      state === null && input.thread.value.automationRun != null ? "automation-run" : "snapshot",
   };
 }
 
@@ -314,7 +341,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
         return false;
       }
       return (
-        projectThreadAwareness({
+        awarenessForRelayThread({
           environmentId: input.environmentId,
           project,
           thread,
@@ -455,6 +482,12 @@ export const make = Effect.gen(function* () {
     });
     const publishIdentity = agentAwarenessPublishIdentity(snapshot.state);
     const publishedStateByThread = yield* Ref.get(publishedStateByThreadRef);
+    if (snapshot.reason === "automation-run" && !publishedStateByThread.has(threadId)) {
+      // A quiet run thread never reached the phones, so there is nothing to
+      // retract. Once it has been published (it needed a human), the ordinary
+      // tombstone path below clears the card when it goes quiet again.
+      return;
+    }
     if (publishedStateByThread.get(threadId) === publishIdentity) {
       // The projection is back at (or never left) the last published state, so
       // any pending deferred confirmation is moot. Leaving the deadline in

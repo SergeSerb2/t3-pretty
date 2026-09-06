@@ -2,6 +2,8 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import type {
+  AutomationId,
+  AutomationRunId,
   EnvironmentId,
   ExecutionEnvironmentDescriptor,
   OrchestrationEvent,
@@ -403,6 +405,78 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
     ).toEqual([activeThreadId]);
   });
 
+  it("mutes automation run threads unless they need a human", () => {
+    const now = "2026-05-25T00:00:00.000Z";
+    const environmentId = "env-1" as EnvironmentId;
+    const project = { id: "project-1" as ProjectId, title: "T3 Code" };
+    const runThread = {
+      id: "thread-run" as ThreadId,
+      projectId: project.id,
+      title: "Nightly · May 25, 00:00",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      enabledSkillIds: [],
+      automationRun: { automationId: "auto-1" as AutomationId, runId: "run-1" as AutomationRunId },
+      latestTurn: {
+        turnId: "turn-1" as TurnId,
+        state: "completed",
+        requestedAt: now,
+        startedAt: now,
+        completedAt: now,
+        assistantMessageId: null,
+      },
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      session: null,
+      latestUserMessageAt: now,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    } satisfies OrchestrationThreadShell;
+    const phaseOf = (thread: OrchestrationThreadShell) =>
+      AgentAwarenessRelay.awarenessForRelayThread({ environmentId, project, thread })?.phase ??
+      null;
+
+    expect(phaseOf(runThread)).toBeNull();
+    expect(phaseOf({ ...runThread, automationRun: null })).toBe("completed");
+    expect(phaseOf({ ...runThread, hasPendingApprovals: true })).toBe("waiting_for_approval");
+    expect(phaseOf({ ...runThread, hasPendingUserInput: true })).toBe("waiting_for_input");
+    expect(phaseOf({ ...runThread, latestTurn: { ...runThread.latestTurn, state: "error" } })).toBe(
+      "failed",
+    );
+    expect(
+      AgentAwarenessRelay.resolveAgentAwarenessRelayPublishSnapshot({
+        environmentId,
+        threadId: runThread.id,
+        thread: Option.some(runThread),
+        project: Option.some({
+          ...project,
+          workspaceRoot: "/workspace",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      }),
+    ).toEqual({ projectId: project.id, state: null, reason: "automation-run" });
+    expect(
+      AgentAwarenessRelay.resolveAgentAwarenessRelayActiveThreadIds({
+        environmentId,
+        projects: [project],
+        threads: [
+          runThread,
+          { ...runThread, id: "thread-blocked" as ThreadId, hasPendingUserInput: true },
+        ],
+      }),
+    ).toEqual(["thread-blocked"]);
+  });
+
   it.effect("signs the activity publish JWT and rejects tampering", () =>
     Effect.gen(function* () {
       const keyPair = NodeCrypto.generateKeyPairSync("ed25519", {
@@ -517,6 +591,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           getShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: 1,
+              automations: [],
               projects: [project],
               threads: [thread],
               updatedAt: now,
@@ -713,6 +788,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
             getShellSnapshot: () =>
               Effect.succeed({
                 snapshotSequence: 1,
+                automations: [],
                 projects: [project],
                 threads: [thread],
                 updatedAt: now,

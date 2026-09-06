@@ -553,6 +553,12 @@ const EnvironmentOrchestrationThreadSnapshotQuery = {
   beforeCursor: Schema.optional(OrchestrationThreadDetailCursor),
 };
 
+// Query flag mirroring the socket subscription's `acceptAutomations`: clients
+// that omit it never receive automation run threads.
+const EnvironmentOrchestrationShellSnapshotQuery = {
+  acceptAutomations: Schema.optional(Schema.Literal("true")),
+};
+
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
   .add(
     HttpApiEndpoint.get("snapshot", "/api/orchestration/snapshot", {
@@ -564,6 +570,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   .add(
     HttpApiEndpoint.get("shellSnapshot", "/api/orchestration/shell", {
       headers: OptionalBearerHeaders,
+      payload: EnvironmentOrchestrationShellSnapshotQuery,
       success: OrchestrationShellSnapshot,
       error: EnvironmentOrchestrationSnapshotErrors,
     }).middleware(EnvironmentAuthenticatedAuth),

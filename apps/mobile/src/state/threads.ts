@@ -13,6 +13,7 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
+import { automationEnvironment } from "./automations";
 import { environmentSnapshotAtom } from "./shell";
 
 // Keep back-navigation warm without retaining every opened thread's WebSocket
@@ -30,6 +31,7 @@ export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
 export const environmentThreadShells = createEnvironmentThreadShellAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   snapshotAtom: environmentSnapshotAtom,
+  automationIndexAtom: automationEnvironment.automationIndexAtom,
 });
 
 const EMPTY_THREAD_STATE_ATOM = Atom.make(AsyncResult.success(EMPTY_ENVIRONMENT_THREAD_STATE)).pipe(

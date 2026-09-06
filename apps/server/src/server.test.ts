@@ -20,6 +20,8 @@ import {
   AuthStandardClientScopes,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
+  AutomationId,
+  AutomationRunId,
   CommandId,
   DEFAULT_SERVER_SETTINGS,
   type DpopFailureReason,
@@ -360,6 +362,7 @@ const makeDefaultOrchestrationReadModel = () => {
   const now = "2026-01-01T00:00:00.000Z";
   return {
     snapshotSequence: 0,
+    automations: [],
     updatedAt: now,
     projects: [
       {
@@ -1052,6 +1055,7 @@ const buildAppUnderTest = (options?: {
           getShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: 0,
+              automations: [],
               projects: [],
               threads: [],
               updatedAt: "1970-01-01T00:00:00.000Z",
@@ -1059,6 +1063,7 @@ const buildAppUnderTest = (options?: {
           getArchivedShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: 0,
+              automations: [],
               projects: [],
               threads: [],
               updatedAt: "1970-01-01T00:00:00.000Z",
@@ -2385,6 +2390,53 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.status, 200);
       assert.equal(snapshot.thread.id, threadId);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("hides automation run threads from the HTTP shell snapshot unless accepted", () =>
+    Effect.gen(function* () {
+      const runThreadId = ThreadId.make("thread-run");
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 1,
+                automations: [],
+                projects: [],
+                threads: [
+                  makeDefaultOrchestrationThreadShell(),
+                  makeDefaultOrchestrationThreadShell({
+                    id: runThreadId,
+                    automationRun: {
+                      automationId: AutomationId.make("automation-1"),
+                      runId: AutomationRunId.make("run-1"),
+                    },
+                  }),
+                ],
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }),
+          },
+        },
+      });
+      const headers = { cookie: yield* getAuthenticatedSessionCookieHeader() };
+      const threadIds = (path: string) =>
+        fetchEffect(path, { headers }).pipe(
+          Effect.flatMap(
+            responseJsonEffect<{ readonly threads: ReadonlyArray<{ readonly id: ThreadId }> }>,
+          ),
+          Effect.map((snapshot) => snapshot.threads.map((thread) => thread.id)),
+        );
+
+      assert.deepEqual(yield* threadIds(yield* getHttpServerUrl("/api/orchestration/shell")), [
+        defaultThreadId,
+      ]);
+      assert.deepEqual(
+        yield* threadIds(
+          yield* getHttpServerUrl("/api/orchestration/shell?acceptAutomations=true"),
+        ),
+        [defaultThreadId, runThreadId],
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -8157,6 +8209,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const now = "2026-01-01T00:00:00.000Z";
       const snapshot = {
         snapshotSequence: 1,
+        automations: [],
         updatedAt: now,
         projects: [
           {
@@ -8400,6 +8453,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 yield* PubSub.publish(liveEvents, deletedEvent);
                 return {
                   snapshotSequence: 1,
+                  automations: [],
                   projects: [],
                   threads: [makeDefaultOrchestrationThreadShell()],
                   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -8962,6 +9016,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 snapshotCalls += 1;
                 return {
                   snapshotSequence: headSequence,
+                  automations: [],
                   projects: headSequence === 1 ? [project] : [],
                   threads: headSequence === 1 ? [thread] : [],
                   updatedAt: "2026-01-01T00:00:02.000Z",
@@ -9382,6 +9437,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             getShellSnapshot: () =>
               Effect.succeed({
                 snapshotSequence: 100_000,
+                automations: [],
                 projects: [],
                 threads: [makeDefaultOrchestrationThreadShell({ id: snapshotThreadId })],
                 updatedAt: now,
@@ -9452,6 +9508,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             getShellSnapshot: () =>
               Effect.succeed({
                 snapshotSequence: 5,
+                automations: [],
                 projects: [],
                 threads: [shell],
                 updatedAt: "2026-01-01T00:00:00.000Z",
@@ -9506,6 +9563,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             getShellSnapshot: () =>
               Effect.succeed({
                 snapshotSequence: 5,
+                automations: [],
                 projects: [],
                 threads: [],
                 updatedAt: "2026-01-01T00:00:00.000Z",

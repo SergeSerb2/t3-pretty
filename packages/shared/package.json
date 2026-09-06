@@ -43,6 +43,18 @@
       "types": "./src/createPullRequestPrompt.ts",
       "import": "./src/createPullRequestPrompt.ts"
     },
+    "./hiddenInstructionBlocks": {
+      "types": "./src/hiddenInstructionBlocks.ts",
+      "import": "./src/hiddenInstructionBlocks.ts"
+    },
+    "./automationRunPrompt": {
+      "types": "./src/automationRunPrompt.ts",
+      "import": "./src/automationRunPrompt.ts"
+    },
+    "./automationSchedule": {
+      "types": "./src/automationSchedule.ts",
+      "import": "./src/automationSchedule.ts"
+    },
     "./nativeResume": {
       "types": "./src/nativeResume.ts",
       "import": "./src/nativeResume.ts"

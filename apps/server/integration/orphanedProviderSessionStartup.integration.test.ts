@@ -34,6 +34,7 @@ import * as ExternalLauncher from "../src/process/externalLauncher.ts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import * as ProviderService from "../src/provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "../src/provider/Services/ProviderSessionDirectory.ts";
+import * as AutomationScheduler from "../src/automations/AutomationScheduler.ts";
 import * as ProviderSessionReaper from "../src/provider/Services/ProviderSessionReaper.ts";
 import * as RepositoryIdentityResolver from "../src/project/RepositoryIdentityResolver.ts";
 import * as ServerLifecycleEvents from "../src/serverLifecycleEvents.ts";
@@ -75,6 +76,12 @@ const startupDependencies = Layer.mergeAll(
   }),
   Layer.succeed(ProviderSessionReaper.ProviderSessionReaper, {
     start: () => Effect.void,
+  }),
+  Layer.succeed(AutomationScheduler.AutomationScheduler, {
+    start: () => Effect.void,
+    drain: Effect.void,
+    tickOnce: Effect.void,
+    pollGitOnce: Effect.void,
   }),
   ServerLifecycleEvents.layer,
   Layer.succeed(ServerEnvironment.ServerEnvironment, {

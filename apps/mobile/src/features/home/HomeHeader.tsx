@@ -49,6 +49,8 @@ export function HomeHeader(props: {
   readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   readonly onOpenEnvironments: () => void;
   readonly onOpenPullRequests: () => void;
+  /** Null while no connected environment advertises the automations capability. */
+  readonly onOpenAutomations: (() => void) | null;
   readonly onOpenSettings: () => void;
   readonly onStartNewTask: () => void;
 }) {
@@ -261,6 +263,21 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
                 type="monochrome"
               />
             </Pressable>
+            {props.onOpenAutomations === null ? null : (
+              <Pressable
+                accessibilityLabel="Open automations"
+                accessibilityRole="button"
+                onPress={props.onOpenAutomations}
+                className={headerControlClassName}
+              >
+                <SymbolView
+                  name="bolt"
+                  size={18}
+                  tintColorClassName={"accent-icon"}
+                  type="monochrome"
+                />
+              </Pressable>
+            )}
             <Pressable
               accessibilityLabel="Open settings"
               accessibilityRole="button"
@@ -353,6 +370,18 @@ function IosHomeHeader(props: HomeHeaderProps) {
                     onPress: props.onOpenPullRequests,
                     type: "button",
                   }),
+                  ...(props.onOpenAutomations === null
+                    ? []
+                    : [
+                        withNativeGlassHeaderItem({
+                          accessibilityLabel: "Open automations",
+                          icon: { name: "bolt", type: "sfSymbol" } as const,
+                          identifier: "home-automations",
+                          label: "",
+                          onPress: props.onOpenAutomations,
+                          type: "button",
+                        }),
+                      ]),
                   withNativeGlassHeaderItem({
                     accessibilityLabel: "Open settings",
                     icon: { name: "ellipsis", type: "sfSymbol" } as const,

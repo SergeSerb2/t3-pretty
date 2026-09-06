@@ -6,6 +6,13 @@
  * so the UI can hide it from the user's chat bubble.
  */
 
+import {
+  hasHiddenInstructionSuffix,
+  hiddenInstructionCloseMarker,
+  hiddenInstructionOpenMarker,
+  stripHiddenInstructionSuffixes,
+} from "./hiddenInstructionBlocks.ts";
+
 export const CREATE_PULL_REQUEST_TAG = "create_pull_request_instructions";
 
 export type AutoCreatePullRequestEnvMode = "local" | "worktree";
@@ -28,13 +35,10 @@ export function resolveAutoCreatePullRequest(
   return typeof stored === "boolean" ? stored : AUTO_CREATE_PULL_REQUEST_DEFAULTS[envMode];
 }
 
-/**
- * The `source` attribute is the generated-only discriminator: a user asking
- * about this feature naturally quotes the bare `<create_pull_request_instructions>`
- * tag, which never collides with the attributed marker the clients emit.
- */
-export const CREATE_PULL_REQUEST_OPEN_MARKER = `<${CREATE_PULL_REQUEST_TAG} source="t3-auto-pr">`;
-export const CREATE_PULL_REQUEST_CLOSE_MARKER = `</${CREATE_PULL_REQUEST_TAG}>`;
+/** Markers come from the hidden-block registry so the shared stripper knows them. */
+export const CREATE_PULL_REQUEST_OPEN_MARKER = hiddenInstructionOpenMarker(CREATE_PULL_REQUEST_TAG);
+export const CREATE_PULL_REQUEST_CLOSE_MARKER =
+  hiddenInstructionCloseMarker(CREATE_PULL_REQUEST_TAG);
 
 const OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
 const CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
@@ -108,51 +112,18 @@ export function applyCreatePullRequestSuffix(input: {
 }
 
 /**
- * The generated block viewed from its own opening marker: one open tag,
- * arbitrary instruction wording, close tag at the end of the text. Applied to
- * the slice starting at the LAST opening marker, so user-authored occurrences
- * of the marker earlier in the message can never widen the match.
+ * True when the auto-PR block is among the trailing generated blocks (other
+ * hidden blocks, such as automation run context, may sit after it).
  */
-const SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN = new RegExp(
-  `^${OPEN_TAG}\\n[\\s\\S]*\\n${CLOSE_TAG}\\s*$`,
-);
-
-/**
- * Index of the auto-generated trailing block's opening marker, or -1 when the
- * text does not end with one. Anchoring on the last opening marker keeps
- * user-authored text that merely quotes the marker (e.g. while discussing
- * this feature) from being mistaken for — or swallowed into — the suffix.
- */
-function trailingSuffixStart(text: string): number {
-  const lastOpen = text.lastIndexOf(OPEN_TAG);
-  if (lastOpen === -1) {
-    return -1;
-  }
-  return SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN.test(text.slice(lastOpen)) ? lastOpen : -1;
-}
-
 export function hasCreatePullRequestSuffix(text: string): boolean {
-  return trailingSuffixStart(text) !== -1;
+  return hasHiddenInstructionSuffix(text, CREATE_PULL_REQUEST_TAG);
 }
 
 /**
- * Removes the trailing marker block for display so the user's chat bubble
- * shows only what they typed. Mid-text occurrences of the marker are left
- * alone — only the generated trailing block is agent-only.
+ * Removes trailing generated blocks for display so the user's chat bubble
+ * shows only what they typed. Delegates to the shared stripper; kept so
+ * callers can migrate to `stripHiddenInstructionSuffixes` incrementally.
  */
 export function stripCreatePullRequestSuffix(text: string): string {
-  let end = text.length;
-  let changed = false;
-  while (end > 0) {
-    const lastOpen = text.lastIndexOf(OPEN_TAG, end - 1);
-    if (lastOpen === -1 || !SUFFIX_BLOCK_FROM_OPEN_TAG_PATTERN.test(text.slice(lastOpen, end))) {
-      break;
-    }
-    changed = true;
-    end = lastOpen;
-    while (end > 0 && /\s/u.test(text[end - 1]!)) {
-      end -= 1;
-    }
-  }
-  return changed ? text.slice(0, end) : text;
+  return stripHiddenInstructionSuffixes(text);
 }

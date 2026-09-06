@@ -1,9 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  AutomationId,
+  AutomationRunId,
   EventId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  type AutomationShell,
   type OrchestrationEvent,
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
@@ -130,6 +133,110 @@ describe("makeShellStreamProjector", () => {
       assert.deepEqual(fetches, [threadId]);
     }),
   );
+});
+
+const automationId = AutomationId.make("automation-1");
+const automationShell = {
+  id: automationId,
+  projectId: ProjectId.make("project-1"),
+  name: "Nightly",
+  prompt: "Do the thing",
+  enabled: true,
+  triggers: [],
+  modelSelection: null,
+  runtimeMode: "full-access",
+  workspace: "checkout",
+  createPullRequest: false,
+  includeLastRunSummary: false,
+  catchUpMissedRuns: true,
+  minIntervalSeconds: 60,
+  timeoutMinutes: 120,
+  webhookToken: null,
+  sourceThreadId: null,
+  createdAt: now,
+  updatedAt: now,
+  nextRunAt: null,
+  activeRun: null,
+  lastRun: null,
+  lastRequestedAt: null,
+  pendingTrigger: null,
+  consecutiveFailures: 0,
+  runCount: 0,
+  webhookPath: null,
+} satisfies AutomationShell;
+
+const automationEvent = (sequence: number, type: OrchestrationEvent["type"], payload: unknown) =>
+  ({
+    ...makeEvent(sequence, type, payload),
+    aggregateKind: "automation",
+    aggregateId: automationId,
+  }) as OrchestrationEvent;
+
+describe("automation shell events", () => {
+  const projector = ShellStream.makeShellStreamProjector({
+    getAutomationShellById: () => Effect.succeed(Option.some(automationShell)),
+  } as unknown as ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]);
+
+  it.effect("refetches the automation shell on run events and removes on delete", () =>
+    Effect.gen(function* () {
+      const items = yield* projector.coalesceShellEvents([
+        automationEvent(1, "automation.run-started", {}),
+        automationEvent(2, "automation.deleted", { automationId }),
+      ]);
+      // One aggregate, latest event wins.
+      assert.deepEqual(items, [{ kind: "automation-removed", sequence: 2, automationId }]);
+
+      const upserts = yield* projector.coalesceShellEvents([
+        automationEvent(3, "automation.run-finished", {}),
+      ]);
+      assert.deepEqual(upserts, [
+        { kind: "automation-upserted", sequence: 3, automation: automationShell },
+      ]);
+    }),
+  );
+});
+
+describe("stripAutomationsForLegacyClient", () => {
+  const runThread: OrchestrationThreadShell = {
+    ...shell,
+    id: ThreadId.make("thread-run"),
+    automationRun: { automationId, runId: AutomationRunId.make("run-1") },
+  };
+
+  it("drops automation items and run-thread rows, keeps everything else", () => {
+    const strip = ShellStream.stripAutomationsForLegacyClient;
+    assert.isTrue(
+      Option.isNone(
+        strip({ kind: "automation-upserted", sequence: 1, automation: automationShell }),
+      ),
+    );
+    assert.isTrue(Option.isNone(strip({ kind: "automation-removed", sequence: 2, automationId })));
+    assert.isTrue(
+      Option.isNone(strip({ kind: "thread-upserted", sequence: 3, thread: runThread })),
+    );
+    assert.isTrue(Option.isSome(strip({ kind: "thread-upserted", sequence: 4, thread: shell })));
+    assert.isTrue(
+      Option.isSome(strip({ kind: "thread-removed", sequence: 5, threadId: runThread.id })),
+    );
+
+    const snapshot = strip({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 6,
+        projects: [],
+        threads: [shell, runThread],
+        automations: [automationShell],
+        updatedAt: now,
+      },
+    });
+    assert.isTrue(Option.isSome(snapshot));
+    if (Option.isSome(snapshot) && snapshot.value.kind === "snapshot") {
+      assert.deepEqual(
+        snapshot.value.snapshot.threads.map((thread) => thread.id),
+        [shell.id],
+      );
+    }
+  });
 });
 
 describe("ShellStreamBroadcaster", () => {

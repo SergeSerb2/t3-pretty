@@ -24,7 +24,7 @@ const NOOP_OPEN_AGENTS = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 const NOOP_DOWNLOAD_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import {
@@ -917,7 +917,7 @@ function deriveTimelineMinimapItems(
     rowIndex: turn.rowIndex,
     // Match the bubble: agent-facing auto-PR and attached-filepath blocks
     // stay out of the minimap preview and its accessible label.
-    userText: compactMinimapPreview(stripCreatePullRequestSuffix(turn.userText ?? "")),
+    userText: compactMinimapPreview(stripHiddenInstructionSuffixes(turn.userText ?? "")),
     assistantText: compactMinimapPreview(turn.assistantText),
   }));
 }

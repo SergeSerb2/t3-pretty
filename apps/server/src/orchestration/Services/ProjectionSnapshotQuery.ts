@@ -8,6 +8,12 @@
  */
 import type {
   ApprovalRequestId,
+  AutomationId,
+  AutomationRun,
+  AutomationRunId,
+  AutomationShell,
+  AutomationsListRunsInput,
+  AutomationsListRunsResult,
   CheckpointRef,
   EventId,
   OrchestrationCheckpointSummary,
@@ -215,6 +221,29 @@ export interface ProjectionSnapshotQueryShape {
     threadId: ThreadId,
     toTurnCount: number,
   ) => Effect.Effect<Option.Option<ProjectionFullThreadDiffContext>, ProjectionRepositoryError>;
+
+  /** Read one automation's projected shell row. */
+  readonly getAutomationShellById: (
+    automationId: AutomationId,
+  ) => Effect.Effect<Option.Option<AutomationShell>, ProjectionRepositoryError>;
+
+  /** Every automation shell row across projects, in creation order. */
+  readonly listAutomationShells: () => Effect.Effect<
+    ReadonlyArray<AutomationShell>,
+    ProjectionRepositoryError
+  >;
+
+  /**
+   * One page of an automation's runs, newest first. `beforeCursor` is the
+   * opaque `nextCursor` of the previous page.
+   */
+  readonly listAutomationRuns: (
+    input: AutomationsListRunsInput,
+  ) => Effect.Effect<AutomationsListRunsResult, ProjectionRepositoryError>;
+
+  readonly getAutomationRunById: (
+    runId: AutomationRunId,
+  ) => Effect.Effect<Option.Option<AutomationRun>, ProjectionRepositoryError>;
 
   /**
    * Read a single active thread shell row by id.

@@ -44,6 +44,8 @@ import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
   ArrowRightLeftIcon,
+  BotIcon,
+  ClockIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
@@ -89,6 +91,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useAutomationActions } from "./automations/useAutomationActions";
 import { useProject, useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import * as ThreadPr from "./ThreadStatusIndicators";
@@ -595,6 +598,7 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
+  const automationActions = useAutomationActions();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
@@ -1855,6 +1859,51 @@ function OpenCommandPaletteDialog(props: {
         await navigate({
           to: "/projects/$projectKey",
           params: { projectKey: contextualProjectGroup.projectKey },
+        });
+      },
+    });
+  }
+  // Automations need one physical project on an environment that supports
+  // them: the contextual ref when it qualifies, else the group's first
+  // qualifying member.
+  const automationsProjectRef = contextualProjectGroup
+    ? ((contextualProjectRef &&
+      environments.find(
+        (environment) => environment.environmentId === contextualProjectRef.environmentId,
+      )?.serverConfig?.environment.capabilities.automations === true
+        ? contextualProjectRef
+        : null) ??
+      contextualProjectGroup.memberProjectRefs.find(
+        (projectRef) =>
+          environments.find((environment) => environment.environmentId === projectRef.environmentId)
+            ?.serverConfig?.environment.capabilities.automations === true,
+      ) ??
+      null)
+    : null;
+  if (contextualProjectGroup && automationsProjectRef) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-automation",
+      searchTerms: ["new automation", "schedule", "cron", "webhook", "recurring", "automate"],
+      title: "New automation",
+      description: contextualProjectGroup.displayName,
+      icon: <BotIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await automationActions.startAgentSetup(automationsProjectRef);
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:automations",
+      searchTerms: ["automations", "scheduled", "runs", "triggers", "cron"],
+      title: "Automations",
+      description: contextualProjectGroup.displayName,
+      icon: <ClockIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/projects/$projectKey",
+          params: { projectKey: contextualProjectGroup.projectKey },
+          hash: "automations",
         });
       },
     });

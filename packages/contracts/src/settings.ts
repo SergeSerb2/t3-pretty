@@ -826,6 +826,25 @@ export const SourceControlWritingStyleSettings = Schema.Struct({
 });
 export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyleSettings.Type;
 
+export const DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS = 300;
+export const AutomationsGitPollIntervalSeconds = Schema.Int.check(
+  Schema.isBetween({ minimum: 60, maximum: 86_400 }),
+);
+
+export const AutomationsSettings = Schema.Struct({
+  /**
+   * false pauses every schedule, event, git, and webhook source on this
+   * environment. Manual "Run now" still works and the MCP toolkit stays
+   * attached, so agents can keep editing automations.
+   */
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** How often git triggers fetch their remote branch. */
+  gitPollIntervalSeconds: AutomationsGitPollIntervalSeconds.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS)),
+  ),
+});
+export type AutomationsSettings = typeof AutomationsSettings.Type;
+
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 export const DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL = Duration.minutes(5);
 export const BACKGROUND_ACTIVITY_MAX_INTERVAL_MILLIS = Number.MAX_SAFE_INTEGER;
@@ -1015,6 +1034,7 @@ export const ServerSettings = Schema.Struct({
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  automations: AutomationsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Server-written only: clients change apps through the `apps.*` RPCs, so
   // this key is deliberately absent from `ServerSettingsPatch`.
   apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1228,6 +1248,13 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(ServerSettingsUrl),
       otlpMetricsUrl: Schema.optionalKey(ServerSettingsUrl),
+    }),
+  ),
+  // Deep-merged into ServerSettings.automations.
+  automations: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      gitPollIntervalSeconds: Schema.optionalKey(AutomationsGitPollIntervalSeconds),
     }),
   ),
   providers: Schema.optionalKey(

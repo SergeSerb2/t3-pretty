@@ -11,6 +11,7 @@ export interface McpProviderSessionServer {
 
 export const T3_CODE_MCP_SERVER_NAME = "t3-code";
 export const T3_CODE_COMPUTER_MCP_SERVER_NAME = "t3-code-computer";
+export const T3_CODE_AUTOMATIONS_MCP_SERVER_NAME = "t3-code-automations";
 
 export function builtInMcpServers(
   endpoint: string,
@@ -20,6 +21,9 @@ export function builtInMcpServers(
     ...(capabilities.has("preview") ? [{ name: T3_CODE_MCP_SERVER_NAME, url: endpoint }] : []),
     ...(capabilities.has("computer-use")
       ? [{ name: T3_CODE_COMPUTER_MCP_SERVER_NAME, url: `${endpoint}/computer-use` }]
+      : []),
+    ...(capabilities.has("automations")
+      ? [{ name: T3_CODE_AUTOMATIONS_MCP_SERVER_NAME, url: `${endpoint}/automations` }]
       : []),
   ];
 }

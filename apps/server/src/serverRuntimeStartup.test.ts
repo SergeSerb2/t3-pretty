@@ -119,6 +119,10 @@ it.effect("launchStartupHeartbeat does not block the caller while counts are loa
       yield* ServerRuntimeStartup.launchStartupHeartbeat.pipe(
         Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          getAutomationShellById: () => Effect.die("unused"),
+          listAutomationShells: () => Effect.die("unused"),
+          listAutomationRuns: () => Effect.die("unused"),
+          getAutomationRunById: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
@@ -189,6 +193,10 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        getAutomationShellById: () => Effect.die("unused"),
+        listAutomationShells: () => Effect.die("unused"),
+        listAutomationRuns: () => Effect.die("unused"),
+        getAutomationRunById: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
@@ -259,6 +267,10 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        getAutomationShellById: () => Effect.die("unused"),
+        listAutomationShells: () => Effect.die("unused"),
+        listAutomationRuns: () => Effect.die("unused"),
+        getAutomationRunById: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
@@ -326,6 +338,10 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
         getUserInputActivity: () => Effect.die("unused"),
+        getAutomationShellById: () => Effect.die("unused"),
+        listAutomationShells: () => Effect.die("unused"),
+        listAutomationRuns: () => Effect.die("unused"),
+        getAutomationRunById: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),

@@ -852,15 +852,15 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 clientFileSystem: true,
                 additionalDirectories: [serverConfig.attachmentsDir],
                 ...(Option.isSome(cursor) ? { resumeSessionId: cursor.value.sessionId } : {}),
+                // Every built-in toolkit and connected app the session was
+                // granted, like the other ACP adapters.
                 mcpServers: mcp
-                  ? [
-                      {
-                        type: "http",
-                        name: "t3-code",
-                        url: mcp.endpoint,
-                        headers: [{ name: "Authorization", value: mcp.authorizationHeader }],
-                      },
-                    ]
+                  ? mcp.servers.map((server) => ({
+                      type: "http" as const,
+                      name: server.name,
+                      url: server.url,
+                      headers: [{ name: "Authorization", value: mcp.authorizationHeader }],
+                    }))
                   : [],
                 ...makeNativeLoggers({
                   nativeEventLogger: options.nativeEventLogger,

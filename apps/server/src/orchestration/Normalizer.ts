@@ -49,6 +49,17 @@ export const canonicalizeClientCommandTimestamps = (
   };
 };
 
+/**
+ * Only the scheduler tags run threads. A client-sent marker would hide the
+ * thread from pre-automations clients and hand it to run-thread retention.
+ */
+export const stripServerOnlyCommandFields = (
+  command: ClientOrchestrationCommand,
+): ClientOrchestrationCommand =>
+  command.type === "thread.create" && command.automationRun != null
+    ? { ...command, automationRun: null }
+    : command;
+
 const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachmentPaths")(
   function* (attachmentPaths: ReadonlyArray<string>) {
     if (attachmentPaths.length === 0) {
@@ -75,7 +86,9 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
     const receivedAt = DateTime.formatIso(yield* DateTime.now);
-    const canonicalCommand = canonicalizeClientCommandTimestamps(command, receivedAt);
+    const canonicalCommand = stripServerOnlyCommandFields(
+      canonicalizeClientCommandTimestamps(command, receivedAt),
+    );
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;

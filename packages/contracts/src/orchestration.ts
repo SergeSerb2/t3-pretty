@@ -1,12 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
-import { ProviderModelId, ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
   ApprovalRequestId,
+  AutomationId,
+  AutomationRunId,
   CheckpointRef,
   ClientSurface,
   CommandId,
@@ -25,7 +25,22 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { DEFAULT_RUNTIME_MODE, ModelSelection, RuntimeMode } from "./modelSelection.ts";
 import { EnabledSkillIds } from "./skills.ts";
+import {
+  Automation,
+  AutomationEditableFields,
+  AutomationPatch,
+  AutomationRun,
+  AutomationRunFinishedStatus,
+  AutomationRunTrigger,
+  AutomationShell,
+  AutomationsGetRunInput,
+  AutomationsGetRunResult,
+  AutomationsListRunsInput,
+  AutomationsListRunsResult,
+  ThreadAutomationRun,
+} from "./automations.ts";
 import { ThreadSubagentPolicy } from "./subagentPolicy.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
@@ -53,134 +68,15 @@ export const ProviderSandboxMode = Schema.Literals([
 ]);
 export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
 
-/**
- * `ModelSelection` — selection of a model on a configured provider instance.
- *
- * The routing key is `instanceId` (a user-defined slug identifying one
- * configured provider instance). Drivers, credentials, working-directory
- * bindings, and any other per-instance state are recovered from the
- * runtime registry via the instance id.
- *
- * Wire legacy: persisted selections produced before the driver/instance
- * split carried a `provider: <driver-id>` field instead. The schema absorbs
- * that shape via a pre-decoding transform — `{provider, model}` is promoted
- * to `{instanceId: defaultInstanceIdForDriver(provider), model}`. No
- * post-decode compatibility code lives in the runtime; the transform is the
- * only compat surface.
- */
-const ModelSelectionWire = Schema.Struct({
-  instanceId: ProviderInstanceId,
-  model: ProviderModelId,
-  options: Schema.optionalKey(ProviderOptionSelections),
-});
-
-// Source shape for persisted legacy payloads. Fields are typed as
-// `Schema.Unknown` so malformed drafts still make it into the transform and
-// fail validation through the target schema (with proper error messages)
-// rather than at the source-struct layer where the error is less actionable.
-const ModelSelectionSource = Schema.Struct({
-  provider: Schema.optional(Schema.Unknown),
-  instanceId: Schema.optional(Schema.Unknown),
-  model: Schema.Unknown,
-  options: Schema.optional(Schema.Unknown),
-});
-
-export const ModelSelection = ModelSelectionSource.pipe(
-  Schema.decodeTo(
-    ModelSelectionWire,
-    SchemaTransformation.transformOrFail({
-      decode: (raw) => {
-        // Resolve the routing key: prefer an explicit `instanceId`; fall
-        // back to promoting the legacy `provider` slug (the canonical
-        // `defaultInstanceIdForDriver` mapping) so persisted rollout-era
-        // payloads decode without data loss. The target schema brands the
-        // string as `ProviderInstanceId`.
-        const instanceIdSource =
-          raw.instanceId !== undefined
-            ? raw.instanceId
-            : typeof raw.provider === "string"
-              ? raw.provider
-              : undefined;
-        const base: Record<string, unknown> = {
-          instanceId: instanceIdSource,
-          model: raw.model,
-        };
-        if (raw.options !== undefined) base.options = raw.options;
-        return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
-      },
-      encode: (value) => {
-        const base: Record<string, unknown> = {
-          model: value.model,
-          instanceId: value.instanceId,
-        };
-        if (value.options !== undefined) base.options = value.options;
-        return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
-      },
-    }),
-  ),
-);
-export type ModelSelection = typeof ModelSelection.Type;
-
-export const RuntimeMode = Schema.Literals([
-  "approval-required",
-  "auto-accept-edits",
-  "auto",
-  "full-access",
-  // Kimi-only full-access variant: the session runs with full access, but
-  // permission requests are forwarded to the user instead of being
-  // auto-approved. Clients normalize it to "full-access" when switching to
-  // another provider (see resolveRuntimeModeForProviderDriver); adapters
-  // should not rely on receiving it.
-  "yolo",
-]);
-export type RuntimeMode = typeof RuntimeMode.Type;
-export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
-
-// "yolo" is a Kimi-only mode that other providers never offer. Remap it to
-// generic "full-access" when the destination provider is known and is not
-// Kimi. A missing driver keeps the stored mode: guessing "not kimi" would
-// wipe Kimi yolo after a stale lookup, and guessing "kimi" would leak yolo
-// onto Grok.
-export function resolveRuntimeModeForProviderDriver(
-  providerDriver: string | null | undefined,
-  runtimeMode: RuntimeMode,
-): RuntimeMode {
-  return runtimeMode === "yolo" &&
-    providerDriver != null &&
-    providerDriver !== "unconfigured" &&
-    providerDriver !== "kimi"
-    ? "full-access"
-    : runtimeMode;
-}
-
-export function displayRuntimeModeForProviderDriver(
-  providerDriver: string | null | undefined,
-  runtimeMode: RuntimeMode,
-): RuntimeMode {
-  return resolveRuntimeModeForProviderDriver(providerDriver, runtimeMode);
-}
-
-// Kimi's default access mode is "yolo": the same unrestricted session as
-// "full-access", but Kimi can still stop to ask questions. Other providers
-// keep the generic "full-access" default.
-export function defaultRuntimeModeForProviderDriver(
-  providerDriver: string | null | undefined,
-): RuntimeMode {
-  return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
-}
-
-// Compose the provider default with the Kimi-only yolo remap. Pass `null`
-// when the mode is still unset so Kimi inherits yolo; an explicit
-// "full-access" pick stays "full-access" even on Kimi.
-export function effectiveRuntimeModeForProviderDriver(
-  providerDriver: string | null | undefined,
-  runtimeMode: RuntimeMode | null | undefined,
-): RuntimeMode {
-  return displayRuntimeModeForProviderDriver(
-    providerDriver,
-    runtimeMode ?? defaultRuntimeModeForProviderDriver(providerDriver),
-  );
-}
+export {
+  DEFAULT_RUNTIME_MODE,
+  ModelSelection,
+  RuntimeMode,
+  defaultRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
+  effectiveRuntimeModeForProviderDriver,
+  resolveRuntimeModeForProviderDriver,
+} from "./modelSelection.ts";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
@@ -824,6 +720,9 @@ export const OrchestrationThread = Schema.Struct({
   // Per-thread inherit/off/on. Absent means inherit. Optional so payloads
   // from pre-policy servers still decode.
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
+  // Set when the thread is an automation run. Optional so payloads from
+  // pre-automations servers still decode; absent means a normal thread.
+  automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -839,6 +738,8 @@ export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
   threads: Schema.Array(OrchestrationThread),
+  // Defaults to none so read models persisted before automations decode.
+  automations: Schema.Array(AutomationShell).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -893,6 +794,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Same per-thread policy as OrchestrationThread.subagentPolicy.
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
+  // Same run marker as OrchestrationThread.automationRun.
+  automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -925,6 +828,9 @@ export const OrchestrationShellSnapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProjectShell),
   threads: Schema.Array(OrchestrationThreadShell),
+  // Always populated by the server; defaults to none so snapshots from
+  // pre-automations servers still decode.
+  automations: Schema.Array(AutomationShell).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationShellSnapshot = typeof OrchestrationShellSnapshot.Type;
@@ -961,6 +867,17 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     sequence: NonNegativeInt,
     threadId: ThreadId,
     updatedAt: IsoDateTime,
+  }),
+  // Only sent to subscribers that set `acceptAutomations`.
+  Schema.Struct({
+    kind: Schema.Literal("automation-upserted"),
+    sequence: NonNegativeInt,
+    automation: AutomationShell,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("automation-removed"),
+    sequence: NonNegativeInt,
+    automationId: AutomationId,
   }),
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
@@ -999,6 +916,13 @@ export const OrchestrationSubscribeShellInput = Schema.Struct({
    * kind.
    */
   acceptThreadTouched: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Opts in to `automation-upserted` / `automation-removed` deltas and to
+   * automation run threads in `thread-upserted` items and snapshots. Clients
+   * that omit it (builds predating automations) never see run threads and
+   * never receive a kind their decoder does not know.
+   */
+  acceptAutomations: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationSubscribeShellInput = typeof OrchestrationSubscribeShellInput.Type;
 
@@ -1136,6 +1060,8 @@ const ThreadCreateCommand = Schema.Struct({
   // when there are no picks.
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
+  // Marks the thread as an automation run; only the server sets it.
+  automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   createdAt: IsoDateTime,
 });
 
@@ -1452,7 +1378,45 @@ const ThreadSessionStopCommand = Schema.Struct({
   onlyIfSettled: Schema.optional(Schema.Boolean),
 });
 
+const AutomationCreateCommand = Schema.Struct({
+  type: Schema.Literal("automation.create"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  projectId: ProjectId,
+  ...AutomationEditableFields.fields,
+  sourceThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  createdAt: IsoDateTime,
+});
+
+const AutomationUpdateCommand = Schema.Struct({
+  type: Schema.Literal("automation.update"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  patch: AutomationPatch,
+  rotateWebhookToken: Schema.optional(Schema.Literal(true)),
+  updatedAt: IsoDateTime,
+});
+
+const AutomationDeleteCommand = Schema.Struct({
+  type: Schema.Literal("automation.delete"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+const AutomationRunRequestCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.request"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  trigger: AutomationRunTrigger,
+  requestedAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
+  AutomationCreateCommand,
+  AutomationUpdateCommand,
+  AutomationDeleteCommand,
+  AutomationRunRequestCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1484,6 +1448,10 @@ export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
 export const ClientOrchestrationCommand = Schema.Union([
+  AutomationCreateCommand,
+  AutomationUpdateCommand,
+  AutomationDeleteCommand,
+  AutomationRunRequestCommand,
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
@@ -1607,7 +1575,41 @@ const ProjectTransferImportCommand = Schema.Struct({
   importedAt: IsoDateTime,
 });
 
+// Server-only: the scheduler reports run lifecycle; clients must never be
+// able to forge a run start or completion.
+const AutomationRunStartedCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.started"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  threadId: ThreadId,
+  startedAt: IsoDateTime,
+});
+
+const AutomationRunFinishedCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.finished"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  status: AutomationRunFinishedStatus,
+  finishedAt: IsoDateTime,
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  summary: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const AutomationRunMissedCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.missed"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  scheduledFor: IsoDateTime,
+  at: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
+  AutomationRunStartedCommand,
+  AutomationRunFinishedCommand,
+  AutomationRunMissedCommand,
   ThreadAutoSettleCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -1662,10 +1664,19 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "automation.created",
+  "automation.updated",
+  "automation.deleted",
+  "automation.run-requested",
+  "automation.run-coalesced",
+  "automation.run-skipped",
+  "automation.run-missed",
+  "automation.run-started",
+  "automation.run-finished",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals(["project", "thread", "automation"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1717,6 +1728,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   // Optional so persisted events from pre-skills servers still decode.
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
+  automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1953,6 +1965,46 @@ export const OrchestrationClientOrigin = Schema.Struct({
 });
 export type OrchestrationClientOrigin = typeof OrchestrationClientOrigin.Type;
 
+export const AutomationCreatedPayload = Schema.Struct({
+  automation: Automation,
+});
+export const AutomationUpdatedPayload = Schema.Struct({
+  // Full merged record, webhook token included (rotated tokens stay in the log).
+  automation: Automation,
+});
+export const AutomationDeletedPayload = Schema.Struct({
+  automationId: AutomationId,
+  projectId: ProjectId,
+  deletedAt: IsoDateTime,
+});
+export const AutomationRunRequestedPayload = Schema.Struct({
+  run: AutomationRun,
+});
+export const AutomationRunCoalescedPayload = Schema.Struct({
+  automationId: AutomationId,
+  trigger: AutomationRunTrigger,
+});
+export const AutomationRunSkippedPayload = Schema.Struct({
+  run: AutomationRun,
+});
+export const AutomationRunMissedPayload = Schema.Struct({
+  run: AutomationRun,
+});
+export const AutomationRunStartedPayload = Schema.Struct({
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  threadId: ThreadId,
+  startedAt: IsoDateTime,
+});
+export const AutomationRunFinishedPayload = Schema.Struct({
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  status: AutomationRunFinishedStatus,
+  finishedAt: IsoDateTime,
+  error: Schema.NullOr(Schema.String),
+  summary: Schema.NullOr(Schema.String),
+});
+
 export const OrchestrationEventMetadata = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
@@ -1967,7 +2019,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, AutomationId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -2145,6 +2197,51 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.created"),
+    payload: AutomationCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.updated"),
+    payload: AutomationUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.deleted"),
+    payload: AutomationDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-requested"),
+    payload: AutomationRunRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-coalesced"),
+    payload: AutomationRunCoalescedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-skipped"),
+    payload: AutomationRunSkippedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-missed"),
+    payload: AutomationRunMissedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-started"),
+    payload: AutomationRunStartedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("automation.run-finished"),
+    payload: AutomationRunFinishedPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
@@ -2376,6 +2473,14 @@ export const OrchestrationRpcSchemas = {
   subscribeShell: {
     input: OrchestrationSubscribeShellInput,
     output: OrchestrationShellStreamItem,
+  },
+  automationsListRuns: {
+    input: AutomationsListRunsInput,
+    output: AutomationsListRunsResult,
+  },
+  automationsGetRun: {
+    input: AutomationsGetRunInput,
+    output: AutomationsGetRunResult,
   },
 } as const;
 

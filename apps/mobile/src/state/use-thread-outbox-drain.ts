@@ -22,7 +22,7 @@ import { prepareTurnAttachments, type PreparedTurnAttachments } from "../lib/att
 import { randomHex } from "../lib/uuid";
 import { isModelSelectionUnavailable } from "../lib/modelOptions";
 import { appAtomRegistry } from "./atom-registry";
-import { useProjects, useServerConfigs, useThreadShells } from "./entities";
+import { useAllThreadShells, useProjects, useServerConfigs } from "./entities";
 import { serverEnvironment } from "./server";
 import {
   confirmThreadOutboxMessageQueued,
@@ -534,7 +534,9 @@ export function useThreadOutboxDrain(): void {
   const editingQueuedMessageIds = useAtomValue(editingQueuedMessageIdsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const shellStatuses = useThreadOutboxShellStatuses();
-  const threads = useThreadShells();
+  // Unfiltered: an automation run thread is hidden from the lists but a reply
+  // typed inside one still has to drain.
+  const threads = useAllThreadShells();
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
@@ -1127,7 +1129,7 @@ export function useThreadOutboxDrain(): void {
         // created target defers, while busy existing threads can still steer.
         if (deliveryAction === "send") {
           const liveThread = findThread(
-            appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
+            appAtomRegistry.get(environmentThreadShells.allThreadShellsAtom),
             nextQueuedMessage,
           );
           const liveThreadBusy =

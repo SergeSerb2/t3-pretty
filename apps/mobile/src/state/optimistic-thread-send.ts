@@ -82,8 +82,8 @@ export function useOptimisticStartingThreadShell(input: {
 
 /**
  * Server shells plus local starting threads the list should treat as real.
- * Drain / outbox code must keep using `useThreadShells()` — a starting
- * overlay must not look like the creation command already landed.
+ * Drain / outbox code must keep using the raw selectors — a starting overlay
+ * must not look like the creation command already landed.
  */
 export function usePresentedThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   const serverShells = useThreadShells();

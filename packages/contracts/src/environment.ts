@@ -188,6 +188,11 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       desktop servers whose app predates the remote trigger, where clients
       must keep telling the user to update the app on that machine. */
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server runs automations: the `automation.*` commands, the
+      `automations.*` RPCs, and the `t3-code-automations` MCP toolkit.
+      Absent on older servers, so clients hide the feature instead of
+      dispatching commands the decider would reject. */
+  automations: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

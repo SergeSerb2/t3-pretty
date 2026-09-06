@@ -11,6 +11,7 @@ import {
   type QuitConfirmationMode,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
+  DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -93,7 +94,11 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { primaryServerObservabilityAtom, primaryServerProvidersAtom } from "../../state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerObservabilityAtom,
+  primaryServerProvidersAtom,
+} from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -1872,10 +1877,14 @@ function AutoSettleDaysInput({
   value,
   onCommit,
   ariaLabel = "Days of inactivity before auto-settle",
+  min = MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  max = MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
 }: {
   value: number;
   onCommit: (days: number) => void;
   ariaLabel?: string;
+  min?: number;
+  max?: number;
 }) {
   // Local draft so the field can be emptied mid-edit; the setting only moves
   // on valid input and snaps back to the persisted value on blur.
@@ -1888,8 +1897,8 @@ function AutoSettleDaysInput({
     <Input
       size="sm"
       type="number"
-      min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
-      max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
+      min={min}
+      max={max}
       className="w-full sm:w-24"
       value={draft}
       onChange={(event) => {
@@ -1898,11 +1907,7 @@ function AutoSettleDaysInput({
         // committed 3 while the field shows 3.5) — commit only when the
         // persisted value matches the displayed one.
         const parsed = Number(event.target.value);
-        if (
-          Number.isInteger(parsed) &&
-          parsed >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
-          parsed <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
-        ) {
+        if (Number.isInteger(parsed) && parsed >= min && parsed <= max) {
           onCommit(parsed);
         }
       }}
@@ -2050,6 +2055,7 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const primaryServerConfig = useAtomValue(primaryServerConfigAtom);
   const composerCollapseTriggers = useMemo<ComposerCollapseTrigger[]>(
     () => [
       ...(settings.composerCollapseOnBlur ? (["blur"] as const) : []),
@@ -2960,6 +2966,56 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      {primaryServerConfig?.environment.capabilities.automations === true ? (
+        <SettingsSection id="automations" title="Automations">
+          <SettingsRow
+            serverScoped
+            {...searchableSetting("pause-automations")}
+            description="Stops schedules, in-app events, webhooks, and git polling on this environment. Run now still works."
+            control={
+              <Switch
+                checked={!settings.automations.enabled}
+                aria-label="Pause automations on this environment"
+                onCheckedChange={(checked) =>
+                  updateSettings({ automations: { enabled: !checked } })
+                }
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            {...searchableSetting("automation-git-poll-interval")}
+            description="How often git triggers fetch their remote branch, in seconds."
+            resetAction={
+              settings.automations.gitPollIntervalSeconds !==
+              DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS ? (
+                <SettingResetButton
+                  label="automation git poll interval"
+                  onClick={() =>
+                    updateSettings({
+                      automations: {
+                        gitPollIntervalSeconds: DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS,
+                      },
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <AutoSettleDaysInput
+                value={settings.automations.gitPollIntervalSeconds}
+                min={60}
+                max={86_400}
+                ariaLabel="Automation git poll interval in seconds"
+                onCommit={(seconds) =>
+                  updateSettings({ automations: { gitPollIntervalSeconds: seconds } })
+                }
+              />
+            }
+          />
+        </SettingsSection>
+      ) : null}
 
       <LegacyFeaturesSection />
     </SettingsPageContainer>

@@ -25,8 +25,8 @@ import {
   applyCreatePullRequestSuffix,
   hasCreatePullRequestSuffix,
   resolveAutoCreatePullRequest,
-  stripCreatePullRequestSuffix,
 } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import {
   isDefaultThreadEnvModeSettled,
@@ -938,7 +938,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     if (isComposerDraftEmpty(getComposerDraftSnapshot(draftKey))) {
       // Queued text may carry the agent-facing auto-PR block; the editor shows
       // only what the user typed, and re-queueing re-applies the suffix.
-      setComposerDraftText(draftKey, stripCreatePullRequestSuffix(message.text));
+      setComposerDraftText(draftKey, stripHiddenInstructionSuffixes(message.text));
       replaceComposerDraftAttachments(draftKey, message.attachments);
       updateComposerDraftSettings(draftKey, {
         modelSelection: message.modelSelection,

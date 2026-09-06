@@ -1,10 +1,17 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
+import type {
+  AutomationShell,
+  OrchestrationEvent,
+  OrchestrationReadModel,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
+  automationWebhookPath,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
 } from "@t3tools/contracts";
+import { nextAutomationRunAt } from "@t3tools/shared/automationSchedule";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Predicate from "effect/Predicate";
@@ -218,7 +225,125 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     snapshotSequence: 0,
     projects: [],
     threads: [],
+    automations: [],
     updatedAt: nowIso,
+  };
+}
+
+/** Projected automation state without the read-derived `webhookPath`. */
+export type AutomationProjectionRow = Omit<AutomationShell, "webhookPath">;
+
+export type AutomationEvent = Extract<OrchestrationEvent, { type: `automation.${string}` }>;
+
+export function isAutomationEvent(event: OrchestrationEvent): event is AutomationEvent {
+  return event.type.startsWith("automation.");
+}
+
+/**
+ * The one set of projector rules for an automation row, shared by the
+ * in-memory read model and the SQL projection so both derive identical
+ * `nextRunAt` / run bookkeeping from the same event. `now` is the event's
+ * `occurredAt`; returns null when the automation is gone.
+ */
+export function projectAutomationRow(
+  existing: AutomationProjectionRow | undefined,
+  event: AutomationEvent,
+): AutomationProjectionRow | null {
+  const nextRunAtFrom = (
+    row: Pick<AutomationProjectionRow, "triggers" | "enabled">,
+    fromIso: string,
+  ) => nextAutomationRunAt(row.triggers, row.enabled, fromIso);
+
+  switch (event.type) {
+    case "automation.created":
+    case "automation.updated": {
+      const automation = event.payload.automation;
+      return {
+        activeRun: null,
+        lastRun: null,
+        lastRequestedAt: null,
+        pendingTrigger: null,
+        consecutiveFailures: 0,
+        runCount: 0,
+        ...existing,
+        ...automation,
+        nextRunAt: nextRunAtFrom(automation, event.occurredAt),
+      };
+    }
+    case "automation.deleted":
+      return null;
+  }
+
+  if (existing === undefined) {
+    return null;
+  }
+
+  switch (event.type) {
+    case "automation.run-requested": {
+      const run = event.payload.run;
+      return {
+        ...existing,
+        activeRun: {
+          runId: run.id,
+          threadId: null,
+          requestedAt: run.requestedAt,
+          startedAt: null,
+        },
+        lastRequestedAt: run.requestedAt,
+        pendingTrigger: null,
+        nextRunAt:
+          run.trigger.type === "schedule"
+            ? nextRunAtFrom(existing, event.occurredAt)
+            : existing.nextRunAt,
+      };
+    }
+    case "automation.run-coalesced":
+      return { ...existing, pendingTrigger: event.payload.trigger };
+    case "automation.run-skipped":
+    case "automation.run-missed":
+      return {
+        ...existing,
+        nextRunAt: nextRunAtFrom(existing, event.occurredAt),
+        runCount: existing.runCount + 1,
+      };
+    case "automation.run-started":
+      return existing.activeRun?.runId === event.payload.runId
+        ? {
+            ...existing,
+            activeRun: {
+              ...existing.activeRun,
+              threadId: event.payload.threadId,
+              startedAt: event.payload.startedAt,
+            },
+          }
+        : existing;
+    case "automation.run-finished": {
+      const active = existing.activeRun;
+      return {
+        ...existing,
+        activeRun: null,
+        lastRun: {
+          runId: event.payload.runId,
+          status: event.payload.status,
+          threadId: active?.threadId ?? null,
+          requestedAt: active?.requestedAt ?? event.payload.finishedAt,
+          startedAt: active?.startedAt ?? null,
+          finishedAt: event.payload.finishedAt,
+          error: event.payload.error,
+          summary: event.payload.summary,
+        },
+        consecutiveFailures:
+          event.payload.status === "completed" ? 0 : existing.consecutiveFailures + 1,
+        runCount: existing.runCount + 1,
+      };
+    }
+  }
+}
+
+export function toAutomationShell(row: AutomationProjectionRow): AutomationShell {
+  return {
+    ...row,
+    webhookPath: row.webhookToken === null ? null : automationWebhookPath(row.id, row.webhookToken),
   };
 }
 
@@ -231,6 +356,17 @@ export function projectEvent(
     snapshotSequence: event.sequence,
     updatedAt: event.occurredAt,
   };
+
+  if (isAutomationEvent(event)) {
+    const automationId = event.aggregateId;
+    const existing = nextBase.automations.find((entry) => entry.id === automationId);
+    const next = projectAutomationRow(existing, event);
+    const others = nextBase.automations.filter((entry) => entry.id !== automationId);
+    return Effect.succeed({
+      ...nextBase,
+      automations: next === null ? others : [...others, toAutomationShell(next)],
+    });
+  }
 
   switch (event.type) {
     case "project.created":
@@ -336,6 +472,7 @@ export function projectEvent(
             ...(payload.subagentPolicy !== undefined
               ? { subagentPolicy: payload.subagentPolicy }
               : {}),
+            ...(payload.automationRun != null ? { automationRun: payload.automationRun } : {}),
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,

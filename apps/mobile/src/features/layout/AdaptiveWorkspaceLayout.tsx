@@ -47,6 +47,7 @@ import {
   parseActiveThreadPath,
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
+import { useServerConfigs } from "../../state/entities";
 import { AndroidHomeFabLayout } from "../home/AndroidHomeFab";
 import { HomeListOptionsProvider } from "../home/home-list-options";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
@@ -447,6 +448,20 @@ function AdaptiveWorkspaceLayoutContent(
     navigation.navigate("PullRequests");
   }, [navigation]);
 
+  // One capable environment is enough to offer the entry point; the list screen
+  // picks the environment and explains any that are too old.
+  const serverConfigs = useServerConfigs();
+  const automationsSupported = useMemo(
+    () =>
+      Array.from(serverConfigs.values()).some(
+        (config) => config.environment.capabilities.automations === true,
+      ),
+    [serverConfigs],
+  );
+  const handleOpenAutomations = useCallback(() => {
+    navigation.navigate("Automations");
+  }, [navigation]);
+
   const handleStartNewTask = useCallback(() => {
     navigation.navigate("NewTaskSheet", { screen: "NewTask" });
   }, [navigation]);
@@ -568,6 +583,7 @@ function AdaptiveWorkspaceLayoutContent(
                     selectedThreadKey={selectedThreadKey}
                     onOpenSettings={handleOpenSettings}
                     onOpenPullRequests={handleOpenPullRequests}
+                    onOpenAutomations={automationsSupported ? handleOpenAutomations : null}
                     onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
                     onNewThreadInProject={handleNewThreadInProject}
                     onSelectThread={handleSelectThread}

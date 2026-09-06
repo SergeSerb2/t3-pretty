@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import type { UploadedMobileAttachment } from "./attachmentUpload";
@@ -21,7 +21,7 @@ export function deriveThreadTitleFromPrompt(value: string): string {
   }
   // Agent-facing instructions and citation markup should not leak into a
   // title intended to reflect what the user typed.
-  const trimmed = assistantCitationsToPlainText(stripCreatePullRequestSuffix(value)).trim();
+  const trimmed = assistantCitationsToPlainText(stripHiddenInstructionSuffixes(value)).trim();
   if (trimmed.length === 0) {
     return "New thread";
   }

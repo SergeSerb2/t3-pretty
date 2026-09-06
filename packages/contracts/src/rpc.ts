@@ -108,6 +108,7 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
+import { AutomationsError } from "./automations.ts";
 import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
@@ -432,6 +433,10 @@ export const WS_METHODS = {
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
+
+  // Automation run history (definitions ride the orchestration shell stream)
+  automationsListRuns: "automations.listRuns",
+  automationsGetRun: "automations.getRun",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -1360,6 +1365,18 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsAutomationsListRunsRpc = Rpc.make(WS_METHODS.automationsListRuns, {
+  payload: OrchestrationRpcSchemas.automationsListRuns.input,
+  success: OrchestrationRpcSchemas.automationsListRuns.output,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
+});
+
+export const WsAutomationsGetRunRpc = Rpc.make(WS_METHODS.automationsGetRun, {
+  payload: OrchestrationRpcSchemas.automationsGetRun.input,
+  success: OrchestrationRpcSchemas.automationsGetRun.output,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
+});
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -1564,4 +1581,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsAutomationsListRunsRpc,
+  WsAutomationsGetRunRpc,
 );

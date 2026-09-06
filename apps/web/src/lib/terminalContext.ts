@@ -1,5 +1,5 @@
 import { type ThreadId } from "@t3tools/contracts";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
@@ -251,7 +251,7 @@ export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMe
   // `<element_context>`, then attached file paths, then the auto-PR
   // instruction block last. Strip in reverse so each stage sees its block
   // back at the trailing position.
-  const withoutPullRequestSuffix = stripCreatePullRequestSuffix(prompt);
+  const withoutPullRequestSuffix = stripHiddenInstructionSuffixes(prompt);
   const extractedElement = extractTrailingElementContexts(withoutPullRequestSuffix);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {

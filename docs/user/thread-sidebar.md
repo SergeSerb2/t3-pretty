@@ -55,6 +55,15 @@ On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted car
 the landscape photo. Solid rows return if Boring is on, scenery is off, or iOS Reduce Transparency
 is on.
 
+## The Automations shelf
+
+Projects with [automations](./automations.md) get an **Automations** shelf above the pinned section,
+listing each automation with its status and either the time until its next run or **Paused**. Expand
+a row to see its last few runs, or open the automation for its full history. Every automation run
+works in its own thread, and those run threads live inside the automation rather than in your thread
+list, so a nightly job cannot bury your own work; a run that fails or needs an answer still counts
+toward the inbox and the Dock badge.
+
 ## Clearing settled threads
 
 The **Settled** section header has a **Clear** action that archives every settled thread at once,
