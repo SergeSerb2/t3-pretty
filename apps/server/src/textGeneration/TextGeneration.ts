@@ -1,8 +1,19 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
-import { TextGenerationError } from "@t3tools/contracts";
+import type {
+  ChatAttachment,
+  ModelSelection,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  TextGenerationError,
+} from "@t3tools/contracts";
+import { createModelSelection } from "@t3tools/shared/model";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -163,53 +174,142 @@ type TextGenerationOp =
   | "generateActivityHeadline"
   | "generateProjectIcon";
 
-const resolveInstance = (
+/** The selected provider can still take work: its probe has not declared it broken. */
+const canRunTextGeneration = (snapshot: ServerProvider): boolean =>
+  snapshot.enabled && snapshot.installed && snapshot.status !== "error";
+
+/** A provider worth falling back to: probed healthy and able to generate text. */
+const isReadyTextGenerationProvider = (snapshot: ServerProvider): boolean =>
+  snapshot.enabled &&
+  snapshot.installed &&
+  snapshot.status === "ready" &&
+  snapshot.supportsTextGeneration !== false;
+
+const defaultTextGenerationModelForDriver = (driver: ProviderInstance["driverKind"]): string =>
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
+  DEFAULT_MODEL_BY_PROVIDER[driver] ??
+  DEFAULT_TEXT_GENERATION_MODEL;
+
+interface TextGenerationTarget {
+  readonly textGeneration: ProviderInstance["textGeneration"];
+  readonly modelSelection: ModelSelection;
+}
+
+/**
+ * Resolve where a text-generation request runs. The selected instance is
+ * used unless its status probe says it cannot run (binary missing, CLI
+ * failing to start, unauthenticated); then the first probed-ready instance
+ * takes the request with that driver's default text model, so titles,
+ * branch names and headlines keep flowing while the user fixes the selected
+ * provider. With no ready alternative the selected instance still runs so the
+ * real provider error surfaces.
+ */
+const resolveTextGenerationTarget = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
   operation: TextGenerationOp,
-  instanceId: ProviderInstanceId,
-): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
-  registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
-    ),
-  );
+  modelSelection: ModelSelection,
+  onFallback: (
+    from: ProviderInstanceId,
+    to: ProviderInstanceId,
+    reason: string,
+  ) => Effect.Effect<void>,
+): Effect.Effect<TextGenerationTarget, TextGenerationError> =>
+  Effect.gen(function* () {
+    const selected = yield* registry.getInstance(modelSelection.instanceId);
+    // An unknown id is a caller bug, not a broken provider: fail rather than reroute.
+    if (!selected) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: `No provider instance registered for id '${modelSelection.instanceId}'.`,
+      });
+    }
+    const selectedSnapshot = yield* selected.snapshot.getSnapshot;
+    if (canRunTextGeneration(selectedSnapshot)) {
+      return { textGeneration: selected.textGeneration, modelSelection };
+    }
+
+    for (const instance of yield* registry.listInstances) {
+      if (instance.instanceId === modelSelection.instanceId) continue;
+      const snapshot = yield* instance.snapshot.getSnapshot;
+      if (!isReadyTextGenerationProvider(snapshot)) continue;
+      yield* onFallback(
+        modelSelection.instanceId,
+        instance.instanceId,
+        selectedSnapshot.message ?? `provider status is ${selectedSnapshot.status}`,
+      );
+      return {
+        textGeneration: instance.textGeneration,
+        modelSelection: createModelSelection(
+          instance.instanceId,
+          defaultTextGenerationModelForDriver(instance.driverKind),
+        ),
+      };
+    }
+
+    return { textGeneration: selected.textGeneration, modelSelection };
+  });
 
 export const makeTextGenerationFromRegistry = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
-): TextGeneration["Service"] =>
-  TextGeneration.of({
+): TextGeneration["Service"] => {
+  // Headlines re-run every few seconds per thread; log each distinct reroute once.
+  // Bounded by instance pairs, so the set stays small for the process lifetime.
+  const loggedFallbacks = new Set<string>();
+  const logFallback = (from: ProviderInstanceId, to: ProviderInstanceId, reason: string) => {
+    const key = `${from}->${to}`;
+    if (loggedFallbacks.has(key)) return Effect.void;
+    loggedFallbacks.add(key);
+    return Effect.logWarning(
+      "text generation provider cannot run; using a ready provider instead",
+      {
+        selectedInstanceId: from,
+        fallbackInstanceId: to,
+        reason,
+      },
+    );
+  };
+  const target = (operation: TextGenerationOp, modelSelection: ModelSelection) =>
+    resolveTextGenerationTarget(registry, operation, modelSelection, logFallback);
+
+  return TextGeneration.of({
     generateCommitMessage: (input) =>
-      resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),
+      target("generateCommitMessage", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generateCommitMessage({ ...input, modelSelection }),
+        ),
       ),
     generatePrContent: (input) =>
-      resolveInstance(registry, "generatePrContent", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generatePrContent(input)),
+      target("generatePrContent", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generatePrContent({ ...input, modelSelection }),
+        ),
       ),
     generateBranchName: (input) =>
-      resolveInstance(registry, "generateBranchName", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateBranchName(input)),
+      target("generateBranchName", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generateBranchName({ ...input, modelSelection }),
+        ),
       ),
     generateThreadTitle: (input) =>
-      resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
+      target("generateThreadTitle", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generateThreadTitle({ ...input, modelSelection }),
+        ),
       ),
     generateActivityHeadline: (input) =>
-      resolveInstance(registry, "generateActivityHeadline", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateActivityHeadline(input)),
+      target("generateActivityHeadline", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generateActivityHeadline({ ...input, modelSelection }),
+        ),
       ),
     generateProjectIcon: (input) =>
-      resolveInstance(registry, "generateProjectIcon", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateProjectIcon(input)),
+      target("generateProjectIcon", input.modelSelection).pipe(
+        Effect.flatMap(({ textGeneration, modelSelection }) =>
+          textGeneration.generateProjectIcon({ ...input, modelSelection }),
+        ),
       ),
   });
+};
 
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
