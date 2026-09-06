@@ -1142,3 +1142,6 @@
   - edited `packages/shared/src/serverSettings.ts`
 - `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Extend the parent's provider-patch normalization to Grok, converting structured custom models to persisted slugs before deep merging. This preserves T3 Pretty's internal apps patch support while resolving the sole error-level typecheck failure.
   - edited `packages/shared/src/serverSettings.ts`
+- `desktop-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Updated the preview test to configure its debugger through the existing override layer and extended the client-settings fixture with the new required field. Suggestion-level diagnostics are intentionally unchanged.
+  - edited `apps/desktop/src/preview/Manager.test.ts`
+  - edited `apps/desktop/src/settings/DesktopClientSettings.test.ts`

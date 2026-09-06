@@ -2311,29 +2311,34 @@ describe("PreviewManager", () => {
     withManager((manager) =>
       Effect.gen(function* () {
         const capturePage = vi.fn(() => new Promise<TestCapturedPreviewImage>(() => {}));
-        const wc = makeTestPreviewWebContents(capturePage);
-        Object.assign(wc, { isDevToolsOpened: () => false });
-        Object.assign(wc.debugger, {
-          sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
-            if (method === "Runtime.evaluate") {
-              return {
-                result: {
-                  value:
-                    params?.["expression"] === "42"
-                      ? 42
-                      : {
-                          url: "https://example.com",
-                          title: "Example",
-                          loading: false,
-                          visibleText: "Example",
-                          interactiveElements: [],
-                        },
-                },
-              };
-            }
-            return method === "Accessibility.getFullAXTree" ? { nodes: [] } : undefined;
-          }),
+        const wc = makeTestPreviewWebContents(capturePage, 42, undefined, {
+          debugger: {
+            isAttached: () => false,
+            attach: vi.fn(),
+            sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+              if (method === "Runtime.evaluate") {
+                return {
+                  result: {
+                    value:
+                      params?.["expression"] === "42"
+                        ? 42
+                        : {
+                            url: "https://example.com",
+                            title: "Example",
+                            loading: false,
+                            visibleText: "Example",
+                            interactiveElements: [],
+                          },
+                  },
+                };
+              }
+              return method === "Accessibility.getFullAXTree" ? { nodes: [] } : undefined;
+            }),
+            on: vi.fn(),
+            off: vi.fn(),
+          },
         });
+        Object.assign(wc, { isDevToolsOpened: () => false });
         fromId.mockReturnValue(wc);
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
