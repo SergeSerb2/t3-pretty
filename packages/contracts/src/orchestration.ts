@@ -817,9 +817,9 @@ export const OrchestrationThread = Schema.Struct({
   // wins) so devices racing to assign converge. Optional so payloads from
   // pre-scenery servers still decode.
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
-  // Per-thread enabled skills; global settings-enabled skills union on top
-  // when a turn materializes the workspace. Defaults to empty so payloads
-  // from pre-skills servers still decode.
+  // Per-thread skill picks; their instructions ride the first turn that
+  // carries them. Defaults to empty so payloads from pre-skills servers
+  // still decode.
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   // Per-thread inherit/off/on. Absent means inherit. Optional so payloads
   // from pre-policy servers still decode.
@@ -1133,8 +1133,7 @@ const ThreadCreateCommand = Schema.Struct({
   worktreePath: Schema.NullOr(OrchestrationPath),
   // Per-thread skill picks at creation; decode defaults to none so older
   // clients stay valid. RPC encode requires the key — callers send `[]`
-  // when there are no picks. Global settings-enabled skills union on top
-  // at turn start.
+  // when there are no picks.
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   subagentPolicy: Schema.optional(ThreadSubagentPolicy),
   createdAt: IsoDateTime,
@@ -1253,8 +1252,7 @@ const ThreadSkillsSetCommand = Schema.Struct({
   type: Schema.Literal("thread.skills.set"),
   commandId: CommandId,
   threadId: ThreadId,
-  // Full replacement of the per-thread enabled skill set. Global
-  // settings-enabled skills union on top at materialization time.
+  // Full replacement of the per-thread enabled skill set.
   enabledSkillIds: EnabledSkillIds,
   createdAt: IsoDateTime,
 });

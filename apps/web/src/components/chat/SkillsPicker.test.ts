@@ -1,342 +1,106 @@
-import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vite-plus/test";
-import {
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type HostSkill,
-  type InstalledSkill,
-} from "@t3tools/contracts";
+import { describe, expect, it } from "vite-plus/test";
+import type { Skill } from "@t3tools/contracts";
 
-import { Menu } from "../ui/menu";
 import {
-  toPickerSkills,
+  normalizePickedSkillIds,
   organizePickerSkills,
   skillMatchesQuery,
-  SkillPickerRow,
+  toPickerSkills,
 } from "./SkillsPicker";
 
+const skill = (overrides: Partial<Skill> & Pick<Skill, "id" | "name">): Skill => ({
+  dirName: overrides.name,
+  displayPath: `~/.agents/skills/${overrides.name}`,
+  home: "agents",
+  presentIn: ["agents"],
+  ...overrides,
+});
+
+const inventory: Skill[] = [
+  skill({ id: "host:agents:tdd", name: "tdd", description: "Write the test first" }),
+  skill({
+    id: "host:claudeAgent:grill-me",
+    name: "grill-me",
+    displayPath: "~/.claude/skills/grill-me",
+    home: "claudeAgent",
+    presentIn: ["claudeAgent"],
+  }),
+  skill({ id: "host:agents:ponytail", name: "ponytail", description: "Be lazy" }),
+];
+
 describe("toPickerSkills", () => {
-  const claude = ProviderDriverKind.make("claudeAgent");
-  const codex = ProviderDriverKind.make("codex");
-  const claudeDefault = ProviderInstanceId.make("claudeAgent");
-  const codexDefault = ProviderInstanceId.make("codex");
-  const codexPersonal = ProviderInstanceId.make("codex_personal");
-  const codexWork = ProviderInstanceId.make("codex_work");
-  const installed: InstalledSkill[] = [
-    {
-      id: "octo/skills:tdd",
-      name: "tdd",
-      sourceRepo: "octo/skills",
-      sourcePath: "tdd",
-      installedAt: "2026-08-15T00:00:00.000Z",
-    },
-  ];
-  const host: HostSkill[] = [
-    {
-      id: "host:claudeAgent:grill-me",
-      name: "grill-me",
-      path: "/home/u/.claude/skills/grill-me/SKILL.md",
-      displayPath: "~/.claude/skills/grill-me",
-      origin: "Claude Code",
-      enabled: true,
-      driver: claude,
-    },
-    {
-      id: "host:codex:review",
-      name: "review",
-      path: "/home/u/.codex/skills/review/SKILL.md.t3-disabled",
-      displayPath: "~/.codex/skills/review",
-      origin: "Codex",
-      enabled: false,
-      driver: codex,
-    },
-    {
-      id: "host:agents:shared",
-      name: "shared",
-      path: "/home/u/.agents/skills/shared/SKILL.md",
-      displayPath: "~/.agents/skills/shared",
-      origin: "Shared",
-      enabled: true,
-    },
-    {
-      id: "host:codex:codex_personal:personal-only",
-      name: "personal-only",
-      path: "/home/u/.codex-personal/skills/personal-only/SKILL.md",
-      displayPath: "~/.codex-personal/skills/personal-only",
-      origin: "Codex · Personal",
-      enabled: true,
-      driver: codex,
-      instanceId: codexPersonal,
-    },
-    {
-      id: "host:codex:codex_work:work-only",
-      name: "work-only",
-      path: "/home/u/.codex-work/skills/work-only/SKILL.md",
-      displayPath: "~/.codex-work/skills/work-only",
-      origin: "Codex · Work",
-      enabled: true,
-      driver: codex,
-      instanceId: codexWork,
-    },
-  ];
+  it("keeps the id and name and falls back to the folder when there is no description", () => {
+    expect(toPickerSkills(inventory)).toEqual([
+      { id: "host:agents:tdd", name: "tdd", description: "Write the test first" },
+      {
+        id: "host:claudeAgent:grill-me",
+        name: "grill-me",
+        description: "~/.claude/skills/grill-me",
+      },
+      { id: "host:agents:ponytail", name: "ponytail", description: "Be lazy" },
+    ]);
+  });
+});
 
-  it("locks global library picks and the selected instance's own enabled host skills", () => {
-    const skills = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault);
-    expect(skills.map((skill) => [skill.id, skill.group, skill.locked])).toEqual([
-      ["octo/skills:tdd", "Library", true],
-      ["host:claudeAgent:grill-me", "Claude Code", true],
-      ["host:codex:review", "Codex", false],
-      ["host:agents:shared", "Shared", false],
-      ["host:codex:codex_personal:personal-only", "Codex · Personal", false],
-      ["host:codex:codex_work:work-only", "Codex · Work", false],
+describe("normalizePickedSkillIds", () => {
+  it("folds pre-library ids onto their library form", () => {
+    expect(normalizePickedSkillIds(["mattpocock/skills:skills/productivity/grill-me"])).toEqual([
+      "host:agents:grill-me",
     ]);
   });
 
-  it("leaves another provider's host skills toggleable", () => {
-    const skills = toPickerSkills(installed, host, new Set(), codexDefault);
-    expect(skills.find((skill) => skill.id === "host:claudeAgent:grill-me")?.locked).toBe(false);
-    expect(skills.find((skill) => skill.id === "octo/skills:tdd")?.locked).toBe(false);
-  });
-
-  it("locks only the selected sibling instance's enabled host skills", () => {
-    const skills = toPickerSkills(installed, host, new Set(), codexPersonal);
+  it("passes library ids through and drops duplicates folding creates", () => {
     expect(
-      skills.find((skill) => skill.id === "host:codex:codex_personal:personal-only")?.locked,
-    ).toBe(true);
-    expect(skills.find((skill) => skill.id === "host:codex:codex_work:work-only")?.locked).toBe(
-      false,
+      normalizePickedSkillIds([
+        "host:agents:grill-me",
+        "mattpocock/skills:skills/productivity/grill-me",
+        "host:agents:tdd",
+        "host:agents:tdd",
+      ]),
+    ).toEqual(["host:agents:grill-me", "host:agents:tdd"]);
+  });
+});
+
+describe("organizePickerSkills", () => {
+  const skills = toPickerSkills(inventory);
+
+  it("pins favorites first and keeps the rest in list order", () => {
+    const { favorites, rest } = organizePickerSkills(skills, new Set(["host:agents:ponytail"]));
+    expect(favorites.map((row) => row.name)).toEqual(["ponytail"]);
+    expect(rest.map((row) => row.name)).toEqual(["tdd", "grill-me"]);
+  });
+
+  it("filters both halves by the query", () => {
+    const { favorites, rest } = organizePickerSkills(
+      skills,
+      new Set(["host:agents:ponytail"]),
+      "lazy",
     );
-    // Default Codex home has no instanceId; it belongs to the default instance, not this sibling.
-    expect(skills.find((skill) => skill.id === "host:codex:review")?.locked).toBe(false);
+    expect(favorites.map((row) => row.name)).toEqual(["ponytail"]);
+    expect(rest).toEqual([]);
   });
 
-  it("treats default-home host skills as the driver's default instance", () => {
-    const skills = toPickerSkills([], host, new Set(), codexDefault);
-    expect(skills.find((skill) => skill.id === "host:codex:review")?.locked).toBe(false);
-    expect(
-      skills.find((skill) => skill.id === "host:codex:codex_personal:personal-only")?.locked,
-    ).toBe(false);
-  });
-
-  it("falls back to the host path when a skill has no description", () => {
-    const skills = toPickerSkills([], host, new Set(), claudeDefault);
-    expect(skills[0]?.description).toBe("~/.claude/skills/grill-me");
-  });
-
-  it("still pins a globally locked skill when it is favorited", () => {
-    const skills = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault);
-    expect(skills.find((skill) => skill.id === "octo/skills:tdd")?.locked).toBe(true);
-    const groups = organizePickerSkills(skills, new Set(["octo/skills:tdd"]));
-    expect(groups[0]?.[0]).toBe("Favorites");
-    expect(groups[0]?.[1].map((skill) => skill.id)).toEqual(["octo/skills:tdd"]);
-  });
-
-  it("keeps the favorite star clickable on a globally locked skill", () => {
-    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
-      (row) => row.id === "octo/skills:tdd",
-    )!;
-    expect(skill.locked).toBe(true);
-    const html = renderToStaticMarkup(
-      createElement(
-        Menu,
-        null,
-        createElement(SkillPickerRow, {
-          skill,
-          isEnabled: true,
-          isFavorite: false,
-          disabled: false,
-          onToggle: () => {},
-          onToggleFavorite: () => {},
-        }),
-      ),
-    );
-    expect(html).toContain("Add to favorites");
-    expect(html).toContain("Global");
-    expect(html).not.toContain("aria-disabled");
-    expect(html).not.toContain("pointer-events-auto");
-  });
-
-  it("does not let a locked skill's star punch through a disabled picker", () => {
-    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
-      (row) => row.id === "octo/skills:tdd",
-    )!;
-    expect(skill.locked).toBe(true);
-    const onToggleFavorite = vi.fn();
-    const html = renderToStaticMarkup(
-      createElement(
-        Menu,
-        null,
-        createElement(SkillPickerRow, {
-          skill,
-          isEnabled: true,
-          isFavorite: false,
-          disabled: true,
-          onToggle: () => {},
-          onToggleFavorite,
-        }),
-      ),
-    );
-    expect(html).toContain("aria-disabled");
-    expect(html).not.toContain("pointer-events-auto");
-    const row = SkillPickerRow({
-      skill,
-      isEnabled: true,
-      isFavorite: false,
-      disabled: true,
-      onToggle: () => {},
-      onToggleFavorite,
-    }) as ReactElement<{ children: ReactElement<{ children: ReactNode }> }>;
-    const star = Children.toArray(row.props.children.props.children).find(
-      (
-        child,
-      ): child is ReactElement<{
-        disabled?: boolean;
-        onClick: (event: { preventDefault: () => void; stopPropagation: () => void }) => void;
-      }> =>
-        isValidElement<{ "aria-label"?: string }>(child) &&
-        String(child.props["aria-label"]).includes("favorites"),
-    )!;
-    expect(star.props.disabled).toBe(true);
-    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
-    expect(onToggleFavorite).not.toHaveBeenCalled();
-  });
-
-  it("does not let the favorite star punch through a disabled non-locked row", () => {
-    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
-      (row) => row.id === "octo/skills:tdd",
-    )!;
-    expect(skill.locked).toBe(false);
-    const html = renderToStaticMarkup(
-      createElement(
-        Menu,
-        null,
-        createElement(SkillPickerRow, {
-          skill,
-          isEnabled: false,
-          isFavorite: false,
-          disabled: true,
-          onToggle: () => {},
-          onToggleFavorite: () => {},
-        }),
-      ),
-    );
-    expect(html).not.toContain("pointer-events-auto");
-    expect(html).toContain("aria-disabled");
-  });
-
-  it("swallows row activation on a locked skill and still lets the star fire", () => {
-    const skill = toPickerSkills(installed, host, new Set(["octo/skills:tdd"]), claudeDefault).find(
-      (row) => row.id === "octo/skills:tdd",
-    )!;
-    expect(skill.locked).toBe(true);
-    const onToggle = vi.fn();
-    const onToggleFavorite = vi.fn();
-    const row = SkillPickerRow({
-      skill,
-      isEnabled: true,
-      isFavorite: false,
-      disabled: false,
-      onToggle,
-      onToggleFavorite,
-    }) as ReactElement<{
-      onCheckedChange: (checked: boolean, details: { cancel: () => void }) => void;
-      onClick: (event: { preventDefault: () => void }) => void;
-      children: ReactElement<{ children: ReactNode }>;
-    }>;
-    const cancel = vi.fn();
-    row.props.onCheckedChange(false, { cancel });
-    expect(cancel).toHaveBeenCalledTimes(1);
-    const preventDefault = vi.fn();
-    row.props.onClick({ preventDefault });
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(onToggle).not.toHaveBeenCalled();
-    const star = Children.toArray(row.props.children.props.children).find(
-      (
-        child,
-      ): child is ReactElement<{
-        onClick: (event: unknown) => void;
-        onKeyDown: (event: { key: string; stopPropagation: () => void }) => void;
-      }> =>
-        isValidElement<{ "aria-label"?: string }>(child) &&
-        String(child.props["aria-label"]).includes("favorites"),
-    )!;
-    star.props.onClick({ preventDefault: () => {}, stopPropagation: () => {} });
-    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
-    expect(onToggle).not.toHaveBeenCalled();
-    const stopSpace = vi.fn();
-    star.props.onKeyDown({ key: " ", stopPropagation: stopSpace });
-    expect(stopSpace).toHaveBeenCalledTimes(1);
-    const stopEnter = vi.fn();
-    star.props.onKeyDown({ key: "Enter", stopPropagation: stopEnter });
-    expect(stopEnter).toHaveBeenCalledTimes(1);
-    const stopArrow = vi.fn();
-    star.props.onKeyDown({ key: "ArrowDown", stopPropagation: stopArrow });
-    expect(stopArrow).not.toHaveBeenCalled();
-  });
-
-  it("wires the toggle on an unlocked row", () => {
-    const skill = toPickerSkills(installed, [], new Set(), claudeDefault).find(
-      (row) => row.id === "octo/skills:tdd",
-    )!;
-    expect(skill.locked).toBe(false);
-    const onToggle = vi.fn();
-    const row = SkillPickerRow({
-      skill,
-      isEnabled: false,
-      isFavorite: false,
-      disabled: false,
-      onToggle,
-      onToggleFavorite: () => {},
-    }) as ReactElement<{ onCheckedChange?: () => void }>;
-    expect(row.props.onCheckedChange).toBe(onToggle);
-  });
-
-  it("pins favorites above origin groups and keeps them out of those groups", () => {
-    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
-    const groups = organizePickerSkills(skills, new Set(["host:agents:shared", "octo/skills:tdd"]));
-
-    expect(groups.map(([group, rows]) => [group, rows.map((skill) => skill.id)])).toEqual([
-      ["Favorites", ["octo/skills:tdd", "host:agents:shared"]],
-      ["Claude Code", ["host:claudeAgent:grill-me"]],
-      ["Codex", ["host:codex:review"]],
-      ["Codex · Personal", ["host:codex:codex_personal:personal-only"]],
-      ["Codex · Work", ["host:codex:codex_work:work-only"]],
-    ]);
-  });
-
-  it("filters by query and still keeps matching favorites first", () => {
-    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
-    const groups = organizePickerSkills(skills, new Set(["host:codex:review"]), "codex");
-
-    expect(groups.map(([group, rows]) => [group, rows.map((skill) => skill.name)])).toEqual([
-      ["Favorites", ["review"]],
-      ["Codex · Personal", ["personal-only"]],
-      ["Codex · Work", ["work-only"]],
-    ]);
-  });
-
-  it("returns no groups when the query matches nothing", () => {
-    const skills = toPickerSkills(installed, host, new Set(), claudeDefault);
-    expect(organizePickerSkills(skills, new Set(["octo/skills:tdd"]), "zzzz")).toEqual([]);
+  it("returns nothing when the query matches nothing", () => {
+    expect(organizePickerSkills(skills, new Set(["host:agents:tdd"]), "zzzz")).toEqual({
+      favorites: [],
+      rest: [],
+    });
   });
 });
 
 describe("skillMatchesQuery", () => {
-  const skill = {
-    name: "computer-workflow-organization-and-performance",
-    group: "Shared",
+  const row = {
+    name: "computer-workflow-organization",
     description: "Organize the desktop",
   };
 
-  it("matches name, group, and description without caring about case", () => {
-    expect(skillMatchesQuery(skill, "WORKFLOW")).toBe(true);
-    expect(skillMatchesQuery(skill, "shared")).toBe(true);
-    expect(skillMatchesQuery(skill, "desktop")).toBe(true);
-    expect(skillMatchesQuery(skill, "missing")).toBe(false);
+  it("matches name and description without caring about case", () => {
+    expect(skillMatchesQuery(row, "WORKFLOW")).toBe(true);
+    expect(skillMatchesQuery(row, "desktop")).toBe(true);
+    expect(skillMatchesQuery(row, "missing")).toBe(false);
   });
 
   it("treats blank queries as a match", () => {
-    expect(skillMatchesQuery(skill, "  ")).toBe(true);
+    expect(skillMatchesQuery(row, "  ")).toBe(true);
   });
 });

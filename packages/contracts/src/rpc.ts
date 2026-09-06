@@ -35,10 +35,9 @@ import {
   AppsUpsertInput,
 } from "./apps.ts";
 import {
-  HostSkillId,
-  HostSkillsState,
   SKILL_SETTINGS_MAX_MARKETPLACE_SOURCES,
   SkillId,
+  SkillLocationKey,
   SkillMarketplaceListing,
   SkillMarketplaceSource,
   SkillsError,
@@ -304,9 +303,7 @@ export const WS_METHODS = {
   skillsUninstall: "skills.uninstall",
   skillsListMarketplace: "skills.listMarketplace",
   skillsRefreshMarketplace: "skills.refreshMarketplace",
-  skillsListHost: "skills.listHost",
-  skillsUninstallHost: "skills.uninstallHost",
-  skillsSetHostEnabled: "skills.setHostEnabled",
+  skillsSetLocationEnabled: "skills.setLocationEnabled",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -1004,21 +1001,13 @@ export const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMa
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
-export const WsSkillsListHostRpc = Rpc.make(WS_METHODS.skillsListHost, {
-  payload: Schema.Struct({}),
-  success: HostSkillsState,
-  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
-});
-
-export const WsSkillsUninstallHostRpc = Rpc.make(WS_METHODS.skillsUninstallHost, {
-  payload: Schema.Struct({ skillId: HostSkillId }),
-  success: HostSkillsState,
-  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
-});
-
-export const WsSkillsSetHostEnabledRpc = Rpc.make(WS_METHODS.skillsSetHostEnabled, {
-  payload: Schema.Struct({ skillId: HostSkillId, enabled: Schema.Boolean }),
-  success: HostSkillsState,
+export const WsSkillsSetLocationEnabledRpc = Rpc.make(WS_METHODS.skillsSetLocationEnabled, {
+  payload: Schema.Struct({
+    skillId: SkillId,
+    locationKey: SkillLocationKey,
+    enabled: Schema.Boolean,
+  }),
+  success: SkillsState,
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
@@ -1513,9 +1502,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsUninstallRpc,
   WsSkillsListMarketplaceRpc,
   WsSkillsRefreshMarketplaceRpc,
-  WsSkillsListHostRpc,
-  WsSkillsUninstallHostRpc,
-  WsSkillsSetHostEnabledRpc,
+  WsSkillsSetLocationEnabledRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

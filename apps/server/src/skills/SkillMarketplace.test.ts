@@ -1,5 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeBuffer from "node:buffer";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
@@ -12,7 +15,7 @@ import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/u
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SkillMarketplace from "./SkillMarketplace.ts";
-import * as SkillStore from "./SkillStore.ts";
+import * as SkillLibrary from "./SkillLibrary.ts";
 import { tarFile, tarGzArchive } from "./testUtils/tarballFixture.ts";
 
 const TDD_SKILL_MD = [
@@ -55,20 +58,19 @@ function makeLayer(input: {
   const execute = vi.fn((request: HttpClientRequest.HttpClientRequest) =>
     Effect.succeed(HttpClientResponse.fromWeb(request, input.response(request))),
   );
+  // The library hangs off a throwaway home so tests never touch ~/.agents.
+  const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-skill-home-"));
+  const settingsLayer = ServerSettings.layerTest({
+    skills: {
+      marketplaceSources: (input.sources ?? ["octocat/skills"]).map((repo) => ({ repo })),
+    },
+  });
+  const libraryLayer = SkillLibrary.layer.pipe(Layer.provide(settingsLayer));
   const layer = Layer.empty.pipe(
     Layer.provideMerge(
-      SkillMarketplace.layer.pipe(
-        Layer.provide(SkillStore.layer),
-        Layer.provide(
-          ServerSettings.layerTest({
-            skills: {
-              marketplaceSources: (input.sources ?? ["octocat/skills"]).map((repo) => ({ repo })),
-            },
-          }),
-        ),
-      ),
+      SkillMarketplace.layer.pipe(Layer.provide(libraryLayer), Layer.provide(settingsLayer)),
     ),
-    Layer.provideMerge(SkillStore.layer),
+    Layer.provideMerge(libraryLayer),
     Layer.provideMerge(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -78,9 +80,10 @@ function makeLayer(input: {
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-skill-marketplace-test-" }),
     ),
+    Layer.provideMerge(Layer.succeed(SkillLibrary.SkillLibraryHomeDirectory, home)),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { execute, layer };
+  return { execute, layer, home };
 }
 
 const tarballResponse = () =>
@@ -161,21 +164,17 @@ it.effect("refresh always re-downloads and picks up new content", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("computes the installed flag from the store", () => {
-  const { layer } = makeLayer({ response: tarballResponse });
+it.effect("computes the installed flag from the library, whoever installed the folder", () => {
+  const { layer, home } = makeLayer({ response: tarballResponse });
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const store = yield* SkillStore.SkillStore;
     const marketplace = yield* SkillMarketplace.SkillMarketplace;
 
-    const source = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-skill-source-" });
-    yield* fileSystem.writeFileString(path.join(source, "SKILL.md"), TDD_SKILL_MD);
-    yield* store.installFromDirectory({
-      sourceRepo: "octocat/skills",
-      sourcePath: "skills/engineering/tdd",
-      directory: source,
-    });
+    // Same folder name as the marketplace skill, put there by another tool.
+    const tddDir = path.join(home, ".agents", "skills", "tdd");
+    yield* fileSystem.makeDirectory(tddDir, { recursive: true });
+    yield* fileSystem.writeFileString(path.join(tddDir, "SKILL.md"), TDD_SKILL_MD);
 
     const listings = yield* marketplace.list({});
 
@@ -185,36 +184,30 @@ it.effect("computes the installed flag from the store", () => {
   }).pipe(Effect.provide(layer));
 });
 
-it.effect("installs a marketplace skill into the store, then lists from cache", () => {
-  const { execute, layer } = makeLayer({ response: tarballResponse });
+it.effect("installs a marketplace skill into the shared library, then lists from cache", () => {
+  const { execute, layer, home } = makeLayer({ response: tarballResponse });
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const config = yield* ServerConfig.ServerConfig;
     const marketplace = yield* SkillMarketplace.SkillMarketplace;
 
     const state = yield* marketplace.install("octocat/skills:skills/engineering/tdd");
 
-    assert.strictEqual(state.installedSkills.length, 1);
-    const skill = state.installedSkills[0]!;
-    assert.strictEqual(skill.id, "octocat/skills:skills/engineering/tdd");
+    assert.strictEqual(state.skills.length, 1);
+    const skill = state.skills[0]!;
+    assert.strictEqual(skill.id, "host:agents:tdd");
     assert.strictEqual(skill.name, "tdd");
     assert.strictEqual(skill.description, "Test driven development.");
+    assert.deepEqual(skill.source, { repo: "octocat/skills", path: "skills/engineering/tdd" });
 
-    const storedDir = path.join(
-      config.skillsDir,
-      "octocat--skills",
-      "skills",
-      "engineering",
-      "tdd",
-    );
+    const storedDir = path.join(home, ".agents", "skills", "tdd");
     assert.strictEqual(
       yield* fileSystem.readFileString(path.join(storedDir, "cheatsheet.md")),
       "red green refactor\n",
     );
     // The traversal entry was dropped, not written anywhere.
     assert.isFalse(yield* fileSystem.exists(path.join(storedDir, "..\\..\\escaped.md")));
-    assert.isFalse(yield* fileSystem.exists(path.join(config.skillsDir, "escaped.md")));
+    assert.isFalse(yield* fileSystem.exists(path.join(home, ".agents", "skills", "escaped.md")));
     assert.strictEqual(execute.mock.calls.length, 1);
 
     // The install populated the cache, so listing adds no fetches and flags
@@ -305,14 +298,13 @@ it.effect("reports a failed explicit refresh while list keeps serving the stale 
 });
 
 it.effect("lists and installs a repository that is itself one skill", () => {
-  const { layer } = makeLayer({
+  const { layer, home } = makeLayer({
     sources: ["danyuchn/asd-ste100-skill"],
     response: () => new Response(NodeBuffer.Buffer.from(SINGLE_SKILL_TARBALL), { status: 200 }),
   });
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const config = yield* ServerConfig.ServerConfig;
     const marketplace = yield* SkillMarketplace.SkillMarketplace;
 
     const listings = yield* marketplace.list({});
@@ -327,19 +319,14 @@ it.effect("lists and installs a repository that is itself one skill", () => {
     ]);
 
     const state = yield* marketplace.install("danyuchn/asd-ste100-skill:@root");
+    // A root skill takes the repository's name as its folder.
     assert.deepStrictEqual(
-      state.installedSkills.map((skill) => [skill.id, skill.name]),
-      [["danyuchn/asd-ste100-skill:@root", "asd-ste100"]],
+      state.skills.map((skill) => [skill.id, skill.name]),
+      [["host:agents:asd-ste100-skill", "asd-ste100"]],
     );
     assert.strictEqual(
       yield* fileSystem.readFileString(
-        path.join(
-          config.skillsDir,
-          "danyuchn--asd-ste100-skill",
-          "@root",
-          "references",
-          "rules.md",
-        ),
+        path.join(home, ".agents", "skills", "asd-ste100-skill", "references", "rules.md"),
       ),
       "rules\n",
     );

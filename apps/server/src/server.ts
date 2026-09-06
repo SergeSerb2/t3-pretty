@@ -97,10 +97,8 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
-import * as HostSkills from "./skills/HostSkills.ts";
+import * as SkillLibrary from "./skills/SkillLibrary.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
-import * as SkillMaterializer from "./skills/SkillMaterializer.ts";
-import * as SkillStore from "./skills/SkillStore.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -227,7 +225,7 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
-const HostSkillsLayerLive = HostSkills.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const SkillLibraryLayerLive = SkillLibrary.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
 const AppsLayerLive = AppsService.layer.pipe(
   Layer.provide(ServerSettingsLayerLive),
@@ -235,13 +233,11 @@ const AppsLayerLive = AppsService.layer.pipe(
 );
 
 const SkillsLayerLive = Layer.mergeAll(
-  SkillStore.layer,
-  SkillMaterializer.layer.pipe(Layer.provide(SkillStore.layer), Layer.provide(HostSkillsLayerLive)),
+  SkillLibraryLayerLive,
   SkillMarketplace.layer.pipe(
-    Layer.provide(SkillStore.layer),
+    Layer.provide(SkillLibraryLayerLive),
     Layer.provide(ServerSettingsLayerLive),
   ),
-  HostSkillsLayerLive,
 );
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(

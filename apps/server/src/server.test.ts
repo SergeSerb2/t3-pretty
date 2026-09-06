@@ -175,11 +175,10 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
-import * as HostSkills from "./skills/HostSkills.ts";
+import * as SkillLibrary from "./skills/SkillLibrary.ts";
 import * as AppsService from "./apps/AppsService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
-import * as SkillStore from "./skills/SkillStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -564,9 +563,8 @@ const buildAppUnderTest = (options?: {
     antigravityInstallation?: Partial<AntigravityInstallation["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     agentInstructionFiles?: Partial<AgentInstructionFiles.AgentInstructionFiles["Service"]>;
-    skillStore?: Partial<SkillStore.SkillStore["Service"]>;
+    skillLibrary?: Partial<SkillLibrary.SkillLibrary["Service"]>;
     skillMarketplace?: Partial<SkillMarketplace.SkillMarketplace["Service"]>;
-    hostSkills?: Partial<HostSkills.HostSkills["Service"]>;
     appsService?: Partial<AppsService.AppsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -892,19 +890,14 @@ const buildAppUnderTest = (options?: {
             resolveTargets: () => Effect.succeed([]),
           }),
           // Skills ride this merge to stay inside pipe()'s 20-argument ceiling.
-          Layer.mock(SkillStore.SkillStore)({
-            getState: Effect.succeed({ installedSkills: [] }),
-            ...options?.layers?.skillStore,
+          Layer.mock(SkillLibrary.SkillLibrary)({
+            getState: Effect.succeed({ locations: [], skills: [] }),
+            ...options?.layers?.skillLibrary,
           }),
           Layer.mock(SkillMarketplace.SkillMarketplace)({
             list: () => Effect.succeed([]),
             refresh: () => Effect.succeed([]),
             ...options?.layers?.skillMarketplace,
-          }),
-          Layer.mock(HostSkills.HostSkills)({
-            list: Effect.succeed({ skills: [] }),
-            resolve: () => Effect.succeed([]),
-            ...options?.layers?.hostSkills,
           }),
           Layer.mock(AppsService.AppsService)({ ...options?.layers?.appsService }),
         ),

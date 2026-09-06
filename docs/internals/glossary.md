@@ -12,6 +12,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Provider runtime](#provider-runtime)
 - [Checkpointing](#checkpointing)
 - [Appearance](#appearance)
+- [Skills](#skills)
 
 ## Concepts
 
@@ -208,6 +209,24 @@ theme a user picks in Settings afterwards sticks until the next set; mobile keep
 appearance settings. Naming a published [environment theme](#environment-theme) is how a desktop
 ships T3 Code already matching it.
 
+### Skills
+
+#### Skill
+
+One folder holding a `SKILL.md` (YAML frontmatter with `name` and `description`, then the instructions). Provider CLIs discover skills by folder name from their own user-scope `skills/` directory and from project roots; the folder name is what `$mention` and slash invocations use. Contracts live in [skills.ts][29].
+
+#### Skill library
+
+The host's skill folders seen as one inventory: the shared `~/.agents/skills` (read natively by Codex and Cursor) plus each provider CLI's own folder (`~/.claude/skills`, `~/.cursor/skills`, `~/.grok/skills`, `~/.codex/skills`, and configured instance homes). [SkillLibrary.ts][30] scans every location, resolves symlinks, and reports one `Skill` per real folder with the locations it is present in. There is no T3-private store; marketplace installs land in the shared folder and link into the providers that need a link, matching the layout `npx skills` writes.
+
+#### Skill location
+
+One scanned folder, keyed `agents`, `<driver>`, or `<driver>:<instanceId>`. A location's `reads` lists the locations its CLI also scans natively, so a skill is _visible_ to a CLI when it is present in any of them and _linked_ when the CLI's own folder has an entry. Enabling a skill for a provider adds a relative symlink (a junction on Windows); disabling removes it. Nothing inside a skill folder is renamed or rewritten.
+
+#### Attached skill
+
+A per-thread pick (`enabledSkillIds` on the thread, set at creation or by `thread.skills.set`). At turn start the provider command reactor resolves the picks through the library and sends their `SKILL.md` bodies ahead of the user's message as the skill prelude, once per thread and again after a provider handoff; each one is recorded as a `skill.loaded` activity. Pre-library ids (`owner/repo:path`) fold onto `host:agents:<dir>`. User-facing behavior is in [skills.md][31].
+
 ## Practical Shortcuts
 
 - If you see `requested`, think "intent recorded".
@@ -251,3 +270,6 @@ ships T3 Code already matching it.
 [26]: ../../apps/server/src/orchestration/ToolProgress.ts
 [27]: ../../apps/server/src/environmentTheme.ts
 [28]: ../user/environment-theme.md
+[29]: ../../packages/contracts/src/skills.ts
+[30]: ../../apps/server/src/skills/SkillLibrary.ts
+[31]: ../user/skills.md
