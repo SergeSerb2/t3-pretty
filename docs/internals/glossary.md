@@ -121,6 +121,22 @@ A typed signal emitted when an async milestone completes, such as `checkpoint.ba
 
 "Quiesced" means a turn has gone quiet and stable: follow-up work such as [CheckpointReactor.ts][6] has settled. It appears in [the receipt schema][13], so in practice it is something tests wait on rather than a production signal.
 
+#### Automation
+
+A saved prompt plus triggers that the server runs unattended for a project, stored as its own event-sourced aggregate (`aggregateKind: "automation"`). Triggers are schedule (cron + required IANA timezone), manual, in-app event, webhook, and git remote change. Definition and derived run state live in `projection_automations` and reach clients as `AutomationShell` on the shell snapshot. See `packages/contracts/src/automations.ts`, `apps/server/src/automations/AutomationScheduler.ts`, and [automations.md](./automations.md).
+
+#### Automation run
+
+One execution of an automation: a row in `projection_automation_runs` with a status of `requested`, `running`, `completed`, `failed`, `interrupted`, `skipped` (a scheduled instant that collided with a still-running run) or `missed` (a scheduled instant dropped because catch-up is off). Concurrency is decided in [decider.ts][8] from the read model — one active run per automation — not by the scheduler. See [automations.md](./automations.md).
+
+#### Run thread
+
+The ordinary thread an automation run works in, marked by `automationRun: { automationId, runId }` on the thread. Run threads are filtered out of the default thread-list selectors in `packages/client-runtime` and withheld from clients that did not send `acceptAutomations`, so they are reachable only from their automation. Retention deletes the threads of all but the 25 most recent runs; the run row survives and renders "Thread removed".
+
+#### Coalesced trigger
+
+A non-manual trigger (event, git or webhook) that arrived while a run was already active. The decider emits `automation.run-coalesced` instead of a run, which stores the trigger as `pendingTrigger` on the automation; the scheduler requests exactly one follow-up run when the active run finishes. A burst of pushes therefore produces one extra run, not one per push.
+
 ### Provider runtime
 
 The live backend agent implementation and its event stream. The main service is [ProviderService.ts][14], the adapter contract is [ProviderAdapter.ts][15], and the overview is in [providers.md][16].
@@ -147,7 +163,7 @@ Whether a thread may spawn provider-native children, and which model those child
 
 #### App
 
-An external service (Gmail, GitHub, Linear, …) connected to an environment as a remote MCP server, reached by every provider through the server's `/mcp/apps/<id>` proxy and addressed in chat as `@slug`. Records live in `ServerSettings.apps` (server-written), credentials in the secret store. See `packages/contracts/src/apps.ts`, `packages/contracts/src/appsCatalog.ts`, and [apps.md](./apps.md).
+An external service (Gmail, GitHub, Linear, …) connected to an environment as a remote MCP server, reached by every provider through the server's `/mcp/apps/<id>` proxy — alongside the built-in MCP servers `t3-code`, `t3-code-computer` (`${endpoint}/computer-use`) and `t3-code-automations` (`${endpoint}/automations`) — and addressed in chat as `@slug`. Records live in `ServerSettings.apps` (server-written), credentials in the secret store. See `packages/contracts/src/apps.ts`, `packages/contracts/src/appsCatalog.ts`, and [apps.md](./apps.md).
 
 #### Assistant delivery mode
 

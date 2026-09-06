@@ -79,6 +79,23 @@ it.effect("stores only the capabilities requested for a provider session", () =>
   }),
 );
 
+it.effect("attaches one server per granted capability", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-every-capability"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview", "computer-use", "automations"]),
+    });
+
+    expect(issued.config.servers).toEqual([
+      { name: "t3-code", url: "http://127.0.0.1:43123/mcp" },
+      { name: "t3-code-computer", url: "http://127.0.0.1:43123/mcp/computer-use" },
+      { name: "t3-code-automations", url: "http://127.0.0.1:43123/mcp/automations" },
+    ]);
+  }),
+);
+
 it.effect("defaults omitted capabilities to no built-in tools", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);

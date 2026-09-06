@@ -22,6 +22,10 @@ function upsertById<A extends { readonly id: string }>(
  *
  * Returns the original snapshot reference unchanged if the event is not
  * recognized (forward-compatible).
+ *
+ * Every branch replaces only the collection the event touched, so a streaming
+ * thread never changes the `automations` array identity (automation row atoms
+ * are refresh triggers; rebuilding them would refetch run pages per token).
  */
 export function applyShellStreamEvent(
   snapshot: OrchestrationShellSnapshot,
@@ -48,6 +52,16 @@ export function applyShellStreamEvent(
       return {
         ...snapshot,
         threads: Arr.filter(snapshot.threads, (t) => t.id !== event.threadId),
+        snapshotSequence: event.sequence,
+      };
+    case "automation-upserted": {
+      const automations = upsertById(snapshot.automations, event.automation);
+      return { ...snapshot, automations, snapshotSequence: event.sequence };
+    }
+    case "automation-removed":
+      return {
+        ...snapshot,
+        automations: Arr.filter(snapshot.automations, (a) => a.id !== event.automationId),
         snapshotSequence: event.sequence,
       };
     case "thread-touched": {

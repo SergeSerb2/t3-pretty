@@ -23,8 +23,10 @@ import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import {
+  AutomationId,
   ThreadId,
   type OrchestrationEvent,
+  type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
   type OrchestrationShellStreamItem,
   type OrchestrationGetSnapshotError,
@@ -79,6 +81,39 @@ const SHELL_COALESCE_WINDOW = Duration.millis(50);
 const SHELL_COALESCE_MAX_CHUNK = 512;
 const SHELL_REFETCH_CONCURRENCY = 8;
 
+/** A shell snapshot without automation run threads, for clients that did not send `acceptAutomations`. */
+export const stripAutomationsFromShellSnapshot = (
+  snapshot: OrchestrationShellSnapshot,
+): OrchestrationShellSnapshot => ({
+  ...snapshot,
+  threads: snapshot.threads.filter((thread) => thread.automationRun == null),
+});
+
+/**
+ * What a subscriber that did not send `acceptAutomations` may see: no
+ * automation items, and no automation run threads (in deltas or the
+ * snapshot). `thread-removed` passes through; removing an unknown thread is a
+ * no-op on the client.
+ */
+export function stripAutomationsForLegacyClient(
+  item: OrchestrationShellStreamItem,
+): Option.Option<OrchestrationShellStreamItem> {
+  switch (item.kind) {
+    case "automation-upserted":
+    case "automation-removed":
+      return Option.none();
+    case "thread-upserted":
+      return item.thread.automationRun != null ? Option.none() : Option.some(item);
+    case "snapshot":
+      return Option.some({
+        kind: "snapshot",
+        snapshot: stripAutomationsFromShellSnapshot(item.snapshot),
+      });
+    default:
+      return Option.some(item);
+  }
+}
+
 export const makeShellStreamProjector = (
   projectionSnapshotQuery: ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"],
 ) => {
@@ -87,7 +122,7 @@ export const makeShellStreamProjector = (
   // drop the stream item; treating an error as a missing row would
   // incorrectly remove a still-active aggregate.
   const retryShellProjectionRead = <A, E>(
-    aggregateKind: "project" | "thread",
+    aggregateKind: OrchestrationEvent["aggregateKind"],
     aggregateId: string,
     read: Effect.Effect<A, E>,
   ): Effect.Effect<Option.Option<A>, never, never> =>
@@ -172,10 +207,47 @@ export const makeShellStreamProjector = (
       ),
     );
 
+  const automationUpsertOrRemove = (
+    automationId: AutomationId,
+    sequence: number,
+  ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+    retryShellProjectionRead(
+      "automation",
+      automationId,
+      projectionSnapshotQuery.getAutomationShellById(automationId),
+    ).pipe(
+      Effect.map(
+        Option.flatMap((automation) =>
+          Option.match(automation, {
+            onNone: () =>
+              Option.some<OrchestrationShellStreamEvent>({
+                kind: "automation-removed" as const,
+                sequence,
+                automationId,
+              }),
+            onSome: (nextAutomation) =>
+              Option.some<OrchestrationShellStreamEvent>({
+                kind: "automation-upserted" as const,
+                sequence,
+                automation: nextAutomation,
+              }),
+          }),
+        ),
+      ),
+    );
+
   const toShellStreamEvent = (
     event: OrchestrationEvent,
   ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
     switch (event.type) {
+      case "automation.deleted":
+        return Effect.succeed(
+          Option.some({
+            kind: "automation-removed" as const,
+            sequence: event.sequence,
+            automationId: event.payload.automationId,
+          }),
+        );
       case "project.created":
       case "project.meta-updated":
         return projectUpsertOrRemove(event.payload.projectId, event.sequence);
@@ -199,6 +271,9 @@ export const makeShellStreamProjector = (
       case "thread.unarchived":
         return threadUpsertOrRemove(event.payload.threadId, event.sequence);
       default:
+        if (event.aggregateKind === "automation") {
+          return automationUpsertOrRemove(AutomationId.make(event.aggregateId), event.sequence);
+        }
         if (event.aggregateKind !== "thread") {
           return Effect.succeed(Option.none());
         }

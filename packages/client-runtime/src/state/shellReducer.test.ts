@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { AutomationId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { AutomationShell } from "@t3tools/contracts";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
 
 import { applyShellStreamEvent } from "./shellReducer.ts";
@@ -9,6 +10,7 @@ const baseSnapshot: OrchestrationShellSnapshot = {
   snapshotSequence: 0,
   projects: [],
   threads: [],
+  automations: [],
   updatedAt: "2026-04-01T00:00:00.000Z",
 };
 
@@ -45,6 +47,35 @@ const stubThread = {
   hasActionableProposedPlan: false,
   session: null,
 } as const;
+
+const stubAutomation: AutomationShell = {
+  id: AutomationId.make("automation-1"),
+  projectId: ProjectId.make("project-1"),
+  name: "Nightly triage",
+  prompt: "Triage the inbox",
+  triggers: [],
+  enabled: true,
+  modelSelection: null,
+  runtimeMode: "full-access",
+  workspace: "checkout",
+  createPullRequest: false,
+  includeLastRunSummary: false,
+  catchUpMissedRuns: true,
+  minIntervalSeconds: 60,
+  timeoutMinutes: 120,
+  webhookToken: null,
+  sourceThreadId: null,
+  createdAt: "2026-04-01T00:00:00.000Z",
+  updatedAt: "2026-04-01T00:00:00.000Z",
+  nextRunAt: null,
+  activeRun: null,
+  lastRun: null,
+  lastRequestedAt: null,
+  pendingTrigger: null,
+  consecutiveFailures: 0,
+  runCount: 0,
+  webhookPath: null,
+};
 
 describe("applyShellStreamEvent", () => {
   it("ignores stale project upserts without mutating the snapshot", () => {
@@ -233,6 +264,56 @@ describe("applyShellStreamEvent", () => {
 
       expect(next.threads).toHaveLength(0);
       expect(next.snapshotSequence).toBe(8);
+    });
+  });
+
+  describe("automations", () => {
+    it("adds, replaces, and removes rows", () => {
+      const added = applyShellStreamEvent(baseSnapshot, {
+        kind: "automation-upserted",
+        sequence: 1,
+        automation: stubAutomation,
+      });
+      expect(added.automations).toEqual([stubAutomation]);
+
+      const renamed = applyShellStreamEvent(added, {
+        kind: "automation-upserted",
+        sequence: 2,
+        automation: { ...stubAutomation, name: "Renamed" },
+      });
+      expect(renamed.automations).toHaveLength(1);
+      expect(renamed.automations[0]?.name).toBe("Renamed");
+
+      const removed = applyShellStreamEvent(renamed, {
+        kind: "automation-removed",
+        sequence: 3,
+        automationId: stubAutomation.id,
+      });
+      expect(removed.automations).toHaveLength(0);
+      expect(removed.snapshotSequence).toBe(3);
+    });
+
+    it("keeps the automation list identical across thread events", () => {
+      const snapshot: OrchestrationShellSnapshot = {
+        ...baseSnapshot,
+        threads: [stubThread],
+        automations: [stubAutomation],
+      };
+
+      const touched = applyShellStreamEvent(snapshot, {
+        kind: "thread-touched",
+        sequence: 9,
+        threadId: stubThread.id,
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      });
+      const upserted = applyShellStreamEvent(touched, {
+        kind: "thread-upserted",
+        sequence: 10,
+        thread: { ...stubThread, title: "Renamed thread" },
+      });
+
+      expect(touched.automations).toBe(snapshot.automations);
+      expect(upserted.automations).toBe(snapshot.automations);
     });
   });
 

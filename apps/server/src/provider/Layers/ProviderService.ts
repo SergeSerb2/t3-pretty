@@ -790,28 +790,27 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const plan = yield* mcpAttachmentPlan;
-      if (!plan.browserTools && !plan.computerUse && plan.apps.length === 0) {
-        // Revoke as well as clear. Every other prepare path reaches
-        // `issueActiveMcpCredential`, which atomically replaces the thread's
-        // prior credential, so
-        // skipping it here would leave a previously issued bearer token valid
-        // against `/mcp` for the rest of its liveness window — and later turns
-        // would keep refreshing it. A session restart (runtime mode, cwd,
-        // model) re-prepares without stopping, so it relies on this.
-        yield* revokeMcpCredential(threadId);
-        yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
-        return undefined;
-      }
+      // Automations are always attached, so there is no "nothing to attach"
+      // case left: issuing atomically replaces the thread's prior credential,
+      // which is what invalidates a token minted while a toggle was still on.
       const capabilities = new Set<McpInvocationContext.McpCapability>([
         ...(plan.browserTools ? (["preview"] as const) : []),
         ...(plan.computerUse ? (["computer-use"] as const) : []),
+        "automations" as const,
       ]);
       const credential = yield* issueMcpCredential({
         threadId,
         providerInstanceId,
         capabilities,
       });
-      if (!credential) return undefined;
+      if (!credential) {
+        // No credential could be minted (registry inactive). Drop any earlier
+        // one: it would stay valid against `/mcp` for its whole liveness
+        // window, and later turns would keep refreshing it.
+        yield* revokeMcpCredential(threadId);
+        yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
+        return undefined;
+      }
       // One bearer, many servers: built-in toolkits use distinct catalogs and
       // apps ride the `/mcp/apps/<id>` proxy; every endpoint resolves the same token.
       const config: McpProviderSession.McpProviderSessionConfig = {

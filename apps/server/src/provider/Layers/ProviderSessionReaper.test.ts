@@ -207,6 +207,10 @@ describe("ProviderSessionReaper", () => {
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          getAutomationShellById: () => Effect.die("unused"),
+          listAutomationShells: () => Effect.die("unused"),
+          listAutomationRuns: () => Effect.die("unused"),
+          getAutomationRunById: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),

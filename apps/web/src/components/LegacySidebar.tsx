@@ -82,8 +82,9 @@ import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform } from "../lib/utils";
 import {
-  readThreadShell,
+  readEnvironmentSupportsAutomations,
   readEnvironmentSupportsProjectTransfer,
+  readThreadShell,
   useProject,
   useProjects,
   useThreadShells,
@@ -1707,11 +1708,24 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           };
         };
 
+        // Automations live on the project settings page; the legacy tree only
+        // links there.
+        const automationsSupported = project.memberProjects.some((member) =>
+          readEnvironmentSupportsAutomations(member.environmentId),
+        );
+        actionHandlers.set("automations", () => {
+          void router.navigate({
+            to: "/projects/$projectKey",
+            params: { projectKey: project.projectKey },
+            hash: "automations",
+          });
+        });
         const clicked = await api.contextMenu.show(
           [
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
+            ...(automationsSupported ? [{ id: "automations", label: "Automations" }] : []),
             buildTargetedItem("delete", "Remove", {
               destructive: true,
             }),
@@ -1738,6 +1752,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      project.projectKey,
+      router,
       suppressProjectClickForContextMenuRef,
     ],
   );

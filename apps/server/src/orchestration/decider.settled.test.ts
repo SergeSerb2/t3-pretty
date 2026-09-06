@@ -48,6 +48,7 @@ function makeReadModel(
 
   return {
     snapshotSequence: 0,
+    automations: [],
     projects: [],
     threads: [
       {

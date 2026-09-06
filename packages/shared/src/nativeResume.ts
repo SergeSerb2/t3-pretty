@@ -1,6 +1,6 @@
 import { ENTITY_ID_MAX_LENGTH, type OrchestrationSessionStatus } from "@t3tools/contracts";
 
-import { stripCreatePullRequestSuffix } from "./createPullRequestPrompt.ts";
+import { stripHiddenInstructionSuffixes } from "./hiddenInstructionBlocks.ts";
 
 export const NATIVE_RESUME_THREAD_TITLE = "Resumed native session";
 
@@ -27,7 +27,7 @@ export function restoreFailedNativeResumePrompt(
 }
 
 export function parseNativeResumeCommand(text: string): NativeResumeCommand | null {
-  const visibleText = stripCreatePullRequestSuffix(text).trim();
+  const visibleText = stripHiddenInstructionSuffixes(text).trim();
   if (!/^\/resume(?:\s|$)/iu.test(visibleText)) {
     return null;
   }

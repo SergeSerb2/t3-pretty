@@ -77,7 +77,7 @@ vi.mock("../lib/attachmentUpload", () => ({
 vi.mock("./entities", () => ({
   useProjects: () => [],
   useServerConfigs: () => new Map(),
-  useThreadShells: () => [],
+  useAllThreadShells: () => [],
 }));
 
 vi.mock("./server", async () => {

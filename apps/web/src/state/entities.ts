@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
+  EnvironmentAutomation,
+  ScopedAutomationRef,
+} from "@t3tools/client-runtime/state/automations";
+import type {
   EnvironmentProject,
   EnvironmentThread,
   EnvironmentThreadShell,
@@ -22,6 +26,7 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { automationEnvironment } from "./automations";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom } from "./shell";
@@ -33,6 +38,14 @@ const EMPTY_MESSAGES: ReadonlyArray<OrchestrationMessage> = Object.freeze([]);
 const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = Object.freeze([]);
 const EMPTY_PROPOSED_PLANS: ReadonlyArray<OrchestrationProposedPlan> = Object.freeze([]);
 const EMPTY_CHECKPOINTS: ReadonlyArray<OrchestrationCheckpointSummary> = Object.freeze([]);
+
+const EMPTY_AUTOMATIONS: ReadonlyArray<EnvironmentAutomation> = Object.freeze([]);
+const EMPTY_AUTOMATIONS_ATOM = Atom.make(EMPTY_AUTOMATIONS).pipe(
+  Atom.withLabel("web-automations:empty"),
+);
+const EMPTY_AUTOMATION_ATOM = Atom.make<EnvironmentAutomation | null>(null).pipe(
+  Atom.withLabel("web-automation:empty"),
+);
 
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
@@ -121,8 +134,40 @@ export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
   return useAtomValue(environmentServerConfigsAtom);
 }
 
+/** Automation run threads are excluded; the automation surfaces use `useAllThreadShells`. */
 export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.threadShellsAtom);
+}
+
+export function useAllThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
+  return useAtomValue(environmentThreadShells.allThreadShellsAtom);
+}
+
+/** Automations of one environment, or of every connected environment when omitted. */
+export function useAutomations(
+  environmentId?: EnvironmentId | null,
+): ReadonlyArray<EnvironmentAutomation> {
+  return useAtomValue(
+    environmentId === undefined
+      ? automationEnvironment.automationsAtom
+      : environmentId === null
+        ? EMPTY_AUTOMATIONS_ATOM
+        : automationEnvironment.environmentAutomationsAtom(environmentId),
+  );
+}
+
+export function useAutomationsForProject(
+  ref: ScopedProjectRef | null,
+): ReadonlyArray<EnvironmentAutomation> {
+  return useAtomValue(
+    ref === null ? EMPTY_AUTOMATIONS_ATOM : automationEnvironment.automationsForProjectAtom(ref),
+  );
+}
+
+export function useAutomationShell(ref: ScopedAutomationRef | null): EnvironmentAutomation | null {
+  return useAtomValue(
+    ref === null ? EMPTY_AUTOMATION_ATOM : automationEnvironment.automationShellAtom(ref),
+  );
 }
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
@@ -323,6 +368,13 @@ export function readEnvironmentSupportsStorageInventory(environmentId: Environme
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .storageInventory === true
+  );
+}
+
+export function readEnvironmentSupportsAutomations(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .automations === true
   );
 }
 

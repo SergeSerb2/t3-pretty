@@ -317,6 +317,7 @@ import {
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
+  useAutomationShell,
   useProject,
   useProjects,
   useThread,
@@ -368,6 +369,7 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { AutomationRunBanner } from "./chat/AutomationRunBanner";
 import { ComposerSpecular } from "./chat/ComposerSpecular";
 import {
   hasAvailableCompactionProvider,
@@ -2031,6 +2033,16 @@ export default function ChatView(props: ChatViewProps) {
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
+  // Run threads carry a banner naming their automation; an orphaned run
+  // thread (automation gone) is an ordinary thread again and gets none.
+  const runAutomation = useAutomationShell(
+    activeThreadShell?.automationRun
+      ? {
+          environmentId: activeThreadShell.environmentId,
+          automationId: activeThreadShell.automationRun.automationId,
+        }
+      : null,
+  );
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -8479,8 +8491,17 @@ export default function ChatView(props: ChatViewProps) {
                 </div>
               </div>
             ) : null}
-            {/* Banners overlay the timeline without changing its content height. */}
+            {/* Banners overlay the timeline without changing its content height.
+                The run banner is the exception: it is permanent, so the
+                transcript below is inset by its height (h-7 ↔ pt-7). */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col">
+              {runAutomation !== null && activeThreadShell?.automationRun ? (
+                <AutomationRunBanner
+                  environmentId={activeThreadShell.environmentId}
+                  automation={runAutomation}
+                  automationRun={activeThreadShell.automationRun}
+                />
+              ) : null}
               <ProviderStatusBanner
                 status={visibleProviderStatus}
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
@@ -8497,7 +8518,10 @@ export default function ChatView(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
             <div
-              className="relative flex min-h-0 flex-1 flex-col"
+              className={cn(
+                "relative flex min-h-0 flex-1 flex-col",
+                runAutomation !== null && "pt-7",
+              )}
               data-chat-transcript="true"
               data-chat-transcript-active="true"
             >

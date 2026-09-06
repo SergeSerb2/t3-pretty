@@ -1,5 +1,6 @@
 import {
   ApprovalRequestId,
+  AutomationId,
   type ChatAttachment,
   type IsoDateTime,
   type MessageId,
@@ -18,6 +19,8 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { toPersistenceSqlError, type ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { ProjectionAutomationRepository } from "../../persistence/Services/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepository } from "../../persistence/Services/ProjectionAutomationRuns.ts";
 import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
@@ -37,6 +40,8 @@ import {
   ProjectionTurnRepository,
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { ProjectionAutomationRepositoryLive } from "../../persistence/Layers/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepositoryLive } from "../../persistence/Layers/ProjectionAutomationRuns.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -59,6 +64,7 @@ import {
 } from "../../attachmentStore.ts";
 import { attachmentFeedPreviewPath } from "../../assets/attachmentFeedPreviewPath.ts";
 import { SearchIndex, SearchIndexLive } from "../../search/SearchIndex.ts";
+import { isAutomationEvent, projectAutomationRow } from "../projector.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -71,7 +77,11 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
   searchIndex: "projection.search-index",
+  automations: "projection.automations",
 } as const;
+
+// Run rows kept per automation; older ones are pruned when a run finishes.
+const AUTOMATION_RUN_ROW_RETENTION = 1000;
 
 type ProjectorName =
   (typeof ORCHESTRATION_PROJECTOR_NAMES)[keyof typeof ORCHESTRATION_PROJECTOR_NAMES];
@@ -486,6 +496,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionStateRepository = yield* ProjectionStateRepository;
     const projectionProjectRepository = yield* ProjectionProjectRepository;
     const projectionThreadRepository = yield* ProjectionThreadRepository;
+    const projectionAutomationRepository = yield* ProjectionAutomationRepository;
+    const projectionAutomationRunRepository = yield* ProjectionAutomationRunRepository;
     const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
     const projectionThreadProposedPlanRepository = yield* ProjectionThreadProposedPlanRepository;
     const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
@@ -642,6 +654,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             scenery: null,
             enabledSkillIds: event.payload.enabledSkillIds,
             subagentPolicy: event.payload.subagentPolicy ?? null,
+            automationRun: event.payload.automationRun ?? null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -699,6 +712,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             scenery: thread.scenery ?? null,
             enabledSkillIds: thread.enabledSkillIds,
             subagentPolicy: thread.subagentPolicy ?? null,
+            automationRun: thread.automationRun ?? null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt,
@@ -2112,10 +2126,76 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    // Only automation events touch automation rows; thread traffic never
+    // reads these tables.
+    const applyAutomationsProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyAutomationsProjection",
+    )(function* (event) {
+      if (!isAutomationEvent(event)) {
+        return;
+      }
+      const automationId = AutomationId.make(event.aggregateId);
+      const existing = yield* projectionAutomationRepository.getById({ automationId });
+      const next = projectAutomationRow(Option.getOrUndefined(existing), event);
+      if (next === null) {
+        yield* projectionAutomationRepository.deleteById({ automationId });
+        yield* projectionAutomationRunRepository.deleteByAutomationId({ automationId });
+        return;
+      }
+      yield* projectionAutomationRepository.upsert(next);
+
+      switch (event.type) {
+        case "automation.run-requested":
+        case "automation.run-skipped":
+        case "automation.run-missed":
+          yield* projectionAutomationRunRepository.upsert(event.payload.run);
+          return;
+        case "automation.run-started": {
+          const run = yield* projectionAutomationRunRepository.getById({
+            runId: event.payload.runId,
+          });
+          if (Option.isSome(run)) {
+            yield* projectionAutomationRunRepository.upsert({
+              ...run.value,
+              status: "running",
+              threadId: event.payload.threadId,
+              startedAt: event.payload.startedAt,
+            });
+          }
+          return;
+        }
+        case "automation.run-finished": {
+          const run = yield* projectionAutomationRunRepository.getById({
+            runId: event.payload.runId,
+          });
+          if (Option.isSome(run)) {
+            yield* projectionAutomationRunRepository.upsert({
+              ...run.value,
+              status: event.payload.status,
+              finishedAt: event.payload.finishedAt,
+              error: event.payload.error,
+              summary: event.payload.summary,
+            });
+          }
+          yield* projectionAutomationRunRepository.pruneBeyond({
+            automationId,
+            keep: AUTOMATION_RUN_ROW_RETENTION,
+          });
+          return;
+        }
+        default:
+          return;
+      }
+    });
+
     const projectors: ReadonlyArray<ProjectorDefinition> = [
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.projects,
         apply: applyProjectsProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.automations,
+        apply: applyAutomationsProjection,
       },
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.threadMessages,
@@ -2396,6 +2476,8 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
+  Layer.provideMerge(ProjectionAutomationRepositoryLive),
+  Layer.provideMerge(ProjectionAutomationRunRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
   Layer.provideMerge(SearchIndexLive),
 );

@@ -120,7 +120,24 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStatusPulse } from "../hooks/useStatusPulse";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import {
+  useAllThreadShells,
+  useAutomations,
+  useProjects,
+  useThreadShells,
+} from "../state/entities";
+import {
+  automationStatus,
+  type AutomationStatus,
+  type EnvironmentAutomation,
+  type ScopedAutomationRef,
+} from "@t3tools/client-runtime/state/automations";
+import type { ContextMenuPosition } from "@t3tools/contracts";
+import { AutomationDeleteDialog } from "./automations/AutomationDeleteDialog";
+import { AutomationEditorDialog } from "./automations/AutomationEditorDialog";
+import { countAutomationsNeedingAttention } from "./automations/automations.logic";
+import { useAutomationActions } from "./automations/useAutomationActions";
+import { SidebarAutomationRow } from "./sidebar/SidebarAutomationRow";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -233,6 +250,8 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const AUTOMATIONS_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:automations-expanded";
+const automationKey = (ref: ScopedAutomationRef) => `${ref.environmentId}:${ref.automationId}`;
 const PROJECT_SCOPE_KEY = "t3code:sidebar-v2:project-scope";
 const ProjectScopeKeySchema = Schema.NullOr(Schema.String);
 
@@ -2050,6 +2069,15 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  // The automation page is the only route with an automationId param, so the
+  // shelf row can mark itself active without knowing the route tree.
+  const routeAutomationKey = useParams({
+    strict: false,
+    select: (params) =>
+      typeof params.automationId === "string" && typeof params.environmentId === "string"
+        ? `${params.environmentId}:${params.automationId}`
+        : null,
+  });
   const routeTargetRef = useRef(routeTarget);
   routeTargetRef.current = routeTarget;
   // Post-settle navigation validates against the CURRENT route, not the one
@@ -2170,6 +2198,7 @@ export default function Sidebar() {
   );
 
   const nowMinute = useNowMinute();
+  const nowMinuteMs = Date.parse(`${nowMinute}:00.000Z`);
   // Snooze wake times are second-precise, so classifying with the quantized
   // minute would hold a woken thread on the shelf for up to a minute. The
   // tick is a plain counter bumped exactly at the next wake boundary (armed
@@ -2449,9 +2478,166 @@ export default function Sidebar() {
   // inbox partition the sidebar uses, minus project scope, so a parked
   // unread completion cannot keep a red badge on an empty inbox.
   const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+
+  // Automations shelf. Rows come from the shell stream; run threads are
+  // filtered out of `threads` upstream, so the automation shell is the only
+  // thing that can badge for them (see countAutomationsNeedingAttention).
+  const automations = useAutomations();
+  const supportedAutomations = useMemo(
+    () =>
+      automations.filter(
+        (automation) =>
+          serverConfigs.get(automation.environmentId)?.environment.capabilities.automations ===
+          true,
+      ),
+    [automations, serverConfigs],
+  );
+  const scopedAutomations = useMemo(
+    () =>
+      scopedProjectKeys === null
+        ? supportedAutomations
+        : supportedAutomations.filter((automation) =>
+            scopedProjectKeys.has(`${automation.environmentId}:${automation.projectId}`),
+          ),
+    [scopedProjectKeys, supportedAutomations],
+  );
+  const allThreads = useAllThreadShells();
+  const runThreadByKey = useMemo(() => {
+    const byKey = new Map<string, EnvironmentThreadShell>();
+    if (supportedAutomations.length === 0) return byKey;
+    for (const thread of allThreads) {
+      if (thread.automationRun != null) {
+        byKey.set(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), thread);
+      }
+    }
+    return byKey;
+  }, [allThreads, supportedAutomations.length]);
+  const automationStatusByKey = useMemo(() => {
+    const byKey = new Map<string, AutomationStatus>();
+    for (const automation of scopedAutomations) {
+      const activeThreadId = automation.activeRun?.threadId ?? null;
+      const activeThread =
+        activeThreadId === null
+          ? null
+          : (runThreadByKey.get(
+              scopedThreadKey(scopeThreadRef(automation.environmentId, activeThreadId)),
+            ) ?? null);
+      byKey.set(
+        automationKey({ environmentId: automation.environmentId, automationId: automation.id }),
+        automationStatus(automation, activeThread),
+      );
+    }
+    return byKey;
+  }, [runThreadByKey, scopedAutomations]);
+  const automationsNeedingAttention = useMemo(
+    () =>
+      countAutomationsNeedingAttention(supportedAutomations, {
+        runThreadByKey,
+        lastVisitedAtByThreadKey: threadLastVisitedAtById,
+      }),
+    [runThreadByKey, supportedAutomations, threadLastVisitedAtById],
+  );
+  const [automationsShelfExpanded, setAutomationsShelfExpanded] = useLocalStorage(
+    AUTOMATIONS_SHELF_EXPANDED_KEY,
+    true,
+    Schema.Boolean,
+  );
+  const toggleAutomationsShelf = useCallback(
+    () => setAutomationsShelfExpanded((value) => !value),
+    [setAutomationsShelfExpanded],
+  );
+  const [expandedAutomationKeys, setExpandedAutomationKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const toggleAutomationExpanded = useCallback((ref: ScopedAutomationRef) => {
+    const key = automationKey(ref);
+    setExpandedAutomationKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const automationActions = useAutomationActions();
+  const [automationPendingDelete, setAutomationPendingDelete] =
+    useState<EnvironmentAutomation | null>(null);
+  const [automationBeingEdited, setAutomationBeingEdited] = useState<EnvironmentAutomation | null>(
+    null,
+  );
+  const openAutomation = useCallback(
+    (ref: ScopedAutomationRef) => {
+      if (isMobile) setOpenMobile(false);
+      void automationActions.openPage(ref);
+    },
+    [automationActions, isMobile, setOpenMobile],
+  );
+  const automationByKeyRef = useRef(new Map<string, EnvironmentAutomation>());
+  automationByKeyRef.current = new Map(
+    supportedAutomations.map((automation) => [
+      automationKey({ environmentId: automation.environmentId, automationId: automation.id }),
+      automation,
+    ]),
+  );
+  const handleAutomationContextMenu = useCallback(
+    async (ref: ScopedAutomationRef, position: ContextMenuPosition) => {
+      const api = readLocalApi();
+      const automation = automationByKeyRef.current.get(automationKey(ref));
+      if (!api || !automation) return;
+      const clicked = await settlePromise(() =>
+        api.contextMenu.show(
+          [
+            {
+              id: "run-now",
+              label: "Run now",
+              ...(automation.activeRun !== null ? { disabled: true } : {}),
+            },
+            { id: "toggle-enabled", label: automation.enabled ? "Pause" : "Resume" },
+            { id: "edit", label: "Edit", separatorBefore: true },
+            { id: "open", label: "Open" },
+            { id: "delete", label: "Delete", destructive: true, separatorBefore: true },
+          ],
+          position,
+        ),
+      );
+      if (clicked._tag === "Failure") return;
+      switch (clicked.value) {
+        case "run-now":
+          void automationActions.runNow(ref);
+          return;
+        case "toggle-enabled":
+          void automationActions.setEnabled(ref, !automation.enabled);
+          return;
+        case "edit":
+          setAutomationBeingEdited(automation);
+          return;
+        case "open":
+          openAutomation(ref);
+          return;
+        case "delete":
+          setAutomationPendingDelete(automation);
+          return;
+        default:
+          return;
+      }
+    },
+    [automationActions, openAutomation],
+  );
+  // The "+" on the shelf header needs one physical project to create in: the
+  // scoped group's first member on an environment that supports automations.
+  const newAutomationProjectRef = useMemo(() => {
+    if (scopedProjectGroup === null) return null;
+    const member = scopedProjectGroup.memberProjects.find(
+      (candidate) =>
+        serverConfigs.get(candidate.environmentId)?.environment.capabilities.automations === true,
+    );
+    return member ? scopeProjectRef(member.environmentId, member.id) : null;
+  }, [scopedProjectGroup, serverConfigs]);
+
   const threadsAwaitingUser = useMemo(
-    () => countThreadsAwaitingUser(inboxThreadsForDock, threadLastVisitedAtById),
-    [inboxThreadsForDock, threadLastVisitedAtById],
+    () =>
+      countThreadsAwaitingUser(inboxThreadsForDock, threadLastVisitedAtById) +
+      automationsNeedingAttention,
+    [automationsNeedingAttention, inboxThreadsForDock, threadLastVisitedAtById],
   );
   useEffect(() => {
     void window.desktopBridge
@@ -4522,6 +4708,109 @@ export default function Sidebar() {
                       routeDraftId={routeDraftIdForRows}
                       onNavigateToDraft={navigateToDraft}
                     />,
+                  ];
+                  // Automations shelf above the inbox: one header line when
+                  // collapsed, never a promo row. It only exists while the
+                  // scoped projects have automations.
+                  if (scopedAutomations.length > 0) {
+                    items.push(
+                      <li
+                        key="automations-shelf-header"
+                        data-thread-selection-safe
+                        className="list-none"
+                      >
+                        <div className="group/automations-header mb-1 flex w-full items-center px-2.5">
+                          <button
+                            type="button"
+                            onClick={toggleAutomationsShelf}
+                            aria-expanded={automationsShelfExpanded}
+                            data-testid="sidebar-automations-shelf-toggle"
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                          >
+                            <span className="text-xs font-medium text-muted-foreground/50">
+                              Automations
+                            </span>
+                            <span className="h-px flex-1 bg-sidebar-border/60" />
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground/50">
+                              {scopedAutomations.length}
+                            </span>
+                            <ChevronDownIcon
+                              aria-hidden
+                              className={cn(
+                                "size-3 text-muted-foreground/50 transition-transform",
+                                automationsShelfExpanded && "rotate-180",
+                              )}
+                            />
+                          </button>
+                          {newAutomationProjectRef !== null ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    aria-label="New automation"
+                                    data-testid="sidebar-automations-new"
+                                    className="ml-1.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/50 opacity-0 transition-opacity hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/automations-header:opacity-100 pointer-coarse:opacity-100"
+                                    onClick={() => {
+                                      if (isMobile) setOpenMobile(false);
+                                      void automationActions.startAgentSetup(
+                                        newAutomationProjectRef,
+                                      );
+                                    }}
+                                  />
+                                }
+                              >
+                                <PlusIcon aria-hidden className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipPopup>New automation</TooltipPopup>
+                            </Tooltip>
+                          ) : null}
+                        </div>
+                      </li>,
+                    );
+                    if (automationsShelfExpanded) {
+                      for (const automation of scopedAutomations) {
+                        const key = automationKey({
+                          environmentId: automation.environmentId,
+                          automationId: automation.id,
+                        });
+                        const projectLookupKey = `${automation.environmentId}:${automation.projectId}`;
+                        items.push(
+                          <SidebarAutomationRow
+                            key={`automation:${key}`}
+                            automation={automation}
+                            status={automationStatusByKey.get(key) ?? "idle"}
+                            isActive={routeAutomationKey === key}
+                            expanded={expandedAutomationKeys.has(key)}
+                            nowMs={nowMinuteMs}
+                            projectTitle={projectTitleByKey.get(projectLookupKey) ?? null}
+                            projectCwd={projectCwdByKey.get(projectLookupKey) ?? null}
+                            projectFaviconPath={
+                              projectFaviconPathByKey.get(projectLookupKey) ?? null
+                            }
+                            projectIcon={projectIconByKey.get(projectLookupKey) ?? null}
+                            environmentLabel={
+                              scopedProjectKeys === null
+                                ? (environmentLabelById.get(automation.environmentId) ?? null)
+                                : null
+                            }
+                            onOpen={openAutomation}
+                            onToggleExpanded={toggleAutomationExpanded}
+                            onContextMenu={handleAutomationContextMenu}
+                            onOpenThread={navigateToThread}
+                          />,
+                        );
+                      }
+                    }
+                    items.push(
+                      <li
+                        key="automations-divider"
+                        aria-hidden
+                        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+                      />,
+                    );
+                  }
+                  items.push(
                     pinnedThreads.length > 0 ? (
                       <li key="pinned-dnd" className="list-none">
                         <DndContext
@@ -4561,7 +4850,7 @@ export default function Sidebar() {
                         </DndContext>
                       </li>
                     ) : null,
-                  ];
+                  );
                   if (pinnedThreads.length > 0) {
                     items.push(
                       <li
@@ -4740,6 +5029,29 @@ export default function Sidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
+      <AutomationDeleteDialog
+        automation={automationPendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setAutomationPendingDelete(null);
+        }}
+        onConfirm={(automation) =>
+          void automationActions.remove({
+            environmentId: automation.environmentId,
+            automationId: automation.id,
+          })
+        }
+      />
+      {automationBeingEdited !== null ? (
+        <AutomationEditorDialog
+          open
+          environmentId={automationBeingEdited.environmentId}
+          projectId={automationBeingEdited.projectId}
+          automation={automationBeingEdited}
+          onOpenChange={(open) => {
+            if (!open) setAutomationBeingEdited(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

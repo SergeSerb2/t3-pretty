@@ -44,6 +44,7 @@ function makeReadModel(input: {
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
+    automations: [],
     projects: [],
     threads: [
       {

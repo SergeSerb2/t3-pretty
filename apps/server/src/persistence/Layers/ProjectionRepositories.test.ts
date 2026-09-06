@@ -1,4 +1,12 @@
-import { EventId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  AutomationId,
+  AutomationRunId,
+  EventId,
+  ProjectId,
+  ThreadId,
+  ProviderInstanceId,
+  type AutomationRun,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,8 +14,12 @@ import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
+import { ProjectionAutomationRepositoryLive } from "./ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepositoryLive } from "./ProjectionAutomationRuns.ts";
 import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
+import { ProjectionAutomationRepository } from "../Services/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepository } from "../Services/ProjectionAutomationRuns.ts";
 import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
 
@@ -15,6 +27,8 @@ const projectionRepositoriesLayer = it.layer(
   Layer.mergeAll(
     ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionAutomationRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionAutomationRunRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     SqlitePersistenceMemory,
   ),
 );
@@ -338,6 +352,98 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
 
       const cleared = yield* threads.getById({ threadId: ThreadId.make("thread-linked-pr") });
       assert.strictEqual(Option.getOrNull(cleared)?.linkedPullRequest, null);
+    }),
+  );
+  it.effect("round-trips an automation row with booleans and JSON columns", () =>
+    Effect.gen(function* () {
+      const automations = yield* ProjectionAutomationRepository;
+      const automationId = AutomationId.make("automation-1");
+      const row = {
+        id: automationId,
+        projectId: ProjectId.make("project-1"),
+        name: "Nightly",
+        prompt: "Do the thing",
+        enabled: false,
+        triggers: [{ type: "schedule" as const, cron: "0 9 * * *", timezone: "UTC" }],
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access" as const,
+        workspace: "worktree" as const,
+        createPullRequest: true,
+        includeLastRunSummary: false,
+        catchUpMissedRuns: true,
+        minIntervalSeconds: 60,
+        timeoutMinutes: 120,
+        webhookToken: "token",
+        sourceThreadId: ThreadId.make("thread-source"),
+        createdAt: "2026-03-24T00:00:00.000Z",
+        updatedAt: "2026-03-24T00:00:00.000Z",
+        nextRunAt: null,
+        activeRun: {
+          runId: AutomationRunId.make("run-1"),
+          threadId: null,
+          requestedAt: "2026-03-24T00:00:00.000Z",
+          startedAt: null,
+        },
+        lastRun: null,
+        lastRequestedAt: "2026-03-24T00:00:00.000Z",
+        pendingTrigger: { type: "webhook" as const, deliveryId: "d-1", payload: "{}" },
+        consecutiveFailures: 2,
+        runCount: 5,
+      };
+      yield* automations.upsert(row);
+      assert.deepStrictEqual(Option.getOrNull(yield* automations.getById({ automationId })), row);
+      assert.deepStrictEqual(
+        (yield* automations.listByProjectId({ projectId: row.projectId })).map((entry) => entry.id),
+        [automationId],
+      );
+      yield* automations.deleteById({ automationId });
+      assert.isTrue(Option.isNone(yield* automations.getById({ automationId })));
+    }),
+  );
+
+  it.effect("pages runs newest first and prunes beyond the retention window", () =>
+    Effect.gen(function* () {
+      const runs = yield* ProjectionAutomationRunRepository;
+      const automationId = AutomationId.make("automation-runs");
+      const makeRun = (index: number): AutomationRun => ({
+        id: AutomationRunId.make(`run-${index}`),
+        automationId,
+        projectId: ProjectId.make("project-1"),
+        threadId: index % 2 === 0 ? ThreadId.make(`thread-${index}`) : null,
+        status: "completed",
+        trigger: { type: "manual", byThreadId: null },
+        requestedAt: `2026-03-24T00:00:0${index}.000Z`,
+        startedAt: null,
+        finishedAt: null,
+        error: null,
+        summary: null,
+      });
+      for (const index of [1, 2, 3, 4]) {
+        yield* runs.upsert(makeRun(index));
+      }
+
+      const firstPage = yield* runs.listPage({ automationId, limit: 3 });
+      assert.deepStrictEqual(
+        firstPage.map((run) => run.id),
+        ["run-4", "run-3", "run-2"],
+      );
+      const secondPage = yield* runs.listPage({
+        automationId,
+        limit: 3,
+        before: { requestedAt: firstPage[2]!.requestedAt, runId: firstPage[2]!.id },
+      });
+      assert.deepStrictEqual(
+        secondPage.map((run) => run.id),
+        ["run-1"],
+      );
+
+      yield* runs.pruneBeyond({ automationId, keep: 2 });
+      assert.deepStrictEqual(
+        (yield* runs.listPage({ automationId, limit: 10 })).map((run) => run.id),
+        ["run-4", "run-3"],
+      );
+      yield* runs.deleteByAutomationId({ automationId });
+      assert.deepStrictEqual(yield* runs.listPage({ automationId, limit: 10 }), []);
     }),
   );
 });

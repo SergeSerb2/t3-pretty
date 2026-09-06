@@ -3,12 +3,14 @@ import { Pressable, View } from "react-native";
 
 export interface SidebarHeaderActionsProps {
   readonly onOpenPullRequests: () => void;
+  /** Null while no connected environment advertises the automations capability. */
+  readonly onOpenAutomations: (() => void) | null;
   readonly onOpenSettings: () => void;
 }
 
 function FallbackHeaderButton(props: {
   readonly accessibilityLabel: string;
-  readonly icon: "arrow.triangle.pull" | "gearshape" | "square.and.pencil";
+  readonly icon: "arrow.triangle.pull" | "bolt" | "gearshape" | "square.and.pencil";
   readonly onPress: () => void;
 }) {
   return (
@@ -37,6 +39,13 @@ export function SidebarHeaderActions(props: SidebarHeaderActionsProps) {
         icon="arrow.triangle.pull"
         onPress={props.onOpenPullRequests}
       />
+      {props.onOpenAutomations === null ? null : (
+        <FallbackHeaderButton
+          accessibilityLabel="Open automations"
+          icon="bolt"
+          onPress={props.onOpenAutomations}
+        />
+      )}
       <FallbackHeaderButton
         accessibilityLabel="Open settings"
         icon="gearshape"

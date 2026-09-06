@@ -1,12 +1,12 @@
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform, useWindowDimensions, View } from "react-native";
 
 import { EmptyState } from "../../components/EmptyState";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { useProjects } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
 import { usePresentedThreadShells } from "../../state/optimistic-thread-send";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
@@ -32,12 +32,25 @@ export function HomeRouteScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const { layout } = useAdaptiveWorkspaceLayout();
   const projects = useProjects();
+  const serverConfigs = useServerConfigs();
   const threads = usePresentedThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState("");
   const handleSelectThread = useHomeThreadSelection();
+  // One capable environment is enough to show the entry point; the list screen
+  // then picks the environment and explains any that are too old.
+  const automationsSupported = useMemo(
+    () =>
+      Array.from(serverConfigs.values()).some(
+        (config) => config.environment.capabilities.automations === true,
+      ),
+    [serverConfigs],
+  );
+  const openAutomations = useCallback(() => {
+    navigation.navigate("Automations");
+  }, [navigation]);
 
   useEffect(() => {
     void checkForAppUpdateOnLaunch();
@@ -127,6 +140,16 @@ export function HomeRouteScreen() {
               icon="arrow.triangle.pull"
               onPress={() => navigation.navigate("PullRequests")}
             />,
+            ...(automationsSupported
+              ? [
+                  <NativeHeaderToolbar.Button
+                    key="automations"
+                    accessibilityLabel="Open automations"
+                    icon="bolt"
+                    onPress={openAutomations}
+                  />,
+                ]
+              : []),
             <NativeHeaderToolbar.Button
               key="new-task"
               accessibilityLabel="New task"
@@ -199,6 +222,7 @@ export function HomeRouteScreen() {
               params: { screen: "SettingsEnvironments" },
             })
           }
+          onOpenAutomations={automationsSupported ? openAutomations : null}
           onOpenPullRequests={() => navigation.navigate("PullRequests")}
           onOpenSettings={() =>
             navigation.navigate("SettingsSheet", {

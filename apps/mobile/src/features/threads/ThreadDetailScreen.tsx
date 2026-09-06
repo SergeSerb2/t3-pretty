@@ -86,6 +86,7 @@ import {
   COMPOSER_EXPANDED_CHROME,
   ThreadComposer,
 } from "./ThreadComposer";
+import { AutomationRunBanner } from "../automations/AutomationRunBanner";
 import { ThreadFeed } from "./ThreadFeed";
 import { resolveThreadFeedEndOffset } from "./thread-feed-end-scroll";
 import { threadLoadingPhase, type ThreadContentPresentation } from "./threadContentPresentation";
@@ -779,6 +780,14 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
             onListReady={pinFollowedFeedToEnd}
             skills={selectedProviderSkills}
             loadEarlier={props.loadEarlier ?? null}
+            banner={
+              props.selectedThread.automationRun == null ? undefined : (
+                <AutomationRunBanner
+                  automationRun={props.selectedThread.automationRun}
+                  environmentId={props.environmentId}
+                />
+              )
+            }
             readAloudEnabled={
               T3CODE_BUILD_FLAVOR === "internal" &&
               props.serverConfig?.environment.capabilities.readAloud === true

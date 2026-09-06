@@ -28,7 +28,21 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, CopyIcon, PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  BotIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  PlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { automationStatus, formatUntilLabel } from "@t3tools/client-runtime/state/automations";
+import { useNowMinute } from "../../hooks/useNowMinute";
+import { AutomationEditorDialog } from "../automations/AutomationEditorDialog";
+import { automationStatusVisual } from "../automations/automations.logic";
+import { useAutomationActions } from "../automations/useAutomationActions";
+import { StatusDot } from "../ThreadStatusIndicators";
 import {
   lazy,
   Suspense,
@@ -73,7 +87,12 @@ import {
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
-import { useProjects, useThreadShells } from "../../state/entities";
+import {
+  useAllThreadShells,
+  useAutomations,
+  useAutomationsForProject,
+  useProjects,
+} from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -349,7 +368,15 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     EMPTY_SERVER_PROVIDERS;
   const updateClientSettings = useUpdateClientSettings();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const threads = useThreadShells();
+  // Unfiltered: run threads are hidden from lists but deleted with the project.
+  const threads = useAllThreadShells();
+  const allAutomations = useAutomations();
+  const groupAutomationCount = useMemo(() => {
+    const memberKeys = new Set(group.memberProjects.map(memberKey));
+    return allAutomations.filter((automation) =>
+      memberKeys.has(`${automation.environmentId}:${automation.projectId}`),
+    ).length;
+  }, [allAutomations, group.memberProjects]);
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const importFavicon = useAtomCommand(projectEnvironment.importFavicon, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
@@ -600,6 +627,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   );
   const keybindings = selectedServerConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const scripts = selectedCheckout.scripts;
+  // ----- automations (per physical checkout, like scripts) -----
+  const supportsAutomations = selectedServerConfig?.environment.capabilities.automations === true;
+  const selectedProjectRef = scopeProjectRef(selectedCheckout.environmentId, selectedCheckout.id);
+  const projectAutomations = useAutomationsForProject(
+    supportsAutomations ? selectedProjectRef : null,
+  );
+  const automationActions = useAutomationActions();
+  const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
+  const nowMinute = useNowMinute();
+  const nowMinuteMs = Date.parse(`${nowMinute}:00.000Z`);
   const [editorRequest, setEditorRequest] = useState<ProjectScriptEditorRequest | null>(null);
   // Script writes replace the whole array, so two overlapping writes computed
   // from the same snapshot would drop each other's changes. One at a time.
@@ -804,6 +841,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       const projectThreads = threads.filter((thread) =>
         memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
       );
+      const automationCount = allAutomations.filter((automation) =>
+        memberKeys.has(`${automation.environmentId}:${automation.projectId}`),
+      ).length;
       const isWholeGroup = members.length === group.memberProjects.length;
       const singleMember = members.length === 1 ? members[0]! : null;
       const targetLabel = singleMember?.title ?? group.displayName;
@@ -826,6 +866,11 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   "This permanently clears conversation history for those threads and any archived threads.",
                 ]
               : ["This permanently clears any archived conversation history."]),
+            ...(automationCount > 0
+              ? [
+                  `This also deletes ${automationCount} automation${automationCount === 1 ? "" : "s"}.`,
+                ]
+              : []),
             isWholeGroup
               ? "This removes only the project entries, not the files on disk."
               : "Other entries in this grouped project are unaffected.",
@@ -875,6 +920,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       }
     },
     [
+      allAutomations,
       deleteProject,
       group.displayName,
       group.memberProjects.length,
@@ -1323,16 +1369,93 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
           ) : null}
         </SettingsSection>
 
+        {supportsAutomations ? (
+          <SettingsSection
+            id="automations"
+            title="Automations"
+            description={`Prompts that run unattended in ${selectedCheckoutLabel}.`}
+            headerAction={
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => void automationActions.startAgentSetup(selectedProjectRef)}
+                >
+                  <BotIcon className="size-3.5" />
+                  New automation
+                </Button>
+                <Button size="xs" variant="outline" onClick={() => setAutomationEditorOpen(true)}>
+                  <PlusIcon className="size-3.5" />
+                  Create manually
+                </Button>
+              </div>
+            }
+          >
+            {projectAutomations.length === 0 ? (
+              <p className="px-3 py-2 text-base text-muted-foreground sm:px-4 sm:text-sm">
+                No automations in this checkout.
+              </p>
+            ) : (
+              projectAutomations.map((automation) => {
+                const status = automationStatus(automation);
+                const schedule = !automation.enabled
+                  ? "Paused"
+                  : automation.activeRun !== null
+                    ? "Running"
+                    : automation.nextRunAt !== null
+                      ? `Next run ${formatUntilLabel(automation.nextRunAt, nowMinuteMs)}`
+                      : "No schedule";
+                return (
+                  <SettingsRow
+                    key={automation.id}
+                    className="py-2"
+                    title={
+                      <span className="flex min-w-0 items-center gap-2">
+                        <StatusDot status={automationStatusVisual(status)} />
+                        <span className="truncate">{automation.name}</span>
+                      </span>
+                    }
+                    description={
+                      automation.lastRun?.status === "failed"
+                        ? `${schedule} · Last run failed`
+                        : schedule
+                    }
+                    control={
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() =>
+                          void automationActions.openPage({
+                            environmentId: automation.environmentId,
+                            automationId: automation.id,
+                          })
+                        }
+                      >
+                        Open
+                        <ChevronRightIcon className="size-3.5" />
+                      </Button>
+                    }
+                  />
+                );
+              })
+            )}
+          </SettingsSection>
+        ) : null}
+
         <SettingsSection title="Danger">
           <SettingsRow
             title={
               group.memberProjects.length > 1 ? "Remove this project everywhere" : "Remove project"
             }
-            description={
+            description={`${
               group.memberProjects.length > 1
-                ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                : "Deletes the project entry and its threads. Files on disk are not touched."
-            }
+                ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine.`
+                : "Deletes the project entry and its threads."
+            }${
+              groupAutomationCount > 0
+                ? ` Also deletes ${groupAutomationCount} automation${groupAutomationCount === 1 ? "" : "s"}.`
+                : ""
+            } Files on disk are not touched.`}
             control={
               <Button
                 size="sm"
@@ -1347,6 +1470,23 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         </SettingsSection>
       </SettingsPageContainer>
 
+      {automationEditorOpen ? (
+        <AutomationEditorDialog
+          open
+          environmentId={selectedCheckout.environmentId}
+          projectId={selectedCheckout.id}
+          automation={null}
+          onOpenChange={(open) => {
+            if (!open) setAutomationEditorOpen(false);
+          }}
+          onCreated={(automationId) =>
+            void automationActions.openPage({
+              environmentId: selectedCheckout.environmentId,
+              automationId,
+            })
+          }
+        />
+      ) : null}
       <ProjectScriptEditorDialog
         request={editorRequest}
         scripts={scripts}

@@ -11,6 +11,8 @@ import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/uns
 
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -300,4 +302,52 @@ it.effect("advertises object input schemas accepted by strict MCP clients", () =
       expect(Tool.getJsonSchema(tool).type, tool.name).toBe("object");
     }
   }).pipe(Effect.provide(TestLayer)),
+);
+
+const automationsInvocation = { ...invocation, capabilities: new Set(["automations"] as const) };
+// The toolkit's other tools reach these services; validating a cron does not,
+// so every method dies rather than pretending to have data.
+const unusedService = <T extends object>(): T =>
+  new Proxy({}, { get: (_, key) => () => Effect.die(`unexpected call: ${String(key)}`) }) as T;
+const unusedAutomationsServices = Layer.mergeAll(
+  Layer.succeed(ProjectionSnapshotQuery, unusedService<ProjectionSnapshotQuery["Service"]>()),
+  Layer.succeed(OrchestrationEngineService, unusedService<OrchestrationEngineService["Service"]>()),
+);
+const AutomationsTestLayer = McpHttpServer.AutomationsToolkitRegistrationLive.pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(unusedAutomationsServices),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.effect("registers the automations toolkit and validates a schedule through it", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+
+    const validateTool = server.tools.find(
+      ({ tool }) => tool.name === "automations_validate_schedule",
+    );
+    expect(validateTool?.tool.annotations?.readOnlyHint).toBe(true);
+    expect(validateTool?.tool.annotations?.idempotentHint).toBe(true);
+    expect(
+      server.tools.find(({ tool }) => tool.name === "automations_delete")?.tool.annotations
+        ?.destructiveHint,
+    ).toBe(true);
+
+    const result = yield* server
+      .callTool({
+        name: "automations_validate_schedule",
+        arguments: { cron: "0 9 * * 1-5", timezone: "Europe/Berlin" },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, automationsInvocation),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({
+      valid: true,
+      timezone: "Europe/Berlin",
+      error: null,
+    });
+  }).pipe(Effect.provide(AutomationsTestLayer)),
 );

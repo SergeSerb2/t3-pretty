@@ -4169,11 +4169,16 @@ describe("agent browser access", () => {
   // Credential issuance is the observable that matters: it is the only place a
   // credential is minted, and `/mcp` accepts nothing else, so withholding it is
   // what actually denies every provider and external MCP client.
-  it.effect("requests no MCP credential when agent browser access is off", () =>
+  it.effect("requests an automations-only credential when both toolsets are off", () =>
     Effect.gen(function* () {
-      const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
+      const threadId = asThreadId("thread-browser-off");
 
-      assert.deepEqual(issued, []);
+      const issued = yield* startSessionWith(false, threadId);
+
+      // The automations toolkit is always attached, so a session always has a
+      // credential; the optional toolsets stay out of its capability set.
+      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["automations"]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4198,7 +4203,10 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(true, threadId);
 
       assert.deepEqual(issued, [threadId]);
-      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["preview"]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), [
+        "preview",
+        "automations",
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -4209,20 +4217,20 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, threadId, true);
 
       assert.deepEqual(issued, [threadId]);
-      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["computer-use"]);
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), [
+        "computer-use",
+        "automations",
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("withholds computer control on unsupported hosts", () =>
     Effect.gen(function* () {
-      const issued = yield* startSessionWith(
-        false,
-        asThreadId("thread-computer-use-linux"),
-        true,
-        "linux",
-      );
+      const threadId = asThreadId("thread-computer-use-linux");
 
-      assert.deepEqual(issued, []);
+      yield* startSessionWith(false, threadId, true, "linux");
+
+      assert.deepEqual(Array.from(issuedCapabilities.get(threadId) ?? []), ["automations"]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

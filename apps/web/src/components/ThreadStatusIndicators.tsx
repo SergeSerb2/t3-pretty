@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
+import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
+import { cn } from "~/lib/utils";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -38,6 +40,47 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+
+/**
+ * Run-status vocabulary shared by the Agents panel and automation rows.
+ * In-flight subagent states all present as Working (detail belongs in the
+ * activity sub-line); only settled states differentiate. The automation keys
+ * extend the table with the states a scheduled run can be in.
+ */
+export type StatusVisualKey =
+  | RuntimeSubagent["status"]
+  | "attention"
+  | "paused"
+  | "ready"
+  | "skipped"
+  | "missed";
+
+export const STATUS_VISUALS: Record<StatusVisualKey, { dotClass: string; label: string }> = {
+  pending: { dotClass: "bg-info", label: "Working" },
+  running: { dotClass: "bg-info", label: "Working" },
+  waiting: { dotClass: "bg-info", label: "Working" },
+  // Idle reads as settled (muted, not sky): a resting Codex child looks done
+  // unless resumed — live-test: sky idle dots read as stuck in-progress.
+  idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
+  completed: { dotClass: "bg-success", label: "Completed" },
+  failed: { dotClass: "bg-destructive", label: "Failed" },
+  cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
+  interrupted: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
+  attention: { dotClass: "bg-warning", label: "Needs attention" },
+  paused: { dotClass: "bg-muted-foreground/40", label: "Paused" },
+  ready: { dotClass: "bg-success", label: "Ready" },
+  skipped: { dotClass: "bg-muted-foreground/40", label: "Skipped" },
+  missed: { dotClass: "bg-muted-foreground/40", label: "Missed" },
+};
+
+export function StatusDot({ status, className }: { status: StatusVisualKey; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn("size-1.5 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass, className)}
+    />
+  );
+}
 
 export interface PrStatusIndicator {
   label: string;

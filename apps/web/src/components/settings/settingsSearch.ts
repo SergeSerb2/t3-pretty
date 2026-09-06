@@ -41,6 +41,8 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  // Its row only renders when the primary server exposes automations.
+  readonly requiresAutomations?: boolean;
 }
 
 export interface SettingsSearchAvailability {
@@ -50,6 +52,7 @@ export interface SettingsSearchAvailability {
   readonly canManageLocalBackend: boolean;
   readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
+  readonly hasAutomations: boolean;
 }
 
 /**
@@ -408,6 +411,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["project thread tree old flat list"],
   },
   {
+    id: "pause-automations",
+    title: "Pause automations on this environment",
+    to: "/settings/general",
+    searchTerms: ["automations schedule cron webhook git trigger disable resume run now"],
+    primaryOnly: true,
+    requiresAutomations: true,
+  },
+  {
+    id: "automation-git-poll-interval",
+    title: "Automation git poll interval",
+    to: "/settings/general",
+    searchTerms: ["automations git trigger push fetch remote branch seconds"],
+    primaryOnly: true,
+    requiresAutomations: true,
+  },
+  {
     id: "keybindings",
     title: "Keybindings",
     to: "/settings/keybindings",
@@ -722,7 +741,8 @@ export function filterAvailableSettingsSearchItems(
       (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.requiresAutomations || availability.hasAutomations),
   );
 }
 

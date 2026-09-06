@@ -1,4 +1,6 @@
 import type {
+  AutomationId,
+  AutomationShell,
   OrchestrationCommand,
   OrchestrationProject,
   OrchestrationReadModel,
@@ -37,6 +39,53 @@ export function listThreadsByProjectId(
   projectId: ProjectId,
 ): ReadonlyArray<OrchestrationThread> {
   return readModel.threads.filter((thread) => thread.projectId === projectId);
+}
+
+export function findAutomationById(
+  readModel: OrchestrationReadModel,
+  automationId: AutomationId,
+): AutomationShell | undefined {
+  return readModel.automations.find((automation) => automation.id === automationId);
+}
+
+export function listAutomationsByProjectId(
+  readModel: OrchestrationReadModel,
+  projectId: ProjectId,
+): ReadonlyArray<AutomationShell> {
+  return readModel.automations.filter((automation) => automation.projectId === projectId);
+}
+
+export function requireAutomation(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<AutomationShell, OrchestrationCommandInvariantError> {
+  const automation = findAutomationById(input.readModel, input.automationId);
+  if (automation) {
+    return Effect.succeed(automation);
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' does not exist for command '${input.command.type}'.`,
+    ),
+  );
+}
+
+export function requireAutomationAbsent(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly automationId: AutomationId;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (!findAutomationById(input.readModel, input.automationId)) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Automation '${input.automationId}' already exists and cannot be created twice.`,
+    ),
+  );
 }
 
 export function requireProject(input: {

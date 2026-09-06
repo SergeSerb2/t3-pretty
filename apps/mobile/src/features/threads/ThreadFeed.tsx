@@ -28,7 +28,7 @@ import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { SymbolView } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
@@ -276,6 +276,8 @@ export interface ThreadFeedProps {
     readonly loading: boolean;
     readonly onLoadEarlier: () => void;
   } | null;
+  /** Context strip pinned above the first turn (automation runs use it). */
+  readonly banner?: ReactNode;
 }
 
 const USER_MESSAGE_IMAGE_FILL_STYLE = { width: "100%", height: "100%" } as const;
@@ -1472,7 +1474,7 @@ function renderFeedEntry(
                 accessibilityLabel="Copy message"
                 // The clipboard matches the bubble: agent-only auto-PR
                 // instructions never ride a copy.
-                text={stripCreatePullRequestSuffix(message.text)}
+                text={stripHiddenInstructionSuffixes(message.text)}
                 tintColor={iconSubtleColor}
                 buttonSize={28}
                 iconSize={13}
@@ -1704,7 +1706,7 @@ const UserMessageContent = memo(function UserMessageContent(props: {
   // instruction block that those clients hide from the bubble; hide it here
   // too so the same thread reads identically on mobile. Both scans are
   // full-text regexes — key them on the text so list repaints skip them.
-  const displayText = useMemo(() => stripCreatePullRequestSuffix(props.text), [props.text]);
+  const displayText = useMemo(() => stripHiddenInstructionSuffixes(props.text), [props.text]);
   const segments = useMemo(() => parseReviewCommentMessageSegments(displayText), [displayText]);
   const hasReviewComment = segments.some((segment) => segment.kind === "review-comment");
   if (!hasReviewComment) {
@@ -2949,6 +2951,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             ListHeaderComponent={
               <>
                 {usesNativeAutomaticInsets ? null : <View style={{ height: topContentInset }} />}
+                {props.banner}
                 {props.loadEarlier != null ? (
                   <Pressable
                     onPress={props.loadEarlier.onLoadEarlier}

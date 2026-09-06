@@ -42,7 +42,7 @@ export const fetchEnvironmentShellSnapshot = Effect.fn(
     input.timeoutMs ?? DEFAULT_SHELL_SNAPSHOT_TIMEOUT_MS,
     withEnvironmentCredentials(
       input.prepared.httpAuthorization,
-      client.orchestration.shellSnapshot({ headers }),
+      client.orchestration.shellSnapshot({ headers, payload: { acceptAutomations: "true" } }),
     ),
   );
 });

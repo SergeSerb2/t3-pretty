@@ -63,6 +63,7 @@ import {
   FilesystemBrowseError,
   AssetWorkspaceContextNotFoundError,
   AssetWorkspaceContextResolutionError,
+  AutomationsError,
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
@@ -89,6 +90,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { makeThreadLiveEventCoalescer } from "./orchestration/ThreadLiveEventCoalescer.ts";
+import { stripAutomationsForLegacyClient } from "./orchestration/ShellStream.ts";
 
 import {
   isCompatibleBootstrapThread,
@@ -1296,20 +1298,32 @@ const makeWsRpcLayer = (
               // Clients that predate `thread-touched` never opt in; give them
               // the full shell row for those events so their decoder is never
               // handed an unknown kind (same opt-in shape as the marker).
+              // Likewise, clients that predate automations never see the
+              // automation kinds or automation run threads; that filter runs
+              // after touch expansion so an expanded run-thread row is caught.
               const forClient = (
                 stream: Stream.Stream<OrchestrationShellStreamItem, OrchestrationGetSnapshotError>,
-              ): Stream.Stream<OrchestrationShellStreamItem, OrchestrationGetSnapshotError> =>
-                input.acceptThreadTouched === true
-                  ? stream
-                  : stream.pipe(
-                      Stream.mapEffect(
-                        (item): Effect.Effect<ReadonlyArray<OrchestrationShellStreamItem>> =>
-                          item.kind === "thread-touched"
-                            ? shellStream.expandTouched(item).pipe(Effect.map(Option.toArray))
-                            : Effect.succeed([item]),
+              ): Stream.Stream<OrchestrationShellStreamItem, OrchestrationGetSnapshotError> => {
+                const expanded =
+                  input.acceptThreadTouched === true
+                    ? stream
+                    : stream.pipe(
+                        Stream.mapEffect(
+                          (item): Effect.Effect<ReadonlyArray<OrchestrationShellStreamItem>> =>
+                            item.kind === "thread-touched"
+                              ? shellStream.expandTouched(item).pipe(Effect.map(Option.toArray))
+                              : Effect.succeed([item]),
+                        ),
+                        Stream.flatMap((items) => Stream.fromIterable(items)),
+                      );
+                return input.acceptAutomations === true
+                  ? expanded
+                  : expanded.pipe(
+                      Stream.flatMap((item) =>
+                        Stream.fromIterable(Option.toArray(stripAutomationsForLegacyClient(item))),
                       ),
-                      Stream.flatMap((items) => Stream.fromIterable(items)),
                     );
+              };
               // Live shell events are coalesced and projected once per server
               // (see ShellStream); this socket only forwards its subscription.
               // Subscribe BEFORE loading any snapshot or draining catch-up,
@@ -1423,6 +1437,38 @@ const makeWsRpcLayer = (
               );
             }),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.automationsListRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsListRuns,
+            projectionSnapshotQuery.listAutomationRuns(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AutomationsError({
+                    operation: "list-runs",
+                    automationId: input.automationId,
+                    message: "Failed to list automation runs.",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsGetRun]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsGetRun,
+            projectionSnapshotQuery.getAutomationRunById(input.runId).pipe(
+              Effect.map(Option.getOrNull),
+              Effect.mapError(
+                (cause) =>
+                  new AutomationsError({
+                    operation: "get-run",
+                    message: "Failed to load the automation run.",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "automations" },
           ),
         [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: (_input) =>
           observeRpcEffect(

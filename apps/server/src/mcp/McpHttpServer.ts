@@ -14,6 +14,8 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { AutomationsToolkitHandlersLive } from "./toolkits/automations/handlers.ts";
+import { AutomationsToolkit } from "./toolkits/automations/tools.ts";
 import { ComputerUseToolkitHandlersLive } from "./toolkits/computerUse/handlers.ts";
 import { ComputerUseToolkit } from "./toolkits/computerUse/tools.ts";
 import {
@@ -270,6 +272,10 @@ export const ComputerUseToolkitRegistrationLive = McpServer.toolkit(ComputerUseT
   Layer.provide(ComputerUseToolkitHandlersLive),
 );
 
+export const AutomationsToolkitRegistrationLive = McpServer.toolkit(AutomationsToolkit).pipe(
+  Layer.provide(AutomationsToolkitHandlersLive),
+);
+
 const mcpTransportLive = (
   path: HttpRouter.PathInput,
   capability: McpInvocationContext.McpCapability,
@@ -289,4 +295,12 @@ const ComputerUseMcpServerLive = ComputerUseToolkitRegistrationLive.pipe(
   Layer.provide(mcpTransportLive("/mcp/computer-use", "computer-use")),
 );
 
-export const layer = Layer.mergeAll(PreviewMcpServerLive, ComputerUseMcpServerLive);
+const AutomationsMcpServerLive = AutomationsToolkitRegistrationLive.pipe(
+  Layer.provide(mcpTransportLive("/mcp/automations", "automations")),
+);
+
+export const layer = Layer.mergeAll(
+  PreviewMcpServerLive,
+  ComputerUseMcpServerLive,
+  AutomationsMcpServerLive,
+);

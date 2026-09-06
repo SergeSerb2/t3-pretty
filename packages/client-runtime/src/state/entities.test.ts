@@ -1,8 +1,11 @@
 import {
+  AutomationId,
+  AutomationRunId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  type AutomationShell,
   type OrchestrationShellSnapshot,
   type OrchestrationThread,
 } from "@t3tools/contracts";
@@ -171,6 +174,7 @@ const SNAPSHOT: OrchestrationShellSnapshot = {
       title: "Other thread",
     },
   ],
+  automations: [],
 };
 
 function shellState(snapshot: OrchestrationShellSnapshot): EnvironmentShellState {
@@ -210,9 +214,21 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [ENVIRONMENT
     catalogValueAtom,
     snapshotAtom,
   });
+  const automationIndexAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make(
+      (get): ReadonlyMap<AutomationId, AutomationShell> =>
+        new Map(
+          (get(snapshotAtom(environmentId))?.automations ?? []).map((automation) => [
+            automation.id,
+            automation,
+          ]),
+        ),
+    ),
+  );
   const threadShells = createEnvironmentThreadShellAtoms({
     catalogValueAtom,
     snapshotAtom,
+    automationIndexAtom,
   });
   const threadDetails = createEnvironmentThreadDetailAtoms((environmentId, threadId) =>
     threadStateAtoms(`${environmentId}\u0000${threadId}`),
@@ -229,6 +245,91 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [ENVIRONMENT
     threadDetails,
   };
 }
+
+const AUTOMATION_ID = AutomationId.make("automation-1");
+const RUN_THREAD_ID = ThreadId.make("run-thread-1");
+
+const AUTOMATION: AutomationShell = {
+  id: AUTOMATION_ID,
+  projectId: PROJECT_ID,
+  name: "Nightly triage",
+  prompt: "Triage the inbox",
+  triggers: [],
+  enabled: true,
+  modelSelection: null,
+  runtimeMode: "full-access",
+  workspace: "checkout",
+  createPullRequest: false,
+  includeLastRunSummary: false,
+  catchUpMissedRuns: true,
+  minIntervalSeconds: 60,
+  timeoutMinutes: 120,
+  webhookToken: null,
+  sourceThreadId: null,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+  nextRunAt: null,
+  activeRun: null,
+  lastRun: null,
+  lastRequestedAt: null,
+  pendingTrigger: null,
+  consecutiveFailures: 0,
+  runCount: 0,
+  webhookPath: null,
+};
+
+describe("automation run threads", () => {
+  const runThread = {
+    ...THREAD_SHELL,
+    id: RUN_THREAD_ID,
+    title: "Nightly triage · Sep 6, 09:00",
+    automationRun: { automationId: AUTOMATION_ID, runId: AutomationRunId.make("run-1") },
+  };
+
+  function harnessWithRunThread(automations: ReadonlyArray<AutomationShell>) {
+    const harness = makeHarness();
+    harness.registry.set(
+      harness.shellStateAtom,
+      AsyncResult.success(
+        shellState({ ...SNAPSHOT, threads: [...SNAPSHOT.threads, runThread], automations }),
+      ),
+    );
+    return harness;
+  }
+
+  it("hides run threads from every list while point reads still resolve them", () => {
+    const harness = harnessWithRunThread([AUTOMATION]);
+    const runRef = { environmentId: ENVIRONMENT_ID, threadId: RUN_THREAD_ID };
+
+    expect(harness.registry.get(harness.threadShells.threadShellsAtom).map((t) => t.id)).toEqual([
+      THREAD_ID,
+      OTHER_THREAD_ID,
+    ]);
+    expect(harness.registry.get(harness.threadShells.allThreadShellsAtom).map((t) => t.id)).toEqual(
+      [THREAD_ID, OTHER_THREAD_ID, RUN_THREAD_ID],
+    );
+    expect(
+      harness.registry
+        .get(harness.threadShells.environmentThreadRefsAtom(ENVIRONMENT_ID))
+        .map((ref) => ref.threadId),
+    ).toEqual([THREAD_ID, OTHER_THREAD_ID]);
+    expect(harness.registry.get(harness.threadShells.threadShellAtom(runRef))?.id).toBe(
+      RUN_THREAD_ID,
+    );
+    harness.registry.dispose();
+  });
+
+  it("keeps a run thread visible when its automation is gone", () => {
+    const harness = harnessWithRunThread([]);
+
+    expect(harness.registry.get(harness.threadShells.threadShellsAtom).map((t) => t.id)).toEqual([
+      THREAD_ID,
+      OTHER_THREAD_ID,
+      RUN_THREAD_ID,
+    ]);
+    harness.registry.dispose();
+  });
+});
 
 describe("environment entity projections", () => {
   it("applies a client-specific retention window to every detail projection", () => {

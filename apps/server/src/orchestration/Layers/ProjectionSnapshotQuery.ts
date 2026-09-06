@@ -1,6 +1,7 @@
 import type { ProjectionEventReplayStats } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ApprovalRequestId,
+  AutomationRunId,
   ChatAttachment,
   CheckpointRef,
   EventId,
@@ -29,6 +30,7 @@ import {
   ModelSelection,
   ProjectId,
   SkillId,
+  ThreadAutomationRun,
   ThreadLinkedPullRequest,
   ThreadId,
   ThreadSceneryAssignment,
@@ -47,8 +49,8 @@ import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import {
   CREATE_PULL_REQUEST_CLOSE_MARKER,
   CREATE_PULL_REQUEST_OPEN_MARKER,
-  stripCreatePullRequestSuffix,
 } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 
 import {
   isPersistenceError,
@@ -57,6 +59,14 @@ import {
   type ProjectionRepositoryError,
 } from "../../persistence/Errors.ts";
 import { ProjectionCheckpoint } from "../../persistence/Services/ProjectionCheckpoints.ts";
+import { ProjectionAutomationRepository } from "../../persistence/Services/ProjectionAutomations.ts";
+import {
+  AutomationRunPageCursor,
+  ProjectionAutomationRunRepository,
+} from "../../persistence/Services/ProjectionAutomationRuns.ts";
+import { ProjectionAutomationRepositoryLive } from "../../persistence/Layers/ProjectionAutomations.ts";
+import { ProjectionAutomationRunRepositoryLive } from "../../persistence/Layers/ProjectionAutomationRuns.ts";
+import { toAutomationShell } from "../projector.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
 import { ToolProgressService } from "../ToolProgress.ts";
@@ -125,6 +135,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
     subagentPolicy: Schema.NullOr(Schema.fromJsonString(ThreadSubagentPolicy)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+    automationRun: Schema.NullOr(Schema.fromJsonString(ThreadAutomationRun)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -268,7 +279,21 @@ const REQUIRED_SNAPSHOT_PROJECTORS = [
   ORCHESTRATION_PROJECTOR_NAMES.threadActivities,
   ORCHESTRATION_PROJECTOR_NAMES.threadSessions,
   ORCHESTRATION_PROJECTOR_NAMES.checkpoints,
+  ORCHESTRATION_PROJECTOR_NAMES.automations,
 ] as const;
+
+/** Opaque keyset cursor for `automations.listRuns`: `${requestedAt}|${runId}`. */
+const encodeAutomationRunCursor = (cursor: AutomationRunPageCursor): string =>
+  `${cursor.requestedAt}|${cursor.runId}`;
+const decodeAutomationRunPageCursor = Schema.decodeUnknownEffect(AutomationRunPageCursor);
+const decodeAutomationRunCursor = (cursor: string) => {
+  const separator = cursor.indexOf("|");
+  return decodeAutomationRunPageCursor(
+    separator === -1
+      ? {}
+      : { requestedAt: cursor.slice(0, separator), runId: cursor.slice(separator + 1) },
+  );
+};
 
 function maxIso(left: string | null, right: string): string {
   if (left === null) {
@@ -446,6 +471,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const threadSearch = yield* ThreadSearch;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const automationRepository = yield* ProjectionAutomationRepository;
+  const automationRunRepository = yield* ProjectionAutomationRunRepository;
   const repositoryIdentityResolutionConcurrency = 4;
   const resolveRepositoryIdentitiesForProjects = Effect.fn(
     "ProjectionSnapshotQuery.resolveRepositoryIdentitiesForProjects",
@@ -532,6 +559,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
           subagent_policy_json AS "subagentPolicy",
+          automation_run_json AS "automationRun",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -573,6 +601,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
           subagent_policy_json AS "subagentPolicy",
+          automation_run_json AS "automationRun",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -616,6 +645,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
           subagent_policy_json AS "subagentPolicy",
+          automation_run_json AS "automationRun",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -1203,6 +1233,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           scenery_json AS "scenery",
           enabled_skill_ids AS "enabledSkillIds",
           subagent_policy_json AS "subagentPolicy",
+          automation_run_json AS "automationRun",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -2170,6 +2201,7 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          automationRepository.listAll(),
         ]),
       )
       .pipe(
@@ -2184,6 +2216,7 @@ pending_approval_requests AS (
             checkpointRows,
             latestTurnRows,
             stateRows,
+            automationRows,
           ]) =>
             Effect.gen(function* () {
               const messagesByThread = new Map<string, Array<OrchestrationMessage>>();
@@ -2367,6 +2400,7 @@ pending_approval_requests AS (
                 scenery: row.scenery ?? null,
                 enabledSkillIds: row.enabledSkillIds,
                 ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
+                ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
                 titleRegeneration: mapTitleRegeneration(row),
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
@@ -2380,6 +2414,7 @@ pending_approval_requests AS (
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                automations: automationRows.map(toAutomationShell),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -2450,11 +2485,20 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          automationRepository.listAll(),
         ]),
       )
       .pipe(
         Effect.flatMap(
-          ([projectRows, threadRows, proposedPlanRows, sessionRows, latestTurnRows, stateRows]) =>
+          ([
+            projectRows,
+            threadRows,
+            proposedPlanRows,
+            sessionRows,
+            latestTurnRows,
+            stateRows,
+            automationRows,
+          ]) =>
             Effect.sync(() => {
               let updatedAt: string | null = null;
               const projects: OrchestrationProject[] = [];
@@ -2584,6 +2628,8 @@ pending_approval_requests AS (
                   scenery: row.scenery ?? null,
                   enabledSkillIds: row.enabledSkillIds,
                   ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
+                  ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
+                  ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
                   titleRegeneration: mapTitleRegeneration(row),
                   deletedAt: row.deletedAt,
                   messages: [],
@@ -2598,6 +2644,7 @@ pending_approval_requests AS (
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                automations: automationRows.map(toAutomationShell),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationReadModel;
             }),
@@ -2654,103 +2701,112 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          automationRepository.listAll(),
         ]),
       )
       .pipe(
-        Effect.flatMap(([projectRows, threadRows, sessionRows, latestTurnRows, stateRows]) =>
-          Effect.gen(function* () {
-            let updatedAt: string | null = null;
-            for (const row of projectRows) {
-              updatedAt = maxIso(updatedAt, row.updatedAt);
-            }
-            for (const row of threadRows) {
-              updatedAt = maxIso(updatedAt, row.updatedAt);
-            }
-            for (const row of sessionRows) {
-              updatedAt = maxIso(updatedAt, row.updatedAt);
-            }
-            for (const row of latestTurnRows) {
-              updatedAt = maxIso(updatedAt, row.requestedAt);
-              if (row.startedAt !== null) {
-                updatedAt = maxIso(updatedAt, row.startedAt);
+        Effect.flatMap(
+          ([projectRows, threadRows, sessionRows, latestTurnRows, stateRows, automationRows]) =>
+            Effect.gen(function* () {
+              let updatedAt: string | null = null;
+              for (const row of projectRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
               }
-              if (row.completedAt !== null) {
-                updatedAt = maxIso(updatedAt, row.completedAt);
+              for (const row of threadRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
               }
-            }
-            for (const row of stateRows) {
-              updatedAt = maxIso(updatedAt, row.updatedAt);
-            }
+              for (const row of sessionRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+              }
+              for (const row of latestTurnRows) {
+                updatedAt = maxIso(updatedAt, row.requestedAt);
+                if (row.startedAt !== null) {
+                  updatedAt = maxIso(updatedAt, row.startedAt);
+                }
+                if (row.completedAt !== null) {
+                  updatedAt = maxIso(updatedAt, row.completedAt);
+                }
+              }
+              for (const row of stateRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+              }
 
-            const repositoryIdentities = yield* resolveRepositoryIdentitiesForProjects(projectRows);
-            const latestTurnByThread = new Map(
-              latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
-            );
-            const sessionByThread = new Map(
-              sessionRows.map((row) => [row.threadId, mapSessionRow(row)] as const),
-            );
+              const repositoryIdentities =
+                yield* resolveRepositoryIdentitiesForProjects(projectRows);
+              const latestTurnByThread = new Map(
+                latestTurnRows.map((row) => [row.threadId, mapLatestTurn(row)] as const),
+              );
+              const sessionByThread = new Map(
+                sessionRows.map((row) => [row.threadId, mapSessionRow(row)] as const),
+              );
 
-            const snapshot = {
-              snapshotSequence: computeSnapshotSequence(stateRows),
-              projects: Arr.filterMap(projectRows, (row) =>
-                row.deletedAt === null
-                  ? Result.succeed(
-                      mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
-                    )
-                  : Result.failVoid,
-              ),
-              threads: Arr.filterMap(threadRows, (row) =>
-                row.deletedAt === null
-                  ? Result.succeed({
-                      id: row.threadId,
-                      projectId: row.projectId,
-                      title: row.title,
-                      modelSelection: row.modelSelection,
-                      runtimeMode: row.runtimeMode,
-                      interactionMode: row.interactionMode,
-                      branch: row.branch,
-                      worktreePath: row.worktreePath,
-                      ...(row.linkedPullRequest === null
-                        ? {}
-                        : { linkedPullRequest: row.linkedPullRequest }),
-                      latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                      createdAt: row.createdAt,
-                      updatedAt: row.updatedAt,
-                      archivedAt: row.archivedAt,
-                      settledOverride: row.settledOverride,
-                      settledAt: row.settledAt,
-                      unsettledAt: row.unsettledAt,
-                      snoozedUntil: row.snoozedUntil,
-                      snoozedAt: row.snoozedAt,
-                      pinnedAt: row.pinnedAt,
-                      pinOrderKey: row.pinOrderKey ?? null,
-                      scenery: row.scenery ?? null,
-                      enabledSkillIds: row.enabledSkillIds,
-                      ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
-                      titleRegeneration: mapTitleRegeneration(row),
-                      session: sessionByThread.get(row.threadId) ?? null,
-                      latestUserMessageAt: row.latestUserMessageAt,
-                      hasPendingApprovals: row.pendingApprovalCount > 0,
-                      hasPendingUserInput: row.pendingUserInputCount > 0,
-                      hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
-                      backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
-                        row.threadId,
-                      ),
-                      planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
-                    } satisfies OrchestrationThreadShell)
-                  : Result.failVoid,
-              ),
-              updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
-            };
-
-            return yield* decodeShellSnapshot(snapshot).pipe(
-              Effect.mapError(
-                toPersistenceDecodeError(
-                  "ProjectionSnapshotQuery.getShellSnapshot:decodeShellSnapshot",
+              const snapshot = {
+                snapshotSequence: computeSnapshotSequence(stateRows),
+                projects: Arr.filterMap(projectRows, (row) =>
+                  row.deletedAt === null
+                    ? Result.succeed(
+                        mapProjectShellRow(row, repositoryIdentities.get(row.projectId) ?? null),
+                      )
+                    : Result.failVoid,
                 ),
-              ),
-            );
-          }),
+                threads: Arr.filterMap(threadRows, (row) =>
+                  row.deletedAt === null
+                    ? Result.succeed({
+                        id: row.threadId,
+                        projectId: row.projectId,
+                        title: row.title,
+                        modelSelection: row.modelSelection,
+                        runtimeMode: row.runtimeMode,
+                        interactionMode: row.interactionMode,
+                        branch: row.branch,
+                        worktreePath: row.worktreePath,
+                        ...(row.linkedPullRequest === null
+                          ? {}
+                          : { linkedPullRequest: row.linkedPullRequest }),
+                        latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                        createdAt: row.createdAt,
+                        updatedAt: row.updatedAt,
+                        archivedAt: row.archivedAt,
+                        settledOverride: row.settledOverride,
+                        settledAt: row.settledAt,
+                        unsettledAt: row.unsettledAt,
+                        snoozedUntil: row.snoozedUntil,
+                        snoozedAt: row.snoozedAt,
+                        pinnedAt: row.pinnedAt,
+                        pinOrderKey: row.pinOrderKey ?? null,
+                        scenery: row.scenery ?? null,
+                        enabledSkillIds: row.enabledSkillIds,
+                        ...(row.subagentPolicy != null
+                          ? { subagentPolicy: row.subagentPolicy }
+                          : {}),
+                        ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
+                        ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
+                        ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
+                        titleRegeneration: mapTitleRegeneration(row),
+                        session: sessionByThread.get(row.threadId) ?? null,
+                        latestUserMessageAt: row.latestUserMessageAt,
+                        hasPendingApprovals: row.pendingApprovalCount > 0,
+                        hasPendingUserInput: row.pendingUserInputCount > 0,
+                        hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
+                        backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+                          row.threadId,
+                        ),
+                        planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                      } satisfies OrchestrationThreadShell)
+                    : Result.failVoid,
+                ),
+                automations: automationRows.map(toAutomationShell),
+                updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
+              };
+
+              return yield* decodeShellSnapshot(snapshot).pipe(
+                Effect.mapError(
+                  toPersistenceDecodeError(
+                    "ProjectionSnapshotQuery.getShellSnapshot:decodeShellSnapshot",
+                  ),
+                ),
+              );
+            }),
         ),
         Effect.mapError((error) => {
           if (isPersistenceError(error)) {
@@ -2878,6 +2934,7 @@ pending_approval_requests AS (
                 scenery: row.scenery ?? null,
                 enabledSkillIds: row.enabledSkillIds,
                 ...(row.subagentPolicy != null ? { subagentPolicy: row.subagentPolicy } : {}),
+                ...(row.automationRun != null ? { automationRun: row.automationRun } : {}),
                 titleRegeneration: mapTitleRegeneration(row),
                 session: sessionByThread.get(row.threadId) ?? null,
                 latestUserMessageAt: row.latestUserMessageAt,
@@ -3021,7 +3078,7 @@ pending_approval_requests AS (
         // The SQL already reduced user rows to their visible text; this strip
         // is a belt-and-braces pass for any non-trailing marker block.
         snippet: buildSearchSnippet(
-          row.source === "user" ? stripCreatePullRequestSuffix(row.matchText) : row.matchText,
+          row.source === "user" ? stripHiddenInstructionSuffixes(row.matchText) : row.matchText,
           input.query,
         ),
         messageCreatedAt: row.messageCreatedAt,
@@ -3227,6 +3284,9 @@ pending_approval_requests AS (
         enabledSkillIds: threadRow.value.enabledSkillIds,
         ...(threadRow.value.subagentPolicy != null
           ? { subagentPolicy: threadRow.value.subagentPolicy }
+          : {}),
+        ...(threadRow.value.automationRun != null
+          ? { automationRun: threadRow.value.automationRun }
           : {}),
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
@@ -3500,6 +3560,9 @@ pending_approval_requests AS (
         ...(threadRow.value.subagentPolicy != null
           ? { subagentPolicy: threadRow.value.subagentPolicy }
           : {}),
+        ...(threadRow.value.automationRun != null
+          ? { automationRun: threadRow.value.automationRun }
+          : {}),
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         deletedAt: null,
         messages: messageRows.map((row) => {
@@ -3701,11 +3764,57 @@ pending_approval_requests AS (
         ),
       );
 
+  const getAutomationShellById: ProjectionSnapshotQueryShape["getAutomationShellById"] = (
+    automationId,
+  ) =>
+    automationRepository.getById({ automationId }).pipe(Effect.map(Option.map(toAutomationShell)));
+
+  const listAutomationShells: ProjectionSnapshotQueryShape["listAutomationShells"] = () =>
+    automationRepository.listAll().pipe(Effect.map((rows) => rows.map(toAutomationShell)));
+
+  const listAutomationRuns: ProjectionSnapshotQueryShape["listAutomationRuns"] = (input) =>
+    Effect.gen(function* () {
+      const before =
+        input.beforeCursor === undefined
+          ? undefined
+          : yield* decodeAutomationRunCursor(input.beforeCursor).pipe(
+              Effect.mapError(
+                toPersistenceDecodeError("ProjectionSnapshotQuery.listAutomationRuns:cursor"),
+              ),
+            );
+      const runs = yield* automationRunRepository.listPage({
+        automationId: input.automationId,
+        limit: input.limit,
+        ...(before === undefined ? {} : { before }),
+      });
+      const last = runs.at(-1);
+      return {
+        // Lists render a trigger label; the (up to 32 KB) webhook payload stays
+        // in the persisted row and `getAutomationRunById`.
+        runs: runs.map((run) =>
+          run.trigger.type === "webhook" && run.trigger.payload !== null
+            ? { ...run, trigger: { ...run.trigger, payload: null } }
+            : run,
+        ),
+        nextCursor:
+          runs.length === input.limit && last !== undefined
+            ? encodeAutomationRunCursor({ requestedAt: last.requestedAt, runId: last.id })
+            : null,
+      };
+    });
+
+  const getAutomationRunById: ProjectionSnapshotQueryShape["getAutomationRunById"] = (runId) =>
+    automationRunRepository.getById({ runId: AutomationRunId.make(runId) });
+
   return {
     getCommandReadModel,
     getUserInputActivity,
     getSnapshot,
     getShellSnapshot,
+    getAutomationShellById,
+    listAutomationShells,
+    listAutomationRuns,
+    getAutomationRunById,
     listMergedPullRequestCandidates,
     getArchivedShellSnapshot,
     searchThreads,
@@ -3727,4 +3836,8 @@ pending_approval_requests AS (
 export const OrchestrationProjectionSnapshotQueryLive = Layer.effect(
   ProjectionSnapshotQuery,
   makeProjectionSnapshotQuery,
-).pipe(Layer.provideMerge(ThreadSearchLive));
+).pipe(
+  Layer.provideMerge(ThreadSearchLive),
+  Layer.provide(ProjectionAutomationRepositoryLive),
+  Layer.provide(ProjectionAutomationRunRepositoryLive),
+);

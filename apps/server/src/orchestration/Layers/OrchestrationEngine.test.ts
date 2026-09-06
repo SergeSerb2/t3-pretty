@@ -361,6 +361,7 @@ describe("OrchestrationEngine", () => {
 
     const projectionSnapshot = {
       snapshotSequence: 7,
+      automations: [],
       updatedAt: "2026-03-03T00:00:04.000Z",
       projects: [
         {
@@ -422,6 +423,10 @@ describe("OrchestrationEngine", () => {
       Layer.provide(
         Layer.succeed(ProjectionSnapshotQuery, {
           getUserInputActivity: () => Effect.die("unused"),
+          getAutomationShellById: () => Effect.die("unused"),
+          listAutomationShells: () => Effect.die("unused"),
+          listAutomationRuns: () => Effect.die("unused"),
+          getAutomationRunById: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(commandReadModel),
           getSnapshot: () =>
             Effect.sync(() => {
@@ -431,6 +436,7 @@ describe("OrchestrationEngine", () => {
           getShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: projectionSnapshot.snapshotSequence,
+              automations: [],
               projects: [],
               threads: [],
               updatedAt: projectionSnapshot.updatedAt,
@@ -439,6 +445,7 @@ describe("OrchestrationEngine", () => {
           getArchivedShellSnapshot: () =>
             Effect.succeed({
               snapshotSequence: projectionSnapshot.snapshotSequence,
+              automations: [],
               projects: [],
               threads: [],
               updatedAt: projectionSnapshot.updatedAt,

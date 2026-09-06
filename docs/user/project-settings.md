@@ -43,3 +43,15 @@ untracked files, or local commits.
 
 The pull is skipped if the checkout is on another branch, has no upstream, or contains local work.
 Pull failures do not prevent the server from starting.
+
+## Automations
+
+A project's settings list its automations: the saved prompts T3 Code runs on a schedule, on an
+in-app event, on a webhook delivery, when a git branch moves, or when you press **Run now**. Each
+row shows the automation's status and either the time until its next run or **Paused**, and opens
+its page.
+
+**New automation** starts a thread that asks an agent to set one up with you; **Create manually**
+opens the form instead. See [Automations](./automations.md) for triggers, run history, and what a
+run is allowed to do. The section is on web and desktop; mobile can view and control existing
+automations but not create them.

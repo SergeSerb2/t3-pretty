@@ -19,6 +19,8 @@ import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
+import { AutomationDetailScreen } from "./features/automations/AutomationDetailScreen";
+import { AutomationsRouteScreen } from "./features/automations/AutomationsRouteScreen";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
@@ -555,6 +557,20 @@ export const RootStack = createNativeStackNavigator({
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,
       linking: THREAD_LINKING_PREFIX,
+      options: GLASS_HEADER_OPTIONS,
+    }),
+    Automations: createNativeStackScreen({
+      screen: AutomationsRouteScreen,
+      linking: "automations",
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        headerLargeTitle: Platform.OS === "ios",
+        title: "Automations",
+      },
+    }),
+    AutomationDetail: createNativeStackScreen({
+      screen: AutomationDetailScreen,
+      linking: "automations/:environmentId/:automationId",
       options: GLASS_HEADER_OPTIONS,
     }),
     PullRequests: createNativeStackScreen({

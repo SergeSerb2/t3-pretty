@@ -1,4 +1,5 @@
 import type {
+  AutomationId,
   OrchestrationClientOrigin,
   OrchestrationEvent,
   OrchestrationReadModel,
@@ -75,8 +76,8 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "automation";
+  readonly aggregateId: ProjectId | ThreadId | AutomationId;
 } {
   switch (command.type) {
     case "project.create":
@@ -85,6 +86,17 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
+      };
+    case "automation.create":
+    case "automation.update":
+    case "automation.delete":
+    case "automation.run.request":
+    case "automation.run.started":
+    case "automation.run.finished":
+    case "automation.run.missed":
+      return {
+        aggregateKind: "automation",
+        aggregateId: command.automationId,
       };
     case "project.transfer.import":
       // The thread event is committed last, so command receipts use the

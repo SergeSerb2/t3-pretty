@@ -101,6 +101,8 @@ interface ThreadNavigationSidebarProps {
   readonly selectedThreadKey: string | null;
   readonly onOpenSettings: () => void;
   readonly onOpenPullRequests: () => void;
+  /** Null while no connected environment advertises the automations capability. */
+  readonly onOpenAutomations: (() => void) | null;
   readonly onOpenEnvironmentSettings: () => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
   readonly onSearchQueryChange: (query: string) => void;
@@ -1149,9 +1151,16 @@ function ThreadNavigationSidebarPane(
         filterIcon,
         filterMenu,
         onOpenPullRequests: props.onOpenPullRequests,
+        onOpenAutomations: props.onOpenAutomations,
         onOpenSettings: props.onOpenSettings,
       }),
-    [filterIcon, filterMenu, props.onOpenPullRequests, props.onOpenSettings],
+    [
+      filterIcon,
+      filterMenu,
+      props.onOpenAutomations,
+      props.onOpenPullRequests,
+      props.onOpenSettings,
+    ],
   );
   // Snoozed threads need no special case: the shelf header is a list row
   // even while collapsed.
@@ -1320,6 +1329,7 @@ function ThreadNavigationSidebarPane(
             </ControlPillMenu>
             <SidebarHeaderActions
               onOpenPullRequests={props.onOpenPullRequests}
+              onOpenAutomations={props.onOpenAutomations}
               onOpenSettings={props.onOpenSettings}
             />
           </View>

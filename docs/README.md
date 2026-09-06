@@ -22,6 +22,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Automatic pull requests](./user/auto-pull-requests.md)
+- [Automations](./user/automations.md)
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md)
 
@@ -42,6 +43,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Voice input](./internals/voice-input.md)
 - [Providers](./internals/providers.md)
 - [Apps (remote MCP connections)](./internals/apps.md)
+- [Automations](./internals/automations.md)
 - [Remote environments](./internals/remote.md)
 - [Server updates](./internals/server-updates.md)
 - [Resource telemetry](./internals/resource-telemetry.md)

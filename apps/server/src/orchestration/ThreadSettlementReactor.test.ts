@@ -104,6 +104,7 @@ function makeSnapshot(
 ): OrchestrationShellSnapshot {
   return {
     snapshotSequence: 1,
+    automations: [],
     projects,
     threads,
     updatedAt: NOW,
