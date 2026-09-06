@@ -133,6 +133,37 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toContain("--glass-opacity: 42%;");
   });
 
+  it("the composer wears the same frosted material as the chrome plates", () => {
+    // --scenery-chrome-fill is --sidebar at 42%; the composer composes the
+    // same color from its own vars, and every attached surface follows.
+    expect(sceneryCssSource).toContain(
+      "--scenery-chrome-fill: color-mix(in srgb, var(--sidebar) 42%, transparent);",
+    );
+    expect(sceneryCssSource).toMatch(
+      /main\[data-slot="sidebar-inset"\]\s*\{[^}]*--glass-opacity: 42%;[^}]*--glass-blur: 14px;[^}]*--glass-saturation: 1\.1;/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-inner"\]\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\.chat-composer-glass-shell\s*\{[^}]*--chat-composer-glass-surface: var\(--sidebar\);/s,
+    );
+    for (const attached of [
+      ".chat-composer-banner-stack-cap",
+      ".chat-composer-drawer-surface",
+      ".chat-composer-top-drawer",
+      "[data-composer-banner-surface]",
+      '[data-slot="composer-banner-peek"]',
+    ]) {
+      expect(sceneryCssSource).toMatch(
+        new RegExp(
+          `${attached.replace(/[.[\]"]/g, "\\$&")}[^}]*--chat-composer-attached-surface: var\\(--sidebar\\);`,
+          "s",
+        ),
+      );
+    }
+  });
+
   it("keeps hover chrome on an inset top drawer's joined outline", () => {
     const joinedRim =
       /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\)\s+\[data-chat-composer-main-surface="true"\]::after\s*\{[^}]+\}/.exec(
