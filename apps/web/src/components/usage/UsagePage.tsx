@@ -23,6 +23,7 @@ import {
 import { isElectron } from "../../env";
 import { useStatusPulse } from "../../hooks/useStatusPulse";
 import { cn } from "../../lib/utils";
+import { usePrimaryEnvironmentId } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -194,6 +195,9 @@ export function UsagePage() {
             isPartial={isPartial}
             duplicateSources={merged.duplicateSources}
             staleEnvironments={merged.staleEnvironments}
+            sourceWarnings={merged.sourceWarnings}
+            omittedEnvironmentCount={omittedEnvironmentCount}
+            coverageWarningsOmitted={merged.coverageWarningsOmitted}
           />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
@@ -681,6 +685,9 @@ function UsageEnvironmentFilter({
   isPartial,
   duplicateSources,
   staleEnvironments,
+  sourceWarnings,
+  omittedEnvironmentCount,
+  coverageWarningsOmitted,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
@@ -690,6 +697,9 @@ function UsageEnvironmentFilter({
   readonly isPartial: boolean;
   readonly duplicateSources: readonly string[];
   readonly staleEnvironments: readonly string[];
+  readonly sourceWarnings: readonly string[];
+  readonly omittedEnvironmentCount: number;
+  readonly coverageWarningsOmitted: number;
 }) {
   const [modelPricesOpen, setModelPricesOpen] = useState(false);
   const allSelected = selectedEnvironmentIds === null;
@@ -804,6 +814,9 @@ function UsageEnvironmentFilter({
               environments={selectedEnvironments}
               duplicateSources={duplicateSources}
               staleEnvironments={staleEnvironments}
+              sourceWarnings={sourceWarnings}
+              omittedEnvironmentCount={omittedEnvironmentCount}
+              coverageWarningsOmitted={coverageWarningsOmitted}
             />
           ) : null}
           <MenuSeparator />

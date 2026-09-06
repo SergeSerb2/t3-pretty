@@ -215,73 +215,32 @@ function ComposerBannerStackAlert({
       )}
       data-variant={item.variant}
     >
-      <ComposerBanner.Row layout="wrap-actions-narrow">
-        <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
-          {item.icon}
-        </ComposerBanner.Icon>
-        <ComposerBanner.Content className="whitespace-nowrap">
-          <span
-            className={cn(
-              "min-w-0 font-medium leading-7 sm:leading-6",
-              typeof item.title === "string" && "truncate",
-            )}
-          >
-            {item.title}
-          </span>
-          {item.description ? (
-            <>
-              <span className="min-w-0 shrink-[9999] truncate text-muted-foreground @max-[400px]:sr-only">
-                {item.description}
-              </span>
-              <Popover>
-                <PopoverTrigger
-                  openOnHover
-                  render={
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label="Show notice details"
-                      className="hidden flex-none text-muted-foreground hover:text-foreground @max-[400px]:inline-flex"
-                    />
-                  }
-                >
-                  <InfoIcon className="size-3.5" />
-                </PopoverTrigger>
-                <PopoverPopup
-                  tooltipStyle
-                  side="top"
-                  className="max-w-72 whitespace-normal text-pretty"
-                >
-                  {item.description}
-                </PopoverPopup>
-              </Popover>
-            </>
+      {item.icon}
+      <AlertTitle>{item.title}</AlertTitle>
+      {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
+      {item.actions || item.onDismiss ? (
+        <AlertAction
+          className={cn(
+            item.actionClassName,
+            dismissOnly
+              ? "max-sm:col-start-3 max-sm:row-start-1 max-sm:mt-0 max-sm:self-start"
+              : undefined,
+          )}
+        >
+          {item.actions}
+          {item.onDismiss ? (
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={item.dismissLabel ?? "Dismiss warning"}
+              disabled={exiting}
+              onClick={onDismissRequest}
+            >
+              <XIcon className="size-3.5" />
+            </Button>
           ) : null}
-        </ComposerBanner.Content>
-        {item.actions || item.onDismiss ? (
-          <AlertAction
-            className={cn(
-              item.actionClassName,
-              dismissOnly
-                ? "max-sm:col-start-3 max-sm:row-start-1 max-sm:mt-0 max-sm:self-start"
-                : undefined,
-            )}
-          >
-            {item.actions}
-            {item.onDismiss ? (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={item.dismissLabel ?? "Dismiss warning"}
-                disabled={exiting}
-                onClick={onDismissRequest}
-              >
-                <XIcon className="size-3.5" />
-              </Button>
-            ) : null}
-          </AlertAction>
-        ) : null}
-      </ComposerBanner.Row>
+        </AlertAction>
+      ) : null}
     </Alert>
   );
 }

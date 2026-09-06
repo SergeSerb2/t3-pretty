@@ -1120,3 +1120,19 @@
 - `shared-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Fix the missing thread-state retention constant import and replace the redundant Effect catch/succeed recovery with `orElseSucceed`. These minimal edits clear the reported shared-typecheck diagnostics without changing T3 Pretty behavior.
   - edited `packages/client-runtime/src/state/server.ts`
   - edited `packages/client-runtime/src/state/threads.ts`
+- `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Restore the fork-specific banner, timeline, save, and runtime architectures while extending parent fixtures and usage APIs with their required fields. Provider patches are normalized to the fork schema, and incompatible upstream-only APIs/tests are reported explicitly.
+  - edited `apps/web/src/components/chat/ComposerBannerStack.tsx`
+  - edited `apps/web/src/components/files/FilePreviewPanel.tsx`
+  - edited `apps/web/src/components/files/useFileSaveCoordinator.ts`
+  - edited `apps/web/src/components/chat/MessagesTimeline.tsx`
+  - edited `apps/web/src/components/pullRequest/PullRequestRow.tsx`
+  - edited `apps/web/src/components/usage/UsagePage.tsx`
+  - edited `apps/web/src/connection/runtime.ts`
+  - edited `apps/web/src/state/shell.test.ts`
+  - edited `packages/shared/src/serverSettings.ts`
+  - edited `apps/web/src/components/RenderErrorBoundary.test.ts`
+  - omitted parent change: RenderErrorBoundary reset-key helper unit test. Reason: The parent test imports renderErrorBoundaryResetKeysChanged, but the fork's RenderErrorBoundary module does not export that helper and no compatible public API is available in the supplied editable tree; the test is explicitly removed rather than replaced with a test-only fake.
+  - omitted parent change: Connection.layerWithOptions environmentThemes and usageLimitSources initialization. Reason: The fork's client-runtime Connection module has no layerWithOptions API. Its supported Connection.layer composition is restored while all snapshot, platform, runtime, and background-activity layers remain integrated.
+  - omitted parent change: Codex custom-model display names and capability metadata in server settings patches. Reason: The authoritative fork ServerSettings schema stores providers.codex.customModels as string slugs. Rich parent entries are accepted by retaining their slug, but metadata fields cannot be represented without changing the fork's settings contract.
+  - omitted parent change: Parent ComposerBanner/Popover composition in ComposerBannerStack. Reason: That composition conflicts with the fork's authoritative Alert-based banner surface and its className/actionClassName behavior; the fork rendering is restored.
+  - omitted parent change: Parent per-entry WorkGroupViewState timeline integration. Reason: The fork deliberately removed the shared work-group scroll/view-state architecture in favor of row-local AnimatedHeight disclosure state, so the stale context requirements and undefined callback are removed.

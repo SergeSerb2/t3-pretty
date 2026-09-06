@@ -159,6 +159,7 @@ export function applyServerSettingsPatch(
     backgroundActivityProfile,
     backgroundActivity,
     apps,
+    providers: providersPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
@@ -199,7 +200,29 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
-  const next = deepMerge(current, patchForMerge);
+  const providersPatchForMerge = (() => {
+    if (providersPatch === undefined) return undefined;
+    const { codex, ...otherProviders } = providersPatch;
+    if (codex === undefined) return otherProviders;
+    const { customModels, ...codexWithoutCustomModels } = codex;
+    return {
+      ...otherProviders,
+      codex: {
+        ...codexWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      },
+    };
+  })();
+  const next = deepMerge(current, {
+    ...patchForMerge,
+    ...(providersPatchForMerge === undefined ? {} : { providers: providersPatchForMerge }),
+  });
   const nextWithReplacementsBase = {
     ...next,
     ...(backgroundActivity !== undefined

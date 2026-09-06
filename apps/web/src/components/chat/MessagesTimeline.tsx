@@ -229,8 +229,6 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
-  onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
-  workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
   readAloudEnabled: boolean;
@@ -275,11 +273,6 @@ function keepTimelineEndVisibleAfterOverlayGrowth({
     void timeline.scrollToEnd({ animated: false });
   }
 }
-
-const WorkGroupViewCtx = createContext<{
-  state: WorkGroupViewState;
-  onToggleEntry: (collapsed: boolean) => void;
-} | null>(null);
 
 // Header row shown when older turns exist beyond the loaded window. Plain
 // button, no spinner animation; the label change is the loading indicator.
@@ -1988,7 +1981,7 @@ const WorkGroupSection = memo(function WorkGroupSection({
   isExpandedToolGroupEntry: boolean;
   displayLabel?: string | undefined;
 }) {
-  const { workspaceRoot, onToggleWorkEntry } = use(TimelineRowCtx);
+  const { workspaceRoot } = use(TimelineRowCtx);
   const nonEmptyEntries = useMemo(
     () =>
       groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroupEntry)),
@@ -2019,7 +2012,6 @@ const WorkGroupSection = memo(function WorkGroupSection({
             workEntry={workEntry}
             workspaceRoot={workspaceRoot}
             displayLabel={displayLabel}
-            onToggleEntry={onToggleStandaloneEntry}
           />
         ))}
       </div>
@@ -2101,7 +2093,9 @@ function LiveActivityContent({
   active?: boolean;
   highlighted?: boolean;
 }) {
-  const resolvedIconName = failed ? "x" : iconName;
+  const showTrailingFailureMark = failed && toolIcon !== undefined;
+  const resolvedIconName = failed && !showTrailingFailureMark ? "x" : iconName;
+  const failedToolIconClassName = "text-destructive";
 
   return (
     <span
@@ -2121,7 +2115,7 @@ function LiveActivityContent({
           aria-label={announceFailure ? "Tool call failed" : undefined}
         >
           <ToolActivityIconView
-            icon={failed ? undefined : toolIcon}
+            icon={failed && !showTrailingFailureMark ? undefined : toolIcon}
             fallbackName={resolvedIconName}
             className="block size-4 shrink-0 stroke-[1.8]"
             muted={!highlighted}

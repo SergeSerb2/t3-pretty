@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { createRef, useEffect, useMemo } from "react";
 
+import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -38,6 +39,16 @@ export function useFileSaveCoordinator({
             }),
           onConfirmed: (confirmedContents) => {
             confirmProjectFileQueryData(environmentId, cwd, relativePath, confirmedContents);
+          },
+          onError: (error) => {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: `Unable to save ${relativePath}`,
+                description:
+                  error instanceof Error ? error.message : "The file is still unsaved.",
+              }),
+            );
           },
         });
         coordinatorRef.current = coordinator;
