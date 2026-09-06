@@ -202,12 +202,11 @@ export function applyServerSettingsPatch(
         : undefined;
   const providersPatchForMerge = (() => {
     if (providersPatch === undefined) return undefined;
-    const { codex, ...otherProviders } = providersPatch;
-    if (codex === undefined) return otherProviders;
-    const { customModels, ...codexWithoutCustomModels } = codex;
-    return {
-      ...otherProviders,
-      codex: {
+    const { codex, claudeAgent, ...otherProviders } = providersPatch;
+    const codexForMerge = (() => {
+      if (codex === undefined) return undefined;
+      const { customModels, ...codexWithoutCustomModels } = codex;
+      return {
         ...codexWithoutCustomModels,
         ...(customModels === undefined
           ? {}
@@ -216,7 +215,26 @@ export function applyServerSettingsPatch(
                 typeof model === "string" ? model : model.slug,
               ),
             }),
-      },
+      };
+    })();
+    const claudeAgentForMerge = (() => {
+      if (claudeAgent === undefined) return undefined;
+      const { customModels, ...claudeAgentWithoutCustomModels } = claudeAgent;
+      return {
+        ...claudeAgentWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      };
+    })();
+    return {
+      ...otherProviders,
+      ...(codexForMerge === undefined ? {} : { codex: codexForMerge }),
+      ...(claudeAgentForMerge === undefined ? {} : { claudeAgent: claudeAgentForMerge }),
     };
   })();
   const next = deepMerge(current, {
