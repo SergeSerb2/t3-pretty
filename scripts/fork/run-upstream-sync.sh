@@ -834,17 +834,13 @@ repair_sync_tree() {
     web-lint)
       vp lint --fix apps/web/src || true
       local lint_path
-      # Stage only files the failed lint log named. Staging the whole web
-      # source tree would also commit leftover dirty files from the merge.
+      # Stage tracked web files that actually differ after --fix. Grepping
+      # the pre-fix log for apps/web/src/... misses package-relative src/...
+      # paths, leaves the tree dirty, and then the model sees a stale log.
       while IFS= read -r lint_path; do
         [[ -n "$lint_path" ]] || continue
         git add -u -- "$lint_path"
-      done < <(
-        grep -oE 'apps/web/src/[^[:space:]:]+' "$VALIDATION_LOG" |
-          sed 's/[]),]*$//' |
-          sort -u ||
-          true
-      )
+      done < <(git diff --name-only -- apps/web/src || true)
       if ! git diff --cached --quiet; then
         commit_sync "chore(sync): apply lint fixes after merging $UPSTREAM_TAG"
         return 0

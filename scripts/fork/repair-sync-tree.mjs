@@ -65,9 +65,10 @@ const PATH_TOKEN_PATTERN = new RegExp(
   "gu",
 );
 const QUOTED_IDENTIFIER_PATTERN = /'([A-Za-z_$][\w$]{2,})'/gu;
-// tsgo `warning TS…`/`suggestion TS…` lines and oxlint `warning rule(...)`
-// lines never fail a step.
-const ADVISORY_LINE_PATTERN = /\b(?:warning|suggestion)\b/u;
+// Diagnostic severity only. A `\bwarning\b` match would drop real errors
+// whose message mentions the word (`Property 'warning' is missing`).
+const ADVISORY_LINE_PATTERN =
+  /(?:^|[:\s(-])\s*(?:warning|suggestion)(?:\s+TS\d|\s+[\w@.-]+\(|:|\s|$)/u;
 // The model never rewrites the automation that runs it, the fork-owned
 // release boundary, or generated files.
 const READ_ONLY_PATH_PATTERN =

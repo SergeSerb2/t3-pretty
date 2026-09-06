@@ -141,6 +141,19 @@ describe("extractDiagnosticTargets", () => {
     assert.deepEqual(result.targets, ["apps/web/src/index.css"]);
   });
 
+  it("keeps error lines that mention warning or suggestion in the message", () => {
+    const log = [
+      "src/state/threads-atoms.test.ts:145:54 - error TS2741: Property 'warning' is missing in type '{ entries: ... }'.",
+      "  src/connection/registry.ts:95:14 - 'suggestion' is declared here.",
+      "apps/web/src/components/Foo.tsx:12:3: warning react(preserve-manual-memoization): nope",
+    ].join("\n");
+    const result = extractDiagnosticTargets(log, { root, workspaceDirectories, tracked });
+    assert.sameMembers(result.targets, [
+      "packages/client-runtime/src/state/threads-atoms.test.ts",
+      "packages/client-runtime/src/connection/registry.ts",
+    ]);
+  });
+
   it("bounds the target list", () => {
     const many = new Set(tracked);
     const lines = [];
@@ -289,10 +302,10 @@ describe("condenseLog", () => {
   it("returns small logs untouched, then drops advisories, then keeps the tail", () => {
     assert.equal(condenseLog("a\nb", 100), "a\nb");
     const noisy = [
-      "x.ts(1,1): error TS1: bad",
+      "x.ts(1,1): error TS1: Property 'warning' is missing",
       ...Array.from({ length: 50 }, () => "y.ts:1:1: warning r(x): meh"),
     ].join("\n");
-    assert.equal(condenseLog(noisy, 200), "x.ts(1,1): error TS1: bad");
+    assert.equal(condenseLog(noisy, 200), "x.ts(1,1): error TS1: Property 'warning' is missing");
     const long = Array.from({ length: 50 }, (_, index) => `line${index}: error`).join("\n");
     const condensed = condenseLog(long, 100);
     assert.match(condensed, /^… \(earlier output omitted\)\nline\d+: error/u);
@@ -363,6 +376,7 @@ describe("run-upstream-sync.sh repair loop", () => {
     assert.include(script, "vp lint --fix apps/web/src || true");
     assert.notInclude(script, "vp lint --fix apps/web/src >/dev/null");
     assert.notInclude(script, "git add -u -- apps/web/src");
+    assert.include(script, "git diff --name-only -- apps/web/src");
     assert.include(script, 'git add -u -- "$lint_path"');
     assert.include(script, "SYNC_MAX_REPAIR_ROUNDS:-4");
     // The budget resets when a later step fails: progress must not be starved.
