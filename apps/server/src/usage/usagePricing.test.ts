@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   cacheSavingsUsd,
+  createOverrideRateTable,
   lookupRate,
   normalizeModelName,
   parseRateTable,
@@ -48,6 +49,79 @@ describe("lookupRate", () => {
     expect(lookupRate(emptyTable, "kimi-for-coding-highspeed")?.inputCostPerToken).toBe(1.9e-6);
     expect(lookupRate(emptyTable, "kimi-k2.6")?.cacheReadCostPerToken).toBe(1.6e-7);
     expect(lookupRate(emptyTable, "kimi-k2.5")?.outputCostPerToken).toBe(3e-6);
+  });
+});
+
+describe("usage pricing", () => {
+  const totals = {
+    uncachedInputTokens: 1_000_000,
+    cachedInputTokens: 1_000_000,
+    cacheCreationTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    reasoningTokens: 500_000,
+  };
+
+  it("uses custom token rates ahead of public and provider-reported costs", () => {
+    const table = parseRateTable({ "example-model": rate(1) });
+    const overrides = createOverrideRateTable({
+      "example-model": {
+        inputCostPerMillionTokens: 2,
+        outputCostPerMillionTokens: 8,
+        cacheReadCostPerMillionTokens: 0.5,
+        cacheWriteCostPerMillionTokens: 3,
+      },
+    });
+
+    for (const reportedCostUsd of [null, 99]) {
+      expect(priceUsage(table, "example-model", totals, reportedCostUsd, overrides)).toEqual({
+        costUsd: 13.5,
+        costSource: "modelPriced",
+      });
+    }
+    expect(cacheSavingsUsd(table, "example-model", totals, overrides)).toBe(1.5);
+  });
+
+  it("prices unknown models offline and uses input prices for omitted cache rates", () => {
+    const table = parseRateTable({});
+    const overrides = createOverrideRateTable({
+      "example-model": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 },
+    });
+
+    expect(priceUsage(table, "example-model", totals, null, overrides)).toEqual({
+      costUsd: 14,
+      costSource: "modelPriced",
+    });
+    expect(cacheSavingsUsd(table, "example-model", totals, overrides)).toBe(0);
+  });
+
+  it("preserves explicit zero rates and matches only the exact trimmed model ID", () => {
+    const table = parseRateTable({});
+    const overrides = createOverrideRateTable({
+      " vendor/example-model[1m] ": {
+        inputCostPerMillionTokens: 0,
+        outputCostPerMillionTokens: 0,
+      },
+    });
+    expect(priceUsage(table, " vendor/example-model[1m] ", totals, 99, overrides)).toEqual({
+      costUsd: 0,
+      costSource: "modelPriced",
+    });
+    for (const model of [
+      "example-model[1m]",
+      "vendor/example-model",
+      "vendor/Example-model[1m]",
+      "other/example-model[1m]",
+    ]) {
+      expect(priceUsage(table, model, totals, null, overrides).costSource).toBe("unpriced");
+      expect(priceUsage(table, model, totals, 99, overrides)).toEqual({
+        costUsd: 99,
+        costSource: "providerReported",
+      });
+    }
+  });
+
+  it("keeps the existing model-name normalization contract", () => {
+    expect(normalizeModelName(" Anthropic/Claude-Opus-5 ")).toBe("claude-opus-5");
   });
 
   it("lets an explicit table entry override the official Kimi fallback", () => {

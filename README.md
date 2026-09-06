@@ -229,9 +229,9 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 - [Source control](./docs/user/source-control.md) · [Automatic pull requests](./docs/user/auto-pull-requests.md)
 - [Provider handoff](./docs/user/provider-handoff.md)
 - [Usage](./docs/user/usage.md) · [Storage](./docs/user/storage.md)
-- [Project icons](./docs/user/project-settings.md) · [Mobile appearance](./docs/user/mobile-appearance.md)
+- [Project settings](./docs/user/project-settings.md) (including project icons) · [Mobile appearance](./docs/user/mobile-appearance.md)
 - [Keeping client and server in sync](./docs/user/updating.md)
-- [Background service](./docs/user/background-service.md) (Linux and macOS)
+- [Run T3 Pretty as a background service](./docs/user/background-service.md) (Linux and macOS)
 - Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md) · [Kimi](./docs/user/providers-kimi.md)
 
 **Working on the fork**

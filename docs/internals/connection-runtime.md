@@ -2,14 +2,17 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
-The connection runtime is shared by web and mobile. It owns connectivity,
-authentication, retries, transport lifetime, cached environment data, and
-environment-scoped operations.
+The connection runtime is shared by web, the desktop renderer, and mobile. It
+owns connectivity, authentication, retries, transport lifetime, cached
+environment data, and environment-scoped operations.
 
-Web and mobile mount this runtime once at the application root and compose it
-identically: `apps/web/src/connection/runtime.ts` and
+Web, the desktop renderer, and mobile mount this runtime once at the application
+root. The web and mobile entry points compose it identically:
+`apps/web/src/connection/runtime.ts` and
 `apps/mobile/src/connection/runtime.ts` differ only in the platform layer they
-supply. There is no legacy connection owner or supported mixed mode.
+supply. There is no legacy connection owner or supported mixed mode. Keeping
+ownership here prevents competing reconnect loops when several views need the
+same environment.
 
 ## Composition
 
@@ -106,6 +109,21 @@ and thread synchronization are independent data states. A healthy RPC transport
 with a failed shell subscription is shown as connected with a synchronization
 error, not as a reconnect that is not actually scheduled.
 
+## HTTP Authorization
+
+RPC sessions authenticate at socket upgrade, while HTTP requests resolve current
+credentials from the
+[authorization service](../../packages/client-runtime/src/authorization/service.ts).
+Refreshing HTTP authorization does not replace a healthy socket: doing so would
+interrupt conversations and change the transport generation without a transport
+failure. Credential expiry does not close the socket, and refresh failure belongs
+to the HTTP operation.
+
+Session listings retain unrevoked connected sessions after credential expiry so
+an open connection does not disappear from connection management. This does not
+extend the credential's lifetime. New HTTP requests and socket upgrades still
+require valid credentials.
+
 ## Data Boundary
 
 Finite requests, durable subscriptions, and commands are separate APIs:
@@ -120,12 +138,24 @@ Finite requests, durable subscriptions, and commands are separate APIs:
   `retryExpectedFailureAfter` is set, sleeps and resubscribes on the **same**
   session. A healthy transport is never torn down for a domain failure.
 - Mutations resolve the current environment runtime at execution time.
+  Reconnection does not automatically replay them; retry and idempotency rules
+  belong to the operation.
 - Shell and thread snapshots are available while offline.
 - Sync status is explicit and independent per domain. Shell status is `empty`,
   `cached`, `synchronizing`, or `live`, with a separate `error` field; there is
   no `failed` status. Thread status adds `deleted`.
 - Cached shell and thread projections are never allowed to overwrite newer live
   data during a fast reconnect.
+- [Thread detail](../../packages/client-runtime/src/state/threads.ts) separates
+  subscription lifetime from cache lifetime. Mounted consumers share one live
+  stream, which stops when the last consumer unmounts; hidden mounted routes
+  still count. A registry-local cache retains state and its replay cursor for
+  five idle minutes so back navigation can resume without another snapshot
+  download.
+- Thread detail state and its cursor are retained together only after an update
+  finishes. Cancellation must not advance the cached cursor beyond the applied
+  data, and an old scope must not overwrite its successor's cache. Reuse
+  preserves pagination data while clearing canceled loading state.
 - Domain atom factories route effects through the environment registry and
   resolve the current scoped service at execution time. Project and thread
   commands are Atom factories under `src/state`
@@ -192,7 +222,7 @@ Core state-machine tests use `@effect/vitest` and deterministic service layers.
 Required coverage includes:
 
 - offline startup and online wakeup;
-- forever retry with the 16-second cap;
+- forever retry with the five-minute cap;
 - explicit retry interrupting backoff;
 - authentication wakeups;
 - involuntary close and reconnect;

@@ -918,36 +918,17 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-h
   );
 }
 
-/* Composer: upstream's own glass shell (chat-composer-glass-shell, its
-   attached banners/drawers and the floating pills) reads these vars; at the
-   stock 80% fill it looks solid over the wash. 42% + blur(14px) saturate(1.1)
-   is the chrome plate recipe above, so the chat box reads as the same frosted
-   glass as the sidebars and terminal. Scoped to the chat column so it wins
-   over the inline root-level value the Settings "Glass opacity" slider
-   writes — that slider keeps governing every other theme. */
+/* Composer: upstream's own glass shell (chat-composer-glass-shell and the
+   floating pills) reads these vars; at the stock 80% fill it looks solid
+   over the wash. 42% matches the sidebar/header chrome plate so the chat
+   box reads as the same frosted glass. Scoped to the chat column so it
+   wins over the inline root-level value the Settings "Glass opacity"
+   slider writes — that slider keeps governing every other theme. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   main[data-slot="sidebar-inset"] {
   --glass-opacity: 42%;
-  --glass-blur: 14px;
-  --glass-saturation: 1.1;
-}
-
-/* Same tint as --scenery-chrome-fill. Upstream pins every composer surface to
-   --app-theme-surface-raised, a lighter tone than --sidebar, so the chat box
-   read as a greyer pane beside the chrome even at the same fill. */
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] .chat-composer-glass-shell {
-  --chat-composer-glass-surface: var(--sidebar);
-}
-
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  :is(
-    .chat-composer-banner-stack-cap,
-    .chat-composer-drawer-surface,
-    .chat-composer-top-drawer,
-    [data-composer-banner-surface],
-    [data-slot="composer-banner-peek"]
-  ) {
-  --chat-composer-attached-surface: var(--sidebar);
+  --glass-blur: 16px;
+  --glass-saturation: 1;
 }
 
 /* The docked composer overlay is anchored to the viewport bottom; without
@@ -1168,7 +1149,7 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     main[data-slot="sidebar-inset"] {
-    --glass-opacity: 92%;
+    --glass-opacity: 94%;
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-header] {

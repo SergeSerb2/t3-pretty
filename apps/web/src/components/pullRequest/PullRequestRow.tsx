@@ -89,11 +89,11 @@ function PullRequestRowImpl({
       aria-current={selected ? "true" : undefined}
       onClick={() => onSelect(entry)}
       className={cn(
-        "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "@container/pr-row grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         // Offscreen rows are skipped for style, layout and paint: a long list costs what the
         // viewport shows, not what the pages have loaded. The intrinsic size keeps the
         // scrollbar honest while a row is skipped.
-        "[contain-intrinsic-block-size:54px] [content-visibility:auto]",
+        "[contain-intrinsic-block-size:66px] [content-visibility:auto]",
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
     >
@@ -103,12 +103,56 @@ function PullRequestRowImpl({
         mergeability={entry.mergeability}
         baseBranch={entry.baseBranch}
       />
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-foreground">{entry.title}</span>
+      <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
+        <span className="col-start-1 row-start-1 block truncate text-sm font-medium text-foreground">
+          {entry.title}
+        </span>
+        <span className="col-start-2 row-start-1 flex max-w-36 items-center justify-self-end gap-2 text-xs">
+          {/* Only a verdict somebody has actually given: "review required" is the absence of
+              one, and saying so on every unreviewed row would say nothing. */}
+          {entry.reviewDecision === "approved" || entry.reviewDecision === "changes-requested" ? (
+            <span
+              className={cn(
+                "sr-only @md/pr-row:not-sr-only @md/pr-row:min-w-0 @md/pr-row:truncate",
+                entry.reviewDecision === "approved"
+                  ? "text-emerald-600/90 dark:text-emerald-400/80"
+                  : "text-amber-600/90 dark:text-amber-400/80",
+              )}
+            >
+              {entry.reviewDecision === "approved" ? "Approved" : "Changes requested"}
+            </span>
+          ) : null}
+          {entry.checksState === undefined ? null : (
+            <PullRequestChecksPopover
+              checksState={entry.checksState}
+              environmentId={entry.environmentId}
+              reference={{
+                projectId: entry.projectId,
+                repository: entry.repository,
+                number: entry.number,
+              }}
+            />
+          )}
+        </span>
         {/* overflow-hidden is the hard guarantee: segments below can shrink and ellipsize, but
-            in a narrow panel the fixed ones (number, verdict, checks) would otherwise overflow
-            the column and paint over the diff stat on the right. */}
-        <PullRequestMetaLine className="mt-0.5 overflow-hidden text-xs text-muted-foreground/70">
+            in a narrow panel the fixed ones would otherwise overflow toward the diff stat. */}
+        <PullRequestMetaLine className="@container/pr-row-meta col-start-1 row-start-2 overflow-hidden text-xs text-muted-foreground/70">
+          {matchedElsewhere ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="flex min-w-6 items-center gap-1 overflow-hidden rounded-full border border-border/60 px-1 text-[10px]" />
+                }
+              >
+                <span className="sr-only">matched in the description</span>
+                <SearchIcon aria-hidden className="size-3 shrink-0" />
+                <span aria-hidden className="hidden truncate @xs/pr-row-meta:block">
+                  matched in the description
+                </span>
+              </TooltipTrigger>
+              <TooltipPopup side="top">Matched in the description</TooltipPopup>
+            </Tooltip>
+          ) : null}
           <span className="flex shrink-0 items-center gap-1">
             {showProvider ? (
               <Tooltip>
@@ -138,41 +182,13 @@ function PullRequestRowImpl({
           {environmentLabel ? <span className="max-w-32 truncate">{environmentLabel}</span> : null}
           <PullRequestActorLabel actor={entry.author} className="max-w-40" />
           {entry.labels.length > 0 ? <PullRequestRowLabels labels={entry.labels} /> : null}
-          {/* Only a verdict somebody has actually given: "review required" is the absence of
-              one, and saying so on every unreviewed row would say nothing. */}
-          {entry.reviewDecision === "approved" || entry.reviewDecision === "changes-requested" ? (
-            <span
-              className={cn(
-                "shrink-0",
-                entry.reviewDecision === "approved"
-                  ? "text-emerald-600/90 dark:text-emerald-400/80"
-                  : "text-amber-600/90 dark:text-amber-400/80",
-              )}
-            >
-              {entry.reviewDecision === "approved" ? "Approved" : "Changes requested"}
-            </span>
-          ) : null}
-          {entry.checksState === undefined ? null : (
-            <PullRequestChecksPopover
-              checksState={entry.checksState}
-              environmentId={entry.environmentId}
-              reference={{
-                projectId: entry.projectId,
-                repository: entry.repository,
-                number: entry.number,
-              }}
-            />
-          )}
-          {matchedElsewhere ? (
-            <span className="shrink-0 rounded-full border border-border/60 px-1.5 text-[10px]">
-              matched in the description
-            </span>
-          ) : null}
         </PullRequestMetaLine>
-      </span>
-      <span className="flex shrink-0 flex-col items-end gap-0.5 text-xs text-muted-foreground/70 tabular-nums">
-        <span>{formatRelativeTimeLabel(entry.updatedAt)}</span>
-        <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
+        <span className="col-start-2 row-start-2 flex items-center justify-self-end gap-3 whitespace-nowrap text-[11px] text-muted-foreground/70 tabular-nums">
+          <PullRequestDiffStat additions={entry.additions} deletions={entry.deletions} />
+          <span className="hidden @sm/pr-row:inline">
+            {formatRelativeTimeLabel(entry.updatedAt)}
+          </span>
+        </span>
       </span>
     </button>
   );

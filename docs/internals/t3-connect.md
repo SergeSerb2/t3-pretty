@@ -5,15 +5,47 @@
 T3 Connect is the public build's deployment and user-facing name for the upstream protocol. Internal
 builds use the same protocol with the fork-operated Surge Connect relay and branding. Technical API
 routes, environment variables, types, and the `t3 connect` CLI stay unchanged for compatibility.
-Each flavor uses one Clerk application for web, desktop, and mobile
-authentication. The relay verifies two kinds of bearer credential: template JWTs generated from the
-`t3-relay` template with the shared `t3-code-relay` audience, and Clerk OAuth tokens issued to the
-CLI. `verifyRelayClientBearerToken` in `infra/relay/src/http/Api.ts` tries the template/session path
-first and falls back to OAuth verification (`acceptsToken: "oauth_token"`), so the CLI's OAuth
-credential works without a JWT template.
+Each flavor uses one Clerk application for web, desktop, and mobile authentication. The relay
+manages environment links, credentials for reaching environments, and managed tunnel allocations.
+After bootstrap, clients send application traffic through the environment's tunnel hostname; the
+relay Worker does not proxy their HTTP or WebSocket sessions.
 
-For the wider system diagram, see
+The relay verifies two kinds of bearer credential: template JWTs generated from the `t3-relay`
+template with the shared `t3-code-relay` audience, and Clerk OAuth tokens issued to the CLI.
+`verifyRelayClientBearerToken` in `infra/relay/src/http/Api.ts` tries the template/session path first
+and falls back to OAuth verification (`acceptsToken: "oauth_token"`), so the CLI's OAuth credential
+works without a JWT template.
+
+The parent setup baseline is maintained in the
+[Connect setup runbook](../operations/connect-setup.md). Fork flavor and operator-specific
+requirements are documented below. For the wider system diagram, see
 [t3-code-connect-auth-flow.html](./t3-code-connect-auth-flow.html).
+
+## The relay is a trusted broker
+
+An authenticated cloud user still needs an active environment link. The relay asks that environment
+to mint a one-time bootstrap credential bound to the client's DPoP key. The client exchanges it
+directly with the environment for an [environment session](./environment-auth.md). The relay never
+receives that session token, and possessing the bootstrap credential alone does not permit redeeming
+it without the client's private key.
+
+Both sides authenticate this exchange. The environment accepts only bounded, replay-guarded relay
+proofs for its own identity, linked user, and requested operation. Signed environment responses bind
+the result to the request nonce; mint responses also bind the credential to the client proof key.
+The relay verifies those bindings before returning a credential. This prevents a different process
+behind the tunnel from impersonating the linked environment. The checks meet in the
+[environment cloud handlers](../../apps/server/src/cloud/http.ts) and
+[relay connector](../../infra/relay/src/environments/EnvironmentConnector.ts).
+
+The relay holds the signing authority for mint requests. DPoP protects an honest exchange from
+credential reuse; it does not make a compromised relay signing key harmless. Keep that trust
+assumption explicit when changing the protocol.
+
+Managed tunnels expose only a validated loopback HTTP origin. Link proof checks reject forwarded
+authority headers, and the relay resolves endpoints from its own managed allocations rather than a
+caller-supplied URL. Health and mint requests must not follow redirects. These restrictions keep
+endpoint discovery from turning into arbitrary relay egress or exposing another service on the
+environment host.
 
 ## Application Keys
 
@@ -99,8 +131,10 @@ personal developer stage.
 
 ## Headless CLI OAuth Application
 
-The `t3 connect` commands authorize a headless environment with a separate Clerk OAuth application.
-This uses an OAuth public client with PKCE, so the CLI stores no client secret.
+Interactive clients and the headless CLI use the same flavor's Clerk instance but different
+credentials. The `t3 connect` commands authorize a headless environment through a separate Clerk
+OAuth application within that instance. This uses an OAuth public client with PKCE, so the CLI
+stores no client secret.
 
 In **Clerk Dashboard > OAuth applications**:
 
@@ -120,13 +154,13 @@ Both CLI flows start at the hosted `/connect` page (`buildConnectAuthorizeReques
 `packages/shared/src/connectAuth.ts`), which waits for a Clerk session and then forwards the request
 to Clerk's `/oauth/authorize`. The CLI never opens `/oauth/authorize` directly: a signed-out browser
 sent there goes through Clerk's sign-in redirect, which drops the authorize query parameters and
-fails the flow with `unsupported_response_type` or an empty `state` (#5051). The loopback flow marks
-the request with a `port` fragment parameter so the hosted page asks Clerk to redirect the
-authorization code straight to `http://127.0.0.1:<port>/callback`; the out-of-band flow omits it and
-uses the hosted `/connect/callback` page instead. The CLI derives Clerk's frontend API URL from the
-publishable key and calls only the `/oauth/token` endpoint directly. The relay is not involved in
-the OAuth handshake; it only validates the issued Clerk bearer token when the CLI manages an
-environment link.
+fails the flow with `unsupported_response_type` or an empty `state` (#5051). The shared flow
+preserves PKCE and state for both loopback and pasted-code callbacks. The loopback flow marks the
+request with a `port` fragment parameter so the hosted page asks Clerk to redirect the authorization
+code straight to `http://127.0.0.1:<port>/callback`; the out-of-band flow omits it and uses the hosted
+`/connect/callback` page instead. The CLI derives Clerk's frontend API URL from the publishable key
+and calls only the `/oauth/token` endpoint directly. The relay is not involved in the OAuth
+handshake; it only validates the issued Clerk bearer token when the CLI manages an environment link.
 
 The connect command group is:
 
@@ -153,6 +187,30 @@ logout` performs the same cleanup and removes the stored CLI authorization.
 
 The background service has an independent lifecycle. Connect setup may offer to install it, but
 logout leaves it running; manage it with `t3 service status`, `install`, `update`, and `uninstall`.
+
+## A link outlives a connector process
+
+CLI authorization, desired exposure, and a running connector have different lifetimes. Linking can
+record intent while the server is stopped, and startup reconciles that intent. CLI logout removes
+the stored cloud credential and disables exposure without uninstalling the environment's background
+service.
+
+Managed allocations belong to a user/environment pair. Provisioning checkpoints external tunnel
+and DNS resources so retries can reconcile partial work. A normal shutdown of a CLI-managed link
+releases its tunnel to avoid paying for an idle resource, retaining the hostname reservation for
+the next startup. It also retains the allocation record so the environment remains "offline"
+rather than becoming "not authorized".
+
+Two cases must retain the tunnel across shutdown. A link installed through a client has no startup
+provisioning path and depends on its stored connector token. An update handoff immediately starts a
+replacement server, and replacing the tunnel would add routing propagation delay to every update.
+These exceptions belong to [shutdown handling](../../apps/server/src/cloud/http.ts).
+
+Release and unlink claim the allocation generation before deleting external resources. A delayed
+cleanup must not delete a tunnel reused by a concurrent restart or relink. Unlink commits
+authorization revocation before external teardown, because a database failure must leave the active
+link usable. Failed teardown retains enough state to retry. See the
+[managed endpoint lifecycle](../../infra/relay/src/environments/ManagedEndpointProvider.ts).
 
 ### Headless and SSH authorization
 

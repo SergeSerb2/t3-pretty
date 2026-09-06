@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
@@ -20,6 +21,7 @@ import * as Socket from "effect/unstable/socket/Socket";
 import { HttpClient } from "effect/unstable/http";
 
 import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
+import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import type {
   ConnectionAttemptError,
   ConnectionTransientError,
@@ -49,6 +51,11 @@ export interface RpcSession {
   readonly closed: Effect.Effect<never, ConnectionTransientError>;
 }
 
+export interface RpcSessionOptions {
+  readonly environmentThemes?: boolean;
+  readonly usageLimitSources?: boolean;
+}
+
 export class RpcSessionFactory extends Context.Service<
   RpcSessionFactory,
   {
@@ -63,7 +70,12 @@ type InitialConfigError = Effect.Error<
 >;
 type ProbeError = Effect.Error<ReturnType<WsRpcProtocolClient[typeof WS_METHODS.serverProbe]>>;
 
-function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionAttemptError {
+const isSocketErrorReason = Schema.is(Socket.SocketErrorReason);
+
+function mapSessionRpcError(
+  error: InitialConfigError | ProbeError,
+  networkHint: string,
+): ConnectionAttemptError {
   switch (error._tag) {
     case "EnvironmentAuthorizationError":
       return new ConnectionBlockedError({
@@ -79,7 +91,7 @@ function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionA
     case "RpcClientError":
       return new ConnectionTransientErrorClass({
         reason: "transport",
-        detail: error.message,
+        detail: `${error.message}${isSocketErrorReason(error.reason) ? networkHint : ""}`,
       });
   }
 }
@@ -88,8 +100,16 @@ export const make = Effect.gen(function* () {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
   const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
   const dpopSigner = yield* Effect.serviceOption(ManagedRelayDpopSigner);
+  const serverConfigInput: ServerConfigSubscriptionInput = {
+    ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
+    ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+  };
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
+    const networkHint =
+      connection.target._tag === "RelayConnectionTarget" ? ` ${NETWORK_BLOCKING_HINT}` : "";
+    const mapRpcError = (error: Parameters<typeof mapSessionRpcError>[0]) =>
+      mapSessionRpcError(error, networkHint);
     yield* Effect.annotateCurrentSpan({
       "connection.environment.id": connection.environmentId,
     });
@@ -104,9 +124,11 @@ export const make = Effect.gen(function* () {
             disconnected,
             new ConnectionTransientErrorClass({
               reason: "transport",
-              detail: wasConnected
-                ? `${connection.label} disconnected.`
-                : `${connection.label} could not establish a WebSocket connection.`,
+              detail: `${
+                wasConnected
+                  ? `${connection.label} disconnected.`
+                  : `${connection.label} could not establish a WebSocket connection.`
+              }${networkHint}`,
             }),
           ),
         ),
@@ -140,7 +162,7 @@ export const make = Effect.gen(function* () {
     const websocketConfig = Deferred.await(connected).pipe(
       Effect.andThen(client[WS_METHODS.serverGetConfig]({})),
       Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
-      Effect.mapError(mapSessionRpcError),
+      Effect.mapError(mapRpcError),
       Effect.tap((snapshot) =>
         Effect.annotateCurrentSpan({
           "server.config.decodedBytes": JSON.stringify(snapshot.config).length,
@@ -188,7 +210,7 @@ export const make = Effect.gen(function* () {
         (config.environment.capabilities.connectionProbe === true
           ? client[WS_METHODS.serverProbe]({})
           : client[WS_METHODS.serverGetConfig]({})
-        ).pipe(Effect.mapError(mapSessionRpcError)),
+        ).pipe(Effect.mapError(mapRpcError)),
       ),
       Effect.asVoid,
       Effect.withSpan("clientRuntime.connection.rpcSession.probe"),

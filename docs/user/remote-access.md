@@ -1,6 +1,24 @@
-# Remote Access
+# Remote access
 
-Use this when you want to connect to a T3 Code server from another device such as a phone, tablet, or separate desktop app.
+Connect a phone, browser, or another desktop app to T3 Code running on a different
+machine. That machine must stay running and reachable while you work.
+
+## T3 Connect
+
+T3 Connect makes an environment available to your other devices without setting
+up router forwarding. In the desktop app on the host, open **Settings →
+Connections**, sign in, and enable **T3 Connect** for that environment.
+
+For a command-line host, run:
+
+```bash
+t3 connect
+```
+
+Follow the sign-in instructions. Setup offers a
+[background service](./background-service.md); if you decline it, start the
+server with `t3 serve`. Saving your sign-in alone does not make the machine
+reachable.
 
 ## T3 Connect troubleshooting
 
@@ -42,7 +60,7 @@ internal builds check `~/.t3`, and a command run inside a worktree checks its de
 a one-time pairing token and prints the pairing URL as a QR code you can scan from your phone. Use
 `--base-dir` when you intentionally need to target another state directory.
 
-If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
+To publish and pair the running server through Tailscale Serve HTTPS, run:
 
 ```bash
 t3 pair --tailscale
@@ -62,7 +80,7 @@ That gives you:
 - transport security at the network layer
 - less exposure than opening the server to the public internet
 
-## T3 Connect
+## T3 Connect device mesh
 
 Public builds call this service **T3 Connect** and use existing T3 accounts. The compatible internal
 service appears as **Surge Connect** instead; the steps are identical.
@@ -81,6 +99,9 @@ On a new device:
 
 1. Open **Settings** → **Connections** and sign in to the same T3 account.
 2. Find the host under **Remote Environments** and select **Connect**.
+
+Over SSH, the CLI prints a browser link and accepts the returned authorization code, so you do not
+need to forward an OAuth callback port.
 
 In the desktop app, selecting **Connect** also makes the new device available through T3
 Connect. Once both desktops participate, each app automatically keeps the full account mesh in its
@@ -143,90 +164,22 @@ Both environments must be online, and both servers must advertise transfer suppo
 turn on the destination receives a bounded copy of the transferred conversation so the local
 provider can continue with context even though provider sessions do not move between machines.
 
-## Enabling Network Access
+T3 Connect renews access credentials when needed without disconnecting a healthy
+connection. Pull request diffs and provider settings keep working after the
+previous credential expires. A failed renewal affects that request; it does not
+disconnect an otherwise healthy conversation.
 
-There are three ways to reach your server from another device: expose the desktop app's backend,
-run a headless server from the CLI, or have the desktop app launch T3 Code over SSH.
+## Pair over a LAN or private network
 
-### Option 1: Desktop App
+Use direct pairing when the other device can reach the host's network address.
 
-If you are already running the desktop app and want to make it reachable from other devices:
-
-1. Open **Settings** → **Connections**.
-2. Under **This environment**, toggle **Network access** on. This will restart the app and run the backend on all network interfaces.
-3. The settings panel will show the default reachable endpoint, with a `+N` control when more endpoints are available. Expand it to inspect alternatives such as loopback, LAN, private-network, or HTTPS endpoints.
-4. Use **Create Link** to generate a pairing link you can share with another device.
-
-Pairing codes and share links are available only in the client that created them,
-while its Connections page remains open. After you leave the page or reload it,
-create a new link to share. Other clients can see the active link's name, scopes,
-and expiry, and can revoke it if they have access management permission.
-
-The default endpoint controls the QR code and primary copy action for pairing links. You can change it from the expanded endpoint list. The preference is stored by endpoint type, so choosing the local LAN endpoint survives normal IP address changes when you move between networks.
-
-After an app restart, the desktop app replaces its previous
-local credential. Old local desktop entries are removed from **Authorized clients**
-automatically. Paired phones, browsers, and remote desktop clients keep their access.
-
-When no user default is saved, the app uses the built-in LAN endpoint for pairing links when
-available. You can set another endpoint as the default from the expanded endpoint list.
-
-- HTTPS/WSS-compatible endpoints work from `https://app.t3.codes`, but are not made the default
-  automatically.
-- Non-loopback HTTP endpoints are useful for direct LAN pairing.
-- Loopback-only endpoints are not useful for another device unless that device is the same machine.
-
-If the copied link points directly at `http://192.168.x.y:3773`, open it from a client that can reach that LAN address. If it points at `https://app.t3.codes/pair?...`, the hosted web app will save the environment and connect directly to the backend URL in the link.
-
-In the mobile app's **Add Environment** form, a numeric IP address without a scheme uses HTTP. Include `https://` explicitly when the backend is served over HTTPS.
+On a desktop host, open **Settings → Connections**, enable **Network access**,
+then create a pairing link using an address the other device can reach. Changing
+network access restarts the desktop app. You can turn it off in the same place.
 
 T3 Pretty and T3 Pretty Internal can be installed side by side, but both production mobile apps
 register `t3code://`. The app installed most recently receives pairing and deep links; open the
 other app and use **Add Environment** when you need to target it explicitly.
-
-### Tailscale Endpoints
-
-When the desktop app can detect Tailscale, it adds Tailnet endpoints to the reachable endpoint list.
-
-Depending on your Tailscale setup, this may include:
-
-- the machine's `100.x.y.z` Tailnet IP
-- a MagicDNS name
-- an HTTPS MagicDNS endpoint when Tailscale Serve is configured for this backend
-
-The Tailscale HTTPS endpoint uses the clean MagicDNS URL, such as
-`https://machine.tailnet.ts.net/`, and is off until you opt in. Turn on **Enable Tailscale HTTPS**
-on the **Tailscale HTTPS** row in **Settings** → **Connections**. The desktop app restarts the
-backend with the same server-side behavior as `t3 serve --tailscale-serve`, then the server asks
-Tailscale Serve to proxy HTTPS traffic to the local backend. Turn the same switch off to stop it.
-
-The Tailscale support is an endpoint provider add-on. The core remote model still works without Tailscale: LAN HTTP endpoints, custom HTTPS endpoints, future tunnels, and SSH-launched environments all use the same saved environment and pairing flow.
-
-For `https://app.t3.codes`, prefer an HTTPS Tailnet or other HTTPS endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser mixed-content rules.
-
-### Option 2: Headless Server (CLI)
-
-Use this when you want to run the server without a GUI, for example on a remote machine over SSH.
-
-Run the server with `t3 serve`.
-
-```bash
-t3 serve --host "$(tailscale ip -4)"
-```
-
-`t3 serve` starts the server without opening a browser and prints:
-
-- a connection string
-- a pairing token
-- a pairing URL
-- a QR code for the pairing URL
-
-From there, connect from another device in either of these ways:
-
-- scan the QR code on your phone
-- in the mobile app, enter the full pairing URL
-- in the mobile app, enter the host and token separately
-- in the hosted web app, open a hosted pairing URL when the backend is reachable over HTTPS
 
 Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3 Code:
 
@@ -234,157 +187,118 @@ Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T
 curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 ```
 
-Use `t3 serve --help` for the full flag reference. It supports the same general startup options as the normal server command, including an optional `cwd` argument.
+For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
+address:
 
-For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
+```bash
+t3 serve --host <private-ip>
+```
+
+If a server is already running, generate a fresh link without restarting it:
+
+```bash
+t3 pair
+```
+
+Scan the QR code on your phone or paste the pairing URL into **Add environment**
+in the receiving app. Connection settings are under **Settings → Connections**
+on web and desktop and **Settings → Environments** on mobile. A loopback address
+such as `127.0.0.1` reaches only the device opening the link.
+
+Pairing authorizes that device for future connections. Use a fresh one-time link
+for each new device; you do not need the original token to reconnect. Links
+created in Settings can only be copied from the client that created them while
+its Connections page stays open. If you leave or reload that page, create
+another link to share.
+
+### Tailscale HTTPS
+
+Join both devices to the same tailnet. In the desktop app, enable **Tailscale
+HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
+
+To start a command-line server with Tailscale HTTPS:
 
 ```bash
 t3 serve --tailscale-serve
 ```
 
-By default this configures Tailscale Serve on HTTPS port 443 and advertises
-`https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
+For an already-running server:
 
 ```bash
-t3 serve --tailscale-serve --tailscale-serve-port 8443
+npx t3 pair --tailscale
 ```
 
-Once paired, add projects normally: open the Command Palette and choose **Add Project**, then pick
-the environment the project lives on. Every saved environment is offered, not only the local one.
+The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
+The mapping created by `pair --tailscale` persists across restarts. Remove its
+default-port mapping with:
 
-### Option 3: Desktop-Managed SSH Launch
-
-Use this when you want the desktop app to start or reuse T3 Code on another machine over SSH.
-
-1. Open **Settings** → **Connections**.
-2. Under **Remote Environments**, choose **Add environment**.
-3. Enter the SSH target, such as `user@example.com`. When you use an SSH config alias, leave the
-   username blank to use the alias's configured `User` value.
-4. Confirm the launch. The desktop app probes the host, starts or reuses a remote T3 server, opens a local port forward, and saves the environment.
-
-After setup, the renderer connects to a local forwarded HTTP/WebSocket endpoint. The remote host still owns the actual T3 server, projects, files, git state, terminals, and provider sessions.
-
-SSH launch is a desktop feature because it needs local process and SSH access. Once the environment is paired and saved, it uses the same environment list and connection model as direct LAN, Tailscale, HTTPS, or future tunnel-backed environments.
-
-#### SSH Launch Troubleshooting
-
-The desktop SSH launcher detects the remote platform, uses a non-interactive `sh` session on macOS
-and Linux or a Node-based launcher on Windows, writes launcher state under
-`~/.t3/ssh-launch/<host-key>/` (the equivalent path below the Windows user profile), starts or reuses
-a remote T3 server, and forwards the remote loopback port back to your desktop.
-
-The remote host must have a compatible Node.js runtime. T3 Code uses the server package's `engines.node` requirement:
-
-```text
-^22.16 || ^23.11 || >=24.10
+```bash
+tailscale serve --https=443 off
 ```
 
-During SSH launch, T3 Code first checks whether `node` is on `PATH`. If it is missing, the launcher
-looks in the usual install directories and tries to activate a version manager if it finds one
-(Volta, asdf, mise, fnm, nodenv, nvm). That covers most setups, but a version manager that only
-initializes from an interactive shell profile will not be picked up.
+If that port is already in use, choose another with
+`--tailscale-serve-port`. See `npx t3 pair --help` for other pairing options.
 
-If launch fails with `node: command not found`, a port-scan failure, or a message that the remote
-Node version does not satisfy the required range, SSH into the host and check the same
-non-interactive path T3 Code uses. On macOS or Linux:
+### Hosted web app
+
+[app.t3.codes](https://app.t3.codes) needs an HTTPS endpoint. It connects directly
+to your server; a hosted pairing link does not make an unreachable backend
+reachable or convert HTTP to HTTPS.
+
+For a plain HTTP LAN endpoint, use the direct pairing URL in a browser that can
+open it, or pair from the desktop app. On mobile, an IP address entered without a
+scheme uses HTTP, so include `https://` when your server uses HTTPS.
+
+## Desktop-managed SSH
+
+In the desktop app, open **Settings → Connections → Add environment**, choose
+**SSH**, and enter a host or SSH alias such as `user@example.com`. T3 Code starts
+or reuses a server there and opens the port forward for you. Projects, provider
+credentials, and agent work stay on the remote machine.
+
+The remote host needs a compatible [Node.js installation](./install.md#requirements)
+and [provider setup](./install.md#providers). If launch cannot find Node or reports
+an incompatible version, check it through a non-interactive SSH session:
 
 ```bash
 ssh user@example.com 'sh -lc "command -v node && node --version"'
 ```
 
-On Windows:
+Configure your version manager for non-interactive shells if this differs from
+your normal terminal. With nvm, setting a compatible default, such as
+`nvm alias default 24`, can resolve the problem.
 
-```powershell
-ssh user@windows-host node --version
-```
+If SSH reconnecting fails after an app update, retry the launch once. Removing
+the connection stops a server that T3 Code launched; a server that was already
+running is left alone.
 
-If that does not print a compatible Node version, configure your version manager for non-interactive shells or install a compatible Node binary in one of the searched locations. For example, with nvm you may need a default alias:
+For Antigravity's Google callback on a remote host, see
+[remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
 
-```bash
-nvm alias default 24
-```
+## Manage or revoke access
 
-With mise, asdf, fnm, or nodenv, make sure the tool's shim directory is installed and resolves to a Node version satisfying the range above without an interactive shell.
+On the host, **Settings → Connections** lets authorized administrators create
+pairing links and revoke client sessions. Revoking an unused link prevents new
+pairings; revoke a device's session to remove its existing access. Command-line
+management is available through `npx t3 auth --help`.
 
-If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.t3/ssh-launch` or kill `t3` processes manually.
+A session with an open connection stays listed after its access credential
+expires.
 
-## Antigravity Google sign-in
+To remove an environment from T3 Connect, open your account menu's **T3 Connect**
+page, or **Settings → T3 Connect** on mobile, and choose **Deregister**. This
+revokes its cloud access and frees its host space even when the environment is
+offline or has been wiped.
 
-Antigravity runs and saves its Google credentials on the selected environment. You can install
-it and sign in from a remote web or desktop client without an SSH login.
+On a command-line host, `t3 connect unlink` disables exposure while retaining
+your login; `t3 connect logout` also clears that login. Background-service
+[removal](./background-service.md#manage-the-service) is separate.
 
-Start in **Settings** > **Providers**, select the environment, then choose **Antigravity**.
-Provider setup is not available in the mobile app.
+Treat pairing URLs and authorization codes as passwords. Do not include them in
+screenshots, logs, or bug reports.
 
-After Google sign-in, a remote browser usually reaches a `127.0.0.1` page that cannot load.
-Copy that full address into the return URL field in the same T3 Code client and choose
-**Continue**. Keep the address unchanged. Do not paste the return URL into a thread or bug report.
-
-See [Antigravity setup](./providers-antigravity.md) for installation, expiry, and account changes.
-
-## Updating a Remote Server
-
-When the T3 Code web or desktop app and a remote server use different versions, a warning appears in
-the conversation and in **Settings** → **Connections**. Follow the action shown there: T3 Code may
-be able to update and reconnect the server for you, or it may ask you to update the desktop app or
-run a copied command on the server machine.
-
-If T3 Connect cannot connect, check the date and time on both devices, then try again.
-
-Finish active work before updating because the server restarts briefly. For step-by-step guidance,
-see [Keeping T3 Code in Sync](./updating.md).
-
-On a Linux host, you can keep the server running after logout and manage it independently of the
-connection method. See [Running T3 Code in the Background](./background-service.md).
-
-## How Pairing Works
-
-The remote device does not need a long-lived secret up front.
-
-Instead:
-
-1. `t3 serve` issues a one-time owner pairing token.
-2. The remote device exchanges that token with the server.
-3. The server creates an authenticated session for that device.
-
-After pairing, future access is session-based. You do not need to keep reusing the original token unless you are pairing a new device.
-
-## Hosted Web App Pairing
-
-The hosted web app at `https://app.t3.codes` can save a remote backend in browser local storage from a URL like:
-
-```text
-https://app.t3.codes/pair?host=https://backend.example.com:3773#token=PAIRCODE
-```
-
-Use hosted pairing when the backend is reachable from the browser over HTTPS/WSS. This includes a backend behind a trusted HTTPS tunnel or another HTTPS endpoint you operate.
-
-Do not use hosted pairing for plain HTTP LAN URLs such as `http://192.168.x.y:3773`. Browsers block an HTTPS page from connecting to an insecure HTTP or WS backend. For those endpoints, use the direct pairing URL shown by the desktop app or CLI from a client that can open that HTTP URL directly.
-
-Hosted pairing does not proxy traffic through T3 Code. The browser still connects directly to the backend URL in the pairing link.
-
-## Managing Access Later
-
-Use `t3 auth` to manage access after the initial pairing flow.
-
-Typical uses:
-
-- issue additional pairing credentials
-- inspect active sessions
-- revoke old pairing links or sessions
-
-Use `t3 auth --help` and the nested subcommand help pages for the full reference.
-
-### Deregister a T3 Connect Environment
-
-Open your account menu and choose **T3 Connect** to see every environment registered to your
-account. On mobile, open **Settings** → **T3 Connect**. Choose **Deregister** to revoke an
-environment's T3 Connect access, remove any managed tunnel, and free its host space.
-
-Deregistration is an account action and does not need a connection to the environment, so it also
-works for a server that was wiped or is no longer reachable. Device-local connect and disconnect
-controls remain in **Settings** → **Connections** on web and desktop or **Settings** →
-**Environments** on mobile.
+Device-local connect and disconnect controls remain in **Settings → Connections** on web and
+desktop or **Settings → Environments** on mobile.
 
 ## Automation webhooks
 
@@ -399,10 +313,25 @@ rotate it from the automation's page after pasting it into a third-party interfa
 trust, and again if it ever appears in a screenshot or a log. Rotating mints a new URL and kills the
 old one immediately.
 
-## Security Notes
+## T3 Connect troubleshooting
 
-- Treat pairing URLs and pairing tokens like passwords.
-- Prefer binding `--host` to a trusted private address, such as a Tailnet IP, instead of exposing the server broadly.
-- Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
-- Hosted pairing links keep the credential in the URL hash so it is not sent to the hosted app server, but it can still be exposed through browser history, screenshots, logs, or copy/paste.
-- Use `t3 auth` to revoke credentials or sessions you no longer trust.
+Run `t3 connect status` on the host to inspect saved authorization and link
+configuration. It is not a live reachability check. If the environment appears
+offline, run `t3 service status` and read the displayed log. If it disappears
+when SSH closes, see [background-service troubleshooting](./background-service.md#troubleshooting).
+
+| Error                                                     | Recovery                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment_link_limit_exceeded` or managed tunnel limit | Deregister an unused environment, then restart T3 Code on the host.                                                                         |
+| `auth_invalid` or `invalid_bearer`                        | Run `t3 connect login`. If credentials were revoked, run `t3 connect logout`, then `t3 connect` again. Restart the server after signing in. |
+| Expired or invalid link proof                             | Check the host's date and time, update T3 Code, then restart it.                                                                            |
+| HTTP 403 without a recognized error                       | Check relay access, proxies, and firewall rules. Keep any Cloudflare Ray ID for a bug report.                                               |
+| HTTP 408, 429, or 5xx                                     | Check network and relay availability. Startup retries temporary failures for up to ten minutes.                                             |
+
+After fixing a permanent rejection, restart the host's server. On Linux, use
+`systemctl --user restart t3code.service` for the background service. For a
+foreground server, stop it and run `t3 serve` again with your usual options.
+Include the diagnostic message and trace ID when reporting a persistent failure.
+
+For a connection that still fails after linking, check the date and time on both
+devices. For server version warnings, follow [Updating T3 Code](./updating.md).

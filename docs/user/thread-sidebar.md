@@ -1,4 +1,26 @@
-# Organizing threads
+# Working with threads
+
+Use a new thread for a separate task. Choose **New worktree** when its code changes
+need a separate branch and working directory.
+
+## Start a thread
+
+On web and desktop, a new thread keeps the current project and carries your model
+and mode selections, unless the destination project has its own model default.
+Its branch and workspace mode come from your configured defaults. To continue in
+an existing worktree, use **New thread in this worktree** from the branch toolbar.
+
+When you change a new thread's project, T3 Code stays in the current environment
+if that project exists there. Otherwise it selects an environment that has it.
+
+### Start in the background
+
+In a desktop browser or the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`
+on Windows and Linux to start a new thread and immediately open another draft. The
+next draft keeps the workspace mode and base branch you selected. With **New
+worktree**, each background submission creates its own worktree.
+
+## Pin and reorder threads
 
 Pin a thread from its context menu to keep it in the pinned section above your active work.
 `mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
@@ -7,8 +29,23 @@ their project, including when you connect to more than one environment.
 To require confirmation before unpinning, enable **Settings → General → Unpin confirmation**. The
 confirmation applies to the sidebar controls, thread menus, and the `mod+shift+p` shortcut.
 
-Pinned threads still move to **Settled** when they become inactive. They also move when their pull
-request merges if **Auto-settle merged threads** is enabled.
+On web and desktop, drag a pinned thread to change its position. On mobile, open the thread's menu
+and choose **Move up** or **Move down**. The order is stored by the server and appears on your
+other connected devices.
+
+If reordering is unavailable for one environment, update the T3 Code server running in that
+environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
+their pinned threads keep the default newest-first order below the ones you have arranged.
+
+Pinning does not prevent automatic settlement. Pinned threads still move to **Settled** when they
+become inactive or when their pull request merges if **Auto-settle merged threads** is enabled.
+Settling a thread removes its pin.
+
+## Settle finished work
+
+Choose **Settle thread** from its menu to move finished work out of the active list without deleting
+the conversation. **Un-settle thread** restores it to active work and prevents automatic settlement
+until new activity resumes the usual rules.
 
 Each server stores its own copy of the automatic settlement settings and checks them even when no
 web, desktop, or mobile client is connected. By default, it settles threads after three days without
@@ -18,14 +55,10 @@ input, and live background work keep the thread active. T3 Code settles from a c
 pull request only when its timestamp is not older than the user's latest activity. If that timestamp
 is not available, the inactivity rule still applies. A manual un-settle also keeps the thread active.
 
-**Settled** lists threads by when their work finished, newest first. A thread you settle yourself
-sorts by the moment you settled it. A thread that settled on its own sorts by its last message or
-turn, not by when the server noticed it was inactive.
-
-Change these rules in **Settings > General**. The change is written to every connected environment
+Change these rules in **Settings → General**. The change is written to every connected environment
 whose server supports shared settings. An environment that is offline or needs a server update
 keeps its old value and does not appear in mismatch warnings. When a connected environment whose
-server supports shared settings holds a different value, **Settings > General** shows a warning
+server supports shared settings holds a different value, **Settings → General** shows a warning
 that names it. Choose **Apply to all** to write your current values to the environments named in
 the warning. The same applies to the new-thread workspace mode and the source control writing
 style.
@@ -33,24 +66,51 @@ style.
 A settings change affects future settlement and does not reopen a settled thread. Settings saved
 by older clients on one device no longer control this behavior.
 
+**Settled** lists threads by when their work finished, newest first. A thread you settle yourself
+sorts by the moment you settled it. A thread that settled on its own sorts by its last message or
+turn, not by when the server noticed it was inactive.
+
 When you un-settle a thread, it returns to the top of the active list so you can find it right
 away. Its timestamps do not change. Other threads keep their positions.
+
+## Drafts
 
 A thread whose composer holds unsent text or attachments shows an amber tint and a pen icon in the
 sidebar, the same marks a new-thread draft uses. On web and desktop, hover the row and choose the
 **X** to discard that draft without opening the thread.
 
-Right-click a pull request link in a thread and choose **Link to thread** to show that pull request
-in the sidebar. The thread settles when the linked pull request merges if **Auto-settle merged
-threads** is enabled. Right-click the same link and choose **Unlink from thread** to remove it.
+## Link a pull request
 
-On web and desktop, drag a pinned thread to change its position. On mobile, open the thread's menu
-and choose **Move up** or **Move down**. The order is stored by the server and appears on your
-other connected devices.
+On web and desktop, right-click a pull request link in a thread and choose **Link to thread** to
+show that pull request in the sidebar. The thread settles when the linked pull request merges if
+**Auto-settle merged threads** is enabled. Right-click the same link and choose **Unlink from
+thread** to remove it. The linked pull request participates in automatic settlement.
 
-If reordering is unavailable for one environment, update the T3 Code server running in that
-environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
-their pinned threads keep the default newest-first order below the ones you have arranged.
+## Find and reference work
+
+On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
+across connected environments. Message search starts after two characters and
+includes your messages and final agent responses.
+
+Use **Settings → Keybindings** to find or customize shortcuts for searching files
+and copying a thread reference. A copied reference uses the thread's pull request
+link when available, otherwise its thread ID. See [keybindings](./keybindings.md)
+for custom configuration.
+
+To generate a fresh title from the conversation, open a thread's context menu and choose
+**Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
+be selected again. The option is hidden when the connected environment needs a server update.
+
+## Inspect agent work
+
+On web and desktop, use **Agents** to follow work delegated to subagents.
+
+Expand a tool call in the conversation to see its full command and output.
+Summaries shorten shell wrappers and can still describe the latest call after it
+finishes; the call's own result shows its status.
+
+## World Scenery
+
 On phone, [World Scenery](./world-scenery.md) draws the Home list as frosted cards and plates over
 the landscape photo. Solid rows return if Boring is on, scenery is off, or iOS Reduce Transparency
 is on.
@@ -114,9 +174,7 @@ button, or with a version pill. Nightly builds keep the sidebar as glass, with n
 In Settings under environment identification, choose **Artwork**, **Version pill**, or **None**.
 Artwork is recolored to match World Scenery.
 
-To generate a fresh title from the conversation, open a thread's context menu and choose
-**Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
-be selected again. The option is hidden when the connected environment needs a server update.
+## Offline and mobile actions
 
 You can settle, un-settle, snooze, or wake a thread even when its machine is offline. The list
 updates immediately on this device. When that environment is reachable again — including through
