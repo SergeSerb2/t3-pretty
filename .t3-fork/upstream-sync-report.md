@@ -1138,3 +1138,5 @@
   - omitted parent change: Parent per-entry WorkGroupViewState timeline integration. Reason: The fork deliberately removed the shared work-group scroll/view-state architecture in favor of row-local AnimatedHeight disclosure state, so the stale context requirements and undefined callback are removed.
 - `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Extended provider patch normalization to Claude Agent so the parent’s richer custom-model API remains compatible with T3 Pretty’s server settings architecture. Suggestion-level DPoP diagnostics are intentionally unchanged.
   - edited `packages/shared/src/serverSettings.ts`
+- `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Extended provider patch normalization to cover the parent's richer Cursor custom-model API while preserving T3 Pretty's server settings architecture. Suggestion-level DPoP diagnostics remain unchanged as required.
+  - edited `packages/shared/src/serverSettings.ts`
