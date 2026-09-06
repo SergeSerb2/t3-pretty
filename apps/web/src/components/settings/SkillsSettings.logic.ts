@@ -1,3 +1,6 @@
+import { skillLinkedAt, skillVisibleAt } from "@t3tools/client-runtime/state/skills";
+import type { Skill, SkillLocation } from "@t3tools/contracts";
+
 export const SKILL_ROW_EXIT_MS = 200;
 
 export interface Identified {
@@ -104,4 +107,53 @@ export function finishTombstoneExit<T extends Identified>(
   const next = new Map(exiting);
   next.delete(skillId);
   return next;
+}
+
+/**
+ * How one provider chip reads for a (skill, location) pair. `home` and
+ * `inherited` are locked: the first because the folder lives there, the second
+ * because the CLI already sees the skill through a folder it also reads.
+ */
+export type SkillChipState = "home" | "linked" | "inherited" | "off";
+
+export function skillChipState(
+  skill: Skill,
+  location: SkillLocation,
+  linkedOverride?: boolean,
+): SkillChipState {
+  if (location.key === skill.home) return "home";
+  if (linkedOverride ?? skillLinkedAt(skill, location)) return "linked";
+  // A pending unlink has to be taken out of `presentIn` before asking whether
+  // the CLI can still see the skill some other way.
+  const withoutLink =
+    linkedOverride === false
+      ? { ...skill, presentIn: skill.presentIn.filter((key) => key !== location.key) }
+      : skill;
+  return skillVisibleAt(withoutLink, location) ? "inherited" : "off";
+}
+
+/** Optimistic chip key; skill ids and location keys never contain a newline. */
+export function linkOverrideKey(skillId: string, locationKey: string): string {
+  return `${skillId}\n${locationKey}`;
+}
+
+/**
+ * Drops optimistic chip states the refreshed inventory has caught up with (or
+ * whose skill is gone), so the list falls back to server truth on its own.
+ */
+export function pruneSettledLinkOverrides(
+  overrides: ReadonlyMap<string, boolean>,
+  skills: ReadonlyArray<Skill>,
+): ReadonlyMap<string, boolean> {
+  if (overrides.size === 0) return overrides;
+  const byId = new Map(skills.map((skill) => [skill.id, skill] as const));
+  const next = new Map<string, boolean>();
+  for (const [key, linked] of overrides) {
+    const separator = key.indexOf("\n");
+    const skill = byId.get(key.slice(0, separator));
+    if (skill !== undefined && skill.presentIn.includes(key.slice(separator + 1)) !== linked) {
+      next.set(key, linked);
+    }
+  }
+  return next.size === overrides.size ? overrides : next;
 }

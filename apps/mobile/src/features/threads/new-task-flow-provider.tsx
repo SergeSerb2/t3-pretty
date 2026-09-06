@@ -11,6 +11,7 @@ import type {
   ServerProviderSkill,
   SkillId,
 } from "@t3tools/contracts";
+import { normalizeSkillId } from "@t3tools/shared/skillTool";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -908,8 +909,15 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!selectedProjectDraftKey) {
         return;
       }
-      const current =
-        getComposerDraftSnapshot(selectedProjectDraftKey).enabledSkillIds ?? EMPTY_SKILL_IDS;
+      // Drafts saved before the skill library may hold store ids; fold them so
+      // a toggle removes the pick instead of adding a second id for it.
+      const current = [
+        ...new Set(
+          (
+            getComposerDraftSnapshot(selectedProjectDraftKey).enabledSkillIds ?? EMPTY_SKILL_IDS
+          ).map(normalizeSkillId),
+        ),
+      ];
       const next = current.includes(skillId)
         ? current.filter((id) => id !== skillId)
         : [...current, skillId];

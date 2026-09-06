@@ -1,13 +1,6 @@
-import {
-  type EnvironmentId,
-  type InstalledSkill,
-  type ServerSettings,
-  type SkillsState,
-  WS_METHODS,
-} from "@t3tools/contracts";
+import { type EnvironmentId, type Skill, type SkillLocation, WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
@@ -17,40 +10,24 @@ import {
   environmentRpcKey,
 } from "./runtime.ts";
 
-const EMPTY_GLOBALLY_ENABLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
+/** True when this location's CLI can see the skill, through its own folder or one it also reads. */
+export function skillVisibleAt(skill: Skill, location: SkillLocation): boolean {
+  return skill.presentIn.some((key) => location.reads.includes(key));
+}
 
-/**
- * Skills enabled globally in server settings, resolved against the installed
- * registry. Enabled ids that are not installed (e.g. uninstalled from another
- * device) drop out; the result follows install order.
- */
-export function globallyEnabledSkills(
-  settings: ServerSettings | null,
-  state: SkillsState | null,
-): ReadonlyArray<InstalledSkill> {
-  const enabledSkillIds = settings?.skills.enabledSkillIds;
-  if (enabledSkillIds === undefined || enabledSkillIds.length === 0 || state === null) {
-    return EMPTY_GLOBALLY_ENABLED_SKILLS;
-  }
-  const enabled = new Set(enabledSkillIds);
-  return state.installedSkills.filter((skill) => enabled.has(skill.id));
+/** True when the skill has an entry (its home folder or a link) in this location's own folder. */
+export function skillLinkedAt(skill: Skill, location: SkillLocation): boolean {
+  return skill.presentIn.includes(location.key);
 }
 
 /**
- * Atoms for the server-managed skill registry, marketplace, and host-scoped
- * provider CLI skills (see `skills.ts` in `@t3tools/contracts`). T3-store
- * enablement lives in server settings and per-thread orchestration state;
- * host-folder enablement is mutated through `setHostSkillEnabled`. This
- * module mirrors the store, the listings, and the host-folder inventory.
+ * Atoms for the skill library and marketplace (see `skills.ts` in
+ * `@t3tools/contracts`). The library is the host's skill folders as one
+ * inventory; per-thread picks live in orchestration state, not here.
  */
-export function createSkillAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
-  options: {
-    readonly settingsValueAtom: (environmentId: EnvironmentId) => Atom.Atom<ServerSettings | null>;
-  },
-) {
-  const storeScheduler = createAtomCommandScheduler();
-  const storeConcurrency = {
+export function createSkillAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const scheduler = createAtomCommandScheduler();
+  const concurrency = {
     mode: "serial" as const,
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   };
@@ -62,28 +39,16 @@ export function createSkillAtoms<R, E>(
     label: "environment-data:skills:marketplace-listings",
     tag: WS_METHODS.skillsListMarketplace,
   });
-  const hostSkills = createEnvironmentRpcQueryAtomFamily(runtime, {
-    label: "environment-data:skills:host",
-    tag: WS_METHODS.skillsListHost,
-  });
   const skillsStateAtom = (environmentId: EnvironmentId) => state({ environmentId, input: {} });
   const skillMarketplaceListingsAtom = (environmentId: EnvironmentId) =>
     marketplaceListings({ environmentId, input: {} });
-  const hostSkillsStateAtom = (environmentId: EnvironmentId) =>
-    hostSkills({ environmentId, input: {} });
-  const globallyEnabledSkillsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make((get): ReadonlyArray<InstalledSkill> =>
-      globallyEnabledSkills(
-        get(options.settingsValueAtom(environmentId)),
-        Option.getOrNull(AsyncResult.value(get(skillsStateAtom(environmentId)))),
-      ),
-    ).pipe(Atom.withLabel(`environment-data:skills:globally-enabled:${environmentId}`)),
-  );
-  // Installs flip the `installed` flag on marketplace skills, so store
-  // mutations refetch the listings alongside the registry snapshot.
-  const refreshStoreQueries = (
+  // Installs and removals flip the `installed` flag on marketplace skills,
+  // so those refetch the listings alongside the library.
+  const refreshLibraryAndListings = (
     { environmentId }: { readonly environmentId: EnvironmentId },
-    registry: AtomRegistry.AtomRegistry,
+    registry: Parameters<
+      NonNullable<Parameters<typeof createEnvironmentRpcCommand>[1]["onSettled"]>
+    >[1],
   ) =>
     Effect.sync(() => {
       registry.refresh(skillsStateAtom(environmentId));
@@ -92,21 +57,29 @@ export function createSkillAtoms<R, E>(
   return {
     skillsStateAtom,
     skillMarketplaceListingsAtom,
-    hostSkillsStateAtom,
-    globallyEnabledSkillsAtom,
     installSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:install",
       tag: WS_METHODS.skillsInstall,
-      scheduler: storeScheduler,
-      concurrency: storeConcurrency,
-      onSettled: refreshStoreQueries,
+      scheduler,
+      concurrency,
+      onSettled: refreshLibraryAndListings,
     }),
     uninstallSkill: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:uninstall",
       tag: WS_METHODS.skillsUninstall,
-      scheduler: storeScheduler,
-      concurrency: storeConcurrency,
-      onSettled: refreshStoreQueries,
+      scheduler,
+      concurrency,
+      onSettled: refreshLibraryAndListings,
+    }),
+    setSkillLocationEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:set-location-enabled",
+      tag: WS_METHODS.skillsSetLocationEnabled,
+      scheduler,
+      concurrency,
+      onSettled: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(skillsStateAtom(environmentId));
+        }),
     }),
     refreshSkillMarketplace: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:skills:refresh-marketplace",
@@ -119,26 +92,6 @@ export function createSkillAtoms<R, E>(
       onSettled: ({ environmentId }, registry) =>
         Effect.sync(() => {
           registry.refresh(skillMarketplaceListingsAtom(environmentId));
-        }),
-    }),
-    uninstallHostSkill: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:skills:uninstall-host",
-      tag: WS_METHODS.skillsUninstallHost,
-      scheduler: storeScheduler,
-      concurrency: storeConcurrency,
-      onSettled: ({ environmentId }, registry) =>
-        Effect.sync(() => {
-          registry.refresh(hostSkillsStateAtom(environmentId));
-        }),
-    }),
-    setHostSkillEnabled: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:skills:set-host-enabled",
-      tag: WS_METHODS.skillsSetHostEnabled,
-      scheduler: storeScheduler,
-      concurrency: storeConcurrency,
-      onSettled: ({ environmentId }, registry) =>
-        Effect.sync(() => {
-          registry.refresh(hostSkillsStateAtom(environmentId));
         }),
     }),
   };

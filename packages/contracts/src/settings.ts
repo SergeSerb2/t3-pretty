@@ -31,7 +31,7 @@ import {
   ProviderInstanceSlug,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
-import { EnabledSkillIds, SkillId, SkillMarketplaceSources, SkillsSettings } from "./skills.ts";
+import { SkillId, SkillMarketplaceSources, SkillsSettings } from "./skills.ts";
 import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -1229,11 +1229,10 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
-  // Deep-merged into ServerSettings.skills; each array replaces wholesale
+  // Deep-merged into ServerSettings.skills; the array replaces wholesale
   // when present (the client always sends the full list it wants).
   skills: Schema.optionalKey(
     Schema.Struct({
-      enabledSkillIds: Schema.optionalKey(EnabledSkillIds),
       marketplaceSources: Schema.optionalKey(SkillMarketplaceSources),
     }),
   ),

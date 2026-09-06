@@ -1967,7 +1967,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
       }));
     if (composerTrigger.kind === "path") {
-      // `@` links files and skills alike; `$` stays the skills-only shortcut.
+      // `@` is files and apps only; `$` is the skills shortcut.
       const fileItems = workspaceEntries.entries.map((entry): ComposerCommandItem => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path",
@@ -1986,7 +1986,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: `@${app.slug}`,
         }),
       );
-      return [...fileItems, ...skillItems(composerTrigger.query), ...appItems];
+      return [...fileItems, ...appItems];
     }
     if (composerTrigger.kind === "slash-command") {
       const runtimeModeItems = runtimeModeOptionsForProvider(selectedProvider).map(
@@ -2265,7 +2265,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // `thread.skills.set` on toggle.
   const skillsPickerProps = {
     environmentId,
-    selectedInstanceId,
     open: isComposerSkillsPickerOpen,
     onOpenChange: setIsComposerSkillsPickerOpen,
     ...(routeKind === "server" ? { threadRef: routeThreadRef, enabledSkillIds } : {}),

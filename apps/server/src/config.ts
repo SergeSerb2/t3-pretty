@@ -129,6 +129,7 @@ export const deriveServerPaths = Effect.fn(function* (
     environmentThemesDir: join(stateDir, "themes"),
     providerStatusCacheDir,
     skillMarketplaceCacheDir: join(providerStatusCacheDir, "skill-marketplace"),
+    // Pre-library skill store; SkillLibrary moves it into ~/.agents/skills on startup.
     skillsDir: join(stateDir, "skills"),
     worktreesDir: join(baseDir, "worktrees"),
     attachmentsDir,
@@ -163,7 +164,6 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
       fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true }),
       fs.makeDirectory(derivedPaths.providerStatusCacheDir, { recursive: true }),
       fs.makeDirectory(derivedPaths.skillMarketplaceCacheDir, { recursive: true }),
-      fs.makeDirectory(derivedPaths.skillsDir, { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.anonymousIdPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.serverRuntimeStatePath), { recursive: true }),
     ],
