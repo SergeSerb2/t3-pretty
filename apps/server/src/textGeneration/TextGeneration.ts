@@ -216,8 +216,15 @@ const resolveTextGenerationTarget = (
 ): Effect.Effect<TextGenerationTarget, TextGenerationError> =>
   Effect.gen(function* () {
     const selected = yield* registry.getInstance(modelSelection.instanceId);
-    const selectedSnapshot = selected ? yield* selected.snapshot.getSnapshot : undefined;
-    if (selected && selectedSnapshot && canRunTextGeneration(selectedSnapshot)) {
+    // An unknown id is a caller bug, not a broken provider: fail rather than reroute.
+    if (!selected) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: `No provider instance registered for id '${modelSelection.instanceId}'.`,
+      });
+    }
+    const selectedSnapshot = yield* selected.snapshot.getSnapshot;
+    if (canRunTextGeneration(selectedSnapshot)) {
       return { textGeneration: selected.textGeneration, modelSelection };
     }
 
@@ -228,7 +235,7 @@ const resolveTextGenerationTarget = (
       yield* onFallback(
         modelSelection.instanceId,
         instance.instanceId,
-        selectedSnapshot?.message ?? "provider instance is not registered",
+        selectedSnapshot.message ?? `provider status is ${selectedSnapshot.status}`,
       );
       return {
         textGeneration: instance.textGeneration,
@@ -239,12 +246,6 @@ const resolveTextGenerationTarget = (
       };
     }
 
-    if (!selected) {
-      return yield* new TextGenerationError({
-        operation,
-        detail: `No provider instance registered for id '${modelSelection.instanceId}'.`,
-      });
-    }
     return { textGeneration: selected.textGeneration, modelSelection };
   });
 
@@ -252,11 +253,12 @@ export const makeTextGenerationFromRegistry = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
 ): TextGeneration["Service"] => {
   // Headlines re-run every few seconds per thread; log each distinct reroute once.
-  let lastFallback: string | undefined;
+  // Bounded by instance pairs, so the set stays small for the process lifetime.
+  const loggedFallbacks = new Set<string>();
   const logFallback = (from: ProviderInstanceId, to: ProviderInstanceId, reason: string) => {
     const key = `${from}->${to}`;
-    if (key === lastFallback) return Effect.void;
-    lastFallback = key;
+    if (loggedFallbacks.has(key)) return Effect.void;
+    loggedFallbacks.add(key);
     return Effect.logWarning(
       "text generation provider cannot run; using a ready provider instead",
       {

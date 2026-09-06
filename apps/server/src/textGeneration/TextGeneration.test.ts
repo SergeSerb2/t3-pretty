@@ -226,7 +226,18 @@ describe("makeTextGenerationFromRegistry", () => {
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>
     Effect.gen(function* () {
-      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([]));
+      // A ready provider must not absorb requests for an id that was never registered.
+      const readyCalls: string[] = [];
+      const claude = makeStubInstance(
+        ProviderInstanceId.make("claudeAgent"),
+        makeStubTextGeneration({
+          generateBranchName: () => {
+            readyCalls.push("claudeAgent");
+            return Effect.succeed({ branch: "from-claude" });
+          },
+        }),
+      );
+      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([claude]));
 
       const result = yield* tg
         .generateBranchName({
@@ -245,6 +256,7 @@ describe("makeTextGenerationFromRegistry", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
+      expect(readyCalls).toEqual([]);
     }),
   );
 });
