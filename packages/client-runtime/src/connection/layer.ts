@@ -13,34 +13,37 @@ import * as RpcSession from "../rpc/session.ts";
 import { threadLifecycleOutboxLayer } from "../state/threadLifecycleOutbox.ts";
 import { warmThreadStatesLayer } from "../state/threads.ts";
 
-export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
-  const driverLayer = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(ConnectionResolver.layer, RpcSession.layerWithOptions(options))),
-  );
-  const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
-  const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-  const connectionServicesLayer = Layer.mergeAll(
-    registryLayer,
-    RelayEnvironmentDiscovery.layer,
-    onboardingLayer,
-  );
-  const connectionStartupLayer = Layer.effectDiscard(
-    Effect.gen(function* () {
-      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-      const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
-      yield* registry.start;
-      yield* platformSource.registrations.pipe(
-        Stream.runForEach(registry.reconcilePlatform),
-        Effect.forkScoped,
-      );
-    }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
-  );
-  return connectionStartupLayer.pipe(
-    Layer.provideMerge(connectionServicesLayer),
-    Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
-    Layer.provideMerge(threadLifecycleOutboxLayer),
-    Layer.provideMerge(warmThreadStatesLayer),
-  );
-}
+const authorizationLayer = RemoteEnvironmentAuthorization.layer;
 
-export const layer = layerWithOptions({});
+const resolverLayer = ConnectionResolver.layer.pipe(Layer.provide(authorizationLayer));
+
+const driverLayer = ConnectionDriver.layer.pipe(
+  Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer)),
+);
+
+const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
+
+const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
+
+const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer).pipe(
+  Layer.provideMerge(RelayEnvironmentDiscovery.layer),
+);
+
+const connectionStartupLayer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+    const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
+    yield* registry.start;
+    yield* platformSource.registrations.pipe(
+      Stream.runForEach(registry.reconcilePlatform),
+      Effect.forkScoped,
+    );
+  }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
+);
+
+export const layer = connectionStartupLayer.pipe(
+  Layer.provideMerge(connectionServicesLayer),
+  Layer.provideMerge(authorizationLayer),
+  Layer.provideMerge(threadLifecycleOutboxLayer),
+  Layer.provideMerge(warmThreadStatesLayer),
+);

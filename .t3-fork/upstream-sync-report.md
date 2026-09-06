@@ -1105,3 +1105,15 @@
 - `packages/shared/src/relayClient.test.ts` — Skip the dynamic PATH observation test when the test suite is running on Windows.. Reason: This would weaken an intentional T3 Pretty Windows compatibility test at a path recently hardened for cross-surface reliability and Windows Surge remote access. The existing fork test is retained without changing production behavior.
 - `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+## Post-merge repairs
+
+- `shared-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: The repair restores T3 Pretty's static layered runtime and warm-thread behavior while integrating the parent's relay discovery, authorization, fixture, and contract changes. It also removes stale session-option remnants and updates tests to the current APIs.
+  - edited `packages/client-runtime/src/connection/layer.ts`
+  - edited `packages/client-runtime/src/rpc/session.ts`
+  - edited `packages/client-runtime/src/rpc/session.test.ts`
+  - edited `packages/client-runtime/src/authorization/layer.test.ts`
+  - edited `packages/client-runtime/src/state/environmentHttpAuth.test.ts`
+  - edited `packages/client-runtime/src/state/threads-atoms.test.ts`
+  - edited `packages/client-runtime/src/state/threadRetention.ts`
+  - edited `packages/client-runtime/src/connection/supervisor.ts`

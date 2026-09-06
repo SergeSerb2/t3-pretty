@@ -39,6 +39,7 @@ import {
   createEnvironmentThreadStateAtoms,
   requestOlderThreadTurns,
   ThreadSnapshotLoader,
+  warmThreadStatesLayer,
   type EnvironmentThreadState,
   type WarmThreadStates,
 } from "./threads.ts";
@@ -57,6 +58,7 @@ const THREAD: OrchestrationThread = {
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   runtimeMode: "full-access",
   interactionMode: "default",
+  enabledSkillIds: [],
   branch: "main",
   worktreePath: null,
   latestTurn: null,
@@ -153,6 +155,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     reconcilePlatform: () => Effect.die("Unexpected environment reconciliation"),
     remove: () => Effect.die("Unexpected environment removal"),
     removeRelayEnvironments: () => Effect.die("Unexpected environment removal"),
+    reconcileRelayEnvironments: () => Effect.die("Unexpected environment reconciliation"),
     retryNow: () => Effect.void,
     state: () => SubscriptionRef.get(supervisor.state),
     stateChanges: () => SubscriptionRef.changes(supervisor.state),
@@ -165,6 +168,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
   });
   const runtime = Atom.runtime(
     Layer.mergeAll(
+      warmThreadStatesLayer,
       Layer.succeed(EnvironmentRegistry, environmentRegistry),
       Layer.succeed(
         EnvironmentCacheStore,

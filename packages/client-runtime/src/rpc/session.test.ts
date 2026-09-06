@@ -157,7 +157,7 @@ const SOURCE_SERVER_CONFIG: ServerConfigType = {
     },
   },
 };
-const SOURCE_EVENT: ServerConfigStreamEventType = {
+const SOURCE_EVENT: import("@t3tools/contracts").ServerConfigStreamEvent = {
   version: 1,
   type: "usageLimitSourcesUpdated",
   payload: {

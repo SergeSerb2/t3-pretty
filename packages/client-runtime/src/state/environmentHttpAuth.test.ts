@@ -72,6 +72,7 @@ const SHELL = {
   snapshotSequence: 1,
   projects: [],
   threads: [],
+  automations: [],
   updatedAt: "2026-09-04T00:00:00.000Z",
 } satisfies OrchestrationShellSnapshot;
 const THREAD = {
@@ -83,6 +84,7 @@ const THREAD = {
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
     runtimeMode: "full-access",
     interactionMode: "default",
+    enabledSkillIds: [],
     branch: null,
     worktreePath: null,
     latestTurn: null,

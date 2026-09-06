@@ -51,11 +51,6 @@ export interface RpcSession {
   readonly closed: Effect.Effect<never, ConnectionTransientError>;
 }
 
-export interface RpcSessionOptions {
-  readonly environmentThemes?: boolean;
-  readonly usageLimitSources?: boolean;
-}
-
 export class RpcSessionFactory extends Context.Service<
   RpcSessionFactory,
   {
@@ -100,10 +95,6 @@ export const make = Effect.gen(function* () {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
   const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
   const dpopSigner = yield* Effect.serviceOption(ManagedRelayDpopSigner);
-  const serverConfigInput: ServerConfigSubscriptionInput = {
-    ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
-    ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
-  };
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
     const networkHint =

@@ -21,6 +21,7 @@ import * as ConnectionDriver from "./driver.ts";
 import {
   type ConnectionAttemptError,
   type ConnectionTarget,
+  DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
   ConnectionTransientError,
   type NetworkStatus,
   type PreparedConnection,

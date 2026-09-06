@@ -460,7 +460,6 @@ describe("RemoteEnvironmentAuthorization", () => {
         const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
         return yield* remote.authorizeDpop({
           expectedEnvironmentId: ENVIRONMENT_ID,
-          obtainBootstrap: harness.obtainBootstrap,
         });
       }).pipe(Effect.provide(harness.layer), Effect.flip);
 
