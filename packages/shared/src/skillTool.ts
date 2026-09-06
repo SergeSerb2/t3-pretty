@@ -147,3 +147,31 @@ export function skillLoadNameKey(name: string): string {
 export function skillLoadIdKey(skillId: string): string {
   return `id:${skillId}`;
 }
+
+const LIBRARY_SKILL_ID_PREFIX = "host:";
+const SHARED_LIBRARY_LOCATION_KEY = "agents";
+
+/**
+ * Fold a pre-library skill id onto its library form. Older servers kept a
+ * private store addressed as `owner/repo:path/to/dir`; the one-time migration
+ * moved every such skill to `~/.agents/skills/<dir>` (a repository that was
+ * itself one skill, `@root`, took the repository name). Library ids pass
+ * through unchanged.
+ */
+export function normalizeSkillId(skillId: string): string {
+  if (skillId.startsWith(LIBRARY_SKILL_ID_PREFIX)) {
+    return skillId;
+  }
+  const colonIndex = skillId.indexOf(":");
+  if (colonIndex <= 0) {
+    return skillId;
+  }
+  const repo = skillId.slice(0, colonIndex);
+  const segments = skillId
+    .slice(colonIndex + 1)
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  const last = segments[segments.length - 1];
+  const dirName = last === undefined || last === "@root" ? repo.split("/")[1] : last;
+  return dirName ? `${LIBRARY_SKILL_ID_PREFIX}${SHARED_LIBRARY_LOCATION_KEY}:${dirName}` : skillId;
+}

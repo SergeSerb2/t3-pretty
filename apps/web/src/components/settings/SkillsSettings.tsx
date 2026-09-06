@@ -1,30 +1,25 @@
 /**
- * Settings › Skills — the server-managed skill registry: installed skills with
- * a global on/off per skill, marketplace listings browsed from configured
- * GitHub repository sources, host-folder skills the provider CLIs installed
- * themselves (enable/disable without deleting, or uninstall), and a read-only
- * view of plugin/project/system skills those CLIs still report. Install,
- * uninstall, host enablement, and marketplace refresh go through the
- * skills RPC commands; T3-store enablement and sources are patched into
- * server settings.
+ * Settings › Skills — the skill folders this environment's host actually has:
+ * the shared `~/.agents/skills` library plus each provider CLI's own folder,
+ * one row per real folder. A provider chip is on when that CLI can see the
+ * skill, and toggling it adds or removes the link in that CLI's folder. Below
+ * that, marketplace listings browsed from configured GitHub repositories;
+ * installs land in the shared library. Sources are patched into server
+ * settings, everything else goes through the skills RPC commands.
  */
-import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
-  HostSkill,
-  HostSkillsState,
-  InstalledSkill,
   MarketplaceSkill,
-  SkillId,
+  Skill,
+  SkillLocation,
   SkillMarketplaceListing,
   SkillsState,
 } from "@t3tools/contracts";
 import {
-  LaptopIcon,
   LoaderCircleIcon,
   PackageIcon,
   PlusIcon,
@@ -35,50 +30,49 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { useOptimisticIdList } from "~/hooks/useOptimisticIdList";
 import { usePrimarySettings, useUpdatePrimarySettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery, type EnvironmentQueryView } from "~/state/query";
-import { primaryServerProvidersAtom, serverEnvironment } from "~/state/server";
 import { skillsEnvironment } from "~/state/skills";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { deriveProviderInstanceEntries } from "../../providerInstances";
-import {
-  formatProviderSkillDisplayName,
-  formatProviderSkillInstallSource,
-  normalizeProviderSkillPath,
-} from "../../providerSkillPresentation";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Skeleton } from "../ui/skeleton";
-import { Switch } from "../ui/switch";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import {
   displaySkillRows,
   finishTombstoneExit,
+  linkOverrideKey,
   nextSkillOrderIds,
   pruneHiddenSkillIds,
+  pruneSettledLinkOverrides,
   retainedSkillIds,
+  skillChipState,
   SKILL_ROW_EXIT_MS,
   type Identified,
+  type SkillChipState,
 } from "./SkillsSettings.logic";
 import "./skillsSettings.css";
 
 const SKILL_REPO_PATTERN = /^[^\s/]+\/[^\s/]+$/;
+/** Above this many rows the list stops being scannable and earns a filter box. */
+const SKILL_SEARCH_THRESHOLD = 6;
 
-const EMPTY_INSTALLED_SKILLS: ReadonlyArray<InstalledSkill> = [];
+const EMPTY_SKILLS: ReadonlyArray<Skill> = [];
+const EMPTY_LOCATIONS: ReadonlyArray<SkillLocation> = [];
 const EMPTY_ID_SET: ReadonlySet<string> = new Set();
+const EMPTY_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
 
 function withoutId(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
   const next = new Set(ids);
   next.delete(id);
   return next;
 }
-const EMPTY_HOST_SKILLS: ReadonlyArray<HostSkill> = [];
 
 export function SkillsSettingsPanel() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -90,31 +84,20 @@ export function SkillsSettingsPanel() {
       ? null
       : skillsEnvironment.skillMarketplaceListingsAtom(primaryEnvironmentId),
   );
-  const hostSkillsState = useEnvironmentQuery(
-    primaryEnvironmentId === null
-      ? null
-      : skillsEnvironment.hostSkillsStateAtom(primaryEnvironmentId),
-  );
   const environmentKey = primaryEnvironmentId ?? "no-environment";
 
   return (
     <SettingsPageContainer>
-      <InstalledSkillsSection
-        key={`installed:${environmentKey}`}
+      <SkillLibrarySection
+        key={`library:${environmentKey}`}
         environmentId={primaryEnvironmentId}
         query={skillsState}
-      />
-      <HostSkillsSection
-        key={`host:${environmentKey}`}
-        environmentId={primaryEnvironmentId}
-        query={hostSkillsState}
       />
       <MarketplaceSkillsSection
         key={`marketplace:${environmentKey}`}
         environmentId={primaryEnvironmentId}
         query={marketplaceListings}
       />
-      <DetectedSkillsSection hostSkills={hostSkillsState.data?.skills ?? []} />
     </SettingsPageContainer>
   );
 }
@@ -250,68 +233,103 @@ function SkillRowShell({
   );
 }
 
-function InstalledSkillsSection({
+function SkillLibrarySection({
   environmentId,
   query,
 }: {
   environmentId: EnvironmentId | null;
   query: EnvironmentQueryView<SkillsState>;
 }) {
-  const settings = usePrimarySettings();
-  const persistSettings = useAtomCommand(
-    serverEnvironment.updateSettings,
-    "server settings update",
-  );
   const uninstallSkill = useAtomCommand(skillsEnvironment.uninstallSkill, {
     reportFailure: false,
   });
+  const setLocationEnabled = useAtomCommand(skillsEnvironment.setSkillLocationEnabled, {
+    reportFailure: false,
+  });
+  const [searchQuery, setSearchQuery] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [uninstallingIds, setUninstallingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
-  const installedSkills = query.data?.installedSkills ?? EMPTY_INSTALLED_SKILLS;
-  const { rows, beginExit, finishExit } = useTombstonedSkillList(installedSkills);
+  // skill id → the location key whose chip is mid-flight, so only that chip spins.
+  const [pendingChips, setPendingChips] = useState<ReadonlyMap<string, string>>(new Map());
+  // Chip states the user picked, held until the refreshed inventory agrees.
+  const [linkOverrides, setLinkOverrides] = useState<ReadonlyMap<string, boolean>>(EMPTY_OVERRIDES);
 
-  // The enabled list is replaced wholesale on every write, so edits chain off
-  // the last list sent, not the server value that lags a round trip behind.
-  const {
-    ids: enabledSkillIds,
-    setIds: setEnabledSkillIds,
-    reset: resetEnabledSkillIds,
-  } = useOptimisticIdList(settings.skills.enabledSkillIds, environmentId ?? "");
-  const enabledSkillIdSet = useMemo(() => new Set(enabledSkillIds), [enabledSkillIds]);
-  const writeEnabledSkillIds = useCallback(
-    (next: ReadonlyArray<SkillId>) => {
-      if (environmentId === null) return;
-      setEnabledSkillIds(next);
-      void persistSettings({
-        environmentId,
-        input: { patch: { skills: { enabledSkillIds: next } } },
-      }).then((result) => {
-        if (result._tag === "Failure") {
-          resetEnabledSkillIds(next);
-        }
-      });
-    },
-    [environmentId, persistSettings, resetEnabledSkillIds, setEnabledSkillIds],
+  const skills = query.data?.skills ?? EMPTY_SKILLS;
+  const locations = query.data?.locations ?? EMPTY_LOCATIONS;
+  // The shared library is not a provider, so it gets no chip of its own.
+  const providerLocations = useMemo(
+    () => locations.filter((location) => location.driver !== undefined),
+    [locations],
   );
-  const setSkillEnabled = useCallback(
-    (skillId: SkillId, enabled: boolean) => {
-      const next = enabled
-        ? enabledSkillIdSet.has(skillId)
-          ? enabledSkillIds
-          : [...enabledSkillIds, skillId]
-        : enabledSkillIds.filter((id) => id !== skillId);
-      writeEnabledSkillIds(next);
+  const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
+  // Server truth takes back over the moment the refreshed inventory agrees; the
+  // state is pruned too, so a settled override cannot resurface when another
+  // device changes the same link later.
+  useEffect(() => {
+    setLinkOverrides((current) => pruneSettledLinkOverrides(current, skills));
+  }, [skills]);
+  const activeOverrides = useMemo(
+    () => pruneSettledLinkOverrides(linkOverrides, skills),
+    [linkOverrides, skills],
+  );
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleRows = useMemo(
+    () =>
+      rows.filter(({ skill, exiting }) => {
+        if (exiting || normalizedQuery.length === 0) return true;
+        return (
+          skill.name.toLowerCase().includes(normalizedQuery) ||
+          skill.dirName.toLowerCase().includes(normalizedQuery) ||
+          skill.displayPath.toLowerCase().includes(normalizedQuery) ||
+          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false)
+        );
+      }),
+    [normalizedQuery, rows],
+  );
+
+  const handleToggleLocation = useCallback(
+    async (skill: Skill, location: SkillLocation, enabled: boolean) => {
+      if (environmentId === null) return;
+      const key = linkOverrideKey(skill.id, location.key);
+      setActionError(null);
+      setLinkOverrides((current) => new Map(current).set(key, enabled));
+      setPendingChips((current) => new Map(current).set(skill.id, location.key));
+      const result = await setLocationEnabled({
+        environmentId,
+        input: { skillId: skill.id, locationKey: location.key, enabled },
+      });
+      setPendingChips((current) => {
+        const next = new Map(current);
+        next.delete(skill.id);
+        return next;
+      });
+      if (result._tag === "Failure") {
+        setLinkOverrides((current) => {
+          const next = new Map(current);
+          next.delete(key);
+          return next;
+        });
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : `Could not ${enabled ? "add" : "remove"} ${skill.name} in ${location.title}.`,
+          );
+        }
+      }
     },
-    [enabledSkillIdSet, enabledSkillIds, writeEnabledSkillIds],
+    [environmentId, setLocationEnabled],
   );
 
   const handleUninstall = useCallback(
-    async (skill: InstalledSkill) => {
+    async (skill: Skill) => {
       if (environmentId === null) return;
       const confirmed = await ensureLocalApi().dialogs.confirm(
         [
-          `Uninstall "${skill.name}"?`,
-          "It is removed from this server's skill store and no longer lands in new threads.",
+          `Remove "${skill.name}"?`,
+          `This deletes ${skill.displayPath} on this environment and removes its links from every provider.`,
         ].join("\n"),
         { variant: "destructive" },
       );
@@ -323,35 +341,37 @@ function InstalledSkillsSection({
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          setActionError(error instanceof Error ? error.message : "Could not uninstall the skill.");
+          setActionError(error instanceof Error ? error.message : "Could not remove the skill.");
         }
         return;
       }
       beginExit(skill);
-      // Drop the orphaned enablement so the id does not linger in settings.
-      if (enabledSkillIdSet.has(skill.id)) {
-        writeEnabledSkillIds(enabledSkillIds.filter((id) => id !== skill.id));
-      }
     },
-    [
-      beginExit,
-      enabledSkillIdSet,
-      enabledSkillIds,
-      environmentId,
-      uninstallSkill,
-      writeEnabledSkillIds,
-    ],
+    [beginExit, environmentId, uninstallSkill],
   );
 
   return (
     <SettingsSection
-      {...searchableSetting("skills-installed")}
-      title="Installed skills"
+      {...searchableSetting("skills-library")}
+      title="Skills"
       icon={<PackageIcon className="size-4.5 text-muted-foreground" />}
+      headerAction={
+        environmentId === null ? null : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Refresh skills"
+            disabled={query.isPending}
+            onClick={() => query.refresh()}
+          >
+            <RefreshCwIcon className={cn("size-3.5", query.isPending && "animate-spin")} />
+          </Button>
+        )
+      }
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Skill bundles in this server&rsquo;s store. Enabled skills land in every new thread;
-        per-thread picks add on top.
+        Skill folders on this environment. A skill is on for a provider when that provider&rsquo;s
+        CLI can see it.
       </p>
       {environmentId === null ? (
         <SkillListHint>Connect an environment to manage skills.</SkillListHint>
@@ -359,45 +379,77 @@ function InstalledSkillsSection({
         <SkillListHint tone="error">{query.error}</SkillListHint>
       ) : query.data === null ? (
         <SkillListSkeleton rows={3} />
-      ) : rows.length === 0 ? (
-        <SkillListHint>No skills installed yet — find some in the marketplace below.</SkillListHint>
       ) : (
-        rows.map(({ skill, exiting }) => (
-          <SkillRowShell
-            key={skill.id}
-            skillId={skill.id}
-            exiting={exiting}
-            pending={uninstallingIds.has(skill.id)}
-            onExited={finishExit}
-          >
-            <InstalledSkillRow
-              skill={skill}
-              enabled={enabledSkillIdSet.has(skill.id)}
-              pending={uninstallingIds.has(skill.id)}
-              onToggle={(enabled) => setSkillEnabled(skill.id, enabled)}
-              onUninstall={() => void handleUninstall(skill)}
-            />
-          </SkillRowShell>
-        ))
+        <>
+          {skills.length > SKILL_SEARCH_THRESHOLD ? (
+            <div className="px-3 pb-2 sm:px-4">
+              <Input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                placeholder="Search skills…"
+                aria-label="Search skills"
+              />
+            </div>
+          ) : null}
+          {rows.length === 0 ? (
+            <SkillListHint>
+              No skills yet. Find some below or drop a folder with a SKILL.md into ~/.agents/skills.
+            </SkillListHint>
+          ) : visibleRows.length === 0 ? (
+            <SkillListHint>No skills match.</SkillListHint>
+          ) : (
+            visibleRows.map(({ skill, exiting }) => (
+              <SkillRowShell
+                key={skill.id}
+                skillId={skill.id}
+                exiting={exiting}
+                pending={uninstallingIds.has(skill.id)}
+                onExited={finishExit}
+              >
+                <SkillRow
+                  skill={skill}
+                  locations={locations}
+                  providerLocations={providerLocations}
+                  overrides={activeOverrides}
+                  pendingLocationKey={pendingChips.get(skill.id) ?? null}
+                  uninstalling={uninstallingIds.has(skill.id)}
+                  onToggleLocation={(location, enabled) =>
+                    void handleToggleLocation(skill, location, enabled)
+                  }
+                  onUninstall={() => void handleUninstall(skill)}
+                />
+              </SkillRowShell>
+            ))
+          )}
+        </>
       )}
       {actionError !== null ? <SkillListHint tone="error">{actionError}</SkillListHint> : null}
     </SettingsSection>
   );
 }
 
-function InstalledSkillRow({
+function SkillRow({
   skill,
-  enabled,
-  pending,
-  onToggle,
+  locations,
+  providerLocations,
+  overrides,
+  pendingLocationKey,
+  uninstalling,
+  onToggleLocation,
   onUninstall,
 }: {
-  skill: InstalledSkill;
-  enabled: boolean;
-  pending: boolean;
-  onToggle: (enabled: boolean) => void;
+  skill: Skill;
+  locations: ReadonlyArray<SkillLocation>;
+  providerLocations: ReadonlyArray<SkillLocation>;
+  overrides: ReadonlyMap<string, boolean>;
+  pendingLocationKey: string | null;
+  uninstalling: boolean;
+  onToggleLocation: (location: SkillLocation, enabled: boolean) => void;
   onUninstall: () => void;
 }) {
+  const busy = uninstalling || pendingLocationKey !== null;
+
   return (
     <div className="t3-skill-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4 hover:bg-accent/50">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground transition-transform duration-150 group-hover:scale-105">
@@ -408,37 +460,123 @@ function InstalledSkillRow({
           <span className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
             {skill.name}
           </span>
-          <Badge variant="outline" size="sm" className="text-muted-foreground">
-            {skill.sourceRepo}
-          </Badge>
+          {skill.dirName === skill.name ? null : (
+            <code className="truncate font-mono text-[11px] text-muted-foreground/70">
+              {skill.dirName}
+            </code>
+          )}
+          {skill.source === undefined ? null : (
+            <Badge variant="outline" size="sm" className="text-muted-foreground">
+              {skill.source.repo}
+            </Badge>
+          )}
         </div>
         <p className="truncate text-[13px] leading-[1.45] text-muted-foreground/80">
           {skill.description ?? "No description."}
         </p>
+        <p className="truncate font-mono text-[11px] text-muted-foreground/60">
+          {skill.displayPath}
+        </p>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Switch
-          checked={enabled}
-          onCheckedChange={(checked) => onToggle(Boolean(checked))}
-          disabled={pending}
-          aria-label={`Enable ${skill.name} for every thread`}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={pending ? `Uninstalling ${skill.name}` : `Uninstall ${skill.name}`}
-          disabled={pending}
-          onClick={onUninstall}
-          className="text-muted-foreground hover:text-destructive-foreground"
-        >
-          {pending ? (
-            <LoaderCircleIcon className="size-4 animate-spin" />
-          ) : (
-            <Trash2Icon className="size-4" />
-          )}
-        </Button>
+      <div className="flex max-w-[60%] flex-wrap items-center justify-end gap-1">
+        {providerLocations.map((location) => (
+          <SkillLocationChip
+            key={location.key}
+            skill={skill}
+            location={location}
+            locations={locations}
+            state={skillChipState(
+              skill,
+              location,
+              overrides.get(linkOverrideKey(skill.id, location.key)),
+            )}
+            pending={pendingLocationKey === location.key}
+            disabled={busy}
+            onToggle={(enabled) => onToggleLocation(location, enabled)}
+          />
+        ))}
       </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={uninstalling ? `Removing ${skill.name}` : `Remove ${skill.name}`}
+        disabled={busy}
+        onClick={onUninstall}
+        className="shrink-0 text-muted-foreground hover:text-destructive-foreground"
+      >
+        {uninstalling ? (
+          <LoaderCircleIcon className="size-4 animate-spin" />
+        ) : (
+          <Trash2Icon className="size-4" />
+        )}
+      </Button>
     </div>
+  );
+}
+
+/**
+ * One provider's on/off chip for a skill. Locked chips keep hover and focus
+ * (`aria-disabled`, not `disabled`) so the tooltip can say why they cannot move.
+ */
+function SkillLocationChip({
+  skill,
+  location,
+  locations,
+  state,
+  pending,
+  disabled,
+  onToggle,
+}: {
+  skill: Skill;
+  location: SkillLocation;
+  locations: ReadonlyArray<SkillLocation>;
+  state: SkillChipState;
+  pending: boolean;
+  disabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  const on = state !== "off";
+  const lockReason =
+    state === "home"
+      ? `Lives here. Remove the skill to take it out of ${location.title}.`
+      : state === "inherited"
+        ? `${location.title} reads ${
+            locations.find(
+              (candidate) =>
+                candidate.key !== location.key &&
+                location.reads.includes(candidate.key) &&
+                skill.presentIn.includes(candidate.key),
+            )?.displayPath ?? "a shared folder"
+          } directly.`
+        : null;
+
+  const chip = (
+    <Button
+      size="xs"
+      variant={on ? "secondary" : "outline"}
+      aria-pressed={on}
+      aria-disabled={lockReason !== null || undefined}
+      aria-label={`${location.title}: ${on ? "on" : "off"} for ${skill.name}`}
+      disabled={disabled}
+      onClick={lockReason === null ? () => onToggle(state === "off") : undefined}
+      className={cn(
+        "font-normal",
+        lockReason !== null && "cursor-default",
+        state === "inherited" && "opacity-64",
+        state === "off" && "text-muted-foreground",
+      )}
+    >
+      {pending ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
+      {location.title}
+    </Button>
+  );
+
+  if (lockReason === null) return chip;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipPopup>{lockReason}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -535,11 +673,12 @@ function MarketplaceSkillsSection({
   return (
     <SettingsSection
       {...searchableSetting("skills-marketplace")}
-      title="Marketplace"
+      title="Find skills"
       icon={<StoreIcon className="size-4.5 text-muted-foreground" />}
     >
       <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Browse skills from GitHub repositories and install them into this server&rsquo;s store.
+        Browse skill repositories on GitHub. Installs go to ~/.agents/skills and are linked into
+        every provider.
       </p>
       {environmentId === null ? (
         <SkillListHint>Connect an environment to browse the marketplace.</SkillListHint>
@@ -681,7 +820,7 @@ function MarketplaceSkillRow({
       <div className="flex shrink-0 items-center">
         {skill.installed ? (
           <Badge variant="outline" size="sm" className="text-muted-foreground">
-            Installed
+            In library
           </Badge>
         ) : (
           <Button variant="outline" size="xs" disabled={installing} onClick={onInstall}>
@@ -690,308 +829,5 @@ function MarketplaceSkillRow({
         )}
       </div>
     </div>
-  );
-}
-
-function HostSkillsSection({
-  environmentId,
-  query,
-}: {
-  environmentId: EnvironmentId | null;
-  query: EnvironmentQueryView<HostSkillsState>;
-}) {
-  const uninstallHostSkill = useAtomCommand(skillsEnvironment.uninstallHostSkill, {
-    reportFailure: false,
-  });
-  const setHostSkillEnabled = useAtomCommand(skillsEnvironment.setHostSkillEnabled, {
-    reportFailure: false,
-  });
-  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
-    reportFailure: false,
-  });
-  const [searchQuery, setSearchQuery] = useState("");
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
-
-  const skills = query.data?.skills ?? EMPTY_HOST_SKILLS;
-  const { rows, beginExit, finishExit } = useTombstonedSkillList(skills);
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  const visibleRows = useMemo(
-    () =>
-      rows.filter(({ skill, exiting }) => {
-        if (exiting || normalizedQuery.length === 0) return true;
-        return (
-          skill.name.toLowerCase().includes(normalizedQuery) ||
-          skill.origin.toLowerCase().includes(normalizedQuery) ||
-          skill.displayPath.toLowerCase().includes(normalizedQuery) ||
-          (skill.description?.toLowerCase().includes(normalizedQuery) ?? false)
-        );
-      }),
-    [normalizedQuery, rows],
-  );
-  const groups = useMemo(() => {
-    const byOrigin = new Map<string, Array<(typeof visibleRows)[number]>>();
-    for (const row of visibleRows) {
-      const group = byOrigin.get(row.skill.origin);
-      if (group === undefined) {
-        byOrigin.set(row.skill.origin, [row]);
-      } else {
-        group.push(row);
-      }
-    }
-    return [...byOrigin.entries()];
-  }, [visibleRows]);
-
-  const handleUninstall = useCallback(
-    async (skill: HostSkill) => {
-      if (environmentId === null) return;
-      const confirmed = await ensureLocalApi().dialogs.confirm(
-        [
-          `Remove "${skill.name}" from ${skill.displayPath}?`,
-          "This deletes that folder on this environment. The provider CLI that installed it will stop seeing the skill.",
-        ].join("\n"),
-        { variant: "destructive" },
-      );
-      if (!confirmed) return;
-      setActionError(null);
-      setPendingIds((ids) => new Set(ids).add(skill.id));
-      const result = await uninstallHostSkill({
-        environmentId,
-        input: { skillId: skill.id },
-      });
-      setPendingIds((ids) => withoutId(ids, skill.id));
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          setActionError(error instanceof Error ? error.message : "Could not remove the skill.");
-        }
-        return;
-      }
-      beginExit(skill);
-      void refreshProviders({ environmentId, input: {} });
-    },
-    [beginExit, environmentId, refreshProviders, uninstallHostSkill],
-  );
-
-  const handleToggle = useCallback(
-    async (skill: HostSkill, enabled: boolean) => {
-      if (environmentId === null || skill.enabled === enabled) return;
-      setActionError(null);
-      setPendingIds((ids) => new Set(ids).add(skill.id));
-      const result = await setHostSkillEnabled({
-        environmentId,
-        input: { skillId: skill.id, enabled },
-      });
-      setPendingIds((ids) => withoutId(ids, skill.id));
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          setActionError(error instanceof Error ? error.message : "Could not update the skill.");
-        }
-        return;
-      }
-      void refreshProviders({ environmentId, input: {} });
-    },
-    [environmentId, refreshProviders, setHostSkillEnabled],
-  );
-
-  return (
-    <SettingsSection
-      {...searchableSetting("skills-on-environment")}
-      title="On this environment"
-      icon={<LaptopIcon className="size-4.5 text-muted-foreground" />}
-      headerAction={
-        environmentId === null ? null : (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Refresh provider skills"
-            disabled={query.isPending}
-            onClick={() => query.refresh()}
-          >
-            <RefreshCwIcon className={cn("size-3.5", query.isPending && "animate-spin")} />
-          </Button>
-        )
-      }
-    >
-      <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Skills Claude, Codex, Cursor, and other provider CLIs installed in their home folders on
-        this environment — including over a remote connection. Turn a skill off to hide it from
-        those CLIs without deleting it. Removing one deletes that folder.
-      </p>
-      {environmentId === null ? (
-        <SkillListHint>Connect an environment to manage provider skills.</SkillListHint>
-      ) : query.error !== null ? (
-        <SkillListHint tone="error">{query.error}</SkillListHint>
-      ) : query.data === null ? (
-        <SkillListSkeleton rows={3} />
-      ) : (
-        <>
-          {rows.length > 0 || skills.length > 0 ? (
-            <div className="px-3 pb-2 sm:px-4">
-              <Input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                placeholder="Search provider skills…"
-                aria-label="Search provider skills"
-              />
-            </div>
-          ) : null}
-          {rows.length === 0 ? (
-            <SkillListHint>
-              No provider CLI skills in their home folders. Marketplace installs land in T3&rsquo;s
-              library above.
-            </SkillListHint>
-          ) : visibleRows.length === 0 ? (
-            <SkillListHint>No skills match.</SkillListHint>
-          ) : (
-            groups.map(([origin, originRows]) => (
-              <div key={origin} className="space-y-1 pt-1">
-                <div className="px-3 py-1 sm:px-4">
-                  <span className="truncate text-xs text-muted-foreground">{origin}</span>
-                </div>
-                {originRows.map(({ skill, exiting }) => (
-                  <SkillRowShell
-                    key={skill.id}
-                    skillId={skill.id}
-                    exiting={exiting}
-                    pending={pendingIds.has(skill.id)}
-                    onExited={finishExit}
-                  >
-                    <HostSkillRow
-                      skill={skill}
-                      pending={pendingIds.has(skill.id)}
-                      onToggle={(enabled) => void handleToggle(skill, enabled)}
-                      onUninstall={() => void handleUninstall(skill)}
-                    />
-                  </SkillRowShell>
-                ))}
-              </div>
-            ))
-          )}
-        </>
-      )}
-      {actionError !== null ? <SkillListHint tone="error">{actionError}</SkillListHint> : null}
-    </SettingsSection>
-  );
-}
-
-function HostSkillRow({
-  skill,
-  pending,
-  onToggle,
-  onUninstall,
-}: {
-  skill: HostSkill;
-  pending: boolean;
-  onToggle: (enabled: boolean) => void;
-  onUninstall: () => void;
-}) {
-  return (
-    <div className="t3-skill-row group flex w-full items-center gap-3 rounded-xl px-3 py-3 sm:px-4 hover:bg-accent/50">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60 text-foreground transition-transform duration-150 group-hover:scale-105">
-        <PackageIcon className="size-4.5" />
-      </span>
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <span className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-          {skill.name}
-        </span>
-        <p className="truncate text-[13px] leading-[1.45] text-muted-foreground/80">
-          {skill.description ?? "No description."}
-        </p>
-        <p className="truncate font-mono text-[11px] text-muted-foreground/60">
-          {skill.displayPath}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Switch
-          checked={skill.enabled}
-          disabled={pending}
-          onCheckedChange={(checked) => onToggle(Boolean(checked))}
-          aria-label={`Enable ${skill.name} for its provider`}
-        />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={pending ? `Removing ${skill.name}` : `Remove ${skill.name}`}
-          disabled={pending}
-          onClick={onUninstall}
-          className="text-muted-foreground hover:text-destructive-foreground"
-        >
-          {pending ? (
-            <LoaderCircleIcon className="size-4 animate-spin" />
-          ) : (
-            <Trash2Icon className="size-4" />
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function DetectedSkillsSection({ hostSkills }: { hostSkills: ReadonlyArray<HostSkill> }) {
-  const providers = useAtomValue(primaryServerProvidersAtom);
-  const hostSkillPaths = useMemo(() => {
-    const paths = new Set<string>();
-    for (const skill of hostSkills) {
-      const normalized = normalizeProviderSkillPath(skill.path);
-      paths.add(normalized);
-      if (normalized.endsWith(".t3-disabled")) {
-        paths.add(normalized.slice(0, -".t3-disabled".length));
-      }
-    }
-    return paths;
-  }, [hostSkills]);
-  const detected = useMemo(
-    () =>
-      deriveProviderInstanceEntries(providers).flatMap((entry) =>
-        entry.snapshot.skills
-          .filter((skill) => !hostSkillPaths.has(normalizeProviderSkillPath(skill.path)))
-          .map((skill) => ({ entry, skill })),
-      ),
-    [hostSkillPaths, providers],
-  );
-
-  if (detected.length === 0) return null;
-
-  return (
-    <SettingsSection
-      title="Also detected"
-      icon={<LaptopIcon className="size-4.5 text-muted-foreground" />}
-    >
-      <p className="px-3 pb-2 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Plugin, system, or project skills the provider CLIs reported. Those stay with the plugin or
-        repo — T3 Code does not delete them.
-      </p>
-      {detected.map(({ entry, skill }) => {
-        const source = formatProviderSkillInstallSource(skill);
-        return (
-          <div
-            key={`${entry.instanceId}:${skill.path}`}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 sm:px-4"
-          >
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium text-muted-foreground">
-                  {formatProviderSkillDisplayName(skill)}
-                </span>
-                <Badge variant="outline" size="sm" className="text-muted-foreground">
-                  {entry.displayName}
-                </Badge>
-                {(source ?? skill.scope) ? (
-                  <Badge variant="outline" size="sm" className="text-muted-foreground">
-                    {source ?? skill.scope}
-                  </Badge>
-                ) : null}
-              </div>
-              <p className="truncate font-mono text-[11px] text-muted-foreground/60">
-                {skill.path}
-              </p>
-            </div>
-          </div>
-        );
-      })}
-    </SettingsSection>
   );
 }

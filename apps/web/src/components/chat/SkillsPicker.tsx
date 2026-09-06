@@ -1,34 +1,24 @@
 /**
- * Composer `⋯` menu section for per-thread skill picks.
+ * Composer `⋯ → Skills` submenu: which skills ride along with this thread.
  *
- * Lists every skill the environment knows about: the T3 library (Settings →
- * Skills → Installed) plus the skills each provider CLI keeps in its own home
- * folder (Settings → Skills → On this environment). Enablement is a union of
- * global picks and per-thread picks. Rows that are already on regardless of
- * this thread render checked with a dimmed switch — library skills enabled
- * globally, and host skills the selected instance loads from its own home
- * anyway; both are only turned off from settings. The row stays enabled so
- * the favorite star works for mouse and keyboard. Everything else toggles
- * per thread:
+ * The environment reports one inventory of skill folders, and these switches
+ * are purely a per-thread attach: T3 sends the picked skills' instructions
+ * with the thread's first turn, and again after a provider handoff. Nothing
+ * here changes what the CLI can reach on its own — a skill the provider should
+ * be able to invoke itself (`$mention`, `/slash`) is linked into that CLI's
+ * folder from Settings → Skills.
  *   - draft sessions write the composer draft store and ride
  *     `bootstrap.createThread.enabledSkillIds` on the first turn;
  *   - server threads dispatch `thread.skills.set` (full replacement) and the
  *     change materializes from the next turn.
- * Host ids (`host:…`) ride the same `enabledSkillIds` list; the server copies
- * the folder into the workspace like a library skill. The picker search filters
- * by name/origin, and starred skills pin to a Favorites group (client setting).
+ * Threads picked before the library rewrite hold pre-library ids; those are
+ * folded onto library ids for the checked state and written back folded on the
+ * first toggle. The search filters by name and description, and starred skills
+ * pin to a Favorites group (client setting).
  */
-import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
-import {
-  defaultInstanceIdForDriver,
-  type EnvironmentId,
-  type HostSkill,
-  type InstalledSkill,
-  type ProviderInstanceId,
-  type ScopedThreadRef,
-  type SkillId,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, Skill, SkillId } from "@t3tools/contracts";
+import { normalizeSkillId } from "@t3tools/shared/skillTool";
 import { PackageIcon, StarIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -54,11 +44,11 @@ import {
 } from "../ui/menu";
 
 const EMPTY_SKILL_IDS: ReadonlyArray<SkillId> = [];
+/** Shorter lists read fine without a filter, and the input costs a row of height. */
+const SEARCH_MIN_SKILLS = 8;
 
 export interface SkillsPickerProps {
   environmentId: EnvironmentId;
-  /** Instance of the thread; its own home-folder host skills are already loaded and lock on. */
-  selectedInstanceId: ProviderInstanceId;
   /** Server-thread target — toggles dispatch `thread.skills.set`. */
   threadRef?: ScopedThreadRef | undefined;
   /**
@@ -77,65 +67,56 @@ export interface SkillsPickerProps {
 export interface PickerSkill {
   readonly id: SkillId;
   readonly name: string;
-  readonly description: string | undefined;
-  /** Section header: "Library" for the T3 store, the origin for host skills. */
-  readonly group: string;
-  /** Checked and disabled — enabled outside this thread (settings). */
-  readonly locked: boolean;
+  /** Frontmatter description, or the folder as a stand-in. Searchable either way. */
+  readonly description: string;
 }
 
-const LIBRARY_GROUP = "Library";
-
-/** True when this host skill lives in the selected instance's own CLI home. */
-function hostSkillBelongsToInstance(
-  skill: HostSkill,
-  selectedInstanceId: ProviderInstanceId,
-): boolean {
-  if (skill.driver === undefined) {
-    return false;
-  }
-  // Default home roots omit instanceId; treat them as the driver's default instance.
-  const skillInstanceId = skill.instanceId ?? defaultInstanceIdForDriver(skill.driver);
-  return skillInstanceId === selectedInstanceId;
-}
-
-export function toPickerSkills(
-  installedSkills: ReadonlyArray<InstalledSkill>,
-  hostSkills: ReadonlyArray<HostSkill>,
-  globallyEnabledIds: ReadonlySet<SkillId>,
-  selectedInstanceId: ProviderInstanceId,
-): PickerSkill[] {
-  const library = installedSkills.map((skill) => ({
-    id: skill.id,
-    name: skill.name,
-    description: skill.description,
-    group: LIBRARY_GROUP,
-    locked: globallyEnabledIds.has(skill.id),
-  }));
-  // A host skill that is on in the selected instance's own home is loaded by
-  // that CLI no matter what this thread picks. Shared `~/.agents/skills` has
-  // no driver, so it stays toggleable — copying it into the workspace is the
-  // only lever we hold, and a duplicate is harmless where the CLI already
-  // reads it. Sibling instances of the same driver (different homes) stay
-  // toggleable too — their folders are not on this CLI's search path.
-  const host = hostSkills.map((skill) => ({
+export function toPickerSkills(skills: ReadonlyArray<Skill>): PickerSkill[] {
+  return skills.map((skill) => ({
     id: skill.id,
     name: skill.name,
     description: skill.description ?? skill.displayPath,
-    group: skill.origin,
-    locked: skill.enabled && hostSkillBelongsToInstance(skill, selectedInstanceId),
   }));
-  return [...library, ...host];
+}
+
+/**
+ * Fold pre-library picks (`owner/repo:path/to/dir`) onto the library ids the
+ * server reports today, dropping the duplicates that folding can create.
+ */
+export function normalizePickedSkillIds(ids: ReadonlyArray<SkillId>): SkillId[] {
+  return [...new Set(ids.map(normalizeSkillId))];
+}
+
+export function skillMatchesQuery(
+  skill: Pick<PickerSkill, "name" | "description">,
+  query: string,
+): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  return [skill.name, skill.description].some((value) => value.toLowerCase().includes(normalized));
+}
+
+/** Favorites pin to the top (still in list order); the search filters both halves. */
+export function organizePickerSkills(
+  skills: ReadonlyArray<PickerSkill>,
+  favoriteIds: ReadonlySet<string>,
+  query = "",
+): { favorites: PickerSkill[]; rest: PickerSkill[] } {
+  const favorites: PickerSkill[] = [];
+  const rest: PickerSkill[] = [];
+  for (const skill of skills) {
+    if (!skillMatchesQuery(skill, query)) {
+      continue;
+    }
+    (favoriteIds.has(skill.id) ? favorites : rest).push(skill);
+  }
+  return { favorites, rest };
 }
 
 function useSkillsPickerState(props: SkillsPickerProps) {
   const skillsQuery = useEnvironmentQuery(skillsEnvironment.skillsStateAtom(props.environmentId));
-  const hostSkillsQuery = useEnvironmentQuery(
-    skillsEnvironment.hostSkillsStateAtom(props.environmentId),
-  );
-  const globallyEnabledSkills = useAtomValue(
-    skillsEnvironment.globallyEnabledSkillsAtom(props.environmentId),
-  );
   const draftEnabledSkillIds = useComposerDraftStore((store) =>
     props.draftId
       ? (store.getComposerDraft(props.draftId)?.enabledSkillIds ?? EMPTY_SKILL_IDS)
@@ -155,51 +136,28 @@ function useSkillsPickerState(props: SkillsPickerProps) {
     `${props.environmentId}:${props.threadRef?.threadId ?? ""}`,
   );
 
-  const globallyEnabledIds = useMemo(
-    () => new Set(globallyEnabledSkills.map((skill) => skill.id)),
-    [globallyEnabledSkills],
-  );
-  const installedSkills = skillsQuery.data?.installedSkills;
-  const hostSkills = hostSkillsQuery.data?.skills;
-  const skills = useMemo(
-    () =>
-      toPickerSkills(
-        installedSkills ?? [],
-        hostSkills ?? [],
-        globallyEnabledIds,
-        props.selectedInstanceId,
-      ),
-    [globallyEnabledIds, hostSkills, installedSkills, props.selectedInstanceId],
-  );
-  const lockedIds = useMemo(
-    () => new Set(skills.filter((skill) => skill.locked).map((skill) => skill.id)),
-    [skills],
-  );
-  const perThreadSkillIds = props.draftId ? draftEnabledSkillIds : threadSkillIds;
-  const perThreadIds = useMemo(() => new Set(perThreadSkillIds), [perThreadSkillIds]);
-  // Badge counts what T3 adds to the thread: global library picks plus this
-  // thread's own picks. Host skills the provider loads anyway don't count,
-  // and neither does a pick whose skill has since gone away.
+  const inventory = skillsQuery.data?.skills;
+  const skills = useMemo(() => toPickerSkills(inventory ?? []), [inventory]);
+  const rawPickedIds = props.draftId ? draftEnabledSkillIds : threadSkillIds;
+  const pickedIds = useMemo(() => normalizePickedSkillIds(rawPickedIds), [rawPickedIds]);
+  const pickedIdSet = useMemo(() => new Set(pickedIds), [pickedIds]);
+  // Badge counts what this thread attaches; a pick whose skill has since gone
+  // away from the environment does not count.
   const enabledCount = useMemo(
-    () =>
-      skills.reduce(
-        (count, skill) =>
-          globallyEnabledIds.has(skill.id) || (!skill.locked && perThreadIds.has(skill.id))
-            ? count + 1
-            : count,
-        0,
-      ),
-    [globallyEnabledIds, perThreadIds, skills],
+    () => skills.reduce((count, skill) => (pickedIdSet.has(skill.id) ? count + 1 : count), 0),
+    [pickedIdSet, skills],
   );
   const togglesEnabled = props.draftId !== undefined || props.enabledSkillIds !== undefined;
 
   const toggleSkill = (skillId: SkillId) => {
-    if (lockedIds.has(skillId) || !togglesEnabled) {
+    if (!togglesEnabled) {
       return;
     }
-    const next = perThreadIds.has(skillId)
-      ? perThreadSkillIds.filter((id) => id !== skillId)
-      : [...perThreadSkillIds, skillId];
+    // Writing the normalized list means a thread carrying pre-library ids
+    // converges the first time anyone touches this menu.
+    const next = pickedIdSet.has(skillId)
+      ? pickedIds.filter((id) => id !== skillId)
+      : [...pickedIds, skillId];
     if (props.draftId) {
       setDraftEnabledSkillIds(props.draftId, next.length > 0 ? next : undefined);
       return;
@@ -219,65 +177,16 @@ function useSkillsPickerState(props: SkillsPickerProps) {
 
   return {
     skills,
-    isLoading: installedSkills === undefined && hostSkills === undefined,
-    perThreadIds,
+    isLoading: inventory === undefined,
+    pickedIdSet,
     enabledCount,
     togglesEnabled,
     toggleSkill,
   };
 }
 
-/** Rows keep their order; a header is emitted where the group changes. */
-function groupSkills(skills: ReadonlyArray<PickerSkill>): Array<[string, PickerSkill[]]> {
-  const groups: Array<[string, PickerSkill[]]> = [];
-  for (const skill of skills) {
-    const last = groups[groups.length - 1];
-    if (last && last[0] === skill.group) {
-      last[1].push(skill);
-    } else {
-      groups.push([skill.group, [skill]]);
-    }
-  }
-  return groups;
-}
-
-export const FAVORITES_GROUP = "Favorites";
-
-export function skillMatchesQuery(
-  skill: Pick<PickerSkill, "name" | "description" | "group">,
-  query: string,
-): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (normalized.length === 0) {
-    return true;
-  }
-  return [skill.name, skill.group, skill.description ?? ""].some((value) =>
-    value.toLowerCase().includes(normalized),
-  );
-}
-
-/** Favorites first (still in list order), then origin groups. Search filters both. */
-export function organizePickerSkills(
-  skills: ReadonlyArray<PickerSkill>,
-  favoriteIds: ReadonlySet<string>,
-  query = "",
-): Array<[string, PickerSkill[]]> {
-  const visible = skills.filter((skill) => skillMatchesQuery(skill, query));
-  const favorites: PickerSkill[] = [];
-  const rest: PickerSkill[] = [];
-  for (const skill of visible) {
-    if (favoriteIds.has(skill.id)) {
-      favorites.push(skill);
-    } else {
-      rest.push(skill);
-    }
-  }
-  const groups = groupSkills(rest);
-  return favorites.length > 0 ? [[FAVORITES_GROUP, favorites], ...groups] : groups;
-}
-
-/** One picker row: locked skills keep the switch off-limits but the star works. */
-export function SkillPickerRow(props: {
+/** One picker row: the switch attaches the skill, the star pins it to Favorites. */
+function SkillPickerRow(props: {
   skill: PickerSkill;
   isEnabled: boolean;
   isFavorite: boolean;
@@ -285,35 +194,13 @@ export function SkillPickerRow(props: {
   onToggle: () => void;
   onToggleFavorite: () => void;
 }) {
-  const { skill } = props;
   return (
     <MenuCheckboxItem
       checked={props.isEnabled}
-      className={cn(
-        "min-h-6 gap-2 py-0.5 sm:min-h-6",
-        // Locked means the enable switch is off-limits, not the row. Keeping
-        // the item enabled leaves the star in the keyboard/AT order.
-        skill.locked && "[&>:last-child]:opacity-64",
-      )}
+      className="min-h-6 gap-2 py-0.5 sm:min-h-6"
       closeOnClick={false}
       disabled={props.disabled}
-      // Locked rows stay enabled for the star. Omitting onCheckedChange still
-      // lets the menu primitive toggle data-state on click/Space/Enter — cancel
-      // the change and swallow the item click so only the star is interactive.
-      onCheckedChange={
-        skill.locked
-          ? (_checked, details) => {
-              details?.cancel?.();
-            }
-          : props.onToggle
-      }
-      onClick={
-        skill.locked
-          ? (event) => {
-              event.preventDefault();
-            }
-          : undefined
-      }
+      onCheckedChange={props.onToggle}
       variant="switch"
     >
       <span className="flex min-w-0 items-center gap-1">
@@ -345,18 +232,15 @@ export function SkillPickerRow(props: {
         >
           <StarIcon className={cn(props.isFavorite && "fill-current text-yellow-500")} />
         </Button>
-        <span className="min-w-0 truncate">{skill.name}</span>
-        {skill.locked ? (
-          <span className="shrink-0 text-[10px] text-muted-foreground/80">Global</span>
-        ) : null}
+        <span className="min-w-0 truncate">{props.skill.name}</span>
       </span>
     </MenuCheckboxItem>
   );
 }
 
 /**
- * `Skills ▸` row of the composer's `⋯` menu: the trigger carries the enabled
- * count, the submenu lists library and host skills as switches.
+ * `Skills ▸` row of the composer's `⋯` menu: the trigger carries the count of
+ * skills attached to this thread, the submenu lists the environment's skills.
  */
 export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProps) {
   const router = useRouter();
@@ -366,11 +250,12 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
   const favoriteSkillIds = useClientSettings((settings) => settings.favoriteSkillIds);
   const updateClientSettings = useUpdateClientSettings();
   const favoriteIds = useMemo(() => new Set(favoriteSkillIds), [favoriteSkillIds]);
-  const groups = useMemo(
+  const { favorites, rest } = useMemo(
     () => organizePickerSkills(state.skills, favoriteIds, searchQuery),
     [favoriteIds, searchQuery, state.skills],
   );
   const hasQuery = searchQuery.trim().length > 0;
+  const showSearch = state.skills.length > SEARCH_MIN_SKILLS;
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
@@ -386,15 +271,27 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
     updateClientSettings({ favoriteSkillIds: next });
   };
 
+  const renderRow = (skill: PickerSkill) => (
+    <SkillPickerRow
+      key={skill.id}
+      skill={skill}
+      isEnabled={state.pickedIdSet.has(skill.id)}
+      isFavorite={favoriteIds.has(skill.id)}
+      disabled={!state.togglesEnabled}
+      onToggle={() => state.toggleSkill(skill.id)}
+      onToggleFavorite={() => toggleFavorite(skill.id)}
+    />
+  );
+
   useLayoutEffect(() => {
-    if (props.open !== true) {
+    if (props.open !== true || !showSearch) {
       return;
     }
     const focusSearch = () => searchInputRef.current?.focus({ preventScroll: true });
     focusSearch();
     const frame = window.requestAnimationFrame(focusSearch);
     return () => window.cancelAnimationFrame(frame);
-  }, [props.open]);
+  }, [props.open, showSearch]);
 
   return (
     <MenuSub open={props.open} onOpenChange={handleOpenChange}>
@@ -412,7 +309,7 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
           <MenuItem disabled>Loading skills…</MenuItem>
         ) : state.skills.length === 0 ? (
           <>
-            <MenuItem disabled>No skills installed</MenuItem>
+            <MenuItem disabled>No skills on this environment</MenuItem>
             <MenuItem
               onClick={() => {
                 // The settings route lands with the skills settings surface;
@@ -426,44 +323,44 @@ export const SkillsSubmenu = memo(function SkillsSubmenu(props: SkillsPickerProp
           </>
         ) : (
           <>
-            <div className="sticky -top-1 z-10 -mx-1 mb-0.5 border-b border-border/50 bg-popover px-1.5 pt-1 pb-1">
-              <Input
-                ref={searchInputRef}
-                aria-label="Search skills"
-                nativeInput
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape") {
-                    event.stopPropagation();
-                  }
-                }}
-                placeholder="Search skills…"
-                size="compact"
-                type="search"
-                value={searchQuery}
-              />
-            </div>
-            {groups.length === 0 ? (
-              <MenuItem disabled>
-                {hasQuery ? "No matching skills" : "No skills installed"}
-              </MenuItem>
+            {showSearch ? (
+              <div className="sticky -top-1 z-10 -mx-1 mb-0.5 border-b border-border/50 bg-popover px-1.5 pt-1 pb-1">
+                <Input
+                  ref={searchInputRef}
+                  aria-label="Search skills"
+                  nativeInput
+                  onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") {
+                      event.stopPropagation();
+                    }
+                  }}
+                  placeholder="Search skills…"
+                  size="compact"
+                  type="search"
+                  value={searchQuery}
+                />
+              </div>
+            ) : null}
+            {favorites.length === 0 && rest.length === 0 ? (
+              <MenuItem disabled>{hasQuery ? "No matching skills" : "No skills"}</MenuItem>
             ) : (
-              groups.map(([group, groupSkills]) => (
-                <MenuGroup key={group}>
-                  <MenuGroupLabel className="py-1">{group}</MenuGroupLabel>
-                  {groupSkills.map((skill) => (
-                    <SkillPickerRow
-                      key={skill.id}
-                      skill={skill}
-                      isEnabled={skill.locked || state.perThreadIds.has(skill.id)}
-                      isFavorite={favoriteIds.has(skill.id)}
-                      disabled={!state.togglesEnabled}
-                      onToggle={() => state.toggleSkill(skill.id)}
-                      onToggleFavorite={() => toggleFavorite(skill.id)}
-                    />
-                  ))}
-                </MenuGroup>
-              ))
+              <>
+                {favorites.length > 0 ? (
+                  <MenuGroup>
+                    <MenuGroupLabel className="py-1">Favorites</MenuGroupLabel>
+                    {favorites.map(renderRow)}
+                  </MenuGroup>
+                ) : null}
+                {rest.length > 0 ? (
+                  <MenuGroup>
+                    {favorites.length > 0 ? (
+                      <MenuGroupLabel className="py-1">All skills</MenuGroupLabel>
+                    ) : null}
+                    {rest.map(renderRow)}
+                  </MenuGroup>
+                ) : null}
+              </>
             )}
           </>
         )}

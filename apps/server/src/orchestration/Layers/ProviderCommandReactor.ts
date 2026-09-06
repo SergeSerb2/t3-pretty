@@ -21,7 +21,12 @@ import {
 } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
-import { extractSkillMentions, skillLoadIdKey, skillLoadNameKey } from "@t3tools/shared/skillTool";
+import {
+  extractSkillMentions,
+  normalizeSkillId,
+  skillLoadIdKey,
+  skillLoadNameKey,
+} from "@t3tools/shared/skillTool";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -66,12 +71,11 @@ import { extractAppMentions, renderAppMentionsPrelude } from "@t3tools/shared/ap
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import {
-  SkillMaterializer,
+  SkillLibrary,
   sanitizeSkillDirectoryName,
   skillNameMatches,
   type SkillDocument,
-  type SkillMaterializeResult,
-} from "../../skills/SkillMaterializer.ts";
+} from "../../skills/SkillLibrary.ts";
 import { renderSkillsPrelude } from "../../skills/SkillPrelude.ts";
 import {
   HANDOFF_TRANSCRIPT_MAX_CHARS,
@@ -160,7 +164,9 @@ function collectedSkillLoadKeys(
       continue;
     }
     if (typeof payload?.skillId === "string" && payload.skillId.trim().length > 0) {
-      keys.add(skillLoadIdKey(payload.skillId));
+      // Rows written before the skill library carry store ids; fold them so an
+      // upgraded thread does not resend a skill it already holds.
+      keys.add(skillLoadIdKey(normalizeSkillId(payload.skillId)));
       continue;
     }
     const nameCandidates = [payload?.detail, payload?.skillName];
@@ -425,7 +431,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
-  const skillMaterializer = yield* SkillMaterializer;
+  const skillLibrary = yield* SkillLibrary;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -712,15 +718,14 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Skills a turn should carry: the enabled set (global settings ∪ thread
-   * picks) materialized into the workspace plus `$skill` mentions in the
-   * message, minus anything the thread log already shows as loaded (by T3 or
-   * by the agent's own Skill tool). Their SKILL.md bodies travel with the
-   * turn input, so "Skill" rows are only recorded once the provider accepted
-   * the turn (`recordLoaded`); a failed send leaves nothing to dedupe against.
-   * A provider handoff starts a fresh context, so it reloads everything.
-   * Skills must never block a turn: any failure is logged and the turn
-   * proceeds without a prelude.
+   * Skills a turn should carry: the thread's picks resolved against the skill
+   * library plus `$skill` mentions in the message, minus anything the thread
+   * log already shows as loaded (by T3 or by the agent's own Skill tool).
+   * Their SKILL.md bodies travel with the turn input, so "Skill" rows are only
+   * recorded once the provider accepted the turn (`recordLoaded`); a failed
+   * send leaves nothing to dedupe against. A provider handoff starts a fresh
+   * context, so it reloads everything. Skills must never block a turn: any
+   * failure is logged and the turn proceeds without a prelude.
    */
   const prepareSkillsForTurnStart = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
@@ -746,43 +751,16 @@ const make = Effect.gen(function* () {
           ),
         );
 
-    let loaded: SkillMaterializeResult["loaded"] = [];
     if (input.cwd !== undefined) {
-      const cwd = input.cwd;
-      const settings = yield* serverSettingsService.getSettings.pipe(
-        orUndefinedOnFailure(
-          "provider command reactor failed to read skills settings; using thread skills only",
-        ),
-      );
-      const ownSkillIds = new Set<SkillId>([
-        ...(settings?.skills.enabledSkillIds ?? []),
-        ...input.threadEnabledSkillIds,
-      ]);
-      // The workspace is shared by every live thread on the same cwd (local
-      // mode, or several threads on one worktree), so the folders on disk
-      // must cover all of their picks: reconciling to this thread's set alone
-      // would delete a sibling's skill out from under its running agent. Only
-      // this thread's own set is loaded into its context, though.
-      const shells = yield* projectionSnapshotQuery
-        .getShellSnapshot()
-        .pipe(
-          orUndefinedOnFailure(
-            "provider command reactor failed to read sibling threads for skill materialization",
-          ),
-        );
-      const siblingSkillIds =
-        shells?.threads.flatMap((shell) =>
-          shell.id !== input.threadId &&
-          shell.archivedAt === null &&
-          resolveThreadWorkspaceCwd({ thread: shell, projects: shells.projects }) === cwd
-            ? shell.enabledSkillIds
-            : [],
-        ) ?? [];
-      const materializeResult = yield* skillMaterializer
-        .materialize({ cwd, skillIds: [...new Set<SkillId>([...ownSkillIds, ...siblingSkillIds])] })
-        .pipe(orUndefinedOnFailure("provider command reactor failed to materialize skills"));
-      loaded = (materializeResult?.loaded ?? []).filter((skill) => ownSkillIds.has(skill.id));
+      // Older servers copied skills into the workspace; those copies would
+      // shadow the library for the CLI's own discovery, so they go first.
+      yield* skillLibrary.removeManagedWorkspaceCopies(input.cwd);
     }
+    const loaded =
+      (yield* skillLibrary
+        .resolveDocuments(input.threadEnabledSkillIds)
+        .pipe(orUndefinedOnFailure("provider command reactor failed to resolve thread skills"))) ??
+      [];
 
     const mentionedNames = extractSkillMentions(input.messageText ?? "").filter(
       (name) => !loaded.some((skill) => skillNameMatches(skill.name, name)),
@@ -798,7 +776,7 @@ const make = Effect.gen(function* () {
         providers?.find((provider) => provider.instanceId === input.providerInstanceId)?.skills ??
         [];
       mentioned =
-        (yield* skillMaterializer
+        (yield* skillLibrary
           .resolveMentions({ cwd: input.cwd, names: mentionedNames, candidates })
           .pipe(
             orUndefinedOnFailure("provider command reactor failed to resolve $skill mentions"),
@@ -820,7 +798,7 @@ const make = Effect.gen(function* () {
       ...loaded.map((skill) => ({
         document: skill,
         skillId: skill.id,
-        keys: [skillLoadIdKey(skill.id), ...nameKeys(skill.name)],
+        keys: [skillLoadIdKey(normalizeSkillId(skill.id)), ...nameKeys(skill.name)],
       })),
       ...mentioned.map((skill) => ({ document: skill, keys: nameKeys(skill.name) })),
     ];

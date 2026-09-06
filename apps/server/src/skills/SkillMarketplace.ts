@@ -2,7 +2,8 @@
  * SkillMarketplace — browses and installs skills from the GitHub marketplace
  * sources configured in `ServerSettings.skills.marketplaceSources`.
  *
- * Each source repo is downloaded once as a tarball
+ * Installs land in the shared skill library (`SkillLibrary`), named after the
+ * skill's directory in the repository. Each source repo is downloaded once as a tarball
  * (`https://codeload.github.com/<owner>/<repo>/tar.gz/HEAD`) and cached under
  * `skillMarketplaceCacheDir` as `<owner>--<repo>.tar.gz` plus a derived
  * `<owner>--<repo>.listing.json`. Listings serve from cache while fresh
@@ -34,7 +35,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as SkillStore from "./SkillStore.ts";
+import { isSafeSegment, SkillLibrary } from "./SkillLibrary.ts";
 import { listTarGzEntries, type TarEntry } from "./Untar.ts";
 import { readFilePrefix, readTextPrefix } from "../boundedFileRead.ts";
 import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientResponseBody.ts";
@@ -49,6 +50,61 @@ export const ROOT_SKILL_SOURCE_PATH = "@root";
 /** Larger tarballs are refused rather than buffered; skill repos are small. */
 const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 const MAX_CACHED_LISTING_BYTES = 4 * 1024 * 1024;
+
+/** Validate an `"owner/repo"` marketplace source. */
+export function parseSkillSourceRepo(
+  sourceRepo: string,
+): { readonly owner: string; readonly repo: string } | null {
+  const parts = sourceRepo.split("/");
+  if (parts.length !== 2 || !parts.every(isSafeSegment)) {
+    return null;
+  }
+  return { owner: parts[0]!, repo: parts[1]! };
+}
+
+/** Validate a skill directory path relative to a repository root. */
+export function parseSkillSourcePath(sourcePath: string): ReadonlyArray<string> | null {
+  const segments = sourcePath.split("/");
+  return segments.every(isSafeSegment) ? segments : null;
+}
+
+/** The `<owner>--<repo>` cache key for one source. */
+export function formatSkillRepoDirName(owner: string, repo: string): string {
+  return `${owner}--${repo}`;
+}
+
+export interface ParsedMarketplaceSkillId {
+  readonly owner: string;
+  readonly repo: string;
+  readonly sourceRepo: string;
+  readonly sourcePath: string;
+  readonly sourcePathSegments: ReadonlyArray<string>;
+}
+
+/** Parse and validate a marketplace skill id (`owner/repo:path`); `null` when any part is unsafe. */
+export function parseMarketplaceSkillId(skillId: string): ParsedMarketplaceSkillId | null {
+  const colonIndex = skillId.indexOf(":");
+  if (colonIndex <= 0 || colonIndex === skillId.length - 1) {
+    return null;
+  }
+  const sourceRepo = skillId.slice(0, colonIndex);
+  const sourcePath = skillId.slice(colonIndex + 1);
+  const repoParts = parseSkillSourceRepo(sourceRepo);
+  const sourcePathSegments = parseSkillSourcePath(sourcePath);
+  if (!repoParts || !sourcePathSegments) {
+    return null;
+  }
+  return { ...repoParts, sourceRepo, sourcePath, sourcePathSegments };
+}
+
+/** Library folder name for a marketplace skill: its directory name, or the repository name for a root skill. */
+export function marketplaceSkillDirName(sourceRepo: string, sourcePath: string): string {
+  if (sourcePath === ROOT_SKILL_SOURCE_PATH) {
+    return sourceRepo.slice(sourceRepo.indexOf("/") + 1);
+  }
+  const segments = sourcePath.split("/");
+  return segments[segments.length - 1] ?? sourcePath;
+}
 
 /** Cached listing on disk; the `installed` flag is derived fresh on every read. */
 const CachedMarketplaceListing = Schema.Struct({
@@ -98,10 +154,10 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const skillStore = yield* SkillStore.SkillStore;
+  const skillLibrary = yield* SkillLibrary;
 
   const cachePaths = (owner: string, repo: string) => {
-    const key = SkillStore.formatSkillRepoDirName(owner, repo);
+    const key = formatSkillRepoDirName(owner, repo);
     return {
       tarball: path.join(config.skillMarketplaceCacheDir, `${key}.tar.gz`),
       listing: path.join(config.skillMarketplaceCacheDir, `${key}.listing.json`),
@@ -244,7 +300,7 @@ const make = Effect.gen(function* () {
       if (
         segments.length > MARKETPLACE_MAX_DEPTH ||
         segments.some((segment) => segment.startsWith(".")) ||
-        SkillStore.parseSkillSourcePath(sourcePath) === null
+        parseSkillSourcePath(sourcePath) === null
       ) {
         continue;
       }
@@ -323,7 +379,7 @@ const make = Effect.gen(function* () {
     sourceRepo: string,
     options: { readonly forceRefresh: boolean },
   ): Effect.fn.Return<CachedMarketplaceListing, SkillsError> {
-    const repoParts = SkillStore.parseSkillSourceRepo(sourceRepo);
+    const repoParts = parseSkillSourceRepo(sourceRepo);
     if (!repoParts) {
       return yield* new SkillsError({
         operation,
@@ -382,8 +438,8 @@ const make = Effect.gen(function* () {
       return [];
     }
 
-    const installedIds = new Set(
-      (yield* skillStore.getState).installedSkills.map((skill) => skill.id),
+    const installedDirNames = new Set(
+      (yield* skillLibrary.getState).skills.map((skill) => skill.dirName),
     );
     const settled = yield* Effect.forEach(
       sources,
@@ -407,7 +463,9 @@ const make = Effect.gen(function* () {
             name: skill.name,
             ...(skill.description ? { description: skill.description } : {}),
             sourcePath: skill.sourcePath,
-            installed: installedIds.has(`${listing.repo}:${skill.sourcePath}`),
+            installed: installedDirNames.has(
+              marketplaceSkillDirName(listing.repo, skill.sourcePath),
+            ),
           })),
         });
       } else {
@@ -436,7 +494,7 @@ const make = Effect.gen(function* () {
   const install = Effect.fn("SkillMarketplace.install")(function* (
     skillId: SkillId,
   ): Effect.fn.Return<SkillsState, SkillsError> {
-    const parsed = SkillStore.parseSkillId(skillId);
+    const parsed = parseMarketplaceSkillId(skillId);
     if (!parsed) {
       return yield* new SkillsError({
         operation: "install",
@@ -525,10 +583,10 @@ const make = Effect.gen(function* () {
         yield* fileSystem.makeDirectory(path.dirname(destination), { recursive: true });
         yield* fileSystem.writeFile(destination, file.data);
       }
-      return yield* skillStore.installFromDirectory({
-        sourceRepo: parsed.sourceRepo,
-        sourcePath: parsed.sourcePath,
+      return yield* skillLibrary.installFromDirectory({
+        dirName: marketplaceSkillDirName(parsed.sourceRepo, parsed.sourcePath),
         directory: tempDir,
+        source: { repo: parsed.sourceRepo, path: parsed.sourcePath },
       });
     }).pipe(
       Effect.mapError((cause) =>

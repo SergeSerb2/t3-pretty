@@ -458,18 +458,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/agents",
   },
   {
-    id: "skills-installed",
-    title: "Installed skills",
-    to: "/settings/skills",
-  },
-  {
-    id: "skills-on-environment",
-    title: "On this environment",
+    id: "skills-library",
+    title: "Skills",
     to: "/settings/skills",
   },
   {
     id: "skills-marketplace",
-    title: "Skills marketplace",
+    title: "Find skills",
     to: "/settings/skills",
   },
   {
