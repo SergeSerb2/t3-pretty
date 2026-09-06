@@ -197,6 +197,8 @@ describe("Origin Grok review workflow wiring", () => {
     assert.notInclude(trusted, "refs/remotes/origin/main");
     assert.notInclude(trusted, "fetch --deepen=");
     assert.include(trusted, '"+refs/heads/main:${main_ref}"');
+    assert.include(trusted, "originCommandEnvironment");
+    assert.include(trusted, 'cp "${ROOT}/scripts/fork/origin-forge.mjs" "${DIR}/origin-forge.mjs"');
     const updateIndex = trusted.indexOf("origin update");
     assert.isAbove(updateIndex, trusted.indexOf("export GIT_TERMINAL_PROMPT=0"));
     assert.isBelow(updateIndex, trusted.indexOf('ROOT="'));

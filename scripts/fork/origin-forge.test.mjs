@@ -25,6 +25,7 @@ import {
   isMergeableState,
   isPullRequestMerged,
   originChildEnv,
+  originCommandEnvironment,
   originInstallerEnvironment,
   originUnknownOption,
   parseRemoteTagCommit,
@@ -374,6 +375,21 @@ describe("Origin release and blocked-sync helpers", () => {
         T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: "s3-secret",
       }),
       { HOME: "/home/runner", PATH: "/usr/bin" },
+    );
+    assert.deepEqual(
+      originCommandEnvironment({
+        CURSOR_API_KEY: "cursor-secret",
+        HOME: "/home/runner",
+        ORIGIN_TOKEN: "origin-secret",
+        PATH: "/usr/bin",
+        T3CODE_RELEASE_S3_SECRET_ACCESS_KEY: "s3-secret",
+      }),
+      {
+        CURSOR_API_KEY: "cursor-secret",
+        HOME: "/home/runner",
+        ORIGIN_TOKEN: "origin-secret",
+        PATH: "/usr/bin",
+      },
     );
     assert.deepEqual(
       releaseUploaderEnvironment({
@@ -799,6 +815,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(source, "runCommand(process.execPath, [npxCli");
     assert.include(source, "releaseUploaderEnvironment");
     assert.include(source, "inheritEnv: false");
+    assert.include(source, "originCommandEnvironment");
+    assert.include(source, "env: { ...originCommandEnvironment(), ...options.env }");
     assert.notInclude(source, "const env = { ...process.env }");
     assert.include(source, 'case "upload-assets"');
     assert.include(source, 'case "prepare-release-notes"');

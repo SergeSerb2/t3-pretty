@@ -47,6 +47,12 @@ copy_from_main() {
 DIR="$(mktemp -d)"
 if copy_from_main "$DIR"; then
   echo "Running Origin PR review scripts from origin/main"
+  # origin/main's origin-forge omits CURSOR_API_KEY from Origin children.
+  # Overlay this checkout when it knows how to pass the key through, so a
+  # raced HOME config file cannot unauthenticate `origin pr comment`.
+  if grep -q "originCommandEnvironment" "${ROOT}/scripts/fork/origin-forge.mjs"; then
+    cp "${ROOT}/scripts/fork/origin-forge.mjs" "${DIR}/origin-forge.mjs"
+  fi
   bash "${DIR}/review-origin-pr-ci.sh" "$@"
 else
   echo "origin/main has no review scripts yet; using this checkout"
