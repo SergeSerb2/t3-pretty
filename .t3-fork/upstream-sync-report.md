@@ -1140,3 +1140,5 @@
   - edited `packages/shared/src/serverSettings.ts`
 - `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Extended provider patch normalization to cover the parent's richer Cursor custom-model API while preserving T3 Pretty's server settings architecture. Suggestion-level DPoP diagnostics remain unchanged as required.
   - edited `packages/shared/src/serverSettings.ts`
+- `web-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Extend the parent's provider-patch normalization to Grok, converting structured custom models to persisted slugs before deep merging. This preserves T3 Pretty's internal apps patch support while resolving the sole error-level typecheck failure.
+  - edited `packages/shared/src/serverSettings.ts`
