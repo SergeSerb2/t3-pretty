@@ -573,7 +573,7 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly modelSelection?: ModelSelection;
   }) {
-    const thread = yield* resolveThread(input.threadId);
+    const thread = yield* resolveThreadShell(input.threadId);
     if (!thread) {
       return undefined;
     }
@@ -819,7 +819,7 @@ const make = Effect.gen(function* () {
 
     const thread = input.reloadAll
       ? undefined
-      : yield* resolveThread(input.threadId).pipe(
+      : yield* resolveThreadDetail(input.threadId).pipe(
           orUndefinedOnFailure(
             "provider command reactor failed to read the thread log for skill dedupe",
           ),
@@ -1012,11 +1012,19 @@ const make = Effect.gen(function* () {
     const isProviderHandoff =
       pendingUncommittedHandoff ||
       (requestedDifferentInstance && (sourceUnresolved || incompatibleContinuation));
+    const transferredThread =
+      !isProviderHandoff && thread.session === null
+        ? Option.getOrUndefined(
+            yield* projectionSnapshotQuery.getThreadDetailById(threadId, {
+              activityKinds: ["thread.transferred"],
+            }),
+          )
+        : undefined;
     const shouldReplayContext =
       isProviderHandoff ||
-      (thread.session === null &&
-        thread.messages.length > 0 &&
-        thread.activities.some((activity) => activity.kind === "thread.transferred"));
+      (transferredThread !== undefined &&
+        transferredThread.messages.length > 0 &&
+        transferredThread.activities.some((activity) => activity.kind === "thread.transferred"));
     if (options?.pendingTurnStart === true && thread.session?.status !== "running") {
       yield* setThreadSession({
         threadId,
@@ -1325,10 +1333,13 @@ const make = Effect.gen(function* () {
     const subagentPolicyChars =
       subagentPolicyInstructions === undefined ? 0 : subagentPolicyInstructions.length + 2;
     const skillsPrelude = ensuredSession.skills.prelude;
-    const handoffPrelude = ensuredSession.handedOff
+    const handoffThread = ensuredSession.handedOff
+      ? yield* resolveThreadDetail(input.threadId)
+      : undefined;
+    const handoffPrelude = handoffThread
       ? renderProviderHandoffPrelude({
-          messages: thread.messages,
-          activities: thread.activities,
+          messages: handoffThread.messages,
+          activities: handoffThread.activities,
           ...(input.messageId !== undefined ? { excludeMessageId: input.messageId } : {}),
           maxChars: Math.min(
             HANDOFF_TRANSCRIPT_MAX_CHARS,
@@ -1979,7 +1990,7 @@ const make = Effect.gen(function* () {
         onFailure: recoverTurnStartFailure,
         onSuccess: (turn) =>
           Effect.gen(function* () {
-            const startedThread = yield* resolveThread(event.payload.threadId);
+            const startedThread = yield* resolveThreadShell(event.payload.threadId);
             if (startedThread?.session?.status === "starting") {
               const acceptedAt = DateTime.formatIso(yield* DateTime.now);
               yield* setThreadSession({
@@ -2009,7 +2020,7 @@ const make = Effect.gen(function* () {
   // queued start just because its payload says ready.
   const flushQueuedTurnStarts = Effect.fn("flushQueuedTurnStarts")(function* (threadId: ThreadId) {
     while (true) {
-      const thread = yield* resolveThread(threadId);
+      const thread = yield* resolveThreadShell(threadId);
       if (thread?.session?.status === "running" || thread?.session?.status === "starting") {
         return;
       }
@@ -2042,7 +2053,7 @@ const make = Effect.gen(function* () {
     // event was held but the session has already left running/starting,
     // flush here instead of waiting for a wake-up that never comes.
     if (queuedTurnStarts.has(event.payload.threadId)) {
-      const current = yield* resolveThread(event.payload.threadId);
+      const current = yield* resolveThreadShell(event.payload.threadId);
       const status = current?.session?.status;
       if (status !== "running" && status !== "starting") {
         yield* flushQueuedTurnStarts(event.payload.threadId);
@@ -2300,7 +2311,7 @@ const make = Effect.gen(function* () {
   const processNativeResumeRequested = Effect.fn("processNativeResumeRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.native-resume-requested" }>,
   ) {
-    const thread = yield* resolveThread(event.payload.threadId);
+    const thread = yield* resolveThreadShell(event.payload.threadId);
     if (!thread) {
       return;
     }
@@ -2407,7 +2418,7 @@ const make = Effect.gen(function* () {
         // Use the projected session, not the event payload: a ready event that
         // was queued before a flushed turn marked the session starting must
         // not start the next queued message.
-        const thread = yield* resolveThread(event.payload.threadId);
+        const thread = yield* resolveThreadShell(event.payload.threadId);
         const status = thread?.session?.status;
         if (status !== "running" && status !== "starting") {
           yield* flushQueuedTurnStarts(event.payload.threadId);

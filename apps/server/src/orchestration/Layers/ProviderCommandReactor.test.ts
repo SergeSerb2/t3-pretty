@@ -746,8 +746,13 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await waitFor(() => harness.startSession.mock.calls.length === 1);
-    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    const startedThread = (await harness.readModel()).threads.find(
+      (entry) => entry.id === ThreadId.make("thread-1"),
+    );
+    expect(startedThread?.session?.lastError).toBeNull();
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
     expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
       cwd: "/tmp/provider-project",
@@ -761,8 +766,64 @@ describe("ProviderCommandReactor", () => {
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.status).toBe("starting");
+    expect(thread?.session?.status).toBe("running");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("replays transferred history when starting a thread without a provider session", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    const createdAt = "2026-01-01T00:00:00.000Z";
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.message.assistant.delta",
+        commandId: CommandId.make("cmd-transferred-history"),
+        threadId,
+        messageId: asMessageId("transferred-assistant"),
+        delta: "The transferred project uses PostgreSQL.",
+        createdAt,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("cmd-transfer-marker"),
+        threadId,
+        activity: {
+          id: EventId.make("transfer-marker"),
+          tone: "info",
+          kind: "thread.transferred",
+          summary: "Transferred from another connection",
+          payload: {},
+          turnId: null,
+          createdAt,
+        },
+        createdAt,
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-continue-transferred-thread"),
+        threadId,
+        message: {
+          messageId: asMessageId("continue-transferred-thread"),
+          role: "user",
+          text: "Continue the migration.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      }),
+    );
+    await harness.drain();
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toHaveProperty(
+      "input",
+      expect.stringContaining("Assistant:\nThe transferred project uses PostgreSQL."),
+    );
   });
 
   effectIt.effect("resumes a native provider session without sending /resume as a turn", () =>
