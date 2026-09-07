@@ -26,6 +26,96 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260904.1280001613",
+    date: "2026-09-06",
+    items: [
+      {
+        kind: "fixed",
+        title: "route text generation around a provider whose probe reports it broken",
+      },
+      {
+        kind: "fixed",
+        title: "chat box wears the same frosted glass as the chrome",
+      },
+      {
+        kind: "new",
+        title: "add automations that run agents on schedules, events, webhooks, and git changes",
+      },
+      {
+        kind: "new",
+        title: "one skill library with per-provider links",
+      },
+      {
+        kind: "fixed",
+        title: "stop listing skills in the @ mention menu",
+      },
+      {
+        kind: "fixed",
+        title: "restore the live activity shimmer styles",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260904.1280001611",
+    date: "2026-09-06",
+    items: [
+      {
+        kind: "fixed",
+        title: "chat box wears the same frosted glass as the chrome",
+      },
+      {
+        kind: "new",
+        title: "add automations that run agents on schedules, events, webhooks, and git changes",
+      },
+      {
+        kind: "new",
+        title: "one skill library with per-provider links",
+      },
+      {
+        kind: "fixed",
+        title: "stop listing skills in the @ mention menu",
+      },
+      {
+        kind: "fixed",
+        title: "restore the live activity shimmer styles",
+      },
+      {
+        kind: "fixed",
+        title: "inset the composer context strip to match upstream",
+      },
+    ],
+  },
+  {
+    version: "0.0.39-nightly.20260904.1280001608",
+    date: "2026-09-06",
+    items: [
+      {
+        kind: "new",
+        title: "add automations that run agents on schedules, events, webhooks, and git changes",
+      },
+      {
+        kind: "new",
+        title: "one skill library with per-provider links",
+      },
+      {
+        kind: "fixed",
+        title: "stop listing skills in the @ mention menu",
+      },
+      {
+        kind: "fixed",
+        title: "restore the live activity shimmer styles",
+      },
+      {
+        kind: "fixed",
+        title: "inset the composer context strip to match upstream",
+      },
+      {
+        kind: "new",
+        title: "copy or move threads between connections",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260904.1280001606",
     date: "2026-09-06",
     items: [

@@ -1145,3 +1145,27 @@
 - `desktop-typecheck` failed after merging `v0.0.39-nightly.20260905.1284`; repaired with `gpt-5.6-sol`: Updated the preview test to configure its debugger through the existing override layer and extended the client-settings fixture with the new required field. Suggestion-level diagnostics are intentionally unchanged.
   - edited `apps/desktop/src/preview/Manager.test.ts`
   - edited `apps/desktop/src/settings/DesktopClientSettings.test.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.39-nightly.20260905.1284`
+- Previously integrated parent nightly: `v0.0.39-nightly.20260904.1280`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/changelog/changelogData.ts` — Preserved T3 Pretty's fork-specific nightly version identifiers, dates, and newest-first generated changelog history through build 1613.
+- `apps/web/src/changelog/changelogData.ts` — Preserved user-facing release notes for Pretty presentation and mobile behavior, including frosted-glass chat chrome, Live Activity shimmer styling, and composer-strip layout.
+- `apps/web/src/changelog/changelogData.ts` — Preserved changelog coverage for Pretty agent and connection UX, including automations, the shared skill library, skill mention filtering, and copying or moving threads between connections.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/changelog/changelogData.ts` — Integrated the 0.0.39-nightly.20260904.1280001613 release entry, including the fix that routes text generation around a provider whose health probe reports it broken.
+- `apps/web/src/changelog/changelogData.ts` — Kept the complete 1611 and 1608 records from the incoming side, maintaining coherent release-history continuity before the existing 1606 entry.
+
+## Parent changes intentionally omitted
+
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
