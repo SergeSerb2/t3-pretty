@@ -322,8 +322,11 @@ describe("web cloud link environment client", () => {
     }),
   );
 
-  it.effect("links an available primary environment without invoking installation", () =>
+  it.effect("links a browser primary without sending its cookie credentials to the relay", () =>
     Effect.gen(function* () {
+      vi.stubGlobal("window", {
+        location: { origin: TARGET.httpBaseUrl, href: `${TARGET.httpBaseUrl}/settings` },
+      });
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(
@@ -362,6 +365,15 @@ describe("web cloud link environment client", () => {
       );
 
       expect(relayClientInstallDialog.requestConfirmation).not.toHaveBeenCalled();
+      for (const [input, init] of fetchMock.mock.calls) {
+        const request = new Request(input, init);
+        if (request.url.startsWith(TARGET.httpBaseUrl)) {
+          expect(request.credentials).toBe("include");
+        } else {
+          expect(request.credentials).not.toBe("include");
+          expect(request.headers.get("authorization")).toBe("Bearer clerk-token");
+        }
+      }
       expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
         "http://127.0.0.1:3000/api/connect/link-proof",
       );
