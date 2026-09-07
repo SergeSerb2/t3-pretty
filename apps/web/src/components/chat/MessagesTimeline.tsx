@@ -27,6 +27,7 @@ import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
+import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   createContext,
   Fragment,
@@ -50,8 +51,10 @@ import {
 } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
+  createMessageAttachmentPreviewProjector,
   deriveTimelineEntries,
   fileChangeKindHeading,
+  selectMessageImageResources,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntrySignalsSevereFailure,
@@ -104,7 +107,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
+import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import {
   buildAttachmentVideoAsset,
@@ -113,7 +116,6 @@ import {
 } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
-import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { CHAT_TIMELINE_ANCHOR_OFFSET } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -371,6 +373,7 @@ interface MessagesTimelineProps {
    */
   liveFollowEnabled: boolean;
   onIsAtEndChange: (isAtEnd: boolean) => void;
+  onToolOutputCollapsedAtEnd?: () => void;
   onManualNavigation: () => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
@@ -419,6 +422,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   contentInsetEndAdjustment,
   liveFollowEnabled,
   onIsAtEndChange,
+  onToolOutputCollapsedAtEnd,
   onManualNavigation,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
@@ -460,24 +464,32 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     };
   }, []);
 
-  const suspendEndScrollMaintenanceForDisclosure = useCallback((anchorKey: string) => {
-    disclosureAnchorKeyRef.current = anchorKey;
-    setDisclosureToggleSettling(true);
-    if (disclosureSettleFrameRef.current !== null) {
-      cancelAnimationFrame(disclosureSettleFrameRef.current);
-    }
-    if (disclosureSettleSecondFrameRef.current !== null) {
-      cancelAnimationFrame(disclosureSettleSecondFrameRef.current);
-    }
-    disclosureSettleFrameRef.current = requestAnimationFrame(() => {
-      disclosureSettleSecondFrameRef.current = requestAnimationFrame(() => {
-        disclosureAnchorKeyRef.current = null;
-        setDisclosureToggleSettling(false);
-        disclosureSettleFrameRef.current = null;
-        disclosureSettleSecondFrameRef.current = null;
+  const suspendEndScrollMaintenanceForDisclosure = useCallback(
+    (anchorKey: string, collapsed = false) => {
+      disclosureAnchorKeyRef.current = anchorKey;
+      setDisclosureToggleSettling(true);
+      if (disclosureSettleFrameRef.current !== null) {
+        cancelAnimationFrame(disclosureSettleFrameRef.current);
+      }
+      if (disclosureSettleSecondFrameRef.current !== null) {
+        cancelAnimationFrame(disclosureSettleSecondFrameRef.current);
+      }
+      disclosureSettleFrameRef.current = requestAnimationFrame(() => {
+        disclosureSettleSecondFrameRef.current = requestAnimationFrame(() => {
+          disclosureAnchorKeyRef.current = null;
+          setDisclosureToggleSettling(false);
+          disclosureSettleFrameRef.current = null;
+          disclosureSettleSecondFrameRef.current = null;
+          // Wait for row measurement and the disclosure click's blur check.
+          // Closing output can reveal the end without a scroll event.
+          if (collapsed && resolveTimelineIsAtEnd(listRef.current?.getState()) === true) {
+            onToolOutputCollapsedAtEnd?.();
+          }
+        });
       });
-    });
-  }, []);
+    },
+    [listRef, onToolOutputCollapsedAtEnd],
+  );
 
   const shouldRestoreVisibleContentPosition = useCallback((row: MessagesTimelineRow) => {
     const disclosureAnchorKey = disclosureAnchorKeyRef.current;
@@ -510,7 +522,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const onToggleWorkGroup = useCallback(
     (groupId: string, anchorKey: string) => {
-      suspendEndScrollMaintenanceForDisclosure(anchorKey);
+      suspendEndScrollMaintenanceForDisclosure(anchorKey, expandedWorkGroupIds.has(groupId));
       setExpandedWorkGroupIds((existing) => {
         const next = new Set(existing);
         if (next.has(groupId)) {
@@ -521,7 +533,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         return next;
       });
     },
-    [suspendEndScrollMaintenanceForDisclosure],
+    [expandedWorkGroupIds, suspendEndScrollMaintenanceForDisclosure],
   );
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
@@ -1283,9 +1295,24 @@ function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const resources = useMemo(
+    () => selectMessageImageResources(row.message.attachments),
+    [row.message.attachments],
+  );
+  const previewUrls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
+  const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
+  const messageWithPreviews = useMemo(() => {
+    const urlsById = new Map(
+      resources.flatMap((resource, index) => {
+        const url = previewUrls[index];
+        return url ? [[resource.attachmentId, url] as const] : [];
+      }),
+    );
+    return projectPreviews(row.message, (attachment) => urlsById.get(attachment.id));
+  }, [previewUrls, projectPreviews, resources, row.message]);
   // The attachment union has an open member, so guards (not literal type
   // comparisons) split it. Unknown types render as inert rows below the files.
-  const userImages = (row.message.attachments ?? []).filter(isImageAttachment);
+  const userImages = (messageWithPreviews.attachments ?? []).filter(isImageAttachment);
   const userFiles = (row.message.attachments ?? []).filter(isFileAttachment);
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
@@ -1898,6 +1925,7 @@ function WorkingTimelineRow() {
       <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
         <span
           key={showCompacting ? "compacting" : "setup"}
+          ref={isPreparingWorktree || isCompacting ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none"
         >
           {showCompacting ? (
@@ -2009,30 +2037,36 @@ function LiveActivityRow({
   iconName,
   toolIcon,
   failed = false,
+  active = false,
+  shimmer = false,
 }: {
   label: string;
   iconName?: WorkEntryIconName;
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
+  active?: boolean;
+  shimmer?: boolean;
 }) {
+  const animated = active && !failed;
+  const showShimmer = animated && shimmer;
   return (
-    <div className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
+    <div
+      ref={animated ? observeVisibleAnimation : undefined}
+      className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
+    >
       <LiveActivityContent
         label={label}
         iconName={iconName}
         toolIcon={toolIcon}
         failed={failed}
         announceFailure={failed}
+        active={animated && !shimmer}
       />
-      <ActivityShimmerOverlay>
-        <LiveActivityContent
-          label={label}
-          iconName={iconName}
-          toolIcon={toolIcon}
-          failed={failed}
-          highlighted
-        />
-      </ActivityShimmerOverlay>
+      {showShimmer ? (
+        <ActivityShimmerOverlay>
+          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
+        </ActivityShimmerOverlay>
+      ) : null}
     </div>
   );
 }
@@ -2048,6 +2082,7 @@ function LiveActivityContent({
   toolIcon,
   failed = false,
   announceFailure = false,
+  active = false,
   highlighted = false,
 }: {
   label: string;
@@ -2055,9 +2090,12 @@ function LiveActivityContent({
   toolIcon?: ToolActivityIcon | undefined;
   failed?: boolean;
   announceFailure?: boolean;
+  active?: boolean;
   highlighted?: boolean;
 }) {
-  const resolvedIconName = failed ? "x" : iconName;
+  const showTrailingFailureMark = failed && toolIcon !== undefined;
+  const resolvedIconName = failed && !showTrailingFailureMark ? "x" : iconName;
+  const failedToolIconClassName = "text-destructive";
 
   return (
     <span
@@ -2071,20 +2109,23 @@ function LiveActivityContent({
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            highlighted ? "text-foreground" : "text-icon-muted",
+            failed ? failedToolIconClassName : highlighted ? "text-foreground" : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
         >
           <ToolActivityIconView
-            icon={failed ? undefined : toolIcon}
+            icon={failed && !showTrailingFailureMark ? undefined : toolIcon}
             fallbackName={resolvedIconName}
             className="block size-4 shrink-0 stroke-[1.8]"
             muted={!highlighted}
           />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      {showTrailingFailureMark ? (
+        <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+      ) : null}
     </span>
   );
 }
@@ -2104,24 +2145,13 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      {row.active ? (
-        <LiveActivityRow
-          label={label}
-          iconName={workEntryIconName(row.entry)}
-          toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
-          failed={failed}
-        />
-      ) : (
-        <div className="min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
-          <LiveActivityContent
-            label={label}
-            iconName={workEntryIconName(row.entry)}
-            toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
-            failed={failed}
-            announceFailure={failed}
-          />
-        </div>
-      )}
+      <LiveActivityRow
+        label={label}
+        iconName={workEntryIconName(row.entry)}
+        toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
+        failed={failed}
+        active={row.active}
+      />
     </button>
   );
 }
@@ -2287,30 +2317,21 @@ function AssistantChangedFilesSectionInner({
   resolvedTheme: "light" | "dark";
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
 }) {
-  const activity = use(TimelineRowActivityCtx);
-  const isLatestTurn = activity.latestTurnId === turnSummary.turnId;
   const persistedExpanded = useUiStateStore(
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId],
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const [autoExpanded] = useState(() =>
-    shouldAutoExpandChangedFiles(checkpointFiles, isLatestTurn),
-  );
-  const [allDirectoriesExpanded, setAllDirectoriesExpanded] = useState(autoExpanded);
-  const expanded = persistedExpanded ?? (isLatestTurn && autoExpanded);
+  const allDirectoriesExpanded = persistedExpanded ?? false;
 
   return (
     <ChangedFilesCard
       turnId={turnSummary.turnId}
       files={checkpointFiles}
-      expanded={expanded}
-      showCompactPreview={isLatestTurn}
       allDirectoriesExpanded={allDirectoriesExpanded}
       resolvedTheme={resolvedTheme}
-      onExpandedChange={(nextExpanded) =>
-        setExpanded(routeThreadKey, turnSummary.turnId, nextExpanded)
+      onToggleAllDirectories={() =>
+        setExpanded(routeThreadKey, turnSummary.turnId, !allDirectoriesExpanded)
       }
-      onToggleAllDirectories={() => setAllDirectoriesExpanded((current) => !current)}
       onOpenTurnDiff={onOpenTurnDiff}
     />
   );
@@ -3478,6 +3499,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
   displayLabel?: string | undefined;
+  onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, displayLabel } = props;
   // Before any hooks: spawn CTA rows render their own component.
@@ -3489,6 +3511,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       workEntry={workEntry}
       workspaceRoot={workspaceRoot}
       displayLabel={displayLabel}
+      onToggleEntry={props.onToggleEntry}
     />
   );
 });
@@ -3497,6 +3520,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
   displayLabel?: string | undefined;
+  onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
@@ -3515,6 +3539,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         })
       : null;
   const [expanded, setExpanded] = useState(false);
+  const lastReportedExpanded = useRef(expanded);
+  useLayoutEffect(() => {
+    if (lastReportedExpanded.current === expanded) return;
+    lastReportedExpanded.current = expanded;
+    props.onToggleEntry?.(!expanded);
+  }, [expanded, props.onToggleEntry]);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const toolPresentation = resolveWorkEntryToolPresentation(workEntry);

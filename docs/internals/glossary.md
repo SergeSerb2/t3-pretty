@@ -18,9 +18,17 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 
 ### Project and workspace
 
+#### Environment
+
+One running server and the machine, credentials, workspace access, and state it owns.
+
+#### Client
+
+A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server.
+
 #### Project
 
-The top-level workspace record in the app. In [the orchestration contracts][1], a project has a `workspaceRoot` and a title. It does not contain threads: `OrchestrationProject` and `OrchestrationThread` are separate arrays on the read model, and a project can have zero threads. See [workspace-layout.md][2].
+The top-level, environment-local workspace record in the app. In [the orchestration contracts][1], a project has a `workspaceRoot` and a title. It does not contain threads: `OrchestrationProject` and `OrchestrationThread` are separate arrays on the read model, and a project can have zero threads. See [workspace-layout.md][2].
 
 #### Workspace root
 
@@ -29,6 +37,10 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 #### Worktree
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
+
+#### T3 home
+
+The base data directory. Runtime state normally lives under its `userdata` directory.
 
 #### Storage inventory
 
@@ -46,7 +58,7 @@ dependencies, and build caches do not move. See [T3 Connect](./t3-connect.md#pro
 
 #### Thread
 
-The main durable unit of conversation and workspace history. In [the orchestration contracts][1], a thread holds messages, activities, checkpoints, and session-related state. See [projector.ts][4].
+The main durable unit of conversation and workspace history. It survives provider process exits. In [the orchestration contracts][1], a thread holds messages, activities, checkpoints, and session-related state. See [projector.ts][4].
 
 #### Turn
 
@@ -78,7 +90,7 @@ The domain object a command or event belongs to. In [the contracts][1], that is 
 
 #### Command
 
-A typed request to change domain state. In [the contracts][1], commands are validated in [commandInvariants.ts][9] and turned into events by [decider.ts][8].
+A typed request to change domain state. Accepting it does not mean its side effects have finished. In [the contracts][1], commands are validated in [commandInvariants.ts][9] and turned into events by [decider.ts][8].
 Examples include `thread.create`, `thread.turn.start`, and `thread.checkpoint.revert`.
 
 #### Domain Event
@@ -114,13 +126,17 @@ A `thread.activity-appended` that is streamed to `subscribeThread` subscribers b
 
 A side-effecting service that handles follow-up work after events or runtime signals. Examples include [CheckpointReactor.ts][6], [ProviderCommandReactor.ts][12], and [ProviderRuntimeIngestion.ts][5].
 
-#### Receipt
+#### Command receipt
 
-A typed signal emitted when an async milestone completes, such as `checkpoint.baseline.captured`, `checkpoint.diff.finalized`, or `turn.processing.quiesced`. Receipts are a test-only mechanism: the production `RuntimeReceiptBusLive` publish is a no-op and only the test layer is PubSub-backed. Do not build production behavior on them. See [RuntimeReceiptBus.ts][13] and [CheckpointReactor.ts][6].
+A durable record of a command's result, used to make retries idempotent.
+
+#### Runtime receipt
+
+A typed test-only signal emitted when an async milestone completes, such as `checkpoint.baseline.captured`, `checkpoint.diff.finalized`, or `turn.processing.quiesced`. The production `RuntimeReceiptBusLive` publish is a no-op and only the test layer is PubSub-backed. Do not build production behavior on runtime receipts. See [RuntimeReceiptBus.ts][13] and [CheckpointReactor.ts][6].
 
 #### Quiesced
 
-"Quiesced" means a turn has gone quiet and stable: follow-up work such as [CheckpointReactor.ts][6] has settled. It appears in [the receipt schema][13], so in practice it is something tests wait on rather than a production signal.
+"Quiesced" means a turn has gone quiet and stable: follow-up work such as [CheckpointReactor.ts][6] has settled. It appears in [the runtime receipt schema][13], so in practice it is something tests wait on rather than a production signal.
 
 #### Automation
 
@@ -144,19 +160,31 @@ The live backend agent implementation and its event stream. The main service is 
 
 #### Provider
 
-The backend agent runtime that actually performs work. Six drivers ship built in: Codex, Claude, Cursor, Grok, Kimi, and Antigravity. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
+The agent runtime T3 Code controls to perform work. Six drivers ship built in: Codex, Claude, Cursor, Grok, Kimi, and Antigravity. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
+
+#### Driver
+
+The integration for a provider kind.
+
+#### Provider instance
+
+One configured provider, with its own settings and lifecycle. Multiple instances can use the same driver.
+
+#### Adapter
+
+The boundary translating a provider's native protocol into T3 Code operations and events.
 
 #### Session
 
-The live provider-backed runtime attached to a thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
+The live provider-backed runtime attached to a thread. A session can be stopped and resumed without deleting the thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
 
 #### Runtime mode
 
-The safety/access mode for a thread or session. [The contracts][1] define four values: `approval-required`, `auto-accept-edits`, `auto`, and `full-access`. See [permission modes][18].
+The safety/access and permission policy for a thread or session. [The contracts][1] define four values: `approval-required`, `auto-accept-edits`, `auto`, and `full-access`. See [permission modes][18].
 
 #### Interaction mode
 
-The agent interaction style for a thread. In [the contracts][1], the values are `default` and `plan`.
+The agent interaction style for a thread, separate from its permission policy. In [the contracts][1], the values are `default` and `plan`.
 
 #### Subagent policy
 
@@ -200,7 +228,7 @@ The durable identifier for a filesystem checkpoint, stored as a Git ref. It is t
 
 #### Checkpoint baseline
 
-The starting checkpoint for diffing a thread timeline. This flow is surfaced through [RuntimeReceiptBus.ts][13], coordinated in [CheckpointReactor.ts][6], and supported by [Utils.ts][22].
+The workspace state captured before the work being compared, used as the starting checkpoint for diffing a thread timeline. This flow is surfaced through [RuntimeReceiptBus.ts][13], coordinated in [CheckpointReactor.ts][6], and supported by [Utils.ts][22].
 
 #### Checkpoint diff
 
@@ -208,7 +236,7 @@ The difference between two checkpoints. [CheckpointDiffQuery.ts][20] reads full 
 
 #### Turn diff
 
-The file patch and changed-file summary for one turn. It is usually computed in [CheckpointDiffQuery.ts][20], represented in [the contracts][1], and recorded into thread state by [projector.ts][4].
+The file patch and changed-file summary attributed to one turn. It is usually computed in [CheckpointDiffQuery.ts][20], represented in [the contracts][1], and recorded into thread state by [projector.ts][4].
 
 ### Appearance
 
@@ -247,7 +275,8 @@ A per-thread pick (`enabledSkillIds` on the thread, set at creation or by `threa
 
 - If you see `requested`, think "intent recorded".
 - If you see `completed`, think "result applied".
-- If you see `receipt`, think "async milestone signal, for tests".
+- If you see `command receipt`, think "durable command result for idempotent retries".
+- If you see `runtime receipt`, think "async milestone signal, for tests".
 - If you see `checkpoint`, think "workspace snapshot for diff/restore".
 - If you see `quiesced`, think "all relevant follow-up work has gone idle".
 

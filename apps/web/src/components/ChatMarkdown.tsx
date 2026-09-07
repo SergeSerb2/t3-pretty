@@ -2547,7 +2547,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
         fenceTitle={fenceTitle}
         theme={resolvedTheme}
       >
-        <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
+        <RenderErrorBoundary
+          resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
+          fallback={<pre {...props}>{children}</pre>}
+        >
           <Suspense fallback={<pre {...props}>{children}</pre>}>
             <SuspenseShikiCodeBlock
               className={codeBlock.className}

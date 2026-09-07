@@ -12,6 +12,7 @@
 import {
   USAGE_MODEL_MAX_LENGTH,
   type UsageCostSource,
+  type UsageModelPriceOverride,
   type UsageTokenTotals,
 } from "@t3tools/contracts";
 
@@ -31,6 +32,25 @@ export interface ModelRate {
 }
 
 export type RateTable = ReadonlyMap<string, ModelRate>;
+
+/** Custom IDs keep their case, provider prefix, and variant suffix. */
+export function createOverrideRateTable(
+  overrides: Readonly<Record<string, UsageModelPriceOverride>>,
+): RateTable {
+  return new Map(
+    Object.entries(overrides).map(([model, prices]) => [
+      model.trim(),
+      {
+        inputCostPerToken: prices.inputCostPerMillionTokens / 1_000_000,
+        outputCostPerToken: prices.outputCostPerMillionTokens / 1_000_000,
+        cacheReadCostPerToken:
+          (prices.cacheReadCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+        cacheCreationCostPerToken:
+          (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+      },
+    ]),
+  );
+}
 
 /** Raw shape of one LiteLLM entry, narrowed to the fields we read. */
 interface LiteLlmEntry {
@@ -211,12 +231,19 @@ export function priceUsage(
   model: string,
   totals: UsageTokenTotals,
   reportedCostUsd: number | null,
+  overrides?: RateTable,
 ): PricedUsage {
-  if (reportedCostUsd !== null && Number.isFinite(reportedCostUsd) && reportedCostUsd >= 0) {
+  const override = overrides?.get(model.trim());
+  if (
+    override === undefined &&
+    reportedCostUsd !== null &&
+    Number.isFinite(reportedCostUsd) &&
+    reportedCostUsd >= 0
+  ) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
 
-  const rate = lookupRate(table, model);
+  const rate = override ?? lookupRate(table, model);
   if (rate === null) return { costUsd: 0, costSource: "unpriced" };
 
   const costUsd =
@@ -234,8 +261,13 @@ export function priceUsage(
  * What the cached input would have cost at full input rates, minus what it
  * actually cost. Drives the "cache savings" figure.
  */
-export function cacheSavingsUsd(table: RateTable, model: string, totals: UsageTokenTotals): number {
-  const rate = lookupRate(table, model);
+export function cacheSavingsUsd(
+  table: RateTable,
+  model: string,
+  totals: UsageTokenTotals,
+  overrides?: RateTable,
+): number {
+  const rate = overrides?.get(model.trim()) ?? lookupRate(table, model);
   if (rate === null) return 0;
   const savings = totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
   return Number.isFinite(savings) && savings > 0 ? savings : 0;

@@ -38,6 +38,7 @@ import {
   getSystemLocale,
   getWindowFullscreenState,
   openExternal,
+  openSystemSettings,
   probeRemoteEditors,
   pickFolder,
   pickProjectFavicon,
@@ -97,6 +98,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(resolveEditContextMenu);
   yield* ipc.handle(openExternal);
+  yield* ipc.handle(openSystemSettings);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(setDockAttention);
   yield* ipc.handle(getUpdateState);

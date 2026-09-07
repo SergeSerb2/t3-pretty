@@ -130,7 +130,7 @@ export const makeThreadLiveEventCoalescer = Effect.fn("makeThreadLiveEventCoales
         pendingUpdates,
         coalesceLiveToolUpdatedEvents(pendingUpdates.map((item) => item.value)).map((event) => ({
           kind: "event" as const,
-          event: projectActivityEvent(event),
+          event,
         })),
         (item) => item.event,
       );
@@ -177,7 +177,8 @@ export const makeThreadLiveEventCoalescer = Effect.fn("makeThreadLiveEventCoales
                 return;
               }
               if (input.kind === "event") {
-                yield* budget.retain(input.event).pipe(
+                // Retain only the client payload, not full persisted tool output.
+                yield* budget.retain(projectActivityEvent(input.event)).pipe(
                   Effect.tap((item) => Effect.sync(() => pendingUpdates.push(item))),
                   Effect.uninterruptible,
                 );

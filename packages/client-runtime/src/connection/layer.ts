@@ -13,9 +13,9 @@ import * as RpcSession from "../rpc/session.ts";
 import { threadLifecycleOutboxLayer } from "../state/threadLifecycleOutbox.ts";
 import { warmThreadStatesLayer } from "../state/threads.ts";
 
-const resolverLayer = ConnectionResolver.layer.pipe(
-  Layer.provide(RemoteEnvironmentAuthorization.layer),
-);
+const authorizationLayer = RemoteEnvironmentAuthorization.layer;
+
+const resolverLayer = ConnectionResolver.layer.pipe(Layer.provide(authorizationLayer));
 
 const driverLayer = ConnectionDriver.layer.pipe(
   Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer)),
@@ -25,10 +25,8 @@ const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer))
 
 const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
 
-const connectionServicesLayer = Layer.mergeAll(
-  registryLayer,
-  RelayEnvironmentDiscovery.layer,
-  onboardingLayer,
+const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer).pipe(
+  Layer.provideMerge(RelayEnvironmentDiscovery.layer),
 );
 
 const connectionStartupLayer = Layer.effectDiscard(
@@ -45,6 +43,7 @@ const connectionStartupLayer = Layer.effectDiscard(
 
 export const layer = connectionStartupLayer.pipe(
   Layer.provideMerge(connectionServicesLayer),
+  Layer.provideMerge(authorizationLayer),
   Layer.provideMerge(threadLifecycleOutboxLayer),
   Layer.provideMerge(warmThreadStatesLayer),
 );

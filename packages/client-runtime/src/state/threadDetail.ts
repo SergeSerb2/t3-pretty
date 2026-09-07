@@ -15,7 +15,6 @@ import type { EnvironmentThread, EnvironmentThreadShell } from "./models.ts";
 import { scopeThread } from "./models.ts";
 import { EMPTY_ENVIRONMENT_THREAD_STATE, type EnvironmentThreadState } from "./threadState.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
-import { THREAD_STATE_IDLE_TTL_MS } from "./threadRetention.ts";
 
 const EMPTY_MESSAGES: ReadonlyArray<OrchestrationMessage> = Object.freeze([]);
 const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = Object.freeze([]);
@@ -75,7 +74,7 @@ export function createEnvironmentThreadDetailAtoms<E>(
   ) => Atom.Atom<AsyncResult.AsyncResult<EnvironmentThreadState, E>>,
   options?: { readonly idleTtlMs?: number },
 ) {
-  const idleTtlMs = options?.idleTtlMs ?? THREAD_STATE_IDLE_TTL_MS;
+  const idleTtlMs = options?.idleTtlMs ?? 0;
   const threadStateValueAtomFamily = Atom.family((key: string) => {
     const ref = parseThreadKey(key);
     return Atom.make((get) =>

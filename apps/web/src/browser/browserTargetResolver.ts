@@ -5,76 +5,15 @@ import type {
 } from "@t3tools/contracts";
 import { isPublicFaviconHost as isPublicFaviconHostShared } from "@t3tools/shared/networkHost";
 import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
+import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
 
 import { readPreparedConnection } from "~/state/session";
 
-export const normalizeHostname = (host: string): string =>
-  host
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.+$/u, "");
-
-const parseIpv4Address = (host: string): readonly number[] | null => {
-  const parts = normalizeHostname(host).split(".").map(Number);
-  return parts.length === 4 &&
-    parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
-    ? parts
-    : null;
-};
-
-const parseIpv4MappedIpv6Address = (host: string): readonly number[] | null => {
-  const normalized = normalizeHostname(host);
-  if (!normalized.startsWith("::ffff:")) return null;
-  const suffix = normalized.slice("::ffff:".length);
-  const dotted = parseIpv4Address(suffix);
-  if (dotted) return dotted;
-  const hextets = suffix.split(":");
-  if (hextets.length !== 2 || hextets.some((part) => !/^[\da-f]{1,4}$/u.test(part))) return null;
-  const high = Number.parseInt(hextets[0]!, 16);
-  const low = Number.parseInt(hextets[1]!, 16);
-  return [high >>> 8, high & 0xff, low >>> 8, low & 0xff];
-};
-
-const isPrivateIpv4Address = (parts: readonly number[]): boolean =>
-  parts[0] === 0 ||
-  parts[0] === 10 ||
-  parts[0] === 127 ||
-  (parts[0] === 100 && parts[1]! >= 64 && parts[1]! <= 127) ||
-  (parts[0] === 172 && parts[1]! >= 16 && parts[1]! <= 31) ||
-  (parts[0] === 192 && parts[1] === 168) ||
-  (parts[0] === 169 && parts[1] === 254) ||
-  (parts[0] === 198 && parts[1]! >= 18 && parts[1]! <= 19);
-
-export const isLocalLoopbackHost = (host: string): boolean => {
-  const normalized = normalizeHostname(host);
-  if (normalized === "localhost" || normalized === "::1") return true;
-  return parseIpv4Address(normalized)?.[0] === 127;
-};
-
-export const isPrivateNetworkHost = (host: string): boolean => {
-  const normalized = normalizeHostname(host);
-  if (
-    normalized === "::" ||
-    isLocalLoopbackHost(normalized) ||
-    normalized.endsWith(".localhost") ||
-    normalized.endsWith(".local") ||
-    normalized === "home.arpa" ||
-    normalized.endsWith(".home.arpa") ||
-    (!normalized.includes(".") && !normalized.includes(":"))
-  ) {
-    return true;
-  }
-  if (normalized.endsWith(".ts.net")) return true;
-  const parts = parseIpv4Address(normalized) ?? parseIpv4MappedIpv6Address(normalized);
-  if (parts) return isPrivateIpv4Address(parts);
-  const firstIpv6Token = normalized.split(":", 1)[0] ?? "";
-  if (!normalized.includes(":") || !/^[\da-f]{1,4}$/u.test(firstIpv6Token)) return false;
-  const firstIpv6Hextet = Number.parseInt(firstIpv6Token, 16);
-  return (
-    Number.isInteger(firstIpv6Hextet) &&
-    ((firstIpv6Hextet & 0xfe00) === 0xfc00 || (firstIpv6Hextet & 0xffc0) === 0xfe80)
-  );
-};
+export {
+  normalizeHostname,
+  isLocalLoopbackHost,
+  isPrivateNetworkHost,
+} from "@t3tools/shared/hostClassification";
 
 /** Whether a hostname is eligible to be disclosed to a public favicon provider. */
 export const isPublicFaviconHost = isPublicFaviconHostShared;

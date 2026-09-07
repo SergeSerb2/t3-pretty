@@ -9,7 +9,7 @@ import {
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useClientSettings } from "~/hooks/useSettings";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { StatusPulseDot } from "~/hooks/useStatusPulse";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -96,7 +96,8 @@ export function ServerUpdateAction({
   readonly size?: ComponentProps<typeof Button>["size"];
 }) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
-  const continueThreadsAfterServerUpdate = useClientSettings(
+  const continueThreadsAfterServerUpdate = useEnvironmentSettings(
+    environmentId,
     (settings) => settings.continueThreadsAfterServerUpdate,
   );
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {

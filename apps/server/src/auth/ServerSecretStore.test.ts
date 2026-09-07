@@ -115,7 +115,7 @@ const ConcurrentReadMissFileSystemLayer = Layer.effect(
     return {
       ...fileSystem,
       open: (path, options) =>
-        String(path).endsWith("/session-signing-key.bin")
+        /[\\/]session-signing-key\.bin$/.test(String(path))
           ? Ref.updateAndGet(readCountRef, (count) => count + 1).pipe(
               Effect.flatMap((count) => {
                 if (count > 2) {
@@ -225,7 +225,7 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
       yield* secretStore.set("session-signing-key", Uint8Array.from([1, 2, 3]));
 
       assert.isTrue(
-        chmodCalls.some((call) => call.mode === 0o700 && call.path.endsWith("/secrets")),
+        chmodCalls.some((call) => call.mode === 0o700 && /[\\/]secrets$/.test(call.path)),
       );
       assert.isAtLeast(chmodCalls.filter((call) => call.mode === 0o600).length, 2);
     }).pipe(Effect.provide(NodeServices.layer)),

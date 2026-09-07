@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, expectTypeOf, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
@@ -9,12 +9,17 @@ import {
   PROVIDER_RUNTIME_USER_INPUT_MAX_TOTAL_CHARS,
   PROVIDER_RUNTIME_USER_INPUT_OPTION_DESCRIPTION_MAX_LENGTH,
   ProviderRuntimeEvent,
+  type ProviderRuntimeEventType,
 } from "./providerRuntime.ts";
 import { PROVIDER_INTERACTION_MAX_STRING_CHARS } from "./orchestration.ts";
 
 const decodeRuntimeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 
 describe("ProviderRuntimeEvent", () => {
+  it("includes every runtime event in the public event type", () => {
+    expectTypeOf<ProviderRuntimeEvent["type"]>().toEqualTypeOf<ProviderRuntimeEventType>();
+  });
+
   it("requires input and output totals for complete turn usage", () => {
     const completeEvent = {
       type: "turn.completed",

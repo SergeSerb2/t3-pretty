@@ -81,6 +81,7 @@ import {
   resolvePreviewAutomationOpenTab,
   resolvePreviewAutomationTarget,
 } from "./previewAutomationTarget";
+import { resolveHostWaitBudgetMs, waitForHostReadiness } from "./previewAutomationHostBudget";
 import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
 
@@ -100,32 +101,31 @@ const waitForDesktopOverlay = async (
   tabId: string,
   runtimeTabId: string,
   operation: PreviewAutomationRequest["operation"],
-  timeoutMs: number,
+  deadlineMs: number,
 ): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
+  const waitBudgetMs = Math.max(0, deadlineMs - Date.now());
+  const ready = await waitForHostReadiness(deadlineMs, async () => {
     const state = assertPreviewRuntimeCurrent(threadRef, tabId, runtimeTabId, {
       operation,
       requestId,
     });
     const bridge = previewBridge;
     if (state.desktopByTabId[tabId] && bridge && isPreviewWebviewRendering(runtimeTabId)) {
-      const ready = await settlePreviewAutomationBeforeDeadline(
+      const status = await settlePreviewAutomationBeforeDeadline(
         previewAutomationDesktopStatusReady(() => bridge.automation.status(runtimeTabId)),
-        deadline - Date.now(),
+        deadlineMs - Date.now(),
       );
-      if (ready._tag === "Deadline") break;
-      if (ready.value) return;
+      if (status._tag === "Deadline") return false;
+      return status.value;
     }
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) break;
-    await new Promise<void>((resolve) => window.setTimeout(resolve, Math.min(50, remainingMs)));
-  }
+    return false;
+  });
+  if (ready) return;
   throw new PreviewAutomationOverlayTimeoutError({
     requestId,
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
-    timeoutMs,
+    timeoutMs: waitBudgetMs,
   });
 };
 
@@ -338,6 +338,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
 
   const handleRequest = useCallback(
     async (request: PreviewAutomationRequest): Promise<unknown> => {
+      // Session sync and tab creation consume the same budget as overlay registration.
+      const hostDeadlineMs = Date.now() + resolveHostWaitBudgetMs(request.timeoutMs);
       const threadRef: ScopedThreadRef = {
         environmentId,
         threadId: request.threadId,
@@ -403,7 +405,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
               readyTabId,
               runtimeTabId,
               request.operation,
-              request.timeoutMs,
+              hostDeadlineMs,
             );
             return {
               bridge,

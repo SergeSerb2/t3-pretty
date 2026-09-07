@@ -355,6 +355,7 @@ const screenshot = await getImage({
 
 <script>
   import { fetchLatestRelease, RELEASES_URL, type ReleaseAsset } from "../lib/releases";
+  import { startHomeMotion } from "../lib/homeMotion";
 
   type Platform = { os: "mac" | "win" | "linux"; label: string };
 
@@ -443,6 +444,14 @@ const screenshot = await getImage({
 
   pauseOffscreenMarquee();
   init();
+
+  const hero = document.querySelector<HTMLElement>(".hero");
+  const field = document.querySelector<HTMLElement>(".hero-float");
+  const endorsements = document.querySelector<HTMLElement>(".endorsement-carousel");
+  const caret = document.querySelector<HTMLElement>(".caret");
+  if (hero && field && endorsements && caret) {
+    startHomeMotion({ hero, field, endorsements, caret });
+  }
 </script>
 
 <style>
@@ -623,6 +632,8 @@ const screenshot = await getImage({
     inset: 0;
     pointer-events: none;
     z-index: 1;
+    --px: 0px;
+    --py: 0px;
   }
 
   .hero-float-mark {
@@ -632,6 +643,8 @@ const screenshot = await getImage({
     width: var(--s);
     height: var(--s);
     margin-left: calc(var(--s) / -2);
+    translate: calc(var(--px) * var(--depth)) calc(var(--py) * var(--depth));
+    transition: translate var(--parallax-duration, 0s) cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
   .hero-float-card {
@@ -669,6 +682,7 @@ const screenshot = await getImage({
 
   @media (prefers-reduced-motion: reduce) {
     .hero-float-card { animation: none; transform: rotate(var(--rot)); }
+    .hero-float-mark { translate: none; transition: none; }
   }
 
   @media (max-width: 1180px) {
@@ -1023,6 +1037,16 @@ const screenshot = await getImage({
     width: 7px; height: 14px;
     background: var(--fg);
     margin-left: 4px;
+    animation: blink 1s steps(2) infinite;
+    animation-play-state: var(--home-motion-state, paused);
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caret { animation: none; }
   }
 
   .open-pitch {

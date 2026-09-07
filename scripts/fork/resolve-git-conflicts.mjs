@@ -874,7 +874,7 @@ export async function readResponseTextBounded(response, maxBytes) {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
 }
 
-function extractResponseText(response) {
+export function extractResponseText(response) {
   if (typeof response.output_text === "string") return response.output_text;
   for (const item of response.output ?? []) {
     for (const content of item.content ?? []) {

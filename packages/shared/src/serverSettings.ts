@@ -133,10 +133,10 @@ export type ServerSettingsInternalPatch = ServerSettingsPatch & {
 };
 
 /** Upsert each patched entry; `null` removes it. Entries the patch omits are untouched. */
-function mergeUsageLimitSources(
-  current: ServerSettings["usageLimitSources"],
-  patch: NonNullable<ServerSettingsPatch["usageLimitSources"]>,
-): ServerSettings["usageLimitSources"] {
+function mergeSettingsEntries<Value>(
+  current: Readonly<Record<string, Value>>,
+  patch: Readonly<Record<string, Value | null>>,
+): Record<string, Value> {
   const next = new Map(Object.entries(current));
   for (const [id, config] of Object.entries(patch)) {
     if (config === null) {
@@ -145,7 +145,7 @@ function mergeUsageLimitSources(
       next.set(id, config);
     }
   }
-  return Object.fromEntries(next) as ServerSettings["usageLimitSources"];
+  return Object.fromEntries(next);
 }
 
 export function applyServerSettingsPatch(
@@ -159,8 +159,10 @@ export function applyServerSettingsPatch(
     backgroundActivityProfile,
     backgroundActivity,
     apps,
+    providers: providersPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
+    usagePriceOverrides: usagePriceOverridesPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -198,7 +200,77 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
-  const next = deepMerge(current, patchForMerge);
+  const providersPatchForMerge = (() => {
+    if (providersPatch === undefined) return undefined;
+    const { codex, claudeAgent, cursor, grok, ...otherProviders } = providersPatch;
+    const codexForMerge = (() => {
+      if (codex === undefined) return undefined;
+      const { customModels, ...codexWithoutCustomModels } = codex;
+      return {
+        ...codexWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      };
+    })();
+    const claudeAgentForMerge = (() => {
+      if (claudeAgent === undefined) return undefined;
+      const { customModels, ...claudeAgentWithoutCustomModels } = claudeAgent;
+      return {
+        ...claudeAgentWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      };
+    })();
+    const cursorForMerge = (() => {
+      if (cursor === undefined) return undefined;
+      const { customModels, ...cursorWithoutCustomModels } = cursor;
+      return {
+        ...cursorWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      };
+    })();
+    const grokForMerge = (() => {
+      if (grok === undefined) return undefined;
+      const { customModels, ...grokWithoutCustomModels } = grok;
+      return {
+        ...grokWithoutCustomModels,
+        ...(customModels === undefined
+          ? {}
+          : {
+              customModels: customModels.map((model) =>
+                typeof model === "string" ? model : model.slug,
+              ),
+            }),
+      };
+    })();
+    return {
+      ...otherProviders,
+      ...(codexForMerge === undefined ? {} : { codex: codexForMerge }),
+      ...(claudeAgentForMerge === undefined ? {} : { claudeAgent: claudeAgentForMerge }),
+      ...(cursorForMerge === undefined ? {} : { cursor: cursorForMerge }),
+      ...(grokForMerge === undefined ? {} : { grok: grokForMerge }),
+    };
+  })();
+  const next = deepMerge(current, {
+    ...patchForMerge,
+    ...(providersPatchForMerge === undefined ? {} : { providers: providersPatchForMerge }),
+  });
   const nextWithReplacementsBase = {
     ...next,
     ...(backgroundActivity !== undefined
@@ -220,9 +292,17 @@ export function applyServerSettingsPatch(
     ...(apps !== undefined ? { apps } : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {
-          usageLimitSources: mergeUsageLimitSources(
+          usageLimitSources: mergeSettingsEntries(
             current.usageLimitSources,
             usageLimitSourcesPatch,
+          ),
+        }
+      : {}),
+    ...(usagePriceOverridesPatch !== undefined
+      ? {
+          usagePriceOverrides: mergeSettingsEntries(
+            current.usagePriceOverrides,
+            usagePriceOverridesPatch,
           ),
         }
       : {}),

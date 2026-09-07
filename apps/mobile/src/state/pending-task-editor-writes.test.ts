@@ -23,7 +23,7 @@ vi.mock("./thread-outbox", async () => {
   harness.manager = createThreadOutboxManager({
     registry: appAtomRegistry,
     storage: {
-      load: async () => [],
+      load: async () => ({ messages: [], errors: [] }),
       write: async (message) => {
         const pending = harness.writeGates.shift();
         if (pending) {

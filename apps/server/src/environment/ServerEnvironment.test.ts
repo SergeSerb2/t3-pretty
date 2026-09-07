@@ -175,6 +175,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         maxUploadBytes: 50 * 1024 * 1024,
       });
       expect(second.capabilities.pullRequests).toBe(true);
+      expect(second.capabilities.usagePriceOverrides).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.threadPullRequestLinking).toBe(true);
       expect(second.capabilities.providerHandoff).toBe(true);

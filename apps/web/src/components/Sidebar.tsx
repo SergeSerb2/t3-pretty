@@ -110,7 +110,7 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { openCommandPalette } from "../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { openProjectTransferDialog } from "../projectTransferStore";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
@@ -121,6 +121,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useStatusPulse } from "../hooks/useStatusPulse";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
+  useAllEnvironmentProjectSnapshotsReady,
   useAllThreadShells,
   useAutomations,
   useProjects,
@@ -177,6 +178,7 @@ import {
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
   shouldCreateNewThreadInCurrentProject,
+  shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
@@ -965,6 +967,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  const isInFlight =
+    status === "working" || status === "monitoring" || status === "approval" || status === "input";
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -982,17 +986,22 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       autoSettleOnMerge: false,
       thread,
     });
-  // In-flight rows (working, or waiting on approval/input) fade as a whole:
-  // there is nothing for the user to do yet, so prominence is reserved for
-  // rows that need a human — done (unread), read-but-unsettled, failed, and
-  // freshly woken. The status label keeps its hue, so waiting rows stay
-  // findable. In-flight rows recede the same as read-ready ones (inbox-zero:
-  // working threads aren't your problem yet) — only the colored status label
-  // stands out.
-  const isInFlight =
-    status === "working" || status === "monitoring" || status === "approval" || status === "input";
+  // T3 Pretty keeps unread or freshly woken background work prominent; those
+  // rows may still represent a completion the user has not reviewed. Outside
+  // that presentation exception, use the shared policy so ready and
+  // action-required states, selection, and active-thread handling stay aligned
+  // with the parent implementation.
+  const preserveBackgroundProminence =
+    (status === "working" || status === "monitoring") && (isUnread || isWoke);
   const shouldRecede =
-    (status === "ready" || isInFlight) && !isUnread && !isWoke && !props.isActive && !isSelected;
+    !preserveBackgroundProminence &&
+    shouldRecedeSidebarThread({
+      status,
+      isUnread,
+      isWoke,
+      isActive: props.isActive,
+      isSelected,
+    });
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
@@ -1307,21 +1316,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         variant === "card"
           ? cn(
               "truncate",
-              isUnread || isWoke
-                ? "text-foreground"
-                : shouldRecede
-                  ? "text-secondary-label"
+              shouldRecede
+                ? "text-secondary-label"
+                : isUnread || isWoke
+                  ? "text-foreground"
                   : status === "failed"
                     ? "text-foreground/95"
                     : "text-foreground/90",
             )
           : cn(
               "truncate group-hover/sidebar-row:text-foreground",
-              props.isActive || isWoke
-                ? "text-foreground"
-                : isUnread
-                  ? "text-muted-foreground"
-                  : "text-secondary-label/70",
+              shouldRecede
+                ? "text-secondary-label/70"
+                : props.isActive || isWoke
+                  ? "text-foreground"
+                  : isUnread
+                    ? "text-muted-foreground"
+                    : "text-secondary-label/70",
             ),
         isRegeneratingTitle && "opacity-[0.55]",
       )}
@@ -2210,11 +2221,11 @@ export default function Sidebar() {
 
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
-  const [projectScopeKey, setProjectScopeKey] = useLocalStorage(
-    PROJECT_SCOPE_KEY,
-    null as string | null,
-    ProjectScopeKeySchema,
-  );
+  // The selection lives in the persisted UI store next to the other sidebar
+  // project preferences, so routes that unmount the sidebar (Settings) and
+  // app restarts keep it.
+  const projectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   // {value, label} items let Base UI drive the combobox selection contract
   // while the popup search filters the same collection.
   const projectScopeItems = useMemo(
@@ -2278,13 +2289,17 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  // A persisted scope whose project is gone falls back to all projects, but
+  // only after every catalog environment has a live project snapshot. Cached
+  // or disconnected environments cannot establish that the project is gone.
+  const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   useEffect(() => {
-    // Wait for the first project payload: projects arrive over the websocket,
-    // so an empty list means "not loaded yet", not "scope is stale".
-    if (projectGroups.length > 0 && projectScopeKey !== null && scopedProjectGroup === null) {
+    // Wait until every catalog environment has a live project snapshot: an
+    // empty or disconnected environment cannot establish that the scope is stale.
+    if (projectScopeKey !== null && allProjectSnapshotsReady && scopedProjectGroup === null) {
       setProjectScopeKey(null);
     }
-  }, [projectGroups.length, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
+  }, [allProjectSnapshotsReady, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -2329,10 +2344,18 @@ export default function Sidebar() {
     },
     [isMobile, router, setOpenMobile],
   );
+  // Safari can send a click after Ctrl+click opens settings. Ignore that one
+  // selection, then clear the guard when the picker opens again.
+  const suppressNextScopeChangeRef = useRef(false);
+  const highlightedProjectScopeKeyRef = useRef<string | null>(null);
   const handleProjectSettings = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
+    (
+      event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLInputElement>,
+      projectGroup: SidebarProjectSnapshot,
+    ) => {
       event.preventDefault();
       event.stopPropagation();
+      suppressNextScopeChangeRef.current = true;
       dispatchProjectScopeMenu({ type: "project-settings-opened" });
       openProjectSettings(projectGroup);
     },
@@ -4139,7 +4162,9 @@ export default function Sidebar() {
   );
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) return;
+      if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {
+        return;
+      }
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
         context: {
@@ -4358,10 +4383,18 @@ export default function Sidebar() {
                   isItemEqualToValue={(a, b) => a.value === b.value}
                   open={projectScopeMenuState.open}
                   onOpenChange={(open) => {
+                    if (open) suppressNextScopeChangeRef.current = false;
                     dispatchProjectScopeMenu({ type: "open-changed", open });
+                  }}
+                  onItemHighlighted={(item) => {
+                    highlightedProjectScopeKeyRef.current = item?.value ?? null;
                   }}
                   value={selectedProjectScopeItem}
                   onValueChange={(item) => {
+                    if (suppressNextScopeChangeRef.current) {
+                      suppressNextScopeChangeRef.current = false;
+                      return;
+                    }
                     if (!item) return;
                     setProjectScopeKey(item.value === "all" ? null : item.value);
                   }}
@@ -4412,6 +4445,24 @@ export default function Sidebar() {
                           size="sm"
                           unstyled
                           value={projectScopeMenuState.query}
+                          onKeyDown={(event) => {
+                            if (
+                              event.defaultPrevented ||
+                              event.nativeEvent.isComposing ||
+                              event.ctrlKey ||
+                              event.altKey ||
+                              event.metaKey ||
+                              (event.key !== "ContextMenu" &&
+                                !(event.shiftKey && event.key === "F10"))
+                            ) {
+                              return;
+                            }
+                            // Combobox items use virtual focus: keyboard events
+                            // stay on this input, not on the highlighted option.
+                            const scopeKey = highlightedProjectScopeKeyRef.current;
+                            const project = scopeKey ? projectGroupByScopeKey.get(scopeKey) : null;
+                            if (project) handleProjectSettings(event, project);
+                          }}
                           onChange={(event) =>
                             dispatchProjectScopeMenu({
                               type: "query-changed",
@@ -4432,6 +4483,9 @@ export default function Sidebar() {
                             value={item}
                             className="h-8 min-h-8 py-0 font-medium"
                             contentClassName="flex min-w-0 items-center gap-2"
+                            onContextMenu={(event) => {
+                              if (project) handleProjectSettings(event, project);
+                            }}
                           >
                             {project ? (
                               <ProjectFavicon
@@ -4450,7 +4504,8 @@ export default function Sidebar() {
                               <Button
                                 size="icon-xs"
                                 variant="ghost-muted"
-                                aria-label={`Project settings for ${project.displayName}`}
+                                tabIndex={-1}
+                                aria-hidden="true"
                                 title={`Project settings for ${project.displayName}`}
                                 className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
                                 onPointerDown={(event) => event.stopPropagation()}
