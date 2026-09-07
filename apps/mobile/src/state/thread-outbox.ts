@@ -22,6 +22,10 @@ export async function flushThreadOutbox(): Promise<void> {
   await flushThreadOutboxWrites();
 }
 
+export function ensureThreadOutboxLoaded(): void {
+  void threadOutboxManager.load();
+}
+
 export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
   // A startup read failure resets the manager's memoized load. Retry before a
   // new enqueue so persisted prompts cannot remain hidden for the whole active

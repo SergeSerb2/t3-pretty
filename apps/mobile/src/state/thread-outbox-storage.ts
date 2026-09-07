@@ -31,14 +31,7 @@ export async function flushThreadOutboxWrites(): Promise<void> {
 export class ThreadOutboxStorageError extends Schema.TaggedErrorClass<ThreadOutboxStorageError>()(
   "ThreadOutboxStorageError",
   {
-    operation: Schema.Literals([
-      "load",
-      "read-message",
-      "decode-message",
-      "quarantine-message",
-      "write",
-      "remove",
-    ]),
+    operation: Schema.Literals(["load", "read-message", "write", "remove"]),
     environmentId: Schema.NullOr(EnvironmentId),
     threadId: Schema.NullOr(ThreadId),
     messageId: Schema.NullOr(MessageId),
@@ -91,12 +84,12 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
         if (!(entry instanceof File) || !entry.name.endsWith(".json")) {
           continue;
         }
-        let raw: string;
         try {
-          raw = await entry.text();
+          messages.push(decodeQueuedThreadMessage(JSON.parse(await entry.text()) as unknown));
         } catch (cause) {
           // Recover readable messages without treating their attachment
-          // owners as the complete inventory needed for cleanup.
+          // owners as the complete inventory needed for cleanup: the manager
+          // refuses cleanup while `errors` is non-empty.
           errors.push(
             new ThreadOutboxStorageError({
               operation: "read-message",
@@ -107,20 +100,6 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
               cause,
             }),
           );
-        }
-        try {
-          messages.push(decodeQueuedThreadMessage(JSON.parse(raw) as unknown));
-        } catch (cause) {
-          // A partial queue hides attachment owners from cleanup. Keep all
-          // records untouched until every persisted message can be read.
-          throw new ThreadOutboxStorageError({
-            operation: "decode-message",
-            environmentId: null,
-            threadId: null,
-            messageId: null,
-            fileName: entry.name,
-            cause,
-          });
         }
       }
     } catch (cause) {
