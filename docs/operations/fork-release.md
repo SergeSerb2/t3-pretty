@@ -12,7 +12,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    builds become a GitHub Actions `pull_request` event, so `.buildkite/pipeline.yml`
    does not import `fork-pr-review.yml`. A native `macos-release` step runs
    `scripts/fork/run-trusted-origin-pr-ci.sh` instead, which prefers the review
-   scripts on `origin/main` so a feature branch cannot swap the secret loader.
+   scripts on `origin/main` so a feature branch cannot swap the secret loader
+   or the Origin child runner.
    Hosted `linux-small` cannot load `CURSOR_API_KEY`. The step runs on every
    non-`main`, non-`automation/*` branch (Buildkite New Build is the manual
    path). Push builds briefly wait for PR creation because Origin does not
@@ -104,7 +105,22 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    remaining steps (branch delete, release dispatch, inline mobile publish) are best-effort and
    cannot repaint a landed sync as failed. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
-   Release Smoke. Only a run that genuinely cannot land — a git object error, or Origin refusing
+   Release Smoke. Instead the job validates the merged tree itself before pushing: frozen install,
+   contracts/client-runtime/web/desktop/relay typechecks, the web lint error gate, the production
+   web build, the bundled server build, and the production iOS bundle. A merge whose text conflicts
+   all resolved can still fail here, because parent hunks that landed clean call APIs the fork
+   changed (a new parent test fixture that builds `EnvironmentRegistry.of({...})` without the
+   fork's extra field). Those failures are repaired in place rather than blocked: a frozen-lockfile
+   refusal (outdated lockfile vs manifests) regenerates the lockfile, other install failures
+   keep the original error, a lint failure runs the fixer first, and everything else goes to
+   `scripts/fork/repair-sync-tree.mjs`, which hands the same CLIProxyAPI model the failed step's
+   diagnostics, the files they name, the declarations they point at, and the fork's own history for
+   each file, then applies its search-and-replace edits under the same preservation contract (no
+   `any`, `ts-expect-error`, or lint suppressions; an edit that only deletes parent code is an
+   omission and is reported). Each repair is committed as `chore(sync): repair <step> after merging
+<tag>`, appended to the integration report under `## Post-merge repairs`, and followed by a full
+   re-validation, for at most `SYNC_MAX_REPAIR_ROUNDS` (default 4) rounds per failing step. Only a run that genuinely
+   cannot land — a git object error, a tree the repair loop still cannot build, or Origin refusing
    the merge twice — opens an Origin pull request titled `Upstream sync blocked: <tag>` with the
    failure notes; cancelled and superseded runs checkpoint their finished resolutions and file
    nothing.

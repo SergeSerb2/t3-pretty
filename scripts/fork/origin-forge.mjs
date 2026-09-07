@@ -215,7 +215,7 @@ export function retryReleaseUpload(
 export function runOrigin(args, options = {}) {
   return runCommand(originBin(), args, {
     ...options,
-    env: { ...originInstallerEnvironment(), ...options.env },
+    env: { ...originCommandEnvironment(), ...options.env },
     inheritEnv: false,
   });
 }
@@ -498,6 +498,17 @@ export function originInstallerEnvironment(env = process.env) {
     "http_proxy",
     "no_proxy",
   ]) {
+    if (env[key] !== undefined) safe[key] = env[key];
+  }
+  return safe;
+}
+
+// Origin commands need the API key in-process. `auth login --local` only
+// writes the git credential helper; later `origin pr` still reads
+// CURSOR_API_KEY (or a HOME config file that other Origin processes race).
+export function originCommandEnvironment(env = process.env) {
+  const safe = originInstallerEnvironment(env);
+  for (const key of ["CURSOR_API_KEY", "ORIGIN_TOKEN"]) {
     if (env[key] !== undefined) safe[key] = env[key];
   }
   return safe;

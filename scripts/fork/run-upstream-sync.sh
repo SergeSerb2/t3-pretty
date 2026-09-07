@@ -747,63 +747,146 @@ if ! git diff --cached --quiet; then
   git commit -m "chore(sync): record upstream $UPSTREAM_TAG"
 fi
 
-validate_sync_tree() {
-  if ! retry vp i --frozen-lockfile; then
-    SYNC_FAIL_REASON="The merged sync tree could not install from its frozen lockfile."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
+# Run one validation step, keeping its output: a failure's diagnostics are
+# the repair pass's input. `set -o pipefail` makes the tee pipeline report
+# the step's own status.
+VALIDATION_LOG=""
+SYNC_FAIL_STEP=""
+run_validation_step() {
+  local step="$1" reason="$2"
+  shift 2
+  VALIDATION_LOG="${CACHE_ROOT}/t3-pretty-sync-validate-${step}.log"
+  if "$@" 2>&1 | tee "$VALIDATION_LOG"; then
+    return 0
   fi
-  if ! vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck; then
-    SYNC_FAIL_REASON="The merged sync tree failed shared contract typechecks."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  if ! vp run --filter @t3tools/web typecheck; then
-    SYNC_FAIL_REASON="The merged sync tree failed the web typecheck."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  # Keep warnings informational, but block parser, duplicate-declaration, and
-  # other error-level defects before an automation branch can be published.
-  if ! vp lint apps/web/src; then
-    SYNC_FAIL_REASON="The merged sync tree failed the web lint error gate."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  if ! vp run --filter @t3tools/web build; then
-    SYNC_FAIL_REASON="The merged sync tree failed the production web build."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  if ! vp run --filter @t3tools/desktop typecheck; then
-    SYNC_FAIL_REASON="The merged sync tree failed the desktop typecheck."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  if ! vp run --filter t3 build:bundle; then
-    SYNC_FAIL_REASON="The merged sync tree failed the bundled server build."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
-  if ! vp run --filter t3code-relay typecheck; then
-    SYNC_FAIL_REASON="The merged sync tree failed the relay typecheck."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
+  SYNC_FAIL_STEP="$step"
+  SYNC_FAIL_REASON="$reason"
+  echo "$SYNC_FAIL_REASON" >&2
+  return 1
+}
 
-  local mobile_export_dir
+frozen_install() {
+  retry vp i --frozen-lockfile
+}
+
+export_mobile_bundle() {
+  local mobile_export_dir status=0
   mobile_export_dir="$(mktemp -d "${TMPDIR:-/tmp}/t3-mobile-export.XXXXXX")"
-  if ! (
+  (
     cd apps/mobile
     T3CODE_BUILD_FLAVOR=internal EXPO_NO_DOTENV=1 APP_VARIANT=production \
       vp exec expo export --platform ios --output-dir "$mobile_export_dir"
-  ); then
-    rm -rf "$mobile_export_dir"
-    SYNC_FAIL_REASON="The merged sync tree failed the production mobile bundle."
-    echo "$SYNC_FAIL_REASON" >&2
-    return 1
-  fi
+  ) || status=$?
   rm -rf "$mobile_export_dir"
+  return "$status"
+}
+
+validate_sync_tree_once() {
+  run_validation_step install \
+    "The merged sync tree could not install from its frozen lockfile." \
+    frozen_install || return 1
+  run_validation_step shared-typecheck \
+    "The merged sync tree failed shared contract typechecks." \
+    vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck || return 1
+  run_validation_step web-typecheck \
+    "The merged sync tree failed the web typecheck." \
+    vp run --filter @t3tools/web typecheck || return 1
+  # Keep warnings informational, but block parser, duplicate-declaration, and
+  # other error-level defects before an automation branch can be published.
+  run_validation_step web-lint \
+    "The merged sync tree failed the web lint error gate." \
+    vp lint apps/web/src || return 1
+  run_validation_step web-build \
+    "The merged sync tree failed the production web build." \
+    vp run --filter @t3tools/web build || return 1
+  run_validation_step desktop-typecheck \
+    "The merged sync tree failed the desktop typecheck." \
+    vp run --filter @t3tools/desktop typecheck || return 1
+  run_validation_step server-bundle \
+    "The merged sync tree failed the bundled server build." \
+    vp run --filter t3 build:bundle || return 1
+  run_validation_step relay-typecheck \
+    "The merged sync tree failed the relay typecheck." \
+    vp run --filter t3code-relay typecheck || return 1
+  run_validation_step mobile-bundle \
+    "The merged sync tree failed the production mobile bundle." \
+    export_mobile_bundle || return 1
+}
+
+# A merge that resolves every text conflict can still fail to build: parent
+# hunks that landed clean call APIs the fork changed. Repair from the failed
+# step's diagnostics instead of blocking, deterministically where possible
+# (lockfile regeneration, lint fixer) and otherwise through the same model
+# the conflict resolver uses. Each repair is committed and recorded in the
+# integration report; the shell re-validates from the top.
+repair_sync_tree() {
+  local status=0
+  case "$SYNC_FAIL_STEP" in
+    install)
+      # Network, registry, or vp i crashes are not lockfile drift. Only a
+      # frozen-lockfile refusal means the merged manifests and the lockfile
+      # disagree even though the lockfile itself did not conflict.
+      if [[ -z "${VALIDATION_LOG:-}" || ! -f "$VALIDATION_LOG" ]] ||
+        ! grep -Eq 'ERR_PNPM_OUTDATED_LOCKFILE|ERR_PNPM_LOCKFILE_CONFIG_MISMATCH|lockfile is not up to date' "$VALIDATION_LOG"; then
+        echo "Install failed without a frozen-lockfile refusal; not regenerating pnpm-lock.yaml." >&2
+        return 1
+      fi
+      echo "Regenerating pnpm-lock.yaml against the merged package manifests."
+      retry regenerate_lockfile || return 1
+      git add pnpm-lock.yaml
+      commit_sync "chore(sync): regenerate the lockfile after merging $UPSTREAM_TAG"
+      return 0
+      ;;
+    web-lint)
+      vp lint --fix apps/web/src || true
+      local lint_path
+      # Stage tracked web files that actually differ after --fix. Grepping
+      # the pre-fix log for apps/web/src/... misses package-relative src/...
+      # paths, leaves the tree dirty, and then the model sees a stale log.
+      while IFS= read -r lint_path; do
+        [[ -n "$lint_path" ]] || continue
+        git add -u -- "$lint_path"
+      done < <(git diff --name-only -- apps/web/src || true)
+      if ! git diff --cached --quiet; then
+        commit_sync "chore(sync): apply lint fixes after merging $UPSTREAM_TAG"
+        return 0
+      fi
+      ;;
+  esac
+  UPSTREAM_TAG="$UPSTREAM_TAG" \
+    PREVIOUS_UPSTREAM_TAG="${PREVIOUS_UPSTREAM_TAG-}" \
+    node scripts/fork/repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP" ||
+    status=$?
+  if (( status == 75 )); then
+    SYNC_FAIL_REASON="The model-resolution window ended before the $SYNC_FAIL_STEP repair could run."
+    echo "$SYNC_FAIL_REASON" >&2
+    exit 75
+  fi
+  (( status == 0 )) || return 1
+  commit_sync "chore(sync): repair $SYNC_FAIL_STEP after merging $UPSTREAM_TAG"
+}
+
+# The round budget is per failing step: reaching a later step is progress,
+# so a typecheck that took three rounds must not starve the lint gate.
+validate_sync_tree() {
+  local round=0 repaired_step=""
+  while ! validate_sync_tree_once; do
+    if [[ "$SYNC_FAIL_STEP" != "$repaired_step" ]]; then
+      repaired_step="$SYNC_FAIL_STEP"
+      round=0
+    fi
+    if (( round >= ${SYNC_MAX_REPAIR_ROUNDS:-4} )); then
+      SYNC_FAIL_REASON="$SYNC_FAIL_REASON It still failed after $round automated repair round(s)."
+      echo "$SYNC_FAIL_REASON" >&2
+      return 1
+    fi
+    if ! repair_sync_tree; then
+      SYNC_FAIL_REASON="$SYNC_FAIL_REASON The automated repair could not fix it after $round earlier round(s)."
+      echo "$SYNC_FAIL_REASON" >&2
+      return 1
+    fi
+    round=$(( round + 1 ))
+  done
 }
 
 # Do not publish or merge a resolver-composed tree until the actual web,

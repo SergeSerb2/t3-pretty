@@ -2325,7 +2325,7 @@ ${">".repeat(7)} theirs
       "The sync resolver could not install its validation dependencies",
     );
     const firstMerge = script.indexOf('merge_ref origin/main "chore(sync): merge origin/main');
-    const validationStart = script.indexOf("validate_sync_tree() {");
+    const validationStart = script.indexOf("validate_sync_tree_once() {");
     const webTypecheck = script.indexOf("vp run --filter @t3tools/web typecheck", validationStart);
     const webLint = script.indexOf("vp lint apps/web/src", validationStart);
     const webBuild = script.indexOf("vp run --filter @t3tools/web build", validationStart);
