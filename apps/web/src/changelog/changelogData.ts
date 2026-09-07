@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001634",
+    date: "2026-09-07",
+    items: [
+      {
+        kind: "fixed",
+        title: "keep primary cookies out of Surge link requests",
+      },
+      {
+        kind: "fixed",
+        title: "restore thread starts after snapshot split",
+      },
+      {
+        kind: "fixed",
+        title: "restore the mobile typecheck and gate it in the upstream sync",
+      },
+      {
+        kind: "fixed",
+        title: "route text generation around a provider whose probe reports it broken",
+      },
+      {
+        kind: "fixed",
+        title: "chat box wears the same frosted glass as the chrome",
+      },
+      {
+        kind: "new",
+        title: "add automations that run agents on schedules, events, webhooks, and git changes",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001632",
     date: "2026-09-07",
     items: [
