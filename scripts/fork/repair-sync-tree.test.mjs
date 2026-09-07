@@ -366,6 +366,11 @@ describe("run-upstream-sync.sh repair loop", () => {
 
   it("re-validates after each committed repair and stops after a bounded number of rounds", () => {
     assert.include(script, "validate_sync_tree || exit 1");
+    // The mobile release typechecks before publishing OTA; the sync must too,
+    // and before the bundle so the cheaper check reports first.
+    const mobileTypecheck = script.indexOf("vp run --filter @t3tools/mobile typecheck");
+    assert.isAbove(mobileTypecheck, script.indexOf("validate_sync_tree_once() {"));
+    assert.isBelow(mobileTypecheck, script.indexOf("export_mobile_bundle || return 1"));
     assert.include(script, 'repair-sync-tree.mjs --log "$VALIDATION_LOG" --step "$SYNC_FAIL_STEP"');
     assert.include(script, 'UPSTREAM_TAG="$UPSTREAM_TAG"');
     assert.include(script, 'PREVIOUS_UPSTREAM_TAG="${PREVIOUS_UPSTREAM_TAG-}"');

@@ -808,6 +808,12 @@ validate_sync_tree_once() {
   run_validation_step relay-typecheck \
     "The merged sync tree failed the relay typecheck." \
     vp run --filter t3code-relay typecheck || return 1
+  # Metro strips types without checking them, and the mobile release runs
+  # `tsc` before publishing OTA: a merge that bundles but does not typecheck
+  # lands on main and then fails every mobile release (nightly 1284).
+  run_validation_step mobile-typecheck \
+    "The merged sync tree failed the mobile typecheck." \
+    vp run --filter @t3tools/mobile typecheck || return 1
   run_validation_step mobile-bundle \
     "The merged sync tree failed the production mobile bundle." \
     export_mobile_bundle || return 1

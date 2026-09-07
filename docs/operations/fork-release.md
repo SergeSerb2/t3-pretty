@@ -106,7 +106,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    cannot repaint a landed sync as failed. Parent CI is
    disabled on this fork, so sync does not wait on Check, Test, Mobile Native Static Analysis, or
    Release Smoke. Instead the job validates the merged tree itself before pushing: frozen install,
-   contracts/client-runtime/web/desktop/relay typechecks, the web lint error gate, the production
+   contracts/client-runtime/web/desktop/relay/mobile typechecks, the web lint error gate, the production
    web build, the bundled server build, and the production iOS bundle. A merge whose text conflicts
    all resolved can still fail here, because parent hunks that landed clean call APIs the fork
    changed (a new parent test fixture that builds `EnvironmentRegistry.of({...})` without the
