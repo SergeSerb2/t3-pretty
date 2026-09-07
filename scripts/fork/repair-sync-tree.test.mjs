@@ -386,6 +386,18 @@ describe("run-upstream-sync.sh repair loop", () => {
       'commit_sync "chore(sync): repair $SYNC_FAIL_STEP after merging $UPSTREAM_TAG"',
     );
     // A frozen-install refusal is fixed by regeneration, never by the model.
+    // Network/registry failures must not look like lockfile drift.
+    const installRepair = script.slice(
+      script.indexOf("repair_sync_tree() {"),
+      script.indexOf("web-lint)"),
+    );
+    assert.include(installRepair, "ERR_PNPM_OUTDATED_LOCKFILE");
+    assert.include(installRepair, "ERR_PNPM_LOCKFILE_CONFIG_MISMATCH");
+    assert.include(installRepair, "lockfile is not up to date");
+    assert.isBelow(
+      installRepair.indexOf("ERR_PNPM_OUTDATED_LOCKFILE"),
+      installRepair.indexOf("regenerate_lockfile"),
+    );
     assert.include(
       script,
       'commit_sync "chore(sync): regenerate the lockfile after merging $UPSTREAM_TAG"',

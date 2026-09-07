@@ -823,8 +823,14 @@ repair_sync_tree() {
   local status=0
   case "$SYNC_FAIL_STEP" in
     install)
-      # A frozen-install refusal means the merged manifests and the lockfile
+      # Network, registry, or vp i crashes are not lockfile drift. Only a
+      # frozen-lockfile refusal means the merged manifests and the lockfile
       # disagree even though the lockfile itself did not conflict.
+      if [[ -z "${VALIDATION_LOG:-}" || ! -f "$VALIDATION_LOG" ]] ||
+        ! grep -Eq 'ERR_PNPM_OUTDATED_LOCKFILE|ERR_PNPM_LOCKFILE_CONFIG_MISMATCH|lockfile is not up to date' "$VALIDATION_LOG"; then
+        echo "Install failed without a frozen-lockfile refusal; not regenerating pnpm-lock.yaml." >&2
+        return 1
+      fi
       echo "Regenerating pnpm-lock.yaml against the merged package manifests."
       retry regenerate_lockfile || return 1
       git add pnpm-lock.yaml

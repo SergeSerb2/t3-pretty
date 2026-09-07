@@ -12,7 +12,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    builds become a GitHub Actions `pull_request` event, so `.buildkite/pipeline.yml`
    does not import `fork-pr-review.yml`. A native `macos-release` step runs
    `scripts/fork/run-trusted-origin-pr-ci.sh` instead, which prefers the review
-   scripts on `origin/main` so a feature branch cannot swap the secret loader.
+   scripts on `origin/main` so a feature branch cannot swap the secret loader
+   or the Origin child runner.
    Hosted `linux-small` cannot load `CURSOR_API_KEY`. The step runs on every
    non-`main`, non-`automation/*` branch (Buildkite New Build is the manual
    path). Push builds briefly wait for PR creation because Origin does not
@@ -109,8 +110,9 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    web build, the bundled server build, and the production iOS bundle. A merge whose text conflicts
    all resolved can still fail here, because parent hunks that landed clean call APIs the fork
    changed (a new parent test fixture that builds `EnvironmentRegistry.of({...})` without the
-   fork's extra field). Those failures are repaired in place rather than blocked: a frozen-install
-   refusal regenerates the lockfile, a lint failure runs the fixer first, and everything else goes to
+   fork's extra field). Those failures are repaired in place rather than blocked: a frozen-lockfile
+   refusal (outdated lockfile vs manifests) regenerates the lockfile, other install failures
+   keep the original error, a lint failure runs the fixer first, and everything else goes to
    `scripts/fork/repair-sync-tree.mjs`, which hands the same CLIProxyAPI model the failed step's
    diagnostics, the files they name, the declarations they point at, and the fork's own history for
    each file, then applies its search-and-replace edits under the same preservation contract (no
