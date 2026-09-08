@@ -273,7 +273,6 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
     }
   }
 
-  const logicalKeyByPhysicalKey = new Map<string, string>();
   const groupedMembers = new Map<string, ProjectGroupMember<TProject>[]>();
   for (const [physicalProjectKey, physicalProjects] of projectsByPhysicalKey) {
     const winner = physicalProjects.reduce((current, candidate) =>
@@ -283,7 +282,6 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
     const logicalKey = deriveLogicalProjectKey(identitySource, {
       groupingMode: resolveProjectGroupingMode(winner, input.settings),
     });
-    logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);
     const member = { physicalProjectKey, project: winner };
     const existing = groupedMembers.get(logicalKey);
     if (existing) {
@@ -293,27 +291,58 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
     }
   }
 
-  const projectRefsByLogicalKey = new Map<string, ScopedProjectRef[]>();
+  const projectRefsByPhysicalKey = new Map<string, ScopedProjectRef[]>();
   const seenProjectRefs = new Set<string>();
   for (const project of input.projects) {
-    const physicalProjectKey = derivePhysicalProjectKey(project);
-    const logicalKey =
-      logicalKeyByPhysicalKey.get(physicalProjectKey) ??
-      deriveLogicalProjectKeyFromSettings(project, input.settings);
-    const projectRefKey = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+    const projectRef = scopeProjectRef(project.environmentId, project.id);
+    const projectRefKey = scopedProjectKey(projectRef);
     if (seenProjectRefs.has(projectRefKey)) continue;
     seenProjectRefs.add(projectRefKey);
-    const projectRef = scopeProjectRef(project.environmentId, project.id);
-    const existing = projectRefsByLogicalKey.get(logicalKey);
+    const physicalProjectKey = derivePhysicalProjectKey(project);
+    const existing = projectRefsByPhysicalKey.get(physicalProjectKey);
     if (existing) {
       existing.push(projectRef);
     } else {
-      projectRefsByLogicalKey.set(logicalKey, [projectRef]);
+      projectRefsByPhysicalKey.set(physicalProjectKey, [projectRef]);
+    }
+  }
+
+  // A repository group is one project seen from several machines, and every
+  // new-thread surface picks a member per machine. Two clones of the same
+  // repository at the same repository path on one machine are two places to
+  // work with no way to choose between them, so they stand alone under their
+  // physical keys. Monorepo subfolders of one clone and members on other
+  // machines keep the repository group.
+  const finalGroups = new Map<string, ProjectGroupMember<TProject>[]>();
+  for (const [key, members] of groupedMembers) {
+    const membersByCheckoutSlot = new Map<string, ProjectGroupMember<TProject>[]>();
+    for (const member of members) {
+      // An identity without a known root reads as a clone at the root.
+      const slot = `${member.project.environmentId}\0${
+        deriveRepositoryRelativeProjectPath(member.project) ?? ""
+      }`;
+      const slotMembers = membersByCheckoutSlot.get(slot);
+      if (slotMembers) {
+        slotMembers.push(member);
+      } else {
+        membersByCheckoutSlot.set(slot, [member]);
+      }
+    }
+    const sharedMembers: ProjectGroupMember<TProject>[] = [];
+    const standaloneMembers: ProjectGroupMember<TProject>[] = [];
+    for (const slotMembers of membersByCheckoutSlot.values()) {
+      (slotMembers.length === 1 ? sharedMembers : standaloneMembers).push(...slotMembers);
+    }
+    if (sharedMembers.length > 0) {
+      finalGroups.set(key, sharedMembers);
+    }
+    for (const member of standaloneMembers) {
+      finalGroups.set(member.physicalProjectKey, [member]);
     }
   }
 
   const preferredEnvironmentId = input.preferredEnvironmentId ?? null;
-  return Array.from(groupedMembers, ([key, members]) => {
+  return Array.from(finalGroups, ([key, members]) => {
     const representative =
       (preferredEnvironmentId
         ? members.find((member) => member.project.environmentId === preferredEnvironmentId)?.project
@@ -329,7 +358,9 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
           : representative.title,
       representative,
       members,
-      memberProjectRefs: projectRefsByLogicalKey.get(key) ?? [],
+      memberProjectRefs: members.flatMap(
+        (member) => projectRefsByPhysicalKey.get(member.physicalProjectKey) ?? [],
+      ),
     };
   });
 }
