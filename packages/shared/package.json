@@ -207,6 +207,10 @@
       "types": "./src/cliArgs.ts",
       "import": "./src/cliArgs.ts"
     },
+    "./changelogPresentation": {
+      "types": "./src/changelogPresentation.ts",
+      "import": "./src/changelogPresentation.ts"
+    },
     "./connectAuth": {
       "types": "./src/connectAuth.ts",
       "import": "./src/connectAuth.ts"

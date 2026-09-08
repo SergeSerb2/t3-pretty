@@ -2951,7 +2951,7 @@ export function GeneralSettingsPanel() {
           description="See what changed in recent updates."
           control={
             <Button size="xs" variant="outline" onClick={() => openWhatsNewDialog()}>
-              View changelog
+              Open
             </Button>
           }
         />

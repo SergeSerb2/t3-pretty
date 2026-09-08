@@ -249,6 +249,7 @@ describe("buildChangelogPrompt", () => {
     assert.include(prompt, "fix(server): preserve branch association");
     assert.include(prompt, 'without mentioning "upstream", "parent", "nightly", or "fork"');
     assert.include(prompt, "keyed by the exact version string");
+    assert.include(prompt, "not as a commit subject");
   });
 });
 
@@ -264,10 +265,10 @@ describe("fallbackReleaseEntry", () => {
       upstream: null,
     });
     assert.deepEqual(entry.items, [
-      { kind: "fixed", title: "preserve branch association", description: "" },
+      { kind: "fixed", title: "Preserve branch association", description: "" },
       {
         kind: "new",
-        title: "show What's New changelog dialog after updates (#41)",
+        title: "Show What's New changelog dialog after updates",
         description: "",
       },
     ]);
@@ -305,10 +306,10 @@ describe("fallbackReleaseEntry", () => {
     assert.deepEqual(entry.items, [
       {
         kind: "new",
-        title: "add Boring personalization that restores T3 Chat",
+        title: "Boring personalization that restores T3 Chat",
         description: "",
       },
-      { kind: "fixed", title: "restore clicks on titlebar panel toggles", description: "" },
+      { kind: "fixed", title: "Clicks on titlebar panel toggles", description: "" },
     ]);
   });
 
@@ -324,8 +325,8 @@ describe("fallbackReleaseEntry", () => {
       upstream: null,
     });
     assert.deepEqual(entry.items, [
-      { kind: "new", title: "add foo(ci) helper to the composer", description: "" },
-      { kind: "fixed", title: "handle bar(release) timeout", description: "" },
+      { kind: "new", title: "Foo(ci) helper to the composer", description: "" },
+      { kind: "fixed", title: "Handle bar(release) timeout", description: "" },
     ]);
   });
 });

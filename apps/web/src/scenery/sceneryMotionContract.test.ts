@@ -230,7 +230,9 @@ describe("dialog contract", () => {
   it("What's New, the theme editor and the quit hint still carry their hooks", () => {
     expect(whatsNewSource).toContain('aria-label="What\'s new"');
     expect(whatsNewSource).toContain("<SparklesIcon");
-    expect(whatsNewSource).toContain('"--sc-i": Math.min(index, 5)');
+    expect(whatsNewSource).toContain(
+      '"--sc-i": changelogStaggerIndex(groups, groupIndex, itemIndex)',
+    );
     expect(themeEditorSource).toContain('"dialog-glass fixed z-[110]');
     expect(themeEditorSource).toContain("data-theme-editor-panel");
     expect(themeEditorSource).toContain('role="dialog"');
