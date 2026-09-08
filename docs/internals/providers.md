@@ -11,9 +11,29 @@ session or catalog state.
 
 ## T3 Pretty provider set
 
-[`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) registers six drivers:
-`codex`, `claudeAgent`, `cursor`, `grok`, `kimi`, and `antigravity`. T3 Pretty intentionally
-includes its Kimi integration and does not register the parent OpenCode provider.
+[`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) registers seven drivers:
+`codex`, `claudeAgent`, `cursor`, `grok`, `grokBot`, `kimi`, and `antigravity`. T3 Pretty
+intentionally includes its Kimi integration and does not register the parent OpenCode provider.
+
+### Grok Bot is not a subprocess
+
+`grokBot` is the only driver with no local binary. It speaks Cursor's private `GrokBotService`
+Connect API (JSON encoding, so no protobuf toolchain) and the per-user box gateway that the Grok
+Bot desktop app uses; see
+[`GrokBotGateway.ts`](../../apps/server/src/provider/grokBot/GrokBotGateway.ts). Wire shapes were
+taken from the desktop bundle and can break on a Grok Bot release; keep decoding lenient and keep
+the surface small. Constraints that follow from the transport:
+
+- Box-hosted bots must be created through the gateway `createAgent` command. The API's
+  `CreateGrokBotAgent` registers a server-side roster entry the box never learns about, and
+  sends to it fail with 503.
+- The gateway `/events` feed is box-wide, one connection per adapter instance, routed by agent id.
+  Turn completion is the `isRunningTurn` flag on `agent-upserted`, not a transcript row; after a
+  reconnect the adapter re-reads `listAgents` so a flag missed while offline still settles the turn.
+- The bot works on its own computer, so a turn changes nothing in the local worktree: no
+  checkpoint, no diff, and `supportsConversationRollback` is false because the box owns history.
+- Auth is the Cursor access token that `cursor-agent login` stores (Keychain on macOS, `auth.json`
+  elsewhere). It is read per request so a CLI refresh is picked up without restarting the server.
 
 Cursor, Grok, and Kimi share
 [`AcpSessionRuntime.ts`](../../apps/server/src/provider/acp/AcpSessionRuntime.ts). Cursor's picker

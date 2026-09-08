@@ -155,6 +155,29 @@ export const unsupportedProjectIconGeneration = (providerLabel: string) =>
     });
   });
 
+/**
+ * Text generation for providers that only run conversational agents (Grok
+ * Bot). Every operation fails with a clear message so the UI can steer the
+ * user to another provider for commit messages and titles.
+ */
+export const makeUnsupportedTextGeneration = (providerLabel: string): TextGeneration["Service"] => {
+  const unsupported = (operation: TextGenerationOp) =>
+    Effect.fail(
+      new TextGenerationError({
+        operation,
+        detail: `${providerLabel} does not generate text outside of a thread.`,
+      }),
+    );
+  return {
+    generateCommitMessage: () => unsupported("generateCommitMessage"),
+    generatePrContent: () => unsupported("generatePrContent"),
+    generateBranchName: () => unsupported("generateBranchName"),
+    generateThreadTitle: () => unsupported("generateThreadTitle"),
+    generateActivityHeadline: () => unsupported("generateActivityHeadline"),
+    generateProjectIcon: () => unsupported("generateProjectIcon"),
+  };
+};
+
 type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"

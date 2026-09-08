@@ -160,7 +160,7 @@ The live backend agent implementation and its event stream. The main service is 
 
 #### Provider
 
-The agent runtime T3 Code controls to perform work. Six drivers ship built in: Codex, Claude, Cursor, Grok, Kimi, and Antigravity. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
+The agent runtime T3 Code controls to perform work. Seven drivers ship built in: Codex, Claude, Cursor, Grok, Grok Bot, Kimi, and Antigravity. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
 
 #### Driver
 
