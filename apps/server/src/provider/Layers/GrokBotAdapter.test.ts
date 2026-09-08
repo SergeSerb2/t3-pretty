@@ -90,9 +90,23 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
       "transcript",
       transcript({ kind: "message", id: "t0u", role: "user", content: "Reply with exactly: pong" }),
     );
+    // A row can be appended with partial text and updated with the rest; the
+    // item stays open across the update and closes when the next row lands.
     yield* fake.push(
       "transcript",
-      transcript({ kind: "send-message", id: "t0s0", message: { type: "text", content: "pong" } }),
+      transcript({ kind: "send-message", id: "t0s0", message: { type: "text", content: "po" } }),
+    );
+    yield* fake.push("transcript", {
+      ...transcript({
+        kind: "send-message",
+        id: "t0s0",
+        message: { type: "text", content: "pong" },
+      }),
+      type: "updated",
+    });
+    yield* fake.push(
+      "transcript",
+      transcript({ kind: "send-message", id: "t0s1", message: { type: "text", content: "done" } }),
     );
     yield* fake.push("agent-upserted", roster(false));
 
@@ -104,10 +118,21 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
       "thread.started",
       "turn.started",
     ]);
-    assert.include(types, "item.started");
-    const delta = events.find((event) => event.type === "content.delta");
-    assert.equal(delta?.type === "content.delta" ? delta.payload.delta : undefined, "pong");
-    assert.equal(delta?.turnId, turn.turnId);
+    const assistant = events.filter(
+      (event) =>
+        (event.type === "item.started" || event.type === "item.completed") &&
+        event.payload.itemType === "assistant_message",
+    );
+    assert.deepEqual(
+      assistant.map((event) => `${event.type} ${event.itemId}`),
+      ["item.started t0s0", "item.completed t0s0", "item.started t0s1", "item.completed t0s1"],
+    );
+    const deltas = events.filter((event) => event.type === "content.delta");
+    assert.deepEqual(
+      deltas.map((event) => (event.type === "content.delta" ? event.payload.delta : "")),
+      ["po", "ng", "done"],
+    );
+    assert.equal(deltas[0]?.turnId, turn.turnId);
     const activity = events.find(
       (event) => event.type === "item.started" && event.payload.itemType === "dynamic_tool_call",
     );

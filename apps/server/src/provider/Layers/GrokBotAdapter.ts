@@ -120,6 +120,10 @@ interface SessionContext {
   readonly pendingUserInputs: Map<ApprovalRequestId, { readonly entryId: string }>;
   /** Assistant text already emitted per transcript entry, for delta updates. */
   readonly emittedText: Map<string, string>;
+  /** Transcript entry whose assistant item is still streaming. A row may be
+   * appended and then updated with more text, so the item stays open until
+   * another entry arrives or the turn settles. */
+  openAssistantEntryId: string | undefined;
   activityItemId: string | undefined;
   stopped: boolean;
 }
@@ -229,6 +233,22 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         });
       });
 
+    const completeAssistantItem = (ctx: SessionContext) =>
+      Effect.gen(function* () {
+        const entryId = ctx.openAssistantEntryId;
+        if (!entryId) return;
+        ctx.openAssistantEntryId = undefined;
+        yield* emit({
+          type: "item.completed",
+          ...(yield* makeEventStamp()),
+          provider: PROVIDER,
+          threadId: ctx.threadId,
+          turnId: ctx.activeTurn?.turnId,
+          itemId: RuntimeItemId.make(entryId),
+          payload: { itemType: "assistant_message", status: "completed" },
+        });
+      });
+
     const settleTurn = (
       ctx: SessionContext,
       state: "completed" | "interrupted" | "failed",
@@ -237,6 +257,7 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       Effect.gen(function* () {
         const turn = ctx.activeTurn;
         if (!turn) return;
+        yield* completeAssistantItem(ctx);
         ctx.activeTurn = undefined;
         yield* completeActivity(ctx);
         ctx.session = { ...ctx.session, activeTurnId: undefined, updatedAt: yield* nowIso };
@@ -276,6 +297,8 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         if (ctx.activeTurn) ctx.activeTurn.gotReply = true;
         const itemId = RuntimeItemId.make(entryId);
         if (previous === undefined) {
+          if (ctx.openAssistantEntryId !== entryId) yield* completeAssistantItem(ctx);
+          ctx.openAssistantEntryId = entryId;
           yield* emit({
             type: "item.started",
             ...(yield* makeEventStamp()),
@@ -298,15 +321,6 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             raw: { source: RAW_SOURCE, method: "transcript", payload: raw },
           });
         }
-        yield* emit({
-          type: "item.completed",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: ctx.threadId,
-          turnId,
-          itemId,
-          payload: { itemType: "assistant_message", status: "completed" },
-        });
       });
 
     const handleWidget = (
@@ -427,6 +441,8 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const handleBotMessage = (ctx: SessionContext, entry: GrokBotBotMessageEntry, raw: unknown) =>
       Effect.gen(function* () {
         const message = entry.message;
+        // Any non-text card ends the assistant message that preceded it.
+        if (message.type !== "text") yield* completeAssistantItem(ctx);
         switch (message.type) {
           case "text":
             return yield* handleAssistantText(ctx, entry.id, message.content, raw);
@@ -686,6 +702,7 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             pendingRequests: new Map(),
             pendingUserInputs: new Map(),
             emittedText: new Map(),
+            openAssistantEntryId: undefined,
             activityItemId: undefined,
             stopped: false,
           };
