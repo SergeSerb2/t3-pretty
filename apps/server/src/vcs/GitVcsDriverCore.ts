@@ -3207,6 +3207,63 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ]);
     });
 
+  // Moves a local branch up to a commit it is strictly behind, so a base
+  // branch stops drifting behind the remote commit a worktree was just cut
+  // from. Anything that is not a plain fast-forward is left alone: a missing
+  // or diverged branch, a checked-out branch with working tree changes, or a
+  // branch checked out in another worktree.
+  const fastForwardBranch: GitVcsDriver.GitVcsDriver["Service"]["fastForwardBranch"] = Effect.fn(
+    "fastForwardBranch",
+  )(function* (input) {
+    if (!(yield* branchExists(input.cwd, input.refName))) return { updated: false };
+    const localSha = yield* runGitStdout("GitVcsDriver.fastForwardBranch.localSha", input.cwd, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${input.refName}^{commit}`,
+    ]).pipe(Effect.map((stdout) => stdout.trim()));
+    if (localSha === input.commitSha) return { updated: false };
+    const ancestry = yield* executeGit(
+      "GitVcsDriver.fastForwardBranch.isAncestor",
+      input.cwd,
+      ["merge-base", "--is-ancestor", localSha, input.commitSha],
+      { allowNonZeroExit: true },
+    );
+    if (ancestry.exitCode !== 0) return { updated: false };
+
+    const checkedOutBranch = yield* runGitStdout(
+      "GitVcsDriver.fastForwardBranch.head",
+      input.cwd,
+      ["symbolic-ref", "--short", "--quiet", "HEAD"],
+      true,
+    ).pipe(Effect.map((stdout) => stdout.trim()));
+    if (checkedOutBranch === input.refName) {
+      const local = yield* readStatusDetailsLocal(input.cwd);
+      if (local.hasWorkingTreeChanges) return { updated: false };
+      yield* runGit("GitVcsDriver.fastForwardBranch.merge", input.cwd, [
+        "merge",
+        "--ff-only",
+        "--quiet",
+        input.commitSha,
+      ]);
+      return { updated: true };
+    }
+
+    const worktreePath = yield* runGitStdout("GitVcsDriver.fastForwardBranch.worktree", input.cwd, [
+      "branch",
+      "--list",
+      input.refName,
+      "--format=%(worktreepath)",
+    ]).pipe(Effect.map((stdout) => stdout.trim()));
+    if (worktreePath.length > 0) return { updated: false };
+    yield* runGit("GitVcsDriver.fastForwardBranch.updateRef", input.cwd, [
+      "update-ref",
+      `refs/heads/${input.refName}`,
+      input.commitSha,
+      localSha,
+    ]);
+    return { updated: true };
+  });
+
   const setBranchUpstream: GitVcsDriver.GitVcsDriver["Service"]["setBranchUpstream"] = (input) =>
     runGit("GitVcsDriver.setBranchUpstream", input.cwd, [
       "branch",
@@ -3477,6 +3534,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     fetchRemoteBranch: (input) => withListRefsInvalidation(input.cwd, fetchRemoteBranch(input)),
     fetchRemoteTrackingBranch: (input) =>
       withListRefsInvalidation(input.cwd, fetchRemoteTrackingBranch(input)),
+    fastForwardBranch: (input) => withListRefsInvalidation(input.cwd, fastForwardBranch(input)),
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     pruneWorktrees: (input) => withListRefsInvalidation(input.cwd, pruneWorktrees(input)),

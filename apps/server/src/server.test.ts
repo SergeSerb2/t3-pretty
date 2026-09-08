@@ -10705,6 +10705,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               };
             }),
         );
+        const fastForwardBranch = vi.fn(
+          (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["fastForwardBranch"]>[0]) =>
+            Effect.sync(() => {
+              bootstrapGitOperations.push("fast-forward-base");
+              return { updated: true };
+            }),
+        );
         const createWorktree = vi.fn(
           (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
             Effect.sync(() => {
@@ -10739,6 +10746,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               fetchRemote,
               remoteBranchExists,
               resolveRemoteTrackingCommit,
+              fastForwardBranch,
               createWorktree,
             },
             vcsStatusBroadcaster: {
@@ -10832,11 +10840,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           refName: "main",
           fallbackRemoteName: "origin",
         });
+        assert.deepEqual(fastForwardBranch.mock.calls[0]?.[0], {
+          cwd: "/tmp/project",
+          refName: "main",
+          commitSha: fetchedOriginCommit,
+        });
         assert.deepEqual(bootstrapGitOperations, [
           "remote-exists",
           "fetch",
           "remote-branch-exists",
           "resolve-remote-commit",
+          "fast-forward-base",
           "create-worktree",
         ]);
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
