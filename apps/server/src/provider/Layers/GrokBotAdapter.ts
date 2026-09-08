@@ -120,10 +120,14 @@ interface SessionContext {
   readonly pendingUserInputs: Map<ApprovalRequestId, { readonly entryId: string }>;
   /** Assistant text already emitted per transcript entry, for delta updates. */
   readonly emittedText: Map<string, string>;
-  /** Transcript entry whose assistant item is still streaming. A row may be
-   * appended and then updated with more text, so the item stays open until
-   * another entry arrives or the turn settles. */
-  openAssistantEntryId: string | undefined;
+  /** Runtime item id per transcript entry. A rewritten row (an update that is
+   * not a prefix extension) gets a fresh item, so the map can point past the
+   * entry id itself. */
+  readonly assistantItemIds: Map<string, string>;
+  /** Assistant item still streaming. A row may be appended and then updated
+   * with more text, so the item stays open until another entry arrives or the
+   * turn settles. */
+  openAssistantItemId: string | undefined;
   activityItemId: string | undefined;
   stopped: boolean;
 }
@@ -235,16 +239,16 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
 
     const completeAssistantItem = (ctx: SessionContext) =>
       Effect.gen(function* () {
-        const entryId = ctx.openAssistantEntryId;
-        if (!entryId) return;
-        ctx.openAssistantEntryId = undefined;
+        const itemId = ctx.openAssistantItemId;
+        if (!itemId) return;
+        ctx.openAssistantItemId = undefined;
         yield* emit({
           type: "item.completed",
           ...(yield* makeEventStamp()),
           provider: PROVIDER,
           threadId: ctx.threadId,
           turnId: ctx.activeTurn?.turnId,
-          itemId: RuntimeItemId.make(entryId),
+          itemId: RuntimeItemId.make(itemId),
           payload: { itemType: "assistant_message", status: "completed" },
         });
       });
@@ -285,20 +289,26 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     ) =>
       Effect.gen(function* () {
         const previous = ctx.emittedText.get(entryId);
-        const delta =
-          previous === undefined
-            ? content
-            : content.startsWith(previous)
-              ? content.slice(previous.length)
-              : "";
-        if (previous !== undefined && !delta) return;
+        if (previous === content) return;
+        // A row that grows streams as a delta on its open item. A row the box
+        // rewrote cannot be patched through deltas, so it becomes a new item
+        // carrying the full text; the superseded item is closed first.
+        const prefix =
+          previous !== undefined && content.startsWith(previous) ? previous : undefined;
+        const grows = prefix !== undefined;
+        const delta = prefix === undefined ? content : content.slice(prefix.length);
+        if (!delta) return;
         ctx.emittedText.set(entryId, content);
         const turnId = ctx.activeTurn?.turnId;
         if (ctx.activeTurn) ctx.activeTurn.gotReply = true;
-        const itemId = RuntimeItemId.make(entryId);
-        if (previous === undefined) {
-          if (ctx.openAssistantEntryId !== entryId) yield* completeAssistantItem(ctx);
-          ctx.openAssistantEntryId = entryId;
+        const priorItemId = ctx.assistantItemIds.get(entryId);
+        const itemId = RuntimeItemId.make(
+          grows && priorItemId ? priorItemId : priorItemId ? rewrittenItemId(priorItemId) : entryId,
+        );
+        if (!grows || !priorItemId) {
+          if (ctx.openAssistantItemId !== itemId) yield* completeAssistantItem(ctx);
+          ctx.assistantItemIds.set(entryId, itemId);
+          ctx.openAssistantItemId = itemId;
           yield* emit({
             type: "item.started",
             ...(yield* makeEventStamp()),
@@ -702,7 +712,8 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             pendingRequests: new Map(),
             pendingUserInputs: new Map(),
             emittedText: new Map(),
-            openAssistantEntryId: undefined,
+            assistantItemIds: new Map(),
+            openAssistantItemId: undefined,
             activityItemId: undefined,
             stopped: false,
           };
@@ -738,96 +749,104 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         }),
       );
 
+    // Held only while a turn is dispatched, never while the bot works, so a
+    // send and an interrupt on the same thread cannot interleave on activeTurn.
     const sendTurn: GrokBotAdapterShape["sendTurn"] = (input) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(input.threadId);
-        const text = input.input?.trim();
-        if (!text) {
-          return yield* new ProviderAdapterValidationError({
-            provider: PROVIDER,
-            operation: "sendTurn",
-            issue: "Turn requires non-empty text.",
-          });
-        }
-        // A prompt while the bot is still working is a steer: the box folds it
-        // into the running turn, so the active turn id is reused.
-        const steering = ctx.activeTurn;
-        const turnId = steering?.turnId ?? TurnId.make(yield* randomUUIDv4);
-        const clientNonce = yield* randomUUIDv4;
-        if (!steering) {
-          ctx.activeTurn = {
-            turnId,
-            clientNonce,
-            sawRunning: false,
-            gotReply: false,
-            interrupted: false,
-          };
-          ctx.session = { ...ctx.session, activeTurnId: turnId, updatedAt: yield* nowIso };
-          yield* emit({
-            type: "turn.started",
-            ...(yield* makeEventStamp()),
-            provider: PROVIDER,
-            threadId: input.threadId,
-            turnId,
-            payload: { model: GROK_BOT_MODEL },
-          });
-        }
-        if (input.attachments && input.attachments.length > 0) {
-          yield* emit({
-            type: "runtime.warning",
-            ...(yield* makeEventStamp()),
-            provider: PROVIDER,
-            threadId: input.threadId,
-            turnId,
-            payload: {
-              message: "Grok Bot turns do not carry attachments yet; only the text was sent.",
-            },
-          });
-        }
-        const composedAtMs = yield* Clock.currentTimeMillis;
-        const sent = yield* client
-          .command("sendPrompt", {
-            agentId: ctx.agentId,
-            prompt: text,
-            clientNonce,
-            source: "desktop",
-            composedAtMs,
-          })
-          .pipe(Effect.result);
-        if (sent._tag === "Failure") {
-          if (!steering) yield* settleTurn(ctx, "failed", sent.failure.message);
-          return yield* mapGatewayError("gateway/sendPrompt")(sent.failure);
-        }
-        const raw = sent.success;
-        const accepted = decodeSendPrompt(raw);
-        if (accepted._tag === "Some" && accepted.value.accepted === false) {
-          yield* settleTurn(ctx, "failed", "The bot refused the message.");
-          return yield* new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "gateway/sendPrompt",
-            detail: "The bot refused the message.",
-          });
-        }
-        const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
-        if (turnRecord) turnRecord.items.push({ prompt: text });
-        else ctx.turns.push({ id: turnId, items: [{ prompt: text }] });
-        return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
-      });
+      threadLocks.withLock(
+        input.threadId,
+        Effect.gen(function* () {
+          const ctx = yield* requireSession(input.threadId);
+          const text = input.input?.trim();
+          if (!text) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "sendTurn",
+              issue: "Turn requires non-empty text.",
+            });
+          }
+          // A prompt while the bot is still working is a steer: the box folds it
+          // into the running turn, so the active turn id is reused.
+          const steering = ctx.activeTurn;
+          const turnId = steering?.turnId ?? TurnId.make(yield* randomUUIDv4);
+          const clientNonce = yield* randomUUIDv4;
+          if (!steering) {
+            ctx.activeTurn = {
+              turnId,
+              clientNonce,
+              sawRunning: false,
+              gotReply: false,
+              interrupted: false,
+            };
+            ctx.session = { ...ctx.session, activeTurnId: turnId, updatedAt: yield* nowIso };
+            yield* emit({
+              type: "turn.started",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              threadId: input.threadId,
+              turnId,
+              payload: { model: GROK_BOT_MODEL },
+            });
+          }
+          if (input.attachments && input.attachments.length > 0) {
+            yield* emit({
+              type: "runtime.warning",
+              ...(yield* makeEventStamp()),
+              provider: PROVIDER,
+              threadId: input.threadId,
+              turnId,
+              payload: {
+                message: "Grok Bot turns do not carry attachments yet; only the text was sent.",
+              },
+            });
+          }
+          const composedAtMs = yield* Clock.currentTimeMillis;
+          const sent = yield* client
+            .command("sendPrompt", {
+              agentId: ctx.agentId,
+              prompt: text,
+              clientNonce,
+              source: "desktop",
+              composedAtMs,
+            })
+            .pipe(Effect.result);
+          if (sent._tag === "Failure") {
+            if (!steering) yield* settleTurn(ctx, "failed", sent.failure.message);
+            return yield* mapGatewayError("gateway/sendPrompt")(sent.failure);
+          }
+          const raw = sent.success;
+          const accepted = decodeSendPrompt(raw);
+          if (accepted._tag === "Some" && accepted.value.accepted === false) {
+            yield* settleTurn(ctx, "failed", "The bot refused the message.");
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "gateway/sendPrompt",
+              detail: "The bot refused the message.",
+            });
+          }
+          const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
+          if (turnRecord) turnRecord.items.push({ prompt: text });
+          else ctx.turns.push({ id: turnId, items: [{ prompt: text }] });
+          return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
+        }),
+      );
 
     const interruptTurn: GrokBotAdapterShape["interruptTurn"] = (threadId) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
-        const turn = ctx.activeTurn;
-        if (!turn) return;
-        turn.interrupted = true;
-        const raw = yield* client
-          .command("interruptAgentRun", { id: ctx.agentId })
-          .pipe(Effect.mapError(mapGatewayError("gateway/interruptAgentRun")));
-        const decoded = decodeInterrupt(raw);
-        if (decoded._tag === "Some" && decoded.value.hadActiveRun === false) {
-          yield* settleTurn(ctx, "interrupted");
-        }
-      });
+      threadLocks.withLock(
+        threadId,
+        Effect.gen(function* () {
+          const ctx = yield* requireSession(threadId);
+          const turn = ctx.activeTurn;
+          if (!turn) return;
+          turn.interrupted = true;
+          const raw = yield* client
+            .command("interruptAgentRun", { id: ctx.agentId })
+            .pipe(Effect.mapError(mapGatewayError("gateway/interruptAgentRun")));
+          const decoded = decodeInterrupt(raw);
+          if (decoded._tag === "Some" && decoded.value.hadActiveRun === false) {
+            yield* settleTurn(ctx, "interrupted");
+          }
+        }),
+      );
 
     const respondToRequest: GrokBotAdapterShape["respondToRequest"] = (
       threadId,
@@ -844,12 +863,12 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             detail: `Unknown pending approval request: ${requestId}`,
           });
         }
+        // The box has no "cancel": leaving the card unanswered blocks the bot,
+        // so a cancelled approval is delivered as a denial.
+        yield* resolveRequest(ctx, pending, decision === "cancel" ? "decline" : decision).pipe(
+          Effect.mapError(mapGatewayError("gateway/resolveApproval")),
+        );
         ctx.pendingRequests.delete(requestId);
-        if (decision !== "cancel") {
-          yield* resolveRequest(ctx, pending, decision).pipe(
-            Effect.mapError(mapGatewayError("gateway/resolveApproval")),
-          );
-        }
         yield* emit({
           type: "request.resolved",
           ...(yield* makeEventStamp()),
@@ -961,6 +980,12 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     } satisfies GrokBotAdapterShape;
   });
+}
+
+/** `t0s0` → `t0s0~2` → `t0s0~3`: one runtime item per rewrite of a transcript row. */
+function rewrittenItemId(priorItemId: string): string {
+  const match = /^(.*)~(\d+)$/.exec(priorItemId);
+  return match ? `${match[1]}~${Number(match[2]) + 1}` : `${priorItemId}~2`;
 }
 
 function firstAnswer(answers: ProviderUserInputAnswers): string | undefined {

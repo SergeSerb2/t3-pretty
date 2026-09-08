@@ -108,6 +108,16 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
       "transcript",
       transcript({ kind: "send-message", id: "t0s1", message: { type: "text", content: "done" } }),
     );
+    // A rewrite that is not a prefix extension cannot be streamed as a delta:
+    // it closes the item and re-emits the full text as a new item.
+    yield* fake.push("transcript", {
+      ...transcript({
+        kind: "send-message",
+        id: "t0s1",
+        message: { type: "text", content: "Done." },
+      }),
+      type: "updated",
+    });
     yield* fake.push("agent-upserted", roster(false));
 
     const events = Array.from(yield* Fiber.join(collected));
@@ -125,12 +135,19 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
     );
     assert.deepEqual(
       assistant.map((event) => `${event.type} ${event.itemId}`),
-      ["item.started t0s0", "item.completed t0s0", "item.started t0s1", "item.completed t0s1"],
+      [
+        "item.started t0s0",
+        "item.completed t0s0",
+        "item.started t0s1",
+        "item.completed t0s1",
+        "item.started t0s1~2",
+        "item.completed t0s1~2",
+      ],
     );
     const deltas = events.filter((event) => event.type === "content.delta");
     assert.deepEqual(
       deltas.map((event) => (event.type === "content.delta" ? event.payload.delta : "")),
-      ["po", "ng", "done"],
+      ["po", "ng", "done", "Done."],
     );
     assert.equal(deltas[0]?.turnId, turn.turnId);
     const activity = events.find(
@@ -241,10 +258,12 @@ it.effect("forwards approvals to the user outside full access and honors the ans
       fake.commands.find((entry) => entry.command === "resolveAutoReviewApproval"),
     );
 
+    // The box has no cancel; an abandoned card is delivered as a denial so the
+    // bot is not left waiting on it.
     yield* adapter.respondToRequest(
       threadId,
       ApprovalRequestId.make(request!.requestId!),
-      "decline",
+      "cancel",
     );
     const resolve = fake.commands.find((entry) => entry.command === "resolveAutoReviewApproval");
     assert.equal((resolve!.args as { resolution: string }).resolution, "denied");
