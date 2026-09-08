@@ -95,6 +95,10 @@ const decodeListAgents = Schema.decodeUnknownOption(
   ),
 );
 
+type RosterSource =
+  | { readonly kind: "live" }
+  | { readonly kind: "resync"; readonly requestedAt: number };
+
 type PendingRequest =
   | { readonly kind: "local-tool"; readonly entryId: string; readonly requestId: string }
   | { readonly kind: "auto-review"; readonly entryId: string; readonly requestId: string };
@@ -102,6 +106,10 @@ type PendingRequest =
 interface ActiveTurn {
   readonly turnId: TurnId;
   readonly clientNonce: string;
+  /** When `sendPrompt` returned. By then the box already reports the run, so
+   * a roster read requested after this and showing idle means the turn is
+   * over even if every live flag was missed. */
+  dispatchedAt: number | undefined;
   /** Box reported the turn running; the next idle flag settles it. */
   sawRunning: boolean;
   /** A bot message for this turn arrived — enough to settle on idle even if
@@ -504,7 +512,14 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         }
       });
 
-    const handleRunning = (ctx: SessionContext, isRunningTurn: boolean) =>
+    /**
+     * Live upserts are edge-triggered: an idle flag settles only a turn we saw
+     * running or replying, because a stale idle from the previous turn can be
+     * buffered in the feed when the next prompt is sent. A roster read after a
+     * reconnect is current state, so idle there settles a turn that was
+     * dispatched before the read was requested.
+     */
+    const handleRunning = (ctx: SessionContext, isRunningTurn: boolean, source: RosterSource) =>
       Effect.gen(function* () {
         const turn = ctx.activeTurn;
         if (!turn) return;
@@ -512,7 +527,11 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
           turn.sawRunning = true;
           return;
         }
-        if (turn.sawRunning || turn.gotReply) {
+        const freshIdle =
+          source.kind === "resync" &&
+          turn.dispatchedAt !== undefined &&
+          source.requestedAt > turn.dispatchedAt;
+        if (turn.sawRunning || turn.gotReply || freshIdle) {
           yield* settleTurn(ctx, turn.interrupted ? "interrupted" : "completed");
         }
       });
@@ -548,7 +567,11 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         });
       });
 
-    const handleSignal = (signal: GrokBotGatewaySignal, raw: unknown) => {
+    const handleSignal = (
+      signal: GrokBotGatewaySignal,
+      raw: unknown,
+      source: RosterSource = { kind: "live" },
+    ) => {
       const agentId = signal._tag === "agent" ? signal.agent.id : signal.agentId;
       const ctx = sessionsByAgent.get(agentId);
       if (!ctx || ctx.stopped) return Effect.void;
@@ -558,7 +581,7 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         case "agent":
           return signal.agent.isRunningTurn === undefined
             ? Effect.void
-            : handleRunning(ctx, signal.agent.isRunningTurn);
+            : handleRunning(ctx, signal.agent.isRunningTurn, source);
         case "activity":
           return handleActivity(ctx, signal);
       }
@@ -566,18 +589,17 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
 
     /** After (re)connecting, re-read the roster so a running flag missed
      * while disconnected still settles the turn. */
-    const resyncRoster = client.command("listAgents", {}).pipe(
-      Effect.flatMap((raw) => {
-        const agents = decodeListAgents(raw);
-        if (agents._tag === "None") return Effect.void;
-        return Effect.forEach(
-          agents.value,
-          (agent) => handleSignal({ _tag: "agent", agent }, raw),
-          { discard: true },
-        );
-      }),
-      Effect.catch((cause) => Effect.logWarning("Grok Bot roster resync failed", { cause })),
-    );
+    const resyncRoster = Effect.gen(function* () {
+      const requestedAt = yield* Clock.currentTimeMillis;
+      const raw = yield* client.command("listAgents", {});
+      const agents = decodeListAgents(raw);
+      if (agents._tag === "None") return;
+      yield* Effect.forEach(
+        agents.value,
+        (agent) => handleSignal({ _tag: "agent", agent }, raw, { kind: "resync", requestedAt }),
+        { discard: true },
+      );
+    }).pipe(Effect.catch((cause) => Effect.logWarning("Grok Bot roster resync failed", { cause })));
 
     const runEventsOnce = client.events.pipe(
       Stream.runForEach((event) =>
@@ -828,6 +850,7 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
               sawRunning: false,
               gotReply: false,
               interrupted: false,
+              dispatchedAt: undefined,
             };
             ctx.session = { ...ctx.session, activeTurnId: turnId, updatedAt: yield* nowIso };
             yield* emit({
@@ -875,6 +898,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
               detail: "The bot refused the message.",
             });
           }
+          if (ctx.activeTurn?.turnId === turnId) {
+            ctx.activeTurn.dispatchedAt = yield* Clock.currentTimeMillis;
+          }
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
           if (turnRecord) turnRecord.items.push({ prompt: text });
           else ctx.turns.push({ id: turnId, items: [{ prompt: text }] });
@@ -896,6 +922,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
           const decoded = decodeInterrupt(raw);
           if (decoded._tag === "Some" && decoded.value.hadActiveRun === false) {
             yield* settleTurn(ctx, "interrupted");
+          } else {
+            // The box confirmed a run was in flight; its next idle flag settles.
+            turn.sawRunning = true;
           }
         }),
       );
@@ -951,7 +980,6 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             detail: `Unknown pending user-input request: ${requestId}`,
           });
         }
-        ctx.pendingUserInputs.delete(requestId);
         const value = firstAnswer(answers);
         if (value) {
           yield* client
@@ -962,6 +990,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             .command("dismissWidget", { agentId: ctx.agentId, entryId: pending.entryId })
             .pipe(Effect.mapError(mapGatewayError("gateway/dismissWidget")));
         }
+        // Only once the box has the answer; a failed command leaves the card
+        // answerable again.
+        ctx.pendingUserInputs.delete(requestId);
         yield* emit({
           type: "user-input.resolved",
           ...(yield* makeEventStamp()),

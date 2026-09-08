@@ -1,10 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ApprovalRequestId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   type GatewayEvent,
@@ -23,7 +25,12 @@ const AGENT_ID = "b47db307-2b88-4988-bb81-0d3c302355f3";
 const makeFakeClient = Effect.gen(function* () {
   const commands: Array<{ readonly command: string; readonly args: unknown }> = [];
   const failCommands = new Set<string>();
-  const feed = yield* Queue.unbounded<GatewayEvent>();
+  // One queue per `/events` connection so a test can end the current feed
+  // and watch the adapter reconnect and re-read the roster.
+  let feed = yield* Queue.unbounded<GatewayEvent, Cause.Done>();
+  /** One element per `/events` connection, so a test can wait for a (re)connect. */
+  const connections = yield* Queue.unbounded<number>();
+  let connectionCount = 0;
   const client: GrokBotClient = {
     api: () => Effect.succeed({}),
     ensureBox: Effect.succeed({
@@ -41,10 +48,22 @@ const makeFakeClient = Effect.gen(function* () {
         }
         return Effect.succeed(fakeReply(command));
       }),
-    events: Stream.fromQueue(feed),
+    events: Stream.unwrap(
+      Effect.gen(function* () {
+        connectionCount += 1;
+        yield* Queue.offer(connections, connectionCount);
+        return Stream.fromQueue(feed);
+      }),
+    ),
   };
   const push = (channel: string, payload: unknown) => Queue.offer(feed, { channel, payload });
-  return { client, commands, failCommands, push };
+  const dropFeed = Effect.gen(function* () {
+    const ended = feed;
+    feed = yield* Queue.unbounded<GatewayEvent, Cause.Done>();
+    yield* Queue.end(ended);
+  });
+  const awaitConnection = Queue.take(connections);
+  return { client, commands, failCommands, push, dropFeed, awaitConnection };
 });
 
 function fakeReply(command: string): unknown {
@@ -361,6 +380,78 @@ it.effect("settles on idle after an approval-only reply and keeps a failed auto-
       fake.commands.filter((entry) => entry.command === "resolveAutoReviewApproval").length,
       2,
     );
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("settles a dispatched turn from the roster after the feed reconnects", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const threadId = ThreadId.make("grok-bot-reconnect");
+    const collected = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId),
+      Stream.takeUntil((event) => event.type === "turn.completed"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "long job" });
+    // The feed dies before any running flag or reply arrived; the bot finishes
+    // while we are disconnected, so the reconnect's roster read shows idle.
+    yield* fake.awaitConnection;
+    yield* fake.dropFeed;
+    // Drive the virtual clock through the reconnect backoff until the turn settles.
+    const events = Array.from(
+      yield* Fiber.join(collected).pipe(
+        Effect.race(
+          Effect.forever(TestClock.adjust("1 second").pipe(Effect.andThen(Effect.yieldNow))),
+        ),
+      ),
+    );
+    assert.equal(events.at(-1)?.type, "turn.completed");
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps a widget answerable when the box rejects the answer", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const threadId = ThreadId.make("grok-bot-widget");
+    const asked = yield* adapter.streamEvents.pipe(
+      Stream.filter(
+        (event) => event.threadId === threadId && event.type === "user-input.requested",
+      ),
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "pick one" });
+    yield* fake.push(
+      "transcript",
+      transcript({
+        kind: "send-message",
+        id: "t5s0",
+        message: {
+          type: "widget",
+          widget: { prompt: "Resume?", options: [{ label: "Yes", value: "yes" }] },
+        },
+      }),
+    );
+    const [request] = Array.from(yield* Fiber.join(asked));
+    const requestId = ApprovalRequestId.make(request!.requestId!);
+
+    fake.failCommands.add("respondToWidget");
+    const failed = yield* adapter
+      .respondToUserInput(threadId, requestId, { t5s0: "yes" })
+      .pipe(Effect.flip);
+    assert.equal(failed._tag, "ProviderAdapterRequestError");
+
+    fake.failCommands.clear();
+    yield* adapter.respondToUserInput(threadId, requestId, { t5s0: "yes" });
+    assert.equal(fake.commands.filter((entry) => entry.command === "respondToWidget").length, 2);
     yield* adapter.stopSession(threadId);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
