@@ -29,7 +29,7 @@ const KIND_HEADING: Record<ChangelogItemKind, string> = {
 };
 /** Post-update dialog only — keep it a short read. Settings still shows the rest. */
 const UPDATE_DIGEST_ITEM_LIMIT = 12;
-const LEADING_COMMIT_VERB = /^(?:add|added|fix|fixed|restore|restored|keep|kept|stop|stopped)\s+/iu;
+const LEADING_ADD = /^(?:add|added)\s+/iu;
 const TRAILING_PR = /\s*\(#\d+\)\s*$/u;
 const CONTRIBUTOR_ONLY =
   /\b(typecheck|upstream sync|github actions?|sigkill|vitest|eslint|prettier|packaging step)\b/iu;
@@ -120,7 +120,7 @@ export function formatUpdateSubtitle(
 
 /** Sentence-case, drop feat-style "add", and strip trailing PR numbers. */
 export function formatChangelogTitle(title: string): string {
-  const stripped = title.trim().replace(TRAILING_PR, "").replace(LEADING_COMMIT_VERB, "").trim();
+  const stripped = title.trim().replace(TRAILING_PR, "").replace(LEADING_ADD, "").trim();
   const text = stripped === "" ? title.trim() : stripped;
   if (text === "") {
     return title;
@@ -226,9 +226,10 @@ export function presentChangelogHistory(
   releases: readonly ChangelogRelease[],
   locale?: string,
 ): PresentedChangelogDay[] {
+  const newestFirst = [...releases].sort(compareReleaseNewestFirst);
   const itemsByDate = new Map<string, ChangelogItem[]>();
   const dateOrder: string[] = [];
-  for (const release of releases) {
+  for (const release of newestFirst) {
     const existing = itemsByDate.get(release.date);
     if (existing === undefined) {
       itemsByDate.set(release.date, [...release.items]);

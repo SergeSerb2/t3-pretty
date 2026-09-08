@@ -42,11 +42,9 @@ describe("formatChangelogTitle", () => {
       "Show What's New changelog dialog after updates",
     );
     expect(formatChangelogTitle("restore clicks on titlebar panel toggles")).toBe(
-      "Clicks on titlebar panel toggles",
+      "Restore clicks on titlebar panel toggles",
     );
-    expect(formatChangelogTitle("fix window snapping on tiled desktops")).toBe(
-      "Window snapping on tiled desktops",
-    );
+    expect(formatChangelogTitle("Fix number 0")).toBe("Fix number 0");
   });
 });
 
@@ -213,6 +211,35 @@ describe("presentChangelogHistory", () => {
     expect(days[0]?.groups.flatMap((group) => group.items.map((item) => item.title))).toEqual([
       "One skill library with per-provider links",
       "Composer hover eases in",
+    ]);
+  });
+
+  it("lists newest days first and keeps the newest description on duplicates", () => {
+    const days = presentChangelogHistory(
+      [
+        release("0.0.38", "2026-09-01", [{ kind: "improved", title: "faster thread switching" }]),
+        release("0.0.39-nightly.1", "2026-09-08", [
+          { kind: "fixed", title: "composer hover eases in" },
+        ]),
+        release("0.0.39-nightly.2", "2026-09-08", [
+          {
+            kind: "fixed",
+            title: "composer hover eases in",
+            description: "Hover no longer jumps.",
+          },
+        ]),
+      ],
+      "en-US",
+    );
+
+    expect(days.map((day) => day.label)).toEqual(["September 8, 2026", "September 1, 2026"]);
+    expect(days[0]?.groups[0]?.items).toEqual([
+      {
+        kind: "fixed",
+        title: "Composer hover eases in",
+        sourceTitle: "composer hover eases in",
+        description: "Hover no longer jumps.",
+      },
     ]);
   });
 });
