@@ -89,11 +89,19 @@ const decodeSendPrompt = Schema.decodeUnknownOption(
 const decodeInterrupt = Schema.decodeUnknownOption(
   Schema.Struct({ hadActiveRun: Schema.optional(Schema.Boolean) }),
 );
-const decodeListAgents = Schema.decodeUnknownOption(
-  Schema.Array(
-    Schema.Struct({ id: Schema.String, isRunningTurn: Schema.optional(Schema.Boolean) }),
-  ),
+const RosterAgents = Schema.Array(
+  Schema.Struct({ id: Schema.String, isRunningTurn: Schema.optional(Schema.Boolean) }),
 );
+// The gateway's `listAgents` answers with a bare array (observed live); the
+// `agents` feed channel wraps the same rows in `{ agents }`. Accept both.
+const decodeListAgents = Schema.decodeUnknownOption(
+  Schema.Union([RosterAgents, Schema.Struct({ agents: RosterAgents })]),
+);
+const rosterAgents = (raw: unknown): typeof RosterAgents.Type | undefined => {
+  const decoded = decodeListAgents(raw);
+  if (decoded._tag === "None") return undefined;
+  return "agents" in decoded.value ? decoded.value.agents : decoded.value;
+};
 
 type RosterSource =
   | { readonly kind: "live" }
@@ -592,10 +600,10 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const resyncRoster = Effect.gen(function* () {
       const requestedAt = yield* Clock.currentTimeMillis;
       const raw = yield* client.command("listAgents", {});
-      const agents = decodeListAgents(raw);
-      if (agents._tag === "None") return;
+      const agents = rosterAgents(raw);
+      if (!agents) return;
       yield* Effect.forEach(
-        agents.value,
+        agents,
         (agent) => handleSignal({ _tag: "agent", agent }, raw, { kind: "resync", requestedAt }),
         { discard: true },
       );
@@ -669,14 +677,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       });
 
     const findAgent = (agentId: string) =>
-      client.command("listAgents", {}).pipe(
-        Effect.map((raw) => {
-          const agents = decodeListAgents(raw);
-          return agents._tag === "Some"
-            ? agents.value.find((agent) => agent.id === agentId)
-            : undefined;
-        }),
-      );
+      client
+        .command("listAgents", {})
+        .pipe(Effect.map((raw) => rosterAgents(raw)?.find((agent) => agent.id === agentId)));
 
     const createAgent = (input: { readonly title: string | undefined; readonly cwd: string }) =>
       Effect.gen(function* () {
@@ -1032,8 +1035,14 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         return ctx !== undefined && !ctx.stopped;
       });
 
+    // Same per-thread lock as stopSession so shutdown cannot race a dispatch
+    // or a start on the same thread.
     const stopAll: GrokBotAdapterShape["stopAll"] = () =>
-      Effect.forEach(Array.from(sessions.values()), stopSessionInternal, { discard: true });
+      Effect.forEach(
+        Array.from(sessions.values()),
+        (ctx) => threadLocks.withLock(ctx.threadId, stopSessionInternal(ctx)),
+        { discard: true },
+      );
 
     yield* Effect.addFinalizer(() =>
       stopAll().pipe(
