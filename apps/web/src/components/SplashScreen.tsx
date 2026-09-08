@@ -1,3 +1,4 @@
+/** Unused React copy. The launch overlay is `#boot-shell` in index.html. */
 export function SplashScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

@@ -15,6 +15,7 @@ import {
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
+import { BOOT_SHELL_EXIT_MS, bootShellRevealDelayMs } from "./lib/bootShell";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
 // The Electron provider bundles all of clerk-js; only the desktop renderer
@@ -130,16 +131,21 @@ export const startup = Promise.all([
     );
 
     // The shell is intentionally outside #root, so React cannot clear it.
-    // Remove it only after the first commit has painted (the double rAF), and
-    // retain a timeout for hidden windows where transitionend may not fire.
+    // Wait until the lockup has settled (or reduced-motion skips that beat),
+    // then dissolve after the first commit has painted. Hidden windows may
+    // never fire transitionend, so a timeout is the fallback removal.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        document.documentElement.dataset.booted = "true";
-        const bootShell = document.getElementById("boot-shell");
-        if (!bootShell) return;
-        const removeBootShell = () => bootShell.remove();
-        bootShell.addEventListener("transitionend", removeBootShell, { once: true });
-        window.setTimeout(removeBootShell, 600);
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const dissolve = () => {
+          document.documentElement.dataset.booted = "true";
+          const bootShell = document.getElementById("boot-shell");
+          if (!bootShell) return;
+          const removeBootShell = () => bootShell.remove();
+          bootShell.addEventListener("transitionend", removeBootShell, { once: true });
+          window.setTimeout(removeBootShell, reduceMotion ? 200 : BOOT_SHELL_EXIT_MS + 280);
+        };
+        window.setTimeout(dissolve, bootShellRevealDelayMs(performance.now(), reduceMotion));
       });
     });
   })
