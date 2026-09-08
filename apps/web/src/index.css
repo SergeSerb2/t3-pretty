@@ -1423,8 +1423,8 @@ html[data-window-inactive]
       black var(--chat-composer-attachment-overlap)
     );
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
-    transition: border-color calc(160ms * var(--composer-hover-dur, 1))
-      cubic-bezier(0.32, 0.72, 0, 1);
+    transition: border-color calc(var(--composer-surface-t, 160ms) * var(--composer-hover-k, 1))
+      var(--composer-hover-ease, ease) var(--composer-surface-delay, 0ms);
     content: "";
 
     @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -1474,6 +1474,18 @@ html[data-window-inactive]
     --chat-composer-highlight: rgb(255 255 255 / 60%);
     /* Pointer speed multiplier; ComposerSpecular writes this on hover cross. */
     --composer-hover-dur: 1;
+    /* Hover motion is asymmetric: these resting values are the exit (relax),
+       :hover below overrides them for the enter (respond). Exit only takes a
+       nudge from pointer speed — a fast leave must not snap the light off —
+       and the surface settles a beat after the light starts to dim. */
+    --composer-hover-k: calc(0.65 + 0.35 * var(--composer-hover-dur));
+    --composer-hover-ease: cubic-bezier(0.4, 0, 0.3, 1);
+    --composer-surface-t: 420ms;
+    --composer-surface-delay: 60ms;
+    --composer-light-t: 640ms;
+    --composer-light-delay: 0ms;
+    --composer-bloom-t: 720ms;
+    --composer-bloom-ease: var(--composer-hover-ease);
 
     /* Stacking context so ::before (z-0) stays behind the host (z-10) without
        becoming a Backdrop Root. Isolating this element would trap the
@@ -1486,6 +1498,19 @@ html[data-window-inactive]
       --chat-composer-outline: color-mix(in srgb, var(--color-white) 5%, transparent);
       --chat-composer-highlight: rgb(255 255 255 / 3%);
     }
+  }
+
+  /* Enter: quick ease-out at full pointer-speed scaling, rim and shadow first,
+     the light a beat behind, the halo blooming last with a soft overshoot. */
+  .chat-composer-glass-shell:hover {
+    --composer-hover-k: var(--composer-hover-dur);
+    --composer-hover-ease: cubic-bezier(0.215, 0.61, 0.355, 1);
+    --composer-surface-t: 260ms;
+    --composer-surface-delay: 0ms;
+    --composer-light-t: 380ms;
+    --composer-light-delay: 40ms;
+    --composer-bloom-t: 560ms;
+    --composer-bloom-ease: cubic-bezier(0.3, 1.25, 0.5, 1);
   }
 
   .chat-composer-glass-shell::before {
@@ -1550,7 +1575,8 @@ html[data-window-inactive]
 
   .chat-composer-glass-host {
     box-shadow: 0 12px 28px -18px rgb(0 0 0 / 40%);
-    transition: box-shadow calc(260ms * var(--composer-hover-dur, 1)) cubic-bezier(0.32, 0.72, 0, 1);
+    transition: box-shadow calc(var(--composer-surface-t) * var(--composer-hover-k))
+      var(--composer-hover-ease) var(--composer-surface-delay);
 
     @variant dark {
       box-shadow: none;
@@ -1560,8 +1586,8 @@ html[data-window-inactive]
   /* The resting drop shadow deepens and stretches on hover so the composer
      lifts toward the pointer. Dark mode stays flat: there the rim and the
      specular carry the hover state. One shadow transition per hover change
-     on a single small element — not a per-frame repaint. Duration follows
-     pointer speed via --composer-hover-dur. */
+     on a single small element — not a per-frame repaint. Timing comes from
+     the shell's --composer-* hover vars. */
   .chat-composer-glass-shell:hover .chat-composer-glass-host {
     box-shadow: 0 18px 40px -18px rgb(0 0 0 / 46%);
 
@@ -1578,8 +1604,8 @@ html[data-window-inactive]
     border: 1px solid var(--chat-composer-outline);
     border-radius: inherit;
     box-shadow: inset 0 1px var(--chat-composer-highlight);
-    transition: border-color calc(160ms * var(--composer-hover-dur, 1))
-      cubic-bezier(0.32, 0.72, 0, 1);
+    transition: border-color calc(var(--composer-surface-t, 160ms) * var(--composer-hover-k, 1))
+      var(--composer-hover-ease, ease) var(--composer-surface-delay, 0ms);
     content: "";
   }
 
@@ -1630,8 +1656,8 @@ html[data-window-inactive]
       border: 1px solid var(--chat-composer-outline);
       border-radius: inherit;
       box-shadow: inset 0 1px var(--chat-composer-highlight);
-      transition: border-color calc(160ms * var(--composer-hover-dur, 1))
-        cubic-bezier(0.32, 0.72, 0, 1);
+      transition: border-color calc(var(--composer-surface-t, 160ms) * var(--composer-hover-k, 1))
+        var(--composer-hover-ease, ease) var(--composer-surface-delay, 0ms);
       content: "";
     }
 
@@ -1727,8 +1753,8 @@ html[data-window-inactive]
      lip. A wider halo (::after) sits under the core and blooms from 72% to
      full size on hover; `scale` transitions independently of the per-frame
      `translate` updates, so tracking stays instant while the bloom settles.
-     Opacity and bloom keep their speed-scaled durations both ways so leave
-     matches enter.
+     Enter and exit timing come from the shell's --composer-* hover vars: the
+     light arrives a beat after the rim and lingers longer on the way out.
      Each gradient keeps a full-range alpha ramp and applies its faintness as
      post-render opacity, avoiding the visible steps in a 2.5–6% ramp. */
   @media (hover: hover) and (pointer: fine) {
@@ -1740,7 +1766,8 @@ html[data-window-inactive]
       border-radius: 22px;
       pointer-events: none;
       opacity: 0;
-      transition: opacity calc(480ms * var(--composer-hover-dur, 1)) cubic-bezier(0.33, 0, 0.2, 1);
+      transition: opacity calc(var(--composer-light-t) * var(--composer-hover-k))
+        var(--composer-hover-ease) var(--composer-light-delay);
     }
 
     .chat-composer-glass-shell-with-context .chat-composer-specular {
@@ -1791,7 +1818,10 @@ html[data-window-inactive]
       background: radial-gradient(circle closest-side, var(--foreground), transparent);
       opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
+      scale: 0.85;
       will-change: translate;
+      transition: scale calc(var(--composer-light-t) * var(--composer-hover-k))
+        var(--composer-hover-ease) var(--composer-light-delay);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);
@@ -1812,7 +1842,8 @@ html[data-window-inactive]
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: 0.72;
       will-change: translate;
-      transition: scale calc(520ms * var(--composer-hover-dur, 1)) cubic-bezier(0.22, 1, 0.36, 1);
+      transition: scale calc(var(--composer-bloom-t) * var(--composer-hover-k))
+        var(--composer-bloom-ease) var(--composer-light-delay);
 
       @variant dark {
         background: radial-gradient(circle closest-side, white, transparent);
@@ -1820,6 +1851,7 @@ html[data-window-inactive]
       }
     }
 
+    .chat-composer-glass-shell:hover .chat-composer-specular::before,
     .chat-composer-glass-shell:hover .chat-composer-specular::after {
       scale: 1;
     }
