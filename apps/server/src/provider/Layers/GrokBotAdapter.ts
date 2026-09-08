@@ -535,6 +535,10 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
           turn.sawRunning = true;
           return;
         }
+        // An open approval is a mid-run gate: the box resumes the same work
+        // once it is answered, so the turn stays open. Widgets are not gates;
+        // the box also posts them after a run ends.
+        if (ctx.pendingRequests.size > 0) return;
         const freshIdle =
           source.kind === "resync" &&
           turn.dispatchedAt !== undefined &&
@@ -688,7 +692,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const createAgent = (input: { readonly title: string | undefined; readonly cwd: string }) =>
       Effect.gen(function* () {
         const [remote, branch] = yield* Effect.all([
-          gitOutput(input.cwd, ["remote", "get-url", "origin"], options?.environment),
+          gitOutput(input.cwd, ["remote", "get-url", "origin"], options?.environment).pipe(
+            Effect.map((remote) => (remote ? withoutRemoteCredentials(remote) : undefined)),
+          ),
           gitOutput(input.cwd, ["rev-parse", "--abbrev-ref", "HEAD"], options?.environment),
         ]).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
         const raw = yield* client.command("createAgent", {
@@ -941,75 +947,81 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       requestId,
       decision,
     ) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
-        const pending = ctx.pendingRequests.get(requestId);
-        if (!pending) {
-          return yield* new ProviderAdapterRequestError({
+      threadLocks.withLock(
+        threadId,
+        Effect.gen(function* () {
+          const ctx = yield* requireSession(threadId);
+          const pending = ctx.pendingRequests.get(requestId);
+          if (!pending) {
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "gateway/resolveApproval",
+              detail: `Unknown pending approval request: ${requestId}`,
+            });
+          }
+          // The box has no "cancel": leaving the card unanswered blocks the bot,
+          // so a cancelled approval is delivered as a denial.
+          yield* resolveRequest(ctx, pending, decision === "cancel" ? "decline" : decision).pipe(
+            Effect.mapError(mapGatewayError("gateway/resolveApproval")),
+          );
+          ctx.pendingRequests.delete(requestId);
+          yield* emit({
+            type: "request.resolved",
+            ...(yield* makeEventStamp()),
             provider: PROVIDER,
-            method: "gateway/resolveApproval",
-            detail: `Unknown pending approval request: ${requestId}`,
+            threadId,
+            turnId: ctx.activeTurn?.turnId,
+            requestId: RuntimeRequestId.make(requestId),
+            payload: {
+              requestType:
+                pending.kind === "local-tool" ? "command_execution_approval" : "dynamic_tool_call",
+              decision,
+            },
           });
-        }
-        // The box has no "cancel": leaving the card unanswered blocks the bot,
-        // so a cancelled approval is delivered as a denial.
-        yield* resolveRequest(ctx, pending, decision === "cancel" ? "decline" : decision).pipe(
-          Effect.mapError(mapGatewayError("gateway/resolveApproval")),
-        );
-        ctx.pendingRequests.delete(requestId);
-        yield* emit({
-          type: "request.resolved",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId,
-          turnId: ctx.activeTurn?.turnId,
-          requestId: RuntimeRequestId.make(requestId),
-          payload: {
-            requestType:
-              pending.kind === "local-tool" ? "command_execution_approval" : "dynamic_tool_call",
-            decision,
-          },
-        });
-      });
+        }),
+      );
 
     const respondToUserInput: GrokBotAdapterShape["respondToUserInput"] = (
       threadId,
       requestId,
       answers,
     ) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
-        const pending = ctx.pendingUserInputs.get(requestId);
-        if (!pending) {
-          return yield* new ProviderAdapterRequestError({
+      threadLocks.withLock(
+        threadId,
+        Effect.gen(function* () {
+          const ctx = yield* requireSession(threadId);
+          const pending = ctx.pendingUserInputs.get(requestId);
+          if (!pending) {
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "gateway/respondToWidget",
+              detail: `Unknown pending user-input request: ${requestId}`,
+            });
+          }
+          const value = firstAnswer(answers);
+          if (value) {
+            yield* client
+              .command("respondToWidget", { agentId: ctx.agentId, entryId: pending.entryId, value })
+              .pipe(Effect.mapError(mapGatewayError("gateway/respondToWidget")));
+          } else {
+            yield* client
+              .command("dismissWidget", { agentId: ctx.agentId, entryId: pending.entryId })
+              .pipe(Effect.mapError(mapGatewayError("gateway/dismissWidget")));
+          }
+          // Only once the box has the answer; a failed command leaves the card
+          // answerable again.
+          ctx.pendingUserInputs.delete(requestId);
+          yield* emit({
+            type: "user-input.resolved",
+            ...(yield* makeEventStamp()),
             provider: PROVIDER,
-            method: "gateway/respondToWidget",
-            detail: `Unknown pending user-input request: ${requestId}`,
+            threadId,
+            turnId: ctx.activeTurn?.turnId,
+            requestId: RuntimeRequestId.make(requestId),
+            payload: { answers },
           });
-        }
-        const value = firstAnswer(answers);
-        if (value) {
-          yield* client
-            .command("respondToWidget", { agentId: ctx.agentId, entryId: pending.entryId, value })
-            .pipe(Effect.mapError(mapGatewayError("gateway/respondToWidget")));
-        } else {
-          yield* client
-            .command("dismissWidget", { agentId: ctx.agentId, entryId: pending.entryId })
-            .pipe(Effect.mapError(mapGatewayError("gateway/dismissWidget")));
-        }
-        // Only once the box has the answer; a failed command leaves the card
-        // answerable again.
-        ctx.pendingUserInputs.delete(requestId);
-        yield* emit({
-          type: "user-input.resolved",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId,
-          turnId: ctx.activeTurn?.turnId,
-          requestId: RuntimeRequestId.make(requestId),
-          payload: { answers },
-        });
-      });
+        }),
+      );
 
     const readThread: GrokBotAdapterShape["readThread"] = (threadId) =>
       Effect.map(requireSession(threadId), (ctx) => ({ threadId, turns: ctx.turns }));
@@ -1075,6 +1087,19 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     } satisfies GrokBotAdapterShape;
   });
+}
+
+/** HTTPS remotes may carry `user:token@`; never ship that to the box. */
+export function withoutRemoteCredentials(remote: string): string {
+  try {
+    const url = new URL(remote);
+    url.username = "";
+    url.password = "";
+    return url.toString();
+  } catch {
+    // scp-like `git@host:owner/repo.git` has no userinfo to strip.
+    return remote;
+  }
 }
 
 /** `t0s0` → `t0s0~2` → `t0s0~3`: one runtime item per rewrite of a transcript row. */

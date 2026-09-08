@@ -13,7 +13,7 @@ import {
   type GrokBotClient,
   GrokBotGatewayError,
 } from "../grokBot/GrokBotGateway.ts";
-import { makeGrokBotAdapter } from "./GrokBotAdapter.ts";
+import { makeGrokBotAdapter, withoutRemoteCredentials } from "./GrokBotAdapter.ts";
 
 const AGENT_ID = "b47db307-2b88-4988-bb81-0d3c302355f3";
 
@@ -359,12 +359,18 @@ it.effect("restarts the shared event feed for a session started after the last o
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("settles on idle after an approval-only reply and keeps a failed auto-approve open", () =>
+it.effect("holds the turn open on an unanswered approval and settles once it is answered", () =>
   Effect.gen(function* () {
     const fake = yield* makeFakeClient;
     fake.failCommands.add("resolveAutoReviewApproval");
     const adapter = yield* makeGrokBotAdapter(fake.client);
     const threadId = ThreadId.make("grok-bot-approval-only");
+    const warned = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId && event.type === "runtime.warning"),
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
     const collected = yield* adapter.streamEvents.pipe(
       Stream.filter((event) => event.threadId === threadId),
       Stream.takeUntil((event) => event.type === "turn.completed"),
@@ -373,7 +379,7 @@ it.effect("settles on idle after an approval-only reply and keeps a failed auto-
     );
     yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
     yield* adapter.sendTurn({ threadId, input: "archive everything" });
-    // No running flag observed: the only signal is the approval card.
+    // The auto-approve fails, so the card stays open as a mid-run gate.
     yield* fake.push(
       "transcript",
       transcript({
@@ -385,22 +391,31 @@ it.effect("settles on idle after an approval-only reply and keeps a failed auto-
         },
       }),
     );
+    yield* Fiber.join(warned);
+    // Idle while the gate is open does not settle the turn.
     yield* fake.push("agent-upserted", roster(false));
+    assert.isTrue(
+      yield* Effect.map(
+        adapter.listSessions(),
+        (sessions) => sessions[0]?.activeTurnId !== undefined,
+      ),
+    );
 
-    const events = Array.from(yield* Fiber.join(collected));
-    const types = events.map((event) => event.type);
-    assert.include(types, "request.opened");
-    assert.include(types, "runtime.warning");
-    assert.notInclude(types, "request.resolved");
-    assert.equal(events.at(-1)?.type, "turn.completed");
-
-    // The card stayed answerable by hand.
+    // Answered by hand: the box resumes, then finishes.
     fake.failCommands.clear();
     yield* adapter.respondToRequest(threadId, ApprovalRequestId.make("t4s0"), "accept");
     assert.equal(
       fake.commands.filter((entry) => entry.command === "resolveAutoReviewApproval").length,
       2,
     );
+    yield* fake.push("agent-upserted", roster(false));
+
+    const events = Array.from(yield* Fiber.join(collected));
+    const types = events.map((event) => event.type);
+    assert.include(types, "request.opened");
+    assert.include(types, "runtime.warning");
+    assert.include(types, "request.resolved");
+    assert.equal(events.at(-1)?.type, "turn.completed");
     yield* adapter.stopSession(threadId);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -561,3 +576,11 @@ it.effect("forwards approvals to the user outside full access and honors the ans
     yield* adapter.stopSession(threadId);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
+
+it("strips credentials from HTTPS remotes and leaves scp-like remotes alone", () => {
+  assert.equal(
+    withoutRemoteCredentials("https://x-access-token:ghp_secret@github.com/o/r.git"),
+    "https://github.com/o/r.git",
+  );
+  assert.equal(withoutRemoteCredentials("git@github.com:o/r.git"), "git@github.com:o/r.git");
+});
