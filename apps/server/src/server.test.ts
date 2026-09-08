@@ -10996,6 +10996,110 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("creates the worktree from origin when the base branch cannot fast-forward", () =>
+    Effect.gen(function* () {
+      const dispatchedCommands: Array<OrchestrationCommand> = [];
+      const fetchedOriginCommit = "0123456789abcdef0123456789abcdef01234567";
+      const fastForwardBranch = vi.fn(
+        (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["fastForwardBranch"]>[0]) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.fastForwardBranch.merge",
+              command: "git merge --ff-only",
+              cwd: "/tmp/project",
+              detail: "merge refused",
+            }),
+          ),
+      );
+      const createWorktree = vi.fn(
+        (_: Parameters<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>[0]) =>
+          Effect.succeed({
+            worktree: {
+              refName: "t3code/bootstrap-refName",
+              path: "/tmp/bootstrap-worktree",
+            },
+          }),
+      );
+
+      yield* buildAppUnderTest({
+        layers: {
+          gitVcsDriver: {
+            remoteExists: () => Effect.succeed(true),
+            fetchRemote: () => Effect.void,
+            remoteBranchExists: () => Effect.succeed(true),
+            resolveRemoteTrackingCommit: () =>
+              Effect.succeed({ commitSha: fetchedOriginCommit, remoteRefName: "origin/main" }),
+            fastForwardBranch,
+            createWorktree,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatchedCommands.push(command);
+                return { sequence: dispatchedCommands.length };
+              }),
+            readEvents: () => Stream.empty,
+          },
+        },
+      });
+
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+            type: "thread.turn.start",
+            commandId: CommandId.make("cmd-bootstrap-turn-start-ff-failure"),
+            threadId: ThreadId.make("thread-bootstrap-ff-failure"),
+            message: {
+              messageId: MessageId.make("msg-bootstrap-ff-failure"),
+              role: "user",
+              text: "hello",
+              attachments: [],
+            },
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            bootstrap: {
+              createThread: {
+                projectId: defaultProjectId,
+                title: "Bootstrap Thread",
+                modelSelection: defaultModelSelection,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: "main",
+                worktreePath: null,
+                enabledSkillIds: [],
+                createdAt,
+              },
+              prepareWorktree: {
+                projectCwd: "/tmp/project",
+                baseBranch: "main",
+                branch: "t3code/bootstrap-refName",
+                startFromOrigin: true,
+              },
+            },
+            createdAt,
+          }),
+        ),
+      );
+
+      assert.equal(fastForwardBranch.mock.calls.length, 1);
+      assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
+        cwd: "/tmp/project",
+        refName: fetchedOriginCommit,
+        newRefName: "t3code/bootstrap-refName",
+        baseRefName: "main",
+        path: null,
+      });
+      assert.equal(
+        dispatchedCommands.filter((command) => command.type === "thread.turn.start").length,
+        1,
+      );
+      assert.equal(response.sequence, dispatchedCommands.length);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("records setup-script failures without aborting bootstrap turn start", () =>
     Effect.gen(function* () {
       const dispatchedCommands: Array<OrchestrationCommand> = [];
