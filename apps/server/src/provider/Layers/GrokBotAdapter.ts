@@ -32,6 +32,7 @@ import {
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -211,11 +212,12 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     // Owns the shared event-feed fiber; closed with the adapter.
     const adapterScope = yield* Scope.make();
     yield* Effect.addFinalizer(() => Scope.close(adapterScope, Exit.void));
+    // At most one feed loop exists per adapter. Stopping the last session does
+    // not interrupt it; it signals `feedRelease` and the loop either exits or,
+    // if a session started meanwhile, reconnects. So a start can never fork a
+    // second consumer next to a draining one.
     let eventsFiber: Fiber.Fiber<void, never> | undefined;
-    // Bumped per loop start. A loop only clears `eventsFiber` on exit when it
-    // is still the current generation, so a stop that interrupts one loop
-    // cannot erase the fiber a concurrent start just registered.
-    let eventsGeneration = 0;
+    let feedRelease: Deferred.Deferred<void> | undefined;
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -613,44 +615,50 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       );
     }).pipe(Effect.catch((cause) => Effect.logWarning("Grok Bot roster resync failed", { cause })));
 
-    const runEventsOnce = client.events.pipe(
-      Stream.runForEach((event) =>
-        Effect.forEach(gatewaySignals(event), (signal) => handleSignal(signal, event.payload), {
-          discard: true,
-        }),
-      ),
-    );
-
-    const eventsLoop = (generation: number) =>
-      Effect.gen(function* () {
-        let backoffMs = EVENTS_RECONNECT_MIN_MS;
-        while (sessions.size > 0) {
-          yield* resyncRoster;
-          const startedAt = yield* Clock.currentTimeMillis;
-          yield* runEventsOnce.pipe(
-            Effect.catch((cause) => Effect.logWarning("Grok Bot event feed ended", { cause })),
-          );
-          if (sessions.size === 0) break;
-          // A feed that lived a while resets the backoff; rapid failures grow it.
-          const endedAt = yield* Clock.currentTimeMillis;
-          backoffMs =
-            endedAt - startedAt > EVENTS_RECONNECT_MAX_MS
-              ? EVENTS_RECONNECT_MIN_MS
-              : Math.min(backoffMs * 2, EVENTS_RECONNECT_MAX_MS);
-          yield* Effect.sleep(backoffMs);
-        }
-      }).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (eventsGeneration === generation) eventsFiber = undefined;
+    const runEventsOnce = (release: Deferred.Deferred<void>) =>
+      client.events.pipe(
+        Stream.interruptWhen(Deferred.await(release)),
+        Stream.runForEach((event) =>
+          Effect.forEach(gatewaySignals(event), (signal) => handleSignal(signal, event.payload), {
+            discard: true,
           }),
         ),
       );
 
+    const eventsLoop = Effect.gen(function* () {
+      let backoffMs = EVENTS_RECONNECT_MIN_MS;
+      while (sessions.size > 0) {
+        yield* resyncRoster;
+        const release = yield* Deferred.make<void>();
+        feedRelease = release;
+        const startedAt = yield* Clock.currentTimeMillis;
+        yield* runEventsOnce(release).pipe(
+          Effect.catch((cause) => Effect.logWarning("Grok Bot event feed ended", { cause })),
+        );
+        feedRelease = undefined;
+        if (sessions.size === 0) break;
+        // Released by a stop but a session started meanwhile: reconnect now.
+        if (yield* Deferred.isDone(release)) continue;
+        // A feed that lived a while resets the backoff; rapid failures grow it.
+        const endedAt = yield* Clock.currentTimeMillis;
+        backoffMs =
+          endedAt - startedAt > EVENTS_RECONNECT_MAX_MS
+            ? EVENTS_RECONNECT_MIN_MS
+            : Math.min(backoffMs * 2, EVENTS_RECONNECT_MAX_MS);
+        yield* Effect.sleep(backoffMs);
+      }
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          eventsFiber = undefined;
+          feedRelease = undefined;
+        }),
+      ),
+    );
+
     const ensureEventsLoop = Effect.gen(function* () {
       if (eventsFiber) return;
-      eventsGeneration += 1;
-      eventsFiber = yield* Effect.forkIn(eventsLoop(eventsGeneration), adapterScope);
+      eventsFiber = yield* Effect.forkIn(eventsLoop, adapterScope);
     });
 
     // ── adapter surface ──────────────────────────────────────────────
@@ -667,13 +675,8 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         sessionsByAgent.delete(ctx.agentId);
         ctx.pendingRequests.clear();
         ctx.pendingUserInputs.clear();
-        if (sessions.size === 0 && eventsFiber) {
-          // Release the slot before the (suspending) interrupt so a session
-          // starting meanwhile forks its own loop instead of adopting this one.
-          const fiber = eventsFiber;
-          eventsFiber = undefined;
-          eventsGeneration += 1;
-          yield* Fiber.interrupt(fiber);
+        if (sessions.size === 0 && feedRelease) {
+          yield* Deferred.succeed(feedRelease, undefined);
         }
         yield* emit({
           type: "session.exited",
