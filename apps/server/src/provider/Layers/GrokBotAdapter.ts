@@ -1092,15 +1092,19 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
   });
 }
 
-/** HTTPS remotes may carry `user:token@`; never ship that to the box. */
+/**
+ * Never ship credentials to the box. HTTP(S) remotes carry tokens in the
+ * userinfo (`user:token@` or a bare token as the user), so it is dropped
+ * entirely. Other schemes keep their user (`ssh://git@host/...` needs it) and
+ * lose only a password. scp-like `git@host:owner/repo.git` is left as is.
+ */
 export function withoutRemoteCredentials(remote: string): string {
   try {
     const url = new URL(remote);
-    url.username = "";
+    if (url.protocol === "http:" || url.protocol === "https:") url.username = "";
     url.password = "";
     return url.toString();
   } catch {
-    // scp-like `git@host:owner/repo.git` has no userinfo to strip.
     return remote;
   }
 }

@@ -582,5 +582,17 @@ it("strips credentials from HTTPS remotes and leaves scp-like remotes alone", ()
     withoutRemoteCredentials("https://x-access-token:ghp_secret@github.com/o/r.git"),
     "https://github.com/o/r.git",
   );
+  assert.equal(
+    withoutRemoteCredentials("https://ghp_secret@github.com/o/r.git"),
+    "https://github.com/o/r.git",
+  );
   assert.equal(withoutRemoteCredentials("git@github.com:o/r.git"), "git@github.com:o/r.git");
+  assert.equal(
+    withoutRemoteCredentials("ssh://git@github.com/o/r.git"),
+    "ssh://git@github.com/o/r.git",
+  );
+  assert.equal(
+    withoutRemoteCredentials("ssh://git:pw@github.com/o/r.git"),
+    "ssh://git@github.com/o/r.git",
+  );
 });
