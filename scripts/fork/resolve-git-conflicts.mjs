@@ -185,11 +185,7 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, exp
       );
       return undefined;
     }
-    const tolerated =
-      Array.isArray(entry.mergeArtifacts) &&
-      entry.mergeArtifacts.every((name) => typeof name === "string")
-        ? entry.mergeArtifacts
-        : [];
+    const tolerated = sanitizeMergeArtifacts(entry.mergeArtifacts);
     if (hasCompletedResolution && typeof entry.resolvedSource === "string") {
       try {
         assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource, tolerated });
@@ -482,8 +478,6 @@ export function deduplicateUnconflictedStatements({ path, source, forkSide }) {
     return unchanged;
   }
   const text = materialized.source;
-  const overlapsUnresolved = (start, end) =>
-    materialized.unresolvedSpans.some((span) => start < span.end && end > span.start);
   const dropped = new Set();
   const removals = [];
   for (const error of parsed.errors) {
@@ -496,20 +490,9 @@ export function deduplicateUnconflictedStatements({ path, source, forkSide }) {
       continue;
     }
     // Babel reports the redeclaration at the later binding.
-    const found = enclosingStatement(parsed.program, position, undefined);
-    if (!found || dropped.has(found.node) || overlapsUnresolved(found.node.start, found.node.end)) {
-      continue;
-    }
-    const { node, siblings } = found;
-    const statement = text.slice(node.start, node.end);
-    const twin = siblings.find(
-      (sibling) =>
-        sibling !== node &&
-        !dropped.has(sibling) &&
-        !overlapsUnresolved(sibling.start, sibling.end) &&
-        text.slice(sibling.start, sibling.end) === statement,
-    );
-    if (!twin) continue;
+    const found = identicalStatementTwin({ parsed, materialized, position, dropped });
+    if (!found) continue;
+    const { node } = found;
     dropped.add(node);
     // Take the whole line: leading indentation and the trailing newline.
     let start = node.start;
@@ -567,13 +550,45 @@ export function mergeArtifactRedeclarations({ path, source, forkSide }) {
         plugins,
         source: materialized.source,
         unresolvedSpans: materialized.unresolvedSpans,
-      })
+      }) ||
+      identicalStatementTwin({ parsed, materialized, position }) !== undefined
     ) {
       continue;
     }
     names.add(identifierName);
   }
   return [...names].sort();
+}
+
+// The byte-identical sibling of the statement a redeclaration diagnostic
+// points at, if one exists outside unresolved text. Statement dedupe removes
+// these; artifact detection must not tolerate them instead.
+function identicalStatementTwin({ parsed, materialized, position, dropped = new Set() }) {
+  const text = materialized.source;
+  const overlapsUnresolved = (start, end) =>
+    materialized.unresolvedSpans.some((span) => start < span.end && end > span.start);
+  const found = enclosingStatement(parsed.program, position, undefined);
+  if (!found || dropped.has(found.node) || overlapsUnresolved(found.node.start, found.node.end)) {
+    return undefined;
+  }
+  const { node, siblings } = found;
+  const statement = text.slice(node.start, node.end);
+  const twin = siblings.find(
+    (sibling) =>
+      sibling !== node &&
+      !dropped.has(sibling) &&
+      !overlapsUnresolved(sibling.start, sibling.end) &&
+      text.slice(sibling.start, sibling.end) === statement,
+  );
+  return twin ? { node, twin } : undefined;
+}
+
+// Cache entries are JSON from a branch anyone with push access can edit;
+// only a list of non-empty identifier strings may widen validation.
+function sanitizeMergeArtifacts(value) {
+  return Array.isArray(value) && value.every((name) => typeof name === "string" && name.length > 0)
+    ? value
+    : [];
 }
 
 function isToleratedRedeclaration(error, tolerated) {
@@ -860,7 +875,8 @@ export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_
     if (!/^[0-9a-f]{64}$/u.test(key)) {
       throw new Error("invalid resolution cache key");
     }
-    const tolerated = entry.mergeArtifacts ?? [];
+    const tolerated = sanitizeMergeArtifacts(entry.mergeArtifacts);
+    if (Object.hasOwn(entry, "mergeArtifacts")) entry = { ...entry, mergeArtifacts: tolerated };
     if (Object.hasOwn(entry, "resolvedSource")) {
       assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource, tolerated });
     }

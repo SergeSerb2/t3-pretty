@@ -1648,9 +1648,8 @@ ${">".repeat(7)} theirs
       () => assertValidResolutionProgressSource({ path, source, forkSide: "ours" }),
       /providerSessionDirectory/u,
     );
-    assert.deepEqual(mergeArtifactRedeclarations({ path, source, forkSide: "ours" }), [
-      "providerSessionDirectory",
-    ]);
+    // Identical twins are dedupe's job, never a tolerated artifact.
+    assert.deepEqual(mergeArtifactRedeclarations({ path, source, forkSide: "ours" }), []);
 
     const result = deduplicateUnconflictedStatements({ path, source, forkSide: "ours" });
     assert.equal(result.removed, 1);
@@ -1749,14 +1748,24 @@ ${">".repeat(7)} theirs
     };
 
     assert.equal(writeCachedResolution({ key, entry, cacheDir }), false);
+    // A non-list never widens validation: "ReadError" as a string would make
+    // `includes` a substring match.
+    assert.equal(
+      writeCachedResolution({ key, entry: { ...entry, mergeArtifacts: "ReadError" }, cacheDir }),
+      false,
+    );
     assert.equal(
       writeCachedResolution({ key, entry: { ...entry, mergeArtifacts: ["ReadError"] }, cacheDir }),
       true,
     );
-    assert.equal(
-      readCachedResolution({ key, expectedPath: path, cacheDir })?.resolvedSource,
-      resolvedSource,
+    const restored = readCachedResolution({ key, expectedPath: path, cacheDir });
+    assert.equal(restored?.resolvedSource, resolvedSource);
+    assert.deepEqual(restored?.mergeArtifacts, ["ReadError"]);
+    NodeFS.writeFileSync(
+      NodePath.join(cacheDir, `${key}.json`),
+      `${JSON.stringify({ ...entry, mergeArtifacts: "ReadError" })}\n`,
     );
+    assert.equal(readCachedResolution({ key, expectedPath: path, cacheDir }), undefined);
     NodeFS.rmSync(cacheDir, { recursive: true, force: true });
   });
 
