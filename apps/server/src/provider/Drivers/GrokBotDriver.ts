@@ -1,3 +1,6 @@
+import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
+
 import { GrokBotSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -124,18 +127,11 @@ export const GrokBotDriver: ProviderDriver<GrokBotSettings, GrokBotDriverEnv> = 
         Effect.provideService(HostProcessPlatform, platform),
         Effect.orElseSucceed(() => undefined),
       );
-      const machineId = yield* crypto.randomUUIDv4.pipe(
-        Effect.map((id) => id.replace(/-/g, "").repeat(2)),
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: "Failed to generate a Grok Bot machine id.",
-              cause,
-            }),
-        ),
-      );
+      // Cursor treats the checksum's machine id as a device identity, so keep
+      // it stable across restarts: one id per host and provider instance.
+      const machineId = NodeCrypto.createHash("sha256")
+        .update(`t3-code:grokBot:${NodeOS.hostname()}:${instanceId}`)
+        .digest("hex");
       const client = yield* makeGrokBotClient({ accessToken, machineId }).pipe(
         Effect.provideService(HttpClient.HttpClient, httpClient),
       );
