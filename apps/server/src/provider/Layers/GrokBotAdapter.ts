@@ -671,17 +671,23 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) yield* stopSessionInternal(existing);
 
+          const cursor = decodeResume(input.resumeCursor);
           const resumeAgentId =
-            input.nativeSessionId ??
-            (() => {
-              const cursor = decodeResume(input.resumeCursor);
-              return cursor._tag === "Some" ? cursor.value.agentId : undefined;
-            })();
+            input.nativeSessionId ?? (cursor._tag === "Some" ? cursor.value.agentId : undefined);
           const resumed = resumeAgentId
             ? yield* findAgent(resumeAgentId).pipe(
                 Effect.mapError(mapGatewayError("gateway/listAgents")),
               )
             : undefined;
+          // A cursor whose bot was deleted in the Grok Bot app falls back to a
+          // fresh bot; an explicit `/resume <id>` for an unknown bot is an error.
+          if (input.nativeSessionId && !resumed) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: `No Grok Bot with id '${input.nativeSessionId}' exists on your box.`,
+            });
+          }
           const agentId = resumed
             ? resumed.id
             : yield* createAgent({ title: input.title, cwd }).pipe(

@@ -180,13 +180,16 @@ const decodeGatewayEvent = Schema.decodeUnknownOption(Schema.fromJsonString(Gate
 /**
  * Incremental SSE parser. Feed it raw text chunks; it returns the complete
  * `data:` payloads that became available and the leftover buffer. Comment
- * lines (`:ping`) and `retry:` fields are dropped.
+ * lines (`:ping`) and `retry:` fields are dropped. LF and CRLF framing are
+ * both accepted.
  */
 export function parseSseChunk(
   buffer: string,
   chunk: string,
 ): readonly [buffer: string, events: ReadonlyArray<GatewayEvent>] {
-  let rest = buffer + chunk;
+  // Normalize CRLF frames; a `\r` split from its `\n` by a chunk boundary is
+  // joined here because the buffer is re-scanned with the next chunk.
+  let rest = (buffer + chunk).replace(/\r\n/g, "\n");
   const events: Array<GatewayEvent> = [];
   for (;;) {
     const boundary = rest.indexOf("\n\n");

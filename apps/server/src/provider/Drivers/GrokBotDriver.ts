@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import type * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -90,6 +91,7 @@ export const GrokBotDriver: ProviderDriver<GrokBotSettings, GrokBotDriverEnv> = 
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      const platform = yield* HostProcessPlatform;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -111,9 +113,12 @@ export const GrokBotDriver: ProviderDriver<GrokBotSettings, GrokBotDriverEnv> = 
         explicitToken: effectiveConfig.accessToken,
         environment: processEnv,
       }).pipe(
+        // The token effect is re-run by the client on every request, outside
+        // this fiber, so every service it needs is bound here explicitly.
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(HostProcessPlatform, platform),
         Effect.orElseSucceed(() => undefined),
       );
       const machineId = yield* crypto.randomUUIDv4.pipe(

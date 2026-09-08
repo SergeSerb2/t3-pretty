@@ -25,6 +25,20 @@ describe("GrokBotGateway", () => {
     expect(buffer2).toBe("");
   });
 
+  it("accepts CRLF framing, including a CR split from its LF by a chunk boundary", () => {
+    const [buffer1, events1] = parseSseChunk("", 'data: {"channel":"a","payload":1}\r\n\r');
+    expect(events1).toEqual([]);
+    const [buffer2, events2] = parseSseChunk(
+      buffer1,
+      '\ndata: {"channel":"b","payload":2}\r\n\r\n',
+    );
+    expect(events2).toEqual([
+      { channel: "a", payload: 1 },
+      { channel: "b", payload: 2 },
+    ]);
+    expect(buffer2).toBe("");
+  });
+
   it("drops frames that are not gateway events", () => {
     const [, events] = parseSseChunk("", 'data: not json\n\ndata: {"payload":1}\n\n');
     expect(events).toEqual([]);

@@ -28,7 +28,8 @@ linked SuperGrok, SuperGrok Plus, or SuperGrok Heavy subscription.
 
 Every T3 Code thread gets its own bot, named after the thread. The bot also appears in the Grok
 Bot desktop and mobile apps, and its conversation continues to live there after the thread is
-closed. Reopening the thread in T3 Code re-attaches to the same bot.
+closed. Reopening the thread in T3 Code re-attaches to the same bot. To talk to a bot you already
+have, start a new thread with `/resume <bot id>`.
 
 When the bot is created, T3 Code tells it the project directory, the `origin` git remote, and the
 current branch. The bot works on a copy of the repository on its own computer, so ask it to push a

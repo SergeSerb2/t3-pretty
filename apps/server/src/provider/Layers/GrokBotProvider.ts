@@ -14,7 +14,8 @@ const GROK_BOT_PRESENTATION = {
   displayName: "Grok Bot",
   badgeLabel: "Experimental",
   showInteractionModeToggle: false,
-  supportsNativeResume: false,
+  // `/resume <bot id>` attaches an existing bot from the Grok Bot app.
+  supportsNativeResume: true,
 } as const;
 
 const PROBE_TIMEOUT_MS = 15_000;

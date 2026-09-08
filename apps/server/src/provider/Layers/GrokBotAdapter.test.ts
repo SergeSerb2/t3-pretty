@@ -224,6 +224,33 @@ it.effect("re-attaches to the bot in the resume cursor and auto-approves in full
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("attaches an existing bot via /resume and rejects unknown ids", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const session = yield* adapter.startSession({
+      threadId: ThreadId.make("grok-bot-native"),
+      cwd: process.cwd(),
+      nativeSessionId: AGENT_ID,
+      runtimeMode: "full-access",
+    });
+    assert.deepEqual(session.resumeCursor, { schemaVersion: 1, agentId: AGENT_ID });
+    assert.isUndefined(fake.commands.find((entry) => entry.command === "createAgent"));
+
+    const missing = yield* adapter
+      .startSession({
+        threadId: ThreadId.make("grok-bot-native-missing"),
+        cwd: process.cwd(),
+        nativeSessionId: "not-a-bot",
+        runtimeMode: "full-access",
+      })
+      .pipe(Effect.flip);
+    assert.equal(missing._tag, "ProviderAdapterValidationError");
+    assert.isUndefined(fake.commands.find((entry) => entry.command === "createAgent"));
+    yield* adapter.stopAll();
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("forwards approvals to the user outside full access and honors the answer", () =>
   Effect.gen(function* () {
     const fake = yield* makeFakeClient;
