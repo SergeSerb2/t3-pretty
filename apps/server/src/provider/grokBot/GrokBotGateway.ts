@@ -371,6 +371,9 @@ export const makeGrokBotClient = Effect.fn("makeGrokBotClient")(function* (
       }
       return response.stream.pipe(
         Stream.decodeText(),
+        // Effect 4 `mapAccum` takes a lazy seed and flattens the returned
+        // `values` array, so each parsed frame is emitted on its own. See the
+        // client-level test in GrokBotGateway.test.ts.
         Stream.mapAccum(
           () => "",
           (buffer, chunk) => parseSseChunk(buffer, chunk),

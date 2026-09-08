@@ -91,6 +91,9 @@ export const GrokBotDriver: ProviderDriver<GrokBotSettings, GrokBotDriverEnv> = 
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      // `HostProcessPlatform` is a Context.Reference with a default, so it is
+      // never a requirement (hence absent from GrokBotDriverEnv); reading it
+      // here honors a test override and pins it for the token effect below.
       const platform = yield* HostProcessPlatform;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
