@@ -228,6 +228,83 @@ it.effect("re-attaches to the bot in the resume cursor and auto-approves in full
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("opens a new activity item when the tool changes without a callId", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const threadId = ThreadId.make("grok-bot-activity");
+    const collected = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId),
+      Stream.takeUntil((event) => event.type === "turn.completed"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "clone and test" });
+    yield* fake.push("agent-upserted", roster(true));
+    yield* fake.push("agent-activity", {
+      agentId: AGENT_ID,
+      live: { activity: { tool: "bash", detail: "git clone" } },
+    });
+    yield* fake.push("agent-activity", {
+      agentId: AGENT_ID,
+      live: { activity: { tool: "bash", detail: "git clone" } },
+    });
+    yield* fake.push("agent-activity", {
+      agentId: AGENT_ID,
+      live: { activity: { tool: "browser", detail: "docs" } },
+    });
+    yield* fake.push("agent-activity", { agentId: AGENT_ID, live: null });
+    yield* fake.push("agent-upserted", roster(false));
+
+    const events = Array.from(yield* Fiber.join(collected));
+    const activity = events
+      .filter(
+        (event) => event.type === "item.started" && event.payload.itemType === "dynamic_tool_call",
+      )
+      .map((event) => (event.type === "item.started" ? event.payload.title : ""));
+    assert.deepEqual(activity, ["bash: git clone", "browser: docs"]);
+    const completed = events.filter(
+      (event) => event.type === "item.completed" && event.payload.itemType === "dynamic_tool_call",
+    );
+    assert.equal(completed.length, 2);
+    yield* adapter.stopSession(threadId);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("restarts the shared event feed for a session started after the last one stopped", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const first = ThreadId.make("grok-bot-first");
+    yield* adapter.startSession({
+      threadId: first,
+      cwd: process.cwd(),
+      runtimeMode: "full-access",
+    });
+    yield* adapter.stopSession(first);
+
+    const second = ThreadId.make("grok-bot-second");
+    const collected = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === second),
+      Stream.takeUntil((event) => event.type === "turn.completed"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({
+      threadId: second,
+      cwd: process.cwd(),
+      runtimeMode: "full-access",
+    });
+    yield* adapter.sendTurn({ threadId: second, input: "ping" });
+    yield* fake.push("agent-upserted", roster(true));
+    yield* fake.push("agent-upserted", roster(false));
+    const events = Array.from(yield* Fiber.join(collected));
+    assert.equal(events.at(-1)?.type, "turn.completed");
+    yield* adapter.stopSession(second);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("attaches an existing bot via /resume and rejects unknown ids", () =>
   Effect.gen(function* () {
     const fake = yield* makeFakeClient;

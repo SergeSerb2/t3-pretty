@@ -129,6 +129,11 @@ interface SessionContext {
    * turn settles. */
   openAssistantItemId: string | undefined;
   activityItemId: string | undefined;
+  /** Identity of the live activity behind `activityItemId`: the box's callId
+   * when present, else the described activity, so a tool change without a
+   * callId still opens a new item. */
+  activityKey: string | undefined;
+  activitySeq: number;
   stopped: boolean;
 }
 
@@ -191,6 +196,10 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const adapterScope = yield* Scope.make();
     yield* Effect.addFinalizer(() => Scope.close(adapterScope, Exit.void));
     let eventsFiber: Fiber.Fiber<void, never> | undefined;
+    // Bumped per loop start. A loop only clears `eventsFiber` on exit when it
+    // is still the current generation, so a stop that interrupts one loop
+    // cannot erase the fiber a concurrent start just registered.
+    let eventsGeneration = 0;
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -500,9 +509,12 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       Effect.gen(function* () {
         const live = activity.activity;
         if (!live) return yield* completeActivity(ctx);
-        const itemId = live.callId?.trim() || `activity-${ctx.agentId}`;
-        if (ctx.activityItemId === itemId) return;
+        const key = live.callId?.trim() || `described:${describeActivity(live)}`;
+        if (ctx.activityItemId && ctx.activityKey === key) return;
         yield* completeActivity(ctx);
+        ctx.activitySeq += 1;
+        const itemId = live.callId?.trim() || `activity-${ctx.agentId}-${ctx.activitySeq}`;
+        ctx.activityKey = key;
         ctx.activityItemId = itemId;
         yield* emit({
           type: "item.started",
@@ -560,34 +572,36 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       ),
     );
 
-    const eventsLoop = Effect.gen(function* () {
-      let backoffMs = EVENTS_RECONNECT_MIN_MS;
-      while (sessions.size > 0) {
-        yield* resyncRoster;
-        const startedAt = yield* Clock.currentTimeMillis;
-        yield* runEventsOnce.pipe(
-          Effect.catch((cause) => Effect.logWarning("Grok Bot event feed ended", { cause })),
-        );
-        if (sessions.size === 0) break;
-        // A feed that lived a while resets the backoff; rapid failures grow it.
-        const endedAt = yield* Clock.currentTimeMillis;
-        backoffMs =
-          endedAt - startedAt > EVENTS_RECONNECT_MAX_MS
-            ? EVENTS_RECONNECT_MIN_MS
-            : Math.min(backoffMs * 2, EVENTS_RECONNECT_MAX_MS);
-        yield* Effect.sleep(backoffMs);
-      }
-    }).pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          eventsFiber = undefined;
-        }),
-      ),
-    );
+    const eventsLoop = (generation: number) =>
+      Effect.gen(function* () {
+        let backoffMs = EVENTS_RECONNECT_MIN_MS;
+        while (sessions.size > 0) {
+          yield* resyncRoster;
+          const startedAt = yield* Clock.currentTimeMillis;
+          yield* runEventsOnce.pipe(
+            Effect.catch((cause) => Effect.logWarning("Grok Bot event feed ended", { cause })),
+          );
+          if (sessions.size === 0) break;
+          // A feed that lived a while resets the backoff; rapid failures grow it.
+          const endedAt = yield* Clock.currentTimeMillis;
+          backoffMs =
+            endedAt - startedAt > EVENTS_RECONNECT_MAX_MS
+              ? EVENTS_RECONNECT_MIN_MS
+              : Math.min(backoffMs * 2, EVENTS_RECONNECT_MAX_MS);
+          yield* Effect.sleep(backoffMs);
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (eventsGeneration === generation) eventsFiber = undefined;
+          }),
+        ),
+      );
 
     const ensureEventsLoop = Effect.gen(function* () {
       if (eventsFiber) return;
-      eventsFiber = yield* Effect.forkIn(eventsLoop, adapterScope);
+      eventsGeneration += 1;
+      eventsFiber = yield* Effect.forkIn(eventsLoop(eventsGeneration), adapterScope);
     });
 
     // ── adapter surface ──────────────────────────────────────────────
@@ -601,8 +615,12 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
         ctx.pendingRequests.clear();
         ctx.pendingUserInputs.clear();
         if (sessions.size === 0 && eventsFiber) {
-          yield* Fiber.interrupt(eventsFiber);
+          // Release the slot before the (suspending) interrupt so a session
+          // starting meanwhile forks its own loop instead of adopting this one.
+          const fiber = eventsFiber;
           eventsFiber = undefined;
+          eventsGeneration += 1;
+          yield* Fiber.interrupt(fiber);
         }
         yield* emit({
           type: "session.exited",
@@ -732,6 +750,8 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
             assistantItemIds: new Map(),
             openAssistantItemId: undefined,
             activityItemId: undefined,
+            activityKey: undefined,
+            activitySeq: 0,
             stopped: false,
           };
           sessions.set(input.threadId, ctx);
