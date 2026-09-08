@@ -444,9 +444,21 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
           raw: { source: RAW_SOURCE, method: "transcript", payload: raw },
         });
         if (askUser) return;
-        yield* resolveRequest(ctx, pending, "accept").pipe(
-          Effect.catch((cause) => Effect.logWarning("Grok Bot auto-approval failed", { cause })),
-        );
+        const approved = yield* resolveRequest(ctx, pending, "accept").pipe(Effect.result);
+        if (approved._tag === "Failure") {
+          // The box still holds the card, so leave it open for the user to
+          // answer by hand rather than reporting an approval that did not land.
+          ctx.pendingRequests.set(requestId, pending);
+          yield* emit({
+            type: "runtime.warning",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId: ctx.threadId,
+            turnId: ctx.activeTurn?.turnId,
+            payload: { message: `Grok Bot auto-approval failed: ${approved.failure.message}` },
+          });
+          return;
+        }
         yield* emit({
           type: "request.resolved",
           ...(yield* makeEventStamp()),
@@ -461,6 +473,9 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const handleBotMessage = (ctx: SessionContext, entry: GrokBotBotMessageEntry, raw: unknown) =>
       Effect.gen(function* () {
         const message = entry.message;
+        // Any bot output proves the box handled the prompt, so an idle flag
+        // can settle the turn even if the running flag was missed.
+        if (ctx.activeTurn) ctx.activeTurn.gotReply = true;
         // Any non-text card ends the assistant message that preceded it.
         if (message.type !== "text") yield* completeAssistantItem(ctx);
         switch (message.type) {

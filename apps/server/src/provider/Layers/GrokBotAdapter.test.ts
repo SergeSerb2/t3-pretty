@@ -6,7 +6,11 @@ import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
-import type { GatewayEvent, GrokBotClient } from "../grokBot/GrokBotGateway.ts";
+import {
+  type GatewayEvent,
+  type GrokBotClient,
+  GrokBotGatewayError,
+} from "../grokBot/GrokBotGateway.ts";
 import { makeGrokBotAdapter } from "./GrokBotAdapter.ts";
 
 const AGENT_ID = "b47db307-2b88-4988-bb81-0d3c302355f3";
@@ -18,6 +22,7 @@ const AGENT_ID = "b47db307-2b88-4988-bb81-0d3c302355f3";
  */
 const makeFakeClient = Effect.gen(function* () {
   const commands: Array<{ readonly command: string; readonly args: unknown }> = [];
+  const failCommands = new Set<string>();
   const feed = yield* Queue.unbounded<GatewayEvent>();
   const client: GrokBotClient = {
     api: () => Effect.succeed({}),
@@ -27,26 +32,35 @@ const makeFakeClient = Effect.gen(function* () {
       networkToken: "n",
     }),
     command: (command, args) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         commands.push({ command, args });
-        switch (command) {
-          case "createAgent":
-            return { agent: { id: AGENT_ID, name: "T3 Code thread" } };
-          case "listAgents":
-            return [{ id: AGENT_ID, isRunningTurn: false }];
-          case "sendPrompt":
-            return { accepted: true };
-          case "interruptAgentRun":
-            return { hadActiveRun: true };
-          default:
-            return {};
+        if (failCommands.has(command)) {
+          return Effect.fail(
+            new GrokBotGatewayError({ operation: `gateway/${command}`, detail: "box refused" }),
+          );
         }
+        return Effect.succeed(fakeReply(command));
       }),
     events: Stream.fromQueue(feed),
   };
   const push = (channel: string, payload: unknown) => Queue.offer(feed, { channel, payload });
-  return { client, commands, push };
+  return { client, commands, failCommands, push };
 });
+
+function fakeReply(command: string): unknown {
+  switch (command) {
+    case "createAgent":
+      return { agent: { id: AGENT_ID, name: "T3 Code thread" } };
+    case "listAgents":
+      return [{ id: AGENT_ID, isRunningTurn: false }];
+    case "sendPrompt":
+      return { accepted: true };
+    case "interruptAgentRun":
+      return { hadActiveRun: true };
+    default:
+      return {};
+  }
+}
 
 const transcript = (entry: unknown) => ({ type: "appended", agentId: AGENT_ID, entry });
 const roster = (isRunningTurn: boolean) => ({
@@ -302,6 +316,52 @@ it.effect("restarts the shared event feed for a session started after the last o
     const events = Array.from(yield* Fiber.join(collected));
     assert.equal(events.at(-1)?.type, "turn.completed");
     yield* adapter.stopSession(second);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("settles on idle after an approval-only reply and keeps a failed auto-approve open", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    fake.failCommands.add("resolveAutoReviewApproval");
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const threadId = ThreadId.make("grok-bot-approval-only");
+    const collected = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId),
+      Stream.takeUntil((event) => event.type === "turn.completed"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "archive everything" });
+    // No running flag observed: the only signal is the approval card.
+    yield* fake.push(
+      "transcript",
+      transcript({
+        kind: "send-message",
+        id: "t4s0",
+        message: {
+          type: "auto-review-approval",
+          approval: { requestId: "ar-2", summary: "Archive" },
+        },
+      }),
+    );
+    yield* fake.push("agent-upserted", roster(false));
+
+    const events = Array.from(yield* Fiber.join(collected));
+    const types = events.map((event) => event.type);
+    assert.include(types, "request.opened");
+    assert.include(types, "runtime.warning");
+    assert.notInclude(types, "request.resolved");
+    assert.equal(events.at(-1)?.type, "turn.completed");
+
+    // The card stayed answerable by hand.
+    fake.failCommands.clear();
+    yield* adapter.respondToRequest(threadId, ApprovalRequestId.make("t4s0"), "accept");
+    assert.equal(
+      fake.commands.filter((entry) => entry.command === "resolveAutoReviewApproval").length,
+      2,
+    );
+    yield* adapter.stopSession(threadId);
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

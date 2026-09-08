@@ -354,15 +354,19 @@ export const makeGrokBotClient = Effect.fn("makeGrokBotClient")(function* (
     Effect.gen(function* () {
       const operation = "gateway/events";
       const box = yield* ensureBox;
+      // Any failure to reach or hold the feed drops the cached box so the next
+      // attempt re-resolves it, mirroring `command`.
+      const forgetBox = Ref.set(boxRef, undefined);
       const response = yield* HttpClientRequest.get(`${box.gatewayUrl}/events`).pipe(
         HttpClientRequest.setHeaders({ ...gatewayHeaders(box), accept: "text/event-stream" }),
         httpClient.execute,
+        Effect.tapError(() => forgetBox),
         Effect.mapError(
           (cause) => new GrokBotGatewayError({ operation, detail: "Request failed.", cause }),
         ),
       );
       if (response.status < 200 || response.status >= 300) {
-        yield* Ref.set(boxRef, undefined);
+        yield* forgetBox;
         return yield* new GrokBotGatewayError({
           operation,
           status: response.status,
@@ -378,6 +382,7 @@ export const makeGrokBotClient = Effect.fn("makeGrokBotClient")(function* (
           () => "",
           (buffer, chunk) => parseSseChunk(buffer, chunk),
         ),
+        Stream.onError(() => forgetBox),
         Stream.mapError(
           (cause) => new GrokBotGatewayError({ operation, detail: "Event stream failed.", cause }),
         ),
