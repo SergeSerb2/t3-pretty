@@ -1,14 +1,14 @@
 import { SparklesIcon } from "lucide-react";
 import type { CSSProperties } from "react";
-
-import type { ChangelogRelease } from "../changelog/changelogData";
 import {
   changelogStaggerIndex,
   formatUpdateSubtitle,
   presentChangelogHistory,
   presentUpdateDigest,
   type PresentedKindGroup,
-} from "../changelog/changelogPresentation";
+} from "@t3tools/shared/changelogPresentation";
+
+import type { ChangelogRelease } from "../changelog/changelogData";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -34,7 +34,7 @@ function KindGroupList({ groups }: { readonly groups: readonly PresentedKindGrou
           <ul className="flex flex-col gap-3.5">
             {group.items.map((item, itemIndex) => (
               <li
-                key={item.title}
+                key={`${item.kind}:${item.sourceTitle}:${itemIndex}`}
                 className="flex flex-col gap-0.5"
                 // Stagger slot for scenery/motion.css; capped so rows below
                 // the fold never wait on the ones above.

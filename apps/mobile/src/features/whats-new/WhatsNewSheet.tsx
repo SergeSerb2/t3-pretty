@@ -1,15 +1,16 @@
 import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import type { ChangelogRelease } from "./changelogData";
 import {
   formatUpdateSubtitle,
   presentChangelogHistory,
   presentUpdateDigest,
   type PresentedKindGroup,
-} from "./changelogPresentation";
+} from "@t3tools/shared/changelogPresentation";
+
+import { AppText as Text } from "../../components/AppText";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import type { ChangelogRelease } from "./changelogData";
 
 function KindGroupList(props: { readonly groups: readonly PresentedKindGroup[] }) {
   const showHeadings = props.groups.length > 1;
@@ -21,8 +22,8 @@ function KindGroupList(props: { readonly groups: readonly PresentedKindGroup[] }
             <Text className="text-sm font-t3-medium text-foreground-muted">{group.heading}</Text>
           ) : null}
           <View className="gap-3.5">
-            {group.items.map((item) => (
-              <View key={item.title} className="gap-0.5">
+            {group.items.map((item, itemIndex) => (
+              <View key={`${item.kind}:${item.sourceTitle}:${itemIndex}`} className="gap-0.5">
                 <Text className="text-base font-t3-medium text-foreground">{item.title}</Text>
                 {item.description ? (
                   <Text className="text-sm leading-5 text-foreground-secondary">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ChangelogRelease } from "./changelogData";
+import type { ChangelogRelease } from "./changelogPresentation.ts";
 import {
   changelogStaggerIndex,
   formatChangelogTitle,
@@ -9,7 +9,7 @@ import {
   formatUpdateSubtitle,
   presentChangelogHistory,
   presentUpdateDigest,
-} from "./changelogPresentation";
+} from "./changelogPresentation.ts";
 
 function release(
   version: string,
@@ -90,6 +90,7 @@ describe("presentUpdateDigest", () => {
       {
         kind: "new",
         title: "Automations that run agents on schedules",
+        sourceTitle: "add automations that run agents on schedules",
         description: "Run agents from a schedule, webhook, or git change.",
       },
     ]);
@@ -166,13 +167,18 @@ describe("formatReleaseDate", () => {
 describe("changelogStaggerIndex", () => {
   it("caps below-the-fold rows so they do not wait on the ones above", () => {
     const groups = [
-      { kind: "new" as const, heading: "New", items: [{ kind: "new" as const, title: "A" }] },
+      {
+        kind: "new" as const,
+        heading: "New",
+        items: [{ kind: "new" as const, title: "A", sourceTitle: "A" }],
+      },
       {
         kind: "fixed" as const,
         heading: "Fixes",
         items: Array.from({ length: 8 }, (_, index) => ({
           kind: "fixed" as const,
           title: `Fix ${index}`,
+          sourceTitle: `Fix ${index}`,
         })),
       },
     ];

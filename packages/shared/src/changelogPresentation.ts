@@ -1,10 +1,24 @@
 /**
  * Turns raw changelog releases into the copy and grouping the What's New UI
- * actually shows. Keep in step with apps/web/src/changelog/changelogPresentation.ts.
+ * actually shows. Nightly builds overlap heavily and titles often arrive as
+ * commit subjects; this layer is what makes the dialog readable.
  *
- * Hermes does not ship Array#toSorted; sort copies instead.
+ * Hermes does not ship Array#toSorted or Array#at; sort copies instead.
  */
-import type { ChangelogItem, ChangelogItemKind, ChangelogRelease } from "./changelogData";
+export type ChangelogItemKind = "new" | "improved" | "fixed";
+
+export interface ChangelogItem {
+  readonly kind: ChangelogItemKind;
+  readonly title: string;
+  readonly description?: string;
+}
+
+export interface ChangelogRelease {
+  readonly version: string;
+  readonly date: string;
+  readonly headline?: string;
+  readonly items: readonly ChangelogItem[];
+}
 
 const MAINTENANCE_ONLY_TITLE = "Under-the-hood stability and maintenance";
 const KIND_ORDER = ["new", "improved", "fixed"] as const satisfies readonly ChangelogItemKind[];
@@ -13,7 +27,7 @@ const KIND_HEADING: Record<ChangelogItemKind, string> = {
   improved: "Improvements",
   fixed: "Fixes",
 };
-/** Post-update sheet only — keep it a short read. Settings still shows the rest. */
+/** Post-update dialog only — keep it a short read. Settings still shows the rest. */
 const UPDATE_DIGEST_ITEM_LIMIT = 12;
 const LEADING_ADD = /^(?:add|added)\s+/iu;
 const TRAILING_PR = /\s*\(#\d+\)\s*$/u;
@@ -23,6 +37,7 @@ const CONTRIBUTOR_ONLY =
 export interface PresentedChangelogItem {
   readonly kind: ChangelogItemKind;
   readonly title: string;
+  readonly sourceTitle: string;
   readonly description?: string;
 }
 
@@ -85,7 +100,7 @@ function formatDateRange(oldestIso: string, newestIso: string, locale?: string):
   return `${short.format(oldest)} – ${short.format(newest)}`;
 }
 
-/** One-line subtitle for the post-update sheet: version and when it landed. */
+/** One-line subtitle for the post-update dialog: version and when it landed. */
 export function formatUpdateSubtitle(
   releases: readonly ChangelogRelease[],
   currentVersion: string,
@@ -125,8 +140,8 @@ function presentItem(item: ChangelogItem): PresentedChangelogItem {
   const title = formatChangelogTitle(item.title);
   const description = item.description?.trim();
   return description === undefined || description === ""
-    ? { kind: item.kind, title }
-    : { kind: item.kind, title, description };
+    ? { kind: item.kind, title, sourceTitle: item.title }
+    : { kind: item.kind, title, sourceTitle: item.title, description };
 }
 
 function dedupeItems(items: readonly ChangelogItem[]): ChangelogItem[] {
@@ -179,7 +194,7 @@ function limitGroups(
   return { groups: limited, truncated: true };
 }
 
-/** Flatten unseen releases into one grouped digest for the update sheet. */
+/** Flatten unseen nightlies into one grouped digest for the update popup. */
 export function presentUpdateDigest(releases: readonly ChangelogRelease[]): PresentedUpdateDigest {
   const items = selectUserFacingItems(dedupeItems(releases.flatMap((release) => release.items)));
   const headline = releases[0]?.headline?.trim();
@@ -225,4 +240,16 @@ export function presentChangelogHistory(
     });
   }
   return days;
+}
+
+export function changelogStaggerIndex(
+  groups: readonly PresentedKindGroup[],
+  groupIndex: number,
+  itemIndex: number,
+): number {
+  let preceding = 0;
+  for (let index = 0; index < groupIndex; index++) {
+    preceding += groups[index]?.items.length ?? 0;
+  }
+  return Math.min(preceding + itemIndex, 5);
 }
