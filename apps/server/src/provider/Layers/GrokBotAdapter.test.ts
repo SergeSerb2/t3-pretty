@@ -157,6 +157,10 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
       activity?.type === "item.started" ? activity.payload.title : undefined,
       "shell · bash: git clone",
     );
+    const activityDone = events.find(
+      (event) => event.type === "item.completed" && event.payload.itemType === "dynamic_tool_call",
+    );
+    assert.equal(activityDone?.turnId, turn.turnId);
     const completed = events.at(-1);
     assert.equal(
       completed?.type === "turn.completed" ? completed.payload.state : undefined,
@@ -247,6 +251,17 @@ it.effect("attaches an existing bot via /resume and rejects unknown ids", () =>
       .pipe(Effect.flip);
     assert.equal(missing._tag, "ProviderAdapterValidationError");
     assert.isUndefined(fake.commands.find((entry) => entry.command === "createAgent"));
+
+    // A bot is bound to one thread at a time.
+    const taken = yield* adapter
+      .startSession({
+        threadId: ThreadId.make("grok-bot-native-second"),
+        cwd: process.cwd(),
+        nativeSessionId: AGENT_ID,
+        runtimeMode: "full-access",
+      })
+      .pipe(Effect.flip);
+    assert.equal(taken._tag, "ProviderAdapterValidationError");
     yield* adapter.stopAll();
   }).pipe(Effect.provide(NodeServices.layer)),
 );

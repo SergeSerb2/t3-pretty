@@ -261,9 +261,10 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
       Effect.gen(function* () {
         const turn = ctx.activeTurn;
         if (!turn) return;
+        // Close open items while the turn is still active so they carry its id.
         yield* completeAssistantItem(ctx);
-        ctx.activeTurn = undefined;
         yield* completeActivity(ctx);
+        ctx.activeTurn = undefined;
         ctx.session = { ...ctx.session, activeTurnId: undefined, updatedAt: yield* nowIso };
         yield* emit({
           type: "turn.completed",
@@ -686,6 +687,16 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
               provider: PROVIDER,
               operation: "startSession",
               issue: `No Grok Bot with id '${input.nativeSessionId}' exists on your box.`,
+            });
+          }
+          // The box feed is routed by bot id, so a bot belongs to one thread at
+          // a time (two threads could otherwise `/resume` the same bot).
+          const owner = resumed ? sessionsByAgent.get(resumed.id) : undefined;
+          if (owner && !owner.stopped) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: `Grok Bot '${owner.agentId}' is already attached to thread '${owner.threadId}'.`,
             });
           }
           const agentId = resumed
