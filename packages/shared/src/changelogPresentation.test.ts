@@ -41,6 +41,12 @@ describe("formatChangelogTitle", () => {
     expect(formatChangelogTitle("show What's New changelog dialog after updates (#41)")).toBe(
       "Show What's New changelog dialog after updates",
     );
+    expect(formatChangelogTitle("restore clicks on titlebar panel toggles")).toBe(
+      "Clicks on titlebar panel toggles",
+    );
+    expect(formatChangelogTitle("fix window snapping on tiled desktops")).toBe(
+      "Window snapping on tiled desktops",
+    );
   });
 });
 
@@ -96,6 +102,59 @@ describe("presentUpdateDigest", () => {
     ]);
     expect(digest.groups[1]?.items.map((item) => item.title)).toEqual([
       "New threads land in the intended clone",
+    ]);
+  });
+
+  it("stays empty when every note is contributor-only", () => {
+    const digest = presentUpdateDigest([
+      release("0.0.39-nightly.1", "2026-09-07", [
+        { kind: "fixed", title: "restore the mobile typecheck and gate it in the upstream sync" },
+        { kind: "improved", title: "eslint and prettier packaging step" },
+      ]),
+    ]);
+    expect(digest.groups).toEqual([]);
+  });
+
+  it("keeps a maintenance stub only when it is the last user-facing note", () => {
+    const digest = presentUpdateDigest([
+      release("0.0.39-nightly.1", "2026-09-07", [
+        { kind: "improved", title: "Under-the-hood stability and maintenance" },
+      ]),
+    ]);
+    expect(digest.groups.flatMap((group) => group.items.map((item) => item.title))).toEqual([
+      "Under-the-hood stability and maintenance",
+    ]);
+  });
+
+  it("takes the newest headline and description even when callers pass oldest first", () => {
+    const digest = presentUpdateDigest([
+      release(
+        "0.0.38",
+        "2026-09-01",
+        [{ kind: "fixed", title: "composer hover eases in" }],
+        "Last month",
+      ),
+      release(
+        "0.0.39-nightly.2",
+        "2026-09-08",
+        [
+          {
+            kind: "fixed",
+            title: "composer hover eases in",
+            description: "Hover no longer jumps.",
+          },
+        ],
+        "This week",
+      ),
+    ]);
+    expect(digest.headline).toBe("This week");
+    expect(digest.groups[0]?.items).toEqual([
+      {
+        kind: "fixed",
+        title: "Composer hover eases in",
+        sourceTitle: "composer hover eases in",
+        description: "Hover no longer jumps.",
+      },
     ]);
   });
 

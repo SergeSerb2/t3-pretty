@@ -343,7 +343,10 @@ async function callChangelogModel({ prompt, token }) {
 const ITEM_KINDS = new Set(["new", "improved", "fixed"]);
 
 function formatFallbackTitle(title) {
-  const stripped = title.replace(/\s*\(#\d+\)\s*$/u, "").trim();
+  const stripped = title
+    .replace(/\s*\(#\d+\)\s*$/u, "")
+    .replace(/^(?:add|added|fix|fixed|restore|restored|keep|kept|stop|stopped)\s+/iu, "")
+    .trim();
   if (stripped === "") {
     return title.trim();
   }

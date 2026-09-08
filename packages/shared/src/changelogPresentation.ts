@@ -29,7 +29,7 @@ const KIND_HEADING: Record<ChangelogItemKind, string> = {
 };
 /** Post-update dialog only — keep it a short read. Settings still shows the rest. */
 const UPDATE_DIGEST_ITEM_LIMIT = 12;
-const LEADING_ADD = /^(?:add|added)\s+/iu;
+const LEADING_COMMIT_VERB = /^(?:add|added|fix|fixed|restore|restored|keep|kept|stop|stopped)\s+/iu;
 const TRAILING_PR = /\s*\(#\d+\)\s*$/u;
 const CONTRIBUTOR_ONLY =
   /\b(typecheck|upstream sync|github actions?|sigkill|vitest|eslint|prettier|packaging step)\b/iu;
@@ -120,7 +120,7 @@ export function formatUpdateSubtitle(
 
 /** Sentence-case, drop feat-style "add", and strip trailing PR numbers. */
 export function formatChangelogTitle(title: string): string {
-  const stripped = title.trim().replace(TRAILING_PR, "").replace(LEADING_ADD, "").trim();
+  const stripped = title.trim().replace(TRAILING_PR, "").replace(LEADING_COMMIT_VERB, "").trim();
   const text = stripped === "" ? title.trim() : stripped;
   if (text === "") {
     return title;
@@ -160,9 +160,20 @@ function dedupeItems(items: readonly ChangelogItem[]): ChangelogItem[] {
 
 function selectUserFacingItems(items: readonly ChangelogItem[]): ChangelogItem[] {
   const withoutContributor = items.filter((item) => !isContributorOnlyTitle(item.title));
-  const pool = withoutContributor.length > 0 ? withoutContributor : [...items];
-  const withoutMaintenance = pool.filter((item) => item.title !== MAINTENANCE_ONLY_TITLE);
-  return withoutMaintenance.length > 0 ? withoutMaintenance : pool;
+  if (withoutContributor.length === 0) {
+    return [];
+  }
+  const withoutMaintenance = withoutContributor.filter(
+    (item) => item.title !== MAINTENANCE_ONLY_TITLE,
+  );
+  return withoutMaintenance.length > 0 ? withoutMaintenance : withoutContributor;
+}
+
+function compareReleaseNewestFirst(a: ChangelogRelease, b: ChangelogRelease): number {
+  if (a.date !== b.date) {
+    return a.date < b.date ? 1 : -1;
+  }
+  return b.version.localeCompare(a.version, undefined, { numeric: true });
 }
 
 function groupByKind(items: readonly PresentedChangelogItem[]): PresentedKindGroup[] {
@@ -196,8 +207,9 @@ function limitGroups(
 
 /** Flatten unseen nightlies into one grouped digest for the update popup. */
 export function presentUpdateDigest(releases: readonly ChangelogRelease[]): PresentedUpdateDigest {
-  const items = selectUserFacingItems(dedupeItems(releases.flatMap((release) => release.items)));
-  const headline = releases[0]?.headline?.trim();
+  const newestFirst = [...releases].sort(compareReleaseNewestFirst);
+  const items = selectUserFacingItems(dedupeItems(newestFirst.flatMap((release) => release.items)));
+  const headline = newestFirst[0]?.headline?.trim();
   const { groups, truncated } = limitGroups(
     groupByKind(items.map(presentItem)),
     UPDATE_DIGEST_ITEM_LIMIT,

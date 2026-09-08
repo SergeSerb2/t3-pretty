@@ -306,10 +306,10 @@ describe("fallbackReleaseEntry", () => {
     assert.deepEqual(entry.items, [
       {
         kind: "new",
-        title: "Add Boring personalization that restores T3 Chat",
+        title: "Boring personalization that restores T3 Chat",
         description: "",
       },
-      { kind: "fixed", title: "Restore clicks on titlebar panel toggles", description: "" },
+      { kind: "fixed", title: "Clicks on titlebar panel toggles", description: "" },
     ]);
   });
 
@@ -325,7 +325,7 @@ describe("fallbackReleaseEntry", () => {
       upstream: null,
     });
     assert.deepEqual(entry.items, [
-      { kind: "new", title: "Add foo(ci) helper to the composer", description: "" },
+      { kind: "new", title: "Foo(ci) helper to the composer", description: "" },
       { kind: "fixed", title: "Handle bar(release) timeout", description: "" },
     ]);
   });
