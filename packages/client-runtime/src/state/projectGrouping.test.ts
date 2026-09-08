@@ -9,6 +9,8 @@ import {
 } from "./projectGrouping.ts";
 
 const environmentId = EnvironmentId.make("environment");
+const remoteEnvironmentId = EnvironmentId.make("remote-environment");
+const thirdEnvironmentId = EnvironmentId.make("third-environment");
 const repositoryIdentity = {
   canonicalKey: "github.com/t3tools/t3code",
   locator: {
@@ -52,11 +54,11 @@ function settings(
 }
 
 describe("buildProjectGroups", () => {
-  it("preserves every physical clone as a selectable member in repository modes", () => {
+  it("preserves every cross-environment clone as a selectable member in repository modes", () => {
     const projects = [
       makeProject("t3code", "/work/t3code"),
-      makeProject("t3code-2", "/work/t3code-2"),
-      makeProject("t3code-3", "/work/t3code-3"),
+      makeProject("t3code-2", "/work/t3code-2", { environmentId: remoteEnvironmentId }),
+      makeProject("t3code-3", "/work/t3code-3", { environmentId: thirdEnvironmentId }),
     ];
 
     for (const mode of ["repository", "repository_path"] as const) {
@@ -71,10 +73,55 @@ describe("buildProjectGroups", () => {
     }
   });
 
+  it("keeps same-environment checkouts of one repository as separate projects", () => {
+    const desktop = makeProject("desktop", "/Users/me/Desktop/t3code", { title: "t3code" });
+    const documents = makeProject("documents", "/Users/me/Documents/t3code", {
+      title: "T3 Code (docs)",
+    });
+    const remote = makeProject("remote", "/srv/t3code", { environmentId: remoteEnvironmentId });
+
+    for (const mode of ["repository", "repository_path"] as const) {
+      const groups = buildProjectGroups({
+        projects: [desktop, documents, remote],
+        settings: settings(mode),
+      });
+      expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+        ["remote"],
+        ["desktop"],
+        ["documents"],
+      ]);
+      expect(groups.map((group) => group.key)).toEqual([
+        repositoryIdentity.canonicalKey,
+        derivePhysicalProjectKey(desktop),
+        derivePhysicalProjectKey(documents),
+      ]);
+      expect(groups.map((group) => group.label)).toEqual(["remote", "t3code", "T3 Code (docs)"]);
+      expect(groups.map((group) => group.memberProjectRefs.length)).toEqual([1, 1, 1]);
+    }
+  });
+
+  it("keeps monorepo subfolders of one clone grouped on the same environment", () => {
+    const identity = { ...repositoryIdentity, rootPath: "/work/t3code" };
+    const web = makeProject("web", "/work/t3code/apps/web", { repositoryIdentity: identity });
+    const mobile = makeProject("mobile", "/work/t3code/apps/mobile", {
+      repositoryIdentity: identity,
+    });
+
+    const groups = buildProjectGroups({
+      projects: [web, mobile],
+      settings: settings("repository"),
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["web", "mobile"]);
+  });
+
   it("uses a shared custom title as the repository group's label", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "Custom project" }),
-      makeProject("second", "/work/t3code-2", { title: "Custom project" }),
+      makeProject("second", "/work/t3code-2", {
+        title: "Custom project",
+        environmentId: remoteEnvironmentId,
+      }),
     ];
 
     expect(buildProjectGroups({ projects, settings: settings("repository") })[0]?.label).toBe(
@@ -85,7 +132,10 @@ describe("buildProjectGroups", () => {
   it("keeps the repository label when shared titles match its repository name", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "t3code" }),
-      makeProject("second", "/work/t3code-2", { title: "t3code" }),
+      makeProject("second", "/work/t3code-2", {
+        title: "t3code",
+        environmentId: remoteEnvironmentId,
+      }),
     ];
 
     expect(buildProjectGroups({ projects, settings: settings("repository") })[0]?.label).toBe(
@@ -108,8 +158,12 @@ describe("buildProjectGroups", () => {
 
   it("applies a physical-project override without dropping its siblings", () => {
     const first = makeProject("t3code", "/work/t3code");
-    const second = makeProject("t3code-2", "/work/t3code-2");
-    const third = makeProject("t3code-3", "/work/t3code-3");
+    const second = makeProject("t3code-2", "/work/t3code-2", {
+      environmentId: remoteEnvironmentId,
+    });
+    const third = makeProject("t3code-3", "/work/t3code-3", {
+      environmentId: thirdEnvironmentId,
+    });
     const groups = buildProjectGroups({
       projects: [first, second, third],
       settings: settings("repository", {
@@ -152,7 +206,9 @@ describe("buildProjectGroups", () => {
       repositoryIdentity: null,
       updatedAt: "2026-07-02T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2");
+    const sibling = makeProject("sibling", "/work/t3code-2", {
+      environmentId: remoteEnvironmentId,
+    });
 
     const groups = buildProjectGroups({
       projects: [identified, freshUnidentified, sibling],
@@ -176,7 +232,9 @@ describe("buildProjectGroups", () => {
     const fresh = makeProject("fresh", "/work/t3code/", {
       updatedAt: "2026-07-02T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2");
+    const sibling = makeProject("sibling", "/work/t3code-2", {
+      environmentId: remoteEnvironmentId,
+    });
 
     const groups = buildProjectGroups({
       projects: [stale, fresh, sibling],
@@ -204,7 +262,9 @@ describe("buildProjectGroups", () => {
       repositoryIdentity: null,
       updatedAt: "2026-07-03T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2");
+    const sibling = makeProject("sibling", "/work/t3code-2", {
+      environmentId: remoteEnvironmentId,
+    });
 
     const groups = buildProjectGroups({
       projects: [staleIdentified, freshIdentified, winner, sibling],

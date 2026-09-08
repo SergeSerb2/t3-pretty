@@ -1916,6 +1916,78 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("remote operations", () => {
+    it.effect("fast-forwards a local base branch only when it is a plain fast-forward", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir("git-remote-");
+        const peer = yield* makeTmpDir("git-peer-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "-u", "origin", initialBranch]);
+
+        yield* git(peer, ["clone", remote, "."]);
+        yield* git(peer, ["config", "user.email", "test@test.com"]);
+        yield* git(peer, ["config", "user.name", "Test"]);
+        yield* writeTextFile(peer, "remote-change.txt", "remote\n");
+        yield* git(peer, ["add", "remote-change.txt"]);
+        yield* git(peer, ["commit", "-m", "remote change"]);
+        yield* git(peer, ["push", "origin", initialBranch]);
+        const remoteHead = yield* git(peer, ["rev-parse", "HEAD"]);
+
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        yield* driver.fetchRemote({ cwd, remoteName: "origin" });
+
+        // Checked out with a dirty tree: left alone.
+        yield* writeTextFile(cwd, "dirty.txt", "dirty\n");
+        assert.deepEqual(
+          yield* driver.fastForwardBranch({ cwd, refName: initialBranch, commitSha: remoteHead }),
+          { updated: false },
+        );
+        assert.notEqual(yield* git(cwd, ["rev-parse", "HEAD"]), remoteHead);
+
+        // Checked out and clean: fast-forwards the working tree.
+        yield* fileSystem.remove(pathService.join(cwd, "dirty.txt"));
+        assert.deepEqual(
+          yield* driver.fastForwardBranch({ cwd, refName: initialBranch, commitSha: remoteHead }),
+          { updated: true },
+        );
+        assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), remoteHead);
+        assert.deepEqual(
+          yield* driver.fastForwardBranch({ cwd, refName: initialBranch, commitSha: remoteHead }),
+          { updated: false },
+        );
+
+        // Not checked out: the ref moves without touching the working tree.
+        yield* git(peer, ["commit", "--allow-empty", "-m", "second remote change"]);
+        yield* git(peer, ["push", "origin", initialBranch]);
+        const secondRemoteHead = yield* git(peer, ["rev-parse", "HEAD"]);
+        yield* driver.fetchRemote({ cwd, remoteName: "origin" });
+        yield* git(cwd, ["checkout", "-b", "feature"]);
+        assert.deepEqual(
+          yield* driver.fastForwardBranch({
+            cwd,
+            refName: initialBranch,
+            commitSha: secondRemoteHead,
+          }),
+          { updated: true },
+        );
+        assert.equal(yield* git(cwd, ["rev-parse", initialBranch]), secondRemoteHead);
+        assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), remoteHead);
+
+        // Diverged: left alone.
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "local feature commit"]);
+        const featureHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+        assert.deepEqual(
+          yield* driver.fastForwardBranch({ cwd, refName: "feature", commitSha: remoteHead }),
+          { updated: false },
+        );
+        assert.equal(yield* git(cwd, ["rev-parse", "feature"]), featureHead);
+      }),
+    );
+
     it.effect("creates a worktree from the latest fetched remote commit", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

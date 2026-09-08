@@ -46,6 +46,10 @@ or local commits. It skips checkouts on another branch or without an upstream. I
 local work, resolve it yourself before automatic pulls can resume. Pull failures do not prevent the
 server from starting.
 
+Starting a **New worktree** thread also fast-forwards the base branch when the worktree begins
+from origin. The branch only moves when it is behind, and a checkout of it with changed files stays
+untouched.
+
 ## Automations
 
 A project's settings list its automations: the saved prompts T3 Code runs on a schedule, on an

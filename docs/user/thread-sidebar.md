@@ -12,6 +12,8 @@ an existing worktree, use **New thread in this worktree** from the branch toolba
 
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
+The same repository on several machines is one project. Two clones of it on one
+machine stay separate projects, so a new thread always lands in the folder you pick.
 
 ### Start in the background
 

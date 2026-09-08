@@ -989,6 +989,23 @@ const makeWsRpcLayer = (
                     fallbackRemoteName: "origin",
                   });
                   worktreeBaseRef = resolvedRemoteBase.commitSha;
+                  // The worktree starts from the remote commit; the local base
+                  // branch catches up too so `git diff main` inside the
+                  // worktree compares against the same code. Best effort: a
+                  // branch that cannot fast-forward never blocks the thread.
+                  const fastForwardInput = {
+                    cwd: bootstrap.prepareWorktree.projectCwd,
+                    refName: bootstrap.prepareWorktree.baseBranch,
+                    commitSha: resolvedRemoteBase.commitSha,
+                  };
+                  yield* gitWorkflow.fastForwardBranch(fastForwardInput).pipe(
+                    Effect.catch((cause) =>
+                      Effect.logWarning("Failed to fast-forward worktree base branch", {
+                        ...fastForwardInput,
+                        cause,
+                      }),
+                    ),
+                  );
                 }
               }
               const worktree = yield* gitWorkflow.createWorktree({
