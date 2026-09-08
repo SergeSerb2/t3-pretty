@@ -86,11 +86,10 @@ update queued for the next suitable moment.
 
 ## What's New Dialog
 
-After an update, the app shows a What's New dialog the next time it opens, listing the changes in
-the releases you skipped. Entries cover T3 Pretty features and the parent T3 Code changes
-integrated with them. Builds that only contained internal maintenance are omitted when there is
-something user-facing to show. Dismissing the dialog marks those releases as seen; it will not
-reappear until the next update.
+After an update, the app shows What's New the next time it opens: a short list of what
+changed since you last used it, grouped as New, Improvements, and Fixes. Notes that
+appeared in more than one build are listed once. Dismissing the dialog marks those
+updates as seen; it will not reappear until the next update.
 
-To browse the changelog at any time, open Settings → General → What's new, or run "What's new"
-from the command palette. That list includes every release, including maintenance-only builds.
+To browse the full history, open Settings → General → What's new, or run "What's new"
+from the command palette.

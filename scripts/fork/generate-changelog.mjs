@@ -212,11 +212,13 @@ ${sections.join("\n\n")}
 Rules:
 - Return one "releases" entry per release above, keyed by the exact version string.
 - kind: "new" for new capabilities, "improved" for enhancements to existing behavior, "fixed" for bug fixes.
-- title: at most 10 words, sentence case, no trailing period, no version numbers, no commit hashes, no PR numbers.
-- description: one short sentence explaining what the user gets; use "" when the title says it all.
+- title: at most 10 words, sentence case (capitalize the first letter), no trailing period, no version numbers, no commit hashes, no PR numbers.
+- Write each title as something a person using the app would notice, not as a commit subject. Prefer "New threads open in the intended clone" over "new threads land in the intended clone and start from current main".
+- Do not start titles with commit verbs such as "add", "fix", "restore", "keep", or "stop".
+- description: one short sentence of what the user can do now; use "" when the title says it all.
 - headline: one sentence only when a release has a clear standout theme; otherwise "".
 - Merge related commits into a single item; order items by user impact; at most 6 items per release.
-- Skip purely internal changes (CI, release plumbing, docs, test-only changes, refactors with no user-visible effect).
+- Skip purely internal changes (CI, typecheck, packaging, release plumbing, docs, test-only changes, sync plumbing, refactors with no user-visible effect).
 - Treat parent T3 Code changes as first-class entries: phrase them as app improvements without mentioning "upstream", "parent", "nightly", or "fork".
 - Never invent changes that are not implied by the commit lists.
 - If a release has no user-visible changes, give it a single "improved" item titled "Under-the-hood stability and maintenance" with an empty description.`;
@@ -340,6 +342,14 @@ async function callChangelogModel({ prompt, token }) {
 
 const ITEM_KINDS = new Set(["new", "improved", "fixed"]);
 
+function formatFallbackTitle(title) {
+  const stripped = title.replace(/\s*\(#\d+\)\s*$/u, "").trim();
+  if (stripped === "") {
+    return title.trim();
+  }
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 function sanitizeItems(items) {
   const seen = new Set();
   const sanitized = [];
@@ -377,8 +387,8 @@ export function fallbackReleaseEntry({ version, date, forkCommits, upstream }) {
     if (!match) {
       continue;
     }
-    const title = match[2].trim();
-    if (items.some((item) => item.title === title)) {
+    const title = formatFallbackTitle(match[2]);
+    if (title === "" || items.some((item) => item.title === title)) {
       continue;
     }
     const kind = match[1] === "fix" ? "fixed" : match[1] === "feat" ? "new" : "improved";

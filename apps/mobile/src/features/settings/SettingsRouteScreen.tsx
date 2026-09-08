@@ -844,7 +844,7 @@ function AppSettingsSection() {
   return (
     <SettingsSection title="App">
       <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
-      <SettingsRow icon="sparkles" label="What's New" onPress={openWhatsNew} />
+      <SettingsRow icon="sparkles" label="What's new" onPress={openWhatsNew} />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <Pressable

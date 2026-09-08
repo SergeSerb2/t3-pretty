@@ -1,9 +1,14 @@
-import { SparklesIcon, WrenchIcon, ZapIcon, type LucideIcon } from "lucide-react";
+import { SparklesIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 
-import { APP_BASE_NAME } from "../branding";
-import type { ChangelogItemKind, ChangelogRelease } from "../changelog/changelogData";
-import { Badge } from "~/components/ui/badge";
+import type { ChangelogRelease } from "../changelog/changelogData";
+import {
+  changelogStaggerIndex,
+  formatUpdateSubtitle,
+  presentChangelogHistory,
+  presentUpdateDigest,
+  type PresentedKindGroup,
+} from "../changelog/changelogPresentation";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -17,38 +22,41 @@ import {
 } from "~/components/ui/dialog";
 import { cn } from "~/lib/utils";
 
-const KIND_PRESENTATION: Record<
-  ChangelogItemKind,
-  { label: string; Icon: LucideIcon; tileClass: string; labelClass: string }
-> = {
-  new: {
-    label: "New",
-    Icon: SparklesIcon,
-    tileClass: "bg-primary/12 text-primary",
-    labelClass: "bg-primary/10 text-primary",
-  },
-  improved: {
-    label: "Improved",
-    Icon: ZapIcon,
-    tileClass: "bg-info/12 text-info-foreground",
-    labelClass: "bg-info/10 text-info-foreground",
-  },
-  fixed: {
-    label: "Fixed",
-    Icon: WrenchIcon,
-    tileClass: "bg-success/12 text-success-foreground",
-    labelClass: "bg-success/10 text-success-foreground",
-  },
-};
-
-const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeZone: "UTC",
-});
-
-function formatReleaseDate(isoDate: string): string | null {
-  const parsed = new Date(`${isoDate}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) ? null : releaseDateFormatter.format(parsed);
+function KindGroupList({ groups }: { readonly groups: readonly PresentedKindGroup[] }) {
+  const showHeadings = groups.length > 1;
+  return (
+    <div className="flex flex-col gap-6">
+      {groups.map((group, groupIndex) => (
+        <div key={group.kind} className="flex flex-col gap-3">
+          {showHeadings ? (
+            <p className="font-medium text-muted-foreground text-sm">{group.heading}</p>
+          ) : null}
+          <ul className="flex flex-col gap-3.5">
+            {group.items.map((item, itemIndex) => (
+              <li
+                key={item.title}
+                className="flex flex-col gap-0.5"
+                // Stagger slot for scenery/motion.css; capped so rows below
+                // the fold never wait on the ones above.
+                style={
+                  {
+                    "--sc-i": changelogStaggerIndex(groups, groupIndex, itemIndex),
+                  } as CSSProperties
+                }
+              >
+                <p className="text-pretty font-medium text-sm leading-snug">{item.title}</p>
+                {item.description ? (
+                  <p className="text-pretty text-muted-foreground text-sm leading-relaxed">
+                    {item.description}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function WhatsNewDialog({
@@ -68,91 +76,70 @@ export function WhatsNewDialog({
   readonly currentVersion: string;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const digest = announceUpdate ? presentUpdateDigest(releases) : null;
+  const history = announceUpdate ? null : presentChangelogHistory(releases);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup aria-label="What's new" className="max-w-md">
-        <DialogHeader className="relative overflow-hidden">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(28rem_9rem_at_top_left,color-mix(in_srgb,var(--primary)_14%,transparent),transparent)]"
-          />
-          <div className="relative flex items-center gap-3.5">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm">
-              <SparklesIcon className="size-5.5" />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <DialogTitle>What’s new</DialogTitle>
-              <DialogDescription>
-                {announceUpdate
-                  ? `${APP_BASE_NAME} has been updated to v${currentVersion}.`
-                  : `Recent updates to ${APP_BASE_NAME}.`}
-              </DialogDescription>
-            </div>
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <SparklesIcon aria-hidden className="size-4.5 shrink-0 text-primary" />
+            <DialogTitle>What’s new</DialogTitle>
           </div>
+          <DialogDescription>
+            {announceUpdate ? formatUpdateSubtitle(releases, currentVersion) : "Recent updates"}
+          </DialogDescription>
         </DialogHeader>
         <DialogPanel className="flex flex-col">
-          {releases.map((release, index) => (
-            <section
-              key={release.version}
-              className={cn("flex flex-col gap-3 py-5 first:pt-1", index > 0 && "border-t")}
-            >
-              <div className="flex items-baseline gap-2">
-                <Badge variant="secondary">v{release.version}</Badge>
-                {formatReleaseDate(release.date) && (
-                  <span className="text-muted-foreground text-xs">
-                    {formatReleaseDate(release.date)}
-                  </span>
-                )}
+          {digest ? (
+            digest.groups.length === 0 ? (
+              <p className="text-pretty text-muted-foreground text-sm leading-relaxed">
+                This update is installed. There are no extra notes to show.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-5">
+                {digest.headline ? (
+                  <p className="text-pretty text-sm leading-relaxed">{digest.headline}</p>
+                ) : null}
+                <KindGroupList groups={digest.groups} />
+                {digest.truncated ? (
+                  <p className="text-pretty text-muted-foreground text-sm leading-relaxed">
+                    Earlier changes are in Settings → What’s new.
+                  </p>
+                ) : null}
               </div>
-              {release.headline && (
-                <p className="text-foreground/90 text-sm leading-relaxed">{release.headline}</p>
-              )}
-              <ul className="flex flex-col gap-3.5">
-                {release.items.map((item, index) => {
-                  const kind = KIND_PRESENTATION[item.kind];
-                  return (
-                    <li
-                      key={item.title}
-                      className="flex gap-3"
-                      // Stagger slot for scenery/motion.css; capped so rows
-                      // below the fold never wait on the ones above.
-                      style={{ "--sc-i": Math.min(index, 5) } as CSSProperties}
-                    >
-                      <span
-                        className={cn(
-                          "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg",
-                          kind.tileClass,
-                        )}
-                      >
-                        <kind.Icon className="size-4" />
-                      </span>
-                      <div className="flex min-w-0 flex-col gap-0.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-medium text-sm leading-tight">{item.title}</span>
-                          <span
-                            className={cn(
-                              "rounded-sm px-1 py-px font-semibold text-[.625rem] uppercase tracking-wide",
-                              kind.labelClass,
-                            )}
-                          >
-                            {kind.label}
-                          </span>
-                        </div>
-                        {item.description && (
-                          <p className="text-muted-foreground text-sm leading-relaxed">
-                            {item.description}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
+            )
+          ) : history !== null && history.length === 0 ? (
+            <p className="text-pretty text-muted-foreground text-sm leading-relaxed">
+              No recent notes to show.
+            </p>
+          ) : (
+            <div className="flex flex-col">
+              {history?.map((day, index) => (
+                <div
+                  key={day.date}
+                  className={cn("flex flex-col gap-4", index > 0 && "mt-5 border-t pt-5")}
+                >
+                  <p className="font-medium text-sm">{day.label}</p>
+                  <KindGroupList groups={day.groups} />
+                </div>
+              ))}
+            </div>
+          )}
         </DialogPanel>
         <DialogFooter>
-          <DialogClose render={<Button size="sm" />}>Got it</DialogClose>
+          <DialogClose
+            render={
+              <Button
+                size="sm"
+                variant={announceUpdate ? "default" : "outline"}
+                className="max-sm:w-full"
+              />
+            }
+          >
+            {announceUpdate ? "Continue" : "Close"}
+          </DialogClose>
         </DialogFooter>
       </DialogPopup>
     </Dialog>
