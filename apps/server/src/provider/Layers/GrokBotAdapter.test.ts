@@ -211,6 +211,27 @@ it.effect("creates a bot per thread and settles a turn from the box feed", () =>
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("closes an in-flight turn as interrupted when the session stops", () =>
+  Effect.gen(function* () {
+    const fake = yield* makeFakeClient;
+    const adapter = yield* makeGrokBotAdapter(fake.client);
+    const threadId = ThreadId.make("grok-bot-stop-midturn");
+    const collected = yield* adapter.streamEvents.pipe(
+      Stream.filter((event) => event.threadId === threadId),
+      Stream.takeUntil((event) => event.type === "session.exited"),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+    yield* adapter.sendTurn({ threadId, input: "keep going" });
+    yield* adapter.stopSession(threadId);
+    const types = Array.from(yield* Fiber.join(collected)).map((event) => event.type);
+    assert.deepEqual(types.slice(-2), ["turn.completed", "session.exited"]);
+    // The bot itself is left alone: it is the user's persistent teammate.
+    assert.isUndefined(fake.commands.find((entry) => entry.command === "interruptAgentRun"));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("re-attaches to the bot in the resume cursor and auto-approves in full access", () =>
   Effect.gen(function* () {
     const fake = yield* makeFakeClient;

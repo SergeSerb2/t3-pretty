@@ -651,9 +651,13 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
 
     // ── adapter surface ──────────────────────────────────────────────
 
+    // Ends T3's view of the session only. The bot is a persistent teammate the
+    // user also drives from the Grok Bot app, so stopping a thread (or
+    // restarting the server) neither interrupts its run nor answers its cards.
     const stopSessionInternal = (ctx: SessionContext) =>
       Effect.gen(function* () {
         if (ctx.stopped) return;
+        yield* settleTurn(ctx, "interrupted");
         ctx.stopped = true;
         sessions.delete(ctx.threadId);
         sessionsByAgent.delete(ctx.agentId);
