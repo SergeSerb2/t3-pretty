@@ -35,8 +35,13 @@ export interface TranscriptFile {
 }
 
 export const TRANSCRIPT_FILE_MAX = 50_000;
-export const TRANSCRIPT_DIRECTORY_MAX = 20_000;
-export const TRANSCRIPT_ENTRY_MAX = 500_000;
+/**
+ * Walk budget in directory entries. Every opened directory is itself an entry,
+ * so this also bounds directory count and the pending-directory queue. Grok
+ * and Kimi keep one directory per session forever (~13 entries each), so a
+ * long-lived machine reaches tens of thousands of session directories.
+ */
+export const TRANSCRIPT_ENTRY_MAX = 2_000_000;
 
 export interface TranscriptListing {
   readonly files: readonly TranscriptFile[];
@@ -46,7 +51,6 @@ export interface TranscriptListing {
 
 export interface TranscriptListingLimits {
   readonly maxFiles?: number;
-  readonly maxDirectories?: number;
   readonly maxEntries?: number;
 }
 
@@ -145,18 +149,15 @@ export async function listTranscriptFiles(
   const boundedLimit = (value: number | undefined, fallback: number) =>
     value === undefined || !Number.isFinite(value) ? fallback : Math.max(0, Math.trunc(value));
   const maxFiles = boundedLimit(limits.maxFiles, TRANSCRIPT_FILE_MAX);
-  const maxDirectories = boundedLimit(limits.maxDirectories, TRANSCRIPT_DIRECTORY_MAX);
   const maxEntries = boundedLimit(limits.maxEntries, TRANSCRIPT_ENTRY_MAX);
-  const pendingDirectories = maxDirectories > 0 ? [root] : [];
-  let openedDirectories = 0;
+  const pendingDirectories = [root];
   let visitedEntries = 0;
   let unreadableDirectories = 0;
-  let truncated = maxDirectories === 0 || maxFiles === 0 || maxEntries === 0;
+  let truncated = maxFiles === 0 || maxEntries === 0;
 
   while (pendingDirectories.length > 0 && !truncated) {
     const dir = pendingDirectories.pop();
     if (dir === undefined) break;
-    openedDirectories += 1;
 
     let entries;
     try {
@@ -175,10 +176,6 @@ export async function listTranscriptFiles(
 
       const child = NodePath.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (openedDirectories + pendingDirectories.length >= maxDirectories) {
-          truncated = true;
-          break;
-        }
         pendingDirectories.push(child);
         continue;
       }

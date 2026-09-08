@@ -65,7 +65,6 @@ describe("listTranscriptFiles", () => {
 
       const listing = await listTranscriptFiles(root, 0, undefined, {
         maxFiles: 1,
-        maxDirectories: 4,
         maxEntries: 10,
       });
 
