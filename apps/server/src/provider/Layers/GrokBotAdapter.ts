@@ -976,19 +976,18 @@ export function makeGrokBotAdapter(client: GrokBotClient, options?: GrokBotAdapt
     const readThread: GrokBotAdapterShape["readThread"] = (threadId) =>
       Effect.map(requireSession(threadId), (ctx) => ({ threadId, turns: ctx.turns }));
 
-    const rollbackThread: GrokBotAdapterShape["rollbackThread"] = (threadId, numTurns) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
-        if (!Number.isInteger(numTurns) || numTurns < 1) {
-          return yield* new ProviderAdapterValidationError({
+    // ProviderService refuses rewinds when `supportsConversationRollback` is
+    // false; this stays consistent if it is ever called directly.
+    const rollbackThread: GrokBotAdapterShape["rollbackThread"] = (threadId) =>
+      Effect.flatMap(requireSession(threadId), () =>
+        Effect.fail(
+          new ProviderAdapterValidationError({
             provider: PROVIDER,
             operation: "rollbackThread",
-            issue: "numTurns must be an integer >= 1.",
-          });
-        }
-        ctx.turns.splice(Math.max(0, ctx.turns.length - numTurns));
-        return { threadId, turns: ctx.turns };
-      });
+            issue: "Grok Bot keeps the conversation on its box; it cannot be rewound from T3 Code.",
+          }),
+        ),
+      );
 
     const stopSession: GrokBotAdapterShape["stopSession"] = (threadId) =>
       threadLocks.withLock(threadId, Effect.flatMap(requireSession(threadId), stopSessionInternal));
