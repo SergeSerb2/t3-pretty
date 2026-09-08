@@ -14,7 +14,9 @@ import {
   buildConflictPrompt,
   buildValidationRetryPrompt,
   conflictResolutionEfforts,
+  deduplicateUnconflictedDeclarations,
   deduplicateUnconflictedImports,
+  deduplicateUnconflictedStatements,
   formatSyncReport,
   isBinaryAssetConflict,
   isGeneratedLockfile,
@@ -25,6 +27,7 @@ import {
   MAX_PROVIDER_AVAILABILITY_ATTEMPTS,
   MAX_VALIDATION_ATTEMPTS,
   materializeResolutionProgressForValidation,
+  mergeArtifactRedeclarations,
   nextProviderAvailabilityAttempt,
   prepareConflictPrompt,
   providerAvailabilityRetryDelayMs,
@@ -1622,6 +1625,141 @@ ${">".repeat(7)} theirs
     );
   });
 
+  it("removes a byte-identical duplicate statement git left outside conflict markers", () => {
+    // Nightly 1332: both sides added the same service lookup at different
+    // positions in ws.ts, so git kept both copies outside every conflict.
+    const path = "apps/server/src/ws.ts";
+    const source = [
+      "export const make = Effect.gen(function* () {\n",
+      "  const providerRegistry = yield* ProviderRegistry;\n",
+      "  const providerSessionDirectory = yield* ProviderSessionDirectory;\n",
+      "  const providerService = yield* ProviderService;\n",
+      "  const providerSessionDirectory = yield* ProviderSessionDirectory;\n",
+      "<<<<<<< OURS\n",
+      "  const scanner = yield* ForkScanner;\n",
+      "=======\n",
+      "  const scanner = yield* AgentSessionScanner;\n",
+      ">>>>>>> THEIRS\n",
+      "  return { providerRegistry, providerSessionDirectory, providerService, scanner };\n",
+      "});\n",
+    ].join("");
+
+    assert.throws(
+      () => assertValidResolutionProgressSource({ path, source, forkSide: "ours" }),
+      /providerSessionDirectory/u,
+    );
+    assert.deepEqual(mergeArtifactRedeclarations({ path, source, forkSide: "ours" }), [
+      "providerSessionDirectory",
+    ]);
+
+    const result = deduplicateUnconflictedStatements({ path, source, forkSide: "ours" });
+    assert.equal(result.removed, 1);
+    assert.equal(result.source.match(/providerSessionDirectory = yield/gu)?.length, 1);
+    // The fork's earlier copy survives; the later duplicate line is gone whole.
+    assert.include(
+      result.source,
+      "  const providerSessionDirectory = yield* ProviderSessionDirectory;\n  const providerService = yield* ProviderService;\n<<<<<<< OURS",
+    );
+    assert.doesNotThrow(() =>
+      assertValidResolutionProgressSource({ path, source: result.source, forkSide: "ours" }),
+    );
+    assert.deepEqual(
+      mergeArtifactRedeclarations({ path, source: result.source, forkSide: "ours" }),
+      [],
+    );
+    assert.deepEqual(
+      deduplicateUnconflictedDeclarations({ path, source, forkSide: "ours" }),
+      result,
+    );
+  });
+
+  it("keeps differing duplicate declarations and reports them as merge artifacts", () => {
+    const path = "apps/desktop/src/settings/DesktopClientSettings.ts";
+    const source = [
+      'export class ReadError extends Error { readonly kind = "fork"; }\n',
+      "export const write = () => 1;\n",
+      'export class ReadError extends Error { readonly kind = "parent"; }\n',
+      "<<<<<<< OURS\n",
+      'export const side = "fork";\n',
+      "=======\n",
+      'export const side = "parent";\n',
+      ">>>>>>> THEIRS\n",
+    ].join("");
+
+    const result = deduplicateUnconflictedDeclarations({ path, source, forkSide: "ours" });
+    assert.equal(result.removed, 0);
+    assert.equal(result.source, source);
+    assert.deepEqual(mergeArtifactRedeclarations({ path, source, forkSide: "ours" }), [
+      "ReadError",
+    ]);
+
+    // The resolver tolerates exactly that identifier while it resolves the
+    // conflicts, for partial and for completed sources alike...
+    assert.throws(() => assertValidResolutionProgressSource({ path, source, forkSide: "ours" }));
+    assert.doesNotThrow(() =>
+      assertValidResolutionProgressSource({
+        path,
+        source,
+        forkSide: "ours",
+        tolerated: ["ReadError"],
+      }),
+    );
+    const resolved = source.replace(
+      /<<<<<<< OURS\n[\s\S]*?>>>>>>> THEIRS\n/u,
+      'export const side = "merged";\n',
+    );
+    assert.throws(() => assertValidResolvedSource({ path, source: resolved }));
+    assert.doesNotThrow(() =>
+      assertValidResolvedSource({ path, source: resolved, tolerated: ["ReadError"] }),
+    );
+    // ...but nothing else: a different redeclaration or broken syntax still fails.
+    assert.throws(
+      () =>
+        assertValidResolvedSource({
+          path,
+          source: `${resolved}export const write = () => 2;\n`,
+          tolerated: ["ReadError"],
+        }),
+      /write/u,
+    );
+    assert.throws(() =>
+      assertValidResolvedSource({
+        path,
+        source: `${resolved}export const = ;\n`,
+        tolerated: ["ReadError"],
+      }),
+    );
+  });
+
+  it("checkpoints and restores a resolution that carries a tolerated merge artifact", () => {
+    const cacheDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-artifact-"));
+    const path = "apps/desktop/src/settings/DesktopClientSettings.ts";
+    const resolvedSource = [
+      'export class ReadError extends Error { readonly kind = "fork"; }\n',
+      'export class ReadError extends Error { readonly kind = "parent"; }\n',
+      'export const side = "merged";\n',
+    ].join("");
+    const key = "a".repeat(64);
+    const entry = {
+      path,
+      resolvedSource,
+      forkChangesPreserved: [],
+      upstreamChangesIntegrated: [],
+      upstreamChangesOmitted: [],
+    };
+
+    assert.equal(writeCachedResolution({ key, entry, cacheDir }), false);
+    assert.equal(
+      writeCachedResolution({ key, entry: { ...entry, mergeArtifacts: ["ReadError"] }, cacheDir }),
+      true,
+    );
+    assert.equal(
+      readCachedResolution({ key, expectedPath: path, cacheDir })?.resolvedSource,
+      resolvedSource,
+    );
+    NodeFS.rmSync(cacheDir, { recursive: true, force: true });
+  });
+
   it("removes exact duplicate imports introduced outside conflict markers", () => {
     const duplicateImport = 'import * as Queue from "effect/Queue";\n';
     const source = [
@@ -2345,7 +2483,10 @@ ${">".repeat(7)} theirs
     // failure: bounded fresh requests usually validate (seen on nightly 1093).
     assert.include(resolver, "returned an invalid edit set");
     assert.include(resolver, "requesting a fresh resolution");
-    assert.include(resolver, "assertValidResolutionProgressSource({ path, source: nextSource })");
+    assert.match(
+      resolver,
+      /assertValidResolutionProgressSource\(\{\s*path,\s*source: nextSource,\s*tolerated: mergeArtifacts,?\s*\}\)/u,
+    );
     assert.include(resolver, "keeping the last valid checkpoint");
     assert.include(resolver, "throw deferredSyncError(");
     assert.equal(MAX_VALIDATION_ATTEMPTS, 3);
