@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001662",
+    date: "2026-09-08",
+    items: [
+      {
+        kind: "fixed",
+        title: "Make What's New readable after an update",
+      },
+      {
+        kind: "new",
+        title: "Animate the launch splash into the app",
+      },
+      {
+        kind: "fixed",
+        title: "New threads land in the intended clone and start from current main",
+      },
+      {
+        kind: "fixed",
+        title: "Usage scan no longer stops at 20,000 transcript directories",
+      },
+      {
+        kind: "fixed",
+        title: "Composer hover eases in and relaxes out instead of snapping",
+      },
+      {
+        kind: "fixed",
+        title: "Primary cookies out of Surge link requests",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001660",
     date: "2026-09-08",
     items: [
