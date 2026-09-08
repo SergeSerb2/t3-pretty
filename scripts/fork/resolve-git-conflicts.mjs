@@ -185,9 +185,10 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, exp
       );
       return undefined;
     }
+    const tolerated = sanitizeMergeArtifacts(entry.mergeArtifacts);
     if (hasCompletedResolution && typeof entry.resolvedSource === "string") {
       try {
-        assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource });
+        assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource, tolerated });
       } catch (error) {
         const quarantined = quarantineCachedResolution({ key, cacheDir });
         process.stdout.write(
@@ -201,6 +202,7 @@ export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, exp
         assertValidResolutionProgressSource({
           path: entry.path,
           source: entry.partialSource,
+          tolerated,
         });
       } catch (error) {
         const quarantined = quarantineCachedResolution({ key, cacheDir });
@@ -230,7 +232,7 @@ export function quarantineCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DI
   }
 }
 
-export function assertValidResolvedSource({ path, source }) {
+export function assertValidResolvedSource({ path, source, tolerated = [] }) {
   if (typeof path !== "string" || typeof source !== "string") {
     throw new Error("completed resolution did not contain a source path and string");
   }
@@ -245,11 +247,16 @@ export function assertValidResolvedSource({ path, source }) {
     assertOxcParserAcceptsSource({ path, source });
     const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
     if (path.endsWith(".tsx")) plugins.push("jsx");
-    parseJavaScript(source, {
+    const parsed = parseJavaScript(source, {
       sourceFilename: path,
       sourceType: "unambiguous",
       plugins,
+      errorRecovery: tolerated.length > 0,
     });
+    const error = (parsed.errors ?? []).find(
+      (candidate) => !isToleratedRedeclaration(candidate, tolerated),
+    );
+    if (error) throw error;
   } catch (error) {
     throw new Error(
       `${path} is not syntactically valid TypeScript: ${oneLine(error instanceof Error ? error.message : String(error))}`,
@@ -283,14 +290,7 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
   let materialized;
   let parsed;
   try {
-    materialized = materializeResolutionProgressDetails({ path, source, forkSide });
-    const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
-    if (path.endsWith(".tsx")) plugins.push("jsx");
-    parsed = parseJavaScript(materialized.source, {
-      sourceType: "unambiguous",
-      plugins,
-      errorRecovery: true,
-    });
+    ({ materialized, parsed } = parseMaterializedForDeduplication({ path, source, forkSide }));
   } catch {
     return unchanged;
   }
@@ -378,7 +378,25 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
       removals.push({ ...range, count: 1 });
     });
   }
-  if (removals.length === 0) return unchanged;
+  return applyMaterializedRemovals({ source, materialized, removals });
+}
+
+function parseMaterializedForDeduplication({ path, source, forkSide }) {
+  const materialized = materializeResolutionProgressDetails({ path, source, forkSide });
+  const plugins = ["typescript", "decorators", "decoratorAutoAccessors"];
+  if (path.endsWith(".tsx")) plugins.push("jsx");
+  const parsed = parseJavaScript(materialized.source, {
+    sourceType: "unambiguous",
+    plugins,
+    errorRecovery: true,
+  });
+  return { materialized, parsed, plugins };
+}
+
+// Cut `removals` (offsets into the materialized text) out of the
+// marker-bearing source.
+function applyMaterializedRemovals({ source, materialized, removals }) {
+  if (removals.length === 0) return { source, removed: 0 };
 
   // Adjacent losers (`{ a, X, X }`) produce overlapping cuts; merge them so
   // every slice below uses offsets from the untouched materialized text.
@@ -408,8 +426,175 @@ export function deduplicateUnconflictedImports({ path, source, forkSource, forkS
     deduplicated = deduplicated.slice(0, start) + deduplicated.slice(end);
     removed += removal.count;
   }
-  if (removed === 0) return unchanged;
   return { source: deduplicated, removed };
+}
+
+const AST_SKIP_KEYS = new Set([
+  "loc",
+  "extra",
+  "comments",
+  "leadingComments",
+  "trailingComments",
+  "innerComments",
+]);
+
+// The innermost statement containing `position` together with the body list
+// it sits in, so a duplicate can be compared against its siblings.
+function enclosingStatement(node, position, siblings) {
+  if (!node || typeof node !== "object") return undefined;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = enclosingStatement(child, position, node);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!Number.isSafeInteger(node.start) || !Number.isSafeInteger(node.end)) return undefined;
+  if (position < node.start || position >= node.end) return undefined;
+  for (const [key, child] of Object.entries(node)) {
+    if (AST_SKIP_KEYS.has(key)) continue;
+    const found = enclosingStatement(child, position, undefined);
+    if (found) return found;
+  }
+  return siblings && /(?:Statement|Declaration)$/u.test(node.type) ? { node, siblings } : undefined;
+}
+
+// Both sides can also add the same statement (a `const` service lookup, an
+// exported class) at different positions. Git keeps both copies outside any
+// conflict and the parser rejects the redeclaration (nightly 1332, ws.ts).
+// When the two statements are byte-identical, dropping the later copy is the
+// only sensible resolution, so do it before the model sees the file.
+export function deduplicateUnconflictedStatements({ path, source, forkSide }) {
+  if (typeof source !== "string") {
+    throw new Error("conflicted source must be a string");
+  }
+  const unchanged = { source, removed: 0 };
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return unchanged;
+  let materialized;
+  let parsed;
+  try {
+    ({ materialized, parsed } = parseMaterializedForDeduplication({ path, source, forkSide }));
+  } catch {
+    return unchanged;
+  }
+  const text = materialized.source;
+  const dropped = new Set();
+  const removals = [];
+  for (const error of parsed.errors) {
+    const position = diagnosticPosition(error);
+    if (
+      error?.reasonCode !== "VarRedeclaration" ||
+      position === undefined ||
+      spanContainsPosition(materialized.unresolvedSpans, position)
+    ) {
+      continue;
+    }
+    // Babel reports the redeclaration at the later binding.
+    const found = identicalStatementTwin({ parsed, materialized, position, dropped });
+    if (!found) continue;
+    const { node } = found;
+    dropped.add(node);
+    // Take the whole line: leading indentation and the trailing newline.
+    let start = node.start;
+    while (start > 0 && (text[start - 1] === " " || text[start - 1] === "\t")) start -= 1;
+    if (start > 0 && text[start - 1] !== "\n") start = node.start;
+    const end = text[node.end] === "\n" ? node.end + 1 : node.end;
+    removals.push({ start, end, count: 1 });
+  }
+  return applyMaterializedRemovals({ source, materialized, removals });
+}
+
+export function deduplicateUnconflictedDeclarations({ path, source, forkSource, forkSide }) {
+  const imports = deduplicateUnconflictedImports({ path, source, forkSource, forkSide });
+  const statements = deduplicateUnconflictedStatements({
+    path,
+    source: imports.source,
+    forkSide,
+  });
+  return { source: statements.source, removed: imports.removed + statements.removed };
+}
+
+// Redeclarations git left outside every conflict that no dedupe could remove
+// (the two copies differ). The model only edits near conflicts, so a run
+// that insists on a clean parse defers the same file at every slot forever.
+// Instead the resolver tolerates exactly these identifiers while it resolves
+// the text conflicts; the merged tree then fails its build gate and the
+// repair pass fixes them with the diagnostics in hand.
+export function mergeArtifactRedeclarations({ path, source, forkSide }) {
+  if (!TYPESCRIPT_SOURCE_PATTERN.test(path)) return [];
+  let materialized;
+  let parsed;
+  let plugins;
+  try {
+    ({ materialized, parsed, plugins } = parseMaterializedForDeduplication({
+      path,
+      source,
+      forkSide,
+    }));
+  } catch {
+    return [];
+  }
+  const names = new Set();
+  for (const error of parsed.errors) {
+    const identifierName = error?.details?.identifierName;
+    const position = diagnosticPosition(error);
+    if (
+      error?.reasonCode !== "VarRedeclaration" ||
+      typeof identifierName !== "string" ||
+      identifierName.length === 0 ||
+      position === undefined ||
+      spanContainsPosition(materialized.unresolvedSpans, position) ||
+      unresolvedPriorBindingCausedRedeclaration({
+        error,
+        parsed,
+        plugins,
+        source: materialized.source,
+        unresolvedSpans: materialized.unresolvedSpans,
+      }) ||
+      identicalStatementTwin({ parsed, materialized, position }) !== undefined
+    ) {
+      continue;
+    }
+    names.add(identifierName);
+  }
+  return [...names].sort();
+}
+
+// The byte-identical sibling of the statement a redeclaration diagnostic
+// points at, if one exists outside unresolved text. Statement dedupe removes
+// these; artifact detection must not tolerate them instead.
+function identicalStatementTwin({ parsed, materialized, position, dropped = new Set() }) {
+  const text = materialized.source;
+  const overlapsUnresolved = (start, end) =>
+    materialized.unresolvedSpans.some((span) => start < span.end && end > span.start);
+  const found = enclosingStatement(parsed.program, position, undefined);
+  if (!found || dropped.has(found.node) || overlapsUnresolved(found.node.start, found.node.end)) {
+    return undefined;
+  }
+  const { node, siblings } = found;
+  const statement = text.slice(node.start, node.end);
+  const twin = siblings.find(
+    (sibling) =>
+      sibling !== node &&
+      !dropped.has(sibling) &&
+      !overlapsUnresolved(sibling.start, sibling.end) &&
+      text.slice(sibling.start, sibling.end) === statement,
+  );
+  return twin ? { node, twin } : undefined;
+}
+
+// Cache entries are JSON from a branch anyone with push access can edit;
+// only a list of non-empty identifier strings may widen validation.
+function sanitizeMergeArtifacts(value) {
+  return Array.isArray(value) && value.every((name) => typeof name === "string" && name.length > 0)
+    ? value
+    : [];
+}
+
+function isToleratedRedeclaration(error, tolerated) {
+  return (
+    error?.reasonCode === "VarRedeclaration" && tolerated.includes(error?.details?.identifierName)
+  );
 }
 
 function materializeResolutionProgressDetails({
@@ -574,9 +759,14 @@ function unresolvedPriorBindingCausedRedeclaration({
   }
 }
 
-export function assertValidResolutionProgressSource({ path, source, forkSide } = {}) {
+export function assertValidResolutionProgressSource({
+  path,
+  source,
+  forkSide,
+  tolerated = [],
+} = {}) {
   if (!LEFTOVER_MARKER_PATTERN.test(source)) {
-    assertValidResolvedSource({ path, source });
+    assertValidResolvedSource({ path, source, tolerated });
     return;
   }
   const preferredForkSide =
@@ -656,7 +846,9 @@ export function assertValidResolutionProgressSource({ path, source, forkSide } =
         );
       };
       const resolvedSourceError = parsed.errors.find(
-        (error) => !diagnosticIsProvisionalCrossConflict(error),
+        (error) =>
+          !diagnosticIsProvisionalCrossConflict(error) &&
+          !isToleratedRedeclaration(error, tolerated),
       );
       if (resolvedSourceError) throw resolvedSourceError;
       return;
@@ -683,11 +875,17 @@ export function writeCachedResolution({ key, entry, cacheDir = RESOLUTION_CACHE_
     if (!/^[0-9a-f]{64}$/u.test(key)) {
       throw new Error("invalid resolution cache key");
     }
+    const tolerated = sanitizeMergeArtifacts(entry.mergeArtifacts);
+    if (Object.hasOwn(entry, "mergeArtifacts")) entry = { ...entry, mergeArtifacts: tolerated };
     if (Object.hasOwn(entry, "resolvedSource")) {
-      assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource });
+      assertValidResolvedSource({ path: entry.path, source: entry.resolvedSource, tolerated });
     }
     if (Object.hasOwn(entry, "partialSource")) {
-      assertValidResolutionProgressSource({ path: entry.path, source: entry.partialSource });
+      assertValidResolutionProgressSource({
+        path: entry.path,
+        source: entry.partialSource,
+        tolerated,
+      });
     }
     NodeFS.mkdirSync(cacheDir, { recursive: true });
     const serialized = `${JSON.stringify(entry)}\n`;
@@ -1880,7 +2078,7 @@ async function resolveConflict(path, token) {
 
   const conflict = conflictSourceForPath(path);
   const forkSide = process.env.SYNC_FORK_SIDE === "theirs" ? "theirs" : "ours";
-  const deduplicated = deduplicateUnconflictedImports({
+  const deduplicated = deduplicateUnconflictedDeclarations({
     path,
     source: conflict.conflictedSource,
     forkSource: stageSource(path, forkSide === "theirs" ? 3 : 2),
@@ -1890,7 +2088,13 @@ async function resolveConflict(path, token) {
   const { deleteConflict } = conflict;
   if (deduplicated.removed > 0) {
     process.stdout.write(
-      `[fork-sync] removed ${deduplicated.removed} duplicate unconflicted import binding(s) from ${oneLine(path)}\n`,
+      `[fork-sync] removed ${deduplicated.removed} duplicate unconflicted declaration(s) from ${oneLine(path)}\n`,
+    );
+  }
+  const mergeArtifacts = mergeArtifactRedeclarations({ path, source: conflictedSource, forkSide });
+  if (mergeArtifacts.length > 0) {
+    process.stdout.write(
+      `[fork-sync] ${oneLine(path)} redeclares ${mergeArtifacts.join(", ")} outside its conflicts; resolving the conflicts and leaving that merge artifact to the post-merge repair pass\n`,
     );
   }
   // A parent deletion is judged against where the behavior went upstream;
@@ -1990,7 +2194,11 @@ async function resolveConflict(path, token) {
           // distinguishes provisional cross-conflict diagnostics from damage
           // in text the model already resolved. A malformed batch is retried
           // immediately instead of poisoning the durable partial checkpoint.
-          assertValidResolutionProgressSource({ path, source: nextSource });
+          assertValidResolutionProgressSource({
+            path,
+            source: nextSource,
+            tolerated: mergeArtifacts,
+          });
           resolution = response.resolution;
           usedEffort = response.usedEffort;
           effectiveTier = response.effectiveTier;
@@ -2046,6 +2254,7 @@ async function resolveConflict(path, token) {
           path,
           partialSource: source,
           completedBatches,
+          mergeArtifacts,
           forkChangesPreserved,
           upstreamChangesIntegrated,
           upstreamChangesOmitted,
@@ -2094,6 +2303,7 @@ async function resolveConflict(path, token) {
     entry: {
       path,
       resolvedSource: source,
+      mergeArtifacts,
       forkChangesPreserved,
       upstreamChangesIntegrated,
       upstreamChangesOmitted,
