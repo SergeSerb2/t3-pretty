@@ -7,6 +7,7 @@ export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("cursor")]: CursorIcon,
   [ProviderDriverKind.make("grok")]: GrokIcon,
+  [ProviderDriverKind.make("grokBot")]: GrokIcon,
   [ProviderDriverKind.make("kimi")]: KimiIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
 };

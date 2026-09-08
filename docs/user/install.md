@@ -102,11 +102,12 @@ computer.
 | Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                       | `cursor-agent`     | `agent login`                      |
 | Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                         | `grok`             | `grok login`                       |
 | Kimi Code   | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html)               | `kimi`             | `kimi login`                       |
+| Grok Bot    | [Grok Bot](https://cursor.com/docs/grok-bot) (cloud, no CLI)                                               | None               | `agent login` (Cursor CLI)         |
 | Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json) | Managed by T3 Code | **Sign in with Google** in T3 Code |
 
-Codex, Claude, and Kimi are on by default. Cursor, Grok Build, and Antigravity are off by
-default. Turn them on in **Settings** → **Providers** using each provider's card when you want to
-use them.
+Codex, Claude, and Kimi are on by default. Cursor, Grok Build, Grok Bot, and Antigravity are off
+by default. Turn them on in **Settings** → **Providers** using each provider's card when you want
+to use them.
 
 For Antigravity, select the environment in provider settings, then install and sign in there.
 The runtime and credentials stay on that environment, even when you use a phone or remote
@@ -146,7 +147,7 @@ authenticated shows its status and setup instructions in **Settings**.
 
 For provider-specific setup and multi-account configuration, see
 [Codex](./providers-codex.md), [Claude](./providers-claude.md),
-[Kimi](./providers-kimi.md), and
+[Kimi](./providers-kimi.md), [Grok Bot](./providers-grok-bot.md), and
 [Antigravity](./providers-antigravity.md#accounts-and-removal).
 
 ## Next steps

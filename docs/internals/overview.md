@@ -38,9 +38,9 @@ threads.
 
 Provider-specific behavior belongs behind an adapter. Orchestration works with normalized commands
 and events, so adding a provider should not require branches throughout the domain or clients.
-Six built-in drivers are registered in
+Seven built-in drivers are registered in
 [`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts): Codex, Claude, Cursor, Grok,
-Kimi, and Antigravity. See [provider constraints](./providers.md).
+Grok Bot, Kimi, and Antigravity. See [provider constraints](./providers.md).
 
 ## Durable intent and side effects
 

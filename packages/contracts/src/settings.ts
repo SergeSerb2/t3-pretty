@@ -801,6 +801,42 @@ export const KimiSettings = makeProviderSettingsSchema(
 export type KimiSettings = typeof KimiSettings.Type;
 
 /**
+ * Grok Bot runs on Cursor's cloud box and is reached over Cursor's private
+ * `GrokBotService` API plus the box gateway, so there is no binary to point
+ * at. Auth reuses the `cursor-agent` login on this machine unless an explicit
+ * token is supplied (remote hosts without the Cursor CLI).
+ */
+export const GrokBotSettings = makeProviderSettingsSchema(
+  {
+    // Off by default like Cursor and Grok: the probe reaches Cursor's API, which
+    // is wasted on installs without Grok Bot access. Users opt in from Settings.
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    accessToken: ServerSettingsSecret.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Cursor access token",
+        description:
+          "Leave empty to reuse the `cursor-agent login` session on this machine. Set it only when this server runs where the Cursor CLI is not signed in.",
+        providerSettingsForm: {
+          control: "password",
+          placeholder: "Optional",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: ServerSettingsCustomModels.pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  { order: ["accessToken"] },
+);
+export type GrokBotSettings = typeof GrokBotSettings.Type;
+
+/**
  * A read-only quota source outside this environment's provider CLIs. The
  * only kind today is a CLIProxyAPI hub, whose management API reports the
  * windows of every pooled account. The key travels in settings for now, like
@@ -1043,6 +1079,7 @@ export const ServerSettings = Schema.Struct({
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     kimi: KimiSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    grokBot: GrokBotSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
@@ -1218,6 +1255,12 @@ const KimiSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(ServerSettingsCustomModels),
 });
 
+const GrokBotSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  accessToken: Schema.optionalKey(ServerSettingsSecret),
+  customModels: Schema.optionalKey(ServerSettingsCustomModels),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
@@ -1289,6 +1332,7 @@ export const ServerSettingsPatch = Schema.Struct({
       grok: Schema.optionalKey(GrokSettingsPatch),
       kimi: Schema.optionalKey(KimiSettingsPatch),
       antigravity: Schema.optionalKey(AntigravitySettingsPatch),
+      grokBot: Schema.optionalKey(GrokBotSettingsPatch),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual
