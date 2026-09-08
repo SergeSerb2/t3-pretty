@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001654",
+    date: "2026-09-08",
+    items: [
+      {
+        kind: "fixed",
+        title: "new threads land in the intended clone and start from current main",
+      },
+      {
+        kind: "fixed",
+        title: "usage scan no longer stops at 20,000 transcript directories",
+      },
+      {
+        kind: "fixed",
+        title: "composer hover eases in and relaxes out instead of snapping",
+      },
+      {
+        kind: "fixed",
+        title: "keep primary cookies out of Surge link requests",
+      },
+      {
+        kind: "fixed",
+        title: "restore thread starts after snapshot split",
+      },
+      {
+        kind: "fixed",
+        title: "restore the mobile typecheck and gate it in the upstream sync",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001649",
     date: "2026-09-08",
     items: [
