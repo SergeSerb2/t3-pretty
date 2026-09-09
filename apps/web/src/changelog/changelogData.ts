@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001727",
+    date: "2026-09-09",
+    items: [
+      {
+        kind: "fixed",
+        title: "Effect.catch for nightly tag fetch (Effect 4)",
+      },
+      {
+        kind: "fixed",
+        title: "Use Context.Service for GitHubReleasesClient (Effect 4)",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid Array.toReversed for Electron runtime",
+      },
+      {
+        kind: "fixed",
+        title: "Remove duplicate DesktopClientSettingsReadError",
+      },
+      {
+        kind: "new",
+        title: "Grok Bot as a native provider",
+      },
+      {
+        kind: "fixed",
+        title: "Make What's New readable after an update",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001724",
     date: "2026-09-09",
     items: [
