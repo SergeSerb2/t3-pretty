@@ -31,7 +31,15 @@ import {
   type Thread,
   type ThreadShell,
   type TurnDiffSummary,
+  type ChatFileAttachment,
 } from "../types";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import { videoMimeType } from "@t3tools/shared/video";
+import type {
+  AssetCreateUrlInput,
+  AssetCreateUrlResult,
+} from "@t3tools/contracts";
+import type { AtomCommandResult } from "@t3tools/client-runtime/state/atomCommand";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -744,6 +752,34 @@ export function readFileAsDataUrl(file: File): Promise<string> {
     });
     reader.readAsDataURL(file);
   });
+}
+
+/** Signs an attachment URL without reading its bytes, so video playback can request byte ranges. */
+export async function resolveFileAttachmentUrl(input: {
+  attachment: ChatFileAttachment;
+  environmentId: EnvironmentId;
+  httpBaseUrl: string;
+  createAssetUrl: (input: {
+    environmentId: EnvironmentId;
+    input: AssetCreateUrlInput;
+  }) => Promise<AtomCommandResult<AssetCreateUrlResult, unknown>>;
+}): Promise<string> {
+  const { attachment } = input;
+  const result = await input.createAssetUrl({
+    environmentId: input.environmentId,
+    input: {
+      resource: {
+        _tag: "attachment",
+        attachmentId: attachment.id,
+        fileName: attachment.name,
+        mimeType: videoMimeType(attachment) ?? attachment.mimeType,
+      },
+    },
+  });
+  if (result._tag === "Failure") throw new Error("Failed to create asset URL");
+  const url = resolveAssetUrl(input.httpBaseUrl, result.value.relativeUrl);
+  if (url === null) throw new Error("The environment returned an invalid attachment URL.");
+  return url;
 }
 
 export function resolveSendEnvMode(input: {
