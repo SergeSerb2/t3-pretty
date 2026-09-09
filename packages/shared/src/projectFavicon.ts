@@ -13,6 +13,14 @@ const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
   `^[0-9a-f]{${MANAGED_PROJECT_FAVICON_REVISION_LENGTH}}$`,
 );
 
+export function getProjectFaviconResourceKey(
+  environmentId: string,
+  workspaceRoot: string,
+  faviconPath?: string | null,
+) {
+  return JSON.stringify([environmentId, workspaceRoot, faviconPath || null]);
+}
+
 export function getProjectFaviconCacheKey(
   environmentId: string,
   workspaceRoot: string,
