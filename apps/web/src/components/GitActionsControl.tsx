@@ -1293,7 +1293,7 @@ export default function GitActionsControl({
     completedAt: string | null;
   }>({ threadId: null, completedAt: null });
   useEffect(() => {
-    const threadId = activeServerThread?.id ?? null;
+    const threadId = (activeServerThread?.id ?? null) as string | null;
     const completedAt = activeServerThread?.latestTurn?.completedAt ?? null;
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
