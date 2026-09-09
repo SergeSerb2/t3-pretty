@@ -44,6 +44,7 @@ import {
   runStream,
   subscribe,
   subscribeDynamic,
+  subscribeDynamicWithSession,
   type EnvironmentRpcInput,
 } from "../rpc/client.ts";
 import { followStreamInEnvironment } from "./runtime.ts";

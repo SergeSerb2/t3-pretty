@@ -96,6 +96,189 @@ describe("DesktopUpdates", () => {
     );
   });
 
+  it("rewrites nightly /releases/latest URLs with latest nightly tag when provided", () => {
+    // Unprefixed appVersion (0.0.38-nightly.*) with latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "0.0.38-nightly.20260906.1000",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Prefixed appVersion (v0.0.38-nightly.*) with latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "v0.0.38-nightly.20260906.1000",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Stable versions ignore latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "1.0.0",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
+  it("falls back to appVersion when latestNightlyTag is null (no nightly found)", () => {
+    // Modern format unprefixed: X.Y.Z-nightly.DATE.BUILD
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "0.0.39-nightly.20260907.1332", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        },
+        { appVersion: "v0.0.39-nightly.20260907.1332", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format: nightly-vX.Y.Z (keep as-is, no 'v' prefix)
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format with suffix: nightly-vX.Y.Z-nightly.DATE (keep as-is)
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0-nightly.20260905.123", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0-nightly.20260905.123/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Stable versions keep /latest
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "1.0.0" },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
+  it("keeps /latest when nightly tag fetch fails (HTTP error, timeout, etc.)", () => {
+    // Fetch failure (latestNightlyTag: undefined) should NOT rewrite to appVersion
+    // This verifies that non-OK responses, timeouts, parse errors → undefined → keep /latest
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "0.0.39-nightly.20260907.1332", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Same for prefixed version
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        },
+        { appVersion: "v0.0.39-nightly.20260907.1332", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // And legacy format
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
 

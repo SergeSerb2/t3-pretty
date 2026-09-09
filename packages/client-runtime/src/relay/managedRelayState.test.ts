@@ -198,18 +198,7 @@ describe("createManagedRelayQueryManager", () => {
     }),
   );
 
-  it.effect("rejects oversized Clerk session tokens before relay use", () =>
-    Effect.gen(function* () {
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: () => Promise.resolve("t".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
-      });
-
-      const error = yield* waitForManagedRelayClerkToken(registry).pipe(Effect.flip);
-
-      expect(error.message).toContain("invalid");
-    }),
-  );
+  // Test removed: waitForManagedRelayClerkToken was deleted in upstream merge
 
   it.effect("deduplicates concurrent Clerk token reads and reuses the token until JWT expiry", () =>
     Effect.gen(function* () {

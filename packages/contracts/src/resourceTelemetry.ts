@@ -20,6 +20,16 @@ const ResourceMonitorRequestId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(RESOURCE_MONITOR_REQUEST_ID_MAX_LENGTH),
 );
 
+/** Whole-host capacity, independent of T3's process diagnostics. */
+export const HostResourcesSnapshot = Schema.Struct({
+  sampledAt: NonNegativeInt,
+  cpuUtilization: Schema.NullOr(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  cpuCount: NonNegativeInt,
+  availableMemoryBytes: NonNegativeInt,
+  totalMemoryBytes: NonNegativeInt,
+});
+export type HostResourcesSnapshot = typeof HostResourcesSnapshot.Type;
+
 export const ResourceTelemetryIoSemantics = Schema.Literals([
   "storage",
   "logical",

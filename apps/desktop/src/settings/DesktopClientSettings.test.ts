@@ -213,6 +213,94 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("loads flat documents with incidental settings key as flat schema", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Flat document with "settings" as a string, not a legacy wrapper
+        const flatWithSettingsKey = { ...clientSettings, settings: "some-value" };
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify(flatWithSettingsKey),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        assert.deepEqual(loaded.value, clientSettings);
+      }),
+    ),
+  );
+
+  it.effect("loads flat documents with null settings key as flat schema", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Flat document with "settings" as null, not a legacy wrapper
+        const flatWithNullSettings = { ...clientSettings, settings: null };
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify(flatWithNullSettings),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        assert.deepEqual(loaded.value, clientSettings);
+      }),
+    ),
+  );
+
+  it.effect("loads flat documents with incidental settings object as flat schema", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Flat document with "settings" as an arbitrary object that is NOT a ClientSettings
+        const flatWithSettingsObject = {
+          ...clientSettings,
+          settings: { someKey: "someValue", anotherKey: 123 },
+        };
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify(flatWithSettingsObject),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        // Should decode flat fields, ignoring incidental "settings" object
+        assert.deepEqual(loaded.value, clientSettings);
+      }),
+    ),
+  );
+
+  it.effect("loads pure legacy wrapper with only settings key", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Pure wrapper: document has ONLY "settings" key
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify({
+            settings: {
+              timestampFormat: "24-hour",
+              wordWrap: false,
+            },
+          }),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        if (Option.isSome(loaded)) {
+          assert.equal(loaded.value.timestampFormat, "24-hour");
+          assert.equal(loaded.value.wordWrap, false);
+        }
+      }),
+    ),
+  );
+
   it.effect("loads legacy wrapped client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {

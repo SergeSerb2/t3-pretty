@@ -107,18 +107,25 @@ const resolveLanAdvertisedHost = (
     return normalizedExplicitHost;
   }
 
+  let tailscaleIp: string | null = null;
   for (const interfaceAddresses of Object.values(networkInterfaces)) {
     if (!interfaceAddresses) continue;
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
       if (address.family !== "IPv4") continue;
-      if (!isUsableLanIpv4Address(address.address)) continue;
-      return address.address;
+      if (isUsableLanIpv4Address(address.address)) {
+        return address.address;
+      }
+      // Remember the first Tailscale IP as fallback
+      if (!tailscaleIp && isTailscaleIpv4Address(address.address)) {
+        tailscaleIp = address.address;
+      }
     }
   }
 
-  return null;
+  // When no LAN IP exists, use Tailscale IP for endpointUrl if available
+  return tailscaleIp;
 };
 
 const resolveDesktopServerExposure = (input: {
@@ -189,15 +196,24 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   ];
 
   if (input.exposure.endpointUrl) {
+    // When endpointUrl is a Tailscale IP (fallback), classify as private-network
+    const isTailscaleEndpoint = input.exposure.advertisedHost
+      ? isTailscaleIpv4Address(input.exposure.advertisedHost)
+      : false;
+    
     endpoints.push(
       createDesktopEndpoint({
-        id: `desktop-lan:${input.exposure.endpointUrl}`,
-        label: "Local network",
+        id: isTailscaleEndpoint
+          ? `desktop-tailscale:${input.exposure.endpointUrl}`
+          : `desktop-lan:${input.exposure.endpointUrl}`,
+        label: isTailscaleEndpoint ? "Tailscale" : "Local network",
         httpBaseUrl: input.exposure.endpointUrl,
-        reachability: "lan",
+        reachability: isTailscaleEndpoint ? "private-network" : "lan",
         status: "available",
         isDefault: true,
-        description: "Reachable from devices on the same network.",
+        description: isTailscaleEndpoint
+          ? "Reachable from devices on the same Tailnet."
+          : "Reachable from devices on the same network.",
       }),
     );
   }
@@ -402,6 +418,8 @@ function resolveRuntimeState(input: {
     networkInterfaces: input.networkInterfaces,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
+  // resolveLanAdvertisedHost already falls back to Tailscale IP when no LAN exists,
+  // so endpointUrl will be non-null if any usable IP is available.
   const unavailable =
     input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
   const exposure = unavailable

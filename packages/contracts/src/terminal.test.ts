@@ -8,6 +8,7 @@ import {
   TerminalAttachInput,
   TerminalClearInput,
   TerminalCloseInput,
+  TerminalError,
   TerminalEvent,
   TerminalOpenInput,
   TerminalResizeInput,
@@ -17,6 +18,10 @@ import {
 } from "./terminal.ts";
 import { ENTITY_ID_MAX_LENGTH } from "./baseSchemas.ts";
 import { PROJECT_PATH_MAX_LENGTH } from "./project.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
+
+const encodeTerminalError = Schema.encodeUnknownSync(TerminalError);
+const decodeTerminalError = Schema.decodeUnknownSync(TerminalError);
 
 function decodeSync<S extends Schema.Top>(schema: S, input: unknown): Schema.Schema.Type<S> {
   return Schema.decodeUnknownSync(schema as never)(input) as Schema.Schema.Type<S>;

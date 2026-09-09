@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   compareIsoDateTimes,
+  generateSpreadPinOrderKeys,
+  pinOrderKeyBetween,
   planPinnedMove,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
