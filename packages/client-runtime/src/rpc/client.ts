@@ -312,6 +312,34 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
   );
 }
 
+/** Tags each value before `switchMap` can buffer it across a session change. */
+export function subscribeDynamicWithSession<TTag extends EnvironmentSubscriptionRpcTag>(
+  tag: TTag,
+  makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
+  options?: SubscriptionOptions<TTag>,
+): Stream.Stream<
+  readonly [session: RpcSession, value: EnvironmentRpcStreamValue<TTag>],
+  EnvironmentRpcStreamFailure<TTag>,
+  EnvironmentSupervisor
+> {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const supervisor = yield* EnvironmentSupervisor;
+      return SubscriptionRef.changes(supervisor.session).pipe(
+        Stream.switchMap(
+          Option.match({
+            onNone: () => Stream.empty,
+            onSome: (session) =>
+              subscribeDynamic(tag, makeInput, options).pipe(
+                Stream.map((value) => [session, value] as const),
+              ),
+          }),
+        ),
+      );
+    }),
+  );
+}
+
 export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
   tag: TTag,
   input: EnvironmentRpcInput<TTag>,

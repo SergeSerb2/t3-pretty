@@ -8,6 +8,7 @@ import {
   TerminalAttachInput,
   TerminalClearInput,
   TerminalCloseInput,
+  TerminalError,
   TerminalEvent,
   TerminalOpenInput,
   TerminalResizeInput,
