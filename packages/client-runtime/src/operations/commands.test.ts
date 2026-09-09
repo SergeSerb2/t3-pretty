@@ -253,7 +253,6 @@ describe("environment commands", () => {
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
-<<<<<<< HEAD
 
   it.effect("dispatches thread.subagent-policy.set with minted metadata", () =>
     Effect.gen(function* () {
@@ -473,6 +472,4 @@ describe("environment commands", () => {
         });
       }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
-=======
->>>>>>> v0.0.39-nightly.20260907.1332
 });

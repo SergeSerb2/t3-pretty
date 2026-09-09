@@ -317,7 +317,6 @@ export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEf
   });
 });
 
-<<<<<<< HEAD
 export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.setThreadSkills",
 )(function* (input) {
@@ -341,8 +340,6 @@ export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => C
     });
   });
 
-=======
->>>>>>> v0.0.39-nightly.20260907.1332
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",
 )(function* (input) {
