@@ -39,6 +39,47 @@ export function shouldContinueDesktopUpdateCheckAnimation({
   return isChecking && !prefersReducedMotion;
 }
 
+export function desktopUpdateCheckMotionAfterSpinIteration({
+  isChecking,
+  prefersReducedMotion,
+}: {
+  readonly isChecking: boolean;
+  readonly prefersReducedMotion: boolean;
+}): "idle" | "settle" | "spin" {
+  if (shouldContinueDesktopUpdateCheckAnimation({ isChecking, prefersReducedMotion })) {
+    return "spin";
+  }
+  return prefersReducedMotion ? "idle" : "settle";
+}
+
+export const DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME = "desktop-update-check-settle";
+
+export function isDesktopUpdateCheckSettleAnimationEnd(event: {
+  readonly animationName: string;
+}): boolean {
+  return event.animationName === DESKTOP_UPDATE_CHECK_SETTLE_ANIMATION_NAME;
+}
+
+export function shouldClearDesktopUpdateCheckSettle({
+  isChecking,
+  isSettling,
+}: {
+  readonly isChecking: boolean;
+  readonly isSettling: boolean;
+}): boolean {
+  return isSettling && !isChecking;
+}
+
+export function desktopUpdateCheckSpinFrom({
+  fineHover,
+  hovered,
+}: {
+  readonly fineHover: boolean;
+  readonly hovered: boolean;
+}): "0deg" | "90deg" {
+  return fineHover && hovered ? "90deg" : "0deg";
+}
+
 function DesktopUpdateAvailableIcon() {
   return (
     <span className="relative grid size-4 place-items-center">
