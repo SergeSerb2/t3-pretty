@@ -2,6 +2,7 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentProject } from "./models.ts";
+import { chooseLoadBalancedEnvironment } from "../load-balancing.ts";
 import {
   buildProjectGroups,
   derivePhysicalProjectKey,
@@ -9,8 +10,70 @@ import {
 } from "./projectGrouping.ts";
 
 const environmentId = EnvironmentId.make("environment");
-const remoteEnvironmentId = EnvironmentId.make("remote-environment");
-const thirdEnvironmentId = EnvironmentId.make("third-environment");
+
+describe("load balancing shared project machines", () => {
+  const now = 100_000;
+  const resources = {
+    sampledAt: now,
+    cpuUtilization: 0.2,
+    cpuCount: 8,
+    availableMemoryBytes: 8_000,
+    totalMemoryBytes: 16_000,
+  };
+
+  it("compares three machines using free capacity and preference", () => {
+    const candidates = [
+      { environmentId: "busy", resources: { ...resources, cpuUtilization: 0.9 }, weight: 1 },
+      { environmentId: "idle", resources, weight: 1 },
+      { environmentId: "preferred", resources: { ...resources, cpuCount: 4 }, weight: 3 },
+    ];
+    expect(chooseLoadBalancedEnvironment(candidates, now)).toBe("preferred");
+    expect(chooseLoadBalancedEnvironment(candidates.slice(0, 2), now)).toBe("idle");
+  });
+
+  it("rejects stale, unknown, excluded and saturated machines", () => {
+    expect(
+      chooseLoadBalancedEnvironment(
+        [
+          {
+            environmentId: "stale",
+            resources: { ...resources, sampledAt: now - 15_001 },
+            weight: 1,
+          },
+          { environmentId: "unknown", resources: null, weight: 1 },
+          {
+            environmentId: "no-cpu-sample",
+            resources: { ...resources, cpuUtilization: null },
+            weight: 1,
+          },
+          { environmentId: "excluded", resources, weight: 0 },
+          {
+            environmentId: "cpu-full",
+            resources: { ...resources, cpuUtilization: 0.95 },
+            weight: 1,
+          },
+          {
+            environmentId: "memory-full",
+            resources: { ...resources, availableMemoryBytes: 100 },
+            weight: 1,
+          },
+        ],
+        now,
+      ),
+    ).toBeNull();
+  });
+
+  it("uses client receipt time when host clocks differ", () => {
+    const candidate = {
+      environmentId: "different-clock",
+      resources: { ...resources, sampledAt: now + 60_000 },
+      receivedAt: now,
+      weight: 1,
+    };
+    expect(chooseLoadBalancedEnvironment([candidate], now)).toBe("different-clock");
+    expect(chooseLoadBalancedEnvironment([candidate], now + 15_001)).toBeNull();
+  });
+});
 const repositoryIdentity = {
   canonicalKey: "github.com/t3tools/t3code",
   locator: {
@@ -54,11 +117,11 @@ function settings(
 }
 
 describe("buildProjectGroups", () => {
-  it("preserves every cross-environment clone as a selectable member in repository modes", () => {
+  it("preserves every physical clone as a selectable member in repository modes", () => {
     const projects = [
       makeProject("t3code", "/work/t3code"),
-      makeProject("t3code-2", "/work/t3code-2", { environmentId: remoteEnvironmentId }),
-      makeProject("t3code-3", "/work/t3code-3", { environmentId: thirdEnvironmentId }),
+      makeProject("t3code-2", "/work/t3code-2"),
+      makeProject("t3code-3", "/work/t3code-3"),
     ];
 
     for (const mode of ["repository", "repository_path"] as const) {
@@ -73,55 +136,10 @@ describe("buildProjectGroups", () => {
     }
   });
 
-  it("keeps same-environment checkouts of one repository as separate projects", () => {
-    const desktop = makeProject("desktop", "/Users/me/Desktop/t3code", { title: "t3code" });
-    const documents = makeProject("documents", "/Users/me/Documents/t3code", {
-      title: "T3 Code (docs)",
-    });
-    const remote = makeProject("remote", "/srv/t3code", { environmentId: remoteEnvironmentId });
-
-    for (const mode of ["repository", "repository_path"] as const) {
-      const groups = buildProjectGroups({
-        projects: [desktop, documents, remote],
-        settings: settings(mode),
-      });
-      expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
-        ["remote"],
-        ["desktop"],
-        ["documents"],
-      ]);
-      expect(groups.map((group) => group.key)).toEqual([
-        repositoryIdentity.canonicalKey,
-        derivePhysicalProjectKey(desktop),
-        derivePhysicalProjectKey(documents),
-      ]);
-      expect(groups.map((group) => group.label)).toEqual(["remote", "t3code", "T3 Code (docs)"]);
-      expect(groups.map((group) => group.memberProjectRefs.length)).toEqual([1, 1, 1]);
-    }
-  });
-
-  it("keeps monorepo subfolders of one clone grouped on the same environment", () => {
-    const identity = { ...repositoryIdentity, rootPath: "/work/t3code" };
-    const web = makeProject("web", "/work/t3code/apps/web", { repositoryIdentity: identity });
-    const mobile = makeProject("mobile", "/work/t3code/apps/mobile", {
-      repositoryIdentity: identity,
-    });
-
-    const groups = buildProjectGroups({
-      projects: [web, mobile],
-      settings: settings("repository"),
-    });
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["web", "mobile"]);
-  });
-
   it("uses a shared custom title as the repository group's label", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "Custom project" }),
-      makeProject("second", "/work/t3code-2", {
-        title: "Custom project",
-        environmentId: remoteEnvironmentId,
-      }),
+      makeProject("second", "/work/t3code-2", { title: "Custom project" }),
     ];
 
     expect(buildProjectGroups({ projects, settings: settings("repository") })[0]?.label).toBe(
@@ -132,10 +150,7 @@ describe("buildProjectGroups", () => {
   it("keeps the repository label when shared titles match its repository name", () => {
     const projects = [
       makeProject("first", "/work/t3code", { title: "t3code" }),
-      makeProject("second", "/work/t3code-2", {
-        title: "t3code",
-        environmentId: remoteEnvironmentId,
-      }),
+      makeProject("second", "/work/t3code-2", { title: "t3code" }),
     ];
 
     expect(buildProjectGroups({ projects, settings: settings("repository") })[0]?.label).toBe(
@@ -158,12 +173,8 @@ describe("buildProjectGroups", () => {
 
   it("applies a physical-project override without dropping its siblings", () => {
     const first = makeProject("t3code", "/work/t3code");
-    const second = makeProject("t3code-2", "/work/t3code-2", {
-      environmentId: remoteEnvironmentId,
-    });
-    const third = makeProject("t3code-3", "/work/t3code-3", {
-      environmentId: thirdEnvironmentId,
-    });
+    const second = makeProject("t3code-2", "/work/t3code-2");
+    const third = makeProject("t3code-3", "/work/t3code-3");
     const groups = buildProjectGroups({
       projects: [first, second, third],
       settings: settings("repository", {
@@ -206,9 +217,7 @@ describe("buildProjectGroups", () => {
       repositoryIdentity: null,
       updatedAt: "2026-07-02T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2", {
-      environmentId: remoteEnvironmentId,
-    });
+    const sibling = makeProject("sibling", "/work/t3code-2");
 
     const groups = buildProjectGroups({
       projects: [identified, freshUnidentified, sibling],
@@ -232,9 +241,7 @@ describe("buildProjectGroups", () => {
     const fresh = makeProject("fresh", "/work/t3code/", {
       updatedAt: "2026-07-02T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2", {
-      environmentId: remoteEnvironmentId,
-    });
+    const sibling = makeProject("sibling", "/work/t3code-2");
 
     const groups = buildProjectGroups({
       projects: [stale, fresh, sibling],
@@ -262,9 +269,7 @@ describe("buildProjectGroups", () => {
       repositoryIdentity: null,
       updatedAt: "2026-07-03T00:00:00.000Z",
     });
-    const sibling = makeProject("sibling", "/work/t3code-2", {
-      environmentId: remoteEnvironmentId,
-    });
+    const sibling = makeProject("sibling", "/work/t3code-2");
 
     const groups = buildProjectGroups({
       projects: [staleIdentified, freshIdentified, winner, sibling],

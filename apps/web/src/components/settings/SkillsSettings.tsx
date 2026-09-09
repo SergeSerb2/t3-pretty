@@ -297,7 +297,7 @@ function SkillLibrarySection({
       setPendingChips((current) => new Map(current).set(skill.id, location.key));
       const result = await setLocationEnabled({
         environmentId,
-        input: { skillId: skill.id, locationKey: location.key, enabled },
+        input: { locationKey: location.key, enabled },
       });
       setPendingChips((current) => {
         const next = new Map(current);
@@ -585,7 +585,7 @@ function MarketplaceSkillsSection({
   query,
 }: {
   environmentId: EnvironmentId | null;
-  query: EnvironmentQueryView<ReadonlyArray<SkillMarketplaceListing>>;
+  query: EnvironmentQueryView<SkillMarketplaceListing>;
 }) {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
@@ -601,7 +601,7 @@ function MarketplaceSkillsSection({
   const [refreshingRepos, setRefreshingRepos] = useState<ReadonlySet<string>>(EMPTY_ID_SET);
 
   const sources = settings.skills.marketplaceSources;
-  const listings = query.data;
+  const listings = query.data !== null ? [query.data] : null;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const matchesQuery = useCallback(
     (skill: MarketplaceSkill) =>

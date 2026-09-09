@@ -209,6 +209,7 @@ export function usePullRequestListStats(
   targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestListStatsInput>>,
 ): {
   readonly stats: ReadonlyArray<EnvironmentPullRequestStat> | null;
+  readonly isPending: boolean;
   readonly refresh: () => void;
 } {
   const query = usePullRequestStatsQuery(targets);
@@ -221,5 +222,5 @@ export function usePullRequestListStats(
           ),
     [query.values],
   );
-  return { stats, refresh: query.refresh };
+  return { stats, isPending: query.isPending, refresh: query.refresh };
 }

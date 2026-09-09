@@ -1,3 +1,4 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   ActivityIcon,
   AlertTriangleIcon,
@@ -9,8 +10,6 @@ import {
   GaugeIcon,
   HardDriveIcon,
   MemoryStickIcon,
-  RefreshCwIcon,
-  RotateCcwIcon,
 } from "lucide-react";
 import type {
   BackgroundBooleanState,
@@ -994,9 +993,7 @@ export function ResourceTelemetryDiagnostics() {
                     onClick={telemetry.refresh}
                     aria-label="Refresh resource telemetry"
                   >
-                    <RefreshCwIcon
-                      className={cn("size-3", telemetry.isPending && "animate-spin")}
-                    />
+                    <RefreshIcon className="size-3" refreshing={telemetry.isPending} />
                   </Button>
                 }
               />
@@ -1107,7 +1104,7 @@ export function ResourceTelemetryDiagnostics() {
         headerAction={
           collectorNeedsRetry ? (
             <Button size="xs" variant="outline" disabled={isRetrying} onClick={retryCollector}>
-              <RotateCcwIcon className={cn("size-3", isRetrying && "animate-spin")} />
+              <RefreshIcon className="size-3" refreshing={isRetrying} />
               Retry monitor
             </Button>
           ) : null
@@ -1245,7 +1242,7 @@ export function ResourceTelemetryDiagnostics() {
               onClick={history.refresh}
               aria-label="Refresh resource history"
             >
-              <RefreshCwIcon className={cn("size-3", history.isPending && "animate-spin")} />
+              <RefreshIcon className="size-3" refreshing={history.isPending} />
             </Button>
           </div>
         }
@@ -1258,11 +1255,6 @@ export function ResourceTelemetryDiagnostics() {
             </div>
           ) : null}
           <ResourceHistoryChart buckets={history.data?.buckets ?? []} />
-          {history.data?.topProcessesTruncated === true ? (
-            <PartialDataNotice>
-              The process ranking is partial; additional processes were omitted from this table.
-            </PartialDataNotice>
-          ) : null}
           <HistoryProcessTable processes={history.data?.topProcesses ?? []} />
         </div>
       </SettingsSection>
@@ -1279,11 +1271,6 @@ export function ResourceTelemetryDiagnostics() {
         }
       >
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">
-          {snapshot?.processesTruncated === true ? (
-            <PartialDataNotice>
-              The live process list is partial; additional processes were omitted from this table.
-            </PartialDataNotice>
-          ) : null}
           <ProcessTable
             processes={snapshot?.processes ?? []}
             signalingKeys={signalingKeys}
@@ -1305,11 +1292,6 @@ export function ResourceTelemetryDiagnostics() {
             counters identify known T3 operations so process spikes can be correlated with specific
             persistence and logging paths.
           </div>
-          {snapshot?.attribution.entriesTruncated === true ? (
-            <PartialDataNotice>
-              Attribution is summarized; additional operations were combined into the overflow row.
-            </PartialDataNotice>
-          ) : null}
           <AttributionTable entries={snapshot?.attribution.entries ?? []} />
         </div>
       </SettingsSection>

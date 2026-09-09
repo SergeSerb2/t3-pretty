@@ -9,13 +9,19 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
-  activeThreadAnchorTimestampMs,
+  sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
+
+import {
+  applyPendingThreadOrder,
+  reconcilePendingThreadOrder,
+  type PendingThreadOrder,
+} from "./threadOrder";
 
 export { snoozeWakeLabel };
 
@@ -27,13 +33,7 @@ export { snoozeWakeLabel };
  * (approval), "in motion" (working), and "broken" (failed). Ready is the
  * unlabeled resting state.
  */
-export type ThreadListV2Status =
-  | "approval"
-  | "input"
-  | "working"
-  | "monitoring"
-  | "failed"
-  | "ready";
+export type ThreadListV2Status = "approval" | "input" | "working" | "failed" | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
@@ -132,10 +132,7 @@ export function resolveThreadListV2Enabled(input: {
 }
 
 export function resolveThreadListV2Status(
-  thread: Pick<
-    EnvironmentThreadShell,
-    "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
-  >,
+  thread: Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput" | "session">,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals) {
     return "approval";
@@ -146,18 +143,8 @@ export function resolveThreadListV2Status(
   if (thread.session?.status === "running" || thread.session?.status === "starting") {
     return "working";
   }
-  // A failed session outranks lingering background liveness: the user must
-  // see the failure, not a stale Working.
   if (thread.session?.status === "error") {
     return "failed";
-  }
-  // Background work outlives the turn: fleets read as working; monitoring
-  // only when watch loops are the sole live work.
-  if (thread.backgroundLiveness === "working") {
-    return "working";
-  }
-  if (thread.backgroundLiveness === "monitoring") {
-    return "monitoring";
   }
   return "ready";
 }
@@ -169,28 +156,56 @@ function parseTimestampMs(isoDate: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-/**
- * v2 sort: static order, newest anchor on top. Activity NEVER reorders the
- * list — a row holds its position between lifecycle transitions. The anchor
- * is creation time until an un-settle re-anchors it (see
- * activeThreadAnchorTimestampMs), so an un-settled thread surfaces at the
- * top instead of sinking back to its creation-order slot. Mirrors web's
- * sortThreadsForSidebar.
- */
+/** The active order shared by web and native: new/reopened rows, then the
+    saved arrangement. Activity does not move a thread. */
 export function sortThreadsForListV2<
   T extends {
     readonly id: string;
     readonly createdAt: string;
     readonly unsettledAt?: string | null | undefined;
+    readonly activeOrderKey?: string | null | undefined;
+    readonly environmentId?: string | undefined;
   },
 >(threads: readonly T[]): T[] {
-  // .sort() on a copy, not .toSorted(): Hermes doesn't ship the ES2023
-  // change-by-copy array methods.
-  return [...threads].sort(
-    (left, right) =>
-      activeThreadAnchorTimestampMs(right) - activeThreadAnchorTimestampMs(left) ||
-      left.id.localeCompare(right.id),
-  );
+  return sortActiveThreadsByOrderKey(threads);
+}
+
+/** Canonical card section for Move up/down, independent of search or scope. */
+export function getThreadListV2OrderedSection(input: {
+  readonly threads: readonly EnvironmentThreadShell[];
+  readonly section: "pinned" | "active";
+  readonly pendingOrder?: PendingThreadOrder | null;
+  readonly now: string;
+  readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
+  readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
+  readonly queuedThreadKeys?: ReadonlySet<string>;
+}): EnvironmentThreadShell[] {
+  const threads = input.threads.filter((thread) => {
+    if (thread.archivedAt !== null) return false;
+    if (
+      (input.settlementEnvironmentIds?.has(thread.environmentId) ?? true) &&
+      thread.settledOverride === "settled" &&
+      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) !== true
+    ) {
+      return false;
+    }
+    if (
+      (input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true) &&
+      effectiveSnoozed(thread, { now: input.now })
+    ) {
+      return false;
+    }
+    return (thread.pinnedAt != null) === (input.section === "pinned");
+  });
+  const ordered =
+    input.section === "pinned"
+      ? sortPinnedThreadsByOrderKey(threads)
+      : sortActiveThreadsByOrderKey(threads);
+  const pending =
+    input.pendingOrder?.section === input.section
+      ? reconcilePendingThreadOrder(input.pendingOrder, ordered)
+      : null;
+  return applyPendingThreadOrder(ordered, input.section, pending);
 }
 
 export interface ThreadListV2Item {
@@ -198,10 +213,6 @@ export interface ThreadListV2Item {
   readonly variant: "card" | "slim";
   /** Snoozed-shelf row: shows the wake countdown and offers Wake. */
   readonly snoozed: boolean;
-  /** Settled-shelf row. With `snoozed`, tells a departing row it landed.
-      Pin wins the partition, so pinned cards stay false: settling a pin
-      also unpins, and the row lands once it is on this shelf. */
-  readonly settled: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
   readonly isLast: boolean;
@@ -289,7 +300,7 @@ export function buildThreadListV2ListItems(input: {
   }));
   const pendingItems = input.pendingTasks.map((pendingTask, index): ThreadListV2ListItem => ({
     type: "v2-pending",
-    key: `v2-pending:${pendingTask.message.messageId}`,
+    key: `v2-${pendingTask.key}`,
     pendingTask,
     showPendingDivider: index === 0,
   }));
@@ -322,12 +333,11 @@ export function buildThreadListV2ListItems(input: {
 }
 
 /**
- * Partitions visible threads into the active card block (creation order) and
+ * Partitions visible threads into the active card block (saved order) and
  * the settled recency tail, matching the web v2 list.
  */
 export function buildThreadListV2Items(input: {
-  /** Legacy callers may supply cached PR data; authoritative settlement lives on the server. */
-  readonly changeRequestByKey?: ReadonlyMap<string, ThreadListV2ChangeRequestState>;
+  readonly pendingOrder?: PendingThreadOrder | null;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly environmentId: EnvironmentId | null;
   readonly projectRefs?: ReadonlyArray<{
@@ -354,8 +364,23 @@ export function buildThreadListV2Items(input: {
   /** The selected thread remains visible on an otherwise collapsed shelf so
       a split-view detail can never lose its navigation row. */
   readonly selectedThreadKey?: string | null;
+  /** Thread keys (`environmentId:threadId`) with a message waiting in the
+      outbox. Such a thread has work the user is waiting on, so it stays in
+      the active block even when the server has settled it. */
+  readonly queuedThreadKeys?: ReadonlySet<string>;
 }): ThreadListV2Layout {
   const now = input.now;
+  const pending =
+    input.pendingOrder == null
+      ? null
+      : reconcilePendingThreadOrder(
+          input.pendingOrder,
+          getThreadListV2OrderedSection({
+            ...input,
+            section: input.pendingOrder.section,
+            pendingOrder: null,
+          }),
+        );
   const query = input.searchQuery.trim().toLocaleLowerCase();
   const projectKeys = input.projectRefs
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
@@ -386,10 +411,7 @@ export function buildThreadListV2Items(input: {
     }
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
-    // Visibility parity with web: snooze outranks everything, including a
-    // pin — a snoozed thread leaves the list until it wakes (or raises its
-    // hand). The pin (and its pinOrderKey) survives underneath, so a woken
-    // thread reappears at its exact spot in the pinned block.
+    // Snooze outranks settlement and pinning until the thread wakes.
     if (supportsSnooze && effectiveSnoozed(thread, { now })) {
       snoozed.push(thread);
       if (
@@ -401,20 +423,18 @@ export function buildThreadListV2Items(input: {
       }
       continue;
     }
-    // A pin otherwise overrides the lifecycle: pinned threads render above
-    // the inbox and never auto-settle out of sight.
-    if (thread.pinnedAt != null) {
-      pinned.push(thread);
-      continue;
-    }
-    if (supportsSettlement && thread.settledOverride === "settled") {
+    const hasQueuedMessages =
+      input.queuedThreadKeys?.has(`${thread.environmentId}:${thread.id}`) === true;
+    if (supportsSettlement && thread.settledOverride === "settled" && !hasQueuedMessages) {
       settled.push(thread);
+    } else if (thread.pinnedAt != null) {
+      pinned.push(thread);
     } else {
       active.push(thread);
     }
   }
 
-  const orderedActive = sortThreadsForListV2(active);
+  const orderedActive = applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>
       parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
@@ -446,12 +466,15 @@ export function buildThreadListV2Items(input: {
         );
 
   const items: ThreadListV2Item[] = [];
-  for (const thread of sortPinnedThreadsByOrderKey(pinned)) {
+  for (const thread of applyPendingThreadOrder(
+    sortPinnedThreadsByOrderKey(pinned),
+    "pinned",
+    pending,
+  )) {
     items.push({
       thread,
       variant: "card",
       snoozed: false,
-      settled: false,
       pinned: true,
       isLast: false,
     });
@@ -461,7 +484,6 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "card",
       snoozed: false,
-      settled: false,
       pinned: false,
       isLast: false,
     });
@@ -472,7 +494,6 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "slim",
       snoozed: true,
-      settled: false,
       pinned: false,
       isLast: false,
     });
@@ -483,7 +504,6 @@ export function buildThreadListV2Items(input: {
       thread,
       variant: "slim",
       snoozed: false,
-      settled: true,
       pinned: false,
       isLast: false,
     });
@@ -501,10 +521,4 @@ export function buildThreadListV2Items(input: {
     settledShelfHeaderIndex,
     nextSnoozeWakeAt,
   };
-}
-
-export interface ThreadListV2ChangeRequestState {
-  readonly state: "open" | "closed" | "merged";
-  readonly linkedPullRequestKey?: string;
-  readonly updatedAt?: string;
 }

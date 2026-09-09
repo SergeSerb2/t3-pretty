@@ -148,7 +148,6 @@ describe("linuxSecretStorage", () => {
   });
 
   it("infers message from selectedBackend when preference is auto", () => {
-    // selectedBackend is gnome-libsecret → GNOME message
     const gnomeMessage = resolveLinuxSecretStorageUnavailableMessage({
       configuredPreference: "auto",
       selectedBackend: "gnome-libsecret",
@@ -157,7 +156,6 @@ describe("linuxSecretStorage", () => {
     expect(gnomeMessage).toContain("GNOME Keyring");
     expect(gnomeMessage).not.toContain("KWallet");
 
-    // selectedBackend is kwallet → KWallet message
     const kwalletMessage = resolveLinuxSecretStorageUnavailableMessage({
       configuredPreference: "auto",
       selectedBackend: "kwallet5",

@@ -328,7 +328,6 @@ const titleUpdated = (title: string, sequence = 2): OrchestrationThreadStreamIte
 
 const ephemeralToolProgress = (detail: string): OrchestrationThreadStreamItem => ({
   kind: "event",
-  ephemeral: true,
   event: {
     eventId: EventId.make("call-1:progress:live"),
     sequence: 0,
@@ -362,7 +361,14 @@ function toolProgressDetail(thread: OrchestrationThread): string | undefined {
     : undefined;
 }
 
-function warmBlob(title: string, lastSequence: number, generation: number) {
+type WarmBlob = {
+  thread: OrchestrationThread;
+  page: Option.Option<{ beforeCursor: string; hasMore: boolean; loadingOlder: boolean }>;
+  lastSequence: number;
+  generation: number;
+};
+
+function warmBlob(title: string, lastSequence: number, generation: number): WarmBlob {
   return {
     thread: { ...ACTIVE_THREAD, title },
     page: Option.none(),
@@ -802,8 +808,8 @@ describe("EnvironmentThreads", () => {
       warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
     }
 
-    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
-    expect(warmStates.get("environment-1:thread-8")?.thread.title).toBe("Thread 8");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
+    expect((warmStates.get("environment-1:thread-8") as WarmBlob | null)?.thread.title).toBe("Thread 8");
   });
 
   it("treats a restore as recent so a later write cannot evict it", () => {
@@ -812,12 +818,12 @@ describe("EnvironmentThreads", () => {
       warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
     }
 
-    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
     warmStates.set("environment-1:thread-new", warmBlob("New", 1, 1));
 
-    expect(warmStates.get("environment-1:thread-0")?.thread.title).toBe("Thread 0");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
     expect(warmStates.get("environment-1:thread-1")).toBeNull();
-    expect(warmStates.get("environment-1:thread-new")?.thread.title).toBe("New");
+    expect((warmStates.get("environment-1:thread-new") as WarmBlob | null)?.thread.title).toBe("New");
   });
 
   it("does not let callers mutate the stored warm blob", () => {
@@ -849,7 +855,7 @@ describe("EnvironmentThreads", () => {
     payload.detail = "mutated input";
     page.loadingOlder = true;
 
-    const restored = warmStates.get(key)!;
+    const restored = warmStates.get(key)! as WarmBlob;
     expect(restored.thread.title).toBe("Live");
     expect(toolProgressDetail(restored.thread)).toBe("original");
     expect(Option.getOrThrow(restored.page).loadingOlder).toBe(false);
@@ -857,9 +863,9 @@ describe("EnvironmentThreads", () => {
     const restoredPayload = restored.thread.activities[0]?.payload as { detail: string };
     restoredPayload.detail = "mutated restore";
     (Option.getOrThrow(restored.page) as { loadingOlder: boolean }).loadingOlder = true;
-    expect(warmStates.get(key)?.thread.title).toBe("Live");
-    expect(toolProgressDetail(warmStates.get(key)!.thread)).toBe("original");
-    expect(Option.getOrThrow(warmStates.get(key)!.page).loadingOlder).toBe(false);
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Live");
+    expect(toolProgressDetail((warmStates.get(key)! as WarmBlob).thread)).toBe("original");
+    expect(Option.getOrThrow((warmStates.get(key)! as WarmBlob).page).loadingOlder).toBe(false);
   });
 
   it("keeps the newer warm snapshot when an older write arrives later", () => {
@@ -868,17 +874,17 @@ describe("EnvironmentThreads", () => {
     warmStates.set(key, warmBlob("Newer", 5, 1));
     warmStates.set(key, warmBlob("Older", 1, 2));
 
-    expect(warmStates.get(key)?.lastSequence).toBe(5);
-    expect(warmStates.get(key)?.thread.title).toBe("Newer");
+    expect((warmStates.get(key) as WarmBlob | null)?.lastSequence).toBe(5);
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Newer");
 
     warmStates.set(key, warmBlob("Same sequence same generation", 5, 1));
-    expect(warmStates.get(key)?.thread.title).toBe("Same sequence same generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence same generation");
 
     warmStates.set(key, warmBlob("Same sequence newer generation", 5, 2));
-    expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence newer generation");
 
     warmStates.set(key, warmBlob("Same sequence older generation", 5, 1));
-    expect(warmStates.get(key)?.thread.title).toBe("Same sequence newer generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence newer generation");
   });
 
   it("forgets a dropped blob without tombstoning", () => {
@@ -891,7 +897,7 @@ describe("EnvironmentThreads", () => {
     expect(warmStates.isDeleted(key)).toBe(false);
 
     warmStates.set(key, warmBlob("Reloaded", 1, 2));
-    expect(warmStates.get(key)?.thread.title).toBe("Reloaded");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Reloaded");
   });
 
   it("does not let a tombstoned delete be re-warmed", () => {
@@ -932,7 +938,7 @@ describe("EnvironmentThreads", () => {
     warmStates.remove(overflow);
     warmStates.set(first, warmBlob("Resurrected", 99, 99));
 
-    expect(warmStates.get(first)?.thread.title).toBe("Resurrected");
+    expect((warmStates.get(first) as WarmBlob | null)?.thread.title).toBe("Resurrected");
     expect(warmStates.get(overflow)).toBeNull();
   });
 

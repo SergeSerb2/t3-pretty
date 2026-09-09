@@ -1096,7 +1096,7 @@ export default function GitActionsControl({
   }, []);
 
   const persistThreadBranchSync = useCallback(
-    (branch: string | null) => {
+    (branch: string | null, manualSelection = false) => {
       if (!activeThreadRef) {
         return;
       }
@@ -1124,6 +1124,10 @@ export default function GitActionsControl({
       setDraftThreadContext(draftId ?? activeThreadRef, {
         branch,
         worktreePath: activeDraftThread.worktreePath,
+        environmentSelection: manualSelection
+          ? "manual"
+          : (activeDraftThread.environmentSelection ??
+            (activeDraftThread.branch ? "manual" : "auto")),
       });
     },
     [
@@ -1143,7 +1147,7 @@ export default function GitActionsControl({
         return;
       }
 
-      persistThreadBranchSync(branchUpdate.branch);
+      persistThreadBranchSync(branchUpdate.branch, true);
     },
     [persistThreadBranchSync],
   );
@@ -1289,11 +1293,12 @@ export default function GitActionsControl({
     completedAt: string | null;
   }>({ threadId: null, completedAt: null });
   useEffect(() => {
-    const threadId = activeServerThread?.id ?? null;
+    const threadId = (activeServerThread?.id ?? null) as string | null;
     const completedAt = activeServerThread?.latestTurn?.completedAt ?? null;
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
     if (
+      !threadId ||
       !shouldRefreshGitStatusAfterTurnComplete({
         previousThreadId: previous.threadId,
         threadId,

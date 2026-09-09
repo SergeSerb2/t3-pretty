@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  MARKDOWN_LINK_HREF_MAX_LENGTH,
+  resolveMarkdownLinkIcon,
   resolveMarkdownLinkPresentation,
 } from "@t3tools/mobile-markdown-text/links";
+
+describe("resolveMarkdownLinkIcon", () => {
+  it("gives GitHub hosts the brand mark and everything else the generic glyph", () => {
+    expect(resolveMarkdownLinkIcon("github.com")).toBe("github");
+    expect(resolveMarkdownLinkIcon("GitHub.com")).toBe("github");
+    expect(resolveMarkdownLinkIcon("gist.github.com")).toBe("github");
+    expect(resolveMarkdownLinkIcon("github.community")).toBeNull();
+    expect(resolveMarkdownLinkIcon("notgithub.com")).toBeNull();
+    expect(resolveMarkdownLinkIcon("example.com")).toBeNull();
+  });
+});
 
 describe("resolveMarkdownLinkPresentation", () => {
   it("treats protocol-relative media as an external URL, not a filesystem path", () => {
@@ -122,13 +133,5 @@ describe("resolveMarkdownLinkPresentation", () => {
       kind: "link",
       href: null,
     });
-  });
-
-  it("rejects oversized destinations before URL parsing or percent decoding", () => {
-    expect(
-      resolveMarkdownLinkPresentation(
-        `https://example.com/${"a".repeat(MARKDOWN_LINK_HREF_MAX_LENGTH)}`,
-      ),
-    ).toEqual({ kind: "link", href: null });
   });
 });

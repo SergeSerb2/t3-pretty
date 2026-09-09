@@ -49,17 +49,30 @@ const testState = vi.hoisted(() => {
 });
 
 vi.mock("@effect/atom-react", () => ({
-  useAtomValue: () => ({ defaultThreadEnvMode: "local", newWorktreesStartFromOrigin: false }),
+  useAtomValue: (atom: unknown) =>
+    atom === "primary-settings"
+      ? { newWorktreesStartFromOrigin: false }
+      : new Map([
+          [
+            "environment-ssh",
+            {
+              settings: {
+                defaultThreadEnvMode: "local",
+                newWorktreesStartFromOrigin: false,
+                defaultModelSelection: null,
+              },
+            },
+          ],
+        ]),
 }));
 vi.mock("@t3tools/client-runtime/environment", () => ({
   scopedProjectKey: () => "remote-project",
-  scopedThreadKey: () => "remote-thread",
   scopeProjectRef: (environmentId: string, projectId: string) => ({ environmentId, projectId }),
   scopeThreadRef: (environmentId: string, threadId: string) => ({ environmentId, threadId }),
 }));
-vi.mock("@t3tools/contracts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/contracts")>()),
+vi.mock("@t3tools/contracts", () => ({
   DEFAULT_RUNTIME_MODE: "default",
+  DEFAULT_SERVER_SETTINGS: {},
 }));
 vi.mock("@t3tools/shared/threadEnvMode", () => ({
   resolveDefaultThreadEnvMode: (input: {
@@ -76,14 +89,12 @@ vi.mock("react", () => ({
   useMemo: <T>(factory: () => T) => factory(),
 }));
 vi.mock("../components/Sidebar.logic", () => ({ orderItemsByPreferredIds: () => [] }));
-vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 vi.mock("../composerDraftStore", () => {
   const useComposerDraftStore = Object.assign(() => null, {
     getState: () => testState.draftStore,
   });
   return {
     composerDraftHasUserContent: () => false,
-    draftHasInvestedContent: () => false,
     markPromotedDraftThreadByRef: vi.fn(),
     useComposerDraftStore,
   };
@@ -96,8 +107,7 @@ vi.mock("../lib/chatThreadActions", () => ({
 vi.mock("../lib/t3ProjectFileDefaults", () => ({
   readT3ProjectFileDefaultThreadEnvMode: () => testState.projectFileRead,
 }));
-vi.mock("../lib/utils", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../lib/utils")>()),
+vi.mock("../lib/utils", () => ({
   newDraftId: () => "draft-delayed",
   newThreadId: () => "thread-delayed",
 }));
@@ -118,21 +128,12 @@ vi.mock("../state/entities", () => ({
   ],
   readThreadShell: () => null,
   useProjects: () => [],
-  useThreadShell: () => null,
   useThread: () => null,
 }));
-vi.mock("../state/environments", () => ({
-  useEnvironments: () => ({
-    environments: [
-      {
-        environmentId: "environment-ssh",
-        connection: { phase: "connected" },
-      },
-    ],
-  }),
+vi.mock("../state/server", () => ({
+  environmentServerConfigsAtom: {},
+  primaryServerSettingsAtom: "primary-settings",
 }));
-vi.mock("../state/server", () => ({ primaryServerSettingsAtom: {} }));
-vi.mock("../scenery/primeWorldScenery", () => ({ primeWorldSceneryForNewThread: vi.fn() }));
 vi.mock("../threadRoutes", () => ({ resolveThreadRouteTarget: () => null }));
 vi.mock("../uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "remote-project",

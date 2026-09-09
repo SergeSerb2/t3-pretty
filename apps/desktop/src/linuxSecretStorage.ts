@@ -119,9 +119,6 @@ function getKWalletRemediationMessage(): string {
   return "T3 Pretty could not access KWallet to save this environment credential. Enable the KDE wallet subsystem in System Settings, then restart T3 Pretty.";
 }
 
-// Advisory only: this picks between the GNOME Keyring and KWallet wording in the failure notice. It
-// never decides which backend to select, so a loose match costs a user slightly wrong instructions
-// rather than an unprotected credential store.
 function looksLikeKdeSession(env: NodeJS.ProcessEnv): boolean {
   const currentDesktopNames = nonEmptyDesktopNames(env.XDG_CURRENT_DESKTOP);
   if (currentDesktopNames.length > 0) {

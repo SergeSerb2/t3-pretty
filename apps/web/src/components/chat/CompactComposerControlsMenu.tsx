@@ -1,9 +1,8 @@
-import type { ProviderDriverKind, ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import type { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode, useEffect } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
   Menu,
-  MenuCheckboxItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -12,19 +11,14 @@ import {
 } from "../ui/menu";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { resolveRuntimeModeOption, runtimeModeOptionsForProvider } from "./runtimeModeOptions";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
-  provider: ProviderDriverKind;
-  children: ReactNode;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   size?: "sm" | "xs";
-  autoCreatePullRequest: boolean;
-  showAutoCreatePullRequestToggle: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
@@ -35,10 +29,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
-  onToggleAutoCreatePullRequest: () => void;
 }) {
   const size = props.size ?? "sm";
-  const showAutoPrDot = props.showAutoCreatePullRequestToggle && props.autoCreatePullRequest;
+  const showAutoPrDot = false;
   const [uncontrolledOpen, setUncontrolledOpen] = useComposerMenuState(props.hidden);
   const open = !props.hidden && (props.open ?? uncontrolledOpen);
   const setOpen = (nextOpen: boolean) => {
@@ -79,7 +72,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        {props.children}
         {props.showInteractionModeToggle ? (
           <>
             <MenuDivider />
@@ -105,23 +97,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          {runtimeModeOptionsForProvider(props.provider).map((mode) => (
-            <MenuRadioItem key={mode} value={mode}>
-              {resolveRuntimeModeOption(props.provider, mode).label}
-            </MenuRadioItem>
-          ))}
+          <MenuRadioItem value="approval-required">Approval Required</MenuRadioItem>
+          <MenuRadioItem value="auto">Auto</MenuRadioItem>
+          <MenuRadioItem value="auto-accept-edits">Auto Accept Edits</MenuRadioItem>
+          <MenuRadioItem value="full-access">Full Access</MenuRadioItem>
+          <MenuRadioItem value="yolo">YOLO</MenuRadioItem>
         </MenuRadioGroup>
-        {props.showAutoCreatePullRequestToggle ? (
-          <>
-            <MenuDivider />
-            <MenuCheckboxItem
-              checked={props.autoCreatePullRequest}
-              onCheckedChange={() => props.onToggleAutoCreatePullRequest()}
-            >
-              Create PR when done
-            </MenuCheckboxItem>
-          </>
-        ) : null}
       </MenuPopup>
     </Menu>
   );

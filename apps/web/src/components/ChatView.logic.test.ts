@@ -1,6 +1,5 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
-  CheckpointRef,
   EnvironmentId,
   MessageId,
   ProjectId,
@@ -13,10 +12,19 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Thread, ThreadShell, TurnDiffSummary } from "../types";
-import type { TimelineEntry } from "../session-logic";
 import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
-import type { RightPanelSurface } from "../rightPanelStore";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  type RightPanelSurface,
+  pullRequestSurface,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
+import {
+  selectThreadPreviewMiniPlayer,
+  usePreviewMiniPlayerStore,
+} from "../previewMiniPlayerStore";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
@@ -24,40 +32,36 @@ import {
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
-  buildRevertTurnCountByUserMessageId,
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveLockedProvider,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getAntigravitySendBlockReason,
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
-  hasOptimisticWorkingSettled,
   hasServerAcknowledgedLocalDispatch,
+  shouldRefocusComposerOnWindowFocus,
   isBranchMismatchDismissedForSession,
-  reconcileQueuedComposerMessages,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveBackgroundDraftWorkspaceOptions,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   resolveDraftPromotionNavigationTarget,
+  observeProactivePanelUserChoice,
   resolveProactiveTurnDiffAction,
   resolveThreadMetadataUpdateForNextTurn,
-  resolveCarriedRuntimeMode,
-  resolveCarriedComposerRuntimeMode,
-  resolveComposerRuntimeMode,
   resolveSendEnvMode,
   resolveDraftHeroState,
-  storedComposerRuntimeMode,
   scheduleEnvironmentReconnectWarning,
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
   shouldDockDraftHeroForSubmission,
   shouldReleaseTimelineAnchorForToolActivity,
-  shouldResetComposerQueueForRouteChange,
   shouldOpenProactivePullRequest,
+  shouldRetargetThreadPullRequestPanel,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
   shouldShowBranchMismatchBanner,
@@ -104,6 +108,37 @@ describe("agent browser close confirmation", () => {
 });
 
 describe("floating browser preview", () => {
+  it("keeps agent preview intent when a user selects its browser tab and then switches away", () => {
+    useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
+    usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
+    const ref = scopeThreadRef(EnvironmentId.make("env-1"), ThreadId.make("thread-1"));
+    const panels = useRightPanelStore.getState();
+    const revision = panels.getUserActionRevision(ref);
+    usePreviewMiniPlayerStore.getState().open(ref, "agent-tab");
+    panels.reconcileBrowserSurfaces(ref, ["agent-tab"]);
+    const intent = selectThreadPreviewMiniPlayer(
+      usePreviewMiniPlayerStore.getState().byThreadKey,
+      ref,
+    );
+    const isFloating = () =>
+      shouldRenderPreviewMiniPlayer(
+        selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, ref)
+          ?.tabId ?? null,
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, ref),
+      );
+
+    panels.openProactive(ref, { id: "diff", kind: "diff" }, revision);
+    expect(isFloating()).toBe(true);
+    panels.activateSurface(ref, "browser:agent-tab");
+    expect(isFloating()).toBe(false);
+    expect(panels.openProactive(ref, { id: "diff", kind: "diff" }, revision)).toBe(false);
+    panels.open(ref, "diff");
+    expect(isFloating()).toBe(true);
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, ref),
+    ).toBe(intent);
+  });
+
   it("only hides the duplicate while the same browser is rendered in the panel", () => {
     expect(shouldRenderPreviewMiniPlayer(null, null)).toBe(false);
     expect(
@@ -125,11 +160,129 @@ describe("floating browser preview", () => {
 });
 
 describe("proactive panels", () => {
+  it("keeps a manual PR selection made after following a replacement while loading", () => {
+    useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
+    const ref = scopeThreadRef(EnvironmentId.make("env-1"), ThreadId.make("thread-1"));
+    const panels = useRightPanelStore.getState();
+    const oldPr = pullRequestSurface({
+      projectId: "project-1",
+      repository: "owner/repo",
+      number: 1,
+    });
+    const replacement = pullRequestSurface({ ...oldPr, number: 2 });
+    const turnId = TurnId.make("turn-1");
+    panels.openPullRequest(ref, oldPr);
+    const loading = observeProactivePanelUserChoice(null, {
+      threadKey: "env-1:thread-1",
+      runningTurnId: turnId,
+      userActionRevision: panels.getUserActionRevision(ref),
+    });
+    expect(panels.openProactive(ref, replacement, loading.userActionRevision)).toBe(true);
+
+    panels.activateSurface(ref, oldPr.id);
+    const loaded = observeProactivePanelUserChoice(loading, {
+      threadKey: loading.threadKey,
+      runningTurnId: turnId,
+      userActionRevision: panels.getUserActionRevision(ref),
+    });
+    expect(panels.openProactive(ref, replacement, loaded.userActionRevision)).toBe(false);
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, ref)).toEqual(
+      oldPr,
+    );
+    expect(shouldOpenProactivePullRequest(loaded.targetKey, "owner/repo:2")).toBe(false);
+    expect(
+      shouldOpenProactiveTurnDiff({
+        previousRunningTurnId: loaded.runningTurnId,
+        runningTurnId: null,
+        settledTurnId: turnId,
+        turnCompleted: true,
+      }),
+    ).toBe(false);
+  });
+
+  it.each(["idle", "loading", "observed"] as const)(
+    "captures a new turn's choice once with initial state %s",
+    (initialState) => {
+      useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
+      const ref = scopeThreadRef(EnvironmentId.make("env-1"), ThreadId.make("thread-1"));
+      const panels = useRightPanelStore.getState();
+      const firstTurn = TurnId.make("turn-1");
+      const nextTurn = TurnId.make("turn-2");
+      const initial = observeProactivePanelUserChoice(null, {
+        threadKey: "env-1:thread-1",
+        runningTurnId: initialState === "idle" ? null : firstTurn,
+        userActionRevision: panels.getUserActionRevision(ref),
+      });
+      panels.openFile(ref, "src/first.ts");
+      const loadingNextTurn = observeProactivePanelUserChoice(
+        {
+          ...initial,
+          ...(initialState === "observed" ? { runningTurnId: firstTurn, targetKey: null } : {}),
+        },
+        {
+          threadKey: initial.threadKey,
+          runningTurnId: nextTurn,
+          userActionRevision: panels.getUserActionRevision(ref),
+        },
+      );
+      expect(
+        panels.openProactive(ref, { id: "diff", kind: "diff" }, loadingNextTurn.userActionRevision),
+      ).toBe(true);
+
+      panels.openFile(ref, "src/second.ts");
+      const loaded = observeProactivePanelUserChoice(loadingNextTurn, {
+        threadKey: initial.threadKey,
+        runningTurnId: nextTurn,
+        userActionRevision: panels.getUserActionRevision(ref),
+      });
+      expect(
+        panels.openProactive(ref, { id: "diff", kind: "diff" }, loaded.userActionRevision),
+      ).toBe(false);
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, ref)?.id,
+      ).toBe("file:src/second.ts");
+    },
+  );
+
   it("opens a pull request only after a newly observed link appears", () => {
     expect(shouldOpenProactivePullRequest(undefined, "project:repo:42")).toBe(false);
     expect(shouldOpenProactivePullRequest(null, "project:repo:42")).toBe(true);
     expect(shouldOpenProactivePullRequest("project:repo:42", "project:repo:42")).toBe(false);
     expect(shouldOpenProactivePullRequest("project:repo:42", null)).toBe(false);
+  });
+
+  it("follows a changed server PR link without replacing an unrelated open panel", () => {
+    const previous = {
+      projectId: ProjectId.make("project-1"),
+      repository: "pingdotgg/t3code",
+      number: 42,
+      url: "https://github.com/pingdotgg/t3code/pull/42",
+    };
+    const current = {
+      ...previous,
+      number: 43,
+      url: "https://github.com/pingdotgg/t3code/pull/43",
+    };
+    const surface = {
+      id: "pull-request:previous",
+      kind: "pull-request",
+      projectId: previous.projectId,
+      repository: "PingDotGG/T3Code",
+      number: previous.number,
+    } satisfies RightPanelSurface;
+
+    expect(shouldRetargetThreadPullRequestPanel(previous, current, surface)).toBe(true);
+    expect(shouldRetargetThreadPullRequestPanel(previous, previous, surface)).toBe(false);
+    expect(shouldRetargetThreadPullRequestPanel(previous, null, surface)).toBe(false);
+    expect(
+      shouldRetargetThreadPullRequestPanel(previous, current, { ...surface, number: 99 }),
+    ).toBe(false);
+    expect(
+      shouldRetargetThreadPullRequestPanel(previous, current, {
+        ...surface,
+        projectId: "another-project",
+      }),
+    ).toBe(false);
   });
 
   it("opens the diff only when the observed running turn settles", () => {
@@ -182,14 +335,12 @@ describe("proactive panels", () => {
       resolveProactiveTurnDiffAction({
         checkpoint: changedCheckpoint,
         isGitRepo: true,
-        activeSurfaceKind: null,
       }),
     ).toBe("open");
     expect(
       resolveProactiveTurnDiffAction({
         checkpoint: unchangedCheckpoint,
         isGitRepo: true,
-        activeSurfaceKind: null,
       }),
     ).toBe("ignore");
   });
@@ -208,38 +359,20 @@ describe("proactive panels", () => {
       resolveProactiveTurnDiffAction({
         checkpoint: undefined,
         isGitRepo: true,
-        activeSurfaceKind: null,
       }),
     ).toBe("defer");
     expect(
       resolveProactiveTurnDiffAction({
         checkpoint: missingCheckpoint,
         isGitRepo: true,
-        activeSurfaceKind: null,
       }),
     ).toBe("defer");
     expect(
       resolveProactiveTurnDiffAction({
         checkpoint: changedCheckpoint,
         isGitRepo: undefined,
-        activeSurfaceKind: null,
       }),
     ).toBe("defer");
-  });
-
-  it("keeps an active pull request above a completed turn diff", () => {
-    const changedCheckpoint = {
-      status: "ready",
-      files: [{ path: "src/app.ts", kind: "modified", additions: 1, deletions: 0 }],
-    } satisfies Pick<TurnDiffSummary, "status" | "files">;
-
-    expect(
-      resolveProactiveTurnDiffAction({
-        checkpoint: changedCheckpoint,
-        isGitRepo: true,
-        activeSurfaceKind: "pull-request",
-      }),
-    ).toBe("ignore");
   });
 });
 
@@ -572,7 +705,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: threadId,
     environmentId,
-    enabledSkillIds: [],
     projectId,
     title: "Thread",
     modelSelection: {
@@ -595,6 +727,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    enabledSkillIds: [],
     ...overrides,
   };
 }
@@ -800,6 +933,113 @@ describe("resolveComposerProviderSelection", () => {
       },
     ])[0]!;
   }
+
+  function importedThread(instanceId: ProviderInstanceId) {
+    return makeThread({
+      modelSelection: { instanceId, model: "default" },
+      messages: [
+        {
+          id: MessageId.make(`import:${instanceId}:session:000000`),
+          role: "user",
+          text: "Continue the imported conversation",
+          turnId: null,
+          createdAt: now,
+          updatedAt: now,
+          streaming: false,
+        },
+      ],
+    });
+  }
+
+  it.each([
+    ["claudeAgent", "claude_work"],
+    ["codex", "codex_work"],
+    ["ollama", "local_models"],
+  ])("keeps imported %s history selectable through its custom instance", (driver, instanceId) => {
+    const importedEntry = entry(driver, instanceId);
+    const entries = [entry(driver === "codex" ? "claudeAgent" : "codex"), importedEntry];
+    const thread = importedThread(importedEntry.instanceId);
+    const lockedProvider = deriveLockedProvider({
+      thread,
+      selectedProvider: entries[0]!.instanceId,
+      threadProvider: thread.modelSelection.instanceId,
+      providers: entries.map((entry) => entry.snapshot),
+    });
+
+    expect(thread.session).toBeNull();
+    expect(lockedProvider).toBe(driver);
+    expect(
+      resolveComposerProviderSelection({
+        entries,
+        candidateInstanceIds: [thread.modelSelection.instanceId],
+        lockedProvider,
+        lockedInstanceId: thread.modelSelection.instanceId,
+      }).selectedProviderEntry?.instanceId,
+    ).toBe(importedEntry.instanceId);
+  });
+
+  it("keeps the session driver authoritative over instance and draft selections", () => {
+    const selected = entry("claudeAgent", "claude_work");
+    const sessionEntry = entry("ollama", "local_models");
+    const thread = importedThread(selected.instanceId);
+
+    expect(
+      deriveLockedProvider({
+        thread: {
+          ...thread,
+          session: {
+            ...readySession,
+            providerName: sessionEntry.driverKind,
+            providerInstanceId: sessionEntry.instanceId,
+          },
+        },
+        selectedProvider: selected.instanceId,
+        threadProvider: thread.modelSelection.instanceId,
+        providers: [selected.snapshot, sessionEntry.snapshot],
+      }),
+    ).toBe(sessionEntry.driverKind);
+  });
+
+  it.each(["missing", "disabled"] as const)(
+    "does not move imported history to another driver when its instance is %s",
+    (state) => {
+      const imported = entry("claudeAgent", "claude_work", { enabled: false });
+      const other = entry("codex");
+      const entries = state === "missing" ? [other] : [other, imported];
+      const thread = importedThread(imported.instanceId);
+      const lockedProvider = deriveLockedProvider({
+        thread,
+        selectedProvider: other.instanceId,
+        threadProvider: thread.modelSelection.instanceId,
+        providers: entries.map((entry) => entry.snapshot),
+      });
+
+      expect(lockedProvider).not.toBeNull();
+      expect(
+        resolveComposerProviderSelection({
+          entries,
+          candidateInstanceIds: [other.instanceId, imported.instanceId],
+          lockedProvider,
+          lockedInstanceId: imported.instanceId,
+        }).selectedProviderEntry,
+      ).toBeUndefined();
+    },
+  );
+
+  it("leaves a new draft free to select a different driver", () => {
+    const original = entry("claudeAgent", "claude_work");
+    const selected = entry("codex", "codex_work");
+    expect(
+      deriveLockedProvider({
+        thread: makeThread({
+          modelSelection: { instanceId: original.instanceId, model: "default" },
+        }),
+        selectedProvider: selected.instanceId,
+        threadProvider: original.instanceId,
+        providers: [original.snapshot, selected.snapshot],
+      }),
+    ).toBeNull();
+  });
 
   it("uses the custom instance's capability instead of the default instance", () => {
     const defaultEntry = entry("antigravity", "antigravity", {
@@ -1028,78 +1268,6 @@ describe("resolveComposerInteractionMode", () => {
   });
 });
 
-describe("buildRevertTurnCountByUserMessageId", () => {
-  const userMessageId = MessageId.make("rewind-user-message");
-  const assistantMessageId = MessageId.make("rewind-assistant-message");
-  const turnId = TurnId.make("rewind-turn");
-  const timelineEntries = [
-    {
-      id: userMessageId,
-      kind: "message",
-      createdAt: now,
-      message: {
-        id: userMessageId,
-        role: "user",
-        text: "Update the file",
-        turnId,
-        createdAt: now,
-        updatedAt: now,
-        streaming: false,
-      },
-    },
-    {
-      id: assistantMessageId,
-      kind: "message",
-      createdAt: now,
-      message: {
-        id: assistantMessageId,
-        role: "assistant",
-        text: "Updated the file",
-        turnId,
-        createdAt: now,
-        updatedAt: now,
-        streaming: false,
-      },
-    },
-  ] satisfies ReadonlyArray<TimelineEntry>;
-  const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>([
-    [
-      assistantMessageId,
-      {
-        turnId,
-        checkpointTurnCount: 1,
-        checkpointRef: CheckpointRef.make("refs/t3/checkpoints/rewind-turn"),
-        status: "ready",
-        files: [],
-        assistantMessageId,
-        completedAt: now,
-      },
-    ],
-  ]);
-
-  it("offers the checkpoint before the user message when conversation rollback is supported", () => {
-    expect(
-      buildRevertTurnCountByUserMessageId({
-        supportsConversationRollback: true,
-        timelineEntries,
-        turnDiffSummaryByAssistantMessageId,
-        inferredCheckpointTurnCountByTurnId: {},
-      }),
-    ).toEqual(new Map([[userMessageId, 0]]));
-  });
-
-  it("offers no rewind action when file checkpoints exist but conversation rollback is unsupported", () => {
-    expect(
-      buildRevertTurnCountByUserMessageId({
-        supportsConversationRollback: false,
-        timelineEntries,
-        turnDiffSummaryByAssistantMessageId,
-        inferredCheckpointTurnCountByTurnId: {},
-      }).size,
-    ).toBe(0);
-  });
-});
-
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
     const state = deriveComposerSendState({
@@ -1251,42 +1419,6 @@ describe("getStartedThreadModelChangeBlockReason", () => {
         "This provider does not allow switching models after a conversation has started.",
     });
   });
-
-  it("allows switching away from a restricted provider when handoff is supported", () => {
-    expect(
-      getStartedThreadModelChangeBlockReason({
-        providers,
-        hasStartedSession: true,
-        supportsProviderHandoff: true,
-        currentModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-        nextModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5.4",
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("still blocks restricted same-provider model changes when handoff is supported", () => {
-    expect(
-      getStartedThreadModelChangeBlockReason({
-        providers,
-        hasStartedSession: true,
-        supportsProviderHandoff: true,
-        currentModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-build",
-        },
-        nextModelSelection: {
-          instanceId: ProviderInstanceId.make("grok"),
-          model: "grok-other",
-        },
-      }),
-    ).not.toBeNull();
-  });
 });
 
 describe("resolveSendEnvMode", () => {
@@ -1419,18 +1551,6 @@ describe("reconcileMountedTerminalThreadIds", () => {
         activeThreadTerminalOpen: false,
       }),
     ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
-  });
-
-  it("retains the active terminal while its close transition exits", () => {
-    expect(
-      reconcileMountedTerminalThreadIds({
-        currentThreadIds: ["thread-a"],
-        openThreadIds: [],
-        activeThreadId: "thread-a",
-        activeThreadTerminalOpen: false,
-        activeThreadTerminalExiting: true,
-      }),
-    ).toEqual(["thread-a"]);
   });
 });
 
@@ -1745,420 +1865,44 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
   });
 });
 
-describe("reconcileQueuedComposerMessages", () => {
-  const queuedMessages = [
-    {
-      id: MessageId.make("message-queued-1"),
-      text: "First queued follow-up",
-      attachmentCount: 0,
-    },
-    {
-      id: MessageId.make("message-queued-2"),
-      text: "Second queued follow-up",
-      attachmentCount: 1,
-    },
-  ];
-
-  it("holds queued copy until the server identifies its turn", () => {
-    expect(
-      reconcileQueuedComposerMessages({
-        queuedMessages,
-        serverMessages: [],
-        latestTurn: { ...completedTurn, turnId: TurnId.make("turn-other"), state: "running" },
-      }),
-    ).toBe(queuedMessages);
-  });
-
-  it("releases through the queued message identified by the server", () => {
-    expect(
-      reconcileQueuedComposerMessages({
-        queuedMessages,
-        serverMessages: [],
-        latestTurn: {
-          ...completedTurn,
-          turnId: TurnId.make("turn-next"),
-          userMessageId: queuedMessages[1]!.id,
-          state: "running",
-        },
-      }),
-    ).toEqual([]);
-  });
-
-  it("releases a queued message after its turn finishes before reconciliation", () => {
-    expect(
-      reconcileQueuedComposerMessages({
-        queuedMessages,
-        serverMessages: [],
-        latestTurn: { ...completedTurn, userMessageId: queuedMessages[0]!.id },
-      }),
-    ).toEqual([queuedMessages[1]]);
-  });
-
-  it("falls back to the matching server message for older snapshots", () => {
-    expect(
-      reconcileQueuedComposerMessages({
-        queuedMessages,
-        serverMessages: [
-          {
-            id: queuedMessages[1]!.id,
-            role: "user",
-            text: queuedMessages[1]!.text,
-            turnId: null,
-            createdAt: completedTurn.requestedAt,
-            updatedAt: completedTurn.requestedAt,
-            streaming: false,
-          },
-        ],
-        latestTurn: completedTurn,
-      }),
-    ).toEqual([]);
-  });
-
-  it("does not use the fallback when the server identifies another message", () => {
-    expect(
-      reconcileQueuedComposerMessages({
-        queuedMessages,
-        serverMessages: [
-          {
-            id: queuedMessages[0]!.id,
-            role: "user",
-            text: queuedMessages[0]!.text,
-            turnId: null,
-            createdAt: completedTurn.requestedAt,
-            updatedAt: completedTurn.requestedAt,
-            streaming: false,
-          },
-        ],
-        latestTurn: { ...completedTurn, userMessageId: MessageId.make("message-other-client") },
-      }),
-    ).toBe(queuedMessages);
-  });
-});
-
-describe("shouldResetComposerQueueForRouteChange", () => {
-  const draft = { routeKind: "draft" as const, routeThreadKey: "env:thread", draftId: "draft-1" };
-
-  it("preserves promotion but resets other route identity changes", () => {
-    expect(
-      shouldResetComposerQueueForRouteChange(draft, {
-        routeKind: "server",
-        routeThreadKey: draft.routeThreadKey,
-        draftId: null,
-      }),
-    ).toBe(false);
-    expect(shouldResetComposerQueueForRouteChange(draft, { ...draft, draftId: "draft-2" })).toBe(
-      true,
-    );
-    expect(
-      shouldResetComposerQueueForRouteChange(draft, {
-        ...draft,
-        routeThreadKey: "env:other-thread",
-      }),
-    ).toBe(true);
-  });
-});
-
-describe("hasOptimisticWorkingSettled", () => {
-  it("holds through session starting and title/branch session timestamp bumps", () => {
-    const localDispatch = createLocalDispatchSnapshot(makeThread());
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: null,
-        session: {
-          ...readySession,
-          status: "starting",
-          updatedAt: "2026-03-29T00:00:03.000Z",
-        },
-        threadError: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("holds while the session is still the pre-dispatch ready snapshot", () => {
-    const localDispatch = createLocalDispatchSnapshot(
-      makeThread({ latestTurn: completedTurn, session: readySession }),
-    );
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: completedTurn,
-        session: readySession,
-        threadError: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("settles when the session is stopped, ready, or idle without a new turn", () => {
-    const localDispatch = createLocalDispatchSnapshot(
-      makeThread({ latestTurn: completedTurn, session: readySession }),
-    );
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: completedTurn,
-        session: { ...readySession, status: "stopped", updatedAt: "2026-03-29T00:00:12.000Z" },
-        threadError: null,
-      }),
-    ).toBe(true);
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: completedTurn,
-        session: { ...readySession, updatedAt: "2026-03-29T00:00:12.000Z" },
-        threadError: null,
-      }),
-    ).toBe(true);
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: completedTurn,
-        session: { ...readySession, status: "idle", updatedAt: "2026-03-29T00:00:12.000Z" },
-        threadError: null,
-      }),
-    ).toBe(true);
-  });
-
-  it("holds while the new turn is running", () => {
-    const localDispatch = createLocalDispatchSnapshot(
-      makeThread({ latestTurn: completedTurn, session: readySession }),
-    );
-    const runningTurn = {
-      ...completedTurn,
-      turnId: TurnId.make("turn-2"),
-      state: "running" as const,
-      requestedAt: "2026-03-29T00:01:00.000Z",
-      startedAt: "2026-03-29T00:01:01.000Z",
-      completedAt: null,
+describe("shouldRefocusComposerOnWindowFocus", () => {
+  function element(
+    tagName: string,
+    options?: { editable?: boolean; role?: string; within?: string },
+  ) {
+    return {
+      tagName,
+      isContentEditable: options?.editable ?? false,
+      getAttribute: (name: string) => (name === "role" ? (options?.role ?? null) : null),
+      closest: (selector: string) =>
+        options?.within !== undefined && selector.includes(options.within) ? ({} as Element) : null,
     };
+  }
 
+  it("refocuses when nothing or the body holds focus", () => {
+    expect(shouldRefocusComposerOnWindowFocus(null)).toBe(true);
+    expect(shouldRefocusComposerOnWindowFocus(element("BODY"))).toBe(true);
+  });
+
+  it("refocuses away from a plain button, such as a pull request tab", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON"))).toBe(true);
+  });
+
+  it("leaves other text fields alone", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("INPUT"))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("TEXTAREA"))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("DIV", { editable: true }))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("DIV", { role: "textbox" }))).toBe(false);
+  });
+
+  it("leaves a focused terminal alone in the drawer and the right panel", () => {
     expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: runningTurn,
-        session: {
-          ...readySession,
-          status: "running",
-          activeTurnId: runningTurn.turnId,
-          updatedAt: runningTurn.startedAt,
-        },
-        threadError: null,
-      }),
+      shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "data-terminal-owner" })),
     ).toBe(false);
   });
 
-  it("settles once the new turn completes and the session is no longer busy", () => {
-    const localDispatch = createLocalDispatchSnapshot(
-      makeThread({ latestTurn: completedTurn, session: readySession }),
-    );
-    const newerTurn = {
-      ...completedTurn,
-      turnId: TurnId.make("turn-2"),
-      requestedAt: "2026-03-29T00:01:00.000Z",
-      startedAt: "2026-03-29T00:01:01.000Z",
-      completedAt: "2026-03-29T00:01:30.000Z",
-    };
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: newerTurn,
-        session: { ...readySession, updatedAt: newerTurn.completedAt },
-        threadError: null,
-      }),
-    ).toBe(true);
-  });
-
-  it("does not settle a completed turn while the session is still starting or running", () => {
-    const localDispatch = createLocalDispatchSnapshot(makeThread());
-    const runningTurn = {
-      ...completedTurn,
-      turnId: TurnId.make("turn-2"),
-      state: "running" as const,
-      requestedAt: "2026-03-29T00:01:00.000Z",
-      startedAt: "2026-03-29T00:01:01.000Z",
-      completedAt: "2026-03-29T00:01:02.000Z",
-    };
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: runningTurn,
-        session: {
-          ...readySession,
-          status: "running",
-          activeTurnId: runningTurn.turnId,
-        },
-        threadError: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("settles on thread errors and session errors", () => {
-    const localDispatch = createLocalDispatchSnapshot(makeThread());
-
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: null,
-        session: null,
-        threadError: "Failed to send message.",
-      }),
-    ).toBe(true);
-    expect(
-      hasOptimisticWorkingSettled({
-        localDispatch,
-        latestTurn: null,
-        session: { ...readySession, status: "error", lastError: "provider failed" },
-        threadError: null,
-      }),
-    ).toBe(true);
-  });
-});
-
-describe("composer runtime mode", () => {
-  it("remaps carried Kimi yolo off Grok on a new draft", () => {
-    expect(
-      resolveComposerRuntimeMode({
-        providerDriver: "grok",
-        composerRuntimeMode: null,
-        threadRuntimeMode: "yolo",
-        isServerThread: false,
-      }),
-    ).toBe("full-access");
-  });
-
-  it("keeps yolo on Kimi", () => {
-    expect(
-      resolveComposerRuntimeMode({
-        providerDriver: "kimi",
-        composerRuntimeMode: null,
-        threadRuntimeMode: "yolo",
-        isServerThread: false,
-      }),
-    ).toBe("yolo");
-  });
-
-  it("lets an untouched draft inherit Kimi's yolo default", () => {
-    expect(
-      resolveComposerRuntimeMode({
-        providerDriver: "kimi",
-        composerRuntimeMode: null,
-        threadRuntimeMode: "full-access",
-        isServerThread: false,
-      }),
-    ).toBe("yolo");
-  });
-
-  it("keeps an explicit Full access pick on Kimi", () => {
-    expect(
-      resolveComposerRuntimeMode({
-        providerDriver: "kimi",
-        composerRuntimeMode: "full-access",
-        threadRuntimeMode: "yolo",
-        isServerThread: false,
-      }),
-    ).toBe("full-access");
-  });
-
-  it("treats the generic default as unset on drafts only", () => {
-    expect(
-      storedComposerRuntimeMode({
-        composerRuntimeMode: null,
-        threadRuntimeMode: "full-access",
-        isServerThread: false,
-      }),
-    ).toBeNull();
-    expect(
-      storedComposerRuntimeMode({
-        composerRuntimeMode: null,
-        threadRuntimeMode: "full-access",
-        isServerThread: true,
-      }),
-    ).toBe("full-access");
-  });
-
-  it("keeps a composer-recorded full-access carry instead of inheriting Kimi yolo", () => {
-    expect(
-      storedComposerRuntimeMode({
-        composerRuntimeMode: "full-access",
-        threadRuntimeMode: "full-access",
-        isServerThread: false,
-      }),
-    ).toBe("full-access");
-    expect(
-      resolveComposerRuntimeMode({
-        providerDriver: "kimi",
-        composerRuntimeMode: "full-access",
-        threadRuntimeMode: "full-access",
-        isServerThread: false,
-      }),
-    ).toBe("full-access");
-  });
-
-  it("remaps carried yolo onto a known non-Kimi destination", () => {
-    expect(
-      resolveCarriedRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: "grok",
-      }),
-    ).toBe("full-access");
-    expect(
-      resolveCarriedRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: "kimi",
-      }),
-    ).toBe("yolo");
-    expect(
-      resolveCarriedRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: null,
-      }),
-    ).toBe("yolo");
-    expect(
-      resolveCarriedRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: "unconfigured",
-      }),
-    ).toBe("yolo");
-    expect(
-      resolveCarriedRuntimeMode({
-        runtimeMode: null,
-        destinationProviderDriver: "grok",
-      }),
-    ).toBeNull();
-  });
-
-  it("records only real picks as the carried composer runtime mode", () => {
-    // Remapped yolo sticks as an explicit full-access pick.
-    expect(
-      resolveCarriedComposerRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: "grok",
-      }),
-    ).toBe("full-access");
-    // Non-default modes carry as explicit picks.
-    expect(
-      resolveCarriedComposerRuntimeMode({
-        runtimeMode: "yolo",
-        destinationProviderDriver: "kimi",
-      }),
-    ).toBe("yolo");
-    // A plain carried full-access stays unset so Kimi inherits yolo.
-    expect(
-      resolveCarriedComposerRuntimeMode({
-        runtimeMode: "full-access",
-        destinationProviderDriver: "kimi",
-      }),
-    ).toBeNull();
-    expect(
-      resolveCarriedComposerRuntimeMode({
-        runtimeMode: null,
-        destinationProviderDriver: "grok",
-      }),
-    ).toBeNull();
+  it("leaves focus inside a dialog or popup alone", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "dialog" }))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "-popup" }))).toBe(false);
   });
 });

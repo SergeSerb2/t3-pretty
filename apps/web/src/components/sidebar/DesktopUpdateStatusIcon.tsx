@@ -1,7 +1,6 @@
-import { CheckIcon, DownloadIcon, RefreshCwIcon, RotateCwIcon } from "lucide-react";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { CheckIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
-
-import { cn } from "../../lib/utils";
 
 const DOWNLOAD_PROGRESS_RADIUS = 14;
 const DOWNLOAD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_PROGRESS_RADIUS;
@@ -163,14 +162,11 @@ export function DesktopUpdateStatusIcon({
   if (status === "downloaded") return <DesktopUpdateDownloadedIcon />;
 
   return (
-    <RefreshCwIcon
-      className={cn(
-        "size-4",
-        isCheckSettling && "animate-desktop-update-check-settle motion-reduce:animate-none",
-        isCheckAnimating && !isCheckSettling && "animate-spin",
-      )}
+    <RefreshIcon
+      className="size-4"
+      refreshing={status === "checking" && isCheckAnimating === true}
       onAnimationEnd={
-        onCheckAnimationEnd
+        isCheckSettling && onCheckAnimationEnd
           ? (event) => {
               if (!isDesktopUpdateCheckSettleAnimationEnd(event)) return;
               onCheckAnimationEnd(event);

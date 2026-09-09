@@ -210,13 +210,6 @@ export function isStackedPullRequestBase(
   return defaultBranch !== baseBranch;
 }
 
-/** Plain-language state, shown beside the author. Conflicts are a merge signal, not a state. */
-export function describePullRequestState(state: PullRequestState, isDraft: boolean): string {
-  if (state === "merged") return "Merged";
-  if (state === "closed") return "Closed";
-  return isDraft ? "Draft" : "Ready for review";
-}
-
 /** Chronological ascending, oldest to newest — reversed for the "newest" reading order. */
 export function orderPullRequestComments<T extends { readonly createdAt: string }>(
   comments: ReadonlyArray<T>,
@@ -730,12 +723,12 @@ function hostResolveGuidance(provider: SourceControlProviderKind, host: string):
  * (same gate as the Resolve control), omit this so the agent is not told to mutate and fail.
  */
 function resolveFindingsAfterFixInstruction(
-  provider: SourceControlProviderKind,
-  host: string,
+  provider: SourceControlProviderKind | undefined,
+  host: string | undefined,
   threadIds: ReadonlyArray<string>,
-  canResolve: boolean,
+  canResolve: boolean | undefined,
 ): string {
-  if (!canResolve) return "";
+  if (!canResolve || !provider || !host) return "";
   const ids = threadIds
     .map((id) => id.trim())
     .filter((id) => id.length > 0)
@@ -924,9 +917,9 @@ export function shouldShowFixActionsInMenu(offer: boolean, headerFits: boolean):
  * attacker-controlled on public repositories.
  */
 export function buildFixFindingsHandoff(input: {
-  readonly provider: SourceControlProviderKind;
+  readonly provider?: SourceControlProviderKind;
   /** Host the PR is addressed on — github.com or a GitHub Enterprise hostname. */
-  readonly host: string;
+  readonly host?: string;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -935,16 +928,19 @@ export function buildFixFindingsHandoff(input: {
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
   /** The flat conversation, which carries the findings no line can be found for. */
   readonly comments: ReadonlyArray<PullRequestComment>;
-  readonly checks: ReadonlyArray<PullRequestCheck>;
-  readonly commentsTruncated: boolean;
+  readonly checks?: ReadonlyArray<PullRequestCheck>;
+  readonly commentsTruncated?: boolean;
   readonly continuous?: boolean;
   /**
    * Whether this viewer may resolve review threads on the host — host capability and
    * `viewerPermissions.resolve` together, matching the Resolve control.
    */
-  readonly canResolve: boolean;
+  readonly canResolve?: boolean;
 }): FixFindingsHandoff {
-  const collected = collectFixableFindings(input);
+  const collected = collectFixableFindings({
+    ...input,
+    checks: input.checks ?? [],
+  });
   const threads = collected.threads;
   // Not every finding can be a chip. A review submitted with words and no inline comment has no
   // line to hang on, and a host that reports no threads at all — Azure DevOps has no diff to pin
@@ -1089,9 +1085,9 @@ export function pullRequestFindingKey(finding: PullRequestFinding): string {
  * for that one thing, not a sweep that should skip finished work.
  */
 export function buildFixFindingHandoff(input: {
-  readonly provider: SourceControlProviderKind;
+  readonly provider?: SourceControlProviderKind;
   /** Host the PR is addressed on — github.com or a GitHub Enterprise hostname. */
-  readonly host: string;
+  readonly host?: string;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -1102,7 +1098,7 @@ export function buildFixFindingHandoff(input: {
    * Whether this viewer may resolve review threads on the host — host capability and
    * `viewerPermissions.resolve` together, matching the Resolve control.
    */
-  readonly canResolve: boolean;
+  readonly canResolve?: boolean;
 }): FixFindingsHandoff {
   const preamble = handoffPreamble(input);
   if (input.finding.kind === "thread") {

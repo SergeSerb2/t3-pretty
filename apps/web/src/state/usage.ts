@@ -1,36 +1,27 @@
 /**
  * Multi-environment usage state.
  *
- * Each connected environment answers the same typed query; the client merges
- * the results. Disabled and offline environments are not queried. Raw
- * transcripts never leave the machine that produced them.
+ * Every connected environment answers the same typed query; the client merges
+ * the results. Raw transcripts never leave the machine that produced them.
  *
  * @module state/usage
  */
 import { useAtomValue } from "@effect/atom-react";
-import { usageConnectionPlan } from "@t3tools/client-runtime/connection";
 import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { refreshUsage } from "@t3tools/client-runtime/state/usage";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
-import {
-  mergeUsage,
-  type EnvironmentUsage,
-  type MergedUsage,
-  USAGE_MERGE_MAX_ENVIRONMENTS,
-} from "@t3tools/shared/usageMerge";
+import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
-
-const USAGE_WINDOW_IDLE_TTL_MS = 5 * 60_000;
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
@@ -40,47 +31,20 @@ export interface EnvironmentUsageStatus {
   readonly summary: UsageSummary | null;
 }
 
-interface UsageEnvironmentSnapshot {
-  readonly environments: readonly EnvironmentUsageStatus[];
-  readonly omittedEnvironmentCount: number;
-}
-
 /**
- * Reads each connected environment's summary for one window.
- *
- * Disabled, offline, and reconnecting environments are skipped: the usage query
- * atom follows the connection supervisor, which would reconnect them and then
- * hang until they come online.
+ * Reads every environment's summary for one window.
  *
  * Keyed by the serialised window so switching ranges does not thrash the atom
  * cache, and so each environment's query is shared with any other reader of the
  * same window.
  */
 const usageByWindowAtom = Atom.family((windowKey: string) =>
-  Atom.make((get): UsageEnvironmentSnapshot => {
+  Atom.make((get): readonly EnvironmentUsageStatus[] => {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
     const presentations = get(environmentPresentations.presentationsAtom);
 
     const statuses: EnvironmentUsageStatus[] = [];
-    const candidates = [...presentations].flatMap(([environmentId, presentation]) => {
-      const plan = usageConnectionPlan(presentation.connection.phase);
-      return plan === "skip" ? [] : [{ environmentId, presentation, plan }];
-    });
-    const omittedEnvironmentCount = Math.max(0, candidates.length - USAGE_MERGE_MAX_ENVIRONMENTS);
-    for (const { environmentId, presentation, plan } of candidates.slice(
-      0,
-      USAGE_MERGE_MAX_ENVIRONMENTS,
-    )) {
-      if (plan === "await-connect") {
-        statuses.push({
-          environmentId,
-          label: presentation.entry.target.label,
-          isPending: true,
-          error: null,
-          summary: null,
-        });
-        continue;
-      }
+    for (const [environmentId, presentation] of presentations) {
       const result = get(serverEnvironment.usageSummary({ environmentId, input }));
       statuses.push({
         environmentId,
@@ -90,11 +54,8 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
         summary: Option.getOrNull(AsyncResult.value(result)),
       });
     }
-    return { environments: statuses, omittedEnvironmentCount };
-  }).pipe(
-    Atom.setIdleTTL(USAGE_WINDOW_IDLE_TTL_MS),
-    Atom.withLabel(`web-usage:window:${windowKey}`),
-  ),
+    return statuses;
+  }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
 );
 
 export interface UsageView {
@@ -109,8 +70,7 @@ export interface UsageView {
    * improve by waiting on them, so they must not read as "still reporting".
    */
   readonly isPartial: boolean;
-  readonly omittedEnvironmentCount: number;
-  readonly refresh: () => void;
+  readonly refresh: (input?: UsageSummaryInput) => Promise<void>;
 }
 
 export function useUsage(
@@ -137,8 +97,7 @@ export function useUsage(
     ],
   );
   const atom = usageByWindowAtom(windowKey);
-  const snapshot = useAtomValue(atom);
-  const environments = snapshot.environments;
+  const environments = useAtomValue(atom);
   const selectedEnvironments = useMemo(
     () =>
       selectedEnvironmentIds === null
@@ -149,26 +108,17 @@ export function useUsage(
     [environments, selectedEnvironmentIds],
   );
 
-  // Refreshing only the derived atom would re-read the per-environment SWR
-  // queries within their stale window and change nothing. Refresh each
-  // environment's query so the button always rescans.
-  //
-  // Each environment refetches model pricing first, so a model released since
-  // its last daily fetch gets priced by the rescan. The rescan runs whether or
-  // not the refetch succeeds: an offline environment still recounts tokens.
-  const refresh = useCallback(() => {
-    const input = JSON.parse(windowKey) as UsageSummaryInput;
-    for (const environment of selectedEnvironments) {
-      const { environmentId } = environment;
-      const query = serverEnvironment.usageSummary({ environmentId, input });
-      void runAtomCommand(
-        appAtomRegistry,
-        serverEnvironment.refreshUsageRates,
-        { environmentId, input: {} },
-        { reportFailure: false },
-      ).finally(() => appAtomRegistry.refresh(query));
-    }
-  }, [selectedEnvironments, windowKey]);
+  const refresh = useCallback(
+    (nextInput?: UsageSummaryInput) =>
+      refreshUsage({
+        registry: appAtomRegistry,
+        server: serverEnvironment,
+        presentations: environmentPresentations,
+        environmentIds: selectedEnvironments.map(({ environmentId }) => environmentId),
+        input: nextInput ?? (JSON.parse(windowKey) as UsageSummaryInput),
+      }),
+    [selectedEnvironments, windowKey],
+  );
 
   const merged = useMemo(() => {
     const answered: EnvironmentUsage[] = selectedEnvironments.flatMap((environment) =>
@@ -198,7 +148,6 @@ export function useUsage(
     selectedEnvironments,
     isPending: answeredCount === 0 && stillReporting > 0,
     isPartial: answeredCount > 0 && stillReporting > 0,
-    omittedEnvironmentCount: snapshot.omittedEnvironmentCount + merged.omittedEnvironmentCount,
     refresh,
   };
 }

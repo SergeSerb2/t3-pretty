@@ -5,7 +5,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
@@ -665,8 +664,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         inflight.leaseLost
           ? Effect.never
           : active.lease.session.closed.pipe(
-              Effect.catch((error): Effect.Effect<MonitorEvent> =>
-                Effect.succeed({ _tag: "Closed", error }),
+              Effect.catch((error: ConnectionAttemptError): Effect.Effect<MonitorEvent> =>
+                error._tag === "ConnectionTransientError"
+                  ? Effect.succeed({ _tag: "Closed", error })
+                  : Effect.die(new Error(`Unexpected ConnectionBlockedError in session.closed`)),
               ),
             ),
         authorizationRefresh,
@@ -1181,14 +1182,3 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     retryNow,
   });
 });
-
-export const layer = (
-  entry: ConnectionCatalogEntry,
-  options?: EnvironmentSupervisorOptions,
-): Layer.Layer<
-  EnvironmentSupervisor,
-  never,
-  | Connectivity.Connectivity
-  | ConnectionDriver.ConnectionDriver
-  | ConnectionWakeups.ConnectionWakeups
-> => Layer.effect(EnvironmentSupervisor, make(entry, options));

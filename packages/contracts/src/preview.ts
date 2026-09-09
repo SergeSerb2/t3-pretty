@@ -19,6 +19,8 @@ import {
 } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 
+export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
+
 export const PREVIEW_URL_MAX_LENGTH = 2_048;
 export const PREVIEW_TITLE_MAX_LENGTH = 512;
 export const PREVIEW_DIAGNOSTIC_MAX_LENGTH = 8_000;

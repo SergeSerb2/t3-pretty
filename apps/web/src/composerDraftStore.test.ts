@@ -68,10 +68,7 @@ import {
   clearComposerDraftsEnvironment,
   composerDraftHasUserContent,
   finalizePromotedDraftThreadByRef,
-  markPromotedDraftThread,
   markPromotedDraftThreadByRef,
-  markPromotedDraftThreads,
-  markPromotedDraftThreadsByRef,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   composerFileNeedsReattach,
@@ -85,7 +82,7 @@ import {
   insertInlineTerminalContextPlaceholder,
   type TerminalContextDraft,
 } from "./lib/terminalContext";
-import { createDeferredStorage, createDebouncedStorage } from "./lib/storage";
+import { createDeferredStorage } from "./lib/storage";
 
 function makeImage(input: {
   id: string;
@@ -319,72 +316,6 @@ describe("composerDraftStore addImages", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft?.images.map((image) => image.id)).toEqual(["img-shared"]);
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared");
-  });
-
-  it("caps images at the provider attachment limit and revokes rejected previews", () => {
-    const images = Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 2 }, (_, index) =>
-      makeImage({
-        id: `img-${index}`,
-        previewUrl: `blob:${index}`,
-        name: `image-${index}.png`,
-      }),
-    );
-
-    const acceptedCount = useComposerDraftStore.getState().addImages(threadRef, images);
-
-    expect(acceptedCount).toBe(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images).toHaveLength(
-      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-    );
-    expect(revokeSpy).toHaveBeenCalledWith(`blob:${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}`);
-    expect(revokeSpy).toHaveBeenCalledWith(`blob:${PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1}`);
-  });
-
-  it("rejects images for a missing draft session and revokes each object URL once", () => {
-    const missingDraftId = DraftId.make("draft-missing");
-    const first = makeImage({ id: "img-missing-a", previewUrl: "blob:missing" });
-    const second = makeImage({
-      id: "img-missing-b",
-      name: "other.png",
-      previewUrl: "blob:missing",
-    });
-
-    const acceptedCount = useComposerDraftStore
-      .getState()
-      .addImages(missingDraftId, [first, second]);
-
-    expect(acceptedCount).toBe(0);
-    expect(draftByKey(missingDraftId)).toBeUndefined();
-    expect(revokeSpy).toHaveBeenCalledOnce();
-    expect(revokeSpy).toHaveBeenCalledWith("blob:missing");
-  });
-
-  it("does not revoke a rejected preview URL retained by a later image in the batch", () => {
-    const existing = makeImage({
-      id: "img-existing",
-      name: "duplicate.png",
-      previewUrl: "blob:existing",
-    });
-    useComposerDraftStore.getState().addImage(threadRef, existing);
-
-    const rejected = makeImage({
-      id: "img-rejected",
-      name: "duplicate.png",
-      previewUrl: "blob:shared-incoming",
-    });
-    const accepted = makeImage({
-      id: "img-accepted",
-      name: "accepted.png",
-      previewUrl: "blob:shared-incoming",
-    });
-
-    useComposerDraftStore.getState().addImages(threadRef, [rejected, accepted]);
-
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.images.map((image) => image.id)).toEqual([
-      "img-existing",
-      "img-accepted",
-    ]);
-    expect(revokeSpy).not.toHaveBeenCalledWith("blob:shared-incoming");
   });
 });
 
@@ -771,193 +702,6 @@ describe("composerDraftStore file attachments", () => {
   });
 });
 
-describe("composerDraftStore moveComposerPromptAndImages", () => {
-  const sourceDraftId = DraftId.make("draft-move-source");
-  const destinationDraftId = DraftId.make("draft-move-destination");
-  let originalRevokeObjectUrl: typeof URL.revokeObjectURL;
-  let revokeSpy: ReturnType<typeof vi.fn<(url: string) => void>>;
-
-  beforeEach(() => {
-    resetComposerDraftStore();
-    for (const draftId of [sourceDraftId, destinationDraftId]) {
-      useComposerDraftStore
-        .getState()
-        .setProjectDraftThreadId(
-          scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make(draftId)),
-          draftId,
-          { threadId: ThreadId.make(draftId), branch: "main", worktreePath: null },
-        );
-    }
-
-    originalRevokeObjectUrl = URL.revokeObjectURL;
-    revokeSpy = vi.fn();
-    URL.revokeObjectURL = revokeSpy;
-  });
-
-  afterEach(() => {
-    URL.revokeObjectURL = originalRevokeObjectUrl;
-  });
-
-  it("moves prompt and images to the destination without revoking preview URLs", () => {
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(sourceDraftId, "fix the login redirect");
-    store.addImages(sourceDraftId, [makeImage({ id: "img-move", previewUrl: "blob:move" })]);
-
-    store.moveComposerPromptAndImages(sourceDraftId, destinationDraftId);
-
-    expect(draftByKey(sourceDraftId)).toBeUndefined();
-    const destination = draftByKey(destinationDraftId);
-    expect(destination?.prompt).toBe("fix the login redirect");
-    expect(destination?.images.map((image) => image.id)).toEqual(["img-move"]);
-    expect(revokeSpy).not.toHaveBeenCalled();
-  });
-
-  it("keeps session-bound contexts on the source and strips their placeholders from the moved prompt", () => {
-    const sourceThreadId = ThreadId.make("thread-move-source");
-    const sourceThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, sourceThreadId);
-    const store = useComposerDraftStore.getState();
-    store.addTerminalContext(sourceThreadRef, makeTerminalContext({ id: "ctx-stay" }));
-    store.setPrompt(sourceThreadRef, `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} explain this error`);
-
-    store.moveComposerPromptAndImages(sourceThreadRef, destinationDraftId);
-
-    const source = draftFor(sourceThreadId, TEST_ENVIRONMENT_ID);
-    expect(source?.terminalContexts.map((context) => context.id)).toEqual(["ctx-stay"]);
-    expect(source?.prompt).toBe(INLINE_TERMINAL_CONTEXT_PLACEHOLDER);
-    expect(draftByKey(destinationDraftId)?.prompt).toBe(" explain this error");
-  });
-
-  it("keeps hydrated file references on their original environment", () => {
-    const sourceRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-file-source"));
-    const destinationRef = scopeThreadRef(
-      OTHER_TEST_ENVIRONMENT_ID,
-      ThreadId.make("thread-file-destination"),
-    );
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(sourceRef, "review the report");
-    store.addFiles(sourceRef, [
-      {
-        ...makeFile("file-hydrated"),
-        file: null,
-        uploadedAttachmentId: "pending-report-pdf",
-        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
-      },
-    ]);
-
-    store.moveComposerPromptAndImages(sourceRef, destinationRef);
-
-    expect(store.getComposerDraft(sourceRef)?.files.map((file) => file.id)).toEqual([
-      "file-hydrated",
-    ]);
-    expect(store.getComposerDraft(destinationRef)?.files).toEqual([]);
-    expect(store.getComposerDraft(destinationRef)?.prompt).toBe("review the report");
-  });
-
-  it("moves files across environments when the original browser file remains available", () => {
-    const sourceRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-file-source"));
-    const destinationRef = scopeThreadRef(
-      OTHER_TEST_ENVIRONMENT_ID,
-      ThreadId.make("thread-file-destination"),
-    );
-    const store = useComposerDraftStore.getState();
-    store.addFiles(sourceRef, [
-      {
-        ...makeFile("file-local"),
-        uploadedAttachmentId: "pending-source-env",
-        uploadEnvironmentId: TEST_ENVIRONMENT_ID,
-      },
-    ]);
-
-    store.moveComposerPromptAndImages(sourceRef, destinationRef);
-
-    expect(store.getComposerDraft(sourceRef)).toBeNull();
-    const moved = store.getComposerDraft(destinationRef)?.files;
-    expect(moved?.map((file) => file.id)).toEqual(["file-local"]);
-    // The source-environment upload is unreachable from the destination; the
-    // move drops it so the destination upload can mint its own.
-    expect(moved?.[0]?.uploadedAttachmentId).toBeUndefined();
-    expect(moved?.[0]?.uploadEnvironmentId).toBeUndefined();
-  });
-
-  it("does not duplicate a file the destination already holds", () => {
-    const sourceRef = scopeThreadRef(TEST_ENVIRONMENT_ID, ThreadId.make("thread-dup-source"));
-    const destinationRef = scopeThreadRef(
-      TEST_ENVIRONMENT_ID,
-      ThreadId.make("thread-dup-destination"),
-    );
-    const store = useComposerDraftStore.getState();
-    // Same metadata key on both sides; the ids differ.
-    store.addFiles(sourceRef, [makeFile("file-copy-a")]);
-    store.addFiles(destinationRef, [makeFile("file-copy-b")]);
-
-    store.moveComposerPromptAndImages(sourceRef, destinationRef);
-
-    expect(store.getComposerDraft(destinationRef)?.files.map((file) => file.id)).toEqual([
-      "file-copy-b",
-    ]);
-    expect(store.getComposerDraft(sourceRef)?.files.map((file) => file.id)).toEqual([
-      "file-copy-a",
-    ]);
-  });
-
-  it("keeps overflow attachments on the source when the destination is nearly full", () => {
-    const store = useComposerDraftStore.getState();
-    store.addImages(
-      destinationDraftId,
-      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) =>
-        makeImage({
-          id: `destination-${index}`,
-          name: `destination-${index}.png`,
-          previewUrl: `blob:destination-${index}`,
-        }),
-      ),
-    );
-    store.addImages(sourceDraftId, [
-      makeImage({ id: "source-first", name: "first.png", previewUrl: "blob:first" }),
-      makeImage({ id: "source-second", name: "second.png", previewUrl: "blob:second" }),
-    ]);
-    store.addFiles(sourceDraftId, [makeFile("source-file")]);
-
-    store.moveComposerPromptAndImages(sourceDraftId, destinationDraftId);
-
-    expect(store.getComposerDraft(destinationDraftId)?.images).toHaveLength(
-      PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-    );
-    expect(store.getComposerDraft(destinationDraftId)?.files).toEqual([]);
-    expect(store.getComposerDraft(sourceDraftId)?.images.map((image) => image.id)).toEqual([
-      "source-second",
-    ]);
-    expect(store.getComposerDraft(sourceDraftId)?.files.map((file) => file.id)).toEqual([
-      "source-file",
-    ]);
-  });
-
-  it("is a no-op when source and destination are the same target", () => {
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(sourceDraftId, "keep me");
-
-    store.moveComposerPromptAndImages(sourceDraftId, sourceDraftId);
-
-    expect(draftByKey(sourceDraftId)?.prompt).toBe("keep me");
-  });
-
-  it("carries per-thread skill picks along with the prompt", () => {
-    const store = useComposerDraftStore.getState();
-    store.setPrompt(sourceDraftId, "use the skills");
-    store.setEnabledSkillIds(sourceDraftId, ["acme/skills:tdd", "acme/skills:review"]);
-    store.setEnabledSkillIds(destinationDraftId, ["acme/skills:review", "acme/skills:prd"]);
-
-    store.moveComposerPromptAndImages(sourceDraftId, destinationDraftId);
-
-    expect(draftByKey(sourceDraftId)).toBeUndefined();
-    expect(draftByKey(destinationDraftId)?.enabledSkillIds).toEqual([
-      "acme/skills:review",
-      "acme/skills:prd",
-      "acme/skills:tdd",
-    ]);
-  });
-});
-
 describe("composerDraftStore syncPersistedAttachments", () => {
   const threadId = ThreadId.make("thread-sync-persisted");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
@@ -977,7 +721,7 @@ describe("composerDraftStore syncPersistedAttachments", () => {
     removeLocalStorageItem(COMPOSER_DRAFT_STORAGE_KEY);
   });
 
-  it("replaces malformed persisted storage with the current attachment write", async () => {
+  it("treats malformed persisted draft storage as empty", async () => {
     const image = makeImage({
       id: "img-persisted",
       previewUrl: "blob:persisted",
@@ -1009,42 +753,8 @@ describe("composerDraftStore syncPersistedAttachments", () => {
     ]);
     await Promise.resolve();
 
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([
-      expect.objectContaining({ id: image.id }),
-    ]);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([]);
-  });
-
-  it("ignores stale attachment verification after a newer attachment write", async () => {
-    const first = makeImage({ id: "img-first", previewUrl: "blob:first" });
-    const latest = makeImage({ id: "img-latest", name: "latest.png", previewUrl: "blob:latest" });
-    const store = useComposerDraftStore.getState();
-    store.addImages(threadRef, [first, latest]);
-
-    store.syncPersistedAttachments(threadRef, [
-      {
-        id: first.id,
-        name: first.name,
-        mimeType: first.mimeType,
-        sizeBytes: first.sizeBytes,
-        dataUrl: first.previewUrl,
-      },
-    ]);
-    store.syncPersistedAttachments(threadRef, [
-      {
-        id: latest.id,
-        name: latest.name,
-        mimeType: latest.mimeType,
-        sizeBytes: latest.sizeBytes,
-        dataUrl: latest.previewUrl,
-      },
-    ]);
-    await Promise.resolve();
-
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([
-      expect.objectContaining({ id: latest.id }),
-    ]);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([first.id]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.persistedAttachments).toEqual([]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.nonPersistedImageIds).toEqual([image.id]);
   });
 });
 
@@ -1220,95 +930,6 @@ describe("composerDraftStore terminal contexts", () => {
     expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]).toBeUndefined();
     expect(mergedState.draftThreadsByThreadKey).toEqual({});
     expect(mergedState.logicalProjectDraftThreadKeyByLogicalProjectKey).toEqual({});
-  });
-});
-
-describe("composerDraftStore enabled skill ids", () => {
-  const threadId = ThreadId.make("thread-enabled-skills");
-  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-
-  beforeEach(() => {
-    resetComposerDraftStore();
-  });
-
-  it("stores per-thread picks and round-trips them through the partializer", () => {
-    useComposerDraftStore
-      .getState()
-      .setEnabledSkillIds(threadRef, ["repo:skills/a", "repo:skills/b"]);
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.enabledSkillIds).toEqual(["repo:skills/a", "repo:skills/b"]);
-
-    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-    expect(
-      persisted.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.enabledSkillIds,
-    ).toEqual(["repo:skills/a", "repo:skills/b"]);
-  });
-
-  it("keeps a picks-only draft alive and drops the entry when picks are cleared", () => {
-    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, ["repo:skills/a"]);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.enabledSkillIds).toEqual(["repo:skills/a"]);
-
-    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, []);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
-
-    // Clearing a draft with no picks is a no-op (no entry is created).
-    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, undefined);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
-  });
-
-  it("keeps skill picks when composer content is cleared", () => {
-    useComposerDraftStore.getState().setPrompt(threadRef, "hello");
-    useComposerDraftStore.getState().setEnabledSkillIds(threadRef, ["repo:skills/a"]);
-
-    useComposerDraftStore.getState().clearComposerContent(threadRef);
-
-    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
-    expect(draft?.prompt).toBe("");
-    expect(draft?.enabledSkillIds).toEqual(["repo:skills/a"]);
-  });
-
-  it("hydrates persisted picks during merge and drops malformed entries", () => {
-    const persistApi = useComposerDraftStore.persist as unknown as {
-      getOptions: () => {
-        merge: (
-          persistedState: unknown,
-          currentState: ReturnType<typeof useComposerDraftStore.getState>,
-        ) => ReturnType<typeof useComposerDraftStore.getState>;
-      };
-    };
-    const mergedState = persistApi.getOptions().merge(
-      {
-        draftsByThreadKey: {
-          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
-            prompt: "",
-            attachments: [],
-            enabledSkillIds: ["repo:skills/a", "", 3],
-          },
-        },
-      },
-      useComposerDraftStore.getInitialState(),
-    );
-    expect(
-      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.enabledSkillIds,
-    ).toEqual(["repo:skills/a"]);
-
-    // A draft whose picks are entirely malformed has no content left to keep.
-    const droppedState = persistApi.getOptions().merge(
-      {
-        draftsByThreadKey: {
-          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
-            prompt: "",
-            attachments: [],
-            enabledSkillIds: [3],
-          },
-        },
-      },
-      useComposerDraftStore.getInitialState(),
-    );
-    expect(
-      droppedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)],
-    ).toBeUndefined();
   });
 });
 
@@ -1550,6 +1171,18 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("removes a draft's previous project mapping when retargeted in place", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "keep this prompt");
+
+    store.setProjectDraftThreadId(otherProjectRef, draftId, { threadId });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(otherProjectRef)?.draftId).toBe(draftId);
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
+  });
+
   it("rotates a failed bootstrap thread id without losing its draft", () => {
     const store = useComposerDraftStore.getState();
     const retryThreadId = ThreadId.make("thread-retry");
@@ -1564,7 +1197,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       interactionMode: "plan",
     });
     store.setPrompt(draftId, "keep this prompt");
-    markPromotedDraftThread(threadId);
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
 
     store.setLogicalProjectDraftThreadId(scopedProjectKey(projectRef), projectRef, draftId, {
       threadId: retryThreadId,
@@ -1727,12 +1360,12 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
-  it("marks a promoted draft by thread id without deleting composer state", () => {
+  it("marks a promoted draft by scoped ref without deleting composer state", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
     store.setPrompt(draftId, "promote me");
 
-    markPromotedDraftThread(threadId);
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
 
     expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.promotedTo).toEqual(
@@ -1757,20 +1390,20 @@ describe("composerDraftStore project draft thread mapping", () => {
     const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
     store.setPrompt(threadRef, "keep me");
 
-    markPromotedDraftThread(threadId);
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
 
     expect(useComposerDraftStore.getState().getDraftThread(threadRef)).toBeNull();
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep me");
   });
 
-  it("marks promoted drafts from an iterable of server thread ids", () => {
+  it("promotes a draft without changing another thread's draft", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
     store.setPrompt(draftId, "promote me");
     store.setProjectDraftThreadId(otherProjectRef, otherDraftId, { threadId: otherThreadId });
     store.setPrompt(otherDraftId, "keep me");
 
-    markPromotedDraftThreads([threadId]);
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
 
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.promotedTo).toEqual(
       scopeThreadRef(TEST_ENVIRONMENT_ID, threadId),
@@ -1782,7 +1415,7 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(otherDraftId)?.prompt).toBe("keep me");
   });
 
-  it("marks every matching scoped draft when multiple environments share a thread id", () => {
+  it("promotes matching thread ids separately for each environment", () => {
     const store = useComposerDraftStore.getState();
     const localThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
     const remoteThreadRef = scopeThreadRef(OTHER_TEST_ENVIRONMENT_ID, threadId);
@@ -1792,7 +1425,16 @@ describe("composerDraftStore project draft thread mapping", () => {
     store.setProjectDraftThreadId(remoteProjectRef, remoteDraftId, { threadId });
     store.setPrompt(remoteDraftId, "remote draft");
 
-    markPromotedDraftThread(threadId);
+    markPromotedDraftThreadByRef(localThreadRef);
+
+    expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
+    expect(store.getDraftThreadByProjectRef(remoteProjectRef)?.threadId).toBe(threadId);
+    expect(store.getDraftThreadByRef(localThreadRef)?.promotedTo).toEqual(localThreadRef);
+    expect(store.getDraftThreadByRef(remoteThreadRef)?.promotedTo).toBeNull();
+    expect(draftByKey(localDraftId)?.prompt).toBe("local draft");
+    expect(draftByKey(remoteDraftId)?.prompt).toBe("remote draft");
+
+    markPromotedDraftThreadByRef(remoteThreadRef);
 
     expect(store.getDraftThreadByProjectRef(projectRef)).toBeNull();
     expect(store.getDraftThreadByProjectRef(remoteProjectRef)).toBeNull();
@@ -1815,34 +1457,10 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)?.prompt).toBe("promote me");
   });
 
-  it("only marks iterable promotion cleanup entries for the matching environment refs", () => {
-    const store = useComposerDraftStore.getState();
-    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
-    store.setPrompt(draftId, "promote me");
-
-    markPromotedDraftThreadsByRef([scopeThreadRef(OTHER_TEST_ENVIRONMENT_ID, threadId)]);
-
-    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)?.threadId).toBe(
-      threadId,
-    );
-    expect(draftByKey(draftId)?.prompt).toBe("promote me");
-  });
-
-  it("keeps existing server-thread composer drafts during iterable promotion cleanup", () => {
-    const store = useComposerDraftStore.getState();
-    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-    store.setPrompt(threadRef, "keep me");
-
-    markPromotedDraftThreads([threadId]);
-
-    expect(useComposerDraftStore.getState().getDraftThread(threadRef)).toBeNull();
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep me");
-  });
-
   it("moves composer edits made during promotion to the canonical thread", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
-    markPromotedDraftThread(threadId);
+    markPromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
     store.setPrompt(draftId, "typed during setup");
 
     finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
@@ -1902,28 +1520,6 @@ describe("composerDraftStore project draft thread mapping", () => {
     store.setDraftThreadContext(draftId, { startFromOrigin: false });
 
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.startFromOrigin).toBe(false);
-  });
-
-  it("stores canvas-first start surface and canvas content on the draft thread", () => {
-    const store = useComposerDraftStore.getState();
-    store.setProjectDraftThreadId(projectRef, draftId, {
-      threadId,
-      startSurface: "canvas",
-    });
-
-    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
-      startSurface: "canvas",
-      hasCanvasContent: false,
-    });
-
-    store.setDraftThreadContext(draftId, { hasCanvasContent: true });
-    expect(useComposerDraftStore.getState().getDraftThread(draftId)?.hasCanvasContent).toBe(true);
-
-    store.setDraftThreadContext(draftId, { startSurface: "chat" });
-    expect(useComposerDraftStore.getState().getDraftThread(draftId)).toMatchObject({
-      startSurface: "chat",
-      hasCanvasContent: true,
-    });
   });
 
   it("preserves existing branch and worktree when setProjectDraftThreadId receives undefined", () => {
@@ -2001,6 +1597,87 @@ describe("composerDraftStore project draft thread mapping", () => {
       envMode: "worktree",
       startFromOrigin: true,
     });
+  });
+
+  it("clears stale upload metadata when retargeting a draft to another environment", () => {
+    const store = useComposerDraftStore.getState();
+    const hydratedFile: ComposerFileAttachment = {
+      ...makeFile("file-cross-environment"),
+      file: null,
+      uploadedAttachmentId: "local-environment-upload",
+      uploadEnvironmentId: TEST_ENVIRONMENT_ID,
+    };
+
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.addFiles(draftId, [hydratedFile]);
+
+    store.setProjectDraftThreadId(remoteProjectRef, draftId, { threadId });
+
+    const file = store.getComposerDraft(draftId)?.files[0];
+    expect(file).toMatchObject({
+      id: hydratedFile.id,
+      file: null,
+    });
+    expect(file?.uploadedAttachmentId).toBeUndefined();
+    expect(file?.uploadEnvironmentId).toBeUndefined();
+    expect(file && composerFileNeedsReattach(file)).toBe(true);
+  });
+
+  it("rechecks balancing when an empty draft is remapped to another project member", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: TEST_ENVIRONMENT_ID,
+    });
+    store.setProjectDraftThreadId(remoteProjectRef, draftId, { threadId });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
+    store.setDraftThreadContext(draftId, { loadBalancedEnvironmentId: OTHER_TEST_ENVIRONMENT_ID });
+    store.setDraftThreadContext(draftId, { projectRef });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
+  });
+
+  it("does not opt a legacy branch choice into balancing when runtime mode changes", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId, branch: "feature/pinned" });
+    store.setDraftThreadContext(draftId, { runtimeMode: "full-access" });
+    expect(store.getDraftThread(draftId)?.environmentSelection).toBeUndefined();
+    expect(store.getDraftThread(draftId)?.branch).toBe("feature/pinned");
+  });
+
+  it("pins manual workspace choices and can return to automatic routing without losing the prompt", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "keep this prompt");
+    store.setDraftThreadContext(draftId, {
+      projectRef: remoteProjectRef,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: OTHER_TEST_ENVIRONMENT_ID,
+    });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      environmentId: OTHER_TEST_ENVIRONMENT_ID,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: OTHER_TEST_ENVIRONMENT_ID,
+    });
+    store.setDraftThreadContext(draftId, { branch: "feature/pinned" });
+    expect(store.getDraftThread(draftId)?.environmentSelection).toBe("manual");
+    store.setDraftThreadContext(draftId, {
+      branch: null,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
+    expect(store.getDraftThread(draftId)).toMatchObject({
+      branch: null,
+      environmentSelection: "auto",
+      loadBalancedEnvironmentId: null,
+    });
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
   });
 
   it("clears branch and worktree but keeps env mode when changing a draft thread project ref", () => {
@@ -3059,25 +2736,5 @@ describe("createDeferredStorage", () => {
     vi.advanceTimersByTime(300);
     expect(base.setItem).toHaveBeenCalledTimes(1);
     expect(base.setItem).toHaveBeenCalledWith("key", "s:v2");
-  });
-
-  it("contains quota and browser-policy failures from delayed storage work", () => {
-    const base = {
-      getItem: vi.fn(() => {
-        throw new Error("blocked");
-      }),
-      setItem: vi.fn(() => {
-        throw new Error("quota exceeded");
-      }),
-      removeItem: vi.fn(() => {
-        throw new Error("blocked");
-      }),
-    };
-    const storage = createDebouncedStorage(base);
-
-    expect(storage.getItem("key")).toBeNull();
-    storage.setItem("key", "value");
-    expect(() => vi.advanceTimersByTime(300)).not.toThrow();
-    expect(() => storage.removeItem("key")).not.toThrow();
   });
 });

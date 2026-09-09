@@ -1,24 +1,27 @@
-import {
-  PROVIDER_MODEL_ID_MAX_LENGTH,
-  SERVER_PROVIDER_LABEL_MAX_LENGTH,
-  SERVER_PROVIDER_MODELS_MAX_ITEMS,
-  type CursorSettings,
-  type ModelCapabilities,
-  type ProviderOptionSelection,
-  type ServerProvider,
-  type ServerProviderAuth,
-  type ServerProviderModel,
-  type ServerProviderState,
+import * as NodeOS from "node:os";
+import type {
+  CursorSettings,
+  ModelCapabilities,
+  ProviderOptionSelection,
+  ServerProvider,
+  ServerProviderAuth,
+  ServerProviderModel,
+  ServerProviderState,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cache from "effect/Cache";
+import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -45,17 +48,15 @@ import {
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
-import {
-  parseCursorListAvailableModelsResponse,
-  type CursorListAvailableModelsResponse,
-} from "../acp/CursorAcpExtension.ts";
-import { boundAcpSessionConfigOptions } from "../acp/AcpRuntimeModel.ts";
+import { CursorListAvailableModelsResponse } from "../acp/CursorAcpExtension.ts";
 
+const decodeCursorListAvailableModelsResponse = Schema.decodeUnknownEffect(
+  CursorListAvailableModelsResponse,
+);
 const CURSOR_PRESENTATION = {
   displayName: "Cursor",
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
-  supportsNativeResume: true,
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -216,130 +217,6 @@ function isCursorThinkingConfigOption(option: EffectAcpSchema.SessionConfigOptio
   return id === "thinking" || name.includes("thinking");
 }
 
-function isCursorOptimizeForConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
-  const id = option.id
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "");
-  const name = option.name.trim().toLowerCase();
-  return (
-    id === "optimizefor" ||
-    name === "optimize for" ||
-    name.includes("optimize for") ||
-    name === "optimization"
-  );
-}
-
-const CURSOR_AUTO_OPTIMIZE_FOR_CHOICES = [
-  { value: "cost", label: "Cost" },
-  { value: "balanced", label: "Balance", isDefault: true },
-  { value: "intelligence", label: "Intelligence" },
-] as const;
-
-type CursorOptimizeForValue = (typeof CURSOR_AUTO_OPTIMIZE_FOR_CHOICES)[number]["value"];
-
-function normalizeCursorOptimizeForValue(
-  value: string | null | undefined,
-): CursorOptimizeForValue | undefined {
-  const normalized = value?.trim().toLowerCase();
-  switch (normalized) {
-    case "cost":
-      return "cost";
-    case "balance":
-    case "balanced":
-      return "balanced";
-    case "intelligence":
-    case "intel":
-      return "intelligence";
-    default:
-      return undefined;
-  }
-}
-
-export function isCursorAutoModel(
-  slug: string | null | undefined,
-  name?: string | null | undefined,
-): boolean {
-  const trimmedSlug = slug?.trim() ?? "";
-  const baseSlug = trimmedSlug.includes("[")
-    ? trimmedSlug.slice(0, trimmedSlug.indexOf("["))
-    : trimmedSlug;
-  const normalizedSlug = (baseSlug || "default").trim().toLowerCase();
-  const normalizedName = name?.trim().toLowerCase() ?? "";
-  return (
-    normalizedSlug === "default" ||
-    normalizedSlug === "auto" ||
-    normalizedSlug === "auto-smart" ||
-    normalizedName === "auto"
-  );
-}
-
-function cursorOptimizeForChoiceLabel(value: CursorOptimizeForValue): string {
-  return CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.find((choice) => choice.value === value)?.label ?? value;
-}
-
-function buildCursorOptimizeForDescriptor(
-  configOption: EffectAcpSchema.SessionConfigOption | undefined,
-): ReturnType<typeof buildSelectOptionDescriptor> | undefined {
-  if (configOption?.type === "select") {
-    const options = flattenSessionConfigSelectOptions(configOption).flatMap((entry) => {
-      const normalizedValue = normalizeCursorOptimizeForValue(entry.value);
-      if (!normalizedValue) {
-        return [];
-      }
-      const isDefault =
-        normalizeCursorOptimizeForValue(configOption.currentValue) === normalizedValue ||
-        (normalizeCursorOptimizeForValue(configOption.currentValue) === undefined &&
-          normalizedValue === "balanced");
-      return [
-        {
-          value: normalizedValue,
-          label: entry.name.trim() || cursorOptimizeForChoiceLabel(normalizedValue),
-          ...(isDefault ? { isDefault: true as const } : {}),
-        },
-      ];
-    });
-    if (options.length > 0) {
-      return buildSelectOptionDescriptor({
-        id: "optimizeFor",
-        label: configOption.name?.trim() || "Optimize For",
-        description:
-          configOption.description?.trim() ||
-          "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-        options,
-      });
-    }
-  }
-
-  return buildSelectOptionDescriptor({
-    id: "optimizeFor",
-    label: "Optimize For",
-    description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-    options: CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.map((choice) => ({ ...choice })),
-  });
-}
-
-export function enrichCursorAutoModelCapabilities(
-  capabilities: ModelCapabilities,
-  slug: string,
-  name?: string | null,
-): ModelCapabilities {
-  if (!isCursorAutoModel(slug, name)) {
-    return capabilities;
-  }
-  const optionDescriptors = capabilities.optionDescriptors ?? [];
-  if (optionDescriptors.some((descriptor) => descriptor.id === "optimizeFor")) {
-    return capabilities;
-  }
-  const optimizeFor = buildCursorOptimizeForDescriptor(undefined);
-  if (!optimizeFor) {
-    return capabilities;
-  }
-  return createModelCapabilities({
-    optionDescriptors: [...optionDescriptors, optimizeFor],
-  });
-}
-
 function isBooleanLikeConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
   if (option.type === "boolean") {
     return true;
@@ -428,20 +305,9 @@ export function buildCursorCapabilitiesFromConfigOptions(
   const thinkingOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorThinkingConfigOption(option),
   );
-  const optimizeForOption = configOptions.find(
-    (option) =>
-      (option.category === "model_config" ||
-        option.category === "model_option" ||
-        option.category === undefined) &&
-      isCursorOptimizeForConfigOption(option),
-  );
   const fastCurrentValue = getBooleanCurrentValue(fastOption);
   const thinkingCurrentValue = getBooleanCurrentValue(thinkingOption);
-  const optimizeForDescriptor = optimizeForOption
-    ? buildCursorOptimizeForDescriptor(optimizeForOption)
-    : undefined;
   const optionDescriptors = [
-    ...(optimizeForDescriptor ? [optimizeForDescriptor] : []),
     ...(reasoningEffortLevels.length > 0
       ? [
           buildSelectOptionDescriptor({
@@ -516,7 +382,7 @@ function buildCursorDiscoveredModels(
 }
 
 function buildCursorDiscoveredModelsFromAvailableModelsResponse(
-  response: CursorListAvailableModelsResponse,
+  response: typeof CursorListAvailableModelsResponse.Type,
 ): ReadonlyArray<ServerProviderModel> {
   return buildCursorDiscoveredModels(
     response.models.flatMap((model) => {
@@ -530,13 +396,7 @@ function buildCursorDiscoveredModelsFromAvailableModelsResponse(
         {
           slug,
           name,
-          capabilities: enrichCursorAutoModelCapabilities(
-            buildCursorCapabilitiesFromConfigOptions(
-              boundAcpSessionConfigOptions(model.configOptions),
-            ),
-            slug,
-            name,
-          ),
+          capabilities: buildCursorCapabilitiesFromConfigOptions(model.configOptions),
         },
       ];
     }),
@@ -616,13 +476,7 @@ function findCursorBooleanConfigValue(
 export function resolveCursorAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
   const base = trimmed && trimmed.length > 0 ? trimmed : "default";
-  const withoutTraits = base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
-  const normalized = withoutTraits.trim().toLowerCase();
-  // Cursor ACP exposes Auto as `default`; `auto` / `auto-smart` are product/SDK ids.
-  if (normalized === "auto" || normalized === "auto-smart") {
-    return "default";
-  }
-  return withoutTraits;
+  return base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
 }
 
 export function resolveCursorAcpConfigUpdates(
@@ -696,21 +550,6 @@ export function resolveCursorAcpConfigUpdates(
     }
   }
 
-  const optimizeForOption = configOptions.find((option) => isCursorOptimizeForConfigOption(option));
-  const requestedOptimizeFor = normalizeCursorOptimizeForValue(
-    getProviderOptionStringSelectionValue(selections, "optimizeFor"),
-  );
-  if (optimizeForOption && requestedOptimizeFor) {
-    const value = findCursorSelectOptionValue(optimizeForOption, (option) => {
-      const normalizedValue = normalizeCursorOptimizeForValue(option.value);
-      const normalizedName = normalizeCursorOptimizeForValue(option.name);
-      return normalizedValue === requestedOptimizeFor || normalizedName === requestedOptimizeFor;
-    });
-    if (value) {
-      updates.push({ configId: optimizeForOption.id, value });
-    }
-  }
-
   return updates;
 }
 
@@ -724,9 +563,8 @@ const discoverCursorModelsViaListAvailableModels = (
       Effect.gen(function* () {
         yield* acp.start();
         const response = yield* acp.request("cursor/list_available_models", {});
-        return buildCursorDiscoveredModelsFromAvailableModelsResponse(
-          parseCursorListAvailableModelsResponse(response),
-        );
+        const decoded = yield* decodeCursorListAvailableModelsResponse(response);
+        return buildCursorDiscoveredModelsFromAvailableModelsResponse(decoded);
       }),
     environment,
   );
@@ -736,7 +574,24 @@ export const discoverCursorModelsViaAcp = (
   environment?: NodeJS.ProcessEnv,
 ) => discoverCursorModelsViaListAvailableModels(cursorSettings, environment);
 
-export function getCursorFallbackModels(
+// Each driver instance owns its cache; version and account changes invalidate it.
+export const makeCursorModelDiscovery = Effect.fn("makeCursorModelDiscovery")(function* (
+  cursorSettings: CursorSettings,
+  environment?: NodeJS.ProcessEnv,
+) {
+  const cache = yield* Cache.makeWith(
+    (_key: string) => discoverCursorModelsViaAcp(cursorSettings, environment),
+    {
+      capacity: 1,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) && exit.value.length > 0 ? Duration.minutes(30) : Duration.zero,
+    },
+  );
+  return (about: Pick<CursorAboutResult, "version" | "auth">) =>
+    Cache.get(cache, JSON.stringify([about.version, about.auth]));
+});
+
+function getCursorFallbackModels(
   cursorSettings: Pick<CursorSettings, "customModels">,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings([], cursorSettings.customModels, EMPTY_CAPABILITIES);
@@ -744,126 +599,6 @@ export function getCursorFallbackModels(
 
 /** Timeout for `agent about` — it's slower than a simple `--version` probe. */
 const ABOUT_TIMEOUT_MS = 8_000;
-const LIST_MODELS_TIMEOUT_MS = ABOUT_TIMEOUT_MS;
-
-/**
- * Effort/fast/thinking suffixes used by `cursor-agent --list-models`.
- * Longer tokens first so `-xhigh` is not stripped as `-high`.
- * Do not include `-flash`: that is part of model ids such as `glm-5.3-flash`.
- */
-const CURSOR_CLI_VARIANT_SUFFIXES = [
-  "-extra-high",
-  "-xhigh",
-  "-thinking",
-  "-minimal",
-  "-medium",
-  "-none",
-  "-high",
-  "-low",
-  "-max",
-  "-fast",
-] as const;
-
-export function cursorCliVariantBaseSlug(slug: string): string {
-  let current = slug.trim();
-  if (current.length === 0) {
-    return current;
-  }
-  let stripped = true;
-  while (stripped && current.length > 0) {
-    stripped = false;
-    const lower = current.toLowerCase();
-    for (const suffix of CURSOR_CLI_VARIANT_SUFFIXES) {
-      if (lower.endsWith(suffix)) {
-        current = current.slice(0, current.length - suffix.length);
-        stripped = true;
-        break;
-      }
-    }
-  }
-  return current.length > 0 ? current : slug.trim();
-}
-
-export function parseCursorListModelsOutput(
-  output: string,
-): ReadonlyArray<{ readonly slug: string; readonly name: string }> {
-  const models: Array<{ slug: string; name: string }> = [];
-  const seen = new Set<string>();
-  for (const rawLine of stripAnsi(output).split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.toLowerCase() === "available models") {
-      continue;
-    }
-    const match = /^(\S+)\s+-\s+(.+)$/.exec(line);
-    if (!match) {
-      continue;
-    }
-    const rawSlug = match[1]?.trim() ?? "";
-    const rawName = match[2]?.replace(/\s*\(default\)\s*$/i, "").trim() ?? "";
-    const slug = isCursorAutoModel(rawSlug, rawName)
-      ? "default"
-      : rawSlug.slice(0, PROVIDER_MODEL_ID_MAX_LENGTH);
-    const name = (rawName || slug).slice(0, SERVER_PROVIDER_LABEL_MAX_LENGTH);
-    if (!slug || seen.has(slug)) {
-      continue;
-    }
-    seen.add(slug);
-    models.push({ slug, name });
-    if (models.length >= SERVER_PROVIDER_MODELS_MAX_ITEMS) {
-      break;
-    }
-  }
-  return models;
-}
-
-export function mergeCursorCliModelsIntoDiscoveredModels(
-  acpModels: ReadonlyArray<ServerProviderModel>,
-  cliModels: ReadonlyArray<{ readonly slug: string; readonly name: string }>,
-): ReadonlyArray<ServerProviderModel> {
-  const coveredBases = new Set<string>();
-  const seenSlugs = new Set<string>();
-  for (const model of acpModels) {
-    seenSlugs.add(model.slug);
-    coveredBases.add(model.slug);
-    coveredBases.add(cursorCliVariantBaseSlug(model.slug));
-    if (isCursorAutoModel(model.slug, model.name)) {
-      coveredBases.add("default");
-      coveredBases.add("auto");
-    }
-  }
-
-  const merged: Array<ServerProviderModel> = [...acpModels];
-  for (const cliModel of cliModels) {
-    if (merged.length >= SERVER_PROVIDER_MODELS_MAX_ITEMS) {
-      break;
-    }
-    const resolvedSlug = isCursorAutoModel(cliModel.slug, cliModel.name)
-      ? "default"
-      : cliModel.slug;
-    const baseSlug = cursorCliVariantBaseSlug(resolvedSlug);
-    if (
-      seenSlugs.has(resolvedSlug) ||
-      seenSlugs.has(baseSlug) ||
-      coveredBases.has(resolvedSlug) ||
-      coveredBases.has(baseSlug)
-    ) {
-      continue;
-    }
-    seenSlugs.add(resolvedSlug);
-    coveredBases.add(baseSlug);
-    merged.push({
-      slug: resolvedSlug,
-      name: cliModel.name,
-      isCustom: false,
-      capabilities: enrichCursorAutoModelCapabilities(
-        EMPTY_CAPABILITIES,
-        resolvedSlug,
-        cliModel.name,
-      ),
-    });
-  }
-  return merged;
-}
 
 /** Strip ANSI escape sequences so we can parse plain key-value lines. */
 function stripAnsi(text: string): string {
@@ -1042,20 +777,45 @@ function isCursorAboutJsonFormatUnsupported(result: CommandResult): boolean {
   );
 }
 
+const readCursorCliConfigChannel = Effect.fn("readCursorCliConfigChannel")(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const configPath = path.join(NodeOS.homedir(), ".cursor", "cli-config.json");
+  const raw = yield* fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => ""));
+  return parseCursorCliConfigChannel(raw);
+});
+
 export function getCursorParameterizedModelPickerUnsupportedMessage(input: {
   readonly version: string | null | undefined;
+  readonly channel: string | null | undefined;
 }): string | undefined {
+  const reasons: Array<string> = [];
   const versionDate = parseCursorVersionDate(input.version);
   if (
     versionDate !== undefined &&
     versionDate < CURSOR_PARAMETERIZED_MODEL_PICKER_MIN_VERSION_DATE
   ) {
-    return [
-      `Cursor Agent CLI version ${input.version} is too old for Cursor ACP parameterized model picker.`,
-      "Run `agent update` and use Cursor Agent CLI 2026.04.08 or newer.",
-    ].join(" ");
+    reasons.push(
+      `Cursor Agent CLI version ${input.version} is too old for Cursor ACP parameterized model picker`,
+    );
   }
-  return undefined;
+
+  const normalizedChannel = input.channel?.trim().toLowerCase();
+  if (
+    normalizedChannel !== undefined &&
+    normalizedChannel.length > 0 &&
+    normalizedChannel !== "lab"
+  ) {
+    reasons.push(
+      `Cursor Agent CLI channel is ${JSON.stringify(input.channel)}, but parameterized model picker is only available on the lab channel`,
+    );
+  }
+
+  if (reasons.length === 0) {
+    return undefined;
+  }
+
+  return `${reasons.join(". ")}. Run \`agent set-channel lab && agent update\` and use Cursor Agent CLI 2026.04.08 or newer.`;
 }
 
 /**
@@ -1245,28 +1005,14 @@ const runCursorAboutCommand = (cursorSettings: CursorSettings, environment?: Nod
     return yield* runCursorCommand(cursorSettings, ["about"], environment);
   });
 
-const discoverCursorModelsViaCliList = (
-  cursorSettings: CursorSettings,
-  environment?: NodeJS.ProcessEnv,
-) =>
-  runCursorCommand(cursorSettings, ["--list-models"], environment).pipe(
-    Effect.timeoutOption(LIST_MODELS_TIMEOUT_MS),
-    Effect.map((result) => {
-      if (Option.isNone(result)) {
-        return [] as const;
-      }
-      return parseCursorListModelsOutput(`${result.value.stdout}\n${result.value.stderr}`);
-    }),
-    Effect.orElseSucceed(() => [] as const),
-  );
-
 export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(function* (
   cursorSettings: CursorSettings,
   environment?: NodeJS.ProcessEnv,
+  discoverModels?: (about: CursorAboutResult) => ReturnType<typeof discoverCursorModelsViaAcp>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | FileSystem.FileSystem | Path.Path
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = getCursorFallbackModels(cursorSettings);
@@ -1332,9 +1078,11 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   }
 
   const parsed = parseCursorAboutOutput(aboutProbe.success.value);
+  const cursorCliConfigChannel = yield* readCursorCliConfigChannel();
   const parameterizedModelPickerUnsupportedMessage =
     getCursorParameterizedModelPickerUnsupportedMessage({
       version: parsed.version,
+      channel: cursorCliConfigChannel,
     });
   if (parameterizedModelPickerUnsupportedMessage) {
     return buildServerProvider({
@@ -1357,46 +1105,23 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   let discoveredModels = Option.none<ReadonlyArray<ServerProviderModel>>();
   let discoveryWarning: string | undefined;
   if (parsed.auth.status !== "unauthenticated") {
-    const [discoveryExit, cliModels] = yield* Effect.all(
-      [
-        Effect.exit(
-          discoverCursorModelsViaAcp(cursorSettings, environment).pipe(
-            Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
-          ),
-        ),
-        discoverCursorModelsViaCliList(cursorSettings, environment),
-      ],
-      { concurrency: 2 },
+    const discoveryExit = yield* Effect.exit(
+      (discoverModels
+        ? discoverModels(parsed)
+        : discoverCursorModelsViaAcp(cursorSettings, environment)
+      ).pipe(Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS)),
     );
-    let acpModels: ReadonlyArray<ServerProviderModel> = [];
     if (Exit.isFailure(discoveryExit)) {
       yield* Effect.logWarning("Cursor ACP model discovery failed", {
         errorTag: causeErrorTag(discoveryExit.cause),
       });
       discoveryWarning = CURSOR_ACP_MODEL_DISCOVERY_FAILED_MESSAGE;
+    } else if (Option.isNone(discoveryExit.value)) {
+      discoveryWarning = `Cursor ACP model discovery timed out after ${CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`;
+    } else if (discoveryExit.value.value.length === 0) {
+      discoveryWarning = "Cursor ACP model discovery returned no built-in models.";
     } else {
-      const acpDiscovery = Option.match(discoveryExit.value, {
-        onNone: () => ({
-          models: [] as ReadonlyArray<ServerProviderModel>,
-          warning: `Cursor ACP model discovery timed out after ${CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS}ms.`,
-        }),
-        onSome: (models) => ({
-          models,
-          warning:
-            models.length === 0
-              ? "Cursor ACP model discovery returned no built-in models."
-              : undefined,
-        }),
-      });
-      acpModels = acpDiscovery.models;
-      discoveryWarning = acpDiscovery.warning;
-    }
-    const mergedModels = mergeCursorCliModelsIntoDiscoveredModels(acpModels, cliModels);
-    if (mergedModels.length > 0) {
-      discoveredModels = Option.some(mergedModels);
-      if (acpModels.length > 0) {
-        discoveryWarning = undefined;
-      }
+      discoveredModels = discoveryExit.value;
     }
   }
   return buildCursorProviderSnapshot({

@@ -8,10 +8,18 @@ export const MANAGED_PROJECT_FAVICON_PREFIX = "t3-project-icon/";
 /** Hex SHA-256 prefix stored in the managed path so replacements bust client caches. */
 export const MANAGED_PROJECT_FAVICON_REVISION_LENGTH = 16;
 
-const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
-const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
+export const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
+export const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
   `^[0-9a-f]{${MANAGED_PROJECT_FAVICON_REVISION_LENGTH}}$`,
 );
+
+export function getProjectFaviconResourceKey(
+  environmentId: string,
+  workspaceRoot: string,
+  faviconPath?: string | null,
+) {
+  return JSON.stringify([environmentId, workspaceRoot, faviconPath || null]);
+}
 
 export function getProjectFaviconCacheKey(
   environmentId: string,

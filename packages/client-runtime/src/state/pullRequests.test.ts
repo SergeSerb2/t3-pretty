@@ -21,7 +21,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
   createPullRequestEnvironmentAtoms,
-  PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
+  LINKED_PULL_REQUEST_IDLE_TTL_MS,
 } from "./pullRequests.ts";
 import { PullRequestDiffLoader } from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery } from "./runtime.ts";
@@ -41,10 +41,10 @@ describe("pull-request environment atoms", () => {
     };
 
     expect(atoms.activity({ environmentId, input: reference }).idleTTL).toBe(
-      PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
+      LINKED_PULL_REQUEST_IDLE_TTL_MS,
     );
     expect(atoms.diff({ environmentId, input: reference }).idleTTL).toBe(
-      PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
+      LINKED_PULL_REQUEST_IDLE_TTL_MS,
     );
   });
 });

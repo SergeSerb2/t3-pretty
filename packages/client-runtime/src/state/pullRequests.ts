@@ -29,16 +29,7 @@ export {
   pullRequestDiffLoaderLayer,
 } from "./pullRequestDiffHttp.ts";
 
-/**
- * How often an open pull-request view re-reads the host. One change request, not a
- * workspace listing: a push, a check, or a comment can land while the panel is open.
- * Half a minute is enough for a reader to see that; five seconds, with a cache bust
- * each time, spent GitHub's hourly budget on one open panel and took the rest of
- * GitHub in the app down with it.
- */
-export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
-export const PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS = 60_000;
-
+/** @public Required to name the error in consumers' inferred pull request results. */
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
@@ -102,7 +93,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     label: "environment-data:pull-requests:activity",
     tag: WS_METHODS.pullRequestsActivity,
     staleTimeMs: 60_000,
-    idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
     refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
   });
   return {
@@ -146,7 +136,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
       staleTimeMs: 60_000,
-      idleTtlMs: PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {
           const supervisor = yield* EnvironmentSupervisor;

@@ -50,33 +50,41 @@ export function asQueuedThreadLifecycleCommand(
   command: ClientOrchestrationCommand,
 ): QueuedThreadLifecycleCommand | null {
   switch (command.type) {
-    case "thread.settle":
+    case "thread.settle": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.settle" }>;
       return {
         type: "thread.settle",
-        commandId: command.commandId,
-        threadId: command.threadId,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
       };
-    case "thread.unsettle":
+    }
+    case "thread.unsettle": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsettle" }>;
       return {
         type: "thread.unsettle",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        reason: command.reason,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        reason: cmd.reason,
       };
-    case "thread.snooze":
+    }
+    case "thread.snooze": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.snooze" }>;
       return {
         type: "thread.snooze",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        snoozedUntil: command.snoozedUntil,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        snoozedUntil: cmd.snoozedUntil,
       };
-    case "thread.unsnooze":
+    }
+    case "thread.unsnooze": {
+      const cmd = command as Extract<ClientOrchestrationCommand, { type: "thread.unsnooze" }>;
       return {
         type: "thread.unsnooze",
-        commandId: command.commandId,
-        threadId: command.threadId,
-        reason: command.reason,
+        commandId: cmd.commandId,
+        threadId: cmd.threadId,
+        reason: cmd.reason,
       };
+    }
     default:
       return null;
   }

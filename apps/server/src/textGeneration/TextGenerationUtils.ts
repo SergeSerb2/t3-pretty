@@ -1,7 +1,11 @@
 import { TextGenerationError } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
+const decodeJsonThreadTitle = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
+);
 
 export const TEXT_GENERATION_RESULT_MAX_BYTES = 1024 * 1024;
 export const TEXT_GENERATION_DIAGNOSTIC_MAX_BYTES = 64 * 1024;
@@ -112,7 +116,10 @@ export function sanitizePrTitle(raw: string): string {
 
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
-  const normalized = raw
+  // Unwrap a JSON-formatted title before truncation can cut off the closing brace.
+  const decoded = decodeJsonThreadTitle(raw);
+  const title = Option.isSome(decoded) ? decoded.value.title : raw;
+  const normalized = title
     .trim()
     .split(/\r?\n/g)[0]
     ?.trim()

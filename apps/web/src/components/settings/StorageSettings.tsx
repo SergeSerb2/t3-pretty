@@ -264,7 +264,7 @@ export function StorageSettingsPanel() {
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
-  const removeOrphan = useAtomCommand(serverEnvironment.removeOrphan, { reportFailure: false });
+  // const removeOrphan = useAtomCommand(serverEnvironment.removeOrphan, { reportFailure: false });
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const [pending, setPending] = useState<PendingDialog | null>(null);
   const [isOperating, setIsOperating] = useState(false);
@@ -367,13 +367,14 @@ export function StorageSettingsPanel() {
           }
           break;
         case "remove-orphans":
-          for (const orphan of inventory.orphanWorktrees) {
-            const result = await removeOrphan({
-              environmentId,
-              input: { path: orphan.path },
-            });
-            reportFailure("Failed to remove orphan", result);
-          }
+          // TODO: Re-enable when storage.removeOrphan RPC is fully implemented
+          // for (const orphan of inventory.orphanWorktrees) {
+          //   const result = await removeOrphan({
+          //     environmentId,
+          //     input: { path: orphan.path },
+          //     });
+          //   reportFailure("Failed to remove orphan", result);
+          // }
           break;
         case "remove-worktree":
           await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
@@ -389,11 +390,12 @@ export function StorageSettingsPanel() {
           }
           break;
         case "remove-orphan": {
-          const result = await removeOrphan({
-            environmentId,
-            input: { path: action.orphan.path },
-          });
-          reportFailure("Failed to remove orphan", result);
+          // TODO: Re-enable when storage.removeOrphan RPC is fully implemented
+          // const result = await removeOrphan({
+          //   environmentId,
+          //   input: { path: action.orphan.path },
+          // });
+          // reportFailure("Failed to remove orphan", result);
           break;
         }
       }
@@ -402,7 +404,7 @@ export function StorageSettingsPanel() {
       setIsOperating(false);
       setPending(null);
     }
-  }, [deleteThread, pending, removeOrphan, reportFailure, unlinkAndMaybeDelete]);
+  }, [deleteThread, pending, reportFailure, unlinkAndMaybeDelete]);
 
   const openManagedFolder = useCallback(
     async (environmentId: EnvironmentId, folderPath: string) => {

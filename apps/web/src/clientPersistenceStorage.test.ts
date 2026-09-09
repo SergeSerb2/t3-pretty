@@ -1,9 +1,4 @@
-import {
-  CLIENT_SETTINGS_LIST_MAX_LENGTH,
-  CLIENT_SETTINGS_VALUE_MAX_LENGTH,
-  DEFAULT_CLIENT_SETTINGS,
-  ProviderInstanceId,
-} from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 function createLocalStorageStub(): Storage {
@@ -43,41 +38,6 @@ afterEach(() => {
 });
 
 describe("clientPersistenceStorage", () => {
-  it("observes this settings key and storage clears from other browser tabs", async () => {
-    const testWindow = getTestWindow();
-    const listeners: { storage?: (event: StorageEvent) => void } = {};
-    const addEventListener = vi.fn((type: string, listener: (event: StorageEvent) => void) => {
-      if (type === "storage") listeners.storage = listener;
-    });
-    const removeEventListener = vi.fn();
-    Object.assign(testWindow, { addEventListener, removeEventListener });
-    const { CLIENT_SETTINGS_STORAGE_KEY, subscribeBrowserClientSettings } =
-      await import("./clientPersistenceStorage");
-    const listener = vi.fn();
-
-    const unsubscribe = subscribeBrowserClientSettings(listener);
-    expect(listeners.storage).toBeDefined();
-    listeners.storage?.({
-      key: "unrelated",
-      storageArea: testWindow.localStorage,
-    } as StorageEvent);
-    listeners.storage?.({
-      key: CLIENT_SETTINGS_STORAGE_KEY,
-      storageArea: createLocalStorageStub(),
-    } as StorageEvent);
-    expect(listener).not.toHaveBeenCalled();
-
-    listeners.storage?.({
-      key: CLIENT_SETTINGS_STORAGE_KEY,
-      storageArea: testWindow.localStorage,
-    } as StorageEvent);
-    listeners.storage?.({ key: null, storageArea: null } as StorageEvent);
-    expect(listener).toHaveBeenCalledTimes(2);
-
-    unsubscribe();
-    expect(removeEventListener).toHaveBeenCalledWith("storage", listeners.storage);
-  });
-
   it("persists client settings in browser storage", async () => {
     getTestWindow();
     const { readBrowserClientSettings, writeBrowserClientSettings } =
@@ -92,58 +52,45 @@ describe("clientPersistenceStorage", () => {
     expect(readBrowserClientSettings()).toEqual(settings);
   });
 
-  it("reports and preserves structured decode failures", async () => {
+  it.each(["not-json", '{"wordWrap":"invalid"}'])(
+    "does not treat invalid saved settings as absent: %s",
+    async (value) => {
+      const testWindow = getTestWindow();
+      testWindow.localStorage.setItem("t3code:client-settings:v1", value);
+      const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+      expect(() => readBrowserClientSettings()).toThrow(
+        expect.objectContaining({
+          _tag: "LocalStorageOperationError",
+          operation: "decode",
+          storageKey: "t3code:client-settings:v1",
+        }),
+      );
+      expect(testWindow.localStorage.getItem("t3code:client-settings:v1")).toBe(value);
+    },
+  );
+
+  it("preserves saved settings across a transient read failure", async () => {
     const testWindow = getTestWindow();
-    testWindow.localStorage.setItem("t3code:client-settings:v1", "not-json");
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const settings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify(settings));
+    const write = vi.spyOn(testWindow.localStorage, "setItem");
+    const failure = new Error("storage unavailable");
+    vi.spyOn(testWindow.localStorage, "getItem").mockImplementationOnce(() => {
+      throw failure;
+    });
     const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
 
     expect(() => readBrowserClientSettings()).toThrow(
       expect.objectContaining({
         _tag: "LocalStorageOperationError",
-        operation: "decode",
+        operation: "read",
         storageKey: "t3code:client-settings:v1",
+        cause: failure,
       }),
     );
-    expect(consoleError).toHaveBeenCalledWith(
-      "Could not read persisted client settings.",
-      expect.objectContaining({
-        _tag: "LocalStorageOperationError",
-        operation: "decode",
-        storageKey: "t3code:client-settings:v1",
-        cause: expect.anything(),
-      }),
-    );
-  });
-
-  it("rejects oversized settings before decoding or writing", async () => {
-    const testWindow = getTestWindow();
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const {
-      CLIENT_SETTINGS_STORAGE_KEY,
-      CLIENT_SETTINGS_STORAGE_MAX_BYTES,
-      readBrowserClientSettings,
-      writeBrowserClientSettings,
-    } = await import("./clientPersistenceStorage");
-    testWindow.localStorage.setItem(
-      CLIENT_SETTINGS_STORAGE_KEY,
-      " ".repeat(CLIENT_SETTINGS_STORAGE_MAX_BYTES + 1),
-    );
-
-    expect(() => readBrowserClientSettings()).toThrow(
-      expect.objectContaining({ operation: "read", storageKey: CLIENT_SETTINGS_STORAGE_KEY }),
-    );
-
-    const oversizedSettings = {
-      ...DEFAULT_CLIENT_SETTINGS,
-      favorites: Array.from({ length: CLIENT_SETTINGS_LIST_MAX_LENGTH }, () => ({
-        provider: ProviderInstanceId.make("codex"),
-        model: "x".repeat(CLIENT_SETTINGS_VALUE_MAX_LENGTH),
-      })),
-    };
-    expect(() => writeBrowserClientSettings(oversizedSettings)).toThrow(
-      expect.objectContaining({ operation: "write", storageKey: CLIENT_SETTINGS_STORAGE_KEY }),
-    );
+    expect(readBrowserClientSettings()).toEqual(settings);
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("defaults word wrap on and discards obsolete wrapping preferences", async () => {

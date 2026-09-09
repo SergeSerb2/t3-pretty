@@ -13,16 +13,12 @@ import {
   mergeEnvironmentThread,
 } from "@t3tools/client-runtime/state/threads";
 import type {
-  OrchestrationCheckpointSummary,
-  OrchestrationMessage,
-  OrchestrationProposedPlan,
-  OrchestrationSession,
-  OrchestrationThreadActivity,
   ScopedProjectRef,
   ScopedThreadRef,
   ServerConfig,
+  OrchestrationCheckpointSummary,
 } from "@t3tools/contracts";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -35,26 +31,14 @@ import {
 } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
-const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
-const EMPTY_MESSAGES: ReadonlyArray<OrchestrationMessage> = Object.freeze([]);
-const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = Object.freeze([]);
-const EMPTY_PROPOSED_PLANS: ReadonlyArray<OrchestrationProposedPlan> = Object.freeze([]);
 const EMPTY_CHECKPOINTS: ReadonlyArray<OrchestrationCheckpointSummary> = Object.freeze([]);
 
-const EMPTY_AUTOMATIONS: ReadonlyArray<EnvironmentAutomation> = Object.freeze([]);
-const EMPTY_AUTOMATIONS_ATOM = Atom.make(EMPTY_AUTOMATIONS).pipe(
-  Atom.withLabel("web-automations:empty"),
-);
 const EMPTY_AUTOMATION_ATOM = Atom.make<EnvironmentAutomation | null>(null).pipe(
   Atom.withLabel("web-automation:empty"),
 );
-
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
-);
-const EMPTY_PROJECT_REFS_ATOM = Atom.make(EMPTY_PROJECT_REFS).pipe(
-  Atom.withLabel("web-project-refs:empty"),
 );
 const EMPTY_THREAD_REFS_ATOM = Atom.make(EMPTY_THREAD_REFS).pipe(
   Atom.withLabel("web-thread-refs:empty"),
@@ -68,23 +52,11 @@ const EMPTY_THREAD_DETAIL_ATOM = Atom.make<EnvironmentThread | null>(null).pipe(
 const EMPTY_THREAD_STATUS_ATOM = Atom.make<EnvironmentThreadStatus>("empty").pipe(
   Atom.withLabel("web-thread-status:empty"),
 );
-const EMPTY_MESSAGES_ATOM = Atom.make(EMPTY_MESSAGES).pipe(
-  Atom.withLabel("web-thread-messages:empty"),
-);
-const EMPTY_ACTIVITIES_ATOM = Atom.make(EMPTY_ACTIVITIES).pipe(
-  Atom.withLabel("web-thread-activities:empty"),
-);
-const EMPTY_PROPOSED_PLANS_ATOM = Atom.make(EMPTY_PROPOSED_PLANS).pipe(
-  Atom.withLabel("web-thread-proposed-plans:empty"),
-);
-const EMPTY_SESSION_ATOM = Atom.make<OrchestrationSession | null>(null).pipe(
-  Atom.withLabel("web-thread-session:empty"),
-);
 const EMPTY_CHECKPOINTS_ATOM = Atom.make(EMPTY_CHECKPOINTS).pipe(
-  Atom.withLabel("web-thread-checkpoints:empty"),
+  Atom.withLabel("web-checkpoints:empty"),
 );
 
-export const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
+const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-active-environment-id"),
 );
@@ -93,30 +65,12 @@ export function useActiveEnvironmentId(): EnvironmentId | null {
   return useAtomValue(activeEnvironmentIdAtom);
 }
 
-export function readActiveEnvironmentId(): EnvironmentId | null {
-  return appAtomRegistry.get(activeEnvironmentIdAtom);
-}
-
 export function setActiveEnvironmentId(environmentId: EnvironmentId | null): void {
   appAtomRegistry.set(activeEnvironmentIdAtom, environmentId);
 }
 
-export function useProjectRefs(): ReadonlyArray<ScopedProjectRef> {
-  return useAtomValue(environmentProjects.projectRefsAtom);
-}
-
 export function useThreadRefs(): ReadonlyArray<ScopedThreadRef> {
   return useAtomValue(environmentThreadShells.threadRefsAtom);
-}
-
-export function useEnvironmentProjectRefs(
-  environmentId: EnvironmentId | null,
-): ReadonlyArray<ScopedProjectRef> {
-  return useAtomValue(
-    environmentId === null
-      ? EMPTY_PROJECT_REFS_ATOM
-      : environmentProjects.environmentProjectRefsAtom(environmentId),
-  );
 }
 
 export function useEnvironmentThreadRefs(
@@ -137,40 +91,8 @@ export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
   return useAtomValue(environmentServerConfigsAtom);
 }
 
-/** Automation run threads are excluded; the automation surfaces use `useAllThreadShells`. */
 export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.threadShellsAtom);
-}
-
-export function useAllThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
-  return useAtomValue(environmentThreadShells.allThreadShellsAtom);
-}
-
-/** Automations of one environment, or of every connected environment when omitted. */
-export function useAutomations(
-  environmentId?: EnvironmentId | null,
-): ReadonlyArray<EnvironmentAutomation> {
-  return useAtomValue(
-    environmentId === undefined
-      ? automationEnvironment.automationsAtom
-      : environmentId === null
-        ? EMPTY_AUTOMATIONS_ATOM
-        : automationEnvironment.environmentAutomationsAtom(environmentId),
-  );
-}
-
-export function useAutomationsForProject(
-  ref: ScopedProjectRef | null,
-): ReadonlyArray<EnvironmentAutomation> {
-  return useAtomValue(
-    ref === null ? EMPTY_AUTOMATIONS_ATOM : automationEnvironment.automationsForProjectAtom(ref),
-  );
-}
-
-export function useAutomationShell(ref: ScopedAutomationRef | null): EnvironmentAutomation | null {
-  return useAtomValue(
-    ref === null ? EMPTY_AUTOMATION_ATOM : automationEnvironment.automationShellAtom(ref),
-  );
 }
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
@@ -191,6 +113,12 @@ export function useProject(ref: ScopedProjectRef | null): EnvironmentProject | n
   return useAtomValue(ref === null ? EMPTY_PROJECT_ATOM : environmentProjects.projectAtom(ref));
 }
 
+export function useAutomationShell(ref: ScopedAutomationRef | null): EnvironmentAutomation | null {
+  return useAtomValue(
+    ref === null ? EMPTY_AUTOMATION_ATOM : automationEnvironment.automationShellAtom(ref),
+  );
+}
+
 export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadShell | null {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_SHELL_ATOM : environmentThreadShells.threadShellAtom(ref),
@@ -203,9 +131,23 @@ export function useThreadDetail(ref: ScopedThreadRef | null): EnvironmentThread 
   );
 }
 
+export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
+  const atom = environmentThreadDetails.detailAtom(ref);
+  const result = appAtomRegistry.get(atom);
+  return result ?? null;
+}
+
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_STATUS_ATOM : environmentThreadDetails.statusAtom(ref),
+  );
+}
+
+export function useThreadCheckpoints(
+  ref: ScopedThreadRef | null,
+): ReadonlyArray<OrchestrationCheckpointSummary> {
+  return useAtomValue(
+    ref === null ? EMPTY_CHECKPOINTS_ATOM : environmentThreadDetails.checkpointsAtom(ref),
   );
 }
 
@@ -239,44 +181,6 @@ export function useThread(
     }),
   );
   return useMemo(() => mergeEnvironmentThread(detail, shell), [detail, shell]);
-}
-
-export function useThreadMessages(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationMessage> {
-  return useAtomValue(
-    ref === null ? EMPTY_MESSAGES_ATOM : environmentThreadDetails.messagesAtom(ref),
-  );
-}
-
-export function useThreadActivities(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationThreadActivity> {
-  return useAtomValue(
-    ref === null ? EMPTY_ACTIVITIES_ATOM : environmentThreadDetails.activitiesAtom(ref),
-  );
-}
-
-export function useThreadProposedPlans(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationProposedPlan> {
-  return useAtomValue(
-    ref === null ? EMPTY_PROPOSED_PLANS_ATOM : environmentThreadDetails.proposedPlansAtom(ref),
-  );
-}
-
-export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSession | null {
-  return useAtomValue(
-    ref === null ? EMPTY_SESSION_ATOM : environmentThreadDetails.sessionAtom(ref),
-  );
-}
-
-export function useThreadCheckpoints(
-  ref: ScopedThreadRef | null,
-): ReadonlyArray<OrchestrationCheckpointSummary> {
-  return useAtomValue(
-    ref === null ? EMPTY_CHECKPOINTS_ATOM : environmentThreadDetails.checkpointsAtom(ref),
-  );
 }
 
 export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
@@ -353,13 +257,6 @@ export function readEnvironmentSupportsTitleRegeneration(environmentId: Environm
   );
 }
 
-export function readEnvironmentSupportsProjectTransfer(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .projectTransfer === true
-  );
-}
-
 /** Whether the environment's server understands thread.pin.reorder (and
     orderKey on thread.pin). Same version-skew contract as settlement. */
 export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId): boolean {
@@ -369,34 +266,11 @@ export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId):
   );
 }
 
-/** Whether the environment's server exposes storage inventory for managed
-    worktrees. Absent on older servers, so clients must not probe them. */
-export function readEnvironmentSupportsStorageInventory(environmentId: EnvironmentId): boolean {
+export function readEnvironmentSupportsActiveReorder(environmentId: EnvironmentId): boolean {
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .storageInventory === true
+      .threadActiveReorder === true
   );
-}
-
-export function readEnvironmentSupportsAutomations(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .automations === true
-  );
-}
-
-/** Whether the environment's server syncs per-thread World Scenery
-    assignments (thread.scenery.assign). False on older servers, where
-    assignments stay device-local. */
-export function readEnvironmentSupportsScenery(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadScenery === true
-  );
-}
-
-export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
-  return appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
 }
 
 export function readEnvironmentThreadRefs(
@@ -405,18 +279,6 @@ export function readEnvironmentThreadRefs(
   return appAtomRegistry.get(environmentThreadShells.environmentThreadRefsAtom(environmentId));
 }
 
-export function readThreadRefs(): ReadonlyArray<ScopedThreadRef> {
-  return appAtomRegistry.get(environmentThreadShells.threadRefsAtom);
-}
-
 export function readThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return appAtomRegistry.get(environmentThreadShells.threadShellsAtom);
-}
-
-export function findThreadRef(threadId: ThreadId): ScopedThreadRef | null {
-  return (
-    appAtomRegistry
-      .get(environmentThreadShells.threadRefsAtom)
-      .find((ref) => ref.threadId === threadId) ?? null
-  );
 }

@@ -9,33 +9,50 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import {
-  AUTH_CREDENTIAL_MAX_LENGTH,
-  AUTH_ERROR_MESSAGE_MAX_LENGTH,
-  AUTH_IDENTIFIER_MAX_LENGTH,
   AuthAccessTokenResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
-  AuthClientSessions,
+  AuthClientSession,
   AuthCreatePairingCredentialInput,
   AuthPairingCredentialResult,
-  AuthPairingLinks,
+  AuthPairingLink,
   AuthRevokeClientSessionInput,
   AuthRevokePairingLinkInput,
   AuthEnvironmentScope,
   AuthTokenExchangeRequest,
   AuthSessionState,
-  AuthSubject,
   AuthWebSocketTicketResult,
   ServerAuthSessionMethod,
 } from "./auth.ts";
 import {
-  AuthSessionId,
   DpopFailureReason,
-  NonNegativeInt,
+  AuthSessionId,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import {
+  ClientOrchestrationCommand,
+  DispatchResult,
+  OrchestrationReadModel,
+  OrchestrationShellSnapshot,
+  OrchestrationThreadDetailSnapshot,
+} from "./orchestration.ts";
+import {
+  PullRequestDiffInput,
+  PullRequestDiffResult,
+  PullRequestOperationError,
+  PullRequestUnavailableError,
+} from "./pullRequest.ts";
+import {
+  RelayCloudEnvironmentHealthRequest,
+  RelayCloudMintCredentialRequest,
+  RelayEnvironmentConfigRequest,
+  RelayEnvironmentHealthResponse,
+  RelayEnvironmentLinkProof,
+  RelayEnvironmentMintResponse,
+  RelayLinkProofRequest,
+} from "./relay.ts";
 import {
   DictationCleanupRequest,
   DictationCleanupResult,
@@ -52,49 +69,14 @@ import {
   ReadAloudUpstreamError,
 } from "./readAloud.ts";
 import { ServerConfig } from "./server.ts";
-import {
-  ClientOrchestrationCommand,
-  DispatchResult,
-  OrchestrationReadModel,
-  OrchestrationShellSnapshot,
-  OrchestrationThreadDetailCursor,
-  OrchestrationThreadDetailSnapshot,
-} from "./orchestration.ts";
-import {
-  PullRequestDiffInput,
-  PullRequestDiffResult,
-  PullRequestOperationError,
-  PullRequestUnavailableError,
-} from "./pullRequest.ts";
-import {
-  RelayCloudEnvironmentHealthRequest,
-  RelayCloudMintCredentialRequest,
-  RELAY_DPOP_PROOF_MAX_LENGTH,
-  RelayEnvironmentConfigRequest,
-  RelayEnvironmentHealthResponse,
-  RelayEnvironmentLinkProof,
-  RelayManagedEndpointRuntimeStatus,
-  RelayEnvironmentMintResponse,
-  RelayLinkProofRequest,
-  SECURE_RELAY_URL_MAX_LENGTH,
-} from "./relay.ts";
-
-const AuthHeaderValue = Schema.String.check(Schema.isMaxLength(AUTH_CREDENTIAL_MAX_LENGTH + 128));
-const DpopProofHeaderValue = Schema.String.check(Schema.isMaxLength(RELAY_DPOP_PROOF_MAX_LENGTH));
-const EnvironmentTraceId = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(AUTH_IDENTIFIER_MAX_LENGTH),
-);
-const EnvironmentHttpMessage = Schema.String.check(
-  Schema.isMaxLength(AUTH_ERROR_MESSAGE_MAX_LENGTH),
-);
 
 const OptionalBearerHeaders = Schema.Struct({
-  authorization: Schema.optionalKey(AuthHeaderValue),
-  dpop: Schema.optionalKey(DpopProofHeaderValue),
+  authorization: Schema.optionalKey(Schema.String),
+  dpop: Schema.optionalKey(Schema.String),
 });
 
 const OptionalDpopProofHeaders = Schema.Struct({
-  dpop: Schema.optionalKey(DpopProofHeaderValue),
+  dpop: Schema.optionalKey(Schema.String),
 });
 
 export const EnvironmentRequestInvalidReason = Schema.Literals([
@@ -129,7 +111,6 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
-  "server_config_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -139,7 +120,7 @@ export class EnvironmentRequestInvalidError extends Schema.TaggedErrorClass<Envi
   {
     code: Schema.Literal("invalid_request"),
     reason: EnvironmentRequestInvalidReason,
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 400 },
 ) {
@@ -159,7 +140,7 @@ export class EnvironmentAuthInvalidError extends Schema.TaggedErrorClass<Environ
     reason: EnvironmentAuthInvalidReason,
     // Older servers do not send a DPoP failure category.
     dpopFailureReason: Schema.optionalKey(DpopFailureReason),
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 401 },
 ) {
@@ -177,7 +158,7 @@ export class EnvironmentScopeRequiredError extends Schema.TaggedErrorClass<Envir
   {
     code: Schema.Literal("insufficient_scope"),
     requiredScope: AuthEnvironmentScope,
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 403 },
 ) {
@@ -195,7 +176,7 @@ export class EnvironmentOperationForbiddenError extends Schema.TaggedErrorClass<
   {
     code: Schema.Literal("operation_forbidden"),
     reason: EnvironmentOperationForbiddenReason,
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 403 },
 ) {
@@ -213,7 +194,7 @@ export class EnvironmentInternalError extends Schema.TaggedErrorClass<Environmen
   {
     code: Schema.Literal("internal_error"),
     reason: EnvironmentInternalErrorReason,
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 500 },
 ) {
@@ -234,7 +215,7 @@ export class EnvironmentResourceNotFoundError extends Schema.TaggedErrorClass<En
   {
     code: Schema.Literal("not_found"),
     reason: EnvironmentResourceNotFoundReason,
-    traceId: EnvironmentTraceId,
+    traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 404 },
 ) {
@@ -265,7 +246,7 @@ const EnvironmentAuthenticationErrors = [
 export class EnvironmentHttpBadRequestError extends Schema.TaggedErrorClass<EnvironmentHttpBadRequestError>()(
   "EnvironmentHttpBadRequestError",
   {
-    message: EnvironmentHttpMessage,
+    message: Schema.String,
   },
   { httpApiStatus: 400 },
 ) {
@@ -277,7 +258,7 @@ export class EnvironmentHttpBadRequestError extends Schema.TaggedErrorClass<Envi
 export class EnvironmentHttpUnauthorizedError extends Schema.TaggedErrorClass<EnvironmentHttpUnauthorizedError>()(
   "EnvironmentHttpUnauthorizedError",
   {
-    message: EnvironmentHttpMessage,
+    message: Schema.String,
   },
   { httpApiStatus: 401 },
 ) {
@@ -289,7 +270,7 @@ export class EnvironmentHttpUnauthorizedError extends Schema.TaggedErrorClass<En
 export class EnvironmentHttpForbiddenError extends Schema.TaggedErrorClass<EnvironmentHttpForbiddenError>()(
   "EnvironmentHttpForbiddenError",
   {
-    message: EnvironmentHttpMessage,
+    message: Schema.String,
   },
   { httpApiStatus: 403 },
 ) {
@@ -301,7 +282,7 @@ export class EnvironmentHttpForbiddenError extends Schema.TaggedErrorClass<Envir
 export class EnvironmentHttpInternalServerError extends Schema.TaggedErrorClass<EnvironmentHttpInternalServerError>()(
   "EnvironmentHttpInternalServerError",
   {
-    message: EnvironmentHttpMessage,
+    message: Schema.String,
   },
   { httpApiStatus: 500 },
 ) {
@@ -313,7 +294,7 @@ export class EnvironmentHttpInternalServerError extends Schema.TaggedErrorClass<
 export class EnvironmentHttpConflictError extends Schema.TaggedErrorClass<EnvironmentHttpConflictError>()(
   "EnvironmentHttpConflictError",
   {
-    message: EnvironmentHttpMessage,
+    message: Schema.String,
   },
   { httpApiStatus: 409 },
 ) {
@@ -325,8 +306,8 @@ export class EnvironmentHttpConflictError extends Schema.TaggedErrorClass<Enviro
 export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedErrorClass<EnvironmentCloudEndpointUnavailableError>()(
   "EnvironmentCloudEndpointUnavailableError",
   {
-    message: EnvironmentHttpMessage,
-    endpointRuntimeStatus: RelayManagedEndpointRuntimeStatus,
+    message: Schema.String,
+    endpointRuntimeStatus: Schema.Unknown,
   },
   { httpApiStatus: 503 },
 ) {
@@ -405,15 +386,15 @@ const EnvironmentHttpCloudErrors = [
 
 export const EnvironmentCloudRelayConfigResult = Schema.Struct({
   ok: Schema.Boolean,
-  endpointRuntimeStatus: RelayManagedEndpointRuntimeStatus,
+  endpointRuntimeStatus: Schema.Unknown,
 });
 export type EnvironmentCloudRelayConfigResult = typeof EnvironmentCloudRelayConfigResult.Type;
 
 export const EnvironmentCloudLinkStateResult = Schema.Struct({
   linked: Schema.Boolean,
-  cloudUserId: Schema.NullOr(AuthSubject),
-  relayUrl: Schema.NullOr(Schema.String.check(Schema.isMaxLength(SECURE_RELAY_URL_MAX_LENGTH))),
-  relayIssuer: Schema.NullOr(Schema.String.check(Schema.isMaxLength(SECURE_RELAY_URL_MAX_LENGTH))),
+  cloudUserId: Schema.NullOr(Schema.String),
+  relayUrl: Schema.NullOr(Schema.String),
+  relayIssuer: Schema.NullOr(Schema.String),
   // A managed Cloudflare tunnel is provisioned for this link. False for a
   // publish-only link (activity publishing without a relay-managed tunnel), so
   // clients can present the two capabilities as independent settings.
@@ -439,31 +420,17 @@ export const AuthClientSessionRevokeResult = Schema.Struct({
 export type AuthClientSessionRevokeResult = typeof AuthClientSessionRevokeResult.Type;
 
 export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
-  revokedCount: NonNegativeInt,
+  revokedCount: Schema.Number,
 });
 export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
 
-export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
+class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
   HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
     success: ExecutionEnvironmentDescriptor,
   }),
 ) {}
 
-export const EnvironmentServerConfigSnapshot = Schema.Struct({
-  config: ServerConfig,
-  digest: TrimmedNonEmptyString.check(Schema.isMaxLength(AUTH_IDENTIFIER_MAX_LENGTH)),
-});
-export type EnvironmentServerConfigSnapshot = typeof EnvironmentServerConfigSnapshot.Type;
-
-export class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
-  HttpApiEndpoint.get("config", "/api/server/config", {
-    headers: OptionalBearerHeaders,
-    success: EnvironmentServerConfigSnapshot,
-    error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
-  }).middleware(EnvironmentAuthenticatedAuth),
-) {}
-
-export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
+class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("session", "/api/auth/session", {
       headers: OptionalBearerHeaders,
@@ -504,7 +471,7 @@ export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("pairingLinks", "/api/auth/pairing-links", {
       headers: OptionalBearerHeaders,
-      success: AuthPairingLinks,
+      success: Schema.Array(AuthPairingLink),
       error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
@@ -519,7 +486,7 @@ export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("clients", "/api/auth/clients", {
       headers: OptionalBearerHeaders,
-      success: AuthClientSessions,
+      success: Schema.Array(AuthClientSession),
       error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
@@ -550,13 +517,7 @@ const EnvironmentOrchestrationThreadSnapshotQuery = {
   turnLimit: Schema.optional(
     Schema.FiniteFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
   ),
-  beforeCursor: Schema.optional(OrchestrationThreadDetailCursor),
-};
-
-// Query flag mirroring the socket subscription's `acceptAutomations`: clients
-// that omit it never receive automation run threads.
-const EnvironmentOrchestrationShellSnapshotQuery = {
-  acceptAutomations: Schema.optional(Schema.Literal("true")),
+  beforeCursor: Schema.optional(TrimmedNonEmptyString),
 };
 
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
@@ -570,7 +531,6 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   .add(
     HttpApiEndpoint.get("shellSnapshot", "/api/orchestration/shell", {
       headers: OptionalBearerHeaders,
-      payload: EnvironmentOrchestrationShellSnapshotQuery,
       success: OrchestrationShellSnapshot,
       error: EnvironmentOrchestrationSnapshotErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
@@ -594,7 +554,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   ) {}
 
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
-export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
+class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
     headers: OptionalBearerHeaders,
     payload: PullRequestDiffInput,
@@ -609,56 +569,7 @@ export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullReque
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
-export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
-  .add(
-    HttpApiEndpoint.get("status", "/api/dictation/status", {
-      headers: OptionalBearerHeaders,
-      success: DictationStatusResult,
-      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("transcribe", "/api/dictation/transcribe", {
-      headers: OptionalBearerHeaders,
-      payload: DictationTranscriptionRequest,
-      success: DictationTranscriptionResult,
-      error: [
-        DictationUnavailableError,
-        DictationUpstreamError,
-        EnvironmentScopeRequiredError,
-        EnvironmentInternalError,
-      ],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("cleanup", "/api/dictation/cleanup", {
-      headers: OptionalBearerHeaders,
-      payload: DictationCleanupRequest,
-      success: DictationCleanupResult,
-      error: [
-        DictationUnavailableError,
-        DictationUpstreamError,
-        EnvironmentScopeRequiredError,
-        EnvironmentInternalError,
-      ],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  ) {}
-
-export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").add(
-  HttpApiEndpoint.post("synthesize", "/api/read-aloud/synthesize", {
-    headers: OptionalBearerHeaders,
-    payload: ReadAloudRequest,
-    success: ReadAloudResult,
-    error: [
-      ReadAloudUnavailableError,
-      ReadAloudUpstreamError,
-      EnvironmentScopeRequiredError,
-      EnvironmentInternalError,
-    ],
-  }).middleware(EnvironmentAuthenticatedAuth),
-) {}
-
-export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
+class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
       headers: OptionalBearerHeaders,
@@ -719,12 +630,69 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
+  .add(
+    HttpApiEndpoint.get("status", "/api/dictation/status", {
+      headers: OptionalBearerHeaders,
+      success: DictationStatusResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("transcribe", "/api/dictation/transcribe", {
+      headers: OptionalBearerHeaders,
+      payload: DictationTranscriptionRequest,
+      success: DictationTranscriptionResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("cleanup", "/api/dictation/cleanup", {
+      headers: OptionalBearerHeaders,
+      payload: DictationCleanupRequest,
+      success: DictationCleanupResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
+export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").add(
+  HttpApiEndpoint.post("synthesize", "/api/read-aloud/synthesize", {
+    headers: OptionalBearerHeaders,
+    payload: ReadAloudRequest,
+    success: ReadAloudResult,
+    error: [
+      ReadAloudUnavailableError,
+      ReadAloudUpstreamError,
+      EnvironmentScopeRequiredError,
+      EnvironmentInternalError,
+    ],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
+  HttpApiEndpoint.get("config", "/api/server/config", {
+    headers: OptionalBearerHeaders,
+    success: ServerConfig,
+    error: [EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
-  .add(EnvironmentServerHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
+  .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentServerHttpApi)
   .add(EnvironmentDictationHttpApi)
-  .add(EnvironmentReadAloudHttpApi)
-  .add(EnvironmentConnectHttpApi) {}
+  .add(EnvironmentReadAloudHttpApi) {}

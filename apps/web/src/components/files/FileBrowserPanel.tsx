@@ -1,3 +1,4 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import type {
   ContextMenuItem as TreeContextMenuItem,
   ContextMenuOpenContext as TreeContextMenuOpenContext,
@@ -5,7 +6,7 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -15,7 +16,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
-import { cn } from "~/lib/utils";
+import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
@@ -35,7 +36,7 @@ interface FileBrowserPanelProps {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
-  selectedFileRefreshPending?: boolean;
+  workspaceMutationId: string | null;
 }
 
 function treePath(entry: ProjectEntry): string {
@@ -52,12 +53,11 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
             variant="ghost"
             size="icon-xs"
             aria-label="Refresh workspace files"
-            disabled={props.isPending}
             onClick={props.onRefresh}
           />
         }
       >
-        <RotateCw className={cn(props.isPending && "animate-spin")} />
+        <RefreshIcon refreshing={props.isPending} />
       </TooltipTrigger>
       <TooltipPopup>{props.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
     </Tooltip>
@@ -100,7 +100,7 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
-  selectedFileRefreshPending = false,
+  workspaceMutationId,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
@@ -124,16 +124,13 @@ export default function FileBrowserPanel({
   // The tree renders rows in shadow DOM and its anchor rect is unreliable, so
   // capture the right-click position ourselves; contextmenu is a composed
   // event, so a capture-phase listener sees it with viewport coordinates.
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
   useEffect(() => {
-    const panel = panelRef.current;
-    if (!panel) return;
     const capturePointer = (event: MouseEvent) => {
       contextMenuPointerRef.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
     };
-    panel.addEventListener("contextmenu", capturePointer, true);
-    return () => panel.removeEventListener("contextmenu", capturePointer, true);
+    document.addEventListener("contextmenu", capturePointer, true);
+    return () => document.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
   const showEntryContextMenu = async (
@@ -198,7 +195,9 @@ export default function FileBrowserPanel({
     }
   };
   const showEntryContextMenuRef = useRef(showEntryContextMenu);
-  showEntryContextMenuRef.current = showEntryContextMenu;
+  useEffect(() => {
+    showEntryContextMenuRef.current = showEntryContextMenu;
+  });
 
   const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
   const dragMention = useMemo(
@@ -265,6 +264,11 @@ export default function FileBrowserPanel({
     entriesQuery.refresh();
     onRefreshSelectedFile?.();
   };
+  useWorkspaceMutationRefresh({
+    mutationId: workspaceMutationId,
+    refresh: entriesQuery.refresh,
+    resourceKey: `files:${environmentId}:${cwd}`,
+  });
 
   useEffect(() => {
     if (entriesQuery.data === null) return;
@@ -343,7 +347,10 @@ export default function FileBrowserPanel({
   // data store is writable for every dragstart listener in the dispatch.
   // The capture phase runs before the tree's own dragstart handler selects
   // the dragged row, so the drag flag is up before that selection emits.
-  treeModelRef.current = model;
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    treeModelRef.current = model;
+  }, [model]);
   useEffect(() => {
     const panel = panelRef.current;
     if (panel === null) {
@@ -366,13 +373,10 @@ export default function FileBrowserPanel({
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
       <div
-        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
+        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
-        <RefreshFilesButton
-          isPending={entriesQuery.isPending || selectedFileRefreshPending}
-          onRefresh={handleRefresh}
-        />
+        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -408,9 +412,7 @@ export default function FileBrowserPanel({
         ) : null}
       </div>
       {entriesQuery.error && entriesQuery.data === null ? (
-        <div role="alert" className="p-4 text-xs leading-relaxed text-destructive">
-          {entriesQuery.error}
-        </div>
+        <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
       ) : (
         <FileTree
           model={model}

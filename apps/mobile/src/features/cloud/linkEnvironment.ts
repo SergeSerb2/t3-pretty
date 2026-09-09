@@ -44,14 +44,6 @@ const RELAY_STATUS_AND_CONNECT_SCOPES = [
 ] satisfies ReadonlyArray<RelayDpopAccessTokenScope>;
 const CLOUD_STATUS_CONCURRENCY = 6;
 
-export function normalizeRelayBaseUrl(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed.replace(/\/+$/g, "");
-}
-
 function readRelayUrl(): string | null {
   return resolveCloudPublicConfig().relay.url;
 }
@@ -404,16 +396,6 @@ export function getCloudEnvironmentStatus(input: {
     yield* ensureStatusMatchesEnvironment({ environment: input.environment, status });
     return status;
   });
-}
-
-export function cloudEnvironmentsPendingStatus(
-  environments: ReadonlyArray<RelayClientEnvironmentRecord>,
-): ReadonlyArray<CloudEnvironmentRecordWithStatus> {
-  return environments.map((environment) => ({
-    environment,
-    status: null,
-    statusError: "Checking status...",
-  }));
 }
 
 export function loadCloudEnvironmentStatuses(input: {

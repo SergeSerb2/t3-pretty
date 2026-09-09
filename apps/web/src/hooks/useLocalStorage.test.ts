@@ -69,9 +69,28 @@ describe("local storage errors", () => {
     }
   });
 
-  it("preserves decode failure context", async () => {
+  it("retries when access to browser storage becomes available", async () => {
+    const storage = createStorage();
+    storage.setItem("read-key", JSON.stringify("saved value"));
+    let blocked = true;
+    vi.stubGlobal("window", {
+      get localStorage() {
+        if (blocked) throw new Error("storage unavailable");
+        return storage;
+      },
+    });
+    const { getLocalStorageItem, LocalStorageOperationError } = await import("./useLocalStorage");
+
+    expect(() => getLocalStorageItem("read-key", Schema.String)).toThrow(
+      LocalStorageOperationError,
+    );
+    blocked = false;
+    expect(getLocalStorageItem("read-key", Schema.String)).toBe("saved value");
+  });
+
+  it.each(["", "not-json"])("preserves decode failure context for %j", async (value) => {
     const { getLocalStorageItem, LocalStorageOperationError } = await loadWithStorage(
-      createStorage({ getItem: () => "not-json" }),
+      createStorage({ getItem: () => value }),
     );
 
     try {
@@ -138,20 +157,16 @@ describe("local storage errors", () => {
     const storage = createStorage({ getItem: () => JSON.stringify("éé"), setItem });
     const { getLocalStorageItem, setLocalStorageItem } = await loadWithStorage(storage);
 
-    expect(() => getLocalStorageItem("read-limit", Schema.String, { maxEncodedBytes: 5 })).toThrow(
+    expect(() => getLocalStorageItem("read-limit", Schema.String)).toThrow(
       expect.objectContaining({
         operation: "read",
         storageKey: "read-limit",
-        cause: expect.objectContaining({ message: expect.stringContaining("5 UTF-8 bytes") }),
       }),
     );
-    expect(() =>
-      setLocalStorageItem("write-limit", "éé", Schema.String, { maxEncodedBytes: 5 }),
-    ).toThrow(
+    expect(() => setLocalStorageItem("write-limit", "éé", Schema.String)).toThrow(
       expect.objectContaining({
         operation: "write",
         storageKey: "write-limit",
-        cause: expect.objectContaining({ message: expect.stringContaining("5 UTF-8 bytes") }),
       }),
     );
     expect(setItem).not.toHaveBeenCalled();

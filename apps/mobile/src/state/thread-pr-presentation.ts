@@ -1,8 +1,5 @@
 import type { VcsStatusResult } from "@t3tools/contracts";
-import {
-  resolveAutomatedReviewPresentation,
-  resolveChangeRequestPresentation,
-} from "@t3tools/shared/sourceControl";
+import { resolveChangeRequestPresentation } from "@t3tools/shared/sourceControl";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 
@@ -18,21 +15,12 @@ export interface ThreadPrPresentation {
   /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
   readonly textClassName: string;
-  readonly automatedReview: ThreadAutomatedReviewPresentation | null;
-}
-
-export interface ThreadAutomatedReviewPresentation {
-  readonly state: NonNullable<NonNullable<ThreadPr["automatedReview"]>>["state"] | "no_signal";
-  readonly label: string;
-  readonly shortLabel: string;
-  readonly description: string;
-  readonly textClassName: string;
 }
 
 const PR_STATE_TEXT_CLASS: Record<ThreadPr["state"], string> = {
   open: "text-adaptive-emerald-600-400",
   merged: "text-adaptive-violet-600-400",
-  closed: "text-adaptive-zinc-500-400",
+  closed: "text-foreground-muted",
 };
 
 export function presentThreadPr(
@@ -40,21 +28,6 @@ export function presentThreadPr(
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): ThreadPrPresentation {
   const presentation = resolveChangeRequestPresentation(provider);
-  const automatedReviewPresentation = resolveAutomatedReviewPresentation(pr.automatedReview);
-  const automatedReview = automatedReviewPresentation
-    ? {
-        state: pr.automatedReview?.state ?? ("no_signal" as const),
-        ...automatedReviewPresentation,
-        textClassName:
-          pr.automatedReview?.state === "reviewing"
-            ? "text-adaptive-blue-600-300"
-            : pr.automatedReview?.state === "passed"
-              ? "text-adaptive-emerald-600-300"
-              : pr.automatedReview?.state === "feedback"
-                ? "text-adaptive-amber-700-300"
-                : "text-foreground-muted",
-      }
-    : null;
   const isDraft = pr.state === "open" && pr.isDraft === true;
   return {
     number: pr.number,
@@ -63,8 +36,7 @@ export function presentThreadPr(
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     label: String(pr.number),
-    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}${automatedReview ? `, ${automatedReview.label}` : ""}`,
-    textClassName: isDraft ? "text-adaptive-zinc-500-400" : PR_STATE_TEXT_CLASS[pr.state],
-    automatedReview,
+    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}`,
+    textClassName: isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[pr.state],
   };
 }

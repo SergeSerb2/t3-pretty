@@ -16,28 +16,39 @@ import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
 export const CLIENT_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
-const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
-const decodeClientSettingsDocument = Schema.decodeEffect(
-  fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
-);
-const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchema);
-const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
-  const document = yield* decodeClientSettingsDocument(raw);
-  // Select the shape before validation so invalid legacy settings cannot become defaults.
-  // Legacy wrapper: document's ONLY key is "settings" and it's a non-null object.
-  // Otherwise, decode flat (even if an incidental "settings" field exists).
-  const keys = Object.keys(document);
-  const isLegacyWrapper =
-    keys.length === 1 &&
-    keys[0] === "settings" &&
-    typeof document.settings === "object" &&
-    document.settings !== null;
-
-  return yield* decodeClientSettingsValue(
-    isLegacyWrapper ? document.settings : document,
-  );
+const ClientSettingsDocumentSchema = Schema.Struct({
+  settings: ClientSettingsSchema,
 });
+
+const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
+const LegacyClientSettingsDocumentJson = fromLenientJson(ClientSettingsDocumentSchema);
+const decodeLegacyClientSettingsDocumentJson = Schema.decodeEffect(
+  LegacyClientSettingsDocumentJson,
+);
+const decodeClientSettingsJsonValue = Schema.decodeEffect(ClientSettingsJson);
+const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
+  decodeClientSettingsJsonValue(raw).pipe(
+    Effect.catchTags({
+      SchemaError: () =>
+        decodeLegacyClientSettingsDocumentJson(raw).pipe(
+          Effect.map((document) => document.settings),
+        ),
+    }),
+  );
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
+
+export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
+  "DesktopClientSettingsReadError",
+  {
+    operation: Schema.Literals(["read-file", "decode-document"]),
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
@@ -57,19 +68,6 @@ export class DesktopClientSettingsWriteError extends Schema.TaggedErrorClass<Des
 ) {
   override get message(): string {
     return `Desktop client settings write failed during ${this.operation} at ${this.path}.`;
-  }
-}
-
-export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
-  "DesktopClientSettingsReadError",
-  {
-    operation: Schema.Literals(["read-document", "decode-document"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
   }
 }
 
@@ -97,7 +95,7 @@ const readClientSettings = (
               Effect.annotateLogs({ settingsPath }),
               Effect.andThen(
                 new DesktopClientSettingsReadError({
-                  operation: "read-document",
+                  operation: "read-file",
                   path: settingsPath,
                   cause,
                 }),
@@ -108,7 +106,7 @@ const readClientSettings = (
           Effect.annotateLogs({ settingsPath }),
           Effect.andThen(
             new DesktopClientSettingsReadError({
-              operation: "read-document",
+              operation: "read-file",
               path: settingsPath,
               cause,
             }),

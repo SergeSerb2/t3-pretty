@@ -1,7 +1,10 @@
 "use client";
 
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
@@ -50,6 +53,7 @@ import {
 } from "~/browser/browserViewportActions";
 import { browserResponsiveViewportForToggle, useBrowserDefaults } from "~/browser/browserDefaults";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
+import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
 import { PreviewUnreachable } from "./PreviewUnreachable";
 import { revealInFileExplorerLabel } from "./fileExplorerLabel";
 import { shouldShowPreviewEmptyState } from "./previewEmptyStateLogic";
@@ -80,7 +84,7 @@ interface Props {
   ) => void;
 }
 
-export function previewProfileName(
+function previewProfileName(
   profiles: ReadonlyArray<{ readonly id: string; readonly name: string }>,
   profileId: string,
 ): string {
@@ -131,6 +135,7 @@ export function PreviewView({
   );
   const addPreviewAnnotation = useComposerDraftStore((store) => store.addPreviewAnnotation);
   const addImage = useComposerDraftStore((store) => store.addImage);
+  const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const environmentHostname = environmentHttpBaseUrl
     ? new URL(environmentHttpBaseUrl).hostname
@@ -202,6 +207,16 @@ export function PreviewView({
         return true;
       }
       const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        if (error instanceof BrowserSettingsReadError) {
+          toastManager.add({
+            type: "error",
+            title: "Unable to open browser",
+            description: error.message,
+          });
+        }
+      }
       return result._tag === "Success";
     },
     [open, runtimeTabId, threadRef],
@@ -650,13 +665,18 @@ export function PreviewView({
               } satisfies ComposerImageAttachment)
             : null;
         if (image) {
-          if (!addImage(threadRef, image)) {
+          const draft = getComposerDraft(threadRef);
+          const attachmentCount =
+            (draft?.images.length ?? 0) + (draft?.files.length ?? 0);
+          if (attachmentCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
             image = null;
             toastManager.add({
               type: "warning",
               title: "Annotation attached without screenshot",
               description: `A message can carry ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images. Remove one to attach this screenshot.`,
             });
+          } else {
+            addImage(threadRef, image);
           }
         }
         if (submission === "send") {

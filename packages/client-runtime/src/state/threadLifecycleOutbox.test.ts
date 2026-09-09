@@ -537,6 +537,7 @@ describe("ThreadLifecycleOutbox", () => {
             dispatch.pipe(Effect.as({ sequence: 1 })),
         } as unknown as WsRpcProtocolClient,
         initialConfig: Effect.never,
+        subscribeServerConfig: () => Stream.never,
         ready: Effect.void,
         probe: Effect.void,
         closed: Effect.never,
@@ -618,6 +619,7 @@ describe("ThreadLifecycleOutbox", () => {
       const session: RpcSession = {
         client,
         initialConfig: Effect.never,
+        subscribeServerConfig: () => Stream.never,
         ready: Effect.void,
         probe: Effect.void,
         closed: Effect.never,
@@ -676,6 +678,7 @@ describe("ThreadLifecycleOutbox", () => {
       const session: RpcSession = {
         client,
         initialConfig: Effect.never,
+        subscribeServerConfig: () => Stream.never,
         ready: Effect.void,
         probe: Effect.void,
         closed: Effect.never,

@@ -16,32 +16,9 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 export { resolveAssetUrl, type AssetUrlState } from "@t3tools/client-runtime/state/assets";
 
-export function useAssetUrlState(
-  environmentId: EnvironmentId | null,
-  resource: AssetResource | null,
-): AssetUrlState {
-  const preparedConnection = usePreparedConnection(environmentId);
-  const result = useAtomValue(
-    environmentId === null || resource === null
-      ? EMPTY_ASSET_URL_ATOM
-      : assetEnvironment.createUrl({ environmentId, input: { resource } }),
-  );
-  return assetUrlStateFromResult(
-    result,
-    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
-  );
-}
-
-export function useAssetUrl(
-  environmentId: EnvironmentId | null,
-  resource: AssetResource | null,
-): string | null {
-  const result = useAssetUrlState(environmentId, resource);
-  return result._tag === "Success" ? result.url : null;
-}
-
 /**
- * Resources the collection atom can key. Empty attachment ids fail
+ * Returns whether the resource can be submitted to `createUrl`. False for
+ * empty-id attachments, which crash before hitting the RPC due to the
  * `AssetResource` decode, which throws `InvalidAssetCollectionKeyError`
  * during render.
  */
@@ -64,6 +41,22 @@ export function alignQueryableAssetUrls<T>(
   });
 }
 
+export function useAssetUrlState(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+): AssetUrlState {
+  const preparedConnection = usePreparedConnection(environmentId);
+  const result = useAtomValue(
+    environmentId === null || resource === null
+      ? EMPTY_ASSET_URL_ATOM
+      : assetEnvironment.createUrl({ environmentId, input: { resource } }),
+  );
+  return assetUrlStateFromResult(
+    result,
+    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null,
+  );
+}
+
 export function useAssetUrlRefresh(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,
@@ -84,22 +77,21 @@ export function useAssetUrls(
   resources: ReadonlyArray<AssetResource>,
 ): ReadonlyArray<string | null> {
   const preparedConnection = usePreparedConnection(environmentId);
-  const queryableResources = resources.filter(isQueryableAssetResource);
   const results = useAtomValue(
     assetEnvironment.createUrls({
       environmentId,
-      resources: queryableResources,
+      resources,
     }),
   );
-  return useMemo(() => {
-    if (preparedConnection._tag === "None") {
-      return resources.map(() => null);
-    }
-    const queryableUrls = results.map((result) =>
-      AsyncResult.isSuccess(result)
-        ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
-        : null,
-    );
-    return alignQueryableAssetUrls(resources, queryableUrls);
-  }, [preparedConnection, resources, results]);
+  return useMemo(
+    () =>
+      preparedConnection._tag === "None"
+        ? resources.map(() => null)
+        : results.map((result) =>
+            AsyncResult.isSuccess(result)
+              ? resolveAssetUrl(preparedConnection.value.httpBaseUrl, result.value.relativeUrl)
+              : null,
+          ),
+    [preparedConnection, resources, results],
+  );
 }

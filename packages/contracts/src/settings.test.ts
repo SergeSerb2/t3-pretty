@@ -1,29 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
-  PROVIDER_INSTANCE_MAX_COUNT,
-  ProviderDriverKind,
-  ProviderInstanceId,
-} from "./providerInstance.ts";
-import {
-  BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS,
-  BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS,
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
-  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
-  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH,
-  SERVER_SETTINGS_PATH_MAX_LENGTH,
-  defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
-import { SUBAGENT_POLICY_MAX_CHILDREN } from "./subagentPolicy.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -32,13 +19,6 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
-
-describe("ServerSettings computer control", () => {
-  it("is opt-in and accepts an explicit toggle", () => {
-    expect(decodeServerSettings({}).enableComputerUse).toBe(false);
-    expect(decodeServerSettingsPatch({ enableComputerUse: true }).enableComputerUse).toBe(true);
-  });
-});
 
 describe("ServerSettings usage price overrides", () => {
   const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
@@ -155,42 +135,18 @@ describe("ClaudeSettings auto-compaction", () => {
   });
 });
 
-describe("ServerSettings subagent policy", () => {
-  it("defaults to spawning on with no instance pins", () => {
-    expect(decodeServerSettings({}).subagentPolicy).toEqual({
-      enabled: true,
-      children: {},
-    });
+describe("ClientSettings load balancing", () => {
+  it("requires opt-in when settings are new or omit load balancing", () => {
+    expect(decodeClientSettings({}).loadBalancingEnabled).toBe(false);
+    expect(decodeClientSettings({ loadBalancingWeights: {} }).loadBalancingEnabled).toBe(false);
   });
 
-  it("accepts a global off switch and an instance child pin", () => {
-    const decoded = decodeServerSettingsPatch({
-      subagentPolicy: {
-        enabled: false,
-        children: {
-          grok: { model: "grok-build", options: [{ id: "reasoningEffort", value: "low" }] },
-        },
-      },
-    });
-    expect(decoded.subagentPolicy?.enabled).toBe(false);
-    expect(decoded.subagentPolicy?.children?.[ProviderInstanceId.make("grok")]?.model).toBe(
-      "grok-build",
+  it.each([true, false])("preserves a saved choice of %s", (loadBalancingEnabled) => {
+    const settings = decodeClientSettings({ loadBalancingEnabled });
+    expect(encodeClientSettings(settings).loadBalancingEnabled).toBe(loadBalancingEnabled);
+    expect(decodeClientSettingsPatch({ loadBalancingEnabled }).loadBalancingEnabled).toBe(
+      loadBalancingEnabled,
     );
-  });
-});
-
-describe("ClientSettings skill favorites", () => {
-  it("defaults to an empty list", () => {
-    expect(decodeClientSettings({}).favoriteSkillIds).toEqual([]);
-  });
-
-  it("accepts skill ids", () => {
-    expect(
-      decodeClientSettings({ favoriteSkillIds: ["octo/skills:tdd"] }).favoriteSkillIds,
-    ).toEqual(["octo/skills:tdd"]);
-    expect(
-      decodeClientSettingsPatch({ favoriteSkillIds: ["host:agents:shared"] }).favoriteSkillIds,
-    ).toEqual(["host:agents:shared"]);
   });
 });
 
@@ -332,11 +288,8 @@ describe("ClientSettings environment identification", () => {
 });
 
 describe("ClientSettings sidebar", () => {
-  it("defaults to the current sidebar with inactivity settling", () => {
-    const settings = decodeClientSettings({});
-    expect(settings.legacySidebarEnabled).toBe(false);
-    expect(settings.sidebarAutoSettleAfterDays).toBe(3);
-    expect(settings).not.toHaveProperty("sidebarAutoSettleOnMerge");
+  it("defaults to the current sidebar", () => {
+    expect(decodeClientSettings({}).legacySidebarEnabled).toBe(false);
   });
 
   it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
@@ -361,56 +314,32 @@ describe("ClientSettings sidebar", () => {
     expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
     expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
   });
+});
 
-  it("allows auto-settle by inactivity to be disabled", () => {
+describe("ClientSettings context window meter", () => {
+  it("defaults off and preserves an explicit legacy opt-in", () => {
+    expect(decodeClientSettings({}).contextWindowMeterEnabled).toBe(false);
     expect(
-      decodeClientSettings({ sidebarAutoSettleAfterDays: null }).sidebarAutoSettleAfterDays,
-    ).toBeNull();
-  });
-
-  it("drops the retired auto-settle-on-merge setting", () => {
-    expect(decodeClientSettings({ sidebarAutoSettleOnMerge: false })).not.toHaveProperty(
-      "sidebarAutoSettleOnMerge",
-    );
-    expect(decodeClientSettingsPatch({ sidebarAutoSettleOnMerge: false })).not.toHaveProperty(
-      "sidebarAutoSettleOnMerge",
-    );
-  });
-
-  it.each([-1, 0, 1.5, 91])("rejects an invalid auto-settle threshold: %s", (value) => {
-    expect(() => decodeClientSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
-    expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
-  });
-
-  it("keeps auto-archive off until enabled at a value inside the shared day bounds", () => {
-    expect(decodeClientSettings({}).sidebarAutoArchiveSettledAfterDays).toBeNull();
-    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeGreaterThanOrEqual(
-      MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-    );
-    expect(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS).toBeLessThanOrEqual(
-      MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-    );
+      decodeClientSettings({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
+    ).toBe(true);
     expect(
-      decodeClientSettings({
-        sidebarAutoArchiveSettledAfterDays: DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
-      }).sidebarAutoArchiveSettledAfterDays,
-    ).toBe(DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS);
+      decodeClientSettingsPatch({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
+    ).toBe(true);
   });
 });
 
 describe("ClientSettings composer collapse", () => {
-  it("collapses on blur and scroll by default and accepts opting out of each", () => {
-    const defaults = decodeClientSettings({});
-    expect(defaults.composerCollapseOnBlur).toBe(true);
-    expect(defaults.composerCollapseOnScroll).toBe(true);
-
-    const blurOff = decodeClientSettings({ composerCollapseOnBlur: false });
-    expect(blurOff.composerCollapseOnBlur).toBe(false);
-    expect(blurOff.composerCollapseOnScroll).toBe(true);
-
+  it("collapses on scroll by default and accepts opting out", () => {
+    expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);
     expect(
       decodeClientSettingsPatch({ composerCollapseOnScroll: false }).composerCollapseOnScroll,
     ).toBe(false);
+  });
+
+  it("drops the retired blur trigger key", () => {
+    const decoded = decodeClientSettings({ composerCollapseOnBlur: false });
+    expect(decoded.composerCollapseOnScroll).toBe(true);
+    expect(decoded).not.toHaveProperty("composerCollapseOnBlur");
   });
 });
 
@@ -442,37 +371,6 @@ describe("ServerSettings thread settlement", () => {
   });
 });
 
-describe("ServerSettings background activity intervals", () => {
-  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])(
-    "rejects a non-finite or negative legacy interval: %s",
-    (value) => {
-      expect(() => decodeServerSettings({ automaticGitFetchInterval: value })).toThrow();
-      expect(() => decodeServerSettingsPatch({ providerHealthRefreshInterval: value })).toThrow();
-    },
-  );
-
-  it("rejects override intervals below their operational minima", () => {
-    expect(() =>
-      decodeServerSettingsPatch({
-        backgroundActivity: {
-          overrides: {
-            hostPowerMonitorActiveInterval: BACKGROUND_ACTIVITY_MIN_HOST_POWER_INTERVAL_MILLIS - 1,
-          },
-        },
-      }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({
-        backgroundActivity: {
-          overrides: {
-            idleClientTtl: BACKGROUND_ACTIVITY_MIN_IDLE_CLIENT_TTL_MILLIS - 1,
-          },
-        },
-      }),
-    ).toThrow();
-  });
-});
-
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
@@ -484,10 +382,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
-  });
-
-  it("defaults live activity headlines on", () => {
-    expect(DEFAULT_SERVER_SETTINGS.generateActivityHeadlines).toBe(true);
   });
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
@@ -532,14 +426,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     });
   });
 
-  it("loads leftover grokBot settings without failing decode", () => {
-    const decoded = decodeServerSettings({
-      providers: { grokBot: { enabled: true, accessToken: "leftover" } },
-    });
-    expect(decoded.providers.codex.enabled).toBe(true);
-    expect("grokBot" in decoded.providers).toBe(false);
-  });
-
   it("rejects instance keys that violate the slug pattern", () => {
     expect(() =>
       decodeServerSettings({
@@ -556,15 +442,7 @@ describe("provider enabled defaults", () => {
     expect(decoded.providers.claudeAgent.enabled).toBe(true);
     expect(decoded.providers.cursor.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
-    expect(decoded.providers.kimi.enabled).toBe(true);
-  });
-
-  it("derives per-driver defaults from the settings schemas", () => {
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("codex"))).toBe(true);
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("cursor"))).toBe(false);
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("grok"))).toBe(false);
-    // Unknown fork drivers stay enabled; their own build decides otherwise.
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("ollama"))).toBe(true);
+    expect(decoded.providers.opencode.enabled).toBe(false);
   });
 
   it("keeps Cursor enabled when an existing user explicitly opted in", () => {
@@ -587,6 +465,10 @@ describe("provider enabled defaults", () => {
     // No flags anywhere: driver default applies.
     expect(resolveProviderInstanceEnabled({ driver: grok, config: {} })).toBe(false);
     expect(resolveProviderInstanceEnabled({ driver: codex, config: {} })).toBe(true);
+    // Unknown fork drivers stay enabled.
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("ollama"), config: {} }),
+    ).toBe(true);
     // Envelope flag wins over the driver default.
     expect(resolveProviderInstanceEnabled({ driver: grok, enabled: true, config: {} })).toBe(true);
     expect(resolveProviderInstanceEnabled({ driver: codex, enabled: false, config: {} })).toBe(
@@ -734,42 +616,6 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(encoded.providers?.codex?.launchArgs).toBe("--strict-config");
   });
 });
-describe("ServerSettings collection and string bounds", () => {
-  it("rejects oversized custom-model lists in full settings and patches", () => {
-    const customModels = Array.from(
-      { length: SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH + 1 },
-      (_, index) => `model-${index}`,
-    );
-
-    expect(() => decodeServerSettings({ providers: { codex: { customModels } } })).toThrow();
-    expect(() => decodeServerSettingsPatch({ providers: { codex: { customModels } } })).toThrow();
-  });
-
-  it("rejects oversized provider and subagent maps before persistence", () => {
-    const providerInstances = Object.fromEntries(
-      Array.from({ length: PROVIDER_INSTANCE_MAX_COUNT + 1 }, (_, index) => [
-        `provider${index}`,
-        { driver: "codex" },
-      ]),
-    );
-    const children = Object.fromEntries(
-      Array.from({ length: SUBAGENT_POLICY_MAX_CHILDREN + 1 }, (_, index) => [
-        `provider${index}`,
-        { model: "gpt-5.6-luna" },
-      ]),
-    );
-
-    expect(() => decodeServerSettingsPatch({ providerInstances })).toThrow();
-    expect(() => decodeServerSettingsPatch({ subagentPolicy: { children } })).toThrow();
-  });
-
-  it("rejects path fields beyond the supported ceiling", () => {
-    const oversizedPath = `/${"a".repeat(SERVER_SETTINGS_PATH_MAX_LENGTH)}`;
-
-    expect(() => decodeServerSettings({ addProjectBaseDirectory: oversizedPath })).toThrow();
-    expect(() => decodeServerSettingsPatch({ addProjectBaseDirectory: oversizedPath })).toThrow();
-  });
-});
 
 describe("ServerSettings environment icon", () => {
   it("defaults to null", () => {
@@ -778,6 +624,7 @@ describe("ServerSettings environment icon", () => {
 
   it("keeps a kind this build knows", () => {
     expect(decodeServerSettings({ environmentIcon: "mac-mini" }).environmentIcon).toBe("mac-mini");
+    expect(decodeServerSettings({ environmentIcon: "linux" }).environmentIcon).toBe("linux");
   });
 
   it("decodes a kind from a newer server as null instead of failing the snapshot", () => {
@@ -787,5 +634,8 @@ describe("ServerSettings environment icon", () => {
   it("round-trips through encode", () => {
     const settings = decodeServerSettings({ environmentIcon: "laptop" });
     expect(encodeServerSettings(settings).environmentIcon).toBe("laptop");
+
+    const linuxSettings = decodeServerSettings({ environmentIcon: "linux" });
+    expect(encodeServerSettings(linuxSettings).environmentIcon).toBe("linux");
   });
 });

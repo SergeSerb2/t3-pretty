@@ -6,20 +6,25 @@ import {
   type ComponentProps,
   type ReactElement,
   type ReactNode,
-  useEffect,
   useMemo,
   useRef,
 } from "react";
-import { Platform, Pressable, type ColorValue, type PressableProps } from "react-native";
+import {
+  Platform,
+  Pressable,
+  View,
+  type ColorValue,
+  type PressableProps,
+  type AccessibilityProps,
+} from "react-native";
 import { withUniwind } from "uniwind";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { cn } from "../lib/cn";
 import { withMenuActionIconColors } from "../lib/menu-action-colors";
-import { AnchoredMenu } from "./AndroidAnchoredMenu";
+import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu";
 import { SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
-import { ComposerSendIconSlot } from "./ComposerSendIndicator";
 
 const ThemedMenuView = withUniwind(
   function NativeMenuView({
@@ -58,39 +63,20 @@ export function ControlPill(props: {
   readonly activateOnPressIn?: boolean;
   readonly variant?: "circle" | "pill" | "primary" | "danger";
   readonly disabled?: boolean;
-  /** In-flight send: keep the primary fill and swap the icon for a spinner. */
-  readonly loading?: boolean;
   readonly className?: string;
 }) {
   const variant = props.variant ?? "circle";
-  const isLoading = props.loading === true;
-  const showDisabledChrome = props.disabled === true && !isLoading;
   const activatedOnPressInRef = useRef(false);
-  const pressResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (pressResetTimerRef.current) {
-        clearTimeout(pressResetTimerRef.current);
-      }
-    },
-    [],
-  );
 
   const handlePressIn = () => {
-    if (pressResetTimerRef.current) {
-      clearTimeout(pressResetTimerRef.current);
-      pressResetTimerRef.current = null;
-    }
     activatedOnPressInRef.current = true;
     props.onPress?.();
   };
   const handlePressOut = () => {
     // Pressability invokes onPressOut immediately before onPress on release.
     // Defer the reset so onPress can identify the same physical gesture.
-    pressResetTimerRef.current = setTimeout(() => {
+    setTimeout(() => {
       activatedOnPressInRef.current = false;
-      pressResetTimerRef.current = null;
     }, 0);
   };
   const handlePress = () => {
@@ -102,7 +88,7 @@ export function ControlPill(props: {
 
   const iconTintClassName =
     variant === "primary"
-      ? showDisabledChrome
+      ? props.disabled
         ? "accent-icon-subtle"
         : "accent-primary-foreground"
       : variant === "danger"
@@ -118,7 +104,7 @@ export function ControlPill(props: {
         ? "h-11 flex-row items-center justify-center gap-2 rounded-full px-5"
         : "h-11 flex-row items-center justify-center gap-2 rounded-full px-3.5",
     variant === "primary"
-      ? showDisabledChrome
+      ? props.disabled
         ? "bg-subtle-strong"
         : "bg-primary"
       : variant === "danger"
@@ -129,7 +115,7 @@ export function ControlPill(props: {
   const labelClassName = cn(
     "text-center text-xs font-t3-bold",
     variant === "primary"
-      ? showDisabledChrome
+      ? props.disabled
         ? "text-foreground-muted"
         : "text-primary-foreground"
       : "",
@@ -139,67 +125,51 @@ export function ControlPill(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
-      accessibilityState={{ disabled: props.disabled === true, busy: isLoading }}
       onPress={props.activateOnPressIn ? handlePress : props.onPress}
       onPressIn={props.activateOnPressIn ? handlePressIn : undefined}
       onPressOut={props.activateOnPressIn ? handlePressOut : undefined}
-      disabled={props.disabled || isLoading}
+      disabled={props.disabled}
       className={containerClassName}
     >
-      {props.iconNode || props.icon || isLoading ? (
-        <ComposerSendIconSlot
-          loading={isLoading}
-          colorClassName={iconTintClassName.replace("accent-", "text-")}
-        >
-          {props.iconNode ? (
-            props.iconNode
-          ) : props.icon ? (
-            <SymbolView
-              name={props.icon}
-              size={16}
-              tintColorClassName={iconTintClassName}
-              type="monochrome"
-            />
-          ) : null}
-        </ComposerSendIconSlot>
+      {props.iconNode ? (
+        <View className="h-4 w-4 items-center justify-center">{props.iconNode}</View>
+      ) : props.icon ? (
+        <SymbolView
+          name={props.icon}
+          size={16}
+          tintColorClassName={iconTintClassName}
+          type="monochrome"
+        />
       ) : null}
       {props.label ? <Text className={labelClassName}>{props.label}</Text> : null}
     </Pressable>
   );
 }
 
-// Tap menus use the token-styled AnchoredMenu on every platform so World
-// Scenery chrome isn't interrupted by a stock UIMenu / AppCompat popup.
-// iOS long-press row actions keep MenuView: that path is a real
-// UIContextMenuInteraction with the row as the zoom preview.
+// iOS renders the native UIMenu (standard checkmark for `state: "on"`);
+// Android renders the token-styled AndroidAnchoredMenu, since the native
+// AppCompat popup can't be themed past its stock animation, metrics, and
+// submenu chrome.
 export function ControlPillMenu(
-  props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> & {
-    readonly children: ReactNode;
-    readonly className?: string;
-    readonly disabled?: boolean;
-  },
+  props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> &
+    Pick<AccessibilityProps, "accessible" | "accessibilityLabel" | "accessibilityRole"> & {
+      readonly children: ReactNode;
+      readonly className?: string;
+    },
 ) {
   const { themeAppearance } = useAppearancePreferences();
   const isDarkMode = themeAppearance === "dark";
   const menuPress = useRef({ isPreparing: false, isOpen: false, suppressPress: false });
   const pendingPress = useRef<(() => void) | null>(null);
 
-  // Android's wrapper owns the press (`pointerEvents="none"` on children),
-  // and iOS MenuView intercepts taps on the host view, so a disabled child
-  // pill is not enough — skip the menu host entirely while locked.
-  if (props.disabled) {
-    return props.children;
-  }
-
-  const useNativeContextMenu = Platform.OS === "ios" && props.shouldOpenOnLongPress === true;
-  if (!useNativeContextMenu) {
+  if (Platform.OS === "android") {
     // Long-press menus keep their child interactive: the child element gets
     // an injected onLongPress (mirroring the iOS context-menu interaction)
     // so its own tap handling still works.
     if (props.shouldOpenOnLongPress && isValidElement(props.children)) {
       const child = props.children as ReactElement<{ onLongPress?: () => void }>;
       return (
-        <AnchoredMenu
+        <AndroidAnchoredMenu
           actions={props.actions}
           className={props.className}
           title={props.title}
@@ -214,11 +184,11 @@ export function ControlPillMenu(
               },
             })
           }
-        </AnchoredMenu>
+        </AndroidAnchoredMenu>
       );
     }
     return (
-      <AnchoredMenu
+      <AndroidAnchoredMenu
         actions={props.actions}
         className={props.className}
         title={props.title}
@@ -226,11 +196,11 @@ export function ControlPillMenu(
         onPressAction={props.onPressAction}
       >
         {props.children}
-      </AnchoredMenu>
+      </AndroidAnchoredMenu>
     );
   }
 
-  const { className: _className, disabled: _disabled, ...menuProps } = props;
+  const { className: _className, ...menuProps } = props;
   let children = menuProps.children;
   if (props.shouldOpenOnLongPress && isValidElement(children)) {
     const child = children as ReactElement<Pick<PressableProps, "onTouchStart" | "onPress">>;

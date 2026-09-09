@@ -302,6 +302,7 @@ export function AutomationEditorDialog({
       catchUpMissedRuns: draft.catchUpMissedRuns,
       minIntervalSeconds,
       timeoutMinutes,
+      updatedAt: new Date().toISOString(),
     };
     setIsSaving(true);
     try {

@@ -6,11 +6,10 @@ import {
   SourceControlProviderError,
   SourceControlProviderInfo,
 } from "./sourceControl.ts";
-import { VCS_WORKSPACE_FILES_MAX_COUNT, VcsDriverKind } from "./vcs.ts";
+import { VcsDriverKind } from "./vcs.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 export const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
-export const GIT_ACTION_PROGRESS_PHASE_MAX_COUNT = 4;
 
 // Domain Types
 
@@ -122,10 +121,7 @@ export const GitRunStackedActionInput = Schema.Struct({
   commitMessage: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(10_000))),
   featureBranch: Schema.optional(Schema.Boolean),
   filePaths: Schema.optional(
-    Schema.Array(TrimmedNonEmptyStringSchema).check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(VCS_WORKSPACE_FILES_MAX_COUNT),
-    ),
+    Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
   ),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;
@@ -209,19 +205,17 @@ const VcsStatusChangeRequest = Schema.Struct({
   /** Optional for compatibility with older servers and providers. */
   isDraft: Schema.optional(Schema.Boolean),
   /**
+   * Last provider-side activity (ISO), including comments and metadata edits.
+   * This is not the time a change request closed or merged. Optional for old
+   * servers and providers whose lookups do not report it.
+   */
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  /**
    * Public review activity observed on the hosting provider. `null` means the
    * provider was checked and left no visible signal; `undefined` means this
    * server/provider cannot report automated review state.
    */
   automatedReview: Schema.optional(Schema.NullOr(AutomatedReviewSignal)),
-  /**
-   * Last provider-side activity (ISO). For a merged/closed change request
-   * this bounds when it reached that state, so clients can tell a PR that
-   * terminated during a thread's life from one that was already history
-   * when the thread was created. Optional for old servers and providers
-   * whose lookups do not report it.
-   */
-  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const VcsStatusLocalShape = {
@@ -279,7 +273,7 @@ export const VcsStatusStreamEvent = Schema.Union([
 export type VcsStatusStreamEvent = typeof VcsStatusStreamEvent.Type;
 
 export const VcsListRefsResult = Schema.Struct({
-  refs: Schema.Array(VcsRef).check(Schema.isMaxLength(GIT_LIST_BRANCHES_MAX_LIMIT)),
+  refs: Schema.Array(VcsRef),
   isRepo: Schema.Boolean,
   hasPrimaryRemote: Schema.Boolean,
   nextCursor: NonNegativeInt.pipe(Schema.NullOr),
@@ -427,9 +421,7 @@ const GitActionProgressBase = Schema.Struct({
 const GitActionStartedEvent = Schema.Struct({
   ...GitActionProgressBase.fields,
   kind: Schema.Literal("action_started"),
-  phases: Schema.Array(GitActionProgressPhase).check(
-    Schema.isMaxLength(GIT_ACTION_PROGRESS_PHASE_MAX_COUNT),
-  ),
+  phases: Schema.Array(GitActionProgressPhase),
 });
 const GitActionPhaseStartedEvent = Schema.Struct({
   ...GitActionProgressBase.fields,
