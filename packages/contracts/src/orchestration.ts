@@ -1493,6 +1493,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadPinCommand,
   ThreadUnpinCommand,
   ThreadPinReorderCommand,
+  ThreadActiveReorderCommand,
   ThreadSceneryAssignCommand,
   ThreadSkillsSetCommand,
   ThreadSubagentPolicySetCommand,
