@@ -943,7 +943,7 @@ const WsSkillsUninstallRpc = Rpc.make(WS_METHODS.skillsUninstall, {
 });
 
 const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
-  payload: Schema.Struct({ repo: Schema.String }),
+  payload: Schema.Struct({ repo: Schema.optional(Schema.String) }),
   success: SkillMarketplaceListing,
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
