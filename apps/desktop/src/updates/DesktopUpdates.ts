@@ -323,14 +323,7 @@ export const liveGitHubReleasesClient = Layer.effect(
         } finally {
           clearTimeout(timeoutId);
         }
-      }).pipe(
-        Effect.tapError((error) =>
-          logUpdaterWarning("Failed to fetch latest nightly tag from GitHub", {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        ),
-        Effect.orElseSucceed(() => undefined),
-      );
+      });
 
     return GitHubReleasesClient.of({
       fetchLatestNightlyTag,
@@ -1105,16 +1098,14 @@ export const make = Effect.gen(function* () {
       const isNightlyVersion = isNightlyTag(environment.appVersion);
       const latestNightlyTag: string | null | undefined = isNightlyVersion
         ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }).pipe(
-            Effect.catch(() => Effect.succeed(undefined)),
+            Effect.catch((error) =>
+              logUpdaterWarning(
+                "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
+                { error: error instanceof Error ? error.message : String(error) },
+              ).pipe(Effect.as(undefined)),
+            ),
           )
         : null;
-
-      // Log warning if fetch failed (undefined indicates error was caught)
-      if (isNightlyVersion && latestNightlyTag === undefined) {
-        yield* logUpdaterWarning(
-          "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-        );
-      }
 
       // Store latestNightlyTag for use in download path
       yield* Ref.set(latestNightlyTagRef, latestNightlyTag);
