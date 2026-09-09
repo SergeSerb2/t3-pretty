@@ -399,11 +399,7 @@ function EnvironmentStorageCard(props: {
             onAction(environment.environmentId, inventory, { kind: "delete-archived" })
           }
         />
-        <ActionRow
-          title="Remove orphan checkouts"
-          disabled={bulkActionsDisabled || inventory.orphanWorktrees.length === 0}
-          onPress={() => onAction(environment.environmentId, inventory, { kind: "remove-orphans" })}
-        />
+        {/* Remove orphan checkouts is not available on mobile */}
       </SettingsSection>
 
       <SettingsSection title="Active worktrees">
@@ -467,19 +463,7 @@ function EnvironmentStorageCard(props: {
                     {formatStorageBytes(orphan.diskUsageBytes)}
                   </Text>
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={actionsDisabled}
-                  onPress={() =>
-                    onAction(environment.environmentId, inventory, {
-                      kind: "remove-orphan",
-                      orphan,
-                    })
-                  }
-                  className="px-3 py-2 disabled:opacity-40"
-                >
-                  <Text className="font-t3-medium text-danger-foreground">Remove</Text>
-                </Pressable>
+                {/* Remove button hidden: orphan removal not available on mobile */}
               </View>
             ))
           )}
