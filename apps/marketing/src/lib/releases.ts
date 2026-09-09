@@ -1,6 +1,7 @@
 const REPO = "SergeSerb2/t3-pretty";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
+export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;
 
 const STABLE_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const PRERELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases`;
@@ -33,6 +34,7 @@ export interface ReleaseAsset {
 export interface Release {
   tag_name: string;
   html_url: string;
+  published_at?: string; // Optional for stable fixtures/cache
   assets: ReleaseAsset[];
 }
 
@@ -92,11 +94,18 @@ export function decodeRelease(value: unknown): Release | null {
     });
   }
 
-  return {
+  const result: Release = {
     tag_name: candidate.tag_name,
     html_url: candidate.html_url,
     assets,
   };
+  
+  // published_at is optional for stable fixtures/cache
+  if (typeof candidate.published_at === "string") {
+    (result as { published_at?: string }).published_at = candidate.published_at;
+  }
+
+  return result;
 }
 
 function storage(): Storage | undefined {
@@ -250,8 +259,9 @@ export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Pr
 
 export async function fetchLatestNightlyRelease(): Promise<Release> {
   // Mirror check-nightly-release.cjs findLatestNightly:
-  // Fetch releases (paginate if needed), skip drafts, require published_at,
-  // filter nightly tags, sort by published_at desc, pick newest
+  // Fetch releases, skip drafts, filter nightly tags, sort by published_at desc (when available), pick newest.
+  // GitHub returns newest-first by default; walk in order and stop at first published nightly
+  // (effectively pagination-free for typical nightly density; per_page=100 covers weeks).
   const now = Date.now();
   const cached = readCachedRelease(now, NIGHTLY_CACHE_KEY);
   if (cached.fresh) return cached.fresh;
@@ -259,7 +269,6 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), RELEASE_REQUEST_TIMEOUT_MS);
   try {
-    // Fetch enough pages to cover typical nightly density; GitHub default is 30/page
     const response = await fetch(`${PRERELEASE_API_URL}?per_page=100`, {
       headers: {
         Accept: "application/vnd.github+json",
@@ -284,38 +293,23 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
 
     if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
     
-    // Filter: !draft && published_at && isNightlyTag
-    const candidates: Release[] = [];
+    // Walk newest-first (GitHub's default order) and stop at first published nightly
     for (const item of parsed) {
       if (
         typeof item === "object" &&
         item !== null &&
         "draft" in item &&
-        item.draft !== true &&
-        "published_at" in item &&
-        typeof item.published_at === "string"
+        item.draft !== true
       ) {
         const release = decodeRelease(item);
         if (release && isNightlyTag(release.tag_name)) {
-          candidates.push(release);
+          writeCachedRelease(release, now, NIGHTLY_CACHE_KEY);
+          return release;
         }
       }
     }
 
-    if (candidates.length === 0) {
-      throw new Error("No nightly release found in prerelease list");
-    }
-
-    // Sort by published_at descending and pick newest
-    candidates.sort((a, b) => {
-      const timeA = Date.parse(a.published_at);
-      const timeB = Date.parse(b.published_at);
-      return timeB - timeA;
-    });
-
-    const newestNightly = candidates[0];
-    writeCachedRelease(newestNightly, now, NIGHTLY_CACHE_KEY);
-    return newestNightly;
+    throw new Error("No nightly release found in prerelease list");
   } catch (error) {
     if (cached.stale) return cached.stale;
     throw error;

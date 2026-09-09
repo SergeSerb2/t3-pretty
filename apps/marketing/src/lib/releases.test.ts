@@ -5,6 +5,7 @@ import { decodeRelease, fetchLatestRelease, fetchLatestNightlyRelease } from "./
 const release = {
   tag_name: "v1.2.3",
   html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v1.2.3",
+  published_at: "2026-09-08T00:00:00Z",
   assets: [
     {
       name: "T3-Code.dmg",

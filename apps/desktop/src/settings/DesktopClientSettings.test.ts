@@ -274,6 +274,33 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("loads pure legacy wrapper with only settings key", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Pure wrapper: document has ONLY "settings" key
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify({
+            settings: {
+              timestampFormat: "24-hour",
+              wordWrap: false,
+            },
+          }),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        if (Option.isSome(loaded)) {
+          assert.equal(loaded.value.timestampFormat, "24-hour");
+          assert.equal(loaded.value.wordWrap, false);
+        }
+      }),
+    ),
+  );
+
   it.effect("loads legacy wrapped client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {

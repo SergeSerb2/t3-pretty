@@ -248,24 +248,31 @@ export const liveGitHubReleasesClient = Layer.succeed(
     fetchLatestNightlyTag: (repo) =>
       Effect.gen(function* () {
         try {
-          const response = yield* Effect.promise(() =>
-            fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100`, {
-              headers: {
-                Accept: "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-              },
-            }),
-          );
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10_000);
+          
+          try {
+            const response = yield* Effect.promise(() =>
+              fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100`, {
+                headers: {
+                  Accept: "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                },
+                signal: controller.signal,
+              }),
+            );
 
-          if (!response.ok) return null;
+            clearTimeout(timeoutId);
 
-          const releases: unknown = yield* Effect.promise(() => response.json());
-          if (!Array.isArray(releases)) return null;
+            if (!response.ok) return null;
 
-          // Mirror check-nightly-release.cjs findLatestNightly
-          const candidates = releases
-            .filter(
-              (release: unknown) =>
+            const releases: unknown = yield* Effect.promise(() => response.json());
+            if (!Array.isArray(releases)) return null;
+
+            // GitHub returns newest-first by default. Walk in order and stop at first published nightly.
+            // This is effectively pagination-free for typical nightly density (per_page=100 covers weeks).
+            for (const release of releases) {
+              if (
                 typeof release === "object" &&
                 release !== null &&
                 "draft" in release &&
@@ -274,14 +281,16 @@ export const liveGitHubReleasesClient = Layer.succeed(
                 typeof release.published_at === "string" &&
                 "tag_name" in release &&
                 typeof release.tag_name === "string" &&
-                isNightlyTag(release.tag_name),
-            )
-            .sort((a: { published_at: string }, b: { published_at: string }) => {
-              return Date.parse(b.published_at) - Date.parse(a.published_at);
-            });
+                isNightlyTag(release.tag_name)
+              ) {
+                return release.tag_name;
+              }
+            }
 
-          if (candidates.length === 0) return null;
-          return (candidates[0] as { tag_name: string }).tag_name;
+            return null;
+          } finally {
+            clearTimeout(timeoutId);
+          }
         } catch {
           return null;
         }
