@@ -91,7 +91,7 @@ patchedDependencies:
   '@effect/vitest@4.0.0-beta.103': a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b
   '@expo/metro-config@57.0.12': 96f1a75347e6ea02dc4b7034ace815d8ee39e18b8166ebfb573d9e58328f0dc2
   '@ff-labs/fff-node@0.9.4': ab9ff544009e1891cfe3930105862d3699007f38922a79f3c98d90018deca368
-  '@legendapp/list@3.3.5': 03ec41339cd915ecb9a774a6b90cc2197c29038f7db67c4d2e55cd3971e5be43
+  '@legendapp/list@3.3.5': 327082aace87a2fe4b0241514e3b30cee050e0194716914ddfc4f7e66e451212
   '@pierre/diffs@1.3.0-beta.10': 0ccee155b93b63d810e2c1a40c1fd676fb6fbcfa72cf6430dcedf1a3ae475ab4
   '@react-native-ai/apple@0.12.0': 2d09870c2848d185cb05b53ed823a46e12dba519324d8dd8e584e28731990f9d
   '@react-native-menu/menu@2.0.0': f63d256bf6a97a873b5e628eb595bd6ef0075ddd5bdd890fc920f7a6024290dd
@@ -166,9 +166,6 @@ importers:
       electron-updater:
         specifier: ^6.6.2
         version: 6.8.3
-      playwright-core:
-        specifier: 1.60.0
-        version: 1.60.0
       react-grab:
         specifier: ^0.1.32
         version: 0.1.44(react@19.2.6)
@@ -188,6 +185,9 @@ importers:
       electron-builder:
         specifier: 26.15.6
         version: 26.15.6(electron-builder-squirrel-windows@26.15.6)
+      playwright-core:
+        specifier: 1.60.0
+        version: 1.60.0
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
@@ -236,7 +236,7 @@ importers:
         version: 57.0.14(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(expo@57.0.18)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=03ec41339cd915ecb9a774a6b90cc2197c29038f7db67c4d2e55cd3971e5be43)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)
+        version: 3.3.5(patch_hash=327082aace87a2fe4b0241514e3b30cee050e0194716914ddfc4f7e66e451212)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)
       '@noble/curves':
         specifier: 'catalog:'
         version: 1.9.1
@@ -552,14 +552,29 @@ importers:
   apps/web:
     dependencies:
       '@base-ui/react':
-        specifier: ^1.4.1
-        version: 1.5.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: 1.7.0
+        version: 1.7.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/electron':
         specifier: 0.0.37
         version: 0.0.37(@clerk/electron-passkeys@0.0.3)(electron-store@8.2.0)(electron@43.4.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/react':
         specifier: 6.14.7
         version: 6.14.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@codemirror/commands':
+        specifier: ^6.10.4
+        version: 6.11.0
+      '@codemirror/lang-markdown':
+        specifier: ^6.5.2
+        version: 6.5.2
+      '@codemirror/language':
+        specifier: ^6.12.4
+        version: 6.12.4
+      '@codemirror/state':
+        specifier: ^6.7.1
+        version: 6.7.4
+      '@codemirror/view':
+        specifier: ^6.43.8
+        version: 6.43.11
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -580,10 +595,13 @@ importers:
         version: 0.9.0
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=03ec41339cd915ecb9a774a6b90cc2197c29038f7db67c4d2e55cd3971e5be43)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 3.3.5(patch_hash=327082aace87a2fe4b0241514e3b30cee050e0194716914ddfc4f7e66e451212)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@lexical/react':
         specifier: ^0.41.0
         version: 0.41.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(yjs@13.6.31)
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@noble/hashes':
         specifier: 'catalog:'
         version: 1.8.0
@@ -1629,8 +1647,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@base-ui/react@1.5.0':
-    resolution: {integrity: sha512-z1gSAlced1yY+iM+mHDEtIkD8UI3Ebs52MuBPxvV6f5hRutk+xvCH/wuB7hDqDzK9JG5FoMz5nhrqtSs1wjt1A==}
+  '@base-ui/react@1.7.0':
+    resolution: {integrity: sha512-j+8QjX44C32jrXD/qyEAGpFr70FRpGL2CY61mQd9nBPWN737CK0xxD1ceJ055rW4RtdvFDT1e7otzdlfxvsYug==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
       '@date-fns/tz': ^1.2.0
@@ -1646,8 +1664,8 @@ packages:
       date-fns:
         optional: true
 
-  '@base-ui/utils@0.2.9':
-    resolution: {integrity: sha512-x/PDDCYzoqPpjrdyb3VcyylTI2IjUXEtYDGi5foh7KsnmNJIIaVwA2GLgDH1dps1GgXiJbA60hM+AyuTfQzIvw==}
+  '@base-ui/utils@0.3.2':
+    resolution: {integrity: sha512-oWy1aq/I2GmYjpl4PhEAhzflF8VPGKgZeq0xAWTbfD5KBWyxcN0ZP2+WHSUm/5Z6lVMBDLReLcoXwSYoRc/zNQ==}
     peerDependencies:
       '@types/react': ^17 || ^18 || ^19
       react: ^17 || ^18 || ^19
@@ -1877,6 +1895,36 @@ packages:
 
   '@cloudflare/workers-types@5.20260726.1':
     resolution: {integrity: sha512-fKgRSm3sDmOdak1LGWehS4vSPSj7/zeu0NfmE62VPjBMqWgODcOGljYvq6A75sL+7YfY3iGFGb0jVEDYq+hlmw==}
+
+  '@codemirror/autocomplete@6.20.3':
+    resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
+
+  '@codemirror/commands@6.11.0':
+    resolution: {integrity: sha512-/K4Rl5BN0OtTiPWmJCdqODu38XnDMsDxKY5rgrPnCkutPTJf2wVbkoixLfealF5Kwse/s8P8M5jAiURiwSwnFA==}
+
+  '@codemirror/lang-css@6.3.1':
+    resolution: {integrity: sha512-kr5fwBGiGtmz6l0LSJIbno9QrifNMUusivHbnA1H6Dmqy4HZFte3UAICix1VuKo0lMPKQr2rqB+0BkKi/S3Ejg==}
+
+  '@codemirror/lang-html@6.4.12':
+    resolution: {integrity: sha512-pw2ReWKUqSkbvh76RAT4NYxiogRu+PWkR2ukAwO9uOgrm8uipkzjtKKtNpyeAQwHOqxEeSvAXZ6vr3AfyB9y/w==}
+
+  '@codemirror/lang-javascript@6.2.5':
+    resolution: {integrity: sha512-zD4e5mS+50htS7F+TYjBPsiIFGanfVqg4HyUz6WNFikgOPf2BgKlx+TQedI1w6n/IqRBVBbBWmGFdLB/7uxO4A==}
+
+  '@codemirror/lang-markdown@6.5.2':
+    resolution: {integrity: sha512-AwBOdkWYuA//WcM0xO5PfHPUcmz/O2i5o0Nsg1U69SII/loCJlFI1Romd9xp2HYb1kYJRGZotyqRghuHH5n8Kw==}
+
+  '@codemirror/language@6.12.4':
+    resolution: {integrity: sha512-1q4PaT+o6PbgpkJt4Q8Fv5XJxTy4FUZ4MWETtyiDw3J0Pyr9E2vqcKL+k9wcvjNTIsauxvE7OfmWj3FRPHQ76A==}
+
+  '@codemirror/lint@6.9.7':
+    resolution: {integrity: sha512-28/+iWLYxKxsvGYhSYL7zaCZqLz5+FFFDq9tVsvGv9kv8RY4fFAchJ5WX9M3YrrRlTIsECjsXPqeNgnSmNP2dg==}
+
+  '@codemirror/state@6.7.4':
+    resolution: {integrity: sha512-QhQIVRY+xHZDxwOSFrJ1eUMapJBUID3IdeAjf7dHO7zBUzSkyooHiodnalz5MG3iHzwixKMlAAyn7244y537EA==}
+
+  '@codemirror/view@6.43.11':
+    resolution: {integrity: sha512-2+esucbQX6wB2JYi1eDvdCPFTA31BN8oSy6xCmk3G6CloV11yOvEjYk+gH7kLrP0MuHG94E8WDhjs5oMiu3+Wg==}
 
   '@distilled.cloud/aws@0.30.2':
     resolution: {integrity: sha512-Uw2yZf7PJ2ienrKG49HN1ajnke65mTtHBUrSb/3ykeZ/8cLaSgwVhPscHxSzGByY0TEtYcYKNNmfUVISgGQl9g==}
@@ -2740,11 +2788,23 @@ packages:
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
 
+  '@floating-ui/core@1.8.0':
+    resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
+
   '@floating-ui/dom@1.7.6':
     resolution: {integrity: sha512-9gZSAI5XM36880PPMm//9dfiEngYoC6Am2izES1FF406YFsjvyBMmeJ2g4SAju3xWwtuynNRFL2s9hgxpLI5SQ==}
 
+  '@floating-ui/dom@1.8.0':
+    resolution: {integrity: sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg==}
+
   '@floating-ui/react-dom@2.1.8':
     resolution: {integrity: sha512-cC52bHwM/n/CxS87FH0yWdngEZrjdtLW/qVruo68qg+prK7ZQ4YGdut2GyDVpoGeAYe/h899rVeOVm6Oi40k2A==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@floating-ui/react-dom@2.1.9':
+    resolution: {integrity: sha512-JDjEFGCpImxDCA7JJKviA0M9+RtmJdj0m/NVU5IMgBK+AmZouAQQ7/+2GLH0GXXY0YMw9oXPB8hKdbPYg5QLYg==}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
@@ -2757,6 +2817,9 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@floating-ui/utils@0.2.12':
+    resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
   '@formkit/auto-animate@0.9.0':
     resolution: {integrity: sha512-VhP4zEAacXS3dfTpJpJ88QdLqMTcabMg0jwpOSxZ/VzfQVfl3GkZSCZThhGC5uhq/TxPHPzW0dzr4H9Bb1OgKA==}
@@ -3086,6 +3149,27 @@ packages:
     peerDependencies:
       yjs: '>=13.5.22'
 
+  '@lezer/common@1.5.2':
+    resolution: {integrity: sha512-sxQE460fPZyU3sdc8lafxiPwJHBzZRy/udNFynGQky1SePYBdhkBl1kOagA9uT3pxR8K09bOrmTUqA9wb/PjSQ==}
+
+  '@lezer/css@1.3.6':
+    resolution: {integrity: sha512-YJE78Wcg+zX8f10hiHWQ4Az48Qr/c13eId0VtRQYLBpxHDmDeSrXIlkbl+fJGW42rWC/uoUco9mhBZeVWP/A1g==}
+
+  '@lezer/highlight@1.2.3':
+    resolution: {integrity: sha512-qXdH7UqTvGfdVBINrgKhDsVTJTxactNNxLk7+UMwZhU13lMHaOBlJe9Vqp907ya56Y3+ed2tlqzys7jDkTmW0g==}
+
+  '@lezer/html@1.3.13':
+    resolution: {integrity: sha512-oI7n6NJml729m7pjm9lvLvmXbdoMoi2f+1pwSDJkl9d68zGr7a9Btz8NdHTGQZtW2DA25ybeuv/SyDb9D5tseg==}
+
+  '@lezer/javascript@1.5.4':
+    resolution: {integrity: sha512-vvYx3MhWqeZtGPwDStM2dwgljd5smolYD2lR2UyFcHfxbBQebqx8yjmFmxtJ/E6nN6u1D9srOiVWm3Rb4tmcUA==}
+
+  '@lezer/lr@1.4.10':
+    resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
+
+  '@lezer/markdown@1.7.2':
+    resolution: {integrity: sha512-iTkYvoVcKt3WkeL7qUDyXHONZEwLio4wj8KTNi2dnjQEXBZKMV63BpQrPqfsM+OkvuRbiSTAcycYAsQzLhRNoQ==}
+
   '@libsql/client@0.17.3':
     resolution: {integrity: sha512-HXk9wiAoJbKFbyBH4O+aEhN6ir5ERXuXvwE5OD2eR4/5RUa3Pw/8L9zrnVdU+iNJitRvisPWaIwmhkO3bH7giA==}
 
@@ -3150,6 +3234,9 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
+
+  '@marijn/find-cluster-break@1.0.4':
+    resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -6292,6 +6379,9 @@ packages:
   cors@2.8.6:
     resolution: {integrity: sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw==}
     engines: {node: '>= 0.10'}
+
+  crelt@1.0.7:
+    resolution: {integrity: sha512-aK6BbWfhf4U/wCcLHKPJl/xa6VkVstRaPywWtMKGwuOLc/wZTyQYuoxgvZnNsBvv7Kg3YTBQYYBCggcviQczuA==}
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
@@ -9908,6 +9998,9 @@ packages:
   structured-headers@0.4.1:
     resolution: {integrity: sha512-0MP/Cxx5SzeeZ10p/bZI0S6MpgD+yxAhi1BOQ34jgnMXsCq3j1t6tQnZu+KdlL7dvJTLT3g9xN8tl10TqgFMcg==}
 
+  style-mod@4.1.3:
+    resolution: {integrity: sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ==}
+
   style-to-js@1.1.21:
     resolution: {integrity: sha512-RjQetxJrrUJLQPHbLku6U/ocGtzyjbJMP9lCNK7Ag0CNh690nSH8woqWH9u16nMjYBAok+i7JO1NP2pOy8IsPQ==}
 
@@ -10563,6 +10656,9 @@ packages:
 
   vscode-uri@3.1.0:
     resolution: {integrity: sha512-/BpdSx+yCQGnCvecbyXdxHDkuk55/G3xwnC0GqY4gmQ3j+A+g8kzzgB4Nk/SINjqn6+waqw3EgbVF2QKExkRxQ==}
+
+  w3c-keyname@2.2.8:
+    resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
   walk-up-path@4.0.0:
     resolution: {integrity: sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A==}
@@ -11701,22 +11797,22 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@base-ui/react@1.5.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@base-ui/react@1.7.0(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
-      '@base-ui/utils': 0.2.9(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@floating-ui/react-dom': 2.1.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@floating-ui/utils': 0.2.11
+      '@base-ui/utils': 0.3.2(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@floating-ui/react-dom': 2.1.9(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@floating-ui/utils': 0.2.12
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       use-sync-external-store: 1.6.0(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.2.16
 
-  '@base-ui/utils@0.2.9(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@base-ui/utils@0.3.2(@types/react@19.2.16)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
-      '@floating-ui/utils': 0.2.11
+      '@floating-ui/utils': 0.2.12
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       reselect: 5.2.0
@@ -11940,6 +12036,86 @@ snapshots:
   '@cloudflare/workers-types@4.20260604.1': {}
 
   '@cloudflare/workers-types@5.20260726.1': {}
+
+  '@codemirror/autocomplete@6.20.3':
+    dependencies:
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+
+  '@codemirror/commands@6.11.0':
+    dependencies:
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+
+  '@codemirror/lang-css@6.3.1':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.4
+      '@lezer/common': 1.5.2
+      '@lezer/css': 1.3.6
+
+  '@codemirror/lang-html@6.4.12':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/lang-css': 6.3.1
+      '@codemirror/lang-javascript': 6.2.5
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+      '@lezer/css': 1.3.6
+      '@lezer/html': 1.3.13
+
+  '@codemirror/lang-javascript@6.2.5':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/language': 6.12.4
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+      '@lezer/javascript': 1.5.4
+
+  '@codemirror/lang-markdown@6.5.2':
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/lang-html': 6.4.12
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+      '@lezer/markdown': 1.7.2
+
+  '@codemirror/language@6.12.4':
+    dependencies:
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
+      style-mod: 4.1.3
+
+  '@codemirror/lint@6.9.7':
+    dependencies:
+      '@codemirror/state': 6.7.4
+      '@codemirror/view': 6.43.11
+      crelt: 1.0.7
+
+  '@codemirror/state@6.7.4':
+    dependencies:
+      '@marijn/find-cluster-break': 1.0.4
+
+  '@codemirror/view@6.43.11':
+    dependencies:
+      '@codemirror/state': 6.7.4
+      crelt: 1.0.7
+      style-mod: 4.1.3
+      w3c-keyname: 2.2.8
 
   '@distilled.cloud/aws@0.30.2(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
     dependencies:
@@ -13062,14 +13238,29 @@ snapshots:
     dependencies:
       '@floating-ui/utils': 0.2.11
 
+  '@floating-ui/core@1.8.0':
+    dependencies:
+      '@floating-ui/utils': 0.2.12
+
   '@floating-ui/dom@1.7.6':
     dependencies:
       '@floating-ui/core': 1.7.5
       '@floating-ui/utils': 0.2.11
 
+  '@floating-ui/dom@1.8.0':
+    dependencies:
+      '@floating-ui/core': 1.8.0
+      '@floating-ui/utils': 0.2.12
+
   '@floating-ui/react-dom@2.1.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@floating-ui/dom': 1.7.6
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+
+  '@floating-ui/react-dom@2.1.9(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@floating-ui/dom': 1.8.0
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
@@ -13082,6 +13273,8 @@ snapshots:
       tabbable: 6.4.0
 
   '@floating-ui/utils@0.2.11': {}
+
+  '@floating-ui/utils@0.2.12': {}
 
   '@formkit/auto-animate@0.9.0': {}
 
@@ -13269,7 +13462,7 @@ snapshots:
     dependencies:
       jsbi: 4.3.2
 
-  '@legendapp/list@3.3.5(patch_hash=03ec41339cd915ecb9a774a6b90cc2197c29038f7db67c4d2e55cd3971e5be43)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)':
+  '@legendapp/list@3.3.5(patch_hash=327082aace87a2fe4b0241514e3b30cee050e0194716914ddfc4f7e66e451212)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))(react@19.2.3)':
     dependencies:
       react: 19.2.3
       use-sync-external-store: 1.6.0(react@19.2.3)
@@ -13277,7 +13470,7 @@ snapshots:
       react-dom: 19.2.3(react@19.2.3)
       react-native: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6)
 
-  '@legendapp/list@3.3.5(patch_hash=03ec41339cd915ecb9a774a6b90cc2197c29038f7db67c4d2e55cd3971e5be43)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@legendapp/list@3.3.5(patch_hash=327082aace87a2fe4b0241514e3b30cee050e0194716914ddfc4f7e66e451212)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       react: 19.2.6
       use-sync-external-store: 1.6.0(react@19.2.6)
@@ -13443,6 +13636,39 @@ snapshots:
       lexical: 0.41.0
       yjs: 13.6.31
 
+  '@lezer/common@1.5.2': {}
+
+  '@lezer/css@1.3.6':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
+
+  '@lezer/highlight@1.2.3':
+    dependencies:
+      '@lezer/common': 1.5.2
+
+  '@lezer/html@1.3.13':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
+
+  '@lezer/javascript@1.5.4':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
+
+  '@lezer/lr@1.4.10':
+    dependencies:
+      '@lezer/common': 1.5.2
+
+  '@lezer/markdown@1.7.2':
+    dependencies:
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+
   '@libsql/client@0.17.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
     dependencies:
       '@libsql/core': 0.17.3
@@ -13513,6 +13739,8 @@ snapshots:
       tmp-promise: 3.0.3
     transitivePeerDependencies:
       - supports-color
+
+  '@marijn/find-cluster-break@1.0.4': {}
 
   '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
     dependencies:
@@ -16435,6 +16663,8 @@ snapshots:
     dependencies:
       object-assign: 4.1.1
       vary: 1.1.2
+
+  crelt@1.0.7: {}
 
   cross-dirname@0.1.0:
     optional: true
@@ -21033,6 +21263,8 @@ snapshots:
 
   structured-headers@0.4.1: {}
 
+  style-mod@4.1.3: {}
+
   style-to-js@1.1.21:
     dependencies:
       style-to-object: 1.0.14
@@ -21663,6 +21895,8 @@ snapshots:
   vscode-nls@5.2.0: {}
 
   vscode-uri@3.1.0: {}
+
+  w3c-keyname@2.2.8: {}
 
   walk-up-path@4.0.0: {}
 

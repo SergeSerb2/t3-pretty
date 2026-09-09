@@ -9,6 +9,17 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
+export const ENVIRONMENT_LABEL_MAX_LENGTH = 512;
+export const REPOSITORY_IDENTITY_REMOTE_MAX_COUNT = 256;
+export const REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH = 1_024;
+export const REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_PATH_MAX_LENGTH = 32 * 1_024;
+export const REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH = 16 * 1_024;
+export const REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH = 128;
+export const REPOSITORY_IDENTITY_OWNER_MAX_LENGTH = 4_096;
+export const REPOSITORY_IDENTITY_NAME_MAX_LENGTH = 4_096;
+
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",

@@ -155,6 +155,28 @@ export type ProviderApprovalOption = typeof ProviderApprovalOption.Type;
 export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unknown);
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
+export const TurnDeliveryMode = Schema.Literals(["steer", "queue"]);
+export type TurnDeliveryMode = typeof TurnDeliveryMode.Type;
+
+export const PROVIDER_INTERACTION_MAX_KEY_LENGTH = 512;
+export const PROVIDER_INTERACTION_MAX_STRING_CHARS = 1024 * 1024;
+export const PROVIDER_INTERACTION_MAX_NODES = 4_096;
+export const PROVIDER_INTERACTION_MAX_DEPTH = 32;
+
+export const ProviderInteractionOpaquePayload = Schema.Unknown;
+export type ProviderInteractionOpaquePayload = typeof ProviderInteractionOpaquePayload.Type;
+
+export const THREAD_TURN_START_TITLE_MAX_LENGTH = 8_192;
+export const THREAD_TURN_START_BRANCH_MAX_LENGTH = 4_096;
+export const THREAD_TURN_START_PATH_MAX_LENGTH = 32 * 1024;
+export const THREAD_TURN_START_MAX_ENABLED_SKILL_ID_CHARS = 2 * 1024 * 1024;
+
+export const PROJECT_SCRIPT_MAX_COUNT = 256;
+export const PROJECT_SCRIPT_ID_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_NAME_MAX_LENGTH = 512;
+export const PROJECT_SCRIPT_COMMAND_MAX_LENGTH = 64 * 1024;
+export const PROJECT_SCRIPT_PREVIEW_URL_MAX_LENGTH = 8_192;
+
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
 export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
