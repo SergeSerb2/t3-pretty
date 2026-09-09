@@ -37,6 +37,7 @@ import {
   AutomationPatch,
   AutomationRunTrigger,
 } from "./automations.ts";
+import { EnabledSkillIds } from "./skills.ts";
 
 export {
   effectiveRuntimeModeForProviderDriver,
@@ -571,6 +572,8 @@ export const OrchestrationThread = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // Per-thread skill picks; defaults to empty for pre-skills servers.
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
