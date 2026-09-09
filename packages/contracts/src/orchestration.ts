@@ -7,6 +7,8 @@ import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
   ApprovalRequestId,
+  AutomationId,
+  AutomationRunId,
   CheckpointRef,
   ClientSurface,
   CommandId,
@@ -31,8 +33,6 @@ import {
 } from "./modelSelection.ts";
 import {
   AutomationShell,
-  AutomationId,
-  AutomationRunId,
   AutomationEditableFields,
   AutomationPatch,
   AutomationRunTrigger,
