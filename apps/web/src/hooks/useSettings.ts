@@ -580,3 +580,11 @@ export function __setClientSettingsForTests(settings: ClientSettings): void {
   clientSettingsHydrationStatus = "ready";
   clientSettingsHydrationPromise = null;
 }
+
+export function __persistClientSettingsPatchForTests(patch: ClientSettingsPatch): void {
+  persistClientSettingsPatch(patch);
+}
+
+export async function __waitForClientSettingsPersistenceForTests(): Promise<void> {
+  await waitForClientSettingsWrites();
+}
