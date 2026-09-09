@@ -1601,6 +1601,9 @@ export function ExistingThreadSettingsRouteScreen() {
 export function NewTaskThreadSettingsRouteScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   return (
-    <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
+    <ThreadSettingsPickerNavigator
+      onClose={() => navigation.goBack()}
+      onActivePageChange={() => {}}
+    />
   );
 }

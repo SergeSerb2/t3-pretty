@@ -911,12 +911,12 @@ export function NewTaskDraftScreen(props: {
   const handleNativePasteImages = useCallback(
     async (uris: ReadonlyArray<string>) => {
       try {
-        const images = await convertPastedImagesToAttachments({
+        const result = await convertPastedImagesToAttachments({
           uris,
           existingCount: flow.attachments.length,
         });
-        if (images.length > 0) {
-          flow.appendAttachments(images);
+        if (result.images.length > 0) {
+          flow.appendAttachments(result.images);
         }
       } catch (error) {
         console.error("[native paste] error converting images", error);
@@ -1067,6 +1067,7 @@ export function NewTaskDraftScreen(props: {
       startFromOrigin,
       runtimeMode,
       interactionMode,
+      enabledSkillIds: flow.selectedSkillIds,
       initialMessageText,
       initialAttachments: draft.attachments,
       onAttachmentsUploaded: async (attachments) => {

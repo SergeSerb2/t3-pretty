@@ -1,5 +1,9 @@
 import type { VcsStatusResult } from "@t3tools/contracts";
-import { resolveChangeRequestPresentation } from "@t3tools/shared/sourceControl";
+import {
+  resolveAutomatedReviewPresentation,
+  resolveChangeRequestPresentation,
+  type AutomatedReviewPresentation,
+} from "@t3tools/shared/sourceControl";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 
@@ -15,6 +19,7 @@ export interface ThreadPrPresentation {
   /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
   readonly textClassName: string;
+  readonly automatedReview: (AutomatedReviewPresentation & { state: string }) | null;
 }
 
 const PR_STATE_TEXT_CLASS: Record<ThreadPr["state"], string> = {
@@ -29,6 +34,17 @@ export function presentThreadPr(
 ): ThreadPrPresentation {
   const presentation = resolveChangeRequestPresentation(provider);
   const isDraft = pr.state === "open" && pr.isDraft === true;
+  const automatedReviewSignal = "automatedReview" in pr ? pr.automatedReview : undefined;
+  const automatedReview = resolveAutomatedReviewPresentation(automatedReviewSignal);
+  const automatedReviewWithState =
+    automatedReview !== null && automatedReviewSignal !== undefined
+      ? {
+          ...automatedReview,
+          state: automatedReviewSignal === null ? "no_signal" : automatedReviewSignal.state,
+        }
+      : null;
+  const automatedReviewLabel =
+    automatedReview !== null ? `, ${automatedReview.label}` : "";
   return {
     number: pr.number,
     state: pr.state,
@@ -36,7 +52,8 @@ export function presentThreadPr(
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     label: String(pr.number),
-    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}`,
+    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}${automatedReviewLabel}`,
     textClassName: isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[pr.state],
+    automatedReview: automatedReviewWithState,
   };
 }

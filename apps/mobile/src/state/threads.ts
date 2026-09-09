@@ -21,9 +21,7 @@ import { environmentSnapshotAtom } from "./shell";
 export const MOBILE_THREAD_STATE_IDLE_TTL_MS = 15_000;
 
 export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime, {
-  idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS,
-});
+export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
   { idleTtlMs: MOBILE_THREAD_STATE_IDLE_TTL_MS },

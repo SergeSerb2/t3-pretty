@@ -132,7 +132,7 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
   }, [loadInitialState, refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
 
   const turnCompleteRefreshRef = useRef<{
-    threadId: string | null;
+    threadId: EnvironmentThreadShell["id"] | null;
     completedAt: string | null;
   }>({ threadId: null, completedAt: null });
   useEffect(() => {
@@ -140,9 +140,12 @@ export function useSelectedThreadGitActions(options?: { readonly loadInitialStat
     const completedAt = selectedThread?.latestTurn?.completedAt ?? null;
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
+    if (threadId === null) {
+      return;
+    }
     if (
       !shouldRefreshGitStatusAfterTurnComplete({
-        previousThreadId: previous.threadId,
+        previousThreadId: previous.threadId ?? undefined,
         threadId,
         previousCompletedAt: previous.completedAt,
         completedAt,

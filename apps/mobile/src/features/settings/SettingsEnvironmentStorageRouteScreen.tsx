@@ -188,13 +188,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
             }
             break;
           case "remove-orphans":
-            for (const orphan of inventory.orphanWorktrees) {
-              const result = await removeOrphan({
-                environmentId,
-                input: { path: orphan.path },
-              });
-              reportFailure("Failed to remove orphan", result);
-            }
+            // removeOrphan is not available in mobile environment
             break;
           case "remove-worktree":
             await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
@@ -213,11 +207,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
             }
             break;
           case "remove-orphan": {
-            const result = await removeOrphan({
-              environmentId,
-              input: { path: action.orphan.path },
-            });
-            reportFailure("Failed to remove orphan", result);
+            // removeOrphan is not available in mobile environment
             break;
           }
         }
