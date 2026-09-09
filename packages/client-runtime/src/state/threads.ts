@@ -552,19 +552,21 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
     }));
   });
-  const publishStreamError = (cause: Cause.Cause<unknown>) =>
+  const publishStreamError = (causeOrMessage: Cause.Cause<unknown> | string) =>
     Ref.set(awaitingCompletion, false).pipe(
       Effect.andThen(
         SubscriptionRef.update(state, (current) => ({
           ...current,
           status:
             current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
-          error: Option.some(message),
+          error: Option.some(
+            typeof causeOrMessage === "string" ? causeOrMessage : Cause.pretty(causeOrMessage),
+          ),
         })),
       ),
     );
-  const setStreamError = (cause: Cause.Cause<unknown>) =>
-    publishStreamError(cause).pipe(
+  const setStreamError = (causeOrMessage: Cause.Cause<unknown> | string) =>
+    publishStreamError(causeOrMessage).pipe(
       Effect.andThen(
         Effect.sync(() => {
           if (warmResume.pending) {
