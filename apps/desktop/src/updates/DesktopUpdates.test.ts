@@ -1,4 +1,4 @@
-import { assert, describe, it } from "@effect/vitest";
+import { assert, describe, it, vi, afterEach } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -19,6 +19,10 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("GitHubReleasesClient service is properly initialized (Effect 4 Context.Service)", () => {
     // Regression test for Mac Nightly crash: ensure the service tag is a real function,
     // not (void 0) from using removed Effect v3 Context.GenericTag API.
@@ -27,25 +31,73 @@ describe("DesktopUpdates", () => {
     assert.strictEqual(DesktopUpdates.GitHubReleasesClient.key, "@t3tools/desktop/GitHubReleasesClient");
   });
 
-  it.effect("recovers when GitHub nightly tag fetch fails (Effect.catch)", () =>
+  it.effect("liveGitHubReleasesClient fails when fetch throws", () =>
     Effect.gen(function* () {
-      // Regression test for Mac Nightly crash: Effect.catchAll doesn't exist in v4,
-      // must use Effect.catch with proper error parameter. Verify that configure path
-      // with failing GitHub client recovers gracefully (returns undefined) and continues startup.
-      const harness = makeHarness({
-        githubReleasesClient: {
-          fetchLatestNightlyTag: () => Effect.die(new Error("GitHub API unavailable")),
-        },
+      // Regression test: liveGitHubReleasesClient no longer catches errors internally.
+      // Effect.tryPromise failures now fail the Effect. Configure's catch handles recovery.
+      
+      // Mock fetch to simulate a network failure
+      vi.stubGlobal('fetch', async () => {
+        throw new Error("Network timeout");
       });
 
-      // Configure should not throw - Effect.catch should recover error and return undefined
+      // Use the production liveGitHubReleasesClient layer
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+      
+      // Call should fail - Effect.tryPromise propagates the error
+      const exit = yield* Effect.exit(client.fetchLatestNightlyTag({ owner: "test", name: "test" }));
+      
+      // Verify the call failed (not succeeded with undefined)
+      assert.equal(exit._tag, "Failure");
+    }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient)),
+  );
+
+  it.effect("configure handles failing GitHub client and falls back gracefully", () =>
+    Effect.gen(function* () {
+      // Verify that configure completes successfully when the GitHub client fails,
+      // logging a warning but continuing with either /latest or the mock feed.
+      const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999",
+        githubReleasesClient: {
+          // Simulate a failing GitHub client (Effect.fail, like tryPromise failures)
+          fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API rate limit")),
+        } as any,
+      });
+
       const updates = yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(harness.layer));
       
-      // Verify configure completes successfully (main test goal)
+      // Verify configure completes successfully despite the failing client
       yield* updates.configure;
       
-      // With failing client, latestNightlyTag becomes undefined (recovered), so
-      // nightly builds fall back to /latest feed (see resolveGitHubGenericUpdaterFeed logic)
+      // Verify the updater is configured and has a feed URL
+      const feedUrls = harness.feedUrls();
+      assert.isAtLeast(feedUrls.length, 1, "Feed URL should be configured even when GitHub fetch fails");
+      
+      // State should be enabled and idle
+      const state = yield* updates.getState;
+      assert.equal(state.enabled, true);
+      assert.equal(state.status, "idle");
+    }),
+  );
+
+  it.effect("configure handles undefined from failed GitHub client gracefully", () =>
+    Effect.gen(function* () {
+      // Verify that configure continues successfully when the GitHub client returns undefined
+      // (simulating a recovered fetch error), falling back to /latest feed for nightly builds.
+      const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999",
+        githubReleasesClient: {
+          // Simulate what liveGitHubReleasesClient returns after catching an error
+          fetchLatestNightlyTag: () => Effect.succeed(undefined),
+        } as any,
+      });
+
+      const updates = yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(harness.layer));
+      
+      // Verify configure completes successfully
+      yield* updates.configure;
+      
+      // With undefined latestNightlyTag, nightly builds fall back to /latest feed
       assert.isAtLeast(harness.feedUrls().length, 1);
     }),
   );
@@ -1074,15 +1126,34 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("liveLayer provides GitHubReleasesClient without Service not found", () => {
-    // This test verifies that DesktopUpdates.liveLayer properly provides
-    // GitHubReleasesClient through liveGitHubReleasesClient, ensuring the
-    // production wiring is correct and configure won't throw at runtime.
+  it.effect("liveLayer provides GitHubReleasesClient for production use", () => {
+    // This test verifies that DesktopUpdates.liveLayer properly wires
+    // liveGitHubReleasesClient so production code can access GitHubReleasesClient
+    // without "Service not found". Uses a mocked fetch to avoid real API calls.
     return Effect.gen(function* () {
+      // Mock fetch to return a successful response with a nightly release
+      vi.stubGlobal('fetch', async (_input: string | URL | Request) => {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              tag_name: "v0.0.39-nightly.20260907.1332",
+              published_at: "2026-09-07T13:32:00Z",
+              draft: false,
+            },
+          ],
+        } as Response;
+      });
+
+      // Access GitHubReleasesClient through liveGitHubReleasesClient layer
       const client = yield* DesktopUpdates.GitHubReleasesClient;
-      // Verify the client service is accessible
       assert.isNotNull(client);
       assert.isFunction(client.fetchLatestNightlyTag);
+      
+      // Verify the method returns a string with the mocked nightly tag
+      const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
+      assert.strictEqual(result, "v0.0.39-nightly.20260907.1332");
     }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient));
   });
 });
