@@ -433,15 +433,6 @@ describe("buildThreadListV2Items", () => {
       threads: [thread],
       environmentId: null,
       searchQuery: "",
-      changeRequestByKey: new Map([
-        [
-          `${environmentId}:${thread.id}`,
-          {
-            state: "merged" as const,
-            linkedPullRequestKey: '["project-1","pingdotgg/t3code",41]',
-          },
-        ],
-      ]),
       now: NOW,
     });
 
@@ -474,9 +465,6 @@ describe("buildThreadListV2Items", () => {
       threads: [merged],
       environmentId: null,
       searchQuery: "",
-      changeRequestByKey: new Map([
-        [`${environmentId}:${merged.id}`, { state: "merged" as const }],
-      ]),
       now: NOW,
     });
 
@@ -548,7 +536,6 @@ describe("buildThreadListV2Items", () => {
       threads: [makeThread({ id: ThreadId.make("active"), title: "Active" }), merged],
       environmentId: null,
       searchQuery: "",
-      changeRequestByKey: new Map([[`${environmentId}:${merged.id}`, { state: "merged" }]]),
       now: NOW,
     });
 

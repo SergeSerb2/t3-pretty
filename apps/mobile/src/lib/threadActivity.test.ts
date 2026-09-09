@@ -267,6 +267,7 @@ function makeThread(
     activities: [],
     checkpoints: [],
     session: null,
+    enabledSkillIds: [],
     ...input,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledAt ?? null,

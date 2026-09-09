@@ -19,6 +19,7 @@ const LEGACY_CACHE_DIRECTORIES = [
 export const ClientCacheKind = Schema.Literals([
   "shell",
   "thread",
+  "thread-lifecycle-outbox",
   "server-config",
   "vcs-refs",
   "project-favicon",
@@ -53,6 +54,7 @@ const MobileDatabaseOperation = Schema.Literals([
   "list-cache",
   "save-cache",
   "remove-cache",
+  "prune-cache-kind",
   "clear-cache-kind",
   "clear-environment-cache",
   "clear-all-caches",

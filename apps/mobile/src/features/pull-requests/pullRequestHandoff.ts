@@ -3,8 +3,8 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import {
   getComposerDraftSnapshot,
-  requireComposerDraftsLoaded,
-  setComposerDraftHandoffText,
+  ensureComposerDraftsLoaded,
+  setComposerDraftText,
 } from "../../state/use-composer-drafts";
 import { handoffPrompt } from "./pullRequestDetail.logic";
 
@@ -21,7 +21,7 @@ export function newTaskComposerDraftKey(
  * navigation action before mutating a draft after this async boundary.
  */
 export async function requirePullRequestHandoffDraftsLoaded(): Promise<void> {
-  await requireComposerDraftsLoaded();
+  await ensureComposerDraftsLoaded();
 }
 
 /**
@@ -41,12 +41,10 @@ export function writePullRequestHandoffDraft(input: {
   const prompt = handoffPrompt(
     {
       prompt: existing.text,
-      lastHandoffPrompt: existing.lastHandoffPrompt,
+      lastHandoffPrompt: undefined,
     },
     input.prompt,
   );
-  setComposerDraftHandoffText(draftKey, prompt, input.prompt, {
-    pullRequestReference: input.url,
-  });
+  setComposerDraftText(draftKey, prompt);
   return draftKey;
 }

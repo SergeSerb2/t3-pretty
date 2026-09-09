@@ -19,6 +19,7 @@ import {
   PositiveInt,
   ProjectId,
   ProviderItemId,
+  ProviderNativeSessionId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -1432,6 +1433,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.transferred",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1442,10 +1444,14 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.pinned",
   "thread.unpinned",
   "thread.pin-reordered",
+  "thread.scenery-assigned",
+  "thread.skills-set",
+  "thread.subagent-policy-set",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.native-resume-requested",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1585,6 +1591,27 @@ export const ThreadPinReorderedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ThreadSceneryAssignedPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The winning assignment: the command's photo on first assign, the existing
+  // binding on raced/duplicate assigns (write-once, like re-pinning).
+  scenery: ThreadSceneryAssignment,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSkillsSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The new per-thread enabled skill set (full replacement).
+  enabledSkillIds: EnabledSkillIds,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSubagentPolicySetPayload = Schema.Struct({
+  threadId: ThreadId,
+  policy: ThreadSubagentPolicy,
+  updatedAt: IsoDateTime,
+});
+
 export const ThreadMetaUpdatedPayload = Schema.Struct({
   threadId: ThreadId,
   // Order updates use this existing event so older clients can ignore the
@@ -1630,6 +1657,12 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadNativeResumeRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
+  nativeSessionId: ProviderNativeSessionId,
+  createdAt: IsoDateTime,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1820,6 +1853,21 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.scenery-assigned"),
+    payload: ThreadSceneryAssignedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.skills-set"),
+    payload: ThreadSkillsSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.subagent-policy-set"),
+    payload: ThreadSubagentPolicySetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.meta-updated"),
     payload: ThreadMetaUpdatedPayload,
   }),
@@ -1837,6 +1885,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.native-resume-requested"),
+    payload: ThreadNativeResumeRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

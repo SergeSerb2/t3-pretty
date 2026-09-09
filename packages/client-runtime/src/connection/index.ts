@@ -9,6 +9,7 @@ export {
   type BearerConnectionUpdateInput,
   ConnectionOnboarding,
   type PairingConnectionInput,
+  preparePairingRegistration,
   type SshConnectionInput,
 } from "./onboarding.ts";
 export * from "./presentation.ts";
