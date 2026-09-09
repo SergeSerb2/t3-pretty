@@ -68,6 +68,7 @@ import {
   ReadAloudUnavailableError,
   ReadAloudUpstreamError,
 } from "./readAloud.ts";
+import { ServerConfig } from "./server.ts";
 
 const OptionalBearerHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),
@@ -678,11 +679,20 @@ export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
+  HttpApiEndpoint.get("config", "/api/server/config", {
+    headers: OptionalBearerHeaders,
+    success: ServerConfig,
+    error: [EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentServerHttpApi)
   .add(EnvironmentDictationHttpApi)
   .add(EnvironmentReadAloudHttpApi) {}

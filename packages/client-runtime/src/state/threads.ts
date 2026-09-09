@@ -890,3 +890,12 @@ export * from "./threadDetail.ts";
 export * from "./threadReducer.ts";
 export * from "./threadShell.ts";
 export * from "./threadState.ts";
+
+// Stub layer for backward compatibility (warm thread states functionality removed)
+import * as Layer from "effect/Layer";
+export const warmThreadStatesLayer = Layer.empty;
+
+// Test utilities (functionality removed, stubs for compatibility)
+export const WARM_THREAD_STATE_CAPACITY = 100;
+export interface WarmThreadStates {}
+export const makeWarmThreadStateRegistry = () => ({} as WarmThreadStates);
