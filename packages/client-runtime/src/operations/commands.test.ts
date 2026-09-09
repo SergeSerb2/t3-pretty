@@ -27,9 +27,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
-  createThread,
-  setThreadSkills,
-  setThreadSubagentPolicy,
+  reorderActiveThread,
   settleThread,
   snoozeThread,
   startThreadTurn,
@@ -231,245 +229,23 @@ describe("environment commands", () => {
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 
-  it.effect("dispatches thread.skills.set with minted metadata", () =>
+  it.effect("sends an active order key without changing activity timestamps", () =>
     Effect.gen(function* () {
       const dispatched: ClientOrchestrationCommand[] = [];
       const supervisor = yield* makeSupervisor(dispatched);
-
-      yield* setThreadSkills({
+      yield* reorderActiveThread({
+        commandId: CommandId.make("reorder-command"),
         threadId: ThreadId.make("thread-1"),
-        enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-        createdAt: "2026-06-06T00:02:00.000Z",
+        orderKey: "mf",
       }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
       expect(dispatched).toEqual([
         {
-          type: "thread.skills.set",
-          commandId: "00000000-0000-4000-8000-000000000000",
+          type: "thread.active.reorder",
+          commandId: "reorder-command",
           threadId: "thread-1",
-          enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-          createdAt: "2026-06-06T00:02:00.000Z",
+          orderKey: "mf",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
-  );
-
-  it.effect("dispatches thread.subagent-policy.set with minted metadata", () =>
-    Effect.gen(function* () {
-      const dispatched: ClientOrchestrationCommand[] = [];
-      const supervisor = yield* makeSupervisor(dispatched);
-
-      yield* setThreadSubagentPolicy({
-        threadId: ThreadId.make("thread-1"),
-        policy: { mode: "off" },
-        createdAt: "2026-06-06T00:03:00.000Z",
-      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
-      expect(dispatched).toEqual([
-        {
-          type: "thread.subagent-policy.set",
-          commandId: "00000000-0000-4000-8000-000000000000",
-          threadId: "thread-1",
-          policy: { mode: "off" },
-          createdAt: "2026-06-06T00:03:00.000Z",
-        },
-      ]);
-    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
-  );
-
-  it.effect("defaults omitted enabledSkillIds to [] on thread.create", () =>
-    Effect.gen(function* () {
-      const dispatched: ClientOrchestrationCommand[] = [];
-      const supervisor = yield* makeSupervisor(dispatched);
-
-      const baseInput = {
-        threadId: ThreadId.make("thread-1"),
-        projectId: ProjectId.make("project-1"),
-        title: "Thread",
-        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-        runtimeMode: "full-access" as const,
-        interactionMode: "default" as const,
-        branch: null,
-        worktreePath: null,
-        createdAt: "2026-06-06T00:03:00.000Z",
-      };
-      yield* createThread(baseInput).pipe(
-        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-      );
-      yield* createThread({
-        ...baseInput,
-        threadId: ThreadId.make("thread-2"),
-        enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
-      expect(dispatched).toEqual([
-        {
-          type: "thread.create",
-          commandId: "00000000-0000-4000-8000-000000000000",
-          threadId: "thread-1",
-          projectId: "project-1",
-          title: "Thread",
-          modelSelection: { instanceId: "codex", model: "gpt-5.4" },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdAt: "2026-06-06T00:03:00.000Z",
-          enabledSkillIds: [],
-        },
-        {
-          type: "thread.create",
-          commandId: "00000000-0000-4000-8000-000000000000",
-          threadId: "thread-2",
-          projectId: "project-1",
-          title: "Thread",
-          modelSelection: { instanceId: "codex", model: "gpt-5.4" },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdAt: "2026-06-06T00:03:00.000Z",
-          enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-        },
-      ]);
-    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
-  );
-
-  it.effect(
-    "defaults omitted bootstrap.createThread.enabledSkillIds to [] on thread.turn.start",
-    () =>
-      Effect.gen(function* () {
-        const dispatched: ClientOrchestrationCommand[] = [];
-        const supervisor = yield* makeSupervisor(dispatched);
-
-        const createThreadBootstrap = {
-          projectId: ProjectId.make("project-1"),
-          title: "Thread",
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-          runtimeMode: "full-access" as const,
-          interactionMode: "default" as const,
-          branch: null,
-          worktreePath: null,
-          createdAt: "2026-06-06T00:04:00.000Z",
-        };
-        yield* startThreadTurn({
-          threadId: ThreadId.make("thread-1"),
-          message: {
-            messageId: MessageId.make("message-1"),
-            role: "user",
-            text: "hello",
-            attachments: [],
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          bootstrap: { createThread: createThreadBootstrap },
-          createdAt: "2026-06-06T00:04:00.000Z",
-        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-        yield* startThreadTurn({
-          threadId: ThreadId.make("thread-2"),
-          message: {
-            messageId: MessageId.make("message-2"),
-            role: "user",
-            text: "hello",
-            attachments: [],
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          bootstrap: {
-            createThread: {
-              ...createThreadBootstrap,
-              enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-            },
-          },
-          createdAt: "2026-06-06T00:04:00.000Z",
-        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
-        expect(dispatched[0]).toMatchObject({
-          type: "thread.turn.start",
-          bootstrap: { createThread: { enabledSkillIds: [] } },
-        });
-        expect(dispatched[1]).toMatchObject({
-          type: "thread.turn.start",
-          bootstrap: {
-            createThread: {
-              enabledSkillIds: ["mattpocock/skills:skills/engineering/tdd"],
-            },
-          },
-        });
-      }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
-  );
-
-  it.effect(
-    "retries a bare thread.turn.start when bootstrap create reports the thread exists",
-    () =>
-      Effect.gen(function* () {
-        const dispatched: ClientOrchestrationCommand[] = [];
-        const alreadyExists = new OrchestrationDispatchCommandError({
-          message:
-            "Orchestration command invariant failed (thread.create): Thread 'thread-1' already exists and cannot be created twice.",
-        });
-        const supervisor = yield* makeSupervisor(dispatched, (command) => {
-          if (command.type === "thread.turn.start" && command.bootstrap !== undefined) {
-            return Effect.fail(alreadyExists);
-          }
-          return Effect.succeed({ sequence: dispatched.length });
-        });
-
-        const result = yield* startThreadTurn({
-          threadId: ThreadId.make("thread-1"),
-          message: {
-            messageId: MessageId.make("message-1"),
-            role: "user",
-            text: "hello",
-            attachments: [],
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          bootstrap: {
-            createThread: {
-              projectId: ProjectId.make("project-1"),
-              title: "Thread",
-              modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              branch: null,
-              worktreePath: null,
-              createdAt: "2026-06-06T00:04:00.000Z",
-            },
-            prepareWorktree: {
-              projectCwd: "/tmp/project",
-              baseBranch: "main",
-              branch: "t3code/retry",
-            },
-            runSetupScript: true,
-          },
-          createdAt: "2026-06-06T00:04:00.000Z",
-        }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
-        expect(result).toEqual({ sequence: 2 });
-        expect(dispatched).toHaveLength(2);
-        expect(dispatched[0]).toMatchObject({
-          type: "thread.turn.start",
-          bootstrap: {
-            createThread: expect.anything(),
-            prepareWorktree: expect.anything(),
-            runSetupScript: true,
-          },
-        });
-        expect(dispatched[1]).toEqual({
-          type: "thread.turn.start",
-          commandId: "00000000-0000-4000-8000-000000000000",
-          threadId: "thread-1",
-          message: {
-            messageId: "message-1",
-            role: "user",
-            text: "hello",
-            attachments: [],
-          },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          createdAt: "2026-06-06T00:04:00.000Z",
-        });
-      }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 });

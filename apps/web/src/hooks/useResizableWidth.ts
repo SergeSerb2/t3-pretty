@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -33,24 +32,6 @@ export interface ResizableWidthHandlers {
   readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
-}
-
-export function resizableWidthFromKeyboard(input: {
-  readonly key: string;
-  readonly currentWidth: number;
-  readonly minWidth: number;
-  readonly maxWidth: number;
-  readonly edge: "left" | "right";
-  readonly step: number;
-}): number | null {
-  const { currentWidth, edge, key, maxWidth, minWidth, step } = input;
-  let next: number;
-  if (key === "Home") next = minWidth;
-  else if (key === "End") next = maxWidth;
-  else if (key === "ArrowLeft") next = currentWidth + (edge === "left" ? step : -step);
-  else if (key === "ArrowRight") next = currentWidth + (edge === "right" ? step : -step);
-  else return null;
-  return Math.max(minWidth, Math.min(maxWidth, next));
 }
 
 /**
@@ -106,6 +87,8 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   const cleanupDrag = useCallback(() => {
     const state = dragStateRef.current;
     if (!state) return;
+    // Clear first because releasing capture can trigger another cleanup.
+    dragStateRef.current = null;
     if (state.rafId !== null) {
       cancelAnimationFrame(state.rafId);
     }
@@ -116,29 +99,29 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     } catch {
       // pointer may already be released; harmless.
     }
-    document.body.style.cursor = state.previousBodyCursor;
-    document.body.style.userSelect = state.previousBodyUserSelect;
-    dragStateRef.current = null;
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
   }, []);
 
-  const releasePointer = useCallback(() => {
-    cleanupDrag();
-    setIsResizing(false);
-  }, [cleanupDrag]);
+  const cancelDrag = useCallback(() => {
+    const state = dragStateRef.current;
+    if (!state) return;
+    releasePointer(state.pointerId);
+    setWidth(state.startWidth);
+  }, [releasePointer]);
 
-  useEffect(
-    () => () => {
-      // A route or panel can disappear while it owns pointer capture. Release
-      // every global side effect instead of leaving the whole app unselectable.
-      cleanupDrag();
-    },
-    [cleanupDrag],
-  );
+  useEffect(() => {
+    window.addEventListener("blur", cancelDrag);
+    return () => {
+      window.removeEventListener("blur", cancelDrag);
+      const state = dragStateRef.current;
+      if (state) releasePointer(state.pointerId);
+    };
+  }, [cancelDrag, releasePointer]);
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0) return;
-      if (dragStateRef.current !== null) return;
+      if (event.button !== 0 || dragStateRef.current) return;
       event.preventDefault();
       event.stopPropagation();
       const target = event.currentTarget;
@@ -206,10 +189,9 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       const state = dragStateRef.current;
       if (!state || state.pointerId !== event.pointerId) return;
       // Don't persist a cancelled drag; revert to the start width.
-      releasePointer();
-      setWidth(state.startWidth);
+      cancelDrag();
     },
-    [releasePointer],
+    [cancelDrag],
   );
 
   const onKeyDown = useCallback(
@@ -236,9 +218,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
 
   return {
     width: clampedWidth,
-    isResizing,
     handlers: {
-      onKeyDown,
       onPointerDown,
       onPointerMove,
       onPointerUp,

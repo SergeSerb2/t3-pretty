@@ -5,7 +5,6 @@ import {
   RESOURCE_MONITOR_PROTOCOL_VERSION,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -14,13 +13,9 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import {
-  NativeTelemetryRequestTimedOut,
-  NativeTelemetryStreamClosed,
-  appendBoundedNativeTelemetryHistory,
   canCommandNativeTelemetrySidecar,
   canRequestNativeTelemetryRetry,
   commitCollectionControlUpdate,
-  nativeTelemetrySupervisorFailureMessage,
   retainRecentNativeTelemetryFailures,
   resolveNativeSampleIntervalMs,
   synchronizeCollectionControlOnStart,
@@ -98,81 +93,6 @@ describe("canCommandNativeTelemetrySidecar", () => {
     expect(canCommandNativeTelemetrySidecar("degraded", true)).toBe(true);
     expect(canCommandNativeTelemetrySidecar("unavailable", true)).toBe(false);
     expect(canCommandNativeTelemetrySidecar("degraded", false)).toBe(false);
-  });
-});
-
-describe("NativeTelemetryRequestTimedOut", () => {
-  it("models history and sample request deadlines without a fabricated cause", () => {
-    const historyTimeout = new NativeTelemetryRequestTimedOut({
-      operation: "readHistory",
-      timeoutMs: 15_000,
-    });
-    const sampleTimeout = new NativeTelemetryRequestTimedOut({
-      operation: "sampleNow",
-      timeoutMs: 5_000,
-    });
-
-    expect(historyTimeout.message).toBe(
-      "Resource monitor 'readHistory' request timed out after 15000ms.",
-    );
-    expect(sampleTimeout.message).toBe(
-      "Resource monitor 'sampleNow' request timed out after 5000ms.",
-    );
-    expect("cause" in historyTimeout).toBe(false);
-    expect("cause" in sampleTimeout).toBe(false);
-  });
-});
-
-describe("appendBoundedNativeTelemetryHistory", () => {
-  it("rejects history streams that exceed the snapshot cap", () => {
-    const result = appendBoundedNativeTelemetryHistory(
-      {
-        snapshots: Array.from(
-          { length: RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS },
-          () => emptyNativeSnapshot,
-        ),
-        retainedEntryCount: 0,
-      },
-      [emptyNativeSnapshot],
-    );
-
-    expect(result).toEqual({
-      _tag: "rejected",
-      resource: "history snapshots",
-      maxItems: RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS,
-    });
-  });
-
-  it("rejects history streams that exceed the retained-entry cap", () => {
-    const result = appendBoundedNativeTelemetryHistory(
-      {
-        snapshots: [],
-        retainedEntryCount: RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
-      },
-      [{ ...emptyNativeSnapshot, externalProcesses: [{ pid: 1 }] }],
-    );
-
-    expect(result).toEqual({
-      _tag: "rejected",
-      resource: "history entries",
-      maxItems: RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
-    });
-  });
-});
-
-describe("native telemetry supervisor failures", () => {
-  it("distinguishes a closed event stream from a process exit", () => {
-    expect(new NativeTelemetryStreamClosed().message).toBe(
-      "Resource monitor event stream closed unexpectedly.",
-    );
-  });
-
-  it("keeps defect details out of the caller-visible health message", () => {
-    const secret = "credential=do-not-expose";
-    const message = nativeTelemetrySupervisorFailureMessage(Cause.die(new Error(secret)));
-
-    expect(message).toBe("Resource monitor supervisor stopped unexpectedly.");
-    expect(message).not.toContain(secret);
   });
 });
 

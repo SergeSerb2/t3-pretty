@@ -14,8 +14,6 @@ import * as Ref from "effect/Ref";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
-export const CLIENT_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
-
 const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
 const decodeClientSettingsDocument = Schema.decodeEffect(
   fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
@@ -24,20 +22,24 @@ const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchem
 const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
   const document = yield* decodeClientSettingsDocument(raw);
   // Select the shape before validation so invalid legacy settings cannot become defaults.
-  // Legacy wrapper: document's ONLY key is "settings" and it's a non-null object.
-  // Otherwise, decode flat (even if an incidental "settings" field exists).
-  const keys = Object.keys(document);
-  const isLegacyWrapper =
-    keys.length === 1 &&
-    keys[0] === "settings" &&
-    typeof document.settings === "object" &&
-    document.settings !== null;
-
   return yield* decodeClientSettingsValue(
-    isLegacyWrapper ? document.settings : document,
+    Object.hasOwn(document, "settings") ? document.settings : document,
   );
 });
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
+
+export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
+  "DesktopClientSettingsReadError",
+  {
+    operation: Schema.Literals(["read-file", "decode-document"]),
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
@@ -87,7 +89,7 @@ const readClientSettings = (
   fileSystem: FileSystem.FileSystem,
   settingsPath: string,
 ): Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError> =>
-  readFileStringWithinLimit(fileSystem, settingsPath, CLIENT_SETTINGS_FILE_MAX_BYTES).pipe(
+  fileSystem.readFileString(settingsPath).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -96,11 +98,13 @@ const readClientSettings = (
           : Effect.logWarning("Could not read desktop client settings.", cause).pipe(
               Effect.annotateLogs({ settingsPath }),
               Effect.andThen(
-                new DesktopClientSettingsReadError({
-                  operation: "read-document",
-                  path: settingsPath,
-                  cause,
-                }),
+                Effect.fail(
+                  new DesktopClientSettingsReadError({
+                    operation: "read-file",
+                    path: settingsPath,
+                    cause,
+                  }),
+                ),
               ),
             ),
       DesktopFileSizeLimitExceededError: (cause) =>
@@ -126,11 +130,13 @@ const readClientSettings = (
                 Effect.logWarning("Could not decode desktop client settings.", cause).pipe(
                   Effect.annotateLogs({ settingsPath }),
                   Effect.andThen(
-                    new DesktopClientSettingsReadError({
-                      operation: "decode-document",
-                      path: settingsPath,
-                      cause,
-                    }),
+                    Effect.fail(
+                      new DesktopClientSettingsReadError({
+                        operation: "decode-document",
+                        path: settingsPath,
+                        cause,
+                      }),
+                    ),
                   ),
                 ),
             }),

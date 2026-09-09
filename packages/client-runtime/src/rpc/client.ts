@@ -174,39 +174,25 @@ export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
 }
 
 interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
+  /** Reports protocol or programming defects without changing their recovery policy. */
+  readonly onDefect?: (
+    cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
+  ) => Effect.Effect<void, never, never>;
   readonly onExpectedFailure?: (
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
   readonly retryExpectedFailureAfter?: Duration.Input;
 }
 
-const SUBSCRIPTION_RETRY_MAX_DELAY_MS = 30_000;
-
-// Escalating delay for retried durable subscriptions: the configured delay is
-// the first rung, doubling per consecutive rejection and capped at 30s, with
-// ±20% jitter so rejected subscriptions do not retry in lockstep.
-const subscriptionRetryDelay = (
-  initial: Duration.Input,
-  consecutiveFailures: number,
-): Effect.Effect<number> =>
-  Effect.map(Random.next, (factor) => {
-    const initialMs = Duration.toMillis(Duration.fromInputUnsafe(initial));
-    const escalatedMs = Math.min(
-      initialMs * 2 ** consecutiveFailures,
-      SUBSCRIPTION_RETRY_MAX_DELAY_MS,
-    );
-    return Math.round(escalatedMs * (0.8 + factor * 0.4));
-  });
-
-export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
+function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
   tag: TTag,
   makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
+  mapStream: (
+    session: RpcSession,
+    stream: Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>,
+  ) => Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>>,
   options?: SubscriptionOptions<TTag>,
-): Stream.Stream<
-  EnvironmentRpcStreamValue<TTag>,
-  EnvironmentRpcStreamFailure<TTag>,
-  EnvironmentSupervisor
-> {
+): Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>, EnvironmentSupervisor> {
   return Stream.unwrap(
     Effect.gen(function* () {
       const supervisor = yield* EnvironmentSupervisor;
@@ -227,15 +213,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                 EnvironmentRpcStreamValue<TTag>,
                 EnvironmentRpcStreamFailure<TTag>
               >;
-              // `consecutiveFailures` counts rejections since the last
-              // delivered value; a subscription that emitted is healthy, so
-              // its next retry starts from the initial delay again.
-              const subscribeToSession = (
-                consecutiveFailures: number,
-              ): Stream.Stream<
-                EnvironmentRpcStreamValue<TTag>,
-                EnvironmentRpcStreamFailure<TTag>
-              > =>
+              const subscribeToSession = (): Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>> =>
                 Stream.suspend(() =>
                   Stream.unwrap(
                     Effect.gen(function* () {
@@ -245,57 +223,61 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                         method: tag,
                         input,
                       });
-                      const delivered = yield* Ref.make(false);
-                      return method(input).pipe(
-                        Stream.tap(() => Ref.set(delivered, true)),
+                      return mapStream(session, method(input)).pipe(
                         Stream.ensuring(completeObservation),
-                        Stream.catchCause((cause) => {
-                          const hasOnlyExpectedFailures =
-                            cause.reasons.length > 0 &&
-                            cause.reasons.every((reason) => reason._tag === "Fail");
-                          const isTransportFailure =
-                            hasOnlyExpectedFailures &&
-                            cause.reasons.every(
-                              (reason) => reason._tag === "Fail" && isRpcClientError(reason.error),
-                            );
-                          if (isTransportFailure) {
-                            return Stream.fromEffect(
-                              Effect.logWarning(
-                                "Durable RPC subscription lost its transport; waiting for the next session.",
-                                {
-                                  cause: Cause.pretty(cause),
-                                  method: tag,
-                                  environmentId: supervisor.target.environmentId,
-                                },
-                              ),
-                            ).pipe(Stream.drain);
-                          }
-                          if (hasOnlyExpectedFailures && options?.onExpectedFailure !== undefined) {
-                            const handled = Stream.fromEffect(
-                              options.onExpectedFailure(cause),
-                            ).pipe(Stream.drain);
-                            if (options.retryExpectedFailureAfter === undefined) {
-                              return handled;
-                            }
-                            const retryAfter = options.retryExpectedFailureAfter;
-                            return Stream.unwrap(
-                              Effect.gen(function* () {
-                                const failures = (yield* Ref.get(delivered))
-                                  ? 0
-                                  : consecutiveFailures;
-                                const delayMs = yield* subscriptionRetryDelay(retryAfter, failures);
-                                return handled.pipe(
-                                  Stream.concat(
-                                    Stream.fromEffect(Effect.sleep(delayMs)).pipe(Stream.drain),
-                                  ),
-                                  Stream.concat(subscribeToSession(failures + 1)),
-                                );
-                              }),
-                            );
-                          }
-                          return Stream.failCause(cause);
-                        }),
                       );
+                    }),
+                  ).pipe(
+                    Stream.tapCause((cause) =>
+                      options?.onDefect !== undefined &&
+                      cause.reasons.some(
+                        (reason) =>
+                          reason._tag === "Die" ||
+                          (reason._tag === "Fail" &&
+                            isRpcClientError(reason.error) &&
+                            reason.error.reason._tag === "RpcClientDefect"),
+                      )
+                        ? options.onDefect(cause)
+                        : Effect.void,
+                    ),
+                    Stream.catchCause((cause) => {
+                      const hasOnlyExpectedFailures =
+                        cause.reasons.length > 0 &&
+                        cause.reasons.every((reason) => reason._tag === "Fail");
+                      const isTransportFailure =
+                        hasOnlyExpectedFailures &&
+                        cause.reasons.every(
+                          (reason) => reason._tag === "Fail" && isRpcClientError(reason.error),
+                        );
+                      if (isTransportFailure) {
+                        return Stream.fromEffect(
+                          Effect.logWarning(
+                            "Durable RPC subscription lost its transport; waiting for the next session.",
+                            {
+                              cause: Cause.pretty(cause),
+                              method: tag,
+                              environmentId: supervisor.target.environmentId,
+                            },
+                          ),
+                        ).pipe(Stream.drain);
+                      }
+                      if (hasOnlyExpectedFailures && options?.onExpectedFailure !== undefined) {
+                        const handled = Stream.fromEffect(options.onExpectedFailure(cause)).pipe(
+                          Stream.drain,
+                        );
+                        if (options.retryExpectedFailureAfter === undefined) {
+                          return handled;
+                        }
+                        return handled.pipe(
+                          Stream.concat(
+                            Stream.fromEffect(Effect.sleep(options.retryExpectedFailureAfter)).pipe(
+                              Stream.drain,
+                            ),
+                          ),
+                          Stream.concat(subscribeToSession()),
+                        );
+                      }
+                      return Stream.failCause(cause);
                     }),
                   ),
                 );
@@ -312,6 +294,18 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
   );
 }
 
+export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
+  tag: TTag,
+  makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
+  options?: SubscriptionOptions<TTag>,
+): Stream.Stream<
+  EnvironmentRpcStreamValue<TTag>,
+  EnvironmentRpcStreamFailure<TTag>,
+  EnvironmentSupervisor
+> {
+  return subscribeDynamicMapped(tag, makeInput, (_session, stream) => stream, options);
+}
+
 /** Tags each value before `switchMap` can buffer it across a session change. */
 export function subscribeDynamicWithSession<TTag extends EnvironmentSubscriptionRpcTag>(
   tag: TTag,
@@ -322,21 +316,11 @@ export function subscribeDynamicWithSession<TTag extends EnvironmentSubscription
   EnvironmentRpcStreamFailure<TTag>,
   EnvironmentSupervisor
 > {
-  return Stream.unwrap(
-    Effect.gen(function* () {
-      const supervisor = yield* EnvironmentSupervisor;
-      return SubscriptionRef.changes(supervisor.session).pipe(
-        Stream.switchMap(
-          Option.match({
-            onNone: () => Stream.empty,
-            onSome: (session) =>
-              subscribeDynamic(tag, makeInput, options).pipe(
-                Stream.map((value) => [session, value] as const),
-              ),
-          }),
-        ),
-      );
-    }),
+  return subscribeDynamicMapped(
+    tag,
+    makeInput,
+    (session, stream) => stream.pipe(Stream.map((value) => [session, value] as const)),
+    options,
   );
 }
 
@@ -351,8 +335,3 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
 > {
   return subscribeDynamic(tag, () => Effect.succeed(input), options);
 }
-
-export const config = Effect.gen(function* () {
-  const session = yield* currentSession();
-  return yield* session.initialConfig;
-}).pipe(Effect.withSpan("EnvironmentRpc.config"));

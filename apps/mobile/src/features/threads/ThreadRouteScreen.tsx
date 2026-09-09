@@ -7,18 +7,22 @@ import {
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Option from "effect/Option";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
-  canSettle,
-  canSnooze,
-  effectiveSettled,
-  effectiveSnoozed,
-} from "@t3tools/client-runtime/state/thread-settled";
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ThreadId,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
 } from "@t3tools/client-runtime/state/threads";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import {
+  projectScriptCwd,
+  projectScriptRuntimeEnv,
+  resolveProjectScripts,
+} from "@t3tools/shared/projectScripts";
+import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
 import { useEnvironmentQuery } from "../../state/query";
@@ -634,16 +638,17 @@ function ThreadRouteContent(
     gitStatus: gitStatus.data,
     gitOperationLabel,
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    settlementSupported,
-    snoozeSupported,
-    settled: threadSettled,
-    snoozed: threadSnoozed,
-    canSettleThread,
-    canSnoozeThread,
-    onSettle: handleSettleThread,
-    onUnsettle: handleUnsettleThread,
-    onSnooze: handleSnoozeThread,
-    onUnsnooze: handleUnsnoozeThread,
+    projectScripts: selectedThreadProject
+      ? resolveProjectScripts(
+          routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
+          selectedThreadProject,
+        )
+      : [],
+    terminalSessions: terminalMenuSessions,
+    showDirectFileControl: layout.usesSplitView,
+    onOpenTerminal: handleOpenTerminal,
+    onOpenNewTerminal: handleOpenNewTerminal,
+    onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
@@ -805,6 +810,8 @@ function ThreadRouteContent(
           screenTone={connectionTone(routeConnectionState)}
           connectionError={routeConnectionError}
           environmentLabel={selectedEnvironmentConnection?.environmentLabel ?? null}
+          feedbackSubmissions={composer.feedbackSubmissions}
+          onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           activeWorkStartedAt={composer.activeWorkStartedAt}
           isCompacting={composer.isCompacting}
@@ -845,6 +852,7 @@ function ThreadRouteContent(
           onSelectUserInputOption={requests.onSelectUserInputOption}
           onChangeUserInputCustomAnswer={requests.onChangeUserInputCustomAnswer}
           onSubmitUserInput={requests.onSubmitUserInput}
+          onDismissUserInput={requests.onDismissUserInput}
         />
       </View>
     </>
@@ -854,6 +862,7 @@ function ThreadRouteContent(
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
       <NativeStackScreenOptions
+        optionsVersion={threadGitControlProps.projectScripts}
         options={{
           // Android draws its own in-flow header (AndroidScreenHeader below);
           // the native stack header stays iOS-only.

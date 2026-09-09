@@ -13,12 +13,6 @@ import {
   ClientSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
-  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
-  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  SERVER_SETTINGS_CUSTOM_MODELS_MAX_LENGTH,
-  SERVER_SETTINGS_PATH_MAX_LENGTH,
-  defaultEnabledForDriver,
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
@@ -155,42 +149,18 @@ describe("ClaudeSettings auto-compaction", () => {
   });
 });
 
-describe("ServerSettings subagent policy", () => {
-  it("defaults to spawning on with no instance pins", () => {
-    expect(decodeServerSettings({}).subagentPolicy).toEqual({
-      enabled: true,
-      children: {},
-    });
+describe("ClientSettings load balancing", () => {
+  it("requires opt-in when settings are new or omit load balancing", () => {
+    expect(decodeClientSettings({}).loadBalancingEnabled).toBe(false);
+    expect(decodeClientSettings({ loadBalancingWeights: {} }).loadBalancingEnabled).toBe(false);
   });
 
-  it("accepts a global off switch and an instance child pin", () => {
-    const decoded = decodeServerSettingsPatch({
-      subagentPolicy: {
-        enabled: false,
-        children: {
-          grok: { model: "grok-build", options: [{ id: "reasoningEffort", value: "low" }] },
-        },
-      },
-    });
-    expect(decoded.subagentPolicy?.enabled).toBe(false);
-    expect(decoded.subagentPolicy?.children?.[ProviderInstanceId.make("grok")]?.model).toBe(
-      "grok-build",
+  it.each([true, false])("preserves a saved choice of %s", (loadBalancingEnabled) => {
+    const settings = decodeClientSettings({ loadBalancingEnabled });
+    expect(encodeClientSettings(settings).loadBalancingEnabled).toBe(loadBalancingEnabled);
+    expect(decodeClientSettingsPatch({ loadBalancingEnabled }).loadBalancingEnabled).toBe(
+      loadBalancingEnabled,
     );
-  });
-});
-
-describe("ClientSettings skill favorites", () => {
-  it("defaults to an empty list", () => {
-    expect(decodeClientSettings({}).favoriteSkillIds).toEqual([]);
-  });
-
-  it("accepts skill ids", () => {
-    expect(
-      decodeClientSettings({ favoriteSkillIds: ["octo/skills:tdd"] }).favoriteSkillIds,
-    ).toEqual(["octo/skills:tdd"]);
-    expect(
-      decodeClientSettingsPatch({ favoriteSkillIds: ["host:agents:shared"] }).favoriteSkillIds,
-    ).toEqual(["host:agents:shared"]);
   });
 });
 
@@ -399,18 +369,17 @@ describe("ClientSettings sidebar", () => {
 });
 
 describe("ClientSettings composer collapse", () => {
-  it("collapses on blur and scroll by default and accepts opting out of each", () => {
-    const defaults = decodeClientSettings({});
-    expect(defaults.composerCollapseOnBlur).toBe(true);
-    expect(defaults.composerCollapseOnScroll).toBe(true);
-
-    const blurOff = decodeClientSettings({ composerCollapseOnBlur: false });
-    expect(blurOff.composerCollapseOnBlur).toBe(false);
-    expect(blurOff.composerCollapseOnScroll).toBe(true);
-
+  it("collapses on scroll by default and accepts opting out", () => {
+    expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);
     expect(
       decodeClientSettingsPatch({ composerCollapseOnScroll: false }).composerCollapseOnScroll,
     ).toBe(false);
+  });
+
+  it("drops the retired blur trigger key", () => {
+    const decoded = decodeClientSettings({ composerCollapseOnBlur: false });
+    expect(decoded.composerCollapseOnScroll).toBe(true);
+    expect(decoded).not.toHaveProperty("composerCollapseOnBlur");
   });
 });
 
@@ -559,14 +528,6 @@ describe("provider enabled defaults", () => {
     expect(decoded.providers.kimi.enabled).toBe(true);
   });
 
-  it("derives per-driver defaults from the settings schemas", () => {
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("codex"))).toBe(true);
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("cursor"))).toBe(false);
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("grok"))).toBe(false);
-    // Unknown fork drivers stay enabled; their own build decides otherwise.
-    expect(defaultEnabledForDriver(ProviderDriverKind.make("ollama"))).toBe(true);
-  });
-
   it("keeps Cursor enabled when an existing user explicitly opted in", () => {
     const cursor = ProviderDriverKind.make("cursor");
     const cursorId = ProviderInstanceId.make("cursor");
@@ -587,6 +548,10 @@ describe("provider enabled defaults", () => {
     // No flags anywhere: driver default applies.
     expect(resolveProviderInstanceEnabled({ driver: grok, config: {} })).toBe(false);
     expect(resolveProviderInstanceEnabled({ driver: codex, config: {} })).toBe(true);
+    // Unknown fork drivers stay enabled.
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("ollama"), config: {} }),
+    ).toBe(true);
     // Envelope flag wins over the driver default.
     expect(resolveProviderInstanceEnabled({ driver: grok, enabled: true, config: {} })).toBe(true);
     expect(resolveProviderInstanceEnabled({ driver: codex, enabled: false, config: {} })).toBe(
@@ -778,6 +743,7 @@ describe("ServerSettings environment icon", () => {
 
   it("keeps a kind this build knows", () => {
     expect(decodeServerSettings({ environmentIcon: "mac-mini" }).environmentIcon).toBe("mac-mini");
+    expect(decodeServerSettings({ environmentIcon: "linux" }).environmentIcon).toBe("linux");
   });
 
   it("decodes a kind from a newer server as null instead of failing the snapshot", () => {
@@ -787,5 +753,8 @@ describe("ServerSettings environment icon", () => {
   it("round-trips through encode", () => {
     const settings = decodeServerSettings({ environmentIcon: "laptop" });
     expect(encodeServerSettings(settings).environmentIcon).toBe("laptop");
+
+    const linuxSettings = decodeServerSettings({ environmentIcon: "linux" });
+    expect(encodeServerSettings(linuxSettings).environmentIcon).toBe("linux");
   });
 });

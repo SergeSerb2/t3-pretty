@@ -32,38 +32,6 @@ export function useAssetUrlState(
   );
 }
 
-export function useAssetUrl(
-  environmentId: EnvironmentId | null,
-  resource: AssetResource | null,
-): string | null {
-  const result = useAssetUrlState(environmentId, resource);
-  return result._tag === "Success" ? result.url : null;
-}
-
-/**
- * Resources the collection atom can key. Empty attachment ids fail
- * `AssetResource` decode, which throws `InvalidAssetCollectionKeyError`
- * during render.
- */
-export function isQueryableAssetResource(resource: AssetResource): boolean {
-  return resource._tag !== "attachment" || resource.attachmentId.trim().length > 0;
-}
-
-/**
- * Re-aligns query results (from the filtered, queryable subset) back onto the
- * original resource list. Unqueryable slots are `null`.
- */
-export function alignQueryableAssetUrls<T>(
-  resources: ReadonlyArray<AssetResource>,
-  queryableResults: ReadonlyArray<T | null>,
-): Array<T | null> {
-  let index = 0;
-  return resources.map((resource) => {
-    if (!isQueryableAssetResource(resource)) return null;
-    return queryableResults[index++] ?? null;
-  });
-}
-
 export function useAssetUrlRefresh(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,

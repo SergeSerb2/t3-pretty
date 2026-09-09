@@ -333,7 +333,7 @@ function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): 
   };
 }
 
-export function providerErrorLabel(value: string | undefined): string {
+function providerErrorLabel(value: string | undefined): string {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : "unknown";
 }
@@ -1717,27 +1717,15 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    // "starting" holds too: a flushed predecessor moves the session through
-    // starting before its turn runs, and a queued message must not jump in
-    // ahead of it. A flush re-entry that lands here (stale duplicate
-    // session-set snapshot) goes back to the HEAD so the queue keeps arrival
-    // order; only fresh arrivals append.
-    if (
-      event.payload.delivery === "queue" &&
-      (thread.session?.status === "running" || thread.session?.status === "starting")
-    ) {
-      const queue = queuedTurnStarts.get(event.payload.threadId);
-      if (!queue) {
-        queuedTurnStarts.set(event.payload.threadId, [event]);
-      } else if (placement === "head") {
-        queue.unshift(event);
-      } else {
-        queue.push(event);
-      }
+    const thread = yield* resolveThreadShell(event.payload.threadId);
+    if (!thread) {
       return;
     }
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
-    if (!message || message.role !== "user") {
+    const turnStart = yield* projectionSnapshotQuery.getTurnStartMessage({
+      threadId: thread.id,
+      messageId: event.payload.messageId,
+    });
+    if (Option.isNone(turnStart) || turnStart.value.message.role !== "user") {
       yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.start.failed",
@@ -1749,6 +1737,7 @@ const make = Effect.gen(function* () {
       });
       return;
     }
+    const { message, hasOtherUserMessages } = turnStart.value;
     const appendTurnStartFailure = (summary: string, detail: string) =>
       appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -1841,10 +1830,7 @@ const make = Effect.gen(function* () {
     yield* ensureThreadWorktree(thread);
 
     const isCompactCommand = isCompactCommandMessage(message);
-    const nonCompactUserMessageCount = thread.messages.filter(
-      (entry) => entry.role === "user" && !isCompactCommandMessage(entry),
-    ).length;
-    if (nonCompactUserMessageCount === 1 && !isCompactCommand) {
+    if (!hasOtherUserMessages && !isCompactCommand) {
       const project = yield* resolveProject(thread.projectId);
       const generationCwd =
         resolveThreadWorkspaceCwd({
@@ -1915,7 +1901,7 @@ const make = Effect.gen(function* () {
         ),
       );
     if (isCompactCommand) {
-      if (nonCompactUserMessageCount === 0) {
+      if (!hasOtherUserMessages) {
         return yield* appendTurnStartFailure(
           "Context compaction failed",
           "Context compaction requires an existing conversation.",

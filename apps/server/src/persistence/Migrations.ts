@@ -52,23 +52,15 @@ import Migration0037 from "./Migrations/037_ProjectionTurnsKeysetIndex.ts";
 import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
 import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
-import Migration0041 from "./Migrations/041_OrchestrationEventRecordedAt.ts";
-import Migration0042 from "./Migrations/042_ProjectionThreadBranchHeads.ts";
-import Migration0043 from "./Migrations/043_ProjectionThreadsScenery.ts";
-import Migration0044 from "./Migrations/044_ThreadCanvas.ts";
-import Migration0045 from "./Migrations/045_ProjectionThreadActivityCompactionMetadata.ts";
-import Migration0046 from "./Migrations/046_ProjectionThreadsEnabledSkillIds.ts";
-import Migration0047 from "./Migrations/047_DeleteSupersededToolUpdatedActivities.ts";
-import Migration0048 from "./Migrations/048_ProjectionThreadsSubagentPolicy.ts";
-import Migration0049 from "./Migrations/049_SearchIndex.ts";
-import Migration0050 from "./Migrations/041_AuthSessionClientConnection.ts";
-import Migration0051 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
-import Migration0052 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
-import Migration0053 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
-import Migration0054 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
-import Migration0055 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
-import Migration0056 from "./Migrations/047_ProjectionProjectIcon.ts";
-import Migration0057 from "./Migrations/050_Automations.ts";
+import Migration0041 from "./Migrations/041_AuthSessionClientConnection.ts";
+import Migration0042 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
+import Migration0043 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
+import Migration0044 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
+import Migration0045 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
+import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
+import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
+import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
+import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -121,23 +113,15 @@ export const migrationEntries = [
   [38, "ProjectionThreadsPinOrderKey", Migration0038],
   [39, "ProjectionProjectsDefaultThreadEnvMode", Migration0039],
   [40, "ProjectionProjectFaviconPath", Migration0040],
-  [41, "OrchestrationEventRecordedAt", Migration0041],
-  [42, "ProjectionThreadBranchHeads", Migration0042],
-  [43, "ProjectionThreadsScenery", Migration0043],
-  [44, "ThreadCanvas", Migration0044],
-  [45, "ProjectionThreadActivityCompactionMetadata", Migration0045],
-  [46, "ProjectionThreadsEnabledSkillIds", Migration0046],
-  [47, "DeleteSupersededToolUpdatedActivities", Migration0047],
-  [48, "ProjectionThreadsSubagentPolicy", Migration0048],
-  [49, "SearchIndex", Migration0049],
-  [50, "AuthSessionClientConnection", Migration0050],
-  [51, "ProjectionThreadLinkedPullRequest", Migration0051],
-  [52, "ProjectionThreadsUnsettledAt", Migration0052],
-  [53, "ClearAutomaticProjectModelDefaults", Migration0053],
-  [54, "ProjectionProjectsAutoPull", Migration0054],
-  [55, "RepairAutomaticSettlementTimestamps", Migration0055],
-  [56, "ProjectionProjectIcon", Migration0056],
-  [57, "Automations", Migration0057],
+  [41, "AuthSessionClientConnection", Migration0041],
+  [42, "ProjectionThreadLinkedPullRequest", Migration0042],
+  [43, "ProjectionThreadsUnsettledAt", Migration0043],
+  [44, "ClearAutomaticProjectModelDefaults", Migration0044],
+  [45, "ProjectionProjectsAutoPull", Migration0045],
+  [46, "RepairAutomaticSettlementTimestamps", Migration0046],
+  [47, "ProjectionProjectIcon", Migration0047],
+  [48, "ProjectionThreadBranchPullRequest", Migration0048],
+  [49, "ProjectionThreadsActiveOrderKey", Migration0049],
 ] as const;
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 

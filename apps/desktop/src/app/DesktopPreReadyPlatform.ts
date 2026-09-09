@@ -17,64 +17,7 @@ export interface DesktopPreReadyCommandLineReader {
   readonly getSwitchValue: (switchName: string) => string;
 }
 
-export interface DesktopPreReadyCommandLineWriter {
-  readonly appendSwitch: (switchName: string, value?: string) => void;
-}
-
-// Chromium's GPU sandbox plus the default crash-limit will exit the whole
-// Windows app after a handful of GPU process deaths (Win11 25H2 sandbox,
-// NVIDIA TDR, 50-series). Must be set before `app.whenReady`.
-export const WINDOWS_GPU_STABILITY_SWITCHES: ReadonlyArray<readonly [string, string?]> = [
-  ["disable-gpu-sandbox"],
-  ["disable-gpu-process-crash-limit"],
-  ["disable-features", "CalculateNativeWinOcclusion"],
-];
-const EARLY_DESKTOP_SETTINGS_MAX_BYTES = 1024 * 1024;
-
-function readEarlyDesktopSettings(path: string): string {
-  const descriptor = NodeFS.openSync(path, "r");
-  try {
-    const size = NodeFS.fstatSync(descriptor).size;
-    if (size > EARLY_DESKTOP_SETTINGS_MAX_BYTES) {
-      throw new Error("Desktop settings exceed the supported pre-ready size.");
-    }
-
-    const bytes = Buffer.allocUnsafe(size);
-    let offset = 0;
-    while (offset < bytes.byteLength) {
-      const bytesRead = NodeFS.readSync(
-        descriptor,
-        bytes,
-        offset,
-        bytes.byteLength - offset,
-        offset,
-      );
-      if (bytesRead === 0) break;
-      offset += bytesRead;
-    }
-    const probe = Buffer.allocUnsafe(1);
-    if (NodeFS.readSync(descriptor, probe, 0, 1, offset) > 0) {
-      throw new Error("Desktop settings changed during the pre-ready read.");
-    }
-    return bytes.subarray(0, offset).toString("utf8");
-  } finally {
-    NodeFS.closeSync(descriptor);
-  }
-}
-
-export function applyWindowsGpuStabilitySwitches(
-  commandLine: DesktopPreReadyCommandLineWriter,
-): void {
-  for (const [switchName, value] of WINDOWS_GPU_STABILITY_SWITCHES) {
-    if (value === undefined) {
-      commandLine.appendSwitch(switchName);
-      continue;
-    }
-    commandLine.appendSwitch(switchName, value);
-  }
-}
-
-export function readCommandLineSwitchValue(
+function readCommandLineSwitchValue(
   commandLine: DesktopPreReadyCommandLineReader,
   switchName: string,
 ): string | null {

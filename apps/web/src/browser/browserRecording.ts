@@ -174,83 +174,39 @@ export function findActiveBrowserRecordingRuntimeTabId(
   );
 }
 
-const preferredMimeType = (): string => {
-  const candidates = ["video/mp4;codecs=avc1.42E01E", "video/webm;codecs=vp9", "video/webm"];
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "video/webm";
-};
+const preferredMimeTypes = [
+  "video/mp4;codecs=avc1",
+  "video/mp4;codecs=avc1.640028",
+  "video/mp4;codecs=avc1.42e01e",
+  "video/webm;codecs=vp9",
+  "video/webm;codecs=vp8",
+  "video/webm",
+] as const;
 
-const recordingFrameBlobPart = (data: Uint8Array): Uint8Array<ArrayBuffer> =>
-  data.buffer instanceof ArrayBuffer
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-
-const decodeFrame = async (
-  recording: ActiveRecording,
-  frame: DesktopPreviewRecordingFrame,
-): Promise<void> => {
-  const image = await createImageBitmap(
-    new Blob([recordingFrameBlobPart(frame.data)], { type: "image/jpeg" }),
+const createMediaRecorder = (stream: MediaStream): MediaRecorder => {
+  const mimeType = preferredMimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+  const settings = stream.getVideoTracks()[0]?.getSettings();
+  // Browser defaults under-budget native-resolution text and motion. Scale with captured pixels
+  // and frames, while bounding storage and encoder load for very large displays.
+  const videoBitsPerSecond = Math.round(
+    Math.min(
+      50_000_000,
+      Math.max(
+        2_500_000,
+        (settings?.width ?? 1920) * (settings?.height ?? 1080) * (settings?.frameRate ?? 30) * 0.05,
+      ),
+    ),
   );
-  try {
-    if (activeRecordings.get(frame.tabId) !== recording) return;
-    const width = Math.max(1, Math.round(frame.width));
-    const height = Math.max(1, Math.round(frame.height));
-    const scale = Math.min(recording.canvas.width / width, recording.canvas.height / height);
-    const targetWidth = width * scale;
-    const targetHeight = height * scale;
-    const targetX = (recording.canvas.width - targetWidth) / 2;
-    const targetY = (recording.canvas.height - targetHeight) / 2;
-    recording.context.fillStyle = "#000000";
-    recording.context.fillRect(0, 0, recording.canvas.width, recording.canvas.height);
-    recording.context.drawImage(image, targetX, targetY, targetWidth, targetHeight);
-  } finally {
-    image.close();
-  }
+  return new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond });
 };
 
-const drainFrameDecode = (
-  recording: ActiveRecording,
-  frame: DesktopPreviewRecordingFrame,
-): void => {
-  recording.frameDecodeInFlight = true;
-  void decodeFrame(recording, frame)
-    .catch(() => undefined)
-    .finally(() => {
-      const pendingFrame = recording.pendingFrame;
-      recording.pendingFrame = null;
-      if (activeRecordings.get(recording.tabId) === recording && pendingFrame !== null) {
-        drainFrameDecode(recording, pendingFrame);
-        return;
-      }
-      recording.frameDecodeInFlight = false;
-    });
-};
-
-const drawFrame = (frame: DesktopPreviewRecordingFrame): void => {
-  const recording = activeRecordings.get(frame.tabId);
-  if (!recording) return;
-  if (
-    !Number.isFinite(frame.width) ||
-    !Number.isFinite(frame.height) ||
-    frame.width <= 0 ||
-    frame.height <= 0
-  ) {
-    return;
-  }
-  const width = Math.max(1, Math.round(frame.width));
-  const height = Math.max(1, Math.round(frame.height));
-  if (!recording.frameSizeEstablished) {
-    recording.canvas.width = width;
-    recording.canvas.height = height;
-    recording.frameSizeEstablished = true;
-    recording.settleFirstFrameSize("frame");
-  }
-  if (recording.frameDecodeInFlight) {
-    recording.pendingFrame = frame;
-    return;
-  }
-  drainFrameDecode(recording, frame);
-};
+const captureTabMediaStream = (frameRate: number): Promise<MediaStream> =>
+  // The desktop main process routes this request to the tab that `startScreencast` armed, so the
+  // stream already arrives at that tab's native size and needs no source or dimension constraints.
+  navigator.mediaDevices.getDisplayMedia({
+    audio: false,
+    video: { frameRate: { ideal: frameRate, max: frameRate } },
+  });
 
 const stopMediaRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
   if (!recorder || recorder.state === "inactive") return;
@@ -441,29 +397,12 @@ export async function startBrowserRecording(
   activeRecordings.set(tabId, recording);
   publishActiveRecordingTabIds();
   try {
-    try {
-      unsubscribeFrames ??= bridge.recording.onFrame(drawFrame);
-    } catch (cause) {
+    await ensureClientSettingsHydrated().catch((cause: unknown) => {
       clearActiveRecording(recording);
-      throw new BrowserRecordingOperationError({
-        operation: "subscribe-frames",
-        tabId,
-        cause,
-      });
-    }
-    try {
-      await bridge.recording.startScreencast(tabId);
-    } catch (cause) {
-      if (!isRecordingStarting(recording)) {
-        throw recordingStartupCancelledError(recording, cause);
-      }
-      clearActiveRecording(recording);
-      throw new BrowserRecordingOperationError({
-        operation: "start-screencast",
-        tabId,
-        cause,
-      });
-    }
+      throw cause;
+    });
+    const frameRate = getClientSettings().browserRecordingFrameRate;
+    await waitForBrowserRecordingPaint();
     const throwIfStartupCancelled = async (): Promise<void> => {
       // A stop requested during startup should let startup finish so the
       // caller receives a real artifact. Only replacement/removal cancels it.
@@ -589,6 +528,15 @@ const finalizeBrowserRecording = async (
           tabId,
           cause,
         });
+      }
+      // Encoding has flushed; release native capture before materializing and saving the file.
+      stopMediaStream(recording.stream);
+      recording.stream = null;
+      const mimeType =
+        recording.recorder.mimeType ||
+        recording.chunks.find((chunk) => chunk.type.length > 0)?.type;
+      if (!mimeType) {
+        throw new BrowserRecordingFormatUnavailableError({ tabId });
       }
       try {
         const blob = new Blob(recording.chunks, { type: recording.mimeType });

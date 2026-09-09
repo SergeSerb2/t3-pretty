@@ -48,21 +48,31 @@ the dialog.
 
 ## Track subscription limits
 
-**Usage → Limits** shows quota use and reset times for Codex and Claude subscriptions in each
-connected environment. It includes session and weekly windows, plus a per-model weekly window such
-as Fable when your plan has one.
+**Usage → Limits** pools every subscription account it can see per provider, so with several Codex
+or Claude accounts across your environments and hubs you read one number per window rather than a
+list. Each window card shows how much of the pool is left and a bar with one segment per account,
+ordered by which resets soonest; when the provider reports reset times, the card also says when
+the next reset lands and how much it hands back. The hatched
+part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
+where it is signed in, and its reset time. On web, you can hover too. Codex accounts with banked
+reset credits show a ticket count and the **Use reset** action in the account details. On narrow screens, numbered rows below
+the bar show each account's quota, countdown, and credits. Tap a row to open its details.
+
+The same account signed in on more than one environment, or reported by a hub as well, counts once.
+Filter with the environment dropdown to see what a single machine has.
 
 Each window is a bar from the moment it opened to its reset, filled by the share of quota spent. A
 thin line marks how far into the window you are, which is also where even spending would have put
 the fill. The icon beside the label says whether you are ahead of, on, or under that pace. Hover a
 bar for the exact reset time.
 
-Limits refresh on the provider health-check interval and update live while a turn runs. If a window
-looks stale, refresh Limits to re-check every provider and hub.
+Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
+current model's limits without leaving the conversation. The result opens above the composer and
+closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
+anything. The command is offered only for providers that appear under **Usage → Limits**.
 
-API-key accounts have no subscription windows and say so. This includes Claude Code connections
-that reach Anthropic through a proxy using `ANTHROPIC_AUTH_TOKEN`, since the CLI then treats itself
-as an API-key client.
+API-key accounts may not report subscription limits. This also applies to Claude connections
+using a proxy through `ANTHROPIC_AUTH_TOKEN`.
 
 ## Connect a CLIProxyAPI hub
 
@@ -70,11 +80,9 @@ To see pooled accounts, open **Settings → Providers → Usage providers → Ad
 environment that will connect to the hub and enter its URL and management key. The key is stored on
 the server and never sent back to a client.
 
-The accounts appear under **Usage → Limits**. Each limits row shows its provider and instance name;
-hub accounts have a small _CLI Proxy_ label. When a connected provider reports limits for the same
-provider and email, its row replaces the hub copy while retaining details such as banked reset
-credits. The hub copy remains visible if the connected provider cannot report limits. Emails are
-blurred until clicked, as in provider settings.
+The accounts appear under **Usage → Limits**. Codex accounts show banked reset credits; select an
+account and choose **Use reset** to redeem one. No hub plugin is required.
 
-This connection supplies usage information; configure the provider separately to send agent
-requests through the hub. Remove the hub from the same settings section when you no longer need it.
+This connection supplies usage information; configure
+the provider separately to send agent requests through the hub. Remove the hub from the same
+settings section when you no longer need it.

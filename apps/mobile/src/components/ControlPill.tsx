@@ -10,7 +10,14 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { Platform, Pressable, type ColorValue, type PressableProps } from "react-native";
+import {
+  Platform,
+  Pressable,
+  View,
+  type ColorValue,
+  type PressableProps,
+  type AccessibilityProps,
+} from "react-native";
 import { withUniwind } from "uniwind";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
@@ -173,11 +180,11 @@ export function ControlPill(props: {
 // iOS long-press row actions keep MenuView: that path is a real
 // UIContextMenuInteraction with the row as the zoom preview.
 export function ControlPillMenu(
-  props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> & {
-    readonly children: ReactNode;
-    readonly className?: string;
-    readonly disabled?: boolean;
-  },
+  props: Omit<ComponentProps<typeof MenuView>, "children" | "themeVariant"> &
+    Pick<AccessibilityProps, "accessible" | "accessibilityLabel" | "accessibilityRole"> & {
+      readonly children: ReactNode;
+      readonly className?: string;
+    },
 ) {
   const { themeAppearance } = useAppearancePreferences();
   const isDarkMode = themeAppearance === "dark";

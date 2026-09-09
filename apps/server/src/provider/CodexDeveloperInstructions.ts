@@ -31,10 +31,7 @@ Mouse, scroll, and screenshot-region inputs use Quartz global display coordinate
 const browserToolInstructions = (browserToolsAvailable: boolean): string =>
   browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
 
-const computerToolInstructions = (computerToolsAvailable: boolean): string =>
-  computerToolsAvailable ? T3_CODE_COMPUTER_TOOL_INSTRUCTIONS : "";
-
-export const codexPlanModeDeveloperInstructions = (
+const codexPlanModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
   computerToolsAvailable = false,
 ): string => `<collaboration_mode># Plan Mode (Conversational)
@@ -169,7 +166,7 @@ ${browserToolInstructions(browserToolsAvailable)}
 ${computerToolInstructions(computerToolsAvailable)}
 </collaboration_mode>`;
 
-export const codexDefaultModeDeveloperInstructions = (
+const codexDefaultModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
   computerToolsAvailable = false,
 ): string => `<collaboration_mode># Collaboration Mode: Default

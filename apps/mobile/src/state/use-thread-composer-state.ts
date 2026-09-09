@@ -2,7 +2,6 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import * as Cause from "effect/Cause";
 
 import {
   CommandId,
@@ -20,12 +19,10 @@ import {
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
-  codexFeedbackMessage,
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 import {
   isNativeResumeSessionReady,
@@ -49,9 +46,7 @@ import {
   resolveOptimisticSendStartedAt,
 } from "../lib/optimisticThreadSend";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
-import { createThreadFeedBuilder } from "../lib/threadActivity";
-import { recordThreadFeedBuildPerformanceSpan } from "../features/observability/threadPerformance";
+import { buildThreadFeed } from "../lib/threadActivity";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -149,37 +144,31 @@ export function useThreadComposerState() {
     () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
-  const optimisticStarting = useOptimisticStartingThread({
-    environmentId: selectedThreadShell?.environmentId ?? null,
-    threadId: selectedThreadShell?.id ?? null,
-  });
-  const selectedThreadMessages = selectedThreadDetail?.messages ?? null;
-  const selectedThreadActivities = selectedThreadDetail?.activities ?? null;
-  const selectedThreadFeedbackMessages = useMemo(() => {
-    const submissions = selectedThreadKey
-      ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
-      : [];
-    return submissions.flatMap((submission) =>
-      submission.status === "interrupted"
-        ? []
-        : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
-    );
-  }, [feedbackSubmissionsByThreadKey, selectedThreadKey]);
-  const selectedThreadFeedMessages = useMemo(
-    () => [
-      ...mergeOptimisticThreadMessages(
-        selectedThreadMessages,
-        selectedThreadQueuedMessages,
-        optimisticStarting,
-      ),
-      ...selectedThreadFeedbackMessages,
-    ],
-    [
-      optimisticStarting,
-      selectedThreadFeedbackMessages,
-      selectedThreadMessages,
-      selectedThreadQueuedMessages,
-    ],
+  const feedbackSubmissions = useMemo(
+    () => (selectedThreadKey ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? []) : []),
+    [feedbackSubmissionsByThreadKey, selectedThreadKey],
+  );
+  const dismissFeedback = useCallback(
+    (id: MessageId) => {
+      if (!selectedThreadKey) return;
+      setFeedbackSubmissionsByThreadKey((current) => ({
+        ...current,
+        [selectedThreadKey]: (current[selectedThreadKey] ?? []).filter((entry) => entry.id !== id),
+      }));
+    },
+    [selectedThreadKey],
+  );
+  const selectedThreadMessages = selectedThreadDetail?.messages;
+  const selectedThreadActivities = selectedThreadDetail?.activities;
+  const selectedThreadFeed = useMemo(
+    () =>
+      selectedThreadMessages && selectedThreadActivities
+        ? buildThreadFeed({
+            messages: selectedThreadMessages,
+            activities: selectedThreadActivities,
+          })
+        : [],
+    [selectedThreadActivities, selectedThreadMessages],
   );
   const selectedThreadFeedBuild = useMemo(() => {
     if (
@@ -411,20 +400,37 @@ export function useThreadComposerState() {
         Alert.alert("Start a Codex thread first", "Send a message before you submit feedback.");
         return null;
       }
-      if (text.length === 0 && attachments.length === 0) {
-        return null;
-      }
-      // A send-failure restore appends with allowOverflow so it never drops the
-      // user's files, which can leave the draft over the cap. Sending it anyway
-      // would enqueue a message that outbox recovery rejects forever, so block
-      // here until the user removes attachments.
-      if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        Alert.alert(
-          "Too many attachments",
-          `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
-        );
-        return null;
-      }
+      const metadata = makeQueuedMessageMetadata();
+      await submitCodexFeedback({
+        submission: {
+          id: MessageId.make(metadata.messageId),
+          command: text,
+          createdAt: metadata.createdAt,
+        },
+        clearDraft: () => clearComposerDraftContent(threadKey),
+        onUpdate: (submission) => {
+          setFeedbackSubmissionsByThreadKey((current) => {
+            const existing = current[threadKey] ?? [];
+            const found = existing.some((entry) => entry.id === submission.id);
+            return {
+              ...current,
+              [threadKey]: found
+                ? existing.map((entry) => (entry.id === submission.id ? submission : entry))
+                : [...existing, submission],
+            };
+          });
+        },
+        upload: () =>
+          uploadThreadFeedback({
+            environmentId: selectedThreadShell.environmentId,
+            input: {
+              threadId: selectedThreadShell.id,
+              ...feedbackCommand,
+            },
+          }),
+      });
+      return null;
+    }
 
       if (feedbackCommand) {
         const metadata = makeQueuedMessageMetadata();
@@ -725,6 +731,8 @@ export function useThreadComposerState() {
   );
 
   return {
+    feedbackSubmissions,
+    dismissFeedback,
     selectedThreadFeed,
     selectedThreadQueueCount,
     headQueuedMessageId,

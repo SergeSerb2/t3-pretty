@@ -1,3 +1,4 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS } from "@t3tools/client-runtime/state/pull-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -9,7 +10,6 @@ import {
   type PullRequestMergeMethod,
   type PullRequestUpdateMethod,
   type PullRequestRef,
-  type PullRequestState,
   resolveEnvironmentMachineKind,
   type ScopedThreadRef,
   type ThreadId,
@@ -39,8 +39,6 @@ import {
   PanelRightIcon,
   PencilIcon,
   PlayIcon,
-  RefreshCwIcon,
-  Repeat2Icon,
   RotateCcwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -503,7 +501,6 @@ export function PullRequestDetailPanel({
   refreshToken: forcedRefreshToken = 0,
   onActed,
   onClose,
-  onStateChange,
   context = "page",
   chromeVariant = "full",
   composerDraftTarget,
@@ -532,8 +529,6 @@ export function PullRequestDetailPanel({
   onActed?: () => void;
   /** Page-owned detail columns use this to clear the selected pull request. */
   onClose?: () => void;
-  /** Keeps surrounding inferred thread state in step with refreshed host state. */
-  onStateChange?: (status: { repository: string; number: number; state: PullRequestState }) => void;
   /**
    * Beside a thread, the checkout affordance disappears: the panel is showing that thread's
    * own pull request, so the branch is already under the reader's feet — and checking it out
@@ -743,8 +738,16 @@ export function PullRequestDetailPanel({
         : {
             ...resolvedCoreDetail,
             ...sharedSummary,
-            // A summary from an older server may omit draft state. Preserve the complete
-            // detail value so downstream pull-request controls still receive a boolean.
+            closedAt:
+              sharedSummary.closedAt === undefined
+                ? resolvedCoreDetail.closedAt
+                : sharedSummary.closedAt,
+            mergedAt:
+              sharedSummary.mergedAt === undefined
+                ? resolvedCoreDetail.mergedAt
+                : sharedSummary.mergedAt,
+            // A summary may come from an older server that does not report draft state. Keep the
+            // detail's required value instead of making the complete detail shape partial.
             isDraft: sharedSummary.isDraft ?? resolvedCoreDetail.isDraft,
           },
     [resolvedCoreDetail, sharedSummary],
@@ -832,110 +835,31 @@ export function PullRequestDetailPanel({
     }
     activityRevision.current = next;
   }, [activityQuery.refresh, coreDetail, tabScopeKey]);
-  useLayoutEffect(() => {
-    if (!resolvedCoreDetail) return;
-    onStateChange?.({
-      repository: resolvedCoreDetail.repository,
-      number: resolvedCoreDetail.number,
-      state: resolvedCoreDetail.state,
-    });
-  }, [onStateChange, resolvedCoreDetail]);
-  // The button goes around the server's cache: a pull request the reader asked to refresh
-  // must not come back as the answer they can already see. The live interval below does not —
-  // busting the cache every tick spent GitHub's budget on one open panel.
-  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
-  const [refreshToken, setRefreshToken] = useState(0);
-  const turnRefresh = usePullRequestTurnRefresh(environmentId);
-  const codeRefreshToken = refreshToken + (turnRefresh ?? 0);
-  const wantDiffReset = useRef(false);
-  const hostRefreshInFlight = useRef(false);
-  const hostRefreshScopeRef = useRef<string | null>(null);
-  const hostRefreshReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    hostRefreshScopeRef.current = pullRequestKey;
-    hostRefreshInFlight.current = false;
-    wantDiffReset.current = false;
-    if (hostRefreshReleaseTimerRef.current !== null) {
-      clearTimeout(hostRefreshReleaseTimerRef.current);
-      hostRefreshReleaseTimerRef.current = null;
-    }
-    return () => {
-      if (hostRefreshScopeRef.current === pullRequestKey) {
-        hostRefreshScopeRef.current = null;
-      }
-      hostRefreshInFlight.current = false;
-      if (hostRefreshReleaseTimerRef.current !== null) {
-        clearTimeout(hostRefreshReleaseTimerRef.current);
-        hostRefreshReleaseTimerRef.current = null;
-      }
-    };
-  }, [pullRequestKey]);
-  const refreshFromHost = useCallback(
-    async (resetDiff = true) => {
-      if (resetDiff) wantDiffReset.current = true;
-      // A host round-trip already in flight is the refresh; stacking another invalidate
-      // strands that request on an old epoch and pays for the same answer twice.
-      if (hostRefreshInFlight.current || detailQuery.isPending || activityQuery.isPending) return;
-      hostRefreshInFlight.current = true;
-      const refreshScope = pullRequestKey;
-      const isCurrentRefresh = () => hostRefreshScopeRef.current === refreshScope;
-      try {
-        await invalidate({ environmentId, input: { reference } });
-        if (!isCurrentRefresh()) return;
-        refreshDetail();
-        diffWarmUpQuery.refresh();
-        if (wantDiffReset.current) {
-          wantDiffReset.current = false;
-          setRefreshToken((token) => token + 1);
-        }
-      } finally {
-        if (isCurrentRefresh()) {
-          const releaseTimer = setTimeout(() => {
-            if (hostRefreshScopeRef.current === refreshScope) {
-              hostRefreshInFlight.current = false;
-            }
-            if (hostRefreshReleaseTimerRef.current === releaseTimer) {
-              hostRefreshReleaseTimerRef.current = null;
-            }
-          }, PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS);
-          hostRefreshReleaseTimerRef.current = releaseTimer;
-        }
-      }
-    },
-    [
-      activityQuery.isPending,
-      detailQuery.isPending,
-      diffWarmUpQuery.refresh,
-      environmentId,
-      invalidate,
-      pullRequestKey,
-      reference,
-      refreshDetail,
-    ],
-  );
-  // Core detail is cheap enough to re-read while this stays open. Reuse activity and diff until
-  // core detail reports a changed revision. Keyed by
+  // Reuse activity and diff until core detail reports a changed revision. Keyed by
   // the pull request rather than by the panel, because this one panel shows a different pull
-  // request every time it is opened. These reads go through the server's cache: only the refresh
-  // button punches through it.
-  useLiveRefresh(detailQuery.refresh, {
-    key: `pull-request:${environmentId}:${pullRequestKey}`,
-    intervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
-    minIntervalMs: PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS,
-  });
-  const diffIdentity =
-    coreDetail === null ? null : `${pullRequestKey}:${pullRequestDiffIdentity(coreDetail)}`;
-  const seenDiffIdentity = useRef<string | null>(null);
-  useEffect(() => {
-    if (diffIdentity === null) return;
-    if (seenDiffIdentity.current === null) {
-      seenDiffIdentity.current = diffIdentity;
-      return;
+  // request every time it is opened.
+  useLiveRefresh(
+    () => {
+      detailQuery.refresh();
+    },
+    { key: `pull-request:${environmentId}:${pullRequestKey}` },
+  );
+  // The button, on the other hand, goes around the server's cache rather than through it: it is
+  // the answer for a reader who can see that what they are looking at is behind. The
+  // invalidation goes first so the re-reads miss that cache; if it fails, the reads still run
+  // and at worst answer from it.
+  const invalidate = useAtomCommand(pullRequestEnvironment.invalidate, { reportFailure: false });
+  const [isInvalidating, setIsInvalidating] = useState(false);
+  const refreshFromHost = useCallback(async () => {
+    setIsInvalidating(true);
+    try {
+      await invalidate({ environmentId, input: { reference } });
+      refreshDetail();
+      setRefreshToken((token) => token + 1);
+    } finally {
+      setIsInvalidating(false);
     }
-    if (seenDiffIdentity.current === diffIdentity) return;
-    seenDiffIdentity.current = diffIdentity;
-    setRefreshToken((token) => token + 1);
-  }, [diffIdentity]);
+  }, [environmentId, invalidate, reference, refreshDetail]);
   // A refresh asked for by the page: the detail, and through the token below, the diff with it.
   const appliedForcedToken = useRef(forcedRefreshToken);
   useEffect(() => {
@@ -2113,9 +2037,15 @@ export function PullRequestDetailPanel({
                   <MoreHorizontalIcon className="size-4" />
                 </MenuTrigger>
                 <MenuPopup align="end" side="bottom" className="min-w-72">
-                  <MenuItem disabled={detailQuery.isPending} onClick={() => void refreshFromHost()}>
-                    <RefreshCwIcon className="size-3.5" />
-                    {detailQuery.isPending ? "Refreshing..." : "Refresh"}
+                  <MenuItem
+                    disabled={isInvalidating || detailQuery.isPending}
+                    onClick={() => void refreshFromHost()}
+                  >
+                    <RefreshIcon
+                      className="size-3.5"
+                      refreshing={isInvalidating || detailQuery.isPending}
+                    />
+                    Refresh
                   </MenuItem>
                   <MenuItem disabled={handoff !== null} onClick={askAboutPullRequest}>
                     <MessageCircleQuestionIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
@@ -2762,6 +2692,7 @@ export function PullRequestDetailPanel({
         {detailQuery.error && !detail ? (
           <PullRequestsUnavailableState
             error={detailQuery.error}
+            refreshing={detailQuery.isPending}
             onRetry={refreshDetail}
             {...(unavailableGitHubUrl ? { gitHubUrl: unavailableGitHubUrl } : {})}
           />

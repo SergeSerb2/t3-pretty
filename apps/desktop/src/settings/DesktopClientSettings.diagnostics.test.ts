@@ -73,15 +73,13 @@ describe("DesktopClientSettings diagnostics", () => {
     Effect.gen(function* () {
       const result = yield* readWithLogs(FileSystem.layerNoop({}));
 
-      assert.equal(result.result._tag, "Success");
-      if (result.result._tag === "Success") {
-        assert.isTrue(Option.isNone(result.result.success));
-      }
+      if (result.result._tag !== "Success") return assert.fail("expected a successful read");
+      assert.isTrue(Option.isNone(result.result.success));
       assert.deepEqual(result.records, []);
     }),
   );
 
-  it.effect("logs non-missing filesystem failures with the settings path", () => {
+  it.effect("reports non-missing filesystem failures and logs the settings path", () => {
     const permissionError = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -96,14 +94,12 @@ describe("DesktopClientSettings diagnostics", () => {
         }),
       );
 
-      assert.equal(result.result._tag, "Failure");
-      if (result.result._tag === "Failure") {
-        assert.instanceOf(
-          result.result.failure,
-          DesktopClientSettings.DesktopClientSettingsReadError,
-        );
-        assert.equal(result.result.failure.operation, "read-document");
-      }
+      if (result.result._tag !== "Failure") return assert.fail("expected a read failure");
+      assert.instanceOf(
+        result.result.failure,
+        DesktopClientSettings.DesktopClientSettingsReadError,
+      );
+      assert.strictEqual(result.result.failure.cause, permissionError);
       assert.equal(result.records.length, 1);
       assert.deepEqual(result.records[0]?.message, [
         "Could not read desktop client settings.",
@@ -113,7 +109,7 @@ describe("DesktopClientSettings diagnostics", () => {
     });
   });
 
-  it.effect("logs malformed settings documents with the settings path", () =>
+  it.effect("reports malformed settings documents and logs the settings path", () =>
     Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({
@@ -130,14 +126,12 @@ describe("DesktopClientSettings diagnostics", () => {
         }),
       );
 
-      assert.equal(result.result._tag, "Failure");
-      if (result.result._tag === "Failure") {
-        assert.instanceOf(
-          result.result.failure,
-          DesktopClientSettings.DesktopClientSettingsReadError,
-        );
-        assert.equal(result.result.failure.operation, "decode-document");
-      }
+      if (result.result._tag !== "Failure") return assert.fail("expected a decode failure");
+      assert.instanceOf(
+        result.result.failure,
+        DesktopClientSettings.DesktopClientSettingsReadError,
+      );
+      assert.equal(result.result.failure.operation, "decode-document");
       assert.equal(result.records.length, 1);
       const message = result.records[0]?.message;
       if (!Array.isArray(message)) {

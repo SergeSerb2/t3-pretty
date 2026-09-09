@@ -108,6 +108,7 @@ function readStoredThemeHalvesRaw(): { light?: string; dark?: string } {
 function themeHalvesSignature(halves: ThemeHalves | null): string {
   return `${halves?.light ?? ""}|${halves?.dark ?? ""}`;
 }
+
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
 
@@ -343,7 +344,9 @@ function applyTheme(
 ) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   // Keep the editor's draft visible until an explicit refresh restores the selection.
-  if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) return;
+  if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) {
+    return;
+  }
   const appearanceMode = readAppearanceModePreference(theme);
   const followSystem = appearanceMode === "system";
   const systemDark = followSystem ? getSystemDark() : false;
@@ -367,17 +370,12 @@ function applyTheme(
     appearanceMode,
     themeHalves,
   );
-  const commitTheme = () => {
-    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-    const isDark = resolvedAppearance === "dark";
-    document.documentElement.classList.toggle("dark", isDark);
-    lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-    syncBrowserChromeTheme();
-    syncDesktopTheme(theme, followSystem, appearanceMode);
-  };
-
-  const root = document.documentElement;
-  const releaseTransitions = () => {
+  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+  document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+  syncBrowserChromeTheme();
+  syncDesktopTheme(theme, followSystem, appearanceMode);
+  if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     void root.offsetHeight;
     requestAnimationFrame(() => {

@@ -1,3 +1,5 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { Spinner } from "~/components/ui/spinner";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pullRequestHostOf, resolveEnvironmentMachineKind, ThreadId } from "@t3tools/contracts";
 import type {
@@ -26,10 +28,8 @@ import {
   LayersIcon,
   ListChecksIcon,
   PenLineIcon,
-  LoaderIcon,
   Maximize2Icon,
   Minimize2Icon,
-  RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
 import {
@@ -81,6 +81,7 @@ import {
   writePullRequestListPreferences,
 } from "../components/pullRequest/pullRequestListPreferences";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
+import { pullRequestFilterProjects } from "../components/pullRequest/pullRequestProjectFilter.logic";
 import { environmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { linkedPullRequestKey } from "../components/pullRequest/pullRequestPanelView.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
@@ -256,7 +257,7 @@ function PullRequestsRouteView() {
   const search = Route.useSearch();
   const sort = search.sort ?? "updated";
   const statsPolicy: PullRequestStatsPolicy =
-    sort === "largest" || sort === "smallest" ? "eager" : "visible";
+    sort === "ready" || sort === "largest" || sort === "smallest" ? "eager" : "visible";
   const navigate = useNavigate({ from: Route.fullPath });
   // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
   const skipNextListPersist = useRef(false);
@@ -322,27 +323,6 @@ function PullRequestsRouteView() {
       ),
     [environments],
   );
-  const scopedProjects = useMemo(() => {
-    // Two machines can hold the same repository, so a title the workspace carries twice is told
-    // apart by the environment it lives on rather than left as two identical rows.
-    const titleCounts = new Map<string, number>();
-    for (const project of projects) {
-      titleCounts.set(project.title, (titleCounts.get(project.title) ?? 0) + 1);
-    }
-    return projects
-      .map((project) => ({
-        id: project.id,
-        environmentId: project.environmentId,
-        title:
-          (titleCounts.get(project.title) ?? 0) > 1
-            ? `${project.title} · ${environmentLabels.get(project.environmentId) ?? project.environmentId}`
-            : project.title,
-        workspaceRoot: project.workspaceRoot,
-        faviconPath: project.faviconPath ?? null,
-        projectIcon: project.projectIcon ?? null,
-      }))
-      .toSorted((left, right) => left.title.localeCompare(right.title));
-  }, [environmentLabels, projects]);
   // The scope the URL asks for, once the environments have had their say about whether it exists.
   const scopedProjectId = useMemo(
     () => resolveProjectScope(search.projectId, projects, projectsKnown),
@@ -351,6 +331,10 @@ function PullRequestsRouteView() {
   const scopedProject = useMemo(
     () => findScopedProject(projects, scopedEnvironmentId, scopedProjectId),
     [projects, scopedEnvironmentId, scopedProjectId],
+  );
+  const scopedProjects = useMemo(
+    () => pullRequestFilterProjects(projects, environmentLabels, scopedProject),
+    [environmentLabels, projects, scopedProject],
   );
 
   // A link from a thread or the sidebar only knows the repository, so the owning project is
@@ -835,7 +819,8 @@ function PullRequestsRouteView() {
   // from the first moment rather than the second: a button that stays live through the slow half
   // of its own work is a button that gets pressed again, and buys the whole cascade twice.
   const [invalidating, setInvalidating] = useState(false);
-  const refreshFromHost = async () => {
+  const refreshFromHost = async (includeDetail = true) => {
+    const requestedStatsScope = statsScopeRef.current;
     setInvalidating(true);
     try {
       // Every environment the page is reading, since what the reader pressed refresh for is the
@@ -847,8 +832,19 @@ function PullRequestsRouteView() {
       setInvalidating(false);
     }
     refreshList(true);
-    statsQuery.refresh();
-    setDetailRefreshToken((token) => token + 1);
+    const visible = visibleStatsKeys.current;
+    const batches = pullRequestStatsRefreshBatches({
+      requestedScope: requestedStatsScope,
+      currentScope: statsScopeRef.current,
+      entriesByKey: entriesByStatsKey.current,
+      candidateKeys: visible.key === requestedStatsScope.key ? visible.values : new Set(),
+      statsByRow: statsByRowRef.current,
+    });
+    if (batches !== null) {
+      setStatsTargetState({ key: requestedStatsScope.key, batches });
+      statsQuery.refresh(batches.map(({ environmentId, input }) => ({ environmentId, input })));
+    }
+    if (includeDetail) setDetailRefreshToken((token) => token + 1);
   };
   const refreshing = invalidating || listQuery.isPending;
 
@@ -1306,23 +1302,111 @@ function PullRequestsRouteView() {
     viewers,
   ]);
 
-  // Keyed by every row being shown — the partitions can hold rows the feed has not paged to —
-  // so scrolling further asks only about what is new. One read per environment, each asking only
-  // about its own rows: a reference names a project, and a project belongs to one machine.
-  const { statsTargets, statsTargetKeys } = useMemo(() => {
-    const refsByEnvironment = new Map<
-      EnvironmentId,
-      Array<{ projectId: ProjectId; repository: string; number: number }>
-    >();
-    const currentKeys = new Set<string>();
-    for (const group of groups) {
-      for (const entry of group.entries) {
-        currentKeys.add(pullRequestDiffStatKey(entry));
-        const refs = refsByEnvironment.get(entry.environmentId) ?? [];
-        refs.push({
-          projectId: entry.projectId,
-          repository: entry.repository,
-          number: entry.number,
+  // Date sorts keep optional line-count reads near the viewport. Size and readiness sorts need
+  // every loaded count before their order is final. Counts stay cached across both policies.
+  const entriesByStatsKey = useRef<ReadonlyMap<string, EnvironmentPullRequestEntry>>(new Map());
+  entriesByStatsKey.current = new Map(
+    groups.flatMap((group) =>
+      group.entries.map((entry) => [pullRequestEntryKey(entry), entry] as const),
+    ),
+  );
+  const visibleStatsKeys = useRef({ key: filterKey, values: new Set<string>() });
+  const [statsByRow, setStatsByRow] = useState<PullRequestDiffStats>(() => new Map());
+  const statsByRowRef = useRef(statsByRow);
+  statsByRowRef.current = statsByRow;
+  const [statsTargetState, setStatsTargetState] = useState<{
+    readonly key: string;
+    readonly batches: ReadonlyArray<PullRequestStatsBatch>;
+  }>({ key: filterKey, batches: [] });
+  const statsBatches = statsTargetState.key === filterKey ? statsTargetState.batches : [];
+  const statsTargets = useMemo(
+    () =>
+      statsBatches.map(({ environmentId, input }) => ({
+        environmentId,
+        input,
+      })),
+    [statsBatches],
+  );
+  const statsObserver = useRef<IntersectionObserver | null>(null);
+  const statsRows = useRef(new Set<HTMLButtonElement>());
+  const statsPending = useRef(true);
+  const statsPolicyRef = useRef(statsPolicy);
+  statsPolicyRef.current = statsPolicy;
+  const registerStatsRow = useCallback((node: HTMLButtonElement | null) => {
+    if (node === null || typeof IntersectionObserver === "undefined") return;
+    statsRows.current.add(node);
+    statsObserver.current?.observe(node);
+    return () => {
+      statsRows.current.delete(node);
+      statsObserver.current?.unobserve(node);
+      const key = node.dataset.pullRequestStatsKey;
+      const visible = visibleStatsKeys.current;
+      if (
+        statsPolicyRef.current !== "visible" ||
+        key === undefined ||
+        !visible.values.delete(key) ||
+        statsPending.current
+      ) {
+        return;
+      }
+      setStatsTargetState((current) => {
+        if (current.key !== visible.key) return current;
+        const batches = retainVisiblePullRequestStatsBatches(current.batches, visible.values);
+        return batches.length === current.batches.length ? current : { key: current.key, batches };
+      });
+    };
+  }, []);
+  useEffect(() => {
+    if (statsPolicy !== "eager") return;
+    setStatsTargetState((current) => {
+      const batches = current.key === filterKey ? current.batches : [];
+      const added = pullRequestStatsRequestBatches({
+        entriesByKey: entriesByStatsKey.current,
+        candidateKeys: visibleStatsKeys.current.values,
+        policy: statsPolicy,
+        activeBatches: batches,
+        statsByRow: statsByRowRef.current,
+      });
+      if (added.length === 0 && current.key === filterKey) return current;
+      return { key: filterKey, batches: [...batches, ...added] };
+    });
+  }, [filterKey, groups, statsPolicy]);
+  useEffect(() => {
+    if (statsPolicy !== "visible" || typeof IntersectionObserver === "undefined") return;
+    visibleStatsKeys.current = { key: filterKey, values: new Set() };
+    const observer = new IntersectionObserver(
+      (observed) => {
+        const visible = visibleStatsKeys.current;
+        if (visible.key !== filterKey) return;
+        let changed = false;
+        const entered = new Set<string>();
+        for (const item of observed) {
+          const key = (item.target as HTMLElement).dataset.pullRequestStatsKey;
+          if (key === undefined) continue;
+          const wasVisible = visible.values.has(key);
+          if (item.isIntersecting && entriesByStatsKey.current.has(key)) {
+            visible.values.add(key);
+            if (!wasVisible) entered.add(key);
+          } else {
+            visible.values.delete(key);
+          }
+          changed ||= wasVisible !== visible.values.has(key);
+        }
+        if (!changed) return;
+        setStatsTargetState((current) => {
+          const batches = current.key === filterKey ? current.batches : [];
+          const retained = statsPending.current
+            ? batches
+            : retainVisiblePullRequestStatsBatches(batches, visible.values);
+          const added = pullRequestStatsRequestBatches({
+            entriesByKey: entriesByStatsKey.current,
+            candidateKeys: entered,
+            policy: statsPolicy,
+            activeBatches: batches,
+            statsByRow: statsByRowRef.current,
+          });
+          if (added.length === 0 && retained.length === batches.length) return current;
+          return { key: filterKey, batches: [...retained, ...added] };
         });
         refsByEnvironment.set(entry.environmentId, refs);
       }
@@ -1545,7 +1629,11 @@ function PullRequestsRouteView() {
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />
       ) : listQuery.error && entries.length === 0 ? (
-        <PullRequestsUnavailableState error={listQuery.error} onRetry={() => listQuery.refresh()} />
+        <PullRequestsUnavailableState
+          error={listQuery.error}
+          refreshing={listQuery.isPending}
+          onRetry={() => listQuery.refresh()}
+        />
       ) : carriedToNothing ? (
         <PullRequestListGhost rows={7} />
       ) : entries.length === 0 ? (
@@ -1617,7 +1705,7 @@ function PullRequestsRouteView() {
         <div className="flex justify-center py-3 text-xs text-muted-foreground">
           {loadingMore ? (
             <span className="flex items-center gap-2">
-              <LoaderIcon aria-hidden className="size-3.5 animate-spin" />
+              <Spinner aria-hidden className="size-3.5" />
               {sentCursors === null ? "Updating pull requests" : "Loading more"}
             </span>
           ) : canContinue || pageSize < MAX_PAGE_SIZE ? (
@@ -1900,10 +1988,10 @@ function PullRequestsRouteView() {
                 ) ?? null
               }
               refreshToken={detailRefreshToken}
-              // Merging, closing or reopening changes the row this panel was opened from, so
-              // the list behind it is out of date the moment the host takes the action.
+              // Host actions can change both readiness and diff size, so refresh the counts
+              // alongside the list. The panel already refreshes itself after each action.
               onActed={() => {
-                refreshList(true);
+                void refreshFromHost(false);
               }}
               chromeVariant="collapse"
             />
@@ -2297,7 +2385,7 @@ function PullRequestRefreshControl({
       onClick={onRefresh}
       disabled={refreshing}
     >
-      <RefreshCwIcon className={cn("size-4", refreshing && "animate-spin")} />
+      <RefreshIcon className="size-4" refreshing={refreshing} />
     </Button>
   );
 }

@@ -29,21 +29,12 @@ export {
   pullRequestDiffLoaderLayer,
 } from "./pullRequestDiffHttp.ts";
 
-/**
- * How often an open pull-request view re-reads the host. One change request, not a
- * workspace listing: a push, a check, or a comment can land while the panel is open.
- * Half a minute is enough for a reader to see that; five seconds, with a cache bust
- * each time, spent GitHub's hourly budget on one open panel and took the rest of
- * GitHub in the app down with it.
- */
-export const PULL_REQUEST_WATCHING_REFRESH_INTERVAL_MS = 30_000;
-export const PULL_REQUEST_LARGE_QUERY_IDLE_TTL_MS = 60_000;
-
+/** @public Required to name the error in consumers' inferred pull request results. */
 export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
 
-export const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
+const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
 function createPullRequestRefreshAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,

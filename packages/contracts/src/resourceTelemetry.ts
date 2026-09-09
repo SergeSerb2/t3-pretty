@@ -4,21 +4,7 @@ import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchema
 import { HostPowerSnapshot } from "./background.ts";
 import { DesktopUpdateStateSchema } from "./ipc.ts";
 
-export const RESOURCE_MONITOR_PROTOCOL_VERSION = 2 as const;
-export const RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT = 256;
-export const RESOURCE_MONITOR_PROCESS_MAX_COUNT = 20_000;
-export const RESOURCE_MONITOR_HISTORY_CHUNK_MAX_SNAPSHOTS = 32;
-export const RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS = 3_600;
-export const RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES = 20_000;
-export const RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH = 1_024;
-export const RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH = 16 * 1_024;
-export const RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH = 256;
-export const RESOURCE_MONITOR_REQUEST_ID_MAX_LENGTH = 128;
-export const RESOURCE_MONITOR_ERROR_CODE_MAX_LENGTH = 128;
-export const RESOURCE_MONITOR_ERROR_MESSAGE_MAX_LENGTH = 4_096;
-const ResourceMonitorRequestId = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(RESOURCE_MONITOR_REQUEST_ID_MAX_LENGTH),
-);
+export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
 
 /** Whole-host capacity, independent of T3's process diagnostics. */
 export const HostResourcesSnapshot = Schema.Struct({
@@ -130,6 +116,13 @@ export const ResourceMonitorSampleNowCommand = Schema.Struct({
 });
 export type ResourceMonitorSampleNowCommand = typeof ResourceMonitorSampleNowCommand.Type;
 
+export const ResourceMonitorProcessTableCommand = Schema.Struct({
+  version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
+  type: Schema.Literal("processTable"),
+  requestId: TrimmedNonEmptyString,
+});
+export type ResourceMonitorProcessTableCommand = typeof ResourceMonitorProcessTableCommand.Type;
+
 export const ResourceMonitorSetSampleIntervalCommand = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("setSampleInterval"),
@@ -165,6 +158,7 @@ export const ResourceMonitorCommand = Schema.Union([
   ResourceMonitorSetSampleIntervalCommand,
   ResourceMonitorSetStreamingCommand,
   ResourceMonitorSampleNowCommand,
+  ResourceMonitorProcessTableCommand,
   ResourceMonitorReadHistoryCommand,
   ResourceMonitorShutdownCommand,
 ]);
@@ -198,6 +192,21 @@ export const ResourceMonitorSnapshotEvent = Schema.Struct({
 });
 export type ResourceMonitorSnapshotEvent = typeof ResourceMonitorSnapshotEvent.Type;
 
+export const ResourceMonitorProcessTableEntry = Schema.Struct({
+  pid: PositiveInt,
+  ppid: NonNegativeInt,
+  name: Schema.String,
+});
+export type ResourceMonitorProcessTableEntry = typeof ResourceMonitorProcessTableEntry.Type;
+
+export const ResourceMonitorProcessTableEvent = Schema.Struct({
+  version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
+  type: Schema.Literal("processTable"),
+  requestId: TrimmedNonEmptyString,
+  processes: Schema.Array(ResourceMonitorProcessTableEntry),
+});
+export type ResourceMonitorProcessTableEvent = typeof ResourceMonitorProcessTableEvent.Type;
+
 export const ResourceMonitorHistoryChunkEvent = Schema.Struct({
   version: Schema.Literal(RESOURCE_MONITOR_PROTOCOL_VERSION),
   type: Schema.Literal("historyChunk"),
@@ -223,6 +232,7 @@ export type ResourceMonitorErrorEvent = typeof ResourceMonitorErrorEvent.Type;
 export const ResourceMonitorEvent = Schema.Union([
   ResourceMonitorHelloEvent,
   ResourceMonitorSnapshotEvent,
+  ResourceMonitorProcessTableEvent,
   ResourceMonitorHistoryChunkEvent,
   ResourceMonitorErrorEvent,
 ]);

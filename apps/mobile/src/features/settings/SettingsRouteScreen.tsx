@@ -46,6 +46,7 @@ import {
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import {
+  filterSharedServerPatch,
   findSharedSettingsMismatches,
   pickSharedServerSettings,
   supportsSharedSettingsSync,
@@ -633,21 +634,14 @@ function AutoSettleSettingsRows() {
   const mismatches = findSharedSettingsMismatches({
     primaryEnvironmentId: reference.environmentId,
     primarySettings: referenceSettings,
-    environments: environments.map((environment) => {
-      const settings = environment.serverConfig?.settings ?? null;
-      return {
-        environmentId: environment.environmentId,
-        label: environment.label,
-        syncEligible: supportsSharedSettingsSync(environment),
-        settings:
-          settings === null
-            ? null
-            : {
-                ...referenceSettings,
-                sidebarAutoSettleAfterDays: settings.sidebarAutoSettleAfterDays,
-              },
-      };
-    }),
+    primaryCapabilities: reference.serverConfig?.environment.capabilities,
+    environments: environments.map((environment) => ({
+      environmentId: environment.environmentId,
+      label: environment.label,
+      syncEligible: supportsSharedSettingsSync(environment),
+      settings: environment.serverConfig?.settings ?? null,
+      capabilities: environment.serverConfig?.environment.capabilities,
+    })),
   });
 
   const commitDays = () => {
@@ -703,11 +697,22 @@ function AutoSettleSettingsRows() {
           <Pressable
             accessibilityRole="button"
             onPress={() => {
-              const { sidebarAutoSettleAfterDays } = pickSharedServerSettings(referenceSettings);
+              const patch = pickSharedServerSettings(
+                referenceSettings,
+                reference.serverConfig?.environment.capabilities,
+              );
               for (const mismatch of mismatches) {
+                const target = environments.find(
+                  (candidate) => candidate.environmentId === mismatch.environmentId,
+                );
                 void updateSettings({
                   environmentId: mismatch.environmentId,
-                  input: { patch: { sidebarAutoSettleAfterDays } },
+                  input: {
+                    patch: filterSharedServerPatch(
+                      patch,
+                      target?.serverConfig?.environment.capabilities,
+                    ),
+                  },
                 });
               }
             }}

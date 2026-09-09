@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
+import { CommandId, ProjectId, ThreadId } from "./baseSchemas.ts";
 
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -893,6 +894,61 @@ it.effect("accepts a title seed in thread.turn.start", () =>
   }),
 );
 
+it.effect("decodes active reorder commands through client and orchestration boundaries", () =>
+  Effect.gen(function* () {
+    const input = {
+      type: "thread.active.reorder",
+      commandId: "cmd-active-reorder",
+      threadId: "thread-1",
+      orderKey: "gm",
+    };
+    const clientCommand = yield* decodeClientOrchestrationCommand(input);
+    const command = yield* decodeOrchestrationCommand(input);
+    for (const decoded of [clientCommand, command]) {
+      assert.strictEqual(decoded.type, "thread.active.reorder");
+      if (decoded.type === "thread.active.reorder") {
+        assert.strictEqual(decoded.threadId, "thread-1");
+        assert.strictEqual(decoded.orderKey, "gm");
+      }
+    }
+    const emptyKey = yield* Effect.exit(
+      decodeClientOrchestrationCommand({ ...input, orderKey: " " }),
+    );
+    assert.isTrue(Exit.isFailure(emptyKey));
+  }),
+);
+
+it.effect("decodes active placement on existing metadata events while accepting old payloads", () =>
+  Effect.gen(function* () {
+    const payload = { threadId: "thread-1", updatedAt: "2026-01-01T00:00:00.000Z" };
+    const oldPayload = yield* decodeThreadMetaUpdatedPayload(payload);
+    assert.strictEqual(oldPayload.activeOrderKey, undefined);
+    const resetPayload = yield* decodeThreadMetaUpdatedPayload({
+      ...payload,
+      activeOrderKey: null,
+    });
+    assert.strictEqual(resetPayload.activeOrderKey, null);
+    const event = yield* decodeOrchestrationEvent({
+      type: "thread.meta-updated",
+      sequence: 1,
+      eventId: "event-active-reorder",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-02T00:00:00.000Z",
+      commandId: "cmd-active-reorder",
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      payload: { ...payload, activeOrderKey: "gm" },
+    });
+    assert.strictEqual(event.type, "thread.meta-updated");
+    if (event.type === "thread.meta-updated") {
+      assert.strictEqual(event.payload.activeOrderKey, "gm");
+      assert.strictEqual(event.payload.updatedAt, payload.updatedAt);
+    }
+  }),
+);
+
 it.effect("accepts a title regeneration intent in thread.meta.update", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationCommand({
@@ -944,6 +1000,47 @@ it.effect("accepts an internal title regeneration completion", () =>
       assert.strictEqual(parsed.requestId, "cmd-title-regenerate");
       assert.strictEqual(parsed.title, "Updated title");
     }
+  }),
+);
+
+it.effect("accepts pull request synchronization only as an internal command", () =>
+  Effect.gen(function* () {
+    const pullRequest = {
+      projectId: ProjectId.make("project-1"),
+      repository: "pingdotgg/t3code",
+      number: 42,
+      url: "https://github.com/pingdotgg/t3code/pull/42",
+    };
+    const command = {
+      type: "thread.pull-request.sync" as const,
+      commandId: CommandId.make("cmd-pull-request-sync"),
+      threadId: ThreadId.make("thread-1"),
+      projectId: pullRequest.projectId,
+      snapshotSequence: 12,
+      expected: {
+        workspaceRoot: "/workspace/project",
+        branch: "feature",
+        worktreePath: null,
+        linkedPullRequest: null,
+        branchPullRequest: null,
+      },
+      branchPullRequest: pullRequest,
+      linkedPullRequest: pullRequest,
+    };
+
+    assert.deepStrictEqual(yield* decodeOrchestrationCommand(command), command);
+    assert.ok(yield* decodeClientOrchestrationCommand(command).pipe(Effect.flip));
+
+    const cleared = { ...command, branchPullRequest: null };
+    assert.deepStrictEqual(yield* decodeOrchestrationCommand(cleared), cleared);
+
+    const metadata = yield* decodeClientOrchestrationCommand({
+      type: "thread.meta.update",
+      commandId: "cmd-forged-branch-pull-request",
+      threadId: "thread-1",
+      branchPullRequest: pullRequest,
+    });
+    assert.isFalse("branchPullRequest" in metadata);
   }),
 );
 
@@ -1253,45 +1350,20 @@ it.effect("project icon overrides accept Lucide icons, colors, and emoji", () =>
   }),
 );
 
-it("resolveRuntimeModeForProviderDriver maps yolo to full-access unless the driver is kimi or unknown", () => {
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("claudeAgent", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
-  assert.strictEqual(resolveRuntimeModeForProviderDriver("codex", "full-access"), "full-access");
-  assert.strictEqual(
-    resolveRuntimeModeForProviderDriver("codex", "approval-required"),
-    "approval-required",
-  );
-});
+it.effect("rejects thread history imports without messages", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeOrchestrationCommand({
+        type: "thread.history.import",
+        commandId: "command-empty-history",
+        threadId: "thread-1",
+        messages: [],
+      }),
+    );
 
-it("displayRuntimeModeForProviderDriver keeps yolo when the driver is unknown", () => {
-  assert.strictEqual(displayRuntimeModeForProviderDriver(null, "yolo"), "yolo");
-  assert.strictEqual(displayRuntimeModeForProviderDriver(undefined, "yolo"), "yolo");
-  assert.strictEqual(displayRuntimeModeForProviderDriver("unconfigured", "yolo"), "yolo");
-  assert.strictEqual(displayRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(displayRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
-});
-
-it("defaultRuntimeModeForProviderDriver defaults Kimi to yolo", () => {
-  assert.strictEqual(defaultRuntimeModeForProviderDriver("kimi"), "yolo");
-  assert.strictEqual(defaultRuntimeModeForProviderDriver("codex"), "full-access");
-  assert.strictEqual(defaultRuntimeModeForProviderDriver("grok"), "full-access");
-  assert.strictEqual(defaultRuntimeModeForProviderDriver(null), "full-access");
-  assert.strictEqual(defaultRuntimeModeForProviderDriver(undefined), "full-access");
-});
-
-it("effectiveRuntimeModeForProviderDriver remaps carried yolo off Kimi", () => {
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", "yolo"), "full-access");
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "yolo"), "yolo");
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver(null, "yolo"), "yolo");
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", null), "yolo");
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver("grok", null), "full-access");
-  assert.strictEqual(effectiveRuntimeModeForProviderDriver("kimi", "full-access"), "full-access");
-});
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
 
 it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {
   assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/png"), true);

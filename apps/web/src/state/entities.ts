@@ -84,7 +84,7 @@ const EMPTY_CHECKPOINTS_ATOM = Atom.make(EMPTY_CHECKPOINTS).pipe(
   Atom.withLabel("web-thread-checkpoints:empty"),
 );
 
-export const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
+const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-active-environment-id"),
 );
@@ -369,34 +369,11 @@ export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId):
   );
 }
 
-/** Whether the environment's server exposes storage inventory for managed
-    worktrees. Absent on older servers, so clients must not probe them. */
-export function readEnvironmentSupportsStorageInventory(environmentId: EnvironmentId): boolean {
+export function readEnvironmentSupportsActiveReorder(environmentId: EnvironmentId): boolean {
   return (
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .storageInventory === true
+      .threadActiveReorder === true
   );
-}
-
-export function readEnvironmentSupportsAutomations(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .automations === true
-  );
-}
-
-/** Whether the environment's server syncs per-thread World Scenery
-    assignments (thread.scenery.assign). False on older servers, where
-    assignments stay device-local. */
-export function readEnvironmentSupportsScenery(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .threadScenery === true
-  );
-}
-
-export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
-  return appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
 }
 
 export function readEnvironmentThreadRefs(

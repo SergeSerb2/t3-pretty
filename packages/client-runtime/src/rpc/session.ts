@@ -48,7 +48,14 @@ export interface RpcSession {
   >;
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
-  readonly closed: Effect.Effect<never, ConnectionTransientError>;
+  readonly closed: Effect.Effect<never, ConnectionAttemptError>;
+}
+
+export interface RpcSessionOptions {
+  readonly environmentThemes?: boolean;
+  readonly usageLimitSources?: boolean;
+  /** This client answers /usage-limits itself, so the server may advertise it. */
+  readonly usageLimitsCommand?: boolean;
 }
 
 export class RpcSessionFactory extends Context.Service<
@@ -91,10 +98,16 @@ function mapSessionRpcError(
   }
 }
 
-export const make = Effect.gen(function* () {
+/** @public Service construction is part of the canonical Effect module API. */
+export const make = Effect.fn("RpcSessionFactory.make")(function* (
+  options: RpcSessionOptions = {},
+) {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
-  const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
-  const dpopSigner = yield* Effect.serviceOption(ManagedRelayDpopSigner);
+  const serverConfigInput: ServerConfigSubscriptionInput = {
+    ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
+    ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+    ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+  };
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
     const networkHint =
@@ -225,4 +238,5 @@ export const make = Effect.gen(function* () {
   return RpcSessionFactory.of({ connect });
 });
 
-export const layer = Layer.effect(RpcSessionFactory, make);
+export const layerWithOptions = (options: RpcSessionOptions) =>
+  Layer.effect(RpcSessionFactory, make(options));

@@ -4,14 +4,14 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 
 const HEIGHT_TRANSITION_FALLBACK_MS = 250;
 
-/**
- * Animates its height to follow the rendered size of `children`. When the
- * caller swaps children to null after showing content, the previous content
- * stays mounted and clipped while the container collapses to zero, so closing
- * animates symmetrically with opening; the content unmounts once the
- * transition settles.
- */
-export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
+export function AnimatedHeight({
+  children,
+  holdHeight = false,
+}: {
+  readonly children: ReactNode;
+  /** Retain the previous content height while a replacement is loading. */
+  readonly holdHeight?: boolean;
+}) {
   const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<(() => void) | null>(null);
   const exitingRef = useRef(false);
@@ -62,6 +62,7 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
   }, [heightState.height, heightState.isClipping, exiting]);
 
   useLayoutEffect(() => {
+    if (holdHeight) return;
     const element = contentRef.current;
     if (!element) return;
     let firstFrameId: number | null = null;
@@ -112,7 +113,7 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
       cancelPendingFrames();
       measureRef.current = null;
     };
-  }, []);
+  }, [holdHeight]);
 
   // Re-measure on every open: reopening with unchanged content emits no
   // ResizeObserver event, so the expand transition needs an explicit kick.
@@ -139,8 +140,8 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
         );
       }}
     >
-      <div ref={contentRef}>
-        {hasContent ? children : isExiting ? lastContentRef.current : null}
+      <div ref={contentRef} style={holdHeight ? { height: "100%" } : undefined}>
+        {children}
       </div>
     </div>
   );

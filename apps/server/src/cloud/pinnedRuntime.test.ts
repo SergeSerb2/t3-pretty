@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
@@ -40,45 +41,81 @@ const successfulRunner = (fs: FileSystem.FileSystem, path: Path.Path) =>
   });
 
 it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
-  it.effect("installs the fork CLI tarball instead of npm t3@version", () =>
+  it.effect("installs through pnpm when its Node runtime has no npm executable", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-runtime-spec-" });
-      let spec = "";
-      const runner = ProcessRunner.ProcessRunner.of({
-        run: (input) =>
-          Effect.gen(function* () {
-            spec = input.args.at(-1) ?? "";
-            const prefixIndex = input.args.indexOf("--prefix");
-            const stagingDir = input.args[prefixIndex + 1];
-            if (stagingDir === undefined) return yield* Effect.die("missing npm --prefix");
-            const entry = path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs");
-            yield* fs.makeDirectory(path.dirname(entry), { recursive: true }).pipe(Effect.orDie);
-            yield* fs.writeFileString(entry, "export {};\n").pipe(Effect.orDie);
-            return {
-              stdout: "",
-              stderr: "",
-              code: ChildProcessSpawner.ExitCode(0),
-              timedOut: false,
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              stdoutInvalidUtf8: false,
-              stderrInvalidUtf8: false,
-            };
-          }),
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-pnpm-" });
+      const commands: Array<ProcessRunner.ProcessRunInput> = [];
+      const install = successfulRunner(fs, path);
+      const paths = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version: "1.2.3",
+        fs,
+        path,
+        runner: ProcessRunner.ProcessRunner.of({
+          run: (input) => {
+            commands.push(input);
+            return input.command === "npm"
+              ? Effect.fail(
+                  new ProcessRunner.ProcessSpawnError({
+                    command: "npm",
+                    argumentCount: input.args.length,
+                    cause: PlatformError.systemError({
+                      _tag: "NotFound",
+                      module: "ChildProcess",
+                      method: "spawn",
+                    }),
+                  }),
+                )
+              : install.run(input);
+          },
+        }),
+        validate: (staging) =>
+          fs.exists(staging.entryPath).pipe(
+            Effect.flatMap((exists) => (exists ? Effect.void : Effect.die("missing runtime"))),
+            Effect.orDie,
+          ),
       });
+      assert.deepEqual(
+        commands.map((command) => command.command),
+        ["npm", "pnpm"],
+      );
+      assert.deepEqual(commands[1]!.args, ["--package=npm@11", "dlx", "npm", ...commands[0]!.args]);
+      assert.equal(yield* fs.readFileString(paths.sentinelPath), "1.2.3\n");
+    }),
+  );
 
+  it.effect("does not try a different installer for npm permission failures", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-permission-" });
+      const commands: string[] = [];
       yield* ensurePinnedRuntimeInstalled({
         baseDir,
         version: "1.2.3",
         fs,
         path,
-        runner,
-        validate: () => Effect.void,
-      });
-
-      assert.equal(spec, forkCliTarballUrl("1.2.3"));
+        runner: ProcessRunner.ProcessRunner.of({
+          run: (input) => {
+            commands.push(input.command);
+            return Effect.fail(
+              new ProcessRunner.ProcessSpawnError({
+                command: input.command,
+                argumentCount: input.args.length,
+                cause: PlatformError.systemError({
+                  _tag: "PermissionDenied",
+                  module: "ChildProcess",
+                  method: "spawn",
+                }),
+              }),
+            );
+          },
+        }),
+        validate: () => Effect.die("must not validate a failed install"),
+      }).pipe(Effect.flip);
+      assert.deepEqual(commands, ["npm"]);
     }),
   );
 

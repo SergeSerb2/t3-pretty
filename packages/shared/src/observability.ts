@@ -431,7 +431,7 @@ export function truncateTraceAttributes(attributes: TraceAttributes): TraceAttri
   return changed ? truncated : attributes;
 }
 
-export function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
+function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
   const status = span.status as Extract<Tracer.SpanStatus, { _tag: "Ended" }>;
   const parentSpanId = Option.getOrUndefined(span.parent)?.spanId;
 

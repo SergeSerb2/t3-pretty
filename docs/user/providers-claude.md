@@ -43,9 +43,9 @@ shadow-home arrangement.
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.
 
-For child-model choices, **Settings → Agents** is the usual configuration. T3 Code
-sets `CLAUDE_CODE_SUBAGENT_MODEL` on the next new Claude session unless that
-environment variable is already set on the provider instance.
+Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
+thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
+T3 Code uses the Claude configuration on the connected server.
 
 ## Compact long conversations
 

@@ -11,10 +11,13 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
   ServerConfig as T3ServerConfig,
-  TurnDeliveryMode,
+  UsageLimitsReport,
 } from "@t3tools/contracts";
-import { displayRuntimeModeForProviderDriver } from "@t3tools/contracts";
-import { replaceTextRange } from "@t3tools/shared/composerTrigger";
+import {
+  collectProviderUsageLimits,
+  hasProviderUsageLimits,
+  isUsageLimitsCommand,
+} from "@t3tools/shared/usageLimits";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import {
@@ -28,8 +31,12 @@ import {
   type RefObject,
 } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View, type ViewStyle } from "react-native";
-import * as Option from "effect/Option";
-import ImageViewing from "react-native-image-viewing";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import {
+  composerAttachmentUploadBlockReason,
+  composerAttachmentsStillUploading,
+  composerAttachmentUploadsAtom,
+} from "../../state/composer-attachment-uploads";
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -152,7 +159,9 @@ export interface ThreadComposerProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: (delivery?: TurnDeliveryMode) => Promise<MessageId | null>;
+  readonly onSendMessage: () => Promise<MessageId | null>;
+  /** `/usage-limits` resolves locally; the host decides where the report shows. Null clears it. */
+  readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateRuntimeMode: (runtimeMode: RuntimeMode) => void;
   readonly onUpdateInteractionMode: (interactionMode: ProviderInteractionMode) => void;
@@ -378,6 +387,28 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const sendStartedAtRef = useRef(0);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
+  const showStopAction =
+    !hasContent &&
+    (props.selectedThread.session?.status === "running" ||
+      props.selectedThread.session?.status === "starting");
+
+  const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
+  const attachmentsUploading =
+    props.connectionState === "connected" &&
+    composerAttachmentsStillUploading({
+      environmentId: props.environmentId,
+      attachments: props.draftAttachments,
+      serverConfig: props.serverConfig,
+      states: uploadStates,
+    });
+  // Every send goes through the outbox; the label says whether it leaves now
+  // or waits (for the connection, an earlier queued message, or an upload).
+  const sendLabel =
+    props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
+      ? "Queue"
+      : "Send";
+  const currentModelSelection = props.selectedThread.modelSelection;
+  const currentRuntimeMode = props.selectedThread.runtimeMode;
   const modelUnavailable =
     props.connectionState === "connected" &&
     isModelSelectionUnavailable(props.serverConfig, props.selectedThread.modelSelection);
@@ -410,24 +441,79 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     const attachedUris = new Set(
       props.draftAttachments.map((image) => (image.type === "image" ? image.previewUri : null)),
     );
-    return [
-      ...props.draftAttachments,
-      ...pendingPreviews.filter(
-        (preview) => preview.type !== "image" || !attachedUris.has(preview.previewUri),
-      ),
-    ];
-  }, [pendingPreviews, props.draftAttachments]);
-  const dispatchStatus = composerDispatchStatusLabel(
-    pendingPreviews.length > 0
-      ? { kind: "preparing-images", count: pendingPreviews.length }
-      : isSending || props.isDeliveringQueuedMessage
-        ? {
-            kind: "sending",
-            creatingThread: false,
-            connected: props.connectionState === "connected",
-          }
-        : { kind: "idle" },
+  }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
+  const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+  const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
+  // T3 owns /usage-limits only where Limits has data for the selected provider;
+  // elsewhere the name stays the provider's own and is sent through untouched.
+  const usageLimitsOffered =
+    selectedProviderStatus !== null &&
+    hasProviderUsageLimits(
+      selectedProviderStatus.driver,
+      props.serverConfig?.providers ?? [],
+      props.serverConfig?.usageLimitSources ?? [],
+    );
+  // Answered locally from the last Limits snapshot; the agent never sees it.
+  const openUsageLimits = useCallback(() => {
+    const report = collectProviderUsageLimits(
+      currentModelSelection.instanceId,
+      props.serverConfig?.providers ?? [],
+      props.serverConfig?.usageLimitSources ?? [],
+      Date.now(),
+    );
+    onShowUsageLimits(report);
+    if (!report) {
+      Alert.alert("Usage limits unavailable", "This provider does not currently report limits.");
+    }
+    return report !== null;
+  }, [currentModelSelection.instanceId, onShowUsageLimits, props.serverConfig]);
+
+  const composerMenu = useComposerCommandMenu({
+    draftMessage: props.draftMessage,
+    ownerKey: composerOwnerKey,
+    environmentId: props.environmentId,
+    projectCwd: props.projectCwd,
+    selectedProviderStatus,
+    hasThread: true,
+    hasCompactableConversation: props.hasCompactableConversation,
+    onChangeDraftMessage: props.onChangeDraftMessage,
+    onUpdateInteractionMode:
+      selectedProviderStatus?.showInteractionModeToggle === false
+        ? undefined
+        : props.onUpdateInteractionMode,
+    offersUsageLimits: usageLimitsOffered,
+    // With attachments aboard the pick just inserts the text, so it sends as a prompt.
+    onUsageLimits:
+      usageLimitsOffered && props.draftAttachments.length === 0 ? openUsageLimits : undefined,
+  });
+  const voiceInput = useVoiceInputController({
+    ownerKey: composerOwnerKey,
+    draftMessage: props.draftMessage,
+    selection: composerMenu.selection,
+    onChangeDraftMessage: props.onChangeDraftMessage,
+    onChangeSelection: composerMenu.onSelectionChange,
+  });
+  const voicePresentation = resolveVoiceComposerPresentation(
+    voiceInput.state,
+    voiceInput.elapsedSeconds,
   );
+  const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  // An open draft stays visible; only a collapsed composer becomes a voice strip.
+  const isExpanded = isFocused || settingsSheetPresentation.isActive;
+  const showsCompactDictation = isVoiceInputPresented && !isExpanded;
+  const isToolbarVisible = isExpanded || isVoiceInputPresented;
+  const attachmentBlockReason = composerAttachmentUploadBlockReason({
+    environmentId: props.environmentId,
+    attachments: props.draftAttachments,
+    connected: props.connectionState === "connected",
+    serverConfig: props.serverConfig,
+    states: uploadStates,
+  });
+  const canSend =
+    hasContent &&
+    !voiceInput.blocksSubmission &&
+    attachmentBlockReason === null &&
+    !modelUnavailable;
 
   useEffect(() => {
     if (!isSending) {
@@ -526,110 +612,25 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const handleBlur = useCallback(() => {
     setIsFocused(false);
     onEditorFocusChange?.(false);
-  }, [onEditorFocusChange]);
-  const editorTextStyle = useMemo(
-    () => ({
-      ...bodyText,
-      color: foregroundColor,
-    }),
-    [bodyText, foregroundColor],
-  );
-  // Keep the expand/collapse morph on the focus/blur frame, but do not layout-
-  // animate the first-responder's ancestors afterward. Reanimated snapshots
-  // of a focused UITextView reload the iOS 26+ keyboard session.
-  const composerLayoutTransition =
-    isFocused && wasFocusedRef.current ? undefined : COMPOSER_LAYOUT_TRANSITION;
-  useLayoutEffect(() => {
-    wasFocusedRef.current = isFocused;
-  }, [isFocused]);
-  const showStopAction =
-    props.selectedThread.session?.status === "running" ||
-    props.selectedThread.session?.status === "starting";
-
-  // What a tap delivers, and therefore what the button says — one source of
-  // truth so the label cannot promise one behavior and send another. Offline
-  // parks the message for the next turn boundary; a connected running turn
-  // steers on tap (long-press queues); a still-draining outbox queues behind
-  // its siblings; an idle connected send leaves the server default (steer).
-  const sendDelivery: TurnDeliveryMode | undefined =
-    props.connectionState !== "connected"
-      ? "queue"
-      : showStopAction
-        ? "steer"
-        : props.queueCount > 0
-          ? "queue"
-          : undefined;
-  const sendLabel = sendDelivery === "queue" ? "Queue" : "Send";
-  const currentModelSelection = props.selectedThread.modelSelection;
-  const storedRuntimeMode = props.selectedThread.runtimeMode;
-  const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
-  const connectionStatus = composerConnectionStatus({
-    connectionError: props.connectionError,
-    connectionState: props.connectionState,
-    environmentLabel: props.environmentLabel,
-    threadSyncPhase: props.threadSyncPhase,
-  });
-  const syncStatusRequested = connectionStatus?.kind === "syncing";
-  const [syncStatusVisible, setSyncStatusVisible] = useState(false);
-  useEffect(
-    () =>
-      scheduleThreadLoadingVisibility(
-        syncStatusRequested,
-        COMPOSER_SYNC_STATUS_DELAY_MS,
-        setSyncStatusVisible,
-      ),
-    [syncStatusRequested],
-  );
-  const visibleConnectionStatus =
-    syncStatusRequested && !syncStatusVisible ? null : connectionStatus;
-  const selectedProviderStatus = useMemo(() => {
-    if (!props.serverConfig) return null;
-    return (
-      props.serverConfig.providers.find(
-        (p) => p.instanceId === props.selectedThread.modelSelection.instanceId,
-      ) ?? null
-    );
-  }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
-
-  const composerMenu = useComposerCommandMenu({
-    ownerKey: props.selectedThread.id,
-    draftMessage: props.draftMessage,
-    environmentId: props.environmentId,
-    projectCwd: props.projectCwd,
-    selectedProviderStatus,
-    hasThread: true,
-    hasCompactableConversation: props.hasCompactableConversation,
-    onChangeDraftMessage: props.onChangeDraftMessage,
-    onUpdateInteractionMode: props.onUpdateInteractionMode,
-  });
-
-  const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
-    if (composerMenu.trigger?.kind !== "path") {
-      return composerMenu.items;
+  }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.isActive]);
+  const handleSend = useCallback(async () => {
+    // Typed out in full rather than picked from the menu. Attachments mean the
+    // user is sending a prompt, so those go through as usual.
+    if (
+      usageLimitsOffered &&
+      isUsageLimitsCommand(props.draftMessage) &&
+      props.draftAttachments.length === 0
+    ) {
+      if (openUsageLimits()) onChangeDraftMessage("");
+      return;
     }
-
-    const apps = props.serverConfig?.settings.apps;
-    if (!apps) {
-      return composerMenu.items;
-    }
-
-    const appItems = attachableAppMatches(apps, composerMenu.trigger.query, 8).map(
-      (connection) => ({
-        id: `app:${connection.id}`,
-        type: "app" as const,
-        slug: connection.slug,
-        color: appAvatarColor(connection.catalogId),
-        label: connection.name,
-        description: `@${connection.slug}`,
-      }),
-    );
-    return [...composerMenu.items, ...appItems];
-  }, [composerMenu.items, composerMenu.trigger, props.serverConfig]);
-
-  const handleComposerMenuSelect = useCallback(
-    (item: ComposerCommandItem) => {
-      if (item.type !== "app" && item.type !== "skill") {
-        composerMenu.onSelect(item);
+    if (voiceInput.blocksSubmission) return;
+    const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+    if (inFlightThreadIdsRef.current.has(threadKey)) return;
+    inFlightThreadIdsRef.current.add(threadKey);
+    try {
+      const messageId = await onSendMessage();
+      if (messageId === null) {
         return;
       }
 
@@ -678,104 +679,19 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     if (isDispatching || preparingImagesRef.current) {
       return;
     }
-    preparingImagesRef.current = true;
-    try {
-      await props.onPickDraftImages({ onPicked: beginPendingPreviews });
-    } finally {
-      preparingImagesRef.current = false;
-      setPendingPreviews([]);
-    }
-  }, [beginPendingPreviews, isDispatching, props.onPickDraftImages]);
-
-  const handleNativePasteImages = useCallback(
-    async (uris: ReadonlyArray<string>) => {
-      if (uris.length === 0 || isDispatching || preparingImagesRef.current) {
-        return;
-      }
-      preparingImagesRef.current = true;
-      beginPendingPreviews(
-        uris.map((uri, index) => ({
-          id: `pending:${index}:${uri}`,
-          previewUri: uri,
-        })),
-      );
-      try {
-        await props.onNativePasteImages(uris);
-      } finally {
-        preparingImagesRef.current = false;
-        setPendingPreviews([]);
-      }
-    },
-    [beginPendingPreviews, isDispatching, props.onNativePasteImages],
-  );
-
-  // Stable void wrapper: an inline paste handler would rebuild every render and
-  // snapshot the focused native editor, which reloads the iOS keyboard session.
-  const handlePasteImages = useCallback(
-    (uris: ReadonlyArray<string>) => {
-      void handleNativePasteImages(uris);
-    },
-    [handleNativePasteImages],
-  );
-
-  const handleSend = useCallback(
-    async (delivery?: TurnDeliveryMode) => {
-      const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-      if (inFlightThreadIdsRef.current.has(threadKey) || isDispatching) return;
-      inFlightThreadIdsRef.current.add(threadKey);
-      sendStartedAtRef.current = Date.now();
-      setIsSending(true);
-      try {
-        const messageId = await onSendMessage(delivery);
-        if (messageId === null) {
-          setIsSending(false);
-          setInFlightMessageId(null);
-          return;
-        }
-        setInFlightMessageId(messageId);
-        // Sending a prompt starts agent work: arm the lock-screen card while the
-        // app is foregrounded and the activity token can be registered. Armed
-        // after the send so its preference read and native Activity start don't
-        // contend with the queued-message feedback on the tap frame.
-        armAgentAwarenessLiveActivityForLocalWork({
-          environmentId: props.environmentId,
-          threadTitle: props.selectedThread.title,
-          projectTitle: props.environmentLabel ?? "T3 Pretty",
-        });
-      } finally {
-        inFlightThreadIdsRef.current.delete(threadKey);
-      }
-    },
-    [
-      isDispatching,
-      onSendMessage,
-      props.environmentId,
-      props.environmentLabel,
-      props.selectedThread.id,
-      props.selectedThread.title,
-    ],
-  );
-  const handleSendPress = useCallback(() => {
-    void handleSend(sendDelivery);
-  }, [handleSend, sendDelivery]);
-  const handleSendMenuAction = useCallback(
-    ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
-      if (nativeEvent.event === "queue") void handleSend("queue");
-    },
-    [handleSend],
-  );
-  // Kept mounted for the whole running turn (its host is a native menu view,
-  // so remounting it on every keystroke would flicker the send button).
-  const sendMenuActions = useMemo<MenuAction[]>(
-    () => [
-      {
-        id: "queue",
-        title: "Queue for next turn",
-        attributes: { disabled: !canSend || isDispatching },
-      },
-    ],
-    [canSend, isDispatching],
-  );
+  }, [
+    props.draftMessage,
+    props.draftAttachments.length,
+    onChangeDraftMessage,
+    openUsageLimits,
+    usageLimitsOffered,
+    onSendMessage,
+    props.environmentId,
+    props.environmentLabel,
+    props.selectedThread.id,
+    props.selectedThread.title,
+    voiceInput.blocksSubmission,
+  ]);
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(

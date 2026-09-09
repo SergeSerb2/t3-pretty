@@ -9,7 +9,8 @@ import { CheckpointReactor } from "../Services/CheckpointReactor.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
-import { ThreadMergedPullRequestReactor } from "../ThreadMergedPullRequestReactor.ts";
+import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
 import { ProjectIconReactor } from "../../project/ProjectIconReactor.ts";
 import { ActivityHeadlineReactor } from "./ActivityHeadlineReactor.ts";
@@ -20,6 +21,8 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const checkpointReactor = yield* CheckpointReactor;
   const threadMergedPullRequestReactor = yield* ThreadMergedPullRequestReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+  const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+  const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const projectIconReactor = yield* ProjectIconReactor;
   const activityHeadlineReactor = yield* ActivityHeadlineReactor;
@@ -30,6 +33,8 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* checkpointReactor.start();
     yield* threadMergedPullRequestReactor.start();
     yield* threadDeletionReactor.start();
+    yield* threadPullRequestReactor.start();
+    yield* threadSettlementReactor.start();
     yield* agentAwarenessRelay.start();
     yield* projectIconReactor.start();
     yield* activityHeadlineReactor.start();

@@ -3,28 +3,13 @@ const REPO = "SergeSerb2/t3-pretty";
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;
 
-const STABLE_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const PRERELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases`;
-const CACHE_KEY = "t3code-latest-release";
-const NIGHTLY_CACHE_KEY = "t3code-latest-nightly";
+const LATEST_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+// The `latest` endpoint skips prereleases, so nightly needs the list. GitHub
+// returns it newest first and nightlies land several times a day, so the first
+// nightly tag in a small page is the current build.
+const LIST_API_URL = `https://api.github.com/repos/${REPO}/releases?per_page=10`;
 
-// Mirror check-nightly-release.cjs isNightlyTag, but also match unprefixed versions.
-// Tags from GitHub: vX.Y.Z-nightly.* or nightly-v*
-// Also accept: X.Y.Z-nightly.* (unprefixed modern format)
-const isNightlyTag = (tag: string): boolean =>
-  /^v?\d+\.\d+\.\d+-nightly\./.test(tag) || tag.startsWith("nightly-v");
-const RELEASE_CACHE_MAX_AGE_MS = 15 * 60 * 1_000;
-const RELEASE_REQUEST_TIMEOUT_MS = 10_000;
-const RELEASE_RESPONSE_MAX_BYTES = 1024 * 1024;
-const RELEASE_ASSET_MAX_COUNT = 256;
-const RELEASE_TAG_MAX_LENGTH = 128;
-const RELEASE_ASSET_NAME_MAX_LENGTH = 512;
-const RELEASE_URL_MAX_LENGTH = 2_048;
-
-interface CachedRelease {
-  readonly cachedAt: number;
-  readonly release: Release;
-}
+export type ReleaseChannel = "stable" | "nightly";
 
 export interface ReleaseAsset {
   name: string;
@@ -34,48 +19,36 @@ export interface ReleaseAsset {
 export interface Release {
   tag_name: string;
   html_url: string;
-  published_at?: string; // Optional for stable fixtures/cache
+  published_at: string;
   assets: ReleaseAsset[];
 }
 
-function isBoundedText(value: unknown, maxLength: number): value is string {
-  return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= maxLength &&
-    value.trim() === value
-  );
+function cacheKey(channel: ReleaseChannel) {
+  return `t3code-${channel}-release`;
 }
 
-function isCanonicalGitHubUrl(value: unknown, pathnamePrefix: string): value is string {
-  if (!isBoundedText(value, RELEASE_URL_MAX_LENGTH)) return false;
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === "github.com" &&
-      url.port === "" &&
-      url.username === "" &&
-      url.password === "" &&
-      url.search === "" &&
-      url.hash === "" &&
-      url.pathname.startsWith(pathnamePrefix)
-    );
-  } catch {
-    return false;
-  }
+async function fetchStable(): Promise<Release> {
+  return fetch(LATEST_API_URL).then((r) => r.json());
 }
 
-export function decodeRelease(value: unknown): Release | null {
-  if (typeof value !== "object" || value === null) return null;
-  const candidate = value as Record<string, unknown>;
-  if (!isBoundedText(candidate.tag_name, RELEASE_TAG_MAX_LENGTH)) return null;
-  if (
-    !isCanonicalGitHubUrl(candidate.html_url, `/${REPO}/releases/tag/`) ||
-    !Array.isArray(candidate.assets) ||
-    candidate.assets.length > RELEASE_ASSET_MAX_COUNT
-  ) {
-    return null;
+async function fetchNightly(): Promise<Release> {
+  const list: Release[] = await fetch(LIST_API_URL).then((r) => r.json());
+  const nightly = Array.isArray(list)
+    ? list.find((release) => release.tag_name?.includes("-nightly."))
+    : undefined;
+  if (!nightly) throw new Error("No nightly release in the latest page");
+  return nightly;
+}
+
+export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Promise<Release> {
+  const key = cacheKey(channel);
+  const cached = sessionStorage.getItem(key);
+  if (cached) return JSON.parse(cached);
+
+  const data = channel === "nightly" ? await fetchNightly() : await fetchStable();
+
+  if (data?.assets) {
+    sessionStorage.setItem(key, JSON.stringify(data));
   }
 
   const assets: ReleaseAsset[] = [];

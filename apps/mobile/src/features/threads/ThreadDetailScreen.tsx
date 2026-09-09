@@ -2,7 +2,15 @@ import { FloatingWorkingControl, type FloatingWorkingStatus } from "./floating-w
 import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import { useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
+import {
+  appendCodexArtifactTemplateUsePrompt,
+  type CodexArtifactTemplate,
+} from "@t3tools/client-runtime/codex-artifact-templates";
+import type {
+  CodexFeedbackSubmission,
+  EnvironmentThreadStatus,
+} from "@t3tools/client-runtime/state/threads";
+import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -18,7 +26,7 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
-  TurnDeliveryMode,
+  UsageLimitsReport,
   UserInputQuestion,
 } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
@@ -60,6 +68,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPill } from "../../components/ControlPill";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerAttachment } from "../../lib/composerImages";
@@ -74,6 +83,8 @@ import type {
   ThreadFeedEntry,
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
+import { ComposerFeedback } from "./ComposerFeedback";
+import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
 import { deriveComposerBottomInset } from "./composerKeyboardLayout";
 import {
@@ -108,6 +119,8 @@ export interface ThreadDetailScreenProps {
   readonly screenTone: StatusTone;
   readonly connectionError: string | null;
   readonly environmentLabel: string | null;
+  readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
+  readonly onDismissFeedback: (id: MessageId) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly activeWorkStartedAt: string | null;
   readonly isCompacting: boolean;
@@ -165,6 +178,7 @@ export interface ThreadDetailScreenProps {
     customAnswer: string,
   ) => void;
   readonly onSubmitUserInput: () => Promise<unknown>;
+  readonly onDismissUserInput: () => Promise<unknown>;
   readonly showContent?: boolean;
 }
 
@@ -373,6 +387,68 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const [collapsedUserInputRequestId, setCollapsedUserInputRequestId] =
     useState<ApprovalRequestId | null>(null);
   const activeUserInputRequestId = props.activePendingUserInput?.requestId ?? null;
+  // The open /usage-limits panel for this thread, model and turn. Only the open
+  // moment is stored: the rows read live provider data, so a redeemed reset
+  // credit or refreshed probe shows through. Anything that spends quota closes
+  // it: a new turn from any source, or the agent resuming after an approval or
+  // answered question.
+  const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
+    readonly key: string;
+    readonly threadKey: string;
+    readonly now: number;
+  } | null>(null);
+  // A pending approval or question is part of the key: once it is answered,
+  // from this client or any other, the agent resumes and spends quota.
+  const usageLimitsKey = [
+    selectedThreadKey,
+    props.selectedThread.modelSelection.instanceId,
+    props.selectedThread.latestTurn?.turnId ?? "",
+    props.activePendingApproval?.requestId ?? props.activePendingUserInput?.requestId ?? "",
+  ].join(":");
+  // Drop the snapshot as soon as the key changes so it cannot resurface stale.
+  if (usageLimitsPanel !== null && usageLimitsPanel.key !== usageLimitsKey) {
+    setUsageLimitsPanel(null);
+  }
+  const usageLimitsReport = useMemo(
+    () =>
+      usageLimitsPanel !== null && usageLimitsPanel.key === usageLimitsKey
+        ? collectProviderUsageLimits(
+            props.selectedThread.modelSelection.instanceId,
+            props.serverConfig?.providers ?? [],
+            props.serverConfig?.usageLimitSources ?? [],
+            usageLimitsPanel.now,
+          )
+        : null,
+    [
+      props.selectedThread.modelSelection.instanceId,
+      props.serverConfig,
+      usageLimitsKey,
+      usageLimitsPanel,
+    ],
+  );
+  const showUsageLimits = useCallback(
+    (report: UsageLimitsReport | null) =>
+      setUsageLimitsPanel(
+        report === null
+          ? null
+          : {
+              key: usageLimitsKey,
+              threadKey: selectedThreadKey,
+              now: Date.parse(report.createdAt),
+            },
+      ),
+    [selectedThreadKey, usageLimitsKey],
+  );
+  const dismissUsageLimits = useCallback(() => setUsageLimitsPanel(null), []);
+  // A send may resolve after navigating away, so only the originating
+  // thread's panel is cleared; a panel opened elsewhere in the meantime stays.
+  const clearUsageLimitsFor = useCallback(
+    (threadKey: string) =>
+      setUsageLimitsPanel((current) =>
+        current !== null && current.threadKey === threadKey ? null : current,
+      ),
+    [],
+  );
   const userInputCollapsed =
     activeUserInputRequestId !== null && collapsedUserInputRequestId === activeUserInputRequestId;
   // The card's height RESERVES keyboard space at all times instead of
@@ -677,28 +753,30 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         return messageId;
       }
 
-      setSubmittedMessageId(messageId);
-      setAnchorMessageId(
-        resolveThreadFeedSubmissionAnchor({
-          currentAnchorMessageId: anchorMessageId,
-          submittedMessageId: messageId,
-          hasStartedTurn: props.selectedThread.latestTurn !== null,
-          hasUserMessage,
-          queuedMessageCount: props.selectedThreadQueueCount,
-        }),
-      );
-      composerEditorRef.current?.blur();
-      return messageId;
-    },
-    [
-      anchorMessageId,
-      props.onSendMessage,
-      props.selectedThread.latestTurn,
-      props.selectedThreadQueueCount,
-      selectedThreadFeed,
-      selectedThreadKey,
-    ],
-  );
+    // A sent message makes the snapshot stale; a refused send leaves it in place.
+    clearUsageLimitsFor(targetThreadKey);
+
+    setSubmittedMessageId(messageId);
+    setAnchorMessageId(
+      resolveThreadFeedSubmissionAnchor({
+        currentAnchorMessageId: anchorMessageId,
+        submittedMessageId: messageId,
+        hasStartedTurn: props.selectedThread.latestTurn !== null,
+        hasUserMessage,
+        queuedMessageCount: props.selectedThreadQueueCount,
+      }),
+    );
+    composerEditorRef.current?.blur();
+    return messageId;
+  }, [
+    anchorMessageId,
+    clearUsageLimitsFor,
+    props.onSendMessage,
+    props.selectedThread.latestTurn,
+    props.selectedThreadQueueCount,
+    selectedThreadFeed,
+    selectedThreadKey,
+  ]);
 
   const collapseComposer = useCallback(() => {
     composerEditorRef.current?.blur();
@@ -822,91 +900,105 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 showScrollToEnd={showScrollToEndButton}
                 onScrollToEnd={handleScrollToEnd}
               />
-            ) : null}
-            {showScrollToEndButton && !floatingStatus ? (
-              <Animated.View
-                pointerEvents="box-none"
-                className="absolute -top-11 left-0 right-0 z-20 items-center"
-                entering={FadeInDown.duration(160)}
-                exiting={FadeOut.duration(100)}
-              >
-                {NATIVE_LIQUID_GLASS_SUPPORTED ? (
-                  <GlassView
-                    colorScheme={isDarkMode ? "dark" : "light"}
-                    glassEffectStyle="regular"
-                    isInteractive
-                    // Interactive glass can render larger than the requested
-                    // box (minimum touch size), so center the pill instead of
-                    // relying on it filling the glass exactly.
-                    style={{
-                      alignItems: "center",
-                      borderRadius: 18,
-                      height: 36,
-                      justifyContent: "center",
-                      overflow: "hidden",
-                      width: 36,
-                    }}
-                  >
-                    <ControlPill
-                      accessibilityLabel="Scroll to end"
-                      activateOnPressIn
-                      className="h-9 w-9 bg-transparent"
-                      icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-                      onPress={handleScrollToEnd}
-                    />
-                  </GlassView>
-                ) : (
-                  <ControlPill
-                    accessibilityLabel="Scroll to end"
-                    activateOnPressIn
-                    className="h-9 w-9 border border-border bg-card shadow-md shadow-black/10"
-                    icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
-                    onPress={handleScrollToEnd}
+              <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
+                {props.feedbackSubmissions.map((submission) => (
+                  <ComposerFeedback
+                    key={submission.id}
+                    submission={submission}
+                    onDismiss={() => props.onDismissFeedback(submission.id)}
                   />
-                )}
-              </Animated.View>
-            ) : null}
-            <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
-              {props.activePendingApproval || props.activePendingUserInput ? (
-                <Animated.View
-                  className="shrink-0 gap-3 px-4 pb-3"
-                  // The questionnaire replaces the composer, so it must pad
-                  // the home indicator the composer normally covers.
-                  style={
-                    activeUserInputRequestId !== null
-                      ? { paddingBottom: composerBottomInset }
-                      : undefined
-                  }
-                  entering={FadeInDown.duration(220)}
-                  exiting={FadeOut.duration(140)}
-                >
-                  {props.activePendingApproval ? (
-                    <PendingApprovalCard
-                      approval={props.activePendingApproval}
-                      respondingApprovalId={props.respondingApprovalId}
-                      onRespond={props.onRespondToApproval}
+                ))}
+                {usageLimitsReport && activeUserInputRequestId === null ? (
+                  <Animated.View
+                    className="shrink-0 px-4 pb-3"
+                    entering={FadeInDown.duration(220)}
+                    exiting={FadeOut.duration(140)}
+                  >
+                    <ComposerUsageLimits
+                      report={usageLimitsReport}
+                      environmentId={props.environmentId}
+                      onClose={dismissUsageLimits}
                     />
-                  ) : null}
-                  {props.activePendingUserInput ? (
-                    <PendingUserInputCard
-                      pendingUserInput={props.activePendingUserInput}
-                      maxHeight={pendingUserInputMaxHeight}
-                      collapsed={userInputCollapsed}
-                      onToggleCollapsed={handleToggleUserInputCollapsed}
-                      onStopThread={props.onStopThread}
-                      cardProgress={userInputCardProgress}
-                      cardCoverage={userInputCardCoverage}
-                      onInputFocusChange={handleOwnedInputFocusChange}
-                      drafts={props.activePendingUserInputDrafts}
-                      answers={props.activePendingUserInputAnswers}
-                      respondingUserInputId={props.respondingUserInputId}
-                      onSelectOption={props.onSelectUserInputOption}
-                      onChangeCustomAnswer={props.onChangeUserInputCustomAnswer}
-                      onSubmit={props.onSubmitUserInput}
-                    />
-                  ) : null}
-                </Animated.View>
-              ) : null}
+                  </Animated.View>
+                ) : null}
+                {props.activePendingApproval || props.activePendingUserInput ? (
+                  <Animated.View
+                    className="shrink-0 gap-3 px-4 pb-3"
+                    // The questionnaire replaces the composer, so it must pad
+                    // the home indicator the composer normally covers.
+                    style={
+                      activeUserInputRequestId !== null
+                        ? { paddingBottom: composerBottomInset }
+                        : undefined
+                    }
+                    entering={FadeInDown.duration(220)}
+                    exiting={FadeOut.duration(140)}
+                  >
+                    {props.activePendingApproval ? (
+                      <PendingApprovalCard
+                        approval={props.activePendingApproval}
+                        respondingApprovalId={props.respondingApprovalId}
+                        onRespond={props.onRespondToApproval}
+                      />
+                    ) : null}
+                    {props.activePendingUserInput ? (
+                      <PendingUserInputCard
+                        pendingUserInput={props.activePendingUserInput}
+                        maxHeight={pendingUserInputMaxHeight}
+                        collapsed={userInputCollapsed}
+                        onToggleCollapsed={handleToggleUserInputCollapsed}
+                        onStopThread={props.onStopThread}
+                        cardProgress={userInputCardProgress}
+                        cardCoverage={userInputCardCoverage}
+                        onInputFocusChange={handleOwnedInputFocusChange}
+                        drafts={props.activePendingUserInputDrafts}
+                        answers={props.activePendingUserInputAnswers}
+                        respondingUserInputId={props.respondingUserInputId}
+                        onSelectOption={props.onSelectUserInputOption}
+                        onChangeCustomAnswer={props.onChangeUserInputCustomAnswer}
+                        onSubmit={props.onSubmitUserInput}
+                        onDismiss={props.onDismissUserInput}
+                      />
+                    ) : null}
+                  </Animated.View>
+                ) : null}
+              </View>
+
+              {/* Hidden (not unmounted) while a user-input request owns the
+                composer slot, so composer drafts and editor state survive. */}
+              <View style={activeUserInputRequestId !== null ? { display: "none" } : undefined}>
+                <ThreadComposer
+                  editorRef={composerEditorRef}
+                  draftMessage={props.draftMessage}
+                  draftAttachments={props.draftAttachments}
+                  placeholder="Ask the repo agent, or run a command…"
+                  contentMaxWidth={contentMaxWidth}
+                  connectionState={props.connectionStateLabel}
+                  connectionError={props.connectionError}
+                  environmentLabel={props.environmentLabel}
+                  selectedThread={props.selectedThread}
+                  hasCompactableConversation={hasCompactableConversation && !props.isCompacting}
+                  serverConfig={props.serverConfig}
+                  queueCount={props.selectedThreadQueueCount}
+                  environmentId={props.environmentId}
+                  projectCwd={props.threadCwd ?? props.projectWorkspaceRoot}
+                  bottomInset={composerBottomInset}
+                  onChangeDraftMessage={props.onChangeDraftMessage}
+                  onPickDraftMedia={props.onPickDraftMedia}
+                  onPickDraftFiles={props.onPickDraftFiles}
+                  onNativePasteImages={props.onNativePasteImages}
+                  onRemoveDraftImage={props.onRemoveDraftImage}
+                  onStopThread={props.onStopThread}
+                  onSendMessage={handleSendMessage}
+                  onShowUsageLimits={showUsageLimits}
+                  onReconnectEnvironment={props.onReconnectEnvironment}
+                  onUpdateModelSelection={props.onUpdateThreadModelSelection}
+                  onUpdateRuntimeMode={props.onUpdateThreadRuntimeMode}
+                  onUpdateInteractionMode={props.onUpdateThreadInteractionMode}
+                  onExpandedChange={setComposerExpanded}
+                  onEditorFocusChange={handleComposerFocusChange}
+                />
+              </View>
             </View>
 
             {/* Hidden (not unmounted) while a user-input request owns the

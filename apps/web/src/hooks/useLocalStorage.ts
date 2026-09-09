@@ -15,7 +15,7 @@ export class LocalStorageOperationError extends Schema.TaggedErrorClass<LocalSto
   }
 }
 
-function createMemoryLocalStorage(): Storage {
+const fallbackStorage: Storage = (() => {
   const store = new Map<string, string>();
   return {
     clear: () => store.clear(),
@@ -27,21 +27,14 @@ function createMemoryLocalStorage(): Storage {
     removeItem: (_) => store.delete(_),
     setItem: (_, value) => store.set(_, value),
   };
-}
+})();
 
-function resolveIsomorphicLocalStorage(): Storage {
-  try {
-    return typeof window !== "undefined" ? window.localStorage : createMemoryLocalStorage();
-  } catch {
-    return createMemoryLocalStorage();
-  }
-}
-
-const isomorphicLocalStorage = resolveIsomorphicLocalStorage();
+const getStorage = (): Storage =>
+  typeof window !== "undefined" ? window.localStorage : fallbackStorage;
 
 const read = (key: string) => {
   try {
-    return isomorphicLocalStorage.getItem(key);
+    return getStorage().getItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "read", storageKey: key, cause });
   }
@@ -114,8 +107,7 @@ export const getLocalStorageItem = <T, E>(
   options?: LocalStorageItemSizeOptions,
 ): T | null => {
   const item = read(key);
-  if (item) enforceEncodedSizeLimit(key, item, "read", options);
-  return item ? decode(key, schema, item) : null;
+  return item === null ? null : decode(key, schema, item);
 };
 
 export const setLocalStorageItem = <T, E>(
@@ -127,7 +119,7 @@ export const setLocalStorageItem = <T, E>(
   const valueToSet = encode(key, schema, value);
   enforceEncodedSizeLimit(key, valueToSet, "write", options);
   try {
-    isomorphicLocalStorage.setItem(key, valueToSet);
+    getStorage().setItem(key, valueToSet);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "write", storageKey: key, cause });
   }
@@ -135,7 +127,7 @@ export const setLocalStorageItem = <T, E>(
 
 export const removeLocalStorageItem = (key: string) => {
   try {
-    isomorphicLocalStorage.removeItem(key);
+    getStorage().removeItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "remove", storageKey: key, cause });
   }

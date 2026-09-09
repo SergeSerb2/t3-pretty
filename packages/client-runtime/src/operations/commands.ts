@@ -56,9 +56,7 @@ export type UnsnoozeThreadInput = CommandInput<"thread.unsnooze">;
 export type PinThreadInput = CommandInput<"thread.pin">;
 export type UnpinThreadInput = CommandInput<"thread.unpin">;
 export type ReorderPinnedThreadInput = CommandInput<"thread.pin.reorder">;
-export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
-export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
-export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
+export type ReorderActiveThreadInput = CommandInput<"thread.active.reorder">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
@@ -80,6 +78,7 @@ export type StartThreadTurnInput = Omit<CommandInput<"thread.turn.start">, "boot
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
 export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond">;
 export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.respond">;
+export type DismissThreadUserInputInput = CommandInput<"thread.user-input.dismiss">;
 export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert">;
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
 
@@ -306,38 +305,15 @@ export const reorderPinnedThread: (input: ReorderPinnedThreadInput) => CommandEf
   });
 });
 
-export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEffect = Effect.fn(
-  "EnvironmentCommands.assignThreadScenery",
+export const reorderActiveThread: (input: ReorderActiveThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.reorderActiveThread",
 )(function* (input) {
   return yield* dispatch({
     ...input,
-    type: "thread.scenery.assign",
+    type: "thread.active.reorder",
     commandId: yield* commandId(input),
   });
 });
-
-export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
-  "EnvironmentCommands.setThreadSkills",
-)(function* (input) {
-  const metadata = yield* timestampedCommandMetadata(input);
-  return yield* dispatch({
-    ...input,
-    type: "thread.skills.set",
-    commandId: metadata.commandId,
-    createdAt: metadata.createdAt,
-  });
-});
-
-export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => CommandEffect =
-  Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input) {
-    const metadata = yield* timestampedCommandMetadata(input);
-    return yield* dispatch({
-      ...input,
-      type: "thread.subagent-policy.set",
-      commandId: metadata.commandId,
-      createdAt: metadata.createdAt,
-    });
-  });
 
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",
@@ -432,6 +408,17 @@ export const respondToThreadUserInput: (input: RespondToThreadUserInputInput) =>
     return yield* dispatch({
       ...input,
       type: "thread.user-input.respond",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
+
+export const dismissThreadUserInput: (input: DismissThreadUserInputInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.dismissThreadUserInput")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.user-input.dismiss",
       commandId: metadata.commandId,
       createdAt: metadata.createdAt,
     });

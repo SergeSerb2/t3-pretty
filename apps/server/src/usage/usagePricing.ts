@@ -108,21 +108,22 @@ export function parseRateTable(document: unknown): RateTable {
   return table;
 }
 
-/**
- * Canonicalises a model name for lookup.
- *
- * Strips a `provider/` prefix (LiteLLM publishes both `claude-opus-5` and
- * `anthropic/claude-opus-5`) and lowercases, since transcripts are inconsistent
- * about casing.
- */
-export function normalizeModelName(model: string): string {
-  const trimmed = model.trim().toLowerCase();
-  const slash = trimmed.lastIndexOf("/");
-  return slash === -1 ? trimmed : trimmed.slice(slash + 1);
+function sameRate(a: ModelRate, b: ModelRate): boolean {
+  return (
+    a.inputCostPerToken === b.inputCostPerToken &&
+    a.outputCostPerToken === b.outputCostPerToken &&
+    a.cacheReadCostPerToken === b.cacheReadCostPerToken &&
+    a.cacheCreationCostPerToken === b.cacheCreationCostPerToken
+  );
 }
 
 function normalizeRateKey(model: string): string {
   return model.trim().toLowerCase();
+}
+
+function bareModelName(key: string): string {
+  const slash = key.lastIndexOf("/");
+  return slash === -1 ? key : key.slice(slash + 1);
 }
 
 /**

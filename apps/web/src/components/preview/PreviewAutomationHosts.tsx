@@ -42,7 +42,11 @@ import {
   acquireBrowserSurfaceActivity,
   useBrowserSurfaceStore,
 } from "~/browser/browserSurfaceStore";
-import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
+import {
+  browserDefaultOpenProfileId,
+  browserDefaultOpenViewport,
+  resolveBrowserDefaults,
+} from "~/browser/browserDefaults";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { acquirePreviewGuestThread } from "~/browser/previewGuestResidency";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -375,11 +379,49 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             tabId,
             bridgeAvailable: Boolean(previewBridge),
           };
-          const requireReadyTab = async () => {
-            const bridge = previewBridge;
-            const readyTabId = tabId;
-            if (!bridge || !readyTabId) {
-              throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
+        };
+        switch (request.operation) {
+          case "status":
+            return await currentStatus(threadRef, tabId);
+          case "open": {
+            const input = request.input as PreviewAutomationOpenInput;
+            const resolvedInputUrl = input.url
+              ? resolveBrowserNavigationTarget(environmentId, {
+                  kind: "url",
+                  url: input.url,
+                }).resolvedUrl
+              : undefined;
+            let activeTabId = resolvePreviewAutomationOpenTab(
+              state,
+              request.tabId,
+              input.reuseExistingTab ?? true,
+            );
+            let activeSnapshot = activeTabId
+              ? (state.sessions[activeTabId] ?? state.snapshot ?? undefined)
+              : undefined;
+            const reusedExistingTab = activeTabId !== null;
+            tabId = activeTabId;
+            if (!activeTabId) {
+              const defaults = await resolveBrowserDefaults();
+              const result = await open({
+                environmentId,
+                input: {
+                  threadId: request.threadId,
+                  ...(resolvedInputUrl ? { url: resolvedInputUrl } : {}),
+                  // An agent that didn't state a size gets the user's
+                  // configured default, same as a hand-opened tab.
+                  viewport: browserDefaultOpenViewport(defaults),
+                  profileId: browserDefaultOpenProfileId(defaults),
+                },
+              });
+              if (result._tag === "Failure") {
+                return raiseAtomCommandFailure(result);
+              }
+              const snapshot = result.value;
+              applyPreviewServerSnapshot(threadRef, snapshot);
+              activeTabId = snapshot.tabId;
+              activeSnapshot = snapshot;
+              tabId = activeTabId;
             }
             const readyState = readThreadPreviewState(threadRef);
             const runtimeTabId = previewRuntimeTabId(threadRef, readyState.serverEpoch, readyTabId);
