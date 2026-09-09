@@ -37,6 +37,10 @@ import {
   AutomationPatch,
   AutomationRunTrigger,
   ThreadAutomationRun,
+  AutomationsListRunsInput,
+  AutomationsListRunsResult,
+  AutomationsGetRunInput,
+  AutomationsGetRunResult,
 } from "./automations.ts";
 import { EnabledSkillIds } from "./skills.ts";
 
