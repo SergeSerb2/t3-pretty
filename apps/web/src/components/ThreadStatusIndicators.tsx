@@ -6,8 +6,11 @@ import {
   type ThreadLinkedPullRequest,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { FolderGit2Icon, TerminalIcon } from "lucide-react";
+import { CheckIcon, CircleDashedIcon, EyeIcon, FolderGit2Icon, HistoryIcon, MessageSquareWarningIcon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
+import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
+import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
+import { cn } from "../lib/utils";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useEnvironmentQuery } from "../state/query";
@@ -20,6 +23,48 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+
+// Status visual vocabulary for Agents panel and automation rows
+export type StatusVisualKey =
+  | RuntimeSubagent["status"]
+  | "attention"
+  | "paused"
+  | "ready"
+  | "skipped"
+  | "missed";
+
+export const STATUS_VISUALS: Record<StatusVisualKey, { dotClass: string; label: string }> = {
+  pending: { dotClass: "bg-info", label: "Working" },
+  running: { dotClass: "bg-info", label: "Working" },
+  waiting: { dotClass: "bg-info", label: "Working" },
+  idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
+  completed: { dotClass: "bg-success", label: "Completed" },
+  failed: { dotClass: "bg-destructive", label: "Failed" },
+  cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
+  interrupted: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
+  attention: { dotClass: "bg-warning", label: "Needs attention" },
+  paused: { dotClass: "bg-muted-foreground/40", label: "Paused" },
+  ready: { dotClass: "bg-muted-foreground/40", label: "Ready" },
+  skipped: { dotClass: "bg-muted-foreground/40", label: "Skipped" },
+  missed: { dotClass: "bg-muted-foreground/40", label: "Missed" },
+};
+
+export function StatusDot({ status, className }: { status: StatusVisualKey; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn("size-1.5 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass, className)}
+    />
+  );
+}
+
+export interface AutomatedReviewIndicator {
+  state: NonNullable<NonNullable<ThreadPr>["automatedReview"]>["state"] | "no_signal";
+  label: string;
+  shortLabel: string;
+  description: string;
+  colorClass: string;
+}
 
 export interface PrStatusIndicator {
   label: string;
@@ -37,6 +82,43 @@ export interface TerminalStatusIndicator {
 }
 
 export type ThreadPr = VcsStatusResult["pr"];
+
+export function automatedReviewIndicator(
+  signal: NonNullable<ThreadPr>["automatedReview"],
+): AutomatedReviewIndicator | null {
+  const presentation = resolveAutomatedReviewPresentation(signal);
+  if (presentation === null) return null;
+  const state = signal?.state ?? "no_signal";
+  const colorClass =
+    state === "reviewing"
+      ? "text-sky-600 dark:text-sky-300"
+      : state === "passed"
+        ? "text-emerald-600 dark:text-emerald-300"
+        : state === "feedback"
+          ? "text-amber-700 dark:text-amber-300"
+          : "text-muted-foreground/55";
+  return { state, colorClass, ...presentation };
+}
+
+export function AutomatedReviewStatusIcon({
+  status,
+  className,
+}: {
+  status: AutomatedReviewIndicator;
+  className?: string | undefined;
+}) {
+  const Icon =
+    status.state === "reviewing"
+      ? EyeIcon
+      : status.state === "passed"
+        ? CheckIcon
+        : status.state === "feedback"
+          ? MessageSquareWarningIcon
+          : status.state === "stale"
+            ? HistoryIcon
+            : CircleDashedIcon;
+  return <Icon aria-hidden="true" className={`${className ?? "size-3"} ${status.colorClass}`} />;
+}
 
 export interface LinkedThreadPullRequestStatus {
   readonly pr: NonNullable<ThreadPr>;
