@@ -39,7 +39,7 @@ import {
   makeWarmThreadStateRegistry,
   requestOlderThreadTurns,
   ThreadSnapshotLoader,
-  WarmThreadStates,
+  type WarmThreadStates,
   type EnvironmentThreadState,
 } from "./threads.ts";
 
