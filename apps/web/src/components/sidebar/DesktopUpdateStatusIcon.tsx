@@ -143,11 +143,15 @@ function DesktopUpdateDownloadedIcon() {
 export function DesktopUpdateStatusIcon({
   downloadPercent,
   isCheckAnimating,
+  isCheckSettling,
+  onCheckAnimationEnd,
   onCheckAnimationIteration,
   status,
 }: {
   readonly downloadPercent?: number | null;
   readonly isCheckAnimating?: boolean;
+  readonly isCheckSettling?: boolean;
+  readonly onCheckAnimationEnd?: AnimationEventHandler<SVGSVGElement>;
   readonly onCheckAnimationIteration?: AnimationEventHandler<SVGSVGElement>;
   readonly status: DesktopUpdateStatusIconState;
 }) {
@@ -161,7 +165,15 @@ export function DesktopUpdateStatusIcon({
     <RefreshIcon
       className="size-4"
       refreshing={status === "checking" && isCheckAnimating === true}
-      onAnimationIteration={onCheckAnimationIteration}
+      onAnimationEnd={
+        isCheckSettling && onCheckAnimationEnd
+          ? (event) => {
+              if (!isDesktopUpdateCheckSettleAnimationEnd(event)) return;
+              onCheckAnimationEnd(event);
+            }
+          : undefined
+      }
+      onAnimationIteration={isCheckSettling ? undefined : onCheckAnimationIteration}
     />
   );
 }

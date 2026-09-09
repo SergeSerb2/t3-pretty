@@ -131,6 +131,12 @@ export function useThreadDetail(ref: ScopedThreadRef | null): EnvironmentThread 
   );
 }
 
+export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
+  const atom = environmentThreadDetails.detailAtom(ref);
+  const result = appAtomRegistry.get(atom);
+  return result ?? null;
+}
+
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_STATUS_ATOM : environmentThreadDetails.statusAtom(ref),

@@ -27,6 +27,7 @@ import {
   type ToolLifecycleItemType,
   type ThreadId,
   type TurnId,
+  ProviderDriverKind,
 } from "@t3tools/contracts";
 
 import {
@@ -72,6 +73,52 @@ export {
   workLogEntryIsToolLike,
   type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
+
+export type ProviderPickerKind = ProviderDriverKind;
+
+export type ChangedFileDiff = {
+  readonly path: string;
+  readonly diff?: string | null | undefined;
+};
+
+export const PROVIDER_OPTIONS: Array<{
+  value: ProviderPickerKind;
+  label: string;
+  available: boolean;
+  pickerSidebarBadge?: "new" | "soon";
+}> = [
+  { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
+  { value: ProviderDriverKind.make("claudeAgent"), label: "Claude", available: true },
+  {
+    value: ProviderDriverKind.make("cursor"),
+    label: "Cursor",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+  {
+    value: ProviderDriverKind.make("grok"),
+    label: "Grok",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+  {
+    value: ProviderDriverKind.make("grokBot"),
+    label: "Grok Bot",
+    available: true,
+  },
+  {
+    value: ProviderDriverKind.make("kimi"),
+    label: "Kimi",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+  {
+    value: ProviderDriverKind.make("antigravity"),
+    label: "Antigravity",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
+];
 
 export interface WorkLogEntry {
   id: string;

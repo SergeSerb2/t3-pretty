@@ -31,6 +31,25 @@ export interface ResizableWidthHandlers {
   readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
+  readonly onKeyDown: (event: { readonly key: string; readonly shiftKey: boolean }) => void;
+}
+
+export function resizableWidthFromKeyboard(input: {
+  readonly key: string;
+  readonly currentWidth: number;
+  readonly minWidth: number;
+  readonly maxWidth: number;
+  readonly edge: "left" | "right";
+  readonly step: number;
+}): number | null {
+  const { currentWidth, edge, key, maxWidth, minWidth, step } = input;
+  let next: number;
+  if (key === "Home") next = minWidth;
+  else if (key === "End") next = maxWidth;
+  else if (key === "ArrowLeft") next = currentWidth + (edge === "left" ? step : -step);
+  else if (key === "ArrowRight") next = currentWidth + (edge === "right" ? step : -step);
+  else return null;
+  return Math.max(minWidth, Math.min(maxWidth, next));
 }
 
 /**
@@ -44,6 +63,7 @@ export interface ResizableWidthHandlers {
  */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
+  readonly isResizing: boolean;
   readonly handlers: ResizableWidthHandlers;
 } {
   const { storageKey, defaultWidth, minWidth, maxWidth, edge } = options;
@@ -184,9 +204,34 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     [cancelDrag],
   );
 
+  const onKeyDown = useCallback(
+    (event: { readonly key: string; readonly shiftKey: boolean }) => {
+      const nextWidth = resizableWidthFromKeyboard({
+        key: event.key,
+        currentWidth: clampedWidth,
+        minWidth,
+        maxWidth,
+        edge,
+        step: event.shiftKey ? 64 : 16,
+      });
+      if (nextWidth === null) return;
+      try {
+        setLocalStorageItem(storageKey, nextWidth, WidthSchema);
+      } catch (error) {
+        console.error("Could not persist panel width.", error);
+      }
+      setWidth(nextWidth);
+    },
+    [clampedWidth, edge, maxWidth, minWidth, storageKey],
+  );
+
+  const isResizing = dragStateRef.current !== null;
+
   return {
     width: clampedWidth,
+    isResizing,
     handlers: {
+      onKeyDown,
       onPointerDown,
       onPointerMove,
       onPointerUp,
