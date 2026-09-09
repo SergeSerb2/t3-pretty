@@ -1048,6 +1048,17 @@ export function createServerEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => usagePricesAtom(environmentId),
     }),
+    storageInventory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:storage-inventory",
+      tag: WS_METHODS.storageGetInventory,
+      staleTimeMs: 60_000,
+    }),
+    storageInventoryStream: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:storage-inventory-stream",
+      idleTtlMs: 60_000,
+      restartOnReconnect: true,
+      subscribe: () => runStream(WS_METHODS.storageStreamInventory, {}),
+    }),
     configProjection,
     welcome,
     consumeResetCredit: createEnvironmentRpcCommand(runtime, {
