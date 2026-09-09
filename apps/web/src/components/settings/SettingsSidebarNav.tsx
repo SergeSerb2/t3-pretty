@@ -76,8 +76,13 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/projects": PanelsTopLeftIcon,
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
+  "/settings/instructions": Settings2Icon,
+  "/settings/agents": BotIcon,
+  "/settings/skills": Settings2Icon,
+  "/settings/apps": BlocksIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
+  "/settings/storage": Settings2Icon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };

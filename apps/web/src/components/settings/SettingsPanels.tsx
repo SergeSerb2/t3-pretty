@@ -1052,7 +1052,6 @@ export function AppearanceSettingsPanel() {
     theme,
     themeHalves,
   } = useTheme();
-  const customThemes = useCustomThemes();
   const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
@@ -1086,16 +1085,9 @@ export function AppearanceSettingsPanel() {
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
             appearanceMode={appearanceMode}
-            customThemes={customThemes}
-            initialAppearance={resolvedTheme}
-            refreshTheme={refreshTheme}
-            isImportOpen={isImportThemeOpen}
             setAppearanceMode={setAppearanceMode}
-            setTheme={setTheme}
-            setThemeHalf={setThemeHalf}
             theme={theme}
-            themeHalves={themeHalves}
-            onImportOpenChange={setIsImportThemeOpen}
+            setTheme={setTheme}
           />
         </div>
       </SettingsSection>
@@ -2116,7 +2108,8 @@ export function GeneralSettingsPanel() {
           <>
             <SettingsRow
               serverScoped
-              {...searchableSetting("auto-settle-merged-threads")}
+              id="auto-settle-merged-threads"
+              title="Auto-settle merged threads"
               description="Settle a thread when its pull request merges. Closed pull requests still settle automatically."
               resetAction={
                 settings.sidebarAutoSettleOnMerge !==
