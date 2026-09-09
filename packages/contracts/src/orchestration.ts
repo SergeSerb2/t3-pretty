@@ -43,6 +43,7 @@ import {
   AutomationsGetRunResult,
 } from "./automations.ts";
 import { EnabledSkillIds } from "./skills.ts";
+import { ThreadSubagentPolicy } from "./subagentPolicy.ts";
 
 export {
   effectiveRuntimeModeForProviderDriver,
@@ -1241,6 +1242,30 @@ const AutomationRunRequestCommand = Schema.Struct({
   requestedAt: IsoDateTime,
 });
 
+const ThreadSceneryAssignCommand = Schema.Struct({
+  type: Schema.Literal("thread.scenery.assign"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  scenery: Schema.NullOr(ThreadSceneryAssignment),
+  createdAt: IsoDateTime,
+});
+
+const ThreadSkillsSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.skills.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  enabledSkillIds: EnabledSkillIds,
+  createdAt: IsoDateTime,
+});
+
+const ThreadSubagentPolicySetCommand = Schema.Struct({
+  type: Schema.Literal("thread.subagent-policy.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  subagentPolicy: ThreadSubagentPolicy,
+  createdAt: IsoDateTime,
+});
+
 export const ClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -1267,6 +1292,9 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  ThreadSceneryAssignCommand,
+  ThreadSkillsSetCommand,
+  ThreadSubagentPolicySetCommand,
   AutomationCreateCommand,
   AutomationUpdateCommand,
   AutomationDeleteCommand,
