@@ -9,9 +9,9 @@ export interface ComposerTrigger {
 }
 
 const SIMPLE_MENTION_PATH_REGEX = /^[^\s@"\\]+$/;
-const COMPOSER_TRIGGER_QUERY_MAX_LENGTH = 256;
-const COMPOSER_TRIGGER_TOKEN_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + 1;
-const COMPOSER_SLASH_LINE_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + "/model ".length;
+export const COMPOSER_TRIGGER_QUERY_MAX_LENGTH = 256;
+export const COMPOSER_TRIGGER_TOKEN_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + 1;
+export const COMPOSER_SLASH_LINE_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + "/model ".length;
 
 export function serializeComposerMentionPath(path: string): string {
   if (SIMPLE_MENTION_PATH_REGEX.test(path)) {
