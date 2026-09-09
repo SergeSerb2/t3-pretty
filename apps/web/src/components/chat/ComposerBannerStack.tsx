@@ -39,7 +39,7 @@ export interface ComposerBannerStackItem {
   // Ordering hint for stack assemblers: front this banner even though its
   // variant is calm (e.g. live update progress). The stack itself ignores it.
   readonly urgent?: boolean;
-  readonly priority?: number;
+  readonly priority?: number | string;
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;

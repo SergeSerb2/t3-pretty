@@ -3920,6 +3920,7 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              surface: "sidebar",
               branch: thread.branch ?? null,
               isPinned,
               isSettled,

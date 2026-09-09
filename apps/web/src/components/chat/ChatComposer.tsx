@@ -4095,7 +4095,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         id: "composer-activity",
         variant: "default",
         priority: "activity",
-        content: activityStackContent,
+        icon: <></>,
+        title: activityStackContent,
       }
     : null;
   const bannerStackItems = activityStackItem
