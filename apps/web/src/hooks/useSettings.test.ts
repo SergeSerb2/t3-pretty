@@ -344,7 +344,6 @@ describe("resolveEnvironmentIdentificationMode", () => {
       resolveEnvironmentIdentificationMode({
         mode: "pill",
         settingsHydrated: true,
-        pillAvailable: false,
       }),
     ).toBe("artwork");
     expect(
@@ -352,7 +351,6 @@ describe("resolveEnvironmentIdentificationMode", () => {
         mode: "artwork",
         settingsHydrated: true,
         paletteThemeActive: true,
-        pillAvailable: false,
       }),
     ).toBe("artwork");
   });
@@ -363,7 +361,6 @@ describe("resolveEnvironmentIdentificationMode", () => {
         mode: "none",
         settingsHydrated: true,
         paletteThemeActive: true,
-        pillAvailable: false,
       }),
     ).toBe("none");
   });

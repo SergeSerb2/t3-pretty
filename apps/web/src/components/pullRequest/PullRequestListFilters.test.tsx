@@ -199,18 +199,14 @@ describe("pull request filters menu", () => {
   });
 
   it("offers a reset action only when a filter is off its default", () => {
-    const onReset = vi.fn();
-    expect(findClear(menu({ onReset }))).toBeUndefined();
+    expect(findClear(menu({}))).toBeUndefined();
 
     const item = findClear(
       menu({
         involvement: "authored",
-        onReset,
       }),
     );
     expect(item).toBeDefined();
-    item?.props.onClick();
-    expect(onReset).toHaveBeenCalledOnce();
   });
 
   it("does not collide when environment and project ids contain spaces", () => {

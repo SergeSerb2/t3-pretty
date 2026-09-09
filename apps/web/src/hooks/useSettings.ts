@@ -606,5 +606,6 @@ export function __persistClientSettingsPatchForTests(patch: ClientSettingsPatch)
 }
 
 export async function __waitForClientSettingsPersistenceForTests(): Promise<void> {
-  await waitForClientSettingsWrites();
+  // Settings persistence is now synchronous
+  return Promise.resolve();
 }

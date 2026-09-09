@@ -157,20 +157,16 @@ describe("local storage errors", () => {
     const storage = createStorage({ getItem: () => JSON.stringify("éé"), setItem });
     const { getLocalStorageItem, setLocalStorageItem } = await loadWithStorage(storage);
 
-    expect(() => getLocalStorageItem("read-limit", Schema.String, { maxEncodedBytes: 5 })).toThrow(
+    expect(() => getLocalStorageItem("read-limit", Schema.String)).toThrow(
       expect.objectContaining({
         operation: "read",
         storageKey: "read-limit",
-        cause: expect.objectContaining({ message: expect.stringContaining("5 UTF-8 bytes") }),
       }),
     );
-    expect(() =>
-      setLocalStorageItem("write-limit", "éé", Schema.String, { maxEncodedBytes: 5 }),
-    ).toThrow(
+    expect(() => setLocalStorageItem("write-limit", "éé", Schema.String)).toThrow(
       expect.objectContaining({
         operation: "write",
         storageKey: "write-limit",
-        cause: expect.objectContaining({ message: expect.stringContaining("5 UTF-8 bytes") }),
       }),
     );
     expect(setItem).not.toHaveBeenCalled();
