@@ -1091,7 +1091,7 @@ export const make = Effect.gen(function* () {
         ? yield* Effect.andThen(GitHubReleasesClient, (client) =>
             client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
           ).pipe(
-            Effect.catchAll(() =>
+            Effect.catch(() =>
               // Fetch failed (HTTP error, timeout, parse error) - log and return undefined
               logUpdaterWarning(
                 "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
