@@ -34,6 +34,7 @@ export * from "./agentInstructions.ts";
 export * from "./automations.ts";
 export * from "./skills.ts";
 export * from "./subagentPolicy.ts";
+export * from "./storage.ts";
 export * from "./apps.ts";
 export * from "./appsCatalog.ts";
 export * from "./projectTransfer.ts";
