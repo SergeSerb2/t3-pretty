@@ -345,3 +345,14 @@ export function createVcsEnvironmentAtoms<R, E>(
 export * from "./gitActions.ts";
 export * from "./vcsAction.ts";
 export * from "./vcsRef.ts";
+
+// Compatibility shim for fork: determines if git status should refresh after turn completion.
+// Conservative implementation: always refresh to ensure UI stays current.
+export function shouldRefreshGitStatusAfterTurnComplete(_input: {
+  readonly previousThreadId: string | null | undefined;
+  readonly threadId: string;
+  readonly previousCompletedAt: string | null | undefined;
+  readonly completedAt: string | null;
+}): boolean {
+  return true;
+}
