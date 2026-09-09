@@ -2,7 +2,6 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { mediaMimeType } from "@t3tools/shared/filePreview";
 import {
   getProjectFaviconCacheKey,
-  getProjectFaviconCacheKey,
   isProjectFaviconFallbackUrl,
 } from "@t3tools/shared/projectFavicon";
 import * as Encoding from "effect/Encoding";

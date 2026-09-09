@@ -182,6 +182,7 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
   readonly retryExpectedFailureAfter?: Duration.Input;
+  readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
 const SUBSCRIPTION_RETRY_MAX_DELAY_MS = 30_000;
@@ -308,7 +309,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                     }),
                   ),
                 );
-              return subscribeToSession(0);
+              return subscribeToSession();
             },
           }),
         ),
