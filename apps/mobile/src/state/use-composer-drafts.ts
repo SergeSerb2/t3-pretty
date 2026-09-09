@@ -67,6 +67,8 @@ export interface ComposerDraft {
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
   readonly workspaceSelection?: ComposerDraftWorkspaceSelection;
+  readonly enabledSkillIds?: ReadonlyArray<string>;
+  readonly autoCreatePullRequest?: boolean;
   /**
    * Set on new-task drafts only. The project is stored here rather than in
    * the key so a project can hold any number of drafts and a draft can be
@@ -96,7 +98,13 @@ export interface ComposerDraftWorkspaceSelection {
 
 export type ComposerDraftSettingsUpdate = Pick<
   ComposerDraft,
-  "modelSelection" | "runtimeMode" | "interactionMode" | "workspaceSelection" | "project"
+  | "modelSelection"
+  | "runtimeMode"
+  | "interactionMode"
+  | "workspaceSelection"
+  | "project"
+  | "enabledSkillIds"
+  | "autoCreatePullRequest"
 >;
 
 const ComposerDraftWorkspaceSelectionSchema = Schema.Struct({
