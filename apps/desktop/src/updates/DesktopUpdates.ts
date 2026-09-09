@@ -241,71 +241,87 @@ export const GitHubReleasesClient = Context.GenericTag<GitHubReleasesClient>(
   "@t3tools/desktop/GitHubReleasesClient",
 );
 
-// Production implementation: fetch from GitHub API
-export const liveGitHubReleasesClient = Layer.succeed(
+// Production implementation: fetch from GitHub API with pagination
+export const liveGitHubReleasesClient = Layer.effect(
   GitHubReleasesClient,
-  GitHubReleasesClient.of({
-    fetchLatestNightlyTag: (repo) =>
-      Effect.gen(function* () {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10_000);
-          
+  Effect.gen(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    // Extract repo owner/name from environment or default to fork
+    const repoOwner = "SergeSerb2";
+    const repoName = "t3-pretty";
+
+    return GitHubReleasesClient.of({
+      fetchLatestNightlyTag: (repo) =>
+        Effect.gen(function* () {
           try {
-            const response = yield* Effect.promise(() =>
-              fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100`, {
-                headers: {
-                  Accept: "application/vnd.github+json",
-                  "X-GitHub-Api-Version": "2022-11-28",
-                },
-                signal: controller.signal,
-              }),
-            );
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-            clearTimeout(timeoutId);
+            try {
+              // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
+              const allReleases: unknown[] = [];
+              for (let page = 1; page <= 3; page++) {
+                const response = yield* Effect.promise(() =>
+                  fetch(
+                    `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
+                    {
+                      headers: {
+                        Accept: "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                      },
+                      signal: controller.signal,
+                    },
+                  ),
+                );
 
-            if (!response.ok) return null;
+                if (!response.ok) return null;
 
-            const releases: unknown = yield* Effect.promise(() => response.json());
-            if (!Array.isArray(releases)) return null;
+                // Keep abort signal through JSON parse
+                const releases: unknown = yield* Effect.promise(() => response.json());
+                if (!Array.isArray(releases)) return null;
+                if (releases.length === 0) break; // No more pages
 
-            // Mirror check-nightly-release.cjs findLatestNightly:
-            // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
-            const candidates: Array<{ tag_name: string; published_at: string }> = [];
-            for (const release of releases) {
-              if (
-                typeof release === "object" &&
-                release !== null &&
-                "draft" in release &&
-                release.draft !== true &&
-                "published_at" in release &&
-                typeof release.published_at === "string" &&
-                "tag_name" in release &&
-                typeof release.tag_name === "string" &&
-                isNightlyTag(release.tag_name)
-              ) {
-                candidates.push({
-                  tag_name: release.tag_name,
-                  published_at: release.published_at,
-                });
+                allReleases.push(...releases);
               }
+
+              // Mirror check-nightly-release.cjs findLatestNightly:
+              // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
+              const candidates: Array<{ tag_name: string; published_at: string }> = [];
+              for (const release of allReleases) {
+                if (
+                  typeof release === "object" &&
+                  release !== null &&
+                  "draft" in release &&
+                  release.draft !== true &&
+                  "published_at" in release &&
+                  typeof release.published_at === "string" &&
+                  "tag_name" in release &&
+                  typeof release.tag_name === "string" &&
+                  isNightlyTag(release.tag_name)
+                ) {
+                  candidates.push({
+                    tag_name: release.tag_name,
+                    published_at: release.published_at,
+                  });
+                }
+              }
+
+              if (candidates.length === 0) return null;
+
+              // Sort by Date.parse(published_at) descending
+              candidates.sort((a, b) => {
+                return Date.parse(b.published_at) - Date.parse(a.published_at);
+              });
+
+              return candidates[0].tag_name;
+            } finally {
+              clearTimeout(timeoutId);
             }
-
-            if (candidates.length === 0) return null;
-
-            // Sort by Date.parse(published_at) descending
-            candidates.sort((a, b) => {
-              return Date.parse(b.published_at) - Date.parse(a.published_at);
-            });
-
-            return candidates[0].tag_name;
-          } finally {
-            clearTimeout(timeoutId);
+          } catch {
+            return null;
           }
-        } catch {
-          return null;
-        }
-      }),
+        }),
+    });
   }),
 );
 
@@ -1066,9 +1082,8 @@ export const make = Effect.gen(function* () {
       const isNightlyVersion = isNightlyTag(environment.appVersion);
       const latestNightlyTag = isNightlyVersion
         ? yield* Effect.option(
-            Effect.andThen(
-              GitHubReleasesClient,
-              (client) => client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
+            Effect.andThen(GitHubReleasesClient, (client) =>
+              client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
             ),
           ).pipe(Effect.map(Option.getOrNull))
         : null;
@@ -1209,6 +1224,8 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(DesktopUpdates, make).pipe(
-  Layer.provide(liveGitHubReleasesClient),
-);
+// Base layer that requires GitHubReleasesClient to be provided by the caller
+export const layer = Layer.effect(DesktopUpdates, make);
+
+// Production layer with live GitHub client
+export const liveLayer = layer.pipe(Layer.provide(liveGitHubReleasesClient));

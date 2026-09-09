@@ -259,7 +259,7 @@ export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Pr
 
 export async function fetchLatestNightlyRelease(): Promise<Release> {
   // Mirror check-nightly-release.cjs findLatestNightly:
-  // 1. Paginate releases (or fetch multiple pages)
+  // 1. Paginate releases (fetch multiple pages up to limit)
   // 2. Filter !draft && published_at && isNightlyTag(tag_name)
   // 3. Sort by Date.parse(published_at) descending
   // 4. Take [0]
@@ -270,33 +270,41 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), RELEASE_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${PRERELEASE_API_URL}?per_page=100`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Prerelease list request failed (${response.status})`);
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await readBoundedResponse(response));
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error("Prerelease list response was not JSON", { cause: error });
+    // Paginate up to 3 pages (300 releases) like desktop client
+    const allReleases: unknown[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const response = await fetch(`${PRERELEASE_API_URL}?per_page=100&page=${page}`, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(`Prerelease list request failed (${response.status})`);
       }
-      throw error;
+
+      let parsed: unknown;
+      try {
+        // Keep abort signal through JSON parse
+        parsed = JSON.parse(await readBoundedResponse(response));
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          throw new Error("Prerelease list response was not JSON", { cause: error });
+        }
+        throw error;
+      }
+
+      if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
+      if (parsed.length === 0) break; // No more pages
+
+      allReleases.push(...parsed);
     }
 
-    if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
-    
     // Filter: !draft && published_at && isNightlyTag
     const candidates: Release[] = [];
-    for (const item of parsed) {
+    for (const item of allReleases) {
       if (
         typeof item === "object" &&
         item !== null &&
