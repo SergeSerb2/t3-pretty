@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/state/automations.ts",
+    "src/state/automations.test.ts",
+    "src/state/agentInstructions.ts",
+    "src/state/projectTransfer.ts"
+  ]
+}

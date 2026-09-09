@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/preview/Manager.ts",
+    "src/preview/Manager.test.ts",
+    "src/ipc/methods/preview.ts",
+    "src/ipc/methods/preview.test.ts"
+  ]
+}

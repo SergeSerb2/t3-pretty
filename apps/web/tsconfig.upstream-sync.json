@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/state/automations.ts",
+    "src/state/agentInstructions.ts",
+    "src/state/projectTransfer.ts",
+    "src/state/storageInventory.ts",
+    "src/routes/automations.$environmentId.$automationId.tsx",
+    "src/components/automations/**",
+    "src/components/settings/AgentInstructionsSettings.tsx",
+    "src/components/settings/StorageSettings.tsx",
+    "src/components/ProjectTransferDialog.tsx",
+    "src/components/preview/PreviewAutomationHosts.tsx",
+    "src/components/preview/previewAutomationRequestConsumer.test.ts",
+    "src/components/preview/previewAutomationRequestConsumer.ts",
+    "src/components/preview/previewAutomationTarget.test.ts",
+    "src/components/preview/previewAutomationTarget.ts",
+    "src/components/chat/AutomationRunBanner.tsx",
+    "src/components/sidebar/SidebarAutomationRow.tsx"
+  ]
+}

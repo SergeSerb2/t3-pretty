@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/automations/**",
+    "src/storage/**",
+    "src/instructions/**",
+    "src/project/ProjectTransfer.ts",
+    "src/project/ProjectTransfer.test.ts",
+    "src/orchestration/decider.automations.test.ts",
+    "src/orchestration/projector.automations.test.ts",
+    "src/orchestration/decider.transfer.test.ts",
+    "src/persistence/Migrations/050_Automations.ts",
+    "src/persistence/Layers/ProjectionAutomations.ts",
+    "src/persistence/Services/ProjectionAutomations.ts",
+    "src/mcp/PreviewAutomationBroker.ts",
+    "src/mcp/PreviewAutomationBroker.test.ts",
+    "src/mcp/toolkits/automations/**",
+    "src/mcp/toolkits/preview/**"
+  ]
+}

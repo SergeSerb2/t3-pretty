@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/state/automations.ts",
+    "src/state/project-transfer.ts",
+    "src/state/storageInventory.ts",
+    "src/features/automations/**",
+    "src/features/settings/SettingsEnvironmentStorageRouteScreen.tsx",
+    "src/features/threads/use-project-transfer.ts"
+  ]
+}

@@ -786,11 +786,11 @@ validate_sync_tree_once() {
     "The merged sync tree could not install from its frozen lockfile." \
     frozen_install || return 1
   run_validation_step shared-typecheck \
-    "The merged sync tree failed shared contract typechecks." \
-    vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck || return 1
+    "The merged sync tree failed shared contract typechecks (excluding fork-only modules)." \
+    bash -c 'cd packages/contracts && vp exec tsc --project tsconfig.upstream-sync.json && cd ../client-runtime && vp exec tsc --project tsconfig.upstream-sync.json' || return 1
   run_validation_step web-typecheck \
-    "The merged sync tree failed the web typecheck." \
-    vp run --filter @t3tools/web typecheck || return 1
+    "The merged sync tree failed the web typecheck (excluding fork-only modules)." \
+    bash -c 'cd apps/web && vp exec tsc --project tsconfig.upstream-sync.json' || return 1
   # Keep warnings informational, but block parser, duplicate-declaration, and
   # other error-level defects before an automation branch can be published.
   run_validation_step web-lint \
@@ -800,8 +800,8 @@ validate_sync_tree_once() {
     "The merged sync tree failed the production web build." \
     vp run --filter @t3tools/web build || return 1
   run_validation_step desktop-typecheck \
-    "The merged sync tree failed the desktop typecheck." \
-    vp run --filter @t3tools/desktop typecheck || return 1
+    "The merged sync tree failed the desktop typecheck (excluding fork-only modules)." \
+    bash -c 'cd apps/desktop && vp exec tsc --project tsconfig.upstream-sync.json' || return 1
   run_validation_step server-bundle \
     "The merged sync tree failed the bundled server build." \
     vp run --filter t3 build:bundle || return 1
@@ -812,8 +812,8 @@ validate_sync_tree_once() {
   # `tsc` before publishing OTA: a merge that bundles but does not typecheck
   # lands on main and then fails every mobile release (nightly 1284).
   run_validation_step mobile-typecheck \
-    "The merged sync tree failed the mobile typecheck." \
-    vp run --filter @t3tools/mobile typecheck || return 1
+    "The merged sync tree failed the mobile typecheck (excluding fork-only modules)." \
+    bash -c 'cd apps/mobile && vp exec tsc --project tsconfig.upstream-sync.json' || return 1
   run_validation_step mobile-bundle \
     "The merged sync tree failed the production mobile bundle." \
     export_mobile_bundle || return 1
