@@ -362,10 +362,12 @@ export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.
 export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.assignThreadScenery",
 )(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
   return yield* dispatch({
     ...input,
     type: "thread.scenery.assign",
-    commandId: yield* commandId(input),
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
   });
 });
 

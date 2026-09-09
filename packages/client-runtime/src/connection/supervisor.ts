@@ -664,8 +664,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         inflight.leaseLost
           ? Effect.never
           : active.lease.session.closed.pipe(
-              Effect.catch((error): Effect.Effect<MonitorEvent> =>
-                Effect.succeed({ _tag: "Closed", error }),
+              Effect.catch((error: ConnectionAttemptError): Effect.Effect<MonitorEvent> =>
+                error._tag === "ConnectionTransientError"
+                  ? Effect.succeed({ _tag: "Closed", error })
+                  : Effect.die(new Error(`Unexpected ConnectionBlockedError in session.closed`)),
               ),
             ),
         authorizationRefresh,

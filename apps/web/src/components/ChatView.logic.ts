@@ -39,7 +39,7 @@ import type {
   AssetCreateUrlInput,
   AssetCreateUrlResult,
 } from "@t3tools/contracts";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/atomCommand";
+import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";

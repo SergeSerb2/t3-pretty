@@ -30,6 +30,8 @@ import {
   resolveRuntimeModeForProviderDriver,
   displayRuntimeModeForProviderDriver,
   defaultRuntimeModeForProviderDriver,
+  RuntimeMode,
+  DEFAULT_RUNTIME_MODE,
 } from "./modelSelection.ts";
 import {
   AutomationShell,
@@ -145,14 +147,7 @@ export const ModelSelection = ModelSelectionSource.pipe(
 );
 export type ModelSelection = typeof ModelSelection.Type;
 
-export const RuntimeMode = Schema.Literals([
-  "approval-required",
-  "auto-accept-edits",
-  "auto",
-  "full-access",
-]);
-export type RuntimeMode = typeof RuntimeMode.Type;
-export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
+export { RuntimeMode, DEFAULT_RUNTIME_MODE };
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";

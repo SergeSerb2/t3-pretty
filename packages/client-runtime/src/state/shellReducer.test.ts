@@ -282,7 +282,7 @@ describe("applyShellStreamEvent", () => {
         automation: { ...stubAutomation, name: "Renamed" },
       });
       expect(renamed.automations).toHaveLength(1);
-      expect(renamed.automations[0]?.name).toBe("Renamed");
+      expect(renamed.automations?.[0]?.name).toBe("Renamed");
 
       const removed = applyShellStreamEvent(renamed, {
         kind: "automation-removed",

@@ -410,6 +410,7 @@ describe("streaming row projection", () => {
       activities: [],
       checkpoints: history.map(({ checkpoint }) => checkpoint),
       session: null,
+      enabledSkillIds: [],
     };
     const state = Atom.make(
       AsyncResult.success({ ...EMPTY_ENVIRONMENT_THREAD_STATE, data: Option.some(thread) }),

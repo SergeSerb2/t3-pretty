@@ -63,7 +63,6 @@ const CONFIG = {
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
-      serverConfigHttp: true,
       environmentThemes: true,
     },
   },

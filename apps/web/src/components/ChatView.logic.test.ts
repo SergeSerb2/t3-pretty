@@ -727,6 +727,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    enabledSkillIds: [],
     ...overrides,
   };
 }
@@ -839,6 +840,7 @@ describe("buildLoadingThreadFromShell", () => {
       hasPendingApprovals: false,
       hasPendingUserInput: false,
       hasActionableProposedPlan: false,
+      enabledSkillIds: [],
     } satisfies ThreadShell;
 
     expect(buildLoadingThreadFromShell(shell)).toMatchObject({

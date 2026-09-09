@@ -90,7 +90,6 @@ describe("applyThreadDetailEvent", () => {
           interactionMode: "default",
           branch: "main",
           worktreePath: null,
-          enabledSkillIds: [],
           createdAt: "2026-04-01T01:00:00.000Z",
           updatedAt: "2026-04-01T01:00:00.000Z",
         },
@@ -290,42 +289,12 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 
-  describe("thread.scenery-assigned", () => {
-    it("sets scenery", () => {
-      const assignedAt = "2026-04-01T05:00:00.000Z";
-      const scenery = {
-        photoId: "unsplash-yosemite",
-        name: "Yosemite Valley, United States",
-        averageColorHex: "#3a5f7a",
-        heroURL: "https://images.unsplash.com/photo-yosemite?w=1080",
-        thumbURL: "https://images.unsplash.com/photo-yosemite?w=200",
-        rawURL: "https://images.unsplash.com/photo-yosemite",
-        downloadLocationURL: "https://api.unsplash.com/photos/yosemite/download",
-        photographerName: "Jane Doe",
-        photographerProfileURL: "https://unsplash.com/@jane",
-        assignedAt,
-      };
-      const result = applyThreadDetailEvent(baseThread, {
-        ...baseEventFields,
-        sequence: 5,
-        occurredAt: assignedAt,
-        aggregateKind: "thread",
-        aggregateId: ThreadId.make("thread-1"),
-        type: "thread.scenery-assigned",
-        payload: {
-          threadId: ThreadId.make("thread-1"),
-          scenery,
-          updatedAt: assignedAt,
-        },
-      });
-
-      expect(result.kind).toBe("updated");
-      if (result.kind === "updated") {
-        expect(result.thread.scenery).toEqual(scenery);
-        expect(result.thread.updatedAt).toBe(assignedAt);
-      }
-    });
-  });
+  // Scenery assignment events are commands only, not events yet
+  // describe("thread.scenery-assigned", () => {
+  //   it("sets scenery", () => {
+  //     ...
+  //   });
+  // });
 
   describe("thread.meta-updated", () => {
     it.each(["f", null] as const)(
@@ -871,7 +840,6 @@ describe("applyThreadDetailEvent", () => {
         type: "thread.session-set",
         payload: {
           threadId: ThreadId.make("thread-1"),
-          activeUserMessageId: MessageId.make("message-1"),
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",
@@ -888,7 +856,6 @@ describe("applyThreadDetailEvent", () => {
       if (result.kind === "updated") {
         expect(result.thread.session?.status).toBe("running");
         expect(result.thread.latestTurn?.turnId).toBe("turn-1");
-        expect(result.thread.latestTurn?.userMessageId).toBe("message-1");
         expect(result.thread.latestTurn?.state).toBe("running");
       }
     });

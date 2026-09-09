@@ -55,13 +55,13 @@ export function applyShellStreamEvent(
         snapshotSequence: event.sequence,
       };
     case "automation-upserted": {
-      const automations = upsertById(snapshot.automations, event.automation);
+      const automations = upsertById(snapshot.automations ?? [], event.automation);
       return { ...snapshot, automations, snapshotSequence: event.sequence };
     }
     case "automation-removed":
       return {
         ...snapshot,
-        automations: Arr.filter(snapshot.automations, (a) => a.id !== event.automationId),
+        automations: Arr.filter(snapshot.automations ?? [], (a) => a.id !== event.automationId),
         snapshotSequence: event.sequence,
       };
     case "thread-touched": {
