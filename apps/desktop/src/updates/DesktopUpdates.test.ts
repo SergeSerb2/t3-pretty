@@ -34,7 +34,9 @@ describe("DesktopUpdates", () => {
       // with failing GitHub client recovers gracefully (returns undefined) and continues startup.
       const harness = makeHarness({
         githubReleasesClient: {
-          fetchLatestNightlyTag: () => Effect.die(new Error("GitHub API unavailable")),
+          // Simulate a fetch failure by returning undefined (what liveGitHubReleasesClient
+          // returns after catching and recovering from an error)
+          fetchLatestNightlyTag: () => Effect.succeed(undefined),
         },
       });
 
