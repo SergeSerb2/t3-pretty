@@ -503,6 +503,7 @@ export type OrchestrationLatestTurnState = typeof OrchestrationLatestTurnState.T
 
 export const OrchestrationLatestTurn = Schema.Struct({
   turnId: TurnId,
+  userMessageId: Schema.optional(MessageId),
   state: OrchestrationLatestTurnState,
   requestedAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
