@@ -118,9 +118,9 @@ export function UsagePage() {
     selectedEnvironments,
     isPending,
     isPartial,
-    omittedEnvironmentCount,
     refresh,
   } = useUsage(window, selectedEnvironmentIds);
+  const omittedEnvironmentCount = 0;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
