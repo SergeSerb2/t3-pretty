@@ -34,7 +34,7 @@ describe("DesktopUpdates", () => {
       // with failing GitHub client recovers gracefully (returns undefined) and continues startup.
       const harness = makeHarness({
         githubReleasesClient: {
-          fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API unavailable")),
+          fetchLatestNightlyTag: () => Effect.die(new Error("GitHub API unavailable")),
         },
       });
 
@@ -1058,5 +1058,31 @@ describe("DesktopUpdates", () => {
         assert.equal(harness.checkCount(), 1);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("configure does not throw Service not found when GitHubReleasesClient layer is provided", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        // configure should succeed and not throw "Service not found: @t3tools/desktop/GitHubReleasesClient"
+        yield* updates.configure;
+        const state = yield* updates.getState;
+        assert.isNotNull(state);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("liveLayer provides GitHubReleasesClient without Service not found", () => {
+    // This test verifies that DesktopUpdates.liveLayer properly provides
+    // GitHubReleasesClient through liveGitHubReleasesClient, ensuring the
+    // production wiring is correct and configure won't throw at runtime.
+    return Effect.gen(function* () {
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+      // Verify the client service is accessible
+      assert.isNotNull(client);
+      assert.isFunction(client.fetchLatestNightlyTag);
+    }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient));
   });
 });

@@ -203,11 +203,15 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       : DesktopAppSettings.layer;
 
   // Mock GitHubReleasesClient for tests (returns null to avoid network calls)
-  const mockGitHubReleasesClient = Layer.succeed(
+  const mockGitHubReleasesClient = Layer.effect(
     DesktopUpdates.GitHubReleasesClient,
-    options.githubReleasesClient ?? {
-      fetchLatestNightlyTag: () => Effect.succeed(null),
-    },
+    Effect.succeed(
+      DesktopUpdates.GitHubReleasesClient.of(
+        options.githubReleasesClient ?? {
+          fetchLatestNightlyTag: () => Effect.succeed(null),
+        },
+      ),
+    ),
   );
 
   const layer = DesktopUpdates.layer.pipe(
