@@ -3521,7 +3521,6 @@ export function ConnectionsSettings() {
         <CloudRemoteEnvironmentRows
           primaryEnvironmentId={primaryEnvironmentId}
           savedEnvironments={savedEnvironments}
-          hiddenMachineKeys={workingSavedMachineKeys}
         />
       </SettingsSection>
       <LoadBalancingSettings environments={environments} />
