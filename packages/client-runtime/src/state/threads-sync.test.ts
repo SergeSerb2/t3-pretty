@@ -40,7 +40,7 @@ import {
   makeWarmThreadStateRegistry,
   ThreadSnapshotLoader,
   WARM_THREAD_STATE_CAPACITY,
-  type WarmThreadStates,
+  WarmThreadStates,
   type EnvironmentThreadState,
 } from "./threads.ts";
 

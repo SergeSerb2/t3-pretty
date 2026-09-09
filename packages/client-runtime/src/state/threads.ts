@@ -893,7 +893,6 @@ export * from "./threadState.ts";
 
 // Stub layer for backward compatibility (warm thread states functionality removed)
 import * as Layer from "effect/Layer";
-import * as Context from "effect/Context";
 export const warmThreadStatesLayer = Layer.empty;
 
 // Test utilities (functionality removed, stubs for compatibility)
@@ -907,15 +906,18 @@ export interface WarmThreadStatesService {
   isDeleted(key: string): boolean;
 }
 
-export class WarmThreadStates extends Context.Tag("@t3tools/client-runtime/state/threads/WarmThreadStates")<
+export class WarmThreadStates extends Context.Service<
   WarmThreadStates,
   WarmThreadStatesService
->() {}
+>()("@t3tools/client-runtime/state/threads/WarmThreadStates") {}
 
-export const makeWarmThreadStateRegistry = (): WarmThreadStatesService => ({
-  set: () => {},
-  get: () => undefined,
-  drop: () => {},
-  remove: () => {},
-  isDeleted: () => false,
-});
+export const makeWarmThreadStateRegistry = (): WarmThreadStatesService => {
+  const store = new Map<string, unknown>();
+  return {
+    set: (key, value) => store.set(key, value),
+    get: (key) => store.get(key),
+    drop: (key) => store.delete(key),
+    remove: (key) => store.delete(key),
+    isDeleted: () => false,
+  };
+};
