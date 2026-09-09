@@ -75,6 +75,15 @@ export interface ComposerDraft {
    * retargeted to another project without changing identity.
    */
   readonly project?: ComposerDraftProject;
+  /**
+   * The last prompt text written by a pull-request handoff. Used to replace
+   * only the handoff-written portion when a new handoff arrives.
+   */
+  readonly lastHandoffPrompt?: string;
+  /**
+   * Pull request URL from the most recent handoff that wrote to this draft.
+   */
+  readonly pullRequestReference?: string;
 }
 
 export interface ComposerDraftProject {
@@ -907,6 +916,29 @@ export function setComposerDraftText(draftKey: string, value: string): void {
     const draft = {
       ...normalizeDraft(current[draftKey]),
       text: value,
+    };
+    return withComposerDraft(current, draftKey, draft);
+  });
+}
+
+/**
+ * Updates a draft with handoff-specific text and metadata. Preserves the
+ * incoming prompt in lastHandoffPrompt so a later handoff can replace it.
+ */
+export function setComposerDraftHandoffText(
+  draftKey: string,
+  text: string,
+  lastHandoffPrompt: string,
+  metadata: {
+    readonly pullRequestReference?: string;
+  },
+): void {
+  updateComposerDrafts((current) => {
+    const draft = {
+      ...normalizeDraft(current[draftKey]),
+      text,
+      lastHandoffPrompt,
+      pullRequestReference: metadata.pullRequestReference,
     };
     return withComposerDraft(current, draftKey, draft);
   });

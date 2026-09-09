@@ -1740,6 +1740,37 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export type ThreadCreatedPayload = typeof ThreadCreatedPayload.Type;
+export type ThreadTransferredPayload = typeof ThreadTransferredPayload.Type;
+export type ThreadDeletedPayload = typeof ThreadDeletedPayload.Type;
+export type ThreadArchivedPayload = typeof ThreadArchivedPayload.Type;
+export type ThreadUnarchivedPayload = typeof ThreadUnarchivedPayload.Type;
+export type ThreadSettledPayload = typeof ThreadSettledPayload.Type;
+export type ThreadUnsettledPayload = typeof ThreadUnsettledPayload.Type;
+export type ThreadSnoozedPayload = typeof ThreadSnoozedPayload.Type;
+export type ThreadUnsnoozedPayload = typeof ThreadUnsnoozedPayload.Type;
+export type ThreadPinnedPayload = typeof ThreadPinnedPayload.Type;
+export type ThreadUnpinnedPayload = typeof ThreadUnpinnedPayload.Type;
+export type ThreadPinReorderedPayload = typeof ThreadPinReorderedPayload.Type;
+export type ThreadSceneryAssignedPayload = typeof ThreadSceneryAssignedPayload.Type;
+export type ThreadSkillsSetPayload = typeof ThreadSkillsSetPayload.Type;
+export type ThreadSubagentPolicySetPayload = typeof ThreadSubagentPolicySetPayload.Type;
+export type ThreadMetaUpdatedPayload = typeof ThreadMetaUpdatedPayload.Type;
+export type ThreadRuntimeModeSetPayload = typeof ThreadRuntimeModeSetPayload.Type;
+export type ThreadInteractionModeSetPayload = typeof ThreadInteractionModeSetPayload.Type;
+export type ThreadMessageSentPayload = typeof ThreadMessageSentPayload.Type;
+export type ThreadNativeResumeRequestedPayload = typeof ThreadNativeResumeRequestedPayload.Type;
+export type ThreadTurnStartRequestedPayload = typeof ThreadTurnStartRequestedPayload.Type;
+export type ThreadTurnInterruptRequestedPayload = typeof ThreadTurnInterruptRequestedPayload.Type;
+export type ThreadApprovalResponseRequestedPayload = typeof ThreadApprovalResponseRequestedPayload.Type;
+export type ThreadCheckpointRevertRequestedPayload = typeof ThreadCheckpointRevertRequestedPayload.Type;
+export type ThreadRevertedPayload = typeof ThreadRevertedPayload.Type;
+export type ThreadSessionStopRequestedPayload = typeof ThreadSessionStopRequestedPayload.Type;
+export type ThreadSessionSetPayload = typeof ThreadSessionSetPayload.Type;
+export type ThreadProposedPlanUpsertedPayload = typeof ThreadProposedPlanUpsertedPayload.Type;
+export type ThreadTurnDiffCompletedPayload = typeof ThreadTurnDiffCompletedPayload.Type;
+export type ThreadActivityAppendedPayload = typeof ThreadActivityAppendedPayload.Type;
+
 /**
  * Which client connection dispatched the command that produced an event.
  * Stamped by the orchestration engine on client-dispatched commands; absent on

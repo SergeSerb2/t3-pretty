@@ -4,11 +4,9 @@ import { scopedProjectKey } from "../../lib/scopedEntities";
 import {
   getComposerDraftSnapshot,
   ensureComposerDraftsLoaded,
-  setComposerDraftText,
+  setComposerDraftHandoffText,
 } from "../../state/use-composer-drafts";
 import { handoffPrompt } from "./pullRequestDetail.logic";
-
-const lastHandoffPromptByDraft = new Map<string, string>();
 
 export function newTaskComposerDraftKey(
   environmentId: EnvironmentId,
@@ -43,11 +41,12 @@ export function writePullRequestHandoffDraft(input: {
   const prompt = handoffPrompt(
     {
       prompt: existing.text,
-      lastHandoffPrompt: lastHandoffPromptByDraft.get(draftKey),
+      lastHandoffPrompt: existing.lastHandoffPrompt,
     },
     input.prompt,
   );
-  setComposerDraftText(draftKey, prompt);
-  lastHandoffPromptByDraft.set(draftKey, input.prompt);
+  setComposerDraftHandoffText(draftKey, prompt, input.prompt, {
+    pullRequestReference: input.url,
+  });
   return draftKey;
 }
