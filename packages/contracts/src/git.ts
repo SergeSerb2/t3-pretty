@@ -1,7 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
+import {
+  AutomatedReviewSignal,
+  SourceControlProviderError,
+  SourceControlProviderInfo,
+} from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -206,6 +210,12 @@ const VcsStatusChangeRequest = Schema.Struct({
    * servers and providers whose lookups do not report it.
    */
   updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  /**
+   * Public review activity observed on the hosting provider. `null` means the
+   * provider was checked and left no visible signal; `undefined` means this
+   * server/provider cannot report automated review state.
+   */
+  automatedReview: Schema.optional(Schema.NullOr(AutomatedReviewSignal)),
 });
 
 const VcsStatusLocalShape = {
