@@ -16,6 +16,31 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 export { resolveAssetUrl, type AssetUrlState } from "@t3tools/client-runtime/state/assets";
 
+/**
+ * Returns whether the resource can be submitted to `createUrl`. False for
+ * empty-id attachments, which crash before hitting the RPC due to the
+ * `AssetResource` decode, which throws `InvalidAssetCollectionKeyError`
+ * during render.
+ */
+export function isQueryableAssetResource(resource: AssetResource): boolean {
+  return resource._tag !== "attachment" || resource.attachmentId.trim().length > 0;
+}
+
+/**
+ * Re-aligns query results (from the filtered, queryable subset) back onto the
+ * original resource list. Unqueryable slots are `null`.
+ */
+export function alignQueryableAssetUrls<T>(
+  resources: ReadonlyArray<AssetResource>,
+  queryableResults: ReadonlyArray<T | null>,
+): Array<T | null> {
+  let index = 0;
+  return resources.map((resource) => {
+    if (!isQueryableAssetResource(resource)) return null;
+    return queryableResults[index++] ?? null;
+  });
+}
+
 export function useAssetUrlState(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,
