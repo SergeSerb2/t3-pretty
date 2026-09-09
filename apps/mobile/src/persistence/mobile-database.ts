@@ -354,19 +354,18 @@ const makeAvailable = Effect.gen(function* () {
     ),
     pruneCacheKind: Effect.fn("MobileDatabase.pruneCacheKind")((environmentId, kind, keep) =>
       Effect.tryPromise({
-        // The client_cache_environment_updated index (environment_id, updated_at DESC)
-        // serves the keep-newest subquery.
+        // SQLite-safe two-step prune: rowid-based DELETE avoids same-table
+        // subquery issues. The client_cache_environment_updated index
+        // (environment_id, updated_at DESC) serves the keep-newest subquery.
         try: () =>
           database.runAsync(
             `DELETE FROM client_cache
-                     WHERE environment_id = ? AND kind = ? AND cache_key NOT IN (
-                       SELECT cache_key FROM client_cache
+                     WHERE rowid IN (
+                       SELECT rowid FROM client_cache
                        WHERE environment_id = ? AND kind = ?
                        ORDER BY updated_at DESC, cache_key
-                       LIMIT ?
+                       LIMIT -1 OFFSET ?
                      )`,
-            environmentId,
-            kind,
             environmentId,
             kind,
             keep,

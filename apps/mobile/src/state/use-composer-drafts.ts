@@ -128,6 +128,8 @@ const ComposerDraftSchema = Schema.Struct({
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
   workspaceSelection: Schema.optional(ComposerDraftWorkspaceSelectionSchema),
+  enabledSkillIds: Schema.optional(Schema.Array(Schema.String)),
+  autoCreatePullRequest: Schema.optional(Schema.Boolean),
   project: Schema.optional(ComposerDraftProjectSchema),
 });
 

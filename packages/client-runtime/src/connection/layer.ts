@@ -17,45 +17,17 @@ const authorizationLayer = RemoteEnvironmentAuthorization.layer;
 
 const resolverLayer = ConnectionResolver.layer.pipe(Layer.provide(authorizationLayer));
 
-const driverLayer = ConnectionDriver.layer.pipe(
-  Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layer)),
-);
-
-const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
-
-const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
-
-const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer).pipe(
-  Layer.provideMerge(RelayEnvironmentDiscovery.layer),
-);
-
-const connectionStartupLayer = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-    const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
-    yield* registry.start;
-    yield* platformSource.registrations.pipe(
-      Stream.runForEach(registry.reconcilePlatform),
-      Effect.forkScoped,
-    );
-  }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
-);
-
 export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
-  const driverLayerWithOptions = ConnectionDriver.layer.pipe(
-    Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layerWithOptions(options))),
+  const sessionLayer = RpcSession.layerWithOptions(options);
+  const driverLayer = ConnectionDriver.layer.pipe(
+    Layer.provide(Layer.mergeAll(resolverLayer, sessionLayer)),
   );
-  const registryLayerWithOptions = EnvironmentRegistry.layer.pipe(
-    Layer.provide(driverLayerWithOptions),
+  const registryLayer = EnvironmentRegistry.layer.pipe(Layer.provide(driverLayer));
+  const onboardingLayer = ConnectionOnboarding.layer.pipe(Layer.provide(registryLayer));
+  const connectionServicesLayer = Layer.mergeAll(registryLayer, onboardingLayer).pipe(
+    Layer.provideMerge(RelayEnvironmentDiscovery.layer),
   );
-  const onboardingLayerWithOptions = ConnectionOnboarding.layer.pipe(
-    Layer.provide(registryLayerWithOptions),
-  );
-  const connectionServicesLayerWithOptions = Layer.mergeAll(
-    registryLayerWithOptions,
-    onboardingLayerWithOptions,
-  ).pipe(Layer.provideMerge(RelayEnvironmentDiscovery.layer));
-  const connectionStartupLayerWithOptions = Layer.effectDiscard(
+  const connectionStartupLayer = Layer.effectDiscard(
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
@@ -66,17 +38,12 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
       );
     }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
   );
-  return connectionStartupLayerWithOptions.pipe(
-    Layer.provideMerge(connectionServicesLayerWithOptions),
+  return connectionStartupLayer.pipe(
+    Layer.provideMerge(connectionServicesLayer),
     Layer.provideMerge(authorizationLayer),
     Layer.provideMerge(threadLifecycleOutboxLayer),
     Layer.provideMerge(warmThreadStatesLayer),
   );
 }
 
-export const layer = connectionStartupLayer.pipe(
-  Layer.provideMerge(connectionServicesLayer),
-  Layer.provideMerge(authorizationLayer),
-  Layer.provideMerge(threadLifecycleOutboxLayer),
-  Layer.provideMerge(warmThreadStatesLayer),
-);
+export const layer = layerWithOptions({});
