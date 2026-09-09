@@ -29,6 +29,7 @@ import {
   displayRuntimeModeForProviderDriver,
   defaultRuntimeModeForProviderDriver,
 } from "./modelSelection.ts";
+import { AutomationShell } from "./automations.ts";
 
 export {
   effectiveRuntimeModeForProviderDriver,
@@ -660,6 +661,7 @@ export const OrchestrationShellSnapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProjectShell),
   threads: Schema.Array(OrchestrationThreadShell),
+  automations: Schema.optional(Schema.Array(AutomationShell)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationShellSnapshot = typeof OrchestrationShellSnapshot.Type;
@@ -684,6 +686,21 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     kind: Schema.Literal("thread-removed"),
     sequence: NonNegativeInt,
     threadId: ThreadId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("thread-touched"),
+    sequence: NonNegativeInt,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("automation-upserted"),
+    sequence: NonNegativeInt,
+    automation: AutomationShell,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("automation-removed"),
+    sequence: NonNegativeInt,
+    automationId: Schema.String,
   }),
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
