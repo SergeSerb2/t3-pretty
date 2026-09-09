@@ -236,7 +236,7 @@ export class GitHubReleasesClient extends Context.Service<
     readonly fetchLatestNightlyTag: (repo: {
       readonly owner: string;
       readonly name: string;
-    }) => Effect.Effect<string | null | undefined>;
+    }) => Effect.Effect<string | null>;
   }
 >()("@t3tools/desktop/GitHubReleasesClient") {}
 
@@ -244,7 +244,7 @@ export class GitHubReleasesClient extends Context.Service<
 export const liveGitHubReleasesClient = Layer.effect(
   GitHubReleasesClient,
   Effect.gen(function* () {
-    const fetchLatestNightlyTag = (repo: { readonly owner: string; readonly name: string }): Effect.Effect<string | null | undefined> =>
+    const fetchLatestNightlyTag = (repo: { readonly owner: string; readonly name: string }): Effect.Effect<string | null> =>
       Effect.gen(function* () {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10_000);
