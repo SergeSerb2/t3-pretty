@@ -354,3 +354,29 @@ export const stopThreadSession: (input: StopThreadSessionInput) => CommandEffect
     createdAt: metadata.createdAt,
   });
 });
+
+export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
+export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
+
+export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.setThreadSkills",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.skills.set",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
+export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.subagent-policy.set",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
