@@ -833,7 +833,7 @@ function PullRequestsRouteView() {
     });
     if (batches !== null) {
       setStatsTargetState({ key: requestedStatsScope.key, batches });
-      statsQuery.refresh(batches.map(({ environmentId, input }) => ({ environmentId, input })));
+      statsQuery.refresh();
     }
     if (includeDetail) setDetailRefreshToken((token) => token + 1);
   };
@@ -1387,7 +1387,9 @@ function PullRequestsRouteView() {
   useEffect(() => {
     const stats = statsQuery.stats;
     if (stats === null) return;
-    setStatsByRow((previous) => mergePullRequestDiffStats(previous, stats));
+    setStatsByRow((previous) =>
+      mergePullRequestDiffStats(previous, stats, visibleStatsKeys.current.values),
+    );
   }, [statsQuery.stats]);
   const displayGroups = useMemo(() => {
     const enriched = groups.map((group) => ({
@@ -1621,8 +1623,6 @@ function PullRequestsRouteView() {
                 return (
                   <PullRequestRow
                     key={entryKey}
-                    statsKey={entryKey}
-                    statsRef={registerStatsRow}
                     entry={entry}
                     showProjectTitle
                     showProvider={showProvider}

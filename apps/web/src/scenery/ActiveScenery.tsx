@@ -13,6 +13,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { connectionProjectionPhase } from "@t3tools/client-runtime/connection";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
@@ -42,6 +43,11 @@ import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useInkOverride } from "./useInkOverride";
 import "./scenery.css";
+
+function readEnvironmentSupportsScenery(_environmentId: EnvironmentId): boolean {
+  // TODO: Check capabilities when scenery capability is added
+  return true;
+}
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
 const TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";

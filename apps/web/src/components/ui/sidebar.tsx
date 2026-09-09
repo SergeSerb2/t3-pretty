@@ -201,8 +201,12 @@ function Sidebar({
     }
 
     const options = typeof resizable === "boolean" ? {} : resizable;
+    const maxWidth =
+      typeof options.maxWidth === "function"
+        ? options.maxWidth()
+        : options.maxWidth ?? Number.POSITIVE_INFINITY;
     return {
-      maxWidth: options.maxWidth ?? Number.POSITIVE_INFINITY,
+      maxWidth,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,
       storageKey: options.storageKey ?? null,
       ...(options.onResize ? { onResize: options.onResize } : {}),
