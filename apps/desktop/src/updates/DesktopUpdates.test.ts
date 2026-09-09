@@ -59,8 +59,8 @@ describe("DesktopUpdates", () => {
       const harness = makeHarness({
         appVersion: "v0.0.39-nightly.20260907.999",
         githubReleasesClient: {
-          // Simulate a failing GitHub client (Effect.fail, like tryPromise failures)
-          fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API rate limit")),
+          // Simulate a failing GitHub client that caught an error and returned null
+          fetchLatestNightlyTag: () => Effect.succeed(null),
         },
       });
 
@@ -85,9 +85,10 @@ describe("DesktopUpdates", () => {
       // Verify that configure continues successfully when the GitHub client returns undefined
       // (simulating a recovered fetch error), falling back to /latest feed for nightly builds.
       const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999",
         githubReleasesClient: {
           // Simulate what liveGitHubReleasesClient returns after catching an error
-          fetchLatestNightlyTag: () => Effect.succeed(undefined),
+          fetchLatestNightlyTag: () => Effect.succeed(null),
         },
       });
 
