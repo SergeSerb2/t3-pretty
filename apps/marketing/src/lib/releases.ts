@@ -278,7 +278,7 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
     // Find first nightly release (modern vX.Y.Z-nightly.* or legacy nightly-v*)
     for (const item of parsed) {
       const release = decodeRelease(item);
-      if (release && /^v?[^-]+-nightly\./i.test(release.tag_name) || /^nightly-v/i.test(release.tag_name)) {
+      if (release && (/^v?[^-]+-nightly\./i.test(release.tag_name) || /^nightly-v/i.test(release.tag_name))) {
         writeCachedRelease(release, now, NIGHTLY_CACHE_KEY);
         return release;
       }

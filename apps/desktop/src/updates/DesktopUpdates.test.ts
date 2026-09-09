@@ -126,7 +126,7 @@ describe("DesktopUpdates", () => {
         useMultipleRangeRequest: false,
       },
     );
-    // Legacy format: nightly-vX.Y.Z
+    // Legacy format: nightly-vX.Y.Z (keep as-is, no 'v' prefix)
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {
@@ -137,11 +137,11 @@ describe("DesktopUpdates", () => {
       ),
       {
         provider: "generic",
-        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/vnightly-v0.9.0/",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0/",
         useMultipleRangeRequest: false,
       },
     );
-    // Legacy format with suffix: nightly-vX.Y.Z-nightly.DATE
+    // Legacy format with suffix: nightly-vX.Y.Z-nightly.DATE (keep as-is)
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {
@@ -152,7 +152,7 @@ describe("DesktopUpdates", () => {
       ),
       {
         provider: "generic",
-        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/vnightly-v0.9.0-nightly.20260905.123/",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0-nightly.20260905.123/",
         useMultipleRangeRequest: false,
       },
     );

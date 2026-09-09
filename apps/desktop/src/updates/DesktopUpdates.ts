@@ -248,7 +248,12 @@ export function resolveGitHubGenericUpdaterFeed(
     /\/releases\/latest\/download\/?$/i.test(trimmed) &&
     (/^v?[^-]+-nightly\./i.test(appVersion) || /^nightly-v/i.test(appVersion))
   ) {
-    const versionTag = appVersion.startsWith("v") ? appVersion : `v${appVersion}`;
+    // Legacy tags already have the correct format; only add 'v' for modern tags missing it
+    const versionTag = /^nightly-v/i.test(appVersion)
+      ? appVersion
+      : appVersion.startsWith("v")
+        ? appVersion
+        : `v${appVersion}`;
     finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${versionTag}/`);
   }
 
