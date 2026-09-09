@@ -36,6 +36,7 @@ import {
   AutomationEditableFields,
   AutomationPatch,
   AutomationRunTrigger,
+  ThreadAutomationRun,
 } from "./automations.ts";
 import { EnabledSkillIds } from "./skills.ts";
 
@@ -705,8 +706,8 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
-  automationRun: Schema.optional(Schema.Unknown),
-  enabledSkillIds: Schema.optional(Schema.Array(Schema.String)),
+  automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
+  enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 
