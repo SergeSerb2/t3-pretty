@@ -345,6 +345,31 @@ describe("DesktopServerExposure", () => {
             ["private-network", "http://100.90.1.2:4173/"],
           ],
         );
+        // Verify Tailscale endpoint is NOT labeled as "lan"
+        const tailscaleEndpoint = endpoints.find((e) => e.httpBaseUrl === "http://100.90.1.2:4173/");
+        assert.equal(tailscaleEndpoint?.reachability, "private-network");
+        assert.equal(tailscaleEndpoint?.label, "Tailscale");
+      }),
+    ),
+  );
+
+  it.effect("classifies actual LAN hosts as lan reachability", () =>
+    withHarness(
+      lanNetworkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* settings.setServerExposureMode("network-accessible");
+
+        const state = yield* serverExposure.configureFromSettings({ port: 4173 });
+        assert.equal(state.mode, "network-accessible");
+        assert.equal(state.advertisedHost, "192.168.1.20");
+        assert.equal(state.endpointUrl, "http://192.168.1.20:4173");
+
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        const lanEndpoint = endpoints.find((e) => e.httpBaseUrl === "http://192.168.1.20:4173/");
+        assert.equal(lanEndpoint?.reachability, "lan");
+        assert.equal(lanEndpoint?.label, "Local network");
       }),
     ),
   );

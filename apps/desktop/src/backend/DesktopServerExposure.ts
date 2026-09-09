@@ -196,15 +196,24 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   ];
 
   if (input.exposure.endpointUrl) {
+    // When endpointUrl is a Tailscale IP (fallback), classify as private-network
+    const isTailscaleEndpoint = input.exposure.advertisedHost
+      ? isTailscaleIpv4Address(input.exposure.advertisedHost)
+      : false;
+    
     endpoints.push(
       createDesktopEndpoint({
-        id: `desktop-lan:${input.exposure.endpointUrl}`,
-        label: "Local network",
+        id: isTailscaleEndpoint
+          ? `desktop-tailscale:${input.exposure.endpointUrl}`
+          : `desktop-lan:${input.exposure.endpointUrl}`,
+        label: isTailscaleEndpoint ? "Tailscale" : "Local network",
         httpBaseUrl: input.exposure.endpointUrl,
-        reachability: "lan",
+        reachability: isTailscaleEndpoint ? "private-network" : "lan",
         status: "available",
         isDefault: true,
-        description: "Reachable from devices on the same network.",
+        description: isTailscaleEndpoint
+          ? "Reachable from devices on the same Tailnet."
+          : "Reachable from devices on the same network.",
       }),
     );
   }

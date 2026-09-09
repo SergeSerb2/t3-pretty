@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { decodeRelease, fetchLatestRelease } from "./releases.ts";
+import { decodeRelease, fetchLatestRelease, fetchLatestNightlyRelease } from "./releases.ts";
 
 const release = {
   tag_name: "v1.2.3",
@@ -110,5 +110,52 @@ describe("fetchLatestRelease", () => {
 
     await expect(fetchLatestRelease()).rejects.toThrow("too large");
     expect(cancelled).toBe(true);
+  });
+
+  it("fetches latest nightly from prerelease list", async () => {
+    const nightlyRelease = {
+      tag_name: "v0.0.39-nightly.20260907.1332",
+      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.39-nightly.20260907.1332",
+      assets: [
+        {
+          name: "T3-Code-nightly.dmg",
+          browser_download_url:
+            "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/T3-Code-nightly.dmg",
+        },
+      ],
+    };
+    const stableRelease = {
+      tag_name: "v1.0.0",
+      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v1.0.0",
+      assets: [],
+    };
+
+    const store = memoryStorage();
+    vi.stubGlobal("sessionStorage", store);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([nightlyRelease, stableRelease])),
+    );
+
+    await expect(fetchLatestNightlyRelease()).resolves.toEqual(nightlyRelease);
+    const cached = JSON.parse(store.getItem("t3code-latest-nightly") ?? "");
+    expect(cached).toMatchObject({ release: nightlyRelease });
+    expect(cached.release.html_url).toContain("SergeSerb2/t3-pretty");
+  });
+
+  it("fetches latest legacy nightly from prerelease list", async () => {
+    const legacyNightlyRelease = {
+      tag_name: "nightly-v0.9.0",
+      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/nightly-v0.9.0",
+      assets: [],
+    };
+
+    vi.stubGlobal("sessionStorage", memoryStorage());
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json([legacyNightlyRelease])),
+    );
+
+    await expect(fetchLatestNightlyRelease()).resolves.toEqual(legacyNightlyRelease);
   });
 });

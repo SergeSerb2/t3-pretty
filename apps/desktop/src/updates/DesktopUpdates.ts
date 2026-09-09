@@ -240,12 +240,13 @@ export function resolveGitHubGenericUpdaterFeed(
   }
 
   // For nightly builds, rewrite /releases/latest/download to the specific
-  // nightly tag so updates find the correct versioned assets.
+  // nightly tag so updates find the correct versioned assets. Match both
+  // modern (vX.Y.Z-nightly.*) and legacy (nightly-vX.Y.Z*) formats.
   let finalUrl = trimmed;
   if (
     appVersion &&
     /\/releases\/latest\/download\/?$/i.test(trimmed) &&
-    /-nightly\.\d{8}\.\d+$/.test(appVersion)
+    (/^v?[^-]+-nightly\./i.test(appVersion) || /^nightly-v/i.test(appVersion))
   ) {
     const versionTag = appVersion.startsWith("v") ? appVersion : `v${appVersion}`;
     finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${versionTag}/`);

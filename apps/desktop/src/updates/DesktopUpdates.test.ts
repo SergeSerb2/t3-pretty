@@ -97,6 +97,7 @@ describe("DesktopUpdates", () => {
   });
 
   it("rewrites nightly /releases/latest URLs to version-specific tags", () => {
+    // Modern format: vX.Y.Z-nightly.DATE.BUILD
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {
@@ -122,6 +123,36 @@ describe("DesktopUpdates", () => {
       {
         provider: "generic",
         url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format: nightly-vX.Y.Z
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        "nightly-v0.9.0",
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/vnightly-v0.9.0/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format with suffix: nightly-vX.Y.Z-nightly.DATE
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        "nightly-v0.9.0-nightly.20260905.123",
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/vnightly-v0.9.0-nightly.20260905.123/",
         useMultipleRangeRequest: false,
       },
     );

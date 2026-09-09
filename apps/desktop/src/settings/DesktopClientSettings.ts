@@ -16,24 +16,37 @@ import { readFileStringWithinLimit } from "../boundedFileRead.ts";
 
 export const CLIENT_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
-const ClientSettingsDocumentSchema = Schema.Struct({
-  settings: ClientSettingsSchema,
-});
-
 const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
-const LegacyClientSettingsDocumentJson = fromLenientJson(ClientSettingsDocumentSchema);
-const decodeLegacyClientSettingsDocumentJson = Schema.decodeEffect(
-  LegacyClientSettingsDocumentJson,
+const decodeClientSettingsDocument = Schema.decodeEffect(
+  fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
 );
-const decodeClientSettingsJsonValue = Schema.decodeEffect(ClientSettingsJson);
-const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
-  decodeLegacyClientSettingsDocumentJson(raw).pipe(
-    Effect.map((document) => document.settings),
-    Effect.catchTags({
-      SchemaError: () => decodeClientSettingsJsonValue(raw),
-    }),
+const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchema);
+const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
+  const document = yield* decodeClientSettingsDocument(raw);
+  // Select the shape before validation so invalid legacy settings cannot become defaults.
+  // Legacy wrapper requires "settings" to be a non-null object; otherwise prefer flat schema.
+  const isLegacyWrapper =
+    Object.hasOwn(document, "settings") &&
+    typeof document.settings === "object" &&
+    document.settings !== null;
+  return yield* decodeClientSettingsValue(
+    isLegacyWrapper ? document.settings : document,
   );
+});
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
+
+export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
+  "DesktopClientSettingsReadError",
+  {
+    operation: Schema.Literals(["read-file", "decode-document"]),
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",

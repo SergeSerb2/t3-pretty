@@ -2,8 +2,10 @@ const REPO = "SergeSerb2/t3-pretty";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
-const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const STABLE_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const PRERELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases`;
 const CACHE_KEY = "t3code-latest-release";
+const NIGHTLY_CACHE_KEY = "t3code-latest-nightly";
 const RELEASE_CACHE_MAX_AGE_MS = 15 * 60 * 1_000;
 const RELEASE_REQUEST_TIMEOUT_MS = 10_000;
 const RELEASE_RESPONSE_MAX_BYTES = 1024 * 1024;
@@ -99,7 +101,7 @@ function storage(): Storage | undefined {
   }
 }
 
-function readCachedRelease(now: number): {
+function readCachedRelease(now: number, cacheKey: string): {
   readonly fresh: Release | null;
   readonly stale: Release | null;
 } {
@@ -107,10 +109,10 @@ function readCachedRelease(now: number): {
   if (!store) return { fresh: null, stale: null };
 
   try {
-    const raw = store.getItem(CACHE_KEY);
+    const raw = store.getItem(cacheKey);
     if (raw === null) return { fresh: null, stale: null };
     if (raw.length > RELEASE_RESPONSE_MAX_BYTES) {
-      store.removeItem(CACHE_KEY);
+      store.removeItem(cacheKey);
       return { fresh: null, stale: null };
     }
 
@@ -135,10 +137,10 @@ function readCachedRelease(now: number): {
       if (release) return { fresh: null, stale: release };
     }
 
-    store.removeItem(CACHE_KEY);
+    store.removeItem(cacheKey);
   } catch {
     try {
-      store.removeItem(CACHE_KEY);
+      store.removeItem(cacheKey);
     } catch {
       // Storage may be unavailable in privacy-restricted browser contexts.
     }
@@ -146,9 +148,9 @@ function readCachedRelease(now: number): {
   return { fresh: null, stale: null };
 }
 
-function writeCachedRelease(release: Release, cachedAt: number): void {
+function writeCachedRelease(release: Release, cachedAt: number, cacheKey: string): void {
   try {
-    storage()?.setItem(CACHE_KEY, JSON.stringify({ cachedAt, release } satisfies CachedRelease));
+    storage()?.setItem(cacheKey, JSON.stringify({ cachedAt, release } satisfies CachedRelease));
   } catch {
     // Downloads should continue to work when session storage is unavailable.
   }
@@ -189,15 +191,18 @@ async function readBoundedResponse(response: Response): Promise<string> {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
-export async function fetchLatestRelease(): Promise<Release> {
+async function fetchReleaseFromUrl(
+  url: string,
+  cacheKey: string,
+): Promise<Release> {
   const now = Date.now();
-  const cached = readCachedRelease(now);
+  const cached = readCachedRelease(now, cacheKey);
   if (cached.fresh) return cached.fresh;
 
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), RELEASE_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(url, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -206,7 +211,7 @@ export async function fetchLatestRelease(): Promise<Release> {
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Latest release request failed (${response.status})`);
+      throw new Error(`Release request failed (${response.status})`);
     }
 
     let parsed: unknown;
@@ -214,15 +219,72 @@ export async function fetchLatestRelease(): Promise<Release> {
       parsed = JSON.parse(await readBoundedResponse(response));
     } catch (error) {
       if (error instanceof SyntaxError) {
-        throw new Error("Latest release response was not JSON", { cause: error });
+        throw new Error("Release response was not JSON", { cause: error });
       }
       throw error;
     }
     const release = decodeRelease(parsed);
-    if (!release) throw new Error("Latest release response was invalid");
+    if (!release) throw new Error("Release response was invalid");
 
-    writeCachedRelease(release, now);
+    writeCachedRelease(release, now, cacheKey);
     return release;
+  } catch (error) {
+    if (cached.stale) return cached.stale;
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+  }
+}
+
+export type ReleaseChannel = "stable" | "nightly";
+
+export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Promise<Release> {
+  return channel === "nightly" ? fetchLatestNightlyRelease() : fetchReleaseFromUrl(STABLE_API_URL, CACHE_KEY);
+}
+
+export async function fetchLatestNightlyRelease(): Promise<Release> {
+  // Fetch prerelease list and find the first nightly tag
+  const now = Date.now();
+  const cached = readCachedRelease(now, NIGHTLY_CACHE_KEY);
+  if (cached.fresh) return cached.fresh;
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), RELEASE_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${PRERELEASE_API_URL}?per_page=20`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Prerelease list request failed (${response.status})`);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readBoundedResponse(response));
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error("Prerelease list response was not JSON", { cause: error });
+      }
+      throw error;
+    }
+
+    if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
+    
+    // Find first nightly release (modern vX.Y.Z-nightly.* or legacy nightly-v*)
+    for (const item of parsed) {
+      const release = decodeRelease(item);
+      if (release && /^v?[^-]+-nightly\./i.test(release.tag_name) || /^nightly-v/i.test(release.tag_name)) {
+        writeCachedRelease(release, now, NIGHTLY_CACHE_KEY);
+        return release;
+      }
+    }
+
+    throw new Error("No nightly release found in prerelease list");
   } catch (error) {
     if (cached.stale) return cached.stale;
     throw error;
