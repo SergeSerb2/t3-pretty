@@ -813,7 +813,6 @@ export function HomeScreen(props: HomeScreenProps) {
             environmentMachine={machineByEnvironmentId.get(item.pendingTask.environmentId)}
             showPendingDivider={item.showPendingDivider}
             showTrailingDivider={showTrailingDivider}
-            sceneryChrome={sceneryChrome}
             onSelectPendingTask={props.onSelectPendingTask}
             onDeletePendingTask={props.onDeletePendingTask}
           />
@@ -826,7 +825,6 @@ export function HomeScreen(props: HomeScreenProps) {
             disabled={!shelfPreferencesLoaded}
             expanded={item.expanded}
             onToggle={toggleSnoozedShelf}
-            sceneryChrome={sceneryChrome}
           />
         );
       }
@@ -837,7 +835,6 @@ export function HomeScreen(props: HomeScreenProps) {
             disabled={!shelfPreferencesLoaded}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
-            sceneryChrome={sceneryChrome}
           />
         );
       }
@@ -850,9 +847,7 @@ export function HomeScreen(props: HomeScreenProps) {
           variant={item.item.variant}
           hasQueuedMessages={queuedThreadKeys.has(movedId)}
           snoozed={item.item.snoozed}
-          settled={item.item.settled}
           pinned={item.item.pinned}
-          sceneryChrome={sceneryChrome}
           snoozePresetMinute={nowMinute}
           snoozeWakeLabelText={item.snoozeWakeLabelText}
           showTrailingDivider={showTrailingDivider}

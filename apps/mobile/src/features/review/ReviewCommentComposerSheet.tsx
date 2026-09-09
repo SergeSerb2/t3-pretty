@@ -375,7 +375,6 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               label="Comment"
               variant="primary"
               disabled={!canSubmit}
-              loading={isPreparingImages}
               onPress={handleSubmit}
             />
           </View>
@@ -403,7 +402,6 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               label="Comment"
               variant="primary"
               disabled={!canSubmit}
-              loading={isPreparingImages}
               onPress={handleSubmit}
             />
           </View>

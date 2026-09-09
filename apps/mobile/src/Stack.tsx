@@ -18,11 +18,18 @@ import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
+import { AutomationsRouteScreen } from "./features/automations/AutomationsRouteScreen";
+import { AutomationDetailScreen } from "./features/automations/AutomationDetailScreen";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
 import { HardwareKeyboardCommandProvider } from "./features/keyboard/HardwareKeyboardCommandProvider";
+import { PullRequestsRouteScreen } from "./features/pull-requests/PullRequestsRouteScreen";
+import { PullRequestDetailScreen } from "./features/pull-requests/PullRequestDetailScreen";
+import { PullRequestCommentSheet } from "./features/pull-requests/PullRequestCommentSheet";
+import { PullRequestReviewersSheet } from "./features/pull-requests/PullRequestReviewersSheet";
+import { PullRequestDiffScreen } from "./features/pull-requests/PullRequestDiffScreen";
 import { ReviewCommentComposerSheet } from "./features/review/ReviewCommentComposerSheet";
 import { ReviewSheet } from "./features/review/ReviewSheet";
 import { ThreadTerminalRouteScreen } from "./features/terminal/ThreadTerminalRouteScreen";
@@ -31,6 +38,7 @@ import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
+import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
@@ -56,6 +64,9 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
+import { SettingsAppsRouteScreen } from "./features/settings/SettingsAppsRouteScreen";
+import { SettingsAppEditRouteScreen } from "./features/settings/SettingsAppEditRouteScreen";
+import { SettingsAppOAuthClientRouteScreen } from "./features/settings/SettingsAppOAuthClientRouteScreen";
 import { UsageLimitAccountScreen } from "./features/usage/UsageLimitsPooled";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
@@ -204,6 +215,27 @@ const SettingsContentStack = createNativeStackNavigator({
         title: "Usage",
       },
     }),
+    SettingsApps: createNativeStackScreen({
+      screen: SettingsAppsRouteScreen,
+      linking: "apps",
+      options: {
+        title: "Apps",
+      },
+    }),
+    SettingsAppEdit: createNativeStackScreen({
+      screen: SettingsAppEditRouteScreen,
+      linking: "apps/:environmentId/:connectionId?",
+      options: {
+        title: "Edit App",
+      },
+    }),
+    SettingsAppOAuthClient: createNativeStackScreen({
+      screen: SettingsAppOAuthClientRouteScreen,
+      linking: "apps/:environmentId/oauth/:family",
+      options: {
+        title: "OAuth Client",
+      },
+    }),
   },
 });
 
@@ -335,8 +367,11 @@ const WORKSPACE_OVERLAY_ROUTES = new Set([
   "GitConfirm",
   "GitOverview",
   "NewTaskSheet",
+  "PullRequestComment",
+  "PullRequestReviewers",
   "SettingsLegal",
   "SettingsSheet",
+  "ThreadRename",
   "ThreadReviewComment",
   "ThreadSettingsSheet",
 ]);
@@ -465,6 +500,66 @@ export const RootStack = createNativeStackNavigator({
         contentStyle: { backgroundColor: "transparent" },
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
+      },
+    }),
+    Automations: createNativeStackScreen({
+      screen: AutomationsRouteScreen,
+      linking: "automations",
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        title: "Automations",
+      },
+    }),
+    AutomationDetail: createNativeStackScreen({
+      screen: AutomationDetailScreen,
+      linking: "automations/:environmentId/:automationId",
+      options: GLASS_HEADER_OPTIONS,
+    }),
+    PullRequests: createNativeStackScreen({
+      screen: PullRequestsRouteScreen,
+      linking: "pull-requests",
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        title: "Pull Requests",
+      },
+    }),
+    PullRequestDetail: createNativeStackScreen({
+      screen: PullRequestDetailScreen,
+      linking: "pull-requests/:environmentId/:projectId/:number",
+      options: GLASS_HEADER_OPTIONS,
+    }),
+    PullRequestComment: createNativeStackScreen({
+      screen: PullRequestCommentSheet,
+      linking: "pull-requests/:environmentId/:projectId/:number/comment",
+      options: {
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
+        sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.55, 0.92],
+        sheetGrabberVisible: Platform.OS !== "android",
+      },
+    }),
+    PullRequestReviewers: createNativeStackScreen({
+      screen: PullRequestReviewersSheet,
+      linking: "pull-requests/:environmentId/:projectId/:number/reviewers",
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.55, 0.92],
+        sheetGrabberVisible: true,
+      },
+    }),
+    PullRequestDiff: createNativeStackScreen({
+      screen: PullRequestDiffScreen,
+      linking: "pull-requests/:environmentId/:projectId/:number/diff/:path*",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    ThreadRename: createNativeStackScreen({
+      screen: ThreadRenameSheet,
+      linking: "threads/:environmentId/:threadId/rename",
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.45],
+        sheetGrabberVisible: true,
       },
     }),
     Thread: createNativeStackScreen({
