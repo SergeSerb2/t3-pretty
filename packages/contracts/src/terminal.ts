@@ -8,6 +8,9 @@ import { ProviderInstanceId } from "./providerInstance.ts";
  * that want "the primary shell" don't hardcode `"term-1"`.
  */
 export const DEFAULT_TERMINAL_ID = "term-1";
+export const TERMINAL_INPUT_MAX_LENGTH = 4096;
+export const TERMINAL_WRITE_MAX_LENGTH = 65_536;
+export const TERMINAL_CHUNK_MAX_COUNT = 2048;
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const TerminalColsSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(

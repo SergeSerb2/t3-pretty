@@ -700,6 +700,7 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     kind: Schema.Literal("thread-touched"),
     sequence: NonNegativeInt,
     threadId: ThreadId,
+    updatedAt: IsoDateTime,
   }),
   Schema.Struct({
     kind: Schema.Literal("automation-upserted"),
