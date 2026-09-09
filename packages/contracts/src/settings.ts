@@ -905,6 +905,19 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   enableComputerUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * When on, the server chooses a project icon at project creation (agent mode
+   * only). Icon generation is a provider-specific behavior: typically Claude
+   * uses the user's Grok/Codex subscription and is skipped for other providers.
+   */
+  autoGenerateProjectIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * When on, the text generation model rewrites the live activity line of a
+   * running turn (web and mobile only: desktop always leaves the status as-is).
+   * Defaults to off because the rewritten text is typically less informative
+   * than the service's own status, and misleading when the service runs ahead.
+   */
+  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1234,6 +1247,8 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   enableComputerUse: Schema.optionalKey(Schema.Boolean),
+  autoGenerateProjectIcons: Schema.optionalKey(Schema.Boolean),
+  generateActivityHeadlines: Schema.optionalKey(Schema.Boolean),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),

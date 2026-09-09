@@ -301,6 +301,19 @@ jobs:
           if [[ -z "$relay_domain" && -n "${RELAY_API_ZONE_NAME:-}" ]]; then
             relay_domain="relay.$RELAY_API_ZONE_NAME"
           fi
+          
+          # Validate relay_domain hostname
+          if [[ -n "$relay_domain" ]]; then
+            if [[ ! "$relay_domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+              echo "Invalid relay domain: $relay_domain (must be a valid hostname)" >&2
+              exit 1
+            fi
+            if [[ "$relay_domain" =~ [[:cntrl:]] ]]; then
+              echo "Invalid relay domain: contains control characters" >&2
+              exit 1
+            fi
+          fi
+          
           required=(
             relay_domain
             CLERK_PUBLISHABLE_KEY
@@ -626,13 +639,13 @@ jobs:
           APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && vars.APPLE_TEAM_ID || '' }}
           MACOS_PROVISIONING_PROFILE: ${{ matrix.platform == 'mac' && secrets.MACOS_PROVISIONING_PROFILE || '' }}
           T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
-          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
-          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+          AZURE_TENANT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT || '' }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME || '' }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME || '' }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ matrix.platform == 'win' && secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME || '' }}
         run: |
           args=(
             --platform "${{ matrix.platform }}"
@@ -903,6 +916,10 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          
+          # Remove any debug manifests before verification
+          rm -f release-assets/builder-debug*.yml
+          
           arm64_manifests=(release-assets/*-mac.yml)
           x64_manifests=(release-assets/*-mac-x64.yml)
           if (( ${#arm64_manifests[@]} != 1 || ${#x64_manifests[@]} != 1 )); then
@@ -1079,9 +1096,51 @@ jobs:
           router_url="${T3CODE_WEB_ROUTER_URL:-https://app.t3.codes}"
           latest_domain="${T3CODE_WEB_LATEST_DOMAIN:-latest.app.t3.codes}"
           nightly_domain="${T3CODE_WEB_NIGHTLY_DOMAIN:-nightly.app.t3.codes}"
+          
+          # Validate and parse router_domain
           router_domain="${router_url#http://}"
           router_domain="${router_domain#https://}"
           router_domain="${router_domain%%/*}"
+          
+          # Validate router_domain format
+          if [[ -n "$router_domain" ]]; then
+            if [[ ! "$router_domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+              echo "Invalid router domain: $router_domain (must be a valid hostname)" >&2
+              exit 1
+            fi
+            if [[ "$router_domain" =~ [[:cntrl:]] ]]; then
+              echo "Invalid router domain: contains control characters" >&2
+              exit 1
+            fi
+          fi
+          
+          # Validate latest and nightly domains
+          for domain_var in "latest_domain" "nightly_domain"; do
+            domain="${!domain_var}"
+            if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+              echo "Invalid $domain_var: $domain (must be a valid hostname)" >&2
+              exit 1
+            fi
+            if [[ "$domain" =~ [[:cntrl:]] ]]; then
+              echo "Invalid $domain_var: contains control characters" >&2
+              exit 1
+            fi
+          done
+          
+          # Validate Vercel public config values for control characters and reasonable bounds
+          for env_var in "T3CODE_CLERK_PUBLISHABLE_KEY" "T3CODE_CLERK_JWT_TEMPLATE" "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID" "T3CODE_RELAY_URL"; do
+            value="${!env_var:-}"
+            if [[ -n "$value" ]]; then
+              if [[ "$value" =~ [[:cntrl:]] ]]; then
+                echo "Invalid $env_var: contains control characters" >&2
+                exit 1
+              fi
+              if [[ ${#value} -gt 2048 ]]; then
+                echo "Invalid $env_var: exceeds 2048 character limit" >&2
+                exit 1
+              fi
+            fi
+          done
 
           if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" ]]; then
             channel_domain="$latest_domain"
