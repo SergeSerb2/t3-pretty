@@ -852,6 +852,11 @@ const runtimeModeConfig: Record<
     description: "Allow commands and edits without prompts.",
     icon: LockOpenIcon,
   },
+  yolo: {
+    label: "YOLO",
+    description: "Full access mode (Kimi spelling).",
+    icon: LockOpenIcon,
+  },
 };
 
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
