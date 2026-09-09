@@ -269,11 +269,7 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
-const GROK_BOT_DRIVER_KIND = ProviderDriverKind.make("grokBot");
 const KIMI_DRIVER_KIND = ProviderDriverKind.make("kimi");
-
-/** Grok Bot offers no model choice; this slug is the single built-in "model". */
-export const GROK_BOT_MODEL = "grok-bot";
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
 
@@ -296,7 +292,6 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
   [CURSOR_DRIVER_KIND]: "default",
   [GROK_DRIVER_KIND]: "grok-build",
-  [GROK_BOT_DRIVER_KIND]: GROK_BOT_MODEL,
   [KIMI_DRIVER_KIND]: "kimi-code/k3",
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
 };
@@ -376,6 +371,7 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",
-  [GROK_BOT_DRIVER_KIND]: "Grok Bot",
   [KIMI_DRIVER_KIND]: "Kimi",
+  // Historical Grok Bot threads still carry this driver slug.
+  [ProviderDriverKind.make("grokBot")]: "Grok Bot",
 };

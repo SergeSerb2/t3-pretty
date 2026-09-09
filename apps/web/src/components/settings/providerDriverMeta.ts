@@ -3,7 +3,6 @@ import {
   ClaudeSettings,
   CodexSettings,
   CursorSettings,
-  GrokBotSettings,
   GrokSettings,
   KimiSettings,
   ProviderDriverKind,
@@ -77,13 +76,6 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     icon: KimiIcon,
     badgeLabel: "Early Access",
     settingsSchema: KimiSettings,
-  },
-  {
-    value: ProviderDriverKind.make("grokBot"),
-    label: "Grok Bot",
-    icon: GrokIcon,
-    badgeLabel: "Experimental",
-    settingsSchema: GrokBotSettings,
   },
   {
     value: ProviderDriverKind.make("antigravity"),
