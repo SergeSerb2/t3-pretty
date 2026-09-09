@@ -985,6 +985,8 @@ function SidebarMenuSubButton({
   });
 }
 
+export type { SidebarResizableOptions };
+
 export {
   Sidebar,
   SidebarContent,
