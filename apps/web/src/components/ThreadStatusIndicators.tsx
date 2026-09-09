@@ -73,6 +73,7 @@ export interface PrStatusIndicator {
   tooltipLead: string;
   tooltipTitle: string;
   url: string;
+  automatedReview: AutomatedReviewIndicator | null;
 }
 
 export interface TerminalStatusIndicator {
