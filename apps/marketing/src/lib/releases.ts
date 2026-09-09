@@ -259,9 +259,10 @@ export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Pr
 
 export async function fetchLatestNightlyRelease(): Promise<Release> {
   // Mirror check-nightly-release.cjs findLatestNightly:
-  // Fetch releases, skip drafts, filter nightly tags, sort by published_at desc (when available), pick newest.
-  // GitHub returns newest-first by default; walk in order and stop at first published nightly
-  // (effectively pagination-free for typical nightly density; per_page=100 covers weeks).
+  // 1. Paginate releases (or fetch multiple pages)
+  // 2. Filter !draft && published_at && isNightlyTag(tag_name)
+  // 3. Sort by Date.parse(published_at) descending
+  // 4. Take [0]
   const now = Date.now();
   const cached = readCachedRelease(now, NIGHTLY_CACHE_KEY);
   if (cached.fresh) return cached.fresh;
@@ -293,23 +294,38 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
 
     if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
     
-    // Walk newest-first (GitHub's default order) and stop at first published nightly
+    // Filter: !draft && published_at && isNightlyTag
+    const candidates: Release[] = [];
     for (const item of parsed) {
       if (
         typeof item === "object" &&
         item !== null &&
         "draft" in item &&
-        item.draft !== true
+        item.draft !== true &&
+        "published_at" in item &&
+        typeof item.published_at === "string"
       ) {
         const release = decodeRelease(item);
-        if (release && isNightlyTag(release.tag_name)) {
-          writeCachedRelease(release, now, NIGHTLY_CACHE_KEY);
-          return release;
+        if (release && release.published_at && isNightlyTag(release.tag_name)) {
+          candidates.push(release);
         }
       }
     }
 
-    throw new Error("No nightly release found in prerelease list");
+    if (candidates.length === 0) {
+      throw new Error("No nightly release found in prerelease list");
+    }
+
+    // Sort by Date.parse(published_at) descending and take [0]
+    candidates.sort((a, b) => {
+      const timeA = Date.parse(a.published_at!);
+      const timeB = Date.parse(b.published_at!);
+      return timeB - timeA;
+    });
+
+    const newestNightly = candidates[0];
+    writeCachedRelease(newestNightly, now, NIGHTLY_CACHE_KEY);
+    return newestNightly;
   } catch (error) {
     if (cached.stale) return cached.stale;
     throw error;

@@ -113,7 +113,7 @@ describe("fetchLatestRelease", () => {
     expect(cancelled).toBe(true);
   });
 
-  it("fetches latest nightly by published_at, skipping drafts and stables", async () => {
+  it("sorts by published_at desc after filtering, older in API order loses", async () => {
     const olderNightly = {
       tag_name: "v0.0.38-nightly.20260906.1000",
       html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.38-nightly.20260906.1000",
@@ -153,17 +153,21 @@ describe("fetchLatestRelease", () => {
     vi.stubGlobal("sessionStorage", store);
     vi.stubGlobal(
       "fetch",
-      // API order: stable first, then older nightly, then newest, then draft
-      vi.fn(async () => Response.json([stableRelease, olderNightly, newestNightly, draftNightly])),
+      // CRITICAL: olderNightly appears FIRST in API order but has older published_at
+      // Must sort by published_at desc, so newestNightly wins despite appearing later
+      vi.fn(async () => Response.json([olderNightly, stableRelease, newestNightly, draftNightly])),
     );
 
-    await expect(fetchLatestNightlyRelease()).resolves.toEqual(newestNightly);
+    const result = await fetchLatestNightlyRelease();
+    expect(result).toEqual(newestNightly);
+    expect(result.tag_name).toBe("v0.0.39-nightly.20260907.1332");
+    
     const cached = JSON.parse(store.getItem("t3code-latest-nightly") ?? "");
     expect(cached).toMatchObject({ release: newestNightly });
     expect(cached.release.html_url).toContain("SergeSerb2/t3-pretty");
   });
 
-  it("fetches latest legacy nightly by published_at", async () => {
+  it("sorts legacy nightlies by published_at desc, older API order loses", async () => {
     const olderLegacy = {
       tag_name: "nightly-v0.8.5",
       html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/nightly-v0.8.5",
@@ -182,10 +186,12 @@ describe("fetchLatestRelease", () => {
     vi.stubGlobal("sessionStorage", memoryStorage());
     vi.stubGlobal(
       "fetch",
-      // API order: older first
-      vi.fn(async () => Response.json([olderLegacy, newerLegacy])),
+      // CRITICAL: newer legacy appears LAST in API order but has newer published_at
+      vi.fn(async () => Response.json([newerLegacy, olderLegacy])),
     );
 
-    await expect(fetchLatestNightlyRelease()).resolves.toEqual(newerLegacy);
+    const result = await fetchLatestNightlyRelease();
+    expect(result).toEqual(newerLegacy);
+    expect(result.tag_name).toBe("nightly-v0.9.0");
   });
 });

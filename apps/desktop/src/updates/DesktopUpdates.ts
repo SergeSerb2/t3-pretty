@@ -269,8 +269,9 @@ export const liveGitHubReleasesClient = Layer.succeed(
             const releases: unknown = yield* Effect.promise(() => response.json());
             if (!Array.isArray(releases)) return null;
 
-            // GitHub returns newest-first by default. Walk in order and stop at first published nightly.
-            // This is effectively pagination-free for typical nightly density (per_page=100 covers weeks).
+            // Mirror check-nightly-release.cjs findLatestNightly:
+            // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
+            const candidates: Array<{ tag_name: string; published_at: string }> = [];
             for (const release of releases) {
               if (
                 typeof release === "object" &&
@@ -283,11 +284,21 @@ export const liveGitHubReleasesClient = Layer.succeed(
                 typeof release.tag_name === "string" &&
                 isNightlyTag(release.tag_name)
               ) {
-                return release.tag_name;
+                candidates.push({
+                  tag_name: release.tag_name,
+                  published_at: release.published_at,
+                });
               }
             }
 
-            return null;
+            if (candidates.length === 0) return null;
+
+            // Sort by Date.parse(published_at) descending
+            candidates.sort((a, b) => {
+              return Date.parse(b.published_at) - Date.parse(a.published_at);
+            });
+
+            return candidates[0].tag_name;
           } finally {
             clearTimeout(timeoutId);
           }
