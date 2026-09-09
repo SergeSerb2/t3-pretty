@@ -519,6 +519,43 @@ export const ThreadTitleRegeneration = Schema.Struct({
 });
 export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
+export const THREAD_SCENERY_PHOTO_ID_MAX_LENGTH = 512;
+export const THREAD_SCENERY_NAME_MAX_LENGTH = 1_024;
+export const THREAD_SCENERY_COLOR_MAX_LENGTH = 32;
+export const THREAD_SCENERY_URL_MAX_LENGTH = 8_192;
+export const THREAD_SCENERY_PHOTOGRAPHER_NAME_MAX_LENGTH = 2_048;
+
+const threadSceneryPhotoFields = {
+  photoId: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_PHOTO_ID_MAX_LENGTH)),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_NAME_MAX_LENGTH)),
+  averageColorHex: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_COLOR_MAX_LENGTH)),
+  ),
+  heroURL: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  thumbURL: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  rawURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
+  downloadLocationURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
+  photographerName: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(THREAD_SCENERY_PHOTOGRAPHER_NAME_MAX_LENGTH),
+  ),
+  photographerProfileURL: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_SCENERY_URL_MAX_LENGTH)),
+  ),
+} as const;
+
+export const ThreadSceneryPhoto = Schema.Struct(threadSceneryPhotoFields);
+export type ThreadSceneryPhoto = typeof ThreadSceneryPhoto.Type;
+
+export const ThreadSceneryAssignment = Schema.Struct({
+  ...threadSceneryPhotoFields,
+  assignedAt: IsoDateTime,
+});
+export type ThreadSceneryAssignment = typeof ThreadSceneryAssignment.Type;
+
 export const ThreadLinkedPullRequest = Schema.Struct({
   projectId: ProjectId,
   repository: TrimmedNonEmptyString,
@@ -573,6 +610,8 @@ export const OrchestrationThread = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // World Scenery photo; write-once, optional for pre-scenery servers.
+  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   // Per-thread skill picks; defaults to empty for pre-skills servers.
   enabledSkillIds: EnabledSkillIds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -640,6 +679,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
