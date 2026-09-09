@@ -8,7 +8,12 @@ import {
   type EnvironmentThreadStatus,
   mergeEnvironmentThread,
 } from "@t3tools/client-runtime/state/threads";
-import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@t3tools/contracts";
+import type {
+  ScopedProjectRef,
+  ScopedThreadRef,
+  ServerConfig,
+  OrchestrationCheckpointSummary,
+} from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
@@ -22,6 +27,7 @@ import {
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
+const EMPTY_CHECKPOINTS: ReadonlyArray<OrchestrationCheckpointSummary> = Object.freeze([]);
 
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
@@ -37,6 +43,9 @@ const EMPTY_THREAD_DETAIL_ATOM = Atom.make<EnvironmentThread | null>(null).pipe(
 );
 const EMPTY_THREAD_STATUS_ATOM = Atom.make<EnvironmentThreadStatus>("empty").pipe(
   Atom.withLabel("web-thread-status:empty"),
+);
+const EMPTY_CHECKPOINTS_ATOM = Atom.make(EMPTY_CHECKPOINTS).pipe(
+  Atom.withLabel("web-checkpoints:empty"),
 );
 
 const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
@@ -111,6 +120,14 @@ export function useThreadDetail(ref: ScopedThreadRef | null): EnvironmentThread 
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_STATUS_ATOM : environmentThreadDetails.statusAtom(ref),
+  );
+}
+
+export function useThreadCheckpoints(
+  ref: ScopedThreadRef | null,
+): ReadonlyArray<OrchestrationCheckpointSummary> {
+  return useAtomValue(
+    ref === null ? EMPTY_CHECKPOINTS_ATOM : environmentThreadDetails.checkpointsAtom(ref),
   );
 }
 
