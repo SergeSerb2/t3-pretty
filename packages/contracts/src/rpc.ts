@@ -48,6 +48,18 @@ import {
 } from "./agentInstructions.ts";
 import { AutomationsError } from "./automations.ts";
 import {
+  AppsAuthorizeInput,
+  AppsAuthorizeResult,
+  AppsDisconnectInput,
+  AppsError,
+  AppsRemoveInput,
+  AppsSetOAuthClientInput,
+  AppsSetTokenInput,
+  AppsTestInput,
+  AppsTestResult,
+  AppsUpsertInput,
+} from "./apps.ts";
+import {
   SkillsError,
   SkillsState,
   SkillId,
@@ -298,6 +310,13 @@ export const WS_METHODS = {
   skillsListMarketplace: "skills.listMarketplace",
   skillsRefreshMarketplace: "skills.refreshMarketplace",
   skillsSetLocationEnabled: "skills.setLocationEnabled",
+  appsUpsert: "apps.upsert",
+  appsRemove: "apps.remove",
+  appsAuthorize: "apps.authorize",
+  appsSetToken: "apps.setToken",
+  appsSetOAuthClient: "apps.setOAuthClient",
+  appsDisconnect: "apps.disconnect",
+  appsTest: "apps.test",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -960,6 +979,48 @@ const WsSkillsSetLocationEnabledRpc = Rpc.make(WS_METHODS.skillsSetLocationEnabl
   error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
 });
 
+const WsAppsUpsertRpc = Rpc.make(WS_METHODS.appsUpsert, {
+  payload: AppsUpsertInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsRemoveRpc = Rpc.make(WS_METHODS.appsRemove, {
+  payload: AppsRemoveInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsAuthorizeRpc = Rpc.make(WS_METHODS.appsAuthorize, {
+  payload: AppsAuthorizeInput,
+  success: AppsAuthorizeResult,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsSetTokenRpc = Rpc.make(WS_METHODS.appsSetToken, {
+  payload: AppsSetTokenInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsSetOAuthClientRpc = Rpc.make(WS_METHODS.appsSetOAuthClient, {
+  payload: AppsSetOAuthClientInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsDisconnectRpc = Rpc.make(WS_METHODS.appsDisconnect, {
+  payload: AppsDisconnectInput,
+  success: Schema.Void,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
+const WsAppsTestRpc = Rpc.make(WS_METHODS.appsTest, {
+  payload: AppsTestInput,
+  success: AppsTestResult,
+  error: Schema.Union([AppsError, EnvironmentAuthorizationError]),
+});
+
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1412,6 +1473,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsListMarketplaceRpc,
   WsSkillsRefreshMarketplaceRpc,
   WsSkillsSetLocationEnabledRpc,
+  WsAppsUpsertRpc,
+  WsAppsRemoveRpc,
+  WsAppsAuthorizeRpc,
+  WsAppsSetTokenRpc,
+  WsAppsSetOAuthClientRpc,
+  WsAppsDisconnectRpc,
+  WsAppsTestRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAgentSessionsScanRpc,
