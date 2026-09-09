@@ -31,6 +31,8 @@ import {
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
+import { SkillId, SkillsSettings } from "./skills.ts";
+import { SubagentPolicySettings } from "./subagentPolicy.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -321,6 +323,10 @@ export const ClientSettingsSchema = Schema.Struct({
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  // Composer Skills picker pins. Client-only, like model favorites: the
+  // starred ids float to the top of the ⋯ → Skills submenu and do not
+  // change which skills a thread actually loads.
+  favoriteSkillIds: Schema.Array(SkillId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   providerModelPreferences: Schema.Record(
     ProviderInstanceId,
     Schema.Struct({
@@ -974,6 +980,8 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
   // this build cannot decode round-trip untouched, as provider instances do.
