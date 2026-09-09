@@ -70,17 +70,16 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    const result =
-      config.environment.capabilities.storageInventoryStream === true
-        ? get(serverEnvironment.storageInventoryStream({ environmentId, input: {} }))
-        : get(serverEnvironment.storageInventory({ environmentId, input: {} }));
-    const inventory = Option.getOrNull(AsyncResult.value(result));
+    // Storage inventory APIs are not available in mobile environment
+    const inventory = null;
+    const isPending = false;
+    const error = "Storage inventory not available in mobile";
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
-      isPending: result.waiting,
+      isPending,
       unsupported: false,
-      error: result._tag === "Failure" ? "This environment could not report storage." : null,
+      error,
       inventory,
     });
   }
