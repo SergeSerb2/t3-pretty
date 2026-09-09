@@ -53,6 +53,21 @@ import {
   RelayEnvironmentMintResponse,
   RelayLinkProofRequest,
 } from "./relay.ts";
+import {
+  DictationCleanupRequest,
+  DictationCleanupResult,
+  DictationStatusResult,
+  DictationTranscriptionRequest,
+  DictationTranscriptionResult,
+  DictationUnavailableError,
+  DictationUpstreamError,
+} from "./dictation.ts";
+import {
+  ReadAloudRequest,
+  ReadAloudResult,
+  ReadAloudUnavailableError,
+  ReadAloudUpstreamError,
+} from "./readAloud.ts";
 
 const OptionalBearerHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),

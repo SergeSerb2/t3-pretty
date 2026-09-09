@@ -924,6 +924,42 @@ const WsAutomationsGetRunRpc = Rpc.make(WS_METHODS.automationsGetRun, {
   error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
 });
 
+const WsSkillsGetStateRpc = Rpc.make(WS_METHODS.skillsGetState, {
+  payload: Schema.Struct({}),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsInstallRpc = Rpc.make(WS_METHODS.skillsInstall, {
+  payload: Schema.Struct({ skillId: SkillId }),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsUninstallRpc = Rpc.make(WS_METHODS.skillsUninstall, {
+  payload: Schema.Struct({ skillId: SkillId }),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsListMarketplaceRpc = Rpc.make(WS_METHODS.skillsListMarketplace, {
+  payload: Schema.Struct({ repo: Schema.String }),
+  success: SkillMarketplaceListing,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsRefreshMarketplaceRpc = Rpc.make(WS_METHODS.skillsRefreshMarketplace, {
+  payload: Schema.Struct({ repo: Schema.String }),
+  success: SkillMarketplaceListing,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
+const WsSkillsSetLocationEnabledRpc = Rpc.make(WS_METHODS.skillsSetLocationEnabled, {
+  payload: Schema.Struct({ locationKey: SkillLocationKey, enabled: Schema.Boolean }),
+  success: SkillsState,
+  error: Schema.Union([SkillsError, EnvironmentAuthorizationError]),
+});
+
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1370,6 +1406,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentInstructionsWriteRpc,
   WsAutomationsListRunsRpc,
   WsAutomationsGetRunRpc,
+  WsSkillsGetStateRpc,
+  WsSkillsInstallRpc,
+  WsSkillsUninstallRpc,
+  WsSkillsListMarketplaceRpc,
+  WsSkillsRefreshMarketplaceRpc,
+  WsSkillsSetLocationEnabledRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAgentSessionsScanRpc,
