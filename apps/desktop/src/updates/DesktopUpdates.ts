@@ -28,6 +28,10 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
+
+// Mirror check-nightly-release.cjs isNightlyTag
+const isNightlyTag = (tag: string): boolean =>
+  /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -223,9 +227,72 @@ function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYm
   );
 }
 
+// Injectable capability for fetching the latest nightly tag from GitHub
+export interface GitHubReleasesClient {
+  readonly fetchLatestNightlyTag: (repo: {
+    readonly owner: string;
+    readonly name: string;
+  }) => Effect.Effect<string | null>;
+}
+
+export const GitHubReleasesClient = Context.GenericTag<GitHubReleasesClient>(
+  "@t3tools/desktop/GitHubReleasesClient",
+);
+
+// Production implementation: fetch from GitHub API
+export const liveGitHubReleasesClient = Layer.succeed(
+  GitHubReleasesClient,
+  GitHubReleasesClient.of({
+    fetchLatestNightlyTag: (repo) =>
+      Effect.gen(function* () {
+        try {
+          const response = yield* Effect.promise(() =>
+            fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100`, {
+              headers: {
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+            }),
+          );
+
+          if (!response.ok) return null;
+
+          const releases: unknown = yield* Effect.promise(() => response.json());
+          if (!Array.isArray(releases)) return null;
+
+          // Mirror check-nightly-release.cjs findLatestNightly
+          const candidates = releases
+            .filter(
+              (release: unknown) =>
+                typeof release === "object" &&
+                release !== null &&
+                "draft" in release &&
+                release.draft !== true &&
+                "published_at" in release &&
+                typeof release.published_at === "string" &&
+                "tag_name" in release &&
+                typeof release.tag_name === "string" &&
+                isNightlyTag(release.tag_name),
+            )
+            .sort((a: { published_at: string }, b: { published_at: string }) => {
+              return Date.parse(b.published_at) - Date.parse(a.published_at);
+            });
+
+          if (candidates.length === 0) return null;
+          return (candidates[0] as { tag_name: string }).tag_name;
+        } catch {
+          return null;
+        }
+      }),
+  }),
+);
+
 export function resolveGitHubGenericUpdaterFeed(
   config: AppUpdateYmlConfig,
-  appVersion?: string,
+  options?: {
+    readonly appVersion?: string;
+    readonly latestNightlyTag?: string | null;
+  },
 ): ElectronUpdater.ElectronUpdaterFeedUrl | undefined {
   if (config.provider !== "generic") return undefined;
   const trimmed = config.url?.trim() ?? "";
@@ -239,22 +306,28 @@ export function resolveGitHubGenericUpdaterFeed(
     return undefined;
   }
 
-  // For nightly builds, rewrite /releases/latest/download to the specific
-  // nightly tag so updates find the correct versioned assets. Match both
-  // modern (vX.Y.Z-nightly.*) and legacy (nightly-vX.Y.Z*) formats.
+  // For nightly builds, rewrite /releases/latest/download to a moving nightly tag.
+  // Use latestNightlyTag (fetched from GitHub) if available, falling back to appVersion.
+  // This ensures nightly users see newer nightly updates, not just same-version patches.
   let finalUrl = trimmed;
-  if (
-    appVersion &&
-    /\/releases\/latest\/download\/?$/i.test(trimmed) &&
-    (/^v?[^-]+-nightly\./i.test(appVersion) || /^nightly-v/i.test(appVersion))
-  ) {
-    // Legacy tags already have the correct format; only add 'v' for modern tags missing it
-    const versionTag = /^nightly-v/i.test(appVersion)
-      ? appVersion
-      : appVersion.startsWith("v")
+  const appVersion = options?.appVersion;
+  const latestNightlyTag = options?.latestNightlyTag;
+  
+  if (/\/releases\/latest\/download\/?$/i.test(trimmed)) {
+    const isNightlyVersion = appVersion && isNightlyTag(appVersion);
+    
+    if (isNightlyVersion && latestNightlyTag) {
+      // Use the moving latest nightly tag (preferred for nightly channel)
+      finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${latestNightlyTag}/`);
+    } else if (isNightlyVersion && appVersion) {
+      // Fallback to installed version (when fetch failed or unavailable)
+      const versionTag = /^nightly-v/i.test(appVersion)
         ? appVersion
-        : `v${appVersion}`;
-    finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${versionTag}/`);
+        : appVersion.startsWith("v")
+          ? appVersion
+          : `v${appVersion}`;
+      finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${versionTag}/`);
+    }
   }
 
   // GitHub's latest/download feed 302s to Azure blobs that reject multi-range
@@ -518,7 +591,8 @@ export const make = Effect.gen(function* () {
         isArm64HostRunningIntelBuild(environment.runtimeInfo) ||
           Option.exists(
             yield* Ref.get(appUpdateYmlConfigRef),
-            (ymlConfig) => resolveGitHubGenericUpdaterFeed(ymlConfig, environment.appVersion) !== undefined,
+            (ymlConfig) =>
+              resolveGitHubGenericUpdaterFeed(ymlConfig, { appVersion: environment.appVersion }) !== undefined,
           ),
       );
       yield* logUpdaterInfo("downloading update");
@@ -966,9 +1040,25 @@ export const make = Effect.gen(function* () {
       const appUpdateYmlConfig = yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
+      // For nightly channel, fetch the latest nightly tag from GitHub to enable moving feed
+      const isNightlyVersion = isNightlyTag(environment.appVersion);
+      const latestNightlyTag = isNightlyVersion
+        ? yield* Effect.option(
+            Effect.andThen(
+              GitHubReleasesClient,
+              (client) => client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
+            ),
+          ).pipe(Effect.map(Option.getOrNull))
+        : Effect.succeed<string | null>(null);
+
       const githubFeed = Option.getOrUndefined(
         Option.flatMap(appUpdateYmlConfig, (ymlConfig) =>
-          Option.fromNullishOr(resolveGitHubGenericUpdaterFeed(ymlConfig, environment.appVersion)),
+          Option.fromNullishOr(
+            resolveGitHubGenericUpdaterFeed(ymlConfig, {
+              appVersion: environment.appVersion,
+              latestNightlyTag,
+            }),
+          ),
         ),
       );
       if (config.mockUpdates) {
@@ -1097,4 +1187,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(DesktopUpdates, make);
+export const layer = Layer.effect(DesktopUpdates, make).pipe(
+  Layer.provide(liveGitHubReleasesClient),
+);

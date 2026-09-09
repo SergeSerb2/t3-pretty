@@ -24,14 +24,34 @@ const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchem
 const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
   const document = yield* decodeClientSettingsDocument(raw);
   // Select the shape before validation so invalid legacy settings cannot become defaults.
-  // Legacy wrapper requires "settings" to be a non-null object; otherwise prefer flat schema.
-  const isLegacyWrapper =
+  // Legacy wrapper: "settings" is a non-null object AND no sibling keys are flat-schema fields.
+  // Try nested decode first; if it looks like a ClientSettings object (has expected keys),
+  // use nested. Otherwise, prefer flat schema even if "settings" exists as an incidental field.
+  const hasSettingsObject =
     Object.hasOwn(document, "settings") &&
     typeof document.settings === "object" &&
     document.settings !== null;
-  return yield* decodeClientSettingsValue(
-    isLegacyWrapper ? document.settings : document,
-  );
+
+  if (hasSettingsObject) {
+    // Check if nested settings looks like a ClientSettings object by presence of known keys.
+    // If it has at least one ClientSettings field and no sibling keys overlap with flat schema,
+    // treat as legacy wrapper.
+    const nested = document.settings as Record<string, unknown>;
+    const knownClientSettingsKeys = [
+      "appearanceContrast", "browserDefaultViewport", "confirmQuit", "diffLayout",
+      "fontSizeCode", "timestampFormat", "wordWrap", "sidebarProjectSortOrder",
+    ];
+    const hasClientSettingsKey = knownClientSettingsKeys.some((key) => Object.hasOwn(nested, key));
+    const siblingKeys = Object.keys(document).filter((k) => k !== "settings");
+    const siblingOverlapsFlat = siblingKeys.some((k) => knownClientSettingsKeys.includes(k));
+
+    if (hasClientSettingsKey && !siblingOverlapsFlat) {
+      return yield* decodeClientSettingsValue(document.settings);
+    }
+  }
+
+  // Prefer flat schema
+  return yield* decodeClientSettingsValue(document);
 });
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 

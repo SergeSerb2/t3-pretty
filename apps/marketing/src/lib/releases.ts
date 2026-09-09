@@ -6,6 +6,10 @@ const STABLE_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const PRERELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases`;
 const CACHE_KEY = "t3code-latest-release";
 const NIGHTLY_CACHE_KEY = "t3code-latest-nightly";
+
+// Mirror check-nightly-release.cjs isNightlyTag
+const isNightlyTag = (tag: string): boolean =>
+  /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
 const RELEASE_CACHE_MAX_AGE_MS = 15 * 60 * 1_000;
 const RELEASE_REQUEST_TIMEOUT_MS = 10_000;
 const RELEASE_RESPONSE_MAX_BYTES = 1024 * 1024;
@@ -243,7 +247,9 @@ export async function fetchLatestRelease(channel: ReleaseChannel = "stable"): Pr
 }
 
 export async function fetchLatestNightlyRelease(): Promise<Release> {
-  // Fetch prerelease list and find the first nightly tag
+  // Mirror check-nightly-release.cjs findLatestNightly:
+  // Fetch releases (paginate if needed), skip drafts, require published_at,
+  // filter nightly tags, sort by published_at desc, pick newest
   const now = Date.now();
   const cached = readCachedRelease(now, NIGHTLY_CACHE_KEY);
   if (cached.fresh) return cached.fresh;
@@ -251,7 +257,8 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), RELEASE_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(`${PRERELEASE_API_URL}?per_page=20`, {
+    // Fetch enough pages to cover typical nightly density; GitHub default is 30/page
+    const response = await fetch(`${PRERELEASE_API_URL}?per_page=100`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -275,16 +282,38 @@ export async function fetchLatestNightlyRelease(): Promise<Release> {
 
     if (!Array.isArray(parsed)) throw new Error("Prerelease list was not an array");
     
-    // Find first nightly release (modern vX.Y.Z-nightly.* or legacy nightly-v*)
+    // Filter: !draft && published_at && isNightlyTag
+    const candidates: Release[] = [];
     for (const item of parsed) {
-      const release = decodeRelease(item);
-      if (release && (/^v?[^-]+-nightly\./i.test(release.tag_name) || /^nightly-v/i.test(release.tag_name))) {
-        writeCachedRelease(release, now, NIGHTLY_CACHE_KEY);
-        return release;
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        "draft" in item &&
+        item.draft !== true &&
+        "published_at" in item &&
+        typeof item.published_at === "string"
+      ) {
+        const release = decodeRelease(item);
+        if (release && isNightlyTag(release.tag_name)) {
+          candidates.push(release);
+        }
       }
     }
 
-    throw new Error("No nightly release found in prerelease list");
+    if (candidates.length === 0) {
+      throw new Error("No nightly release found in prerelease list");
+    }
+
+    // Sort by published_at descending and pick newest
+    candidates.sort((a, b) => {
+      const timeA = Date.parse(a.published_at);
+      const timeB = Date.parse(b.published_at);
+      return timeB - timeA;
+    });
+
+    const newestNightly = candidates[0];
+    writeCachedRelease(newestNightly, now, NIGHTLY_CACHE_KEY);
+    return newestNightly;
   } catch (error) {
     if (cached.stale) return cached.stale;
     throw error;

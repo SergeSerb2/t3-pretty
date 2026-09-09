@@ -251,6 +251,29 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("loads flat documents with incidental settings object as flat schema", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        // Flat document with "settings" as an arbitrary object that is NOT a ClientSettings
+        const flatWithSettingsObject = {
+          ...clientSettings,
+          settings: { someKey: "someValue", anotherKey: 123 },
+        };
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          JSON.stringify(flatWithSettingsObject),
+        );
+        const loaded = yield* settings.get;
+        assert.isTrue(Option.isSome(loaded));
+        // Should decode flat fields, ignoring incidental "settings" object
+        assert.deepEqual(loaded.value, clientSettings);
+      }),
+    ),
+  );
+
   it.effect("loads legacy wrapped client settings documents", () =>
     withClientSettings(
       Effect.gen(function* () {
