@@ -14,7 +14,6 @@ import type {
   OrchestrationThread,
   ProjectContentMatch,
   ProjectEntryKind,
-  ThreadId,
   VcsListRefsResult,
   VcsRef,
 } from "@t3tools/contracts";
@@ -28,7 +27,6 @@ import { orchestrationEnvironment } from "./orchestration";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
 import { projectContentSearch, projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
-import { useEnvironmentThread } from "./threads";
 import { vcsEnvironment } from "./vcs";
 
 const PROJECT_PATH_SEARCH_DEBOUNCE_MS = 120;
@@ -110,6 +108,7 @@ export function useThreadSearch(
   };
 }
 
+<<<<<<< HEAD
 export function useThreadDetail(
   environmentId: EnvironmentId | null,
   threadId: ThreadId | null,
@@ -139,6 +138,8 @@ export function useBranches(target: VcsRefTarget) {
   );
 }
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 export function usePaginatedBranches(target: VcsRefTarget) {
   const query = normalizeBoundedSearchQuery(target.query ?? "", VCS_REF_QUERY_MAX_LENGTH);
   const targetKey =

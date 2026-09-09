@@ -3,11 +3,7 @@ import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@t3tools/shared/th
 
 import { themeColorToNativeColor } from "../../lib/mobileTheme";
 
-import {
-  buildGhosttyThemeConfig,
-  getMobileTerminalTheme,
-  getPierreTerminalTheme,
-} from "./terminalTheme";
+import { buildGhosttyThemeConfig, getMobileTerminalTheme } from "./terminalTheme";
 
 describe("getPierreTerminalTheme", () => {
   it("returns the Pierre light terminal palette", () => {
@@ -27,15 +23,6 @@ describe("getPierreTerminalTheme", () => {
       cursorBackground: "#0e1110",
     });
   });
-});
-
-describe("getMobileTerminalTheme", () => {
-  it("preserves the Pierre terminal for the default theme", () => {
-    for (const scheme of ["light", "dark"] as const) {
-      expect(getMobileTerminalTheme("t3-code", scheme)).toEqual(getPierreTerminalTheme(scheme));
-    }
-  });
-
   it("applies the selected palette without replacing ANSI status colors", () => {
     const standard = getMobileTerminalTheme("t3-code", "dark");
     const ocean = getMobileTerminalTheme("ocean", "dark");
@@ -58,7 +45,7 @@ describe("getMobileTerminalTheme", () => {
 
 describe("buildGhosttyThemeConfig", () => {
   it("serializes theme colors into a ghostty config file", () => {
-    const config = buildGhosttyThemeConfig(getPierreTerminalTheme("dark"));
+    const config = buildGhosttyThemeConfig(getMobileTerminalTheme("t3-code", "dark"));
 
     expect(config).toContain("background = #0e1110");
     expect(config).toContain("foreground = #adadb1");

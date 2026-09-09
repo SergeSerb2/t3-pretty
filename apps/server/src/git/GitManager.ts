@@ -91,6 +91,13 @@ export interface GitRemoteStatusOptions extends GitVcsDriver.GitRemoteStatusOpti
   readonly refreshMissingPullRequest?: boolean;
 }
 
+export type GitBranchPullRequest = NonNullable<VcsStatusResult["pr"]> & {
+  readonly repositoryKey: string | null;
+  readonly updatedAt: string | null;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
+};
+
 interface SourceControlTextGenerationSettings {
   readonly modelSelection: ModelSelection;
   readonly style: SourceControlWritingStyleSettings;
@@ -115,13 +122,10 @@ export class GitManager extends Context.Service<
       readonly headAssociation?: GitBranchHeadAssociation;
     }) => Effect.Effect<GitPullRequestBranchObservation, GitManagerServiceError>;
     /** Resolve the PR for a saved branch without changing the current checkout. */
-    readonly branchPullRequest: (input: {
-      readonly cwd: string;
-      readonly branch: string;
-    }) => Effect.Effect<
-      { readonly state: "open" | "closed" | "merged"; readonly updatedAt: string | null } | null,
-      GitManagerServiceError
-    >;
+    readonly branchPullRequest: (
+      input: { readonly cwd: string; readonly branch: string },
+      options?: { readonly refresh?: boolean },
+    ) => Effect.Effect<GitBranchPullRequest | null, GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -192,6 +196,8 @@ interface OpenPrInfo {
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
   state: "open" | "closed" | "merged";
   isDraft?: boolean;
+  closedAt?: string | null;
+  mergedAt?: string | null;
   updatedAt: Option.Option<DateTime.Utc>;
   mergedAt: Option.Option<DateTime.Utc>;
 }
@@ -233,9 +239,26 @@ interface BranchHeadContext {
   isCrossRepository: boolean;
 }
 
+export function pullRequestRepositoryKey(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const match =
+      /^(.*)(?:\/pull\/|\/-\/merge_requests\/|\/pull-requests\/|\/pullrequest\/)\d+(?:\/.*)?$/iu.exec(
+        url.pathname,
+      );
+    if (match?.[1] === undefined) return null;
+    url.pathname = match[1];
+    url.search = "";
+    url.hash = "";
+    return normalizeGitRemoteUrl(url.toString());
+  } catch {
+    return null;
+  }
+}
+
 function parseRepositoryNameFromPullRequestUrl(url: string): string | null {
   const trimmed = url.trim();
-  const match = /^https:\/\/github\.com\/[^/]+\/([^/]+)\/pull\/\d+(?:\/.*)?$/i.exec(trimmed);
+  const match = /^https?:\/\/[^/]+\/[^/]+\/([^/]+)\/pull\/\d+(?:\/.*)?$/i.exec(trimmed);
   const repositoryName = match?.[1]?.trim() ?? "";
   return repositoryName.length > 0 ? repositoryName : null;
 }
@@ -273,11 +296,28 @@ function resolvePullRequestWorktreeLocalBranchName(
   return `t3code/pr-${pullRequest.number}/${suffix}`;
 }
 
+=======
+function parseRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
+  const trimmed = url?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const match =
+    /^(?:[^@/\s]+@[^:/\s]+:|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu.exec(
+      trimmed,
+    );
+  const repositoryNameWithOwner = match?.[1]?.trim() ?? "";
+  return repositoryNameWithOwner.length > 0 ? repositoryNameWithOwner : null;
+}
+
+>>>>>>> v0.0.39-nightly.20260907.1332
 function parseRepositoryOwnerLogin(nameWithOwner: string | null): string | null {
   const trimmed = nameWithOwner?.trim() ?? "";
   if (trimmed.length === 0) {
     return null;
   }
+  // GitLab reports the top-level group as owner. The full path distinguishes subgroups.
   const [ownerLogin] = trimmed.split("/");
   const normalizedOwnerLogin = ownerLogin?.trim() ?? "";
   return normalizedOwnerLogin.length > 0 ? normalizedOwnerLogin : null;
@@ -418,6 +458,8 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
     ...(summary.isDraft === true ? { isDraft: true } : {}),
+    closedAt: summary.closedAt ?? null,
+    mergedAt: summary.mergedAt ?? null,
     updatedAt: summary.updatedAt,
     mergedAt: summary.mergedAt ?? Option.none(),
     ...(summary.isCrossRepository !== undefined
@@ -1430,6 +1472,7 @@ export const make = Effect.gen(function* () {
     }
 
     const remoteUrl = yield* readConfigValueNullable(cwd, `remote.${remoteName}.url`);
+<<<<<<< HEAD
     const repositoryNameWithOwner = parseRepositoryNameWithOwnerFromGitRemoteUrl(remoteUrl);
     return {
       remoteUrlKey: remoteUrl ? normalizeGitRemoteUrl(remoteUrl) : null,
@@ -2285,7 +2328,7 @@ export const make = Effect.gen(function* () {
   });
   const branchPullRequest: GitManager["Service"]["branchPullRequest"] = Effect.fn(
     "branchPullRequest",
-  )(function* ({ cwd, branch }) {
+  )(function* ({ cwd, branch }, options) {
     const cacheCwd = yield* normalizeStatusCacheKey(cwd);
     const remotes = yield* gitCore.execute({
       operation: "GitManager.branchPullRequest.remotes",
@@ -2424,8 +2467,14 @@ export const make = Effect.gen(function* () {
     ) {
       return null;
     }
-    const statusPr = toStatusPr(latest);
-    return { state: statusPr.state, updatedAt: statusPr.updatedAt };
+    return {
+      ...toStatusPr(latest),
+      closedAt: latest.closedAt ?? null,
+      mergedAt: latest.mergedAt ?? null,
+      // Hosting CLIs can select an upstream repository instead of origin.
+      // The returned PR URL names the repository that actually owns it.
+      repositoryKey: pullRequestRepositoryKey(latest.url),
+    };
   });
   const invalidateLocalStatus: GitManager["Service"]["invalidateLocalStatus"] = Effect.fn(
     "invalidateLocalStatus",

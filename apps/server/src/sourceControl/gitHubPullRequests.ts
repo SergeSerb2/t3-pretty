@@ -15,6 +15,8 @@ export interface NormalizedGitHubPullRequestRecord {
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
   readonly isDraft?: boolean;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
   readonly updatedAt: Option.Option<DateTime.Utc>;
   readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
@@ -94,6 +96,8 @@ function normalizeGitHubPullRequestRecord(
     headRefName: raw.headRefName,
     state: normalizeGitHubPullRequestState(raw),
     ...(raw.isDraft === true ? { isDraft: true } : {}),
+    closedAt: raw.closedAt ?? null,
+    mergedAt: raw.mergedAt ?? null,
     updatedAt: raw.updatedAt ?? Option.none(),
     mergedAt: raw.mergedAt ?? Option.none(),
     ...(typeof raw.isCrossRepository === "boolean"

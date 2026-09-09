@@ -53,7 +53,7 @@ import { resolveManagedProjectFaviconFile } from "../project/ProjectFaviconStore
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { resolveGrokSessionImageFile } from "./GrokSessionImages.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
-import { openMediaFile, type OpenMediaFile } from "./MediaFile.ts";
+import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
@@ -323,6 +323,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let claims: AssetClaims;
   let fileName: string;
   let sourcePath: string | undefined;
+  let imageDimensions: ImageDimensions | null = null;
 
   switch (input.resource._tag) {
     case "media-file": {
@@ -352,18 +353,33 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       if (hostPreviewMimeTypeFromExtension(path.extname(canonicalFile)) === null) {
         return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
-      const identity = yield* openMediaFile(canonicalFile).pipe(
-        Effect.map((file) =>
-          file ? { device: file.info.dev.toString(), inode: file.info.ino.toString() } : null,
+      const wantsDimensions = HEADER_IMAGE_EXTENSIONS.has(
+        path.extname(canonicalFile).toLowerCase(),
+      );
+      const opened = yield* openMediaFile(canonicalFile).pipe(
+        Effect.flatMap((file) =>
+          file === null
+            ? Effect.succeed(null)
+            : Effect.map(
+                wantsDimensions
+                  ? readImageDimensionsFromOpenFile(canonicalFile, file)
+                  : Effect.succeed(null),
+                (dimensions) => ({
+                  identity: { device: file.info.dev.toString(), inode: file.info.ino.toString() },
+                  dimensions,
+                }),
+              ),
         ),
         Effect.scoped,
         Effect.mapError(
           (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
         ),
       );
-      if (!identity) {
+      if (!opened) {
         return yield* new AssetWorkspaceAssetNotFoundError({ resource: input.resource });
       }
+      const identity = opened.identity;
+      imageDimensions = opened.dimensions;
       claims = {
         version: 1,
         kind: "media-file-exact",
@@ -523,6 +539,9 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         INLINE_DOCUMENT_EXTENSIONS.has(extension)
           ? INLINE_DOCUMENT_MIME_TYPES[extension]
           : undefined;
+      if (!isGenericFile) {
+        imageDimensions = yield* readImageDimensionsFromHeader(attachmentPath);
+      }
       claims = {
         version: 1,
         kind: "attachment",
@@ -729,6 +748,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
     ...(sourcePath !== undefined ? { sourcePath } : {}),
+    ...(imageDimensions !== null ? { imageDimensions } : {}),
   };
 });
 

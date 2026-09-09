@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useMemo } from "react";
 
 import { deriveThreadTitleFromPrompt } from "../lib/projectThreadStartTurn";
@@ -11,12 +12,11 @@ import {
 import { useOptimisticStartingThreads } from "./optimistic-thread-send";
 import { useThreadOutboxMessages } from "./use-thread-outbox";
 
-/** A queued new-task creation, shaped for thread-list presentation. */
-export interface PendingNewTask {
-  readonly message: QueuedThreadMessage;
-  readonly creation: QueuedThreadCreation;
-  readonly title: string;
-}
+export type {
+  PendingDraftTask,
+  PendingNewTask,
+  PendingQueuedTask,
+} from "./pending-new-tasks-model";
 
 export function usePendingNewTasks(): ReadonlyArray<PendingNewTask> {
   const queuedMessagesByThreadKey = useThreadOutboxMessages();

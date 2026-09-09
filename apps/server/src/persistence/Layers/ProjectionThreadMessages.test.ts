@@ -13,11 +13,23 @@ const layer = it.layer(
 );
 
 layer("ProjectionThreadMessageRepository", (it) => {
-  it.effect("finds the latest user-message time within one thread", () =>
+  it.effect("finds the latest live user-message time within one thread", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadMessageRepository;
       const threadId = ThreadId.make("thread-latest-user-message");
       assert.isTrue(Option.isNone(yield* repository.getLatestUserMessageAt({ threadId })));
+
+      yield* repository.upsert({
+        messageId: MessageId.make("import:codex:latest-user-message:000000"),
+        threadId,
+        turnId: null,
+        role: "user",
+        text: "Imported prompt",
+        isStreaming: false,
+        createdAt: "2026-02-28T19:05:06.000Z",
+        updatedAt: "2026-02-28T19:05:06.000Z",
+      });
+      assert.isNull(yield* repository.getLatestUserMessageAt({ threadId }));
 
       const messages = [
         { role: "user", createdAt: "2026-02-28T19:05:02.000Z" },
@@ -221,6 +233,51 @@ layer("ProjectionThreadMessageRepository", (it) => {
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.text, "cleared");
       assert.deepEqual(rows[0]?.attachments, []);
+    }),
+  );
+
+  it.effect("checks assistant turn state without hydrating message text", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-assistant-turn-state");
+      const turnId = TurnId.make("turn-assistant-state");
+      const createdAt = "2026-03-01T00:00:00.000Z";
+
+      yield* repository.upsert({
+        messageId: MessageId.make("message-assistant-turn-state"),
+        threadId,
+        turnId,
+        role: "assistant",
+        text: "large text that the existence query must not select",
+        isStreaming: false,
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      assert.equal(
+        yield* repository.hasAssistantMessageForTurn({
+          threadId,
+          turnId,
+          streamingOnly: false,
+        }),
+        true,
+      );
+      assert.equal(
+        yield* repository.hasAssistantMessageForTurn({
+          threadId,
+          turnId,
+          streamingOnly: true,
+        }),
+        false,
+      );
+      assert.equal(
+        yield* repository.hasAssistantMessageForTurn({
+          threadId,
+          turnId: TurnId.make("turn-assistant-state-missing"),
+          streamingOnly: false,
+        }),
+        false,
+      );
     }),
   );
 });

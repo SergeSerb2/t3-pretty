@@ -1,6 +1,7 @@
 const REPO = "pingdotgg/t3code";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
+export const NIGHTLY_RELEASES_URL = `${RELEASES_URL}?q=nightly&expanded=true`;
 
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const CACHE_KEY = "t3code-latest-release";
@@ -25,6 +26,7 @@ export interface ReleaseAsset {
 export interface Release {
   tag_name: string;
   html_url: string;
+  published_at: string;
   assets: ReleaseAsset[];
 }
 

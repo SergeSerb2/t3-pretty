@@ -32,6 +32,7 @@ export function useAssetUrlState(
   );
 }
 
+<<<<<<< HEAD
 export function useAssetUrl(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,
@@ -64,6 +65,8 @@ export function alignQueryableAssetUrls<T>(
   });
 }
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 export function useAssetUrlRefresh(
   environmentId: EnvironmentId | null,
   resource: AssetResource | null,

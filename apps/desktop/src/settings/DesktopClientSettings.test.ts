@@ -28,7 +28,6 @@ const clientSettings: ClientSettings = {
   confirmThreadUnpin: false,
   continueThreadsAfterServerUpdate: true,
   contextWindowMeterEnabled: false,
-  composerCollapseOnBlur: false,
   composerCollapseOnScroll: true,
   dismissedProviderUpdateNotificationKeys: [],
   diffIgnoreWhitespace: true,
@@ -46,6 +45,7 @@ const clientSettings: ClientSettings = {
   fontSizeTerminal: 12,
   fontSmoothing: true,
   glassOpacity: 80,
+  onboardingCompletedAt: null,
   panelAnimationDurationMs: 0,
   planModeEnabled: false,
   proactivePanelsEnabled: true,
@@ -61,6 +61,8 @@ const clientSettings: ClientSettings = {
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
   legacySidebarEnabled: false,
+  loadBalancingEnabled: false,
+  loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   timestampFormat: "24-hour",
   wordWrap: true,
 };
@@ -139,6 +141,59 @@ describe("DesktopClientSettings", () => {
       }),
     ),
   );
+
+  for (const failure of [
+    { label: "permission", reason: "PermissionDenied" },
+    { label: "I/O", reason: "Unknown" },
+  ] as const) {
+    it.effect(`preserves saved preferences across ${failure.label} read failures and retries`, () =>
+      withClientSettings(
+        Effect.gen(function* () {
+          const environment = yield* DesktopEnvironment.DesktopEnvironment;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const settings = yield* DesktopClientSettings.DesktopClientSettings;
+          const savedSettings = {
+            ...clientSettings,
+            onboardingCompletedAt: "2026-09-05T12:00:00.000Z",
+          };
+          yield* settings.set(savedSettings);
+          const savedContents = yield* fileSystem.readFileString(environment.clientSettingsPath);
+          const cause = PlatformError.systemError({
+            _tag: failure.reason,
+            module: "FileSystem",
+            method: "readFileString",
+            pathOrDescriptor: environment.clientSettingsPath,
+          });
+          let failRead = true;
+          const retryableSettings = yield* DesktopClientSettings.make.pipe(
+            Effect.provideService(
+              FileSystem.FileSystem,
+              FileSystem.FileSystem.of({
+                ...fileSystem,
+                readFileString: (path) =>
+                  Effect.suspend(() =>
+                    failRead ? Effect.fail(cause) : fileSystem.readFileString(path),
+                  ),
+              }),
+            ),
+          );
+
+          const error = yield* retryableSettings.get.pipe(Effect.flip);
+          assert.instanceOf(error, DesktopClientSettings.DesktopClientSettingsReadError);
+          assert.equal(error.operation, "read-file");
+          assert.equal(error.path, environment.clientSettingsPath);
+          assert.strictEqual(error.cause, cause);
+          assert.equal(
+            yield* fileSystem.readFileString(environment.clientSettingsPath),
+            savedContents,
+          );
+
+          failRead = false;
+          assert.deepEqual(yield* retryableSettings.get, Option.some(savedSettings));
+        }),
+      ),
+    );
+  }
 
   it.effect("reports the failed client settings write operation and path", () =>
     withClientSettings(

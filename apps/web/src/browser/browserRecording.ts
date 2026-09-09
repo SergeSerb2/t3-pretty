@@ -590,6 +590,18 @@ const finalizeBrowserRecording = async (
           cause,
         });
       }
+<<<<<<< HEAD
+=======
+      // Encoding has flushed; release native capture before materializing and saving the file.
+      stopMediaStream(recording.stream);
+      recording.stream = null;
+      const mimeType =
+        recording.recorder.mimeType ||
+        recording.chunks.find((chunk) => chunk.type.length > 0)?.type;
+      if (!mimeType) {
+        throw new BrowserRecordingFormatUnavailableError({ tabId });
+      }
+>>>>>>> v0.0.39-nightly.20260907.1332
       try {
         const blob = new Blob(recording.chunks, { type: recording.mimeType });
         const artifact = await bridge.recording.save(

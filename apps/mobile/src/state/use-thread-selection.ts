@@ -32,6 +32,56 @@ function firstRouteParam(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
+<<<<<<< HEAD
+=======
+function latestUserMessageAt(thread: OrchestrationThread): OrchestrationThread["updatedAt"] | null {
+  for (let index = thread.messages.length - 1; index >= 0; index -= 1) {
+    const message = thread.messages[index];
+    if (message?.role === "user") {
+      return message.createdAt;
+    }
+  }
+
+  return null;
+}
+
+function threadDetailToShell(
+  environmentId: EnvironmentId,
+  thread: OrchestrationThread,
+): EnvironmentThreadShell {
+  return {
+    environmentId,
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+    branch: thread.branch,
+    worktreePath: thread.worktreePath,
+    linkedPullRequest: thread.linkedPullRequest ?? null,
+    branchPullRequest: thread.branchPullRequest ?? null,
+    latestTurn: thread.latestTurn,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    archivedAt: thread.archivedAt,
+    settledOverride: thread.settledOverride,
+    settledAt: thread.settledAt,
+    unsettledAt: thread.unsettledAt,
+    activeOrderKey: thread.activeOrderKey,
+    pinnedAt: thread.pinnedAt,
+    pinOrderKey: thread.pinOrderKey,
+    snoozedUntil: thread.snoozedUntil ?? null,
+    snoozedAt: thread.snoozedAt ?? null,
+    session: thread.session,
+    latestUserMessageAt: latestUserMessageAt(thread),
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  };
+}
+
+>>>>>>> v0.0.39-nightly.20260907.1332
 function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefined) {
   const routeParams = params ?? {};
   const routeThreadRef = useMemo<ScopedThreadRef | null>(() => {

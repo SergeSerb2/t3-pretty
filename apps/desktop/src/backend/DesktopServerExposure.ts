@@ -12,7 +12,7 @@ import {
   type DesktopServerExposureMode,
   type DesktopServerExposureState,
 } from "@t3tools/contracts";
-import { readTailscaleStatus } from "@t3tools/tailscale";
+import { isTailscaleIpv4Address, readTailscaleStatus } from "@t3tools/tailscale";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -87,7 +87,9 @@ const normalizeOptionalHost = (value: string | undefined): string | undefined =>
 };
 
 const isUsableLanIpv4Address = (address: string): boolean =>
-  !address.startsWith("127.") && !address.startsWith("169.254.");
+  !address.startsWith("127.") &&
+  !address.startsWith("169.254.") &&
+  !isTailscaleIpv4Address(address);
 
 const isSecureEndpointUrl = (value: string): boolean => {
   try {
@@ -269,7 +271,6 @@ export const DesktopServerExposureSetModeError = Schema.Union([
   DesktopServerExposureModePersistenceError,
 ]);
 export type DesktopServerExposureSetModeError = typeof DesktopServerExposureSetModeError.Type;
-export const isDesktopServerExposureSetModeError = Schema.is(DesktopServerExposureSetModeError);
 
 export const DesktopServerExposureError = Schema.Union([
   DesktopServerExposureNoNetworkAddressError,
@@ -277,7 +278,6 @@ export const DesktopServerExposureError = Schema.Union([
   DesktopTailscaleServePersistenceError,
 ]);
 export type DesktopServerExposureError = typeof DesktopServerExposureError.Type;
-export const isDesktopServerExposureError = Schema.is(DesktopServerExposureError);
 
 export interface DesktopServerExposureBackendConfig {
   readonly port: number;
@@ -403,7 +403,14 @@ function resolveRuntimeState(input: {
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
   const unavailable =
-    input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
+    input.requestedMode === "network-accessible" &&
+    requestedExposure.endpointUrl === null &&
+    !Object.values(input.networkInterfaces).some((addresses) =>
+      addresses?.some(
+        (address) =>
+          !address.internal && address.family === "IPv4" && isTailscaleIpv4Address(address.address),
+      ),
+    );
   const exposure = unavailable
     ? resolveDesktopServerExposure({
         mode: "local-only",

@@ -443,7 +443,7 @@ export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
 });
 export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
 
-export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
+class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
   HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
     success: ExecutionEnvironmentDescriptor,
   }),
@@ -594,7 +594,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   ) {}
 
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
-export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
+class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
     headers: OptionalBearerHeaders,
     payload: PullRequestDiffInput,

@@ -169,7 +169,7 @@ ${browserToolInstructions(browserToolsAvailable)}
 ${computerToolInstructions(computerToolsAvailable)}
 </collaboration_mode>`;
 
-export const codexDefaultModeDeveloperInstructions = (
+const codexDefaultModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
   computerToolsAvailable = false,
 ): string => `<collaboration_mode># Collaboration Mode: Default

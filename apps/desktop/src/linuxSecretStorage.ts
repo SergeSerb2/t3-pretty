@@ -25,9 +25,6 @@ const ELECTRON_KDE_DESKTOP = "KDE";
 // Chromium recognizes LXQt and still selects basic text for it, so it does need a forced backend.
 const ELECTRON_UNPROTECTED_DESKTOPS = new Set(["LXQt"]);
 
-const KDE_NAME_PREFIXES = ["kde", "plasma"];
-const NEGATIVE_FLAG_VALUES = new Set(["0", "false", "no", "off"]);
-
 export function normalizeLinuxPasswordStorePreference(
   value: unknown,
 ): LinuxPasswordStorePreference {
@@ -77,6 +74,7 @@ function electronSelectsProtectedBackend(env: NodeJS.ProcessEnv): boolean {
   return false;
 }
 
+<<<<<<< HEAD
 export function resolveLinuxSecretStorageUnavailableMessage(input: {
   readonly configuredPreference: LinuxPasswordStorePreference;
   readonly selectedBackend: string | null;
@@ -163,16 +161,8 @@ function isAffirmativeFlag(value: string | undefined): boolean {
   return normalized ? !NEGATIVE_FLAG_VALUES.has(normalized) : false;
 }
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 function splitDesktopNameList(value: string | undefined): string[] {
   return value?.split(":") ?? [];
-}
-
-function normalizeDesktopName(value: string | undefined): string | null {
-  const normalized = value?.trim().toLowerCase();
-  return normalized && normalized.length > 0 ? normalized : null;
-}
-
-function normalizeSelectedStorageBackend(value: string | null): string | null {
-  const normalized = value?.trim().toLowerCase().replace(/_/gu, "-");
-  return normalized && normalized.length > 0 ? normalized : null;
 }

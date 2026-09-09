@@ -45,6 +45,7 @@ export const ProjectionThread = Schema.Struct({
   branchHeadIsCrossRepository: Schema.optional(Schema.NullOr(NonNegativeInt)),
   worktreePath: Schema.NullOr(Schema.String),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurnId: Schema.NullOr(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

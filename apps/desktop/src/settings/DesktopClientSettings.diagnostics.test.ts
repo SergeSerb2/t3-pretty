@@ -81,7 +81,7 @@ describe("DesktopClientSettings diagnostics", () => {
     }),
   );
 
-  it.effect("logs non-missing filesystem failures with the settings path", () => {
+  it.effect("reports non-missing filesystem failures and logs the settings path", () => {
     const permissionError = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -113,7 +113,7 @@ describe("DesktopClientSettings diagnostics", () => {
     });
   });
 
-  it.effect("logs malformed settings documents with the settings path", () =>
+  it.effect("reports malformed settings documents and logs the settings path", () =>
     Effect.gen(function* () {
       const result = yield* readWithLogs(
         FileSystem.layerNoop({

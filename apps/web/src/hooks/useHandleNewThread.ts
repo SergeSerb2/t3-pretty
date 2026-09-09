@@ -111,6 +111,11 @@ export function useNewThreadHandler() {
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+=======
+      const projects = readProjects();
+      const targetServerSettings =
+        environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
+>>>>>>> v0.0.39-nightly.20260907.1332
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -220,7 +225,8 @@ export function useNewThreadHandler() {
       );
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
-          projectDefaultSelection: project?.defaultModelSelection ?? null,
+          projectDefaultSelection:
+            project?.defaultModelSelection ?? targetServerSettings.defaultModelSelection ?? null,
           carrySelection: carryModelSelection,
           carrySourceDraftId:
             currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
@@ -244,7 +250,7 @@ export function useNewThreadHandler() {
                 project.workspaceRoot,
               )
             : null,
-          globalDefault: primaryServerSettings.defaultThreadEnvMode,
+          globalDefault: targetServerSettings.defaultThreadEnvMode,
         });
       };
       const logicalProjectKey = project
@@ -565,6 +571,7 @@ export function useNewThreadHandler() {
       })();
     },
     [
+<<<<<<< HEAD
       environmentConnectedById,
       environments,
       getCurrentRouteTarget,

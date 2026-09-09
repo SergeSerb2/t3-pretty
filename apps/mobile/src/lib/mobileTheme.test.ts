@@ -203,6 +203,12 @@ describe("mobile themes", () => {
     expect(variables["--color-sheet-solid"]).toBe(
       themeColorToNativeColor(BUILT_IN_THEMES[0].colors.chrome),
     );
+    expect(variables["--color-warning"]).toBe(
+      themeColorToNativeColor(BUILT_IN_THEMES[0].colors.warningSurface),
+    );
+    expect(variables["--color-warning-foreground"]).toBe(
+      themeColorToNativeColor(BUILT_IN_THEMES[0].colors.warningForeground),
+    );
     expect(variables["--color-primary"]).not.toBe(variables["--color-screen"]);
     expect(variables["--color-primary-shadow"]).toBe("#000000");
     expect(variables["--color-backdrop"]).toBe("rgba(0, 0, 0, 0.22)");

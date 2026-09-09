@@ -134,6 +134,13 @@ started T3 Code.
 Antigravity can use its managed runtime without a `PATH` entry. Its optional **Binary path**
 overrides the managed runtime and must point to the official ACP executable.
 
+When a provider CLI is behind its latest release, its provider card shows the
+available version. **Update now** appears only when T3 Code can tell which
+installer owns the CLI (its own update command, Homebrew, or a global npm, pnpm,
+bun, or Vite+ install) and runs that installer. Otherwise update the CLI the same
+way you installed it. Homebrew installs compare against the version Homebrew
+offers, which can trail the npm release by a few hours.
+
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom
 base URL. Mark secret values as sensitive; after saving, T3 Code does not display

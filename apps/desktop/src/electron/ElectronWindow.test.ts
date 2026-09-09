@@ -80,7 +80,6 @@ describe("ElectronWindow", () => {
       const error = yield* electronWindow.create(options).pipe(Effect.flip);
 
       assert.instanceOf(error, ElectronWindow.ElectronWindowCreateError);
-      assert.isTrue(ElectronWindow.isElectronWindowCreateError(error));
       assert.deepEqual(error.options, {
         title: "T3 Pretty",
         width: 1100,

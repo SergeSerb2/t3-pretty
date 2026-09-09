@@ -2,7 +2,6 @@ import { setPendingConnectionError } from "../state/use-remote-environment-regis
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import * as Cause from "effect/Cause";
 
 import {
   CommandId,
@@ -20,12 +19,10 @@ import {
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
-  codexFeedbackMessage,
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 import {
   isNativeResumeSessionReady,
@@ -725,6 +722,8 @@ export function useThreadComposerState() {
   );
 
   return {
+    feedbackSubmissions,
+    dismissFeedback,
     selectedThreadFeed,
     selectedThreadQueueCount,
     headQueuedMessageId,

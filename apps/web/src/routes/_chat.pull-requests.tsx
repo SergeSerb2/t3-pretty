@@ -1,3 +1,5 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { Spinner } from "~/components/ui/spinner";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pullRequestHostOf, resolveEnvironmentMachineKind, ThreadId } from "@t3tools/contracts";
 import type {
@@ -26,10 +28,8 @@ import {
   LayersIcon,
   ListChecksIcon,
   PenLineIcon,
-  LoaderIcon,
   Maximize2Icon,
   Minimize2Icon,
-  RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
 import {
@@ -81,6 +81,7 @@ import {
   writePullRequestListPreferences,
 } from "../components/pullRequest/pullRequestListPreferences";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
+import { pullRequestFilterProjects } from "../components/pullRequest/pullRequestProjectFilter.logic";
 import { environmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { linkedPullRequestKey } from "../components/pullRequest/pullRequestPanelView.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
@@ -256,7 +257,7 @@ function PullRequestsRouteView() {
   const search = Route.useSearch();
   const sort = search.sort ?? "updated";
   const statsPolicy: PullRequestStatsPolicy =
-    sort === "largest" || sort === "smallest" ? "eager" : "visible";
+    sort === "ready" || sort === "largest" || sort === "smallest" ? "eager" : "visible";
   const navigate = useNavigate({ from: Route.fullPath });
   // Catalog entries can arrive late: clean the live URL without erasing the saved scope.
   const skipNextListPersist = useRef(false);
@@ -322,27 +323,6 @@ function PullRequestsRouteView() {
       ),
     [environments],
   );
-  const scopedProjects = useMemo(() => {
-    // Two machines can hold the same repository, so a title the workspace carries twice is told
-    // apart by the environment it lives on rather than left as two identical rows.
-    const titleCounts = new Map<string, number>();
-    for (const project of projects) {
-      titleCounts.set(project.title, (titleCounts.get(project.title) ?? 0) + 1);
-    }
-    return projects
-      .map((project) => ({
-        id: project.id,
-        environmentId: project.environmentId,
-        title:
-          (titleCounts.get(project.title) ?? 0) > 1
-            ? `${project.title} · ${environmentLabels.get(project.environmentId) ?? project.environmentId}`
-            : project.title,
-        workspaceRoot: project.workspaceRoot,
-        faviconPath: project.faviconPath ?? null,
-        projectIcon: project.projectIcon ?? null,
-      }))
-      .toSorted((left, right) => left.title.localeCompare(right.title));
-  }, [environmentLabels, projects]);
   // The scope the URL asks for, once the environments have had their say about whether it exists.
   const scopedProjectId = useMemo(
     () => resolveProjectScope(search.projectId, projects, projectsKnown),
@@ -351,6 +331,10 @@ function PullRequestsRouteView() {
   const scopedProject = useMemo(
     () => findScopedProject(projects, scopedEnvironmentId, scopedProjectId),
     [projects, scopedEnvironmentId, scopedProjectId],
+  );
+  const scopedProjects = useMemo(
+    () => pullRequestFilterProjects(projects, environmentLabels, scopedProject),
+    [environmentLabels, projects, scopedProject],
   );
 
   // A link from a thread or the sidebar only knows the repository, so the owning project is
@@ -1545,7 +1529,11 @@ function PullRequestsRouteView() {
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />
       ) : listQuery.error && entries.length === 0 ? (
-        <PullRequestsUnavailableState error={listQuery.error} onRetry={() => listQuery.refresh()} />
+        <PullRequestsUnavailableState
+          error={listQuery.error}
+          refreshing={listQuery.isPending}
+          onRetry={() => listQuery.refresh()}
+        />
       ) : carriedToNothing ? (
         <PullRequestListGhost rows={7} />
       ) : entries.length === 0 ? (
@@ -1617,7 +1605,7 @@ function PullRequestsRouteView() {
         <div className="flex justify-center py-3 text-xs text-muted-foreground">
           {loadingMore ? (
             <span className="flex items-center gap-2">
-              <LoaderIcon aria-hidden className="size-3.5 animate-spin" />
+              <Spinner aria-hidden className="size-3.5" />
               {sentCursors === null ? "Updating pull requests" : "Loading more"}
             </span>
           ) : canContinue || pageSize < MAX_PAGE_SIZE ? (
@@ -1900,10 +1888,10 @@ function PullRequestsRouteView() {
                 ) ?? null
               }
               refreshToken={detailRefreshToken}
-              // Merging, closing or reopening changes the row this panel was opened from, so
-              // the list behind it is out of date the moment the host takes the action.
+              // Host actions can change both readiness and diff size, so refresh the counts
+              // alongside the list. The panel already refreshes itself after each action.
               onActed={() => {
-                refreshList(true);
+                void refreshFromHost(false);
               }}
               chromeVariant="collapse"
             />
@@ -2297,7 +2285,7 @@ function PullRequestRefreshControl({
       onClick={onRefresh}
       disabled={refreshing}
     >
-      <RefreshCwIcon className={cn("size-4", refreshing && "animate-spin")} />
+      <RefreshIcon className="size-4" refreshing={refreshing} />
     </Button>
   );
 }

@@ -4,7 +4,6 @@ import {
   cacheSavingsUsd,
   createOverrideRateTable,
   lookupRate,
-  normalizeModelName,
   parseRateTable,
   priceUsage,
   type RateTable,

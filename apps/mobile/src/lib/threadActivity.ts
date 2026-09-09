@@ -30,6 +30,7 @@ import {
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  extractWorkLogToolLifecycleStatus,
   isWorktreeSetupActivity,
   liveActivityToolStatus,
   normalizeCompactToolLabel,
@@ -37,14 +38,17 @@ import {
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
+  workEntryIndicatesToolFailure,
+  workEntryIndicatesToolSuccess,
+  workLogEntryIsToolLike,
   type ToolGroupSummaryKind,
+  type WorkLogToolLifecycleStatus,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
-import * as Schema from "effect/Schema";
 
 import { compareTimestamps } from "./time";
 
@@ -121,28 +125,6 @@ interface ChangedFileDiff {
   readonly diff?: string;
 }
 
-export interface WorkLogEntry {
-  sourceActivityKind?: string;
-  agentSpawn?: boolean;
-  toolCallId?: string;
-  id: string;
-  createdAt: string;
-  turnId: TurnId | null;
-  label: string;
-  detail?: string;
-  viewedImagePath?: string;
-  command?: string;
-  rawCommand?: string;
-  changedFiles?: ReadonlyArray<string>;
-  changedFileDiffs?: ReadonlyArray<ChangedFileDiff>;
-  tone: "thinking" | "tool" | "info" | "error";
-  toolTitle?: string;
-  toolSurface?: import("@t3tools/contracts").ToolActivitySurface;
-  toolIcon?: import("@t3tools/contracts").ToolActivityIcon;
-  toolSource?: import("@t3tools/contracts").ToolActivitySource;
-  itemType?: ToolLifecycleItemType;
-  requestKind?: PendingApproval["requestKind"];
-  toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
   /** Present when this row is a browser-automation (preview_*) tool call. */
   previewAutomation?: PreviewAutomationCallSummary;
@@ -153,6 +135,11 @@ interface DerivedWorkLogEntry extends WorkLogEntry {
   collapseKey?: string;
   /** Grouping key for subagent lifecycle rows (one row per agent). */
   taskId?: string;
+  /** The tool call that launched this agent, when the provider reports one. */
+  agentSpawnToolCallId?: string;
+  isWorkflowCoordinator?: boolean;
+  /** Shell/monitor/plan tasks: ordinary work-log rows, never spawn batches. */
+  isBackgroundTask?: boolean;
 }
 
 type RawThreadFeedEntry =
@@ -211,7 +198,48 @@ export type ThreadFeedEntry =
       readonly turnId: TurnId;
       readonly label: string;
       readonly expanded: boolean;
+    }
+  | {
+      /**
+       * The turn's single live slot. Web keys its live tool row and its
+       * "Thinking" row identically so the slot updates in place; here the
+       * slot holds "Thinking" whenever no tool row is shimmering, so a tool
+       * failing does not insert a row under the group it lives in.
+       */
+      readonly type: "thinking";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly turnId: TurnId | null;
+    }
+  | {
+      /**
+       * One batch of spawned subagents. Rendered as its own card because a
+       * single-line tool row has no room for what the agents are doing now,
+       * which on a phone is the one thing worth showing.
+       */
+      readonly type: "agent-spawn";
+      readonly id: string;
+      readonly createdAt: string;
+      readonly turnId: TurnId | null;
+      readonly activity: ThreadFeedActivity;
+      readonly expanded: boolean;
+      readonly summary: AgentSpawnSummary;
     };
+
+export interface AgentSpawnSummary {
+  /** "Locate UNO hand rendering code" for one agent, "3 subagents" for a batch. */
+  readonly title: string;
+  /** Latest member activity while working, else the batch outcome. */
+  readonly status: string;
+  readonly tone: "working" | "completed" | "failed" | "stopped";
+  readonly members: ReadonlyArray<{
+    readonly title: string;
+    readonly status: string;
+    readonly tone: "working" | "completed" | "failed" | "stopped";
+    readonly detail: string | undefined;
+    readonly updatedAt: string;
+  }>;
+}
 
 export type ThreadFeedLatestTurn = Pick<
   OrchestrationLatestTurn,
@@ -243,6 +271,7 @@ const turnFoldRowsCache = new WeakMap<
   ThreadFeedEntry,
   Extract<ThreadFeedEntry, { readonly type: "turn-fold" }>
 >();
+let cachedThinkingRow: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
 
 export function isContextCompactionActivityGroup(
   entry: Extract<ThreadFeedEntry, { readonly type: "activity-group" }>,
@@ -251,94 +280,6 @@ export function isContextCompactionActivityGroup(
     entry.activities.length === 1 &&
     entry.activities[0]?.workEntry.sourceActivityKind === "context-compaction"
   );
-}
-
-function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
-  switch (requestType) {
-    case "command_execution_approval":
-    case "exec_command_approval":
-      return "command";
-    case "file_read_approval":
-      return "file-read";
-    case "file_change_approval":
-    case "apply_patch_approval":
-      return "file-change";
-    case "mcp_elicitation_approval":
-      return "mcp-elicitation";
-    default:
-      return null;
-  }
-}
-
-function isStalePendingRequestFailureDetail(detail: string | undefined): boolean {
-  const normalized = detail?.toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  return (
-    normalized.includes("stale pending approval request") ||
-    normalized.includes("stale pending user-input request") ||
-    normalized.includes("unknown pending approval request") ||
-    normalized.includes("unknown pending permission request") ||
-    normalized.includes("unknown pending user-input request")
-  );
-}
-
-function parseApprovalRequestId(value: unknown): ApprovalRequestId | null {
-  return typeof value === "string" && value.length > 0 ? ApprovalRequestId.make(value) : null;
-}
-
-function parseUserInputQuestions(
-  payload: Record<string, unknown> | null,
-): ReadonlyArray<UserInputQuestion> | null {
-  const questions = payload?.questions;
-  if (!Array.isArray(questions)) {
-    return null;
-  }
-
-  const parsed = questions
-    .map<UserInputQuestion | null>((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const question = entry as Record<string, unknown>;
-      if (
-        typeof question.id !== "string" ||
-        typeof question.header !== "string" ||
-        typeof question.question !== "string" ||
-        !Array.isArray(question.options)
-      ) {
-        return null;
-      }
-      const options = question.options
-        .map<UserInputQuestion["options"][number] | null>((option) => {
-          if (!option || typeof option !== "object") return null;
-          const record = option as Record<string, unknown>;
-          if (typeof record.label !== "string" || typeof record.description !== "string") {
-            return null;
-          }
-          return {
-            label: record.label,
-            description: record.description,
-            ...(typeof record.value === "string" ? { value: record.value } : {}),
-          };
-        })
-        .filter((option): option is UserInputQuestion["options"][number] => option !== null);
-      if (options.length === 0 && question.allowCustomAnswer === false) {
-        return null;
-      }
-      return {
-        id: question.id,
-        header: question.header,
-        question: question.question,
-        options,
-        multiSelect: question.multiSelect === true,
-        ...(typeof question.allowCustomAnswer === "boolean"
-          ? { allowCustomAnswer: question.allowCustomAnswer }
-          : {}),
-      };
-    })
-    .filter((question): question is UserInputQuestion => question !== null);
-
-  return parsed.length > 0 ? parsed : null;
 }
 
 function normalizeDraftAnswer(value: string | undefined): string | null {
@@ -423,10 +364,12 @@ function isTerminalTaskUpdate(activity: OrchestrationThreadActivity): boolean {
 
 /**
  * Quiet-timeline guarantee (mirrors web's session-logic): agent-internal
- * activity lives in the Agents sheet, not the work log. Terminal rows are
- * kept — with no Agents surface on mobile they are the terminal signal
- * (a surface that hides rows must keep its own terminal signal). That means
- * task.completed and terminal task.updated, including Antigravity cancellation.
+ * activity lives in the Agents sheet, not the work log. Agent lifecycle rows
+ * pass even when bypassed or owned by another agent, because they fold into
+ * their spawn batch rather than rendering on their own; that is how Codex
+ * children (all bypassed) and Claude workflow members reach the batch row.
+ * Terminal rows are kept regardless — with no Agents surface on mobile they
+ * are the terminal signal.
  */
 function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean {
   const payload =
@@ -436,20 +379,36 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   if (!payload) {
     return false;
   }
-  const isTerminalTaskRow = activity.kind === "task.completed" || isTerminalTaskUpdate(activity);
-  if (payload.timelineBypass === true && !isTerminalTaskRow) {
-    return true;
-  }
-  // agentId marks ownership, not "hide me": a NESTED AGENT's terminal row is
-  // the only signal mobile gets (no Agents sheet), so it stays. Only an
-  // agent's own background work (stamped "background") is internal — same
-  // rule as web (review finding: hiding on agentId alone dropped nested
-  // completions with no replacement UI).
+  const isTaskRow =
+    activity.kind === "task.started" ||
+    activity.kind === "task.progress" ||
+    activity.kind === "task.updated" ||
+    activity.kind === "task.completed";
   const ownedByAgent = typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
-  if (!ownedByAgent) {
-    return false;
+  if (isTaskRow) {
+    if (!ownedByAgent && payload.timelineBypass !== true) {
+      return false;
+    }
+    // An agent's own shells stay internal; the agents themselves fold into
+    // their batch. A bypassed batch marker keeps its terminal row.
+    if (typeof payload.taskId === "string" && payload.agentKind === "agent") {
+      return false;
+    }
+    if (ownedByAgent) {
+      return true;
+    }
+    return !(activity.kind === "task.completed" || isTerminalTaskUpdate(activity));
   }
-  return !(isTerminalTaskRow && payload.agentKind === "agent");
+  return payload.timelineBypass === true || ownedByAgent;
+}
+
+/** Agent (non-background) task.started rows seed spawn batches. */
+function isAgentTaskStartedActivity(activity: OrchestrationThreadActivity): boolean {
+  const payload =
+    activity.payload && typeof activity.payload === "object"
+      ? (activity.payload as Record<string, unknown>)
+      : null;
+  return typeof payload?.taskId === "string" && payload.agentKind === "agent";
 }
 
 /** Per-activity work-log derivation; null for rows the work log drops. */
@@ -518,6 +477,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const toolPresentation = extractToolActivityPresentation(payload);
   // Terminal task updates carry identity so they replace each child's progress row.
   const isTaskActivity =
+    activity.kind === "task.started" ||
     activity.kind === "task.progress" ||
     activity.kind === "task.completed" ||
     activity.kind === "task.updated";
@@ -581,6 +541,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
     entry.detail = payload.error;
   }
+  if (!entry.detail && (activity.kind === "runtime.error" || activity.kind === "runtime.warning")) {
+    const message = asTrimmedString(payload?.message);
+    if (message) entry.detail = message;
+  }
   if (viewedImagePath) {
     entry.viewedImagePath = viewedImagePath;
   }
@@ -637,7 +601,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     entry.requestKind = requestKind;
   }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
-  if (!toolLifecycleStatus && activity.kind === "tool.completed") {
+  if (
+    !toolLifecycleStatus &&
+    (activity.kind === "tool.completed" || activity.kind === "task.completed")
+  ) {
+    toolLifecycleStatus = activity.tone === "error" ? "failed" : "completed";
+  }
+  // A Codex child that finishes its turn reports "idle" (resumable, not
+  // terminal). For the batch row that is a finished member.
+  if (!toolLifecycleStatus && isTaskActivity && payload?.status === "idle") {
     toolLifecycleStatus = "completed";
   }
   if (toolLifecycleStatus) {
@@ -650,28 +622,160 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   return entry;
 }
 
+/**
+ * Spawn-group key for a subagent lifecycle row. Workflow members and their
+ * coordinator share the coordinator's group; direct spawns batch per turn.
+ * Same keys as web's session-logic so both clients fold the same rows.
+ */
+function agentSpawnGroupKey(entry: DerivedWorkLogEntry): string {
+  const taskId = entry.taskId ?? "";
+  const workflowSlot = taskId.indexOf(":wf:");
+  if (workflowSlot !== -1) return `wf:${taskId.slice(0, workflowSlot)}`;
+  if (entry.isWorkflowCoordinator) return `wf:${taskId}`;
+  return entry.turnId ? `direct:${entry.turnId}` : `direct:task:${taskId}`;
+}
+
+/**
+ * The batch row keeps the group's anchor identity (id, createdAt, turnId,
+ * label) so it renders where the run launched instead of drifting to the
+ * newest progress tick, and gains each member's latest lifecycle state.
+ */
+function agentSpawnRow(
+  anchor: DerivedWorkLogEntry,
+  workflowId: string | null,
+  agentTaskIds: ReadonlyArray<string>,
+  members: NonNullable<WorkLogEntry["agentSpawn"]>["agents"],
+): DerivedWorkLogEntry {
+  // A finished coordinator settles members that never reported their own
+  // end; Claude stops synthesizing member ticks once the workflow is done.
+  const coordinator = workflowId === null ? undefined : members[agentTaskIds.indexOf(workflowId)];
+  const agents =
+    coordinator?.status !== undefined && coordinator.status !== "inProgress"
+      ? members.map((agent) =>
+          agent.status === undefined || agent.status === "inProgress"
+            ? { ...agent, status: coordinator.status }
+            : agent,
+        )
+      : members;
+  const agentSpawn = { workflowId, agentTaskIds, agents };
+  // The batch row has no detail of its own: its body lists the members.
+  const { detail: _detail, ...anchorWithoutDetail } = anchor;
+  return {
+    ...anchorWithoutDetail,
+    // The row's own lifecycle is the batch's: live while any member is, then
+    // the worst terminal state, so the group summary and shimmer follow it.
+    toolLifecycleStatus: agentSpawnLifecycleStatus(agents),
+    agentSpawn,
+  };
+}
+
+function agentSpawnMember(
+  entry: DerivedWorkLogEntry,
+  previous?: NonNullable<WorkLogEntry["agentSpawn"]>["agents"][number],
+) {
+  return {
+    title: entry.toolTitle ?? previous?.title ?? entry.label,
+    status: entry.toolLifecycleStatus ?? previous?.status,
+    detail: entry.detail ?? previous?.detail,
+    updatedAt: entry.createdAt,
+  };
+}
+
+function mergeAgentSpawnEntries(
+  existing: DerivedWorkLogEntry,
+  entry: DerivedWorkLogEntry,
+): DerivedWorkLogEntry {
+  const spawn = existing.agentSpawn!;
+  const taskId = entry.taskId ?? "";
+  const memberIndex = spawn.agentTaskIds.indexOf(taskId);
+  if (memberIndex === -1) {
+    return agentSpawnRow(
+      existing,
+      spawn.workflowId,
+      [...spawn.agentTaskIds, taskId],
+      [...spawn.agents, agentSpawnMember(entry)],
+    );
+  }
+  const agents = spawn.agents.map((agent, index) =>
+    index === memberIndex ? agentSpawnMember(entry, agent) : agent,
+  );
+  return agentSpawnRow(existing, spawn.workflowId, spawn.agentTaskIds, agents);
+}
+
+function agentSpawnLifecycleStatus(
+  agents: NonNullable<WorkLogEntry["agentSpawn"]>["agents"],
+): WorkLogToolLifecycleStatus {
+  const statuses = agents.map((agent) => agent.status);
+  if (statuses.some((status) => status === undefined || status === "inProgress")) {
+    return "inProgress";
+  }
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("declined")) return "declined";
+  if (statuses.includes("stopped")) return "stopped";
+  return "completed";
+}
+
 function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
 ): DerivedWorkLogEntry[] {
   const collapsed: DerivedWorkLogEntry[] = [];
-  // Subagent rows collapse by identity, not adjacency (quiet-timeline
-  // guarantee; mirrors web's session-logic).
+  // Task rows collapse by identity, not adjacency (quiet-timeline guarantee;
+  // mirrors web's session-logic). Background tasks keep one row per taskId;
+  // agent spawns fold into one row per spawn group, decided at the FIRST row
+  // seen for a taskId because later rows can arrive under synthetic turns.
   const taskRowIndex = new Map<string, number>();
+  const spawnRowIndex = new Map<string, number>();
+  const spawnGroupByTaskId = new Map<string, string>();
   const toolLifecycleRowIndex = new Map<string, number>();
+  // Tool calls that launched an agent (Claude's Agent tool, ACP subagent
+  // calls). The batch card is the whole story of that call, so its own
+  // lifecycle row is dropped.
+  const spawnToolCallIds = new Set(
+    entries.flatMap((entry) =>
+      entry.agentSpawnToolCallId !== undefined ? [entry.agentSpawnToolCallId] : [],
+    ),
+  );
   for (const entry of entries) {
+    if (
+      entry.toolCallId !== undefined &&
+      entry.taskId === undefined &&
+      spawnToolCallIds.has(entry.toolCallId)
+    ) {
+      continue;
+    }
     const isTaskRow =
       entry.taskId !== undefined &&
-      (entry.sourceActivityKind === "task.progress" ||
+      (entry.sourceActivityKind === "task.started" ||
+        entry.sourceActivityKind === "task.progress" ||
         entry.sourceActivityKind === "task.completed" ||
         entry.sourceActivityKind === "task.updated");
     if (isTaskRow && entry.taskId !== undefined) {
-      const existingIndex = taskRowIndex.get(entry.taskId);
-      if (existingIndex !== undefined) {
-        collapsed[existingIndex] = mergeDerivedWorkLogEntries(collapsed[existingIndex]!, entry);
+      if (entry.isBackgroundTask) {
+        const existingIndex = taskRowIndex.get(entry.taskId);
+        if (existingIndex !== undefined) {
+          collapsed[existingIndex] = mergeDerivedWorkLogEntries(collapsed[existingIndex]!, entry);
+          continue;
+        }
+        taskRowIndex.set(entry.taskId, collapsed.length);
+        collapsed.push(entry);
         continue;
       }
-      taskRowIndex.set(entry.taskId, collapsed.length);
-      collapsed.push(entry);
+      const groupKey = spawnGroupByTaskId.get(entry.taskId) ?? agentSpawnGroupKey(entry);
+      spawnGroupByTaskId.set(entry.taskId, groupKey);
+      const existingIndex = spawnRowIndex.get(groupKey);
+      if (existingIndex !== undefined) {
+        collapsed[existingIndex] = mergeAgentSpawnEntries(collapsed[existingIndex]!, entry);
+        continue;
+      }
+      spawnRowIndex.set(groupKey, collapsed.length);
+      collapsed.push(
+        agentSpawnRow(
+          entry,
+          groupKey.startsWith("wf:") ? groupKey.slice(3) : null,
+          [entry.taskId],
+          [agentSpawnMember(entry)],
+        ),
+      );
       continue;
     }
     const lifecycleKey = toolLifecycleCollapseMapKey(entry);
@@ -847,68 +951,17 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
   return [itemType, normalizedLabel, detail].join("\u001f");
 }
 
-function workLogEntryIsToolLike(entry: WorkLogEntry): boolean {
-  if (entry.tone === "tool" || entry.tone === "thinking" || entry.tone === "error") {
-    return true;
-  }
-  if (entry.command !== undefined && entry.command.trim().length > 0) {
-    return true;
-  }
-  if (entry.requestKind !== undefined) {
-    return true;
-  }
-  return entry.itemType !== undefined && isToolLifecycleItemType(entry.itemType);
-}
-
-function toolDetailTextLooksLikeFailure(text: string): boolean {
-  const normalized = text.toLowerCase();
-  return (
-    normalized.includes("file not found") ||
-    normalized.includes("no files found") ||
-    normalized.includes("enoent") ||
-    normalized.includes("no such file or directory") ||
-    normalized.includes("no such file") ||
-    normalized.includes("commandnotfoundexception") ||
-    normalized.includes("command not found") ||
-    (normalized.includes("cannot find path") && normalized.includes("because it does not exist")) ||
-    (normalized.includes("is not recognized") && normalized.includes("the term '")) ||
-    normalized.includes("is not recognized as the name of a cmdlet") ||
-    normalized.includes("a parameter cannot be found that matches parameter name") ||
-    /<exited with exit code\s+[1-9]\d*\s*>/i.test(text) ||
-    /exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text) ||
-    /exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text)
-  );
-}
-
-function workEntryIndicatesToolFailure(entry: WorkLogEntry): boolean {
-  if (entry.tone === "error") {
-    return true;
-  }
-  if (entry.toolLifecycleStatus === "failed" || entry.toolLifecycleStatus === "declined") {
-    return true;
-  }
-  if (!workLogEntryIsToolLike(entry)) {
-    return false;
-  }
-  return toolDetailTextLooksLikeFailure([entry.detail, entry.command].filter(Boolean).join("\n"));
-}
-
-function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
-  if (!workLogEntryIsToolLike(entry) || workEntryIndicatesToolFailure(entry)) {
-    return false;
-  }
-  if (entry.tone === "thinking") {
-    return false;
-  }
-  return (
-    entry.toolLifecycleStatus !== "inProgress" &&
-    entry.toolLifecycleStatus !== "stopped" &&
-    entry.toolLifecycleStatus !== "failed" &&
-    entry.toolLifecycleStatus !== "declined"
-  );
-}
-
 function workEntryStatus(entry: WorkLogEntry): ThreadFeedActivity["status"] {
+  if (entry.agentSpawn) {
+    switch (entry.toolLifecycleStatus) {
+      case "failed":
+        return "failure";
+      case "completed":
+        return "success";
+      default:
+        return "neutral";
+    }
+  }
   if (!workLogEntryIsToolLike(entry)) {
     return null;
   }
@@ -922,6 +975,7 @@ function workEntryStatus(entry: WorkLogEntry): ThreadFeedActivity["status"] {
 }
 
 function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
+  if (entry.agentSpawn) return "agent";
   if (
     entry.activityKind === "user-input.requested" ||
     entry.activityKind === "user-input.resolved"
@@ -1038,6 +1092,7 @@ function fileChangeKindHeading(
 }
 
 function workEntryHeading(workEntry: WorkLogEntry): string {
+  if (workEntry.agentSpawn) return agentSpawnLabel(workEntry.agentSpawn);
   const presentation = resolveWorkEntryToolPresentation(workEntry);
   if (presentation) return presentation.displayName;
   if (workEntry.previewAutomation) return workEntry.previewAutomation.label;
@@ -1258,27 +1313,6 @@ function extractToolCommand(payload: Record<string, unknown> | null): {
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
   return asTrimmedString(payload?.title);
-}
-
-function extractWorkLogToolLifecycleStatus(
-  payload: Record<string, unknown> | null,
-): WorkLogToolLifecycleStatus | undefined {
-  const status = payload?.status;
-  // The parent turn ended, so batch tracking is inactive. The detail explains
-  // that child status is unavailable; do not retain the earlier running marker.
-  if (status === "idle" && payload?.taskType === "subagent_batch") return "stopped";
-  if (status === "pending" || status === "running" || status === "waiting") return "inProgress";
-  if (status === "cancelled" || status === "interrupted") return "stopped";
-  if (
-    status === "inProgress" ||
-    status === "completed" ||
-    status === "failed" ||
-    status === "declined" ||
-    status === "stopped"
-  ) {
-    return status;
-  }
-  return undefined;
 }
 
 function stripTrailingExitCode(value: string): {
@@ -1836,7 +1870,7 @@ function presentedWorkingEntry(startedAt: string): WorkingFeedEntry {
 
 function appendPresentedFeedEntry(
   result: ThreadFeedEntry[],
-  entry: Exclude<ThreadFeedEntry, { readonly type: "turn-fold" | "work-toggle" }>,
+  entry: Exclude<ThreadFeedEntry, { readonly type: "turn-fold" | "work-toggle" | "thinking" }>,
   expandedWorkGroupIds: ReadonlySet<string>,
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
@@ -1858,7 +1892,9 @@ function appendPresentedFeedEntry(
     cached.isWorking !== isWorking ||
     cached.activeTail !== activeTail ||
     cached.rows.some(
-      (row) => row.type === "work-toggle" && expandedWorkGroupIds.has(row.groupId) !== row.expanded,
+      (row) =>
+        (row.type === "work-toggle" && expandedWorkGroupIds.has(row.groupId) !== row.expanded) ||
+        (row.type === "agent-spawn" && expandedWorkGroupIds.has(row.id) !== row.expanded),
     )
   ) {
     const rows: ThreadFeedEntry[] = [];
@@ -1923,6 +1959,21 @@ function appendActivityGroupRows(
       continue;
     }
     flushGroupableRun(false);
+    if (spawn !== undefined) {
+      // Keyed by the batch, not the anchor activity: the anchor can change
+      // as members arrive, and a changed key remounts the card.
+      const groupId = `agent-spawn:${spawn.workflowId ?? activity.turnId ?? spawn.agentTaskIds[0]}`;
+      result.push({
+        type: "agent-spawn",
+        id: groupId,
+        createdAt: activity.createdAt,
+        turnId: activity.turnId,
+        activity,
+        expanded: expandedWorkGroupIds.has(groupId),
+        summary: agentSpawnSummary(spawn, activity.lifecycleStatus),
+      });
+      continue;
+    }
     result.push({
       type: "activity-group",
       id: activity.id,
@@ -2765,7 +2816,7 @@ function toThreadFeedActivityEntry(
       turnId: entry.turnId,
       summary,
       detail,
-      canExpand: workEntryHasExpandedBody(entry),
+      canExpand: workEntryCanExpand(entry),
       getFullDetail,
       getCopyText,
       icon: workEntryIcon(entry),

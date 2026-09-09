@@ -12,6 +12,8 @@ import {
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cache from "effect/Cache";
+import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -736,7 +738,24 @@ export const discoverCursorModelsViaAcp = (
   environment?: NodeJS.ProcessEnv,
 ) => discoverCursorModelsViaListAvailableModels(cursorSettings, environment);
 
-export function getCursorFallbackModels(
+// Each driver instance owns its cache; version and account changes invalidate it.
+export const makeCursorModelDiscovery = Effect.fn("makeCursorModelDiscovery")(function* (
+  cursorSettings: CursorSettings,
+  environment?: NodeJS.ProcessEnv,
+) {
+  const cache = yield* Cache.makeWith(
+    (_key: string) => discoverCursorModelsViaAcp(cursorSettings, environment),
+    {
+      capacity: 1,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) && exit.value.length > 0 ? Duration.minutes(30) : Duration.zero,
+    },
+  );
+  return (about: Pick<CursorAboutResult, "version" | "auth">) =>
+    Cache.get(cache, JSON.stringify([about.version, about.auth]));
+});
+
+function getCursorFallbackModels(
   cursorSettings: Pick<CursorSettings, "customModels">,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings([], cursorSettings.customModels, EMPTY_CAPABILITIES);
@@ -1263,6 +1282,7 @@ const discoverCursorModelsViaCliList = (
 export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(function* (
   cursorSettings: CursorSettings,
   environment?: NodeJS.ProcessEnv,
+  discoverModels?: (about: CursorAboutResult) => ReturnType<typeof discoverCursorModelsViaAcp>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,

@@ -20,6 +20,10 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const checkpointReactor = yield* CheckpointReactor;
   const threadMergedPullRequestReactor = yield* ThreadMergedPullRequestReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+=======
+  const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+  const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
+>>>>>>> v0.0.39-nightly.20260907.1332
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const projectIconReactor = yield* ProjectIconReactor;
   const activityHeadlineReactor = yield* ActivityHeadlineReactor;
@@ -30,6 +34,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* checkpointReactor.start();
     yield* threadMergedPullRequestReactor.start();
     yield* threadDeletionReactor.start();
+<<<<<<< HEAD
     yield* agentAwarenessRelay.start();
     yield* projectIconReactor.start();
     yield* activityHeadlineReactor.start();

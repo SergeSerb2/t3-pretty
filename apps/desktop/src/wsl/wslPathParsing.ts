@@ -70,10 +70,7 @@ export function wslUncPathToLinuxPath(windowsPath: string): string | null {
   return `/${rest.split("\\").filter(Boolean).join("/")}`;
 }
 
-export function resolveWslHomeUncPath(
-  config: WslConfig,
-  distros: readonly WslDistro[],
-): string | null {
+function resolveWslHomeUncPath(config: WslConfig, distros: readonly WslDistro[]): string | null {
   const distroName = config.distro ?? distros.find((distro) => distro.isDefault)?.name ?? null;
   return distroName ? `\\\\wsl.localhost\\${distroName}\\home` : null;
 }

@@ -84,7 +84,7 @@ const EMPTY_CHECKPOINTS_ATOM = Atom.make(EMPTY_CHECKPOINTS).pipe(
   Atom.withLabel("web-thread-checkpoints:empty"),
 );
 
-export const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
+const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-active-environment-id"),
 );

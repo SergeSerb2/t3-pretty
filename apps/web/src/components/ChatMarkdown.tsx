@@ -55,6 +55,7 @@ import React, {
   Children,
   Suspense,
   type CSSProperties,
+  type ComponentProps,
   type ClipboardEvent as ReactClipboardEvent,
   type MouseEvent as ReactMouseEvent,
   isValidElement,
@@ -108,6 +109,7 @@ import { fnv1a32 } from "../lib/diffRendering";
 import { faviconUrlForOrigin } from "../lib/favicon";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import { GitHubIcon } from "./Icons";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { MemoizedReactMarkdown } from "./MemoizedReactMarkdown";
 import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
@@ -164,6 +166,7 @@ import {
   openFileInPreview,
   openUrlInPreview,
   BrowserPreviewUnavailableError,
+  BrowserSettingsReadError,
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 
@@ -319,7 +322,7 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
  * message's overflow. Widen the gutter to fit the widest marker, including a
  * negative marker's minus sign.
  */
-export function orderedListGutterStyle(
+function orderedListGutterStyle(
   itemCount: number,
   start: unknown,
 ): { "--list-gutter": string } | undefined {
@@ -338,6 +341,55 @@ type MarkdownImageHastNode = {
   children?: MarkdownImageHastNode[];
 };
 
+function meaningfulHastChildren(node: MarkdownImageHastNode): MarkdownImageHastNode[] {
+  return (node.children ?? []).filter(
+    (child) => !(child.type === "text" && (child as { value?: string }).value?.trim() === ""),
+  );
+}
+
+/**
+ * An image that is the only content of its block (optionally wrapped in a
+ * link) is almost always a screenshot or figure, so it gets a reserved slot
+ * while it loads. Images mixed with text or other images — badge rows, icons
+ * in a sentence — stay inline at their natural size, since a placeholder taller
+ * than the image would move the page more than the image itself does.
+ */
+/** Containers whose sole child image reads as a figure rather than part of a sentence. */
+const STANDALONE_IMAGE_BLOCKS = new Set([
+  "p",
+  "div",
+  "li",
+  "td",
+  "th",
+  "figure",
+  "center",
+  "blockquote",
+]);
+
+function soleImageDescendant(node: MarkdownImageHastNode): MarkdownImageHastNode | undefined {
+  const children = meaningfulHastChildren(node);
+  if (children.length !== 1) return undefined;
+  const only = children[0];
+  if (only?.type !== "element") return undefined;
+  if (only.tagName === "img") return only;
+  // A link, emphasis, or similar inline wrapper around the image still counts
+  // as long as nothing else shares the block.
+  return only.tagName === "a" || only.tagName === "strong" || only.tagName === "em"
+    ? soleImageDescendant(only)
+    : undefined;
+}
+
+function markStandaloneImages(node: MarkdownImageHastNode) {
+  // A raw `<img>` on its own line reaches the root without a paragraph.
+  if (node.type === "root" || (node.tagName && STANDALONE_IMAGE_BLOCKS.has(node.tagName))) {
+    const image = soleImageDescendant(node);
+    if (image) image.properties = { ...image.properties, dataStandalone: true };
+  }
+  node.children?.forEach((child) => {
+    if (child.type === "element") markStandaloneImages(child);
+  });
+}
+
 /** Carries authored image source metadata through the sanitizer to the image renderer. */
 function rehypePreserveImageSourceMeta() {
   return (tree: MarkdownImageHastNode) => {
@@ -355,6 +407,7 @@ function rehypePreserveImageSourceMeta() {
     };
 
     visit(tree);
+    markStandaloneImages(tree);
   };
 }
 
@@ -1144,6 +1197,13 @@ const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 /** Bound failed providers for the renderer lifetime; agent-authored hosts are untrusted input. */
 const failedFaviconHosts = new LRUCache<boolean>(128, 128);
 
+/** Sites whose brand mark (drawn in `currentColor`) replaces the fetched favicon so it follows the theme. */
+function brandLinkIcon(host: string): typeof GitHubIcon | null {
+  const hostname = host.toLowerCase();
+  if (hostname === "github.com" || hostname.endsWith(".github.com")) return GitHubIcon;
+  return null;
+}
+
 const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
   const faviconUrl = faviconUrlForOrigin(`https://${host}`, 32);
@@ -1184,9 +1244,15 @@ function markdownImageCopy(alt: string, src: string, title: string | undefined):
   return `![${escapedAlt}](${src}${titleSuffix})`;
 }
 
+/**
+ * `maxHeightRem` folds a height cap into the width bound: `max-height` alone
+ * would not feed back through `aspect-ratio` once `width` is definite, so a
+ * tall image would keep a box wider than the picture it draws.
+ */
 function authoredImageSizeStyle(
   width: string | number | undefined,
   height: string | number | undefined,
+  maxHeightRem = 30,
 ): CSSProperties | undefined {
   const parsedWidth = Number(width);
   const parsedHeight = Number(height);
@@ -1197,7 +1263,7 @@ function authoredImageSizeStyle(
       width: parsedWidth,
       height: "auto",
       aspectRatio: `${parsedWidth} / ${parsedHeight}`,
-      maxWidth: `min(100%, 30rem, ${(30 * parsedWidth) / parsedHeight}rem)`,
+      maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
   if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
@@ -1212,6 +1278,20 @@ const CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME = cn(
   "rounded-lg border border-border/40",
 );
 
+function ChatMarkdownMediaUnavailableLabel(props: {
+  readonly alt: string;
+  readonly kind?: "image" | "video" | undefined;
+}) {
+  const label = props.kind === "video" ? "Video unavailable" : "Image unavailable";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
+      {props.alt.length > 0 ? `${label} · ${props.alt}` : label}
+    </span>
+  );
+}
+
+/** Inline chip for an image that sits in a line of text or can never load. */
 function ChatMarkdownImageFallback(props: {
   readonly alt: string;
   readonly copyMarkdown?: string | undefined;
@@ -1242,6 +1322,10 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly alt: string;
   readonly copyMarkdown?: string;
   readonly srcFragment?: string;
+  /** Reserve a slot while loading; off for images that share a line with text. */
+  readonly standalone?: boolean | undefined;
+  /** Caps the box height in rem while keeping the image's ratio; 30 by default. */
+  readonly maxHeightRem?: number | undefined;
   readonly style?: CSSProperties | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
@@ -2022,6 +2106,18 @@ function useChatMarkdownState({
       }
       return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
         if (result._tag === "Success") recordVisitForThread(threadRef, url);
+        else if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          if (error instanceof BrowserSettingsReadError) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Unable to open link in browser",
+                description: error.message,
+              }),
+            );
+          }
+        }
         return result;
       });
     },
@@ -2360,14 +2456,14 @@ const CHAT_MARKDOWN_COMPONENTS = {
             }
             event.preventDefault();
             event.stopPropagation();
-            // The click was taken from the shell, so an in-app open that fails
-            // hands the link to the system browser instead of dropping it.
+            // Keep the link here if saved settings could not be read.
             void openExternalLinkInPreview(href).then((result) => {
               if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
               reportMarkdownActionFailure(
                 { operation: "open-link-in-preview", target: href },
                 result.cause,
               );
+              if (squashAtomCommandFailure(result) instanceof BrowserSettingsReadError) return;
               void readLocalApi()?.shell.openExternal(href);
             });
           }}
@@ -2481,6 +2577,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
 
     const localSrc = node?.properties?.dataLocalSrc;
     const markdownTitle = node?.properties?.dataMarkdownTitle;
+    const standalone = node?.properties?.dataStandalone === true;
     const authoredSrc = typeof localSrc === "string" ? localSrc : src;
     const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
     const srcString =
@@ -2489,7 +2586,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       typeof localSrc === "string" ? srcString.replaceAll("\\", "/") : srcString;
     const altText = alt ?? "";
     const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
-    const authoredSizeStyle = authoredImageSizeStyle(props.width, props.height);
+    const { className, style: _style, width, height, ...imageProps } = props;
+    const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     if (imageSource._tag === "Direct") {
       return (
@@ -2517,6 +2615,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           alt={altText}
           copyMarkdown={copyMarkdown}
           srcFragment={markdownImageSourceFragment(classifiedSrc)}
+          standalone={standalone}
           style={authoredSizeStyle}
           onImageExpand={onImageExpand}
         />

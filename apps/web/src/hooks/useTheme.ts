@@ -108,6 +108,7 @@ function readStoredThemeHalvesRaw(): { light?: string; dark?: string } {
 function themeHalvesSignature(halves: ThemeHalves | null): string {
   return `${halves?.light ?? ""}|${halves?.dark ?? ""}`;
 }
+
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
 
@@ -343,7 +344,9 @@ function applyTheme(
 ) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   // Keep the editor's draft visible until an explicit refresh restores the selection.
-  if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) return;
+  if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) {
+    return;
+  }
   const appearanceMode = readAppearanceModePreference(theme);
   const followSystem = appearanceMode === "system";
   const systemDark = followSystem ? getSystemDark() : false;

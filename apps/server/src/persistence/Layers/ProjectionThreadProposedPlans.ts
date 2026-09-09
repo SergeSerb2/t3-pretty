@@ -1,14 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-
-import { toPersistenceSqlError } from "../Errors.ts";
-import {
-  DeleteProjectionThreadProposedPlansInput,
-  GetActionableProjectionThreadProposedPlanInput,
   ListProjectionThreadProposedPlansInput,
   ProjectionThreadProposedPlan,
   ProjectionThreadProposedPlanRepository,
@@ -50,6 +42,24 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
         implementation_thread_id = excluded.implementation_thread_id,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
+    `,
+  });
+
+  const getProjectionThreadProposedPlanRow = SqlSchema.findOneOption({
+    Request: GetProjectionThreadProposedPlanInput,
+    Result: ProjectionThreadProposedPlan,
+    execute: ({ threadId, planId }) => sql`
+      SELECT
+        plan_id AS "planId",
+        thread_id AS "threadId",
+        turn_id AS "turnId",
+        plan_markdown AS "planMarkdown",
+        implemented_at AS "implementedAt",
+        implementation_thread_id AS "implementationThreadId",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM projection_thread_proposed_plans
+      WHERE thread_id = ${threadId} AND plan_id = ${planId}
     `,
   });
 
@@ -103,6 +113,13 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadProposedPlanRepository.upsert:query")),
     );
 
+  const getByPlanId: ProjectionThreadProposedPlanRepositoryShape["getByPlanId"] = (input) =>
+    getProjectionThreadProposedPlanRow(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionThreadProposedPlanRepository.getByPlanId:query"),
+      ),
+    );
+
   const listByThreadId: ProjectionThreadProposedPlanRepositoryShape["listByThreadId"] = (input) =>
     listProjectionThreadProposedPlanRows(input).pipe(
       Effect.mapError(
@@ -134,6 +151,10 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
     upsert,
     listByThreadId,
     hasActionableByThreadId,
+<<<<<<< HEAD
+=======
+    getByPlanId,
+>>>>>>> v0.0.39-nightly.20260907.1332
     deleteByThreadId,
   } satisfies ProjectionThreadProposedPlanRepositoryShape;
 });

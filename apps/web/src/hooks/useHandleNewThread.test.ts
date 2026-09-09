@@ -49,7 +49,21 @@ const testState = vi.hoisted(() => {
 });
 
 vi.mock("@effect/atom-react", () => ({
-  useAtomValue: () => ({ defaultThreadEnvMode: "local", newWorktreesStartFromOrigin: false }),
+  useAtomValue: (atom: unknown) =>
+    atom === "primary-settings"
+      ? { newWorktreesStartFromOrigin: false }
+      : new Map([
+          [
+            "environment-ssh",
+            {
+              settings: {
+                defaultThreadEnvMode: "local",
+                newWorktreesStartFromOrigin: false,
+                defaultModelSelection: null,
+              },
+            },
+          ],
+        ]),
 }));
 vi.mock("@t3tools/client-runtime/environment", () => ({
   scopedProjectKey: () => "remote-project",

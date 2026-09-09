@@ -28,20 +28,24 @@ import { useRelayEnvironmentDiscovery } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "../settings/itemRows";
+import { Checkbox } from "../ui/checkbox";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import { toastManager } from "../ui/toast";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { presentSavedCloudEnvironmentConnection } from "./cloudEnvironmentConnectionPresentation";
 import { isElectron } from "~/env";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { useCopyTraceId } from "~/hooks/useCopyTraceId";
+
+const EMPTY_DISCOVERY_REFRESH_INTERVAL_MS = 5_000;
 
 export interface SavedCloudEnvironmentConnection {
   readonly environmentId: EnvironmentId;
   readonly connection: EnvironmentConnectionPresentation;
 }
 
-export function RemoteEnvironmentRowsSkeleton() {
+function RemoteEnvironmentRowsSkeleton() {
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
@@ -70,12 +74,20 @@ export function CloudEnvironmentConnectRows({
   showSavedEnvironments = false,
   hiddenMachineKeys,
   empty = null,
+  selection,
+  onDiscoveryReady,
 }: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<SavedCloudEnvironmentConnection>;
   readonly showSavedEnvironments?: boolean;
   readonly hiddenMachineKeys?: ReadonlySet<string>;
   readonly empty?: ReactNode;
+  readonly onDiscoveryReady?: () => void;
+  readonly selection?: {
+    readonly autoSelectedComputers?: Set<EnvironmentId>;
+    readonly selectedIds: ReadonlySet<EnvironmentId>;
+    readonly onChange: (environmentId: EnvironmentId, selected: boolean) => void;
+  };
 }) {
   const { userId } = useAuth({ treatPendingAsSignedOut: false });
   const environmentsState = useRelayEnvironmentDiscovery();
@@ -163,11 +175,11 @@ export function CloudEnvironmentConnectRows({
         title: "Environment added",
         description: `Connecting to ${environment.label} through ${SURGE_CONNECT_NAME}.`,
       });
-      return;
+      return true;
     }
     if (!finishCurrent()) return;
     if (isAtomCommandInterrupted(result)) {
-      return;
+      return false;
     }
     const cause = squashAtomCommandFailure(result);
     const message =
@@ -189,6 +201,7 @@ export function CloudEnvironmentConnectRows({
           }
         : undefined,
     });
+    return false;
   };
 
   const visibleEnvironments = [...environmentsState.environments.values()].filter(
@@ -232,10 +245,73 @@ export function CloudEnvironmentConnectRows({
   const dedupedEnvironments = visibleEnvironments.filter(({ environment }) =>
     visibleEnvironmentIds.has(environment.environmentId),
   );
+  const selectNewComputers = useEffectEvent(() => {
+    const seen = selection?.autoSelectedComputers;
+    if (!selection || !seen) return;
+    for (const { environment } of visibleEnvironments) {
+      const id = environment.environmentId;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      selection.onChange(id, true);
+      if (!savedById.has(id)) {
+        void connectEnvironment(environment).then((connected) => {
+          if (!connected) selection.onChange(id, false);
+        });
+      }
+    }
+  });
+  useEffect(() => {
+    selectNewComputers();
+  }, [environmentsState.environments]);
+
+  // Discovery clears its list on refresh, so poll only until a machine appears.
+  const shouldRefreshWhileEmpty =
+    refreshWhileEmpty && visibleEnvironments.length === 0 && !environmentsState.offline;
+
+  useEffect(() => {
+    if (!shouldRefreshWhileEmpty) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    let pending = false;
+    const visible = () => document.visibilityState === "visible";
+    const schedule = () => {
+      clearTimeout(timer);
+      if (!disposed && visible()) {
+        timer = setTimeout(() => void refresh(), EMPTY_DISCOVERY_REFRESH_INTERVAL_MS);
+      }
+    };
+    const refresh = async () => {
+      if (disposed || pending || !visible()) return;
+      clearTimeout(timer);
+      pending = true;
+      try {
+        await refreshDiscoveryWhenIdle();
+      } finally {
+        pending = false;
+        schedule();
+      }
+    };
+    const onFocus = () => void refresh();
+    const onVisibilityChange = () => {
+      clearTimeout(timer);
+      if (visible()) void refresh();
+    };
+
+    schedule();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [shouldRefreshWhileEmpty]);
 
   const standalone = showSavedEnvironments || savedEnvironments.length === 0;
 
   if (
+    !refreshWhileEmpty &&
     standalone &&
     dedupedEnvironments.length === 0 &&
     environmentsState.refreshing &&
@@ -347,10 +423,10 @@ export function CloudEnvironmentConnectRows({
           ) : (
             <Button
               size="sm"
-              disabled={connectingEnvironmentId !== null}
+              disabled={connectingEnvironmentIds.size > 0}
               onClick={() => void connectEnvironment(environment)}
             >
-              {connectingEnvironmentId === environment.environmentId ? "Connecting…" : "Connect"}
+              {connectingEnvironmentIds.has(environment.environmentId) ? "Connecting…" : "Connect"}
             </Button>
           )}
         </div>

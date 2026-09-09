@@ -77,6 +77,26 @@ describe("OrchestrationReactor", () => {
           }),
         ),
         Layer.provideMerge(
+=======
+          Layer.succeed(ThreadPullRequestReactor.ThreadPullRequestReactor, {
+            start: () => {
+              started.push("thread-pull-request-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
+            start: () => {
+              started.push("thread-settlement-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+>>>>>>> v0.0.39-nightly.20260907.1332
           Layer.succeed(AgentAwarenessRelay.AgentAwarenessRelay, {
             publishThread: () => Effect.void,
             start: () => {
@@ -114,6 +134,7 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "thread-merged-pull-request-reactor",
       "thread-deletion-reactor",
+<<<<<<< HEAD
       "agent-awareness-relay",
       "project-icon-reactor",
       "activity-headline-reactor",

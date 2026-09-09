@@ -4,7 +4,6 @@ import {
 } from "@t3tools/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
-  createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
   createThreadLifecyclePendingValueAtom,

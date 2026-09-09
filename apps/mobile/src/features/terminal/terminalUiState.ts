@@ -1,7 +1,5 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
-import { DEFAULT_TERMINAL_FONT_SIZE, normalizeTerminalFontSize } from "./terminalPreferences";
-
 export interface TerminalGridSize {
   readonly cols: number;
   readonly rows: number;
@@ -14,21 +12,14 @@ export interface TerminalUiStateTarget {
 }
 
 const terminalGridSizeCache = new Map<string, TerminalGridSize>();
+<<<<<<< HEAD
 const MAX_TERMINAL_GRID_SIZE_CACHE_ENTRIES = 128;
 let cachedTerminalFontSize: number | null = null;
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 
 function terminalUiStateKey(target: TerminalUiStateTarget): string {
   return `${target.environmentId}:${target.threadId}:${target.terminalId}`;
-}
-
-export function getCachedTerminalFontSize(): number | null {
-  return cachedTerminalFontSize;
-}
-
-export function cacheTerminalFontSize(value: number | null | undefined): number {
-  const normalized = normalizeTerminalFontSize(value ?? DEFAULT_TERMINAL_FONT_SIZE);
-  cachedTerminalFontSize = normalized;
-  return normalized;
 }
 
 export function getCachedTerminalGridSize(target: TerminalUiStateTarget): TerminalGridSize | null {
@@ -61,6 +52,5 @@ export function cacheTerminalGridSize(
 }
 
 export function resetTerminalUiStateCaches() {
-  cachedTerminalFontSize = null;
   terminalGridSizeCache.clear();
 }

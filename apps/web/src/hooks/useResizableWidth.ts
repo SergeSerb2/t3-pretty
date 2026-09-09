@@ -1,56 +1,6 @@
 import * as Schema from "effect/Schema";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-
-import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
-
-const WidthSchema = Schema.Finite;
-
-export interface UseResizableWidthOptions {
-  /** localStorage key the persisted width is stored under. */
-  readonly storageKey: string;
-  readonly defaultWidth: number;
-  readonly minWidth: number;
-  readonly maxWidth: number;
-  /**
-   * Which edge of the host element carries the drag handle:
-   *   - "left"  → panel grows leftward (right-anchored panels)
-   *   - "right" → panel grows rightward (left-anchored panels)
-   */
-  readonly edge: "left" | "right";
-}
-
-export interface ResizableWidthHandlers {
-  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
-  readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
-  readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
-  readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
-  readonly onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
-  readonly onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
-}
-
-export function resizableWidthFromKeyboard(input: {
-  readonly key: string;
-  readonly currentWidth: number;
-  readonly minWidth: number;
-  readonly maxWidth: number;
-  readonly edge: "left" | "right";
-  readonly step: number;
-}): number | null {
-  const { currentWidth, edge, key, maxWidth, minWidth, step } = input;
-  let next: number;
-  if (key === "Home") next = minWidth;
-  else if (key === "End") next = maxWidth;
-  else if (key === "ArrowLeft") next = currentWidth + (edge === "left" ? step : -step);
-  else if (key === "ArrowRight") next = currentWidth + (edge === "right" ? step : -step);
-  else return null;
-  return Math.max(minWidth, Math.min(maxWidth, next));
 }
 
 /**
@@ -106,6 +56,8 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   const cleanupDrag = useCallback(() => {
     const state = dragStateRef.current;
     if (!state) return;
+    // Clear first because releasing capture can trigger another cleanup.
+    dragStateRef.current = null;
     if (state.rafId !== null) {
       cancelAnimationFrame(state.rafId);
     }
@@ -209,7 +161,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       releasePointer();
       setWidth(state.startWidth);
     },
-    [releasePointer],
+    [cancelDrag],
   );
 
   const onKeyDown = useCallback(

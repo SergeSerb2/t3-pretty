@@ -42,7 +42,11 @@ import {
   acquireBrowserSurfaceActivity,
   useBrowserSurfaceStore,
 } from "~/browser/browserSurfaceStore";
-import { browserDefaultOpenViewport, resolveBrowserDefaults } from "~/browser/browserDefaults";
+import {
+  browserDefaultOpenProfileId,
+  browserDefaultOpenViewport,
+  resolveBrowserDefaults,
+} from "~/browser/browserDefaults";
 import { runBrowserViewportMutation } from "~/browser/browserViewportActions";
 import { acquirePreviewGuestThread } from "~/browser/previewGuestResidency";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";

@@ -1,8 +1,4 @@
-import {
-  scopeProjectRef,
-  scopedThreadKey,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
 import {
   type EnvironmentId,
@@ -27,12 +23,10 @@ import { cn } from "~/lib/utils";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { StatusPulseDot, useStatusPulse } from "../hooks/useStatusPulse";
 import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
-import { vcsEnvironment } from "../state/vcs";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
@@ -130,12 +124,14 @@ export interface LinkedThreadPullRequestStatus {
   readonly sourceControlProvider: NonNullable<VcsStatusResult["sourceControlProvider"]>;
 }
 
+/** Keep cached summaries visible when an offscreen row stops live queries. */
 export function useLinkedThreadPullRequest(
   environmentId: EnvironmentId | null,
   linkedPullRequest: ThreadLinkedPullRequest | null | undefined,
+  enabled = true,
 ): LinkedThreadPullRequestStatus | null {
   const queried = useEnvironmentQuery(
-    environmentId === null || linkedPullRequest == null
+    !enabled || environmentId === null || linkedPullRequest == null
       ? null
       : linkedPullRequestDetailAtom({
           environmentId,
@@ -294,6 +290,7 @@ export function PrStatusTooltipContent({ status }: { status: PrStatusIndicator }
   );
 }
 
+<<<<<<< HEAD
 export function resolveThreadPr(input: {
   threadBranch: string | null;
   gitStatus: VcsStatusResult | null;
@@ -575,6 +572,8 @@ export function resolveDisplayedThreadPrProvider(input: {
   return undefined;
 }
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 export function terminalStatusFromRunningIds(
   runningTerminalIds: ReadonlyArray<string>,
 ): TerminalStatusIndicator | null {
@@ -675,36 +674,12 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
   const lastVisitedAt = useUiStateStore(
     (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
   );
-  const threadProject = useProject(
-    useMemo(
-      () => scopeProjectRef(thread.environmentId, thread.projectId),
-      [thread.environmentId, thread.projectId],
-    ),
-  );
-  const threadProjectCwd = threadProject?.workspaceRoot ?? null;
-  const gitCwd = thread.worktreePath ?? threadProjectCwd;
-  const linkedPullRequest = useLinkedThreadPullRequest(
+  const pullRequest = useLinkedThreadPullRequest(
     thread.environmentId,
-    thread.linkedPullRequest,
+    thread.linkedPullRequest ?? thread.branchPullRequest,
   );
-  const gitStatus = useEnvironmentQuery(
-    thread.linkedPullRequest == null &&
-      (thread.branch != null || thread.worktreePath !== null) &&
-      gitCwd !== null
-      ? vcsEnvironment.status({
-          environmentId: thread.environmentId,
-          input: { cwd: gitCwd },
-        })
-      : null,
-  );
-  const pr =
-    thread.linkedPullRequest == null
-      ? resolveThreadPr({ threadBranch: thread.branch, gitStatus: gitStatus.data })
-      : (linkedPullRequest?.pr ?? null);
-  const prStatus = prStatusIndicator(
-    pr,
-    linkedPullRequest?.sourceControlProvider ?? gitStatus.data?.sourceControlProvider,
-  );
+  const pr = pullRequest?.pr ?? null;
+  const prStatus = prStatusIndicator(pr, pullRequest?.sourceControlProvider);
   const threadStatus = resolveThreadStatusPill({
     thread: {
       ...thread,

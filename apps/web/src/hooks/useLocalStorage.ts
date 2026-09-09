@@ -41,7 +41,7 @@ const isomorphicLocalStorage = resolveIsomorphicLocalStorage();
 
 const read = (key: string) => {
   try {
-    return isomorphicLocalStorage.getItem(key);
+    return getStorage().getItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "read", storageKey: key, cause });
   }
@@ -127,7 +127,7 @@ export const setLocalStorageItem = <T, E>(
   const valueToSet = encode(key, schema, value);
   enforceEncodedSizeLimit(key, valueToSet, "write", options);
   try {
-    isomorphicLocalStorage.setItem(key, valueToSet);
+    getStorage().setItem(key, valueToSet);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "write", storageKey: key, cause });
   }
@@ -135,7 +135,7 @@ export const setLocalStorageItem = <T, E>(
 
 export const removeLocalStorageItem = (key: string) => {
   try {
-    isomorphicLocalStorage.removeItem(key);
+    getStorage().removeItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "remove", storageKey: key, cause });
   }

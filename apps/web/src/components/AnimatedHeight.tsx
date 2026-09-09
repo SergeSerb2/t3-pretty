@@ -62,6 +62,7 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
   }, [heightState.height, heightState.isClipping, exiting]);
 
   useLayoutEffect(() => {
+    if (holdHeight) return;
     const element = contentRef.current;
     if (!element) return;
     let firstFrameId: number | null = null;
@@ -112,7 +113,7 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
       cancelPendingFrames();
       measureRef.current = null;
     };
-  }, []);
+  }, [holdHeight]);
 
   // Re-measure on every open: reopening with unchanged content emits no
   // ResizeObserver event, so the expand transition needs an explicit kick.

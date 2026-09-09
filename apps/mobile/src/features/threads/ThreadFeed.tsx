@@ -165,7 +165,12 @@ import {
 import { deriveThreadFeedListFooterInset } from "./thread-feed-end-scroll";
 import {
   collapsedWorkLogHeight,
+=======
+  ThreadAgentSpawnCard,
+  ThreadDisclosureChevron,
+>>>>>>> v0.0.39-nightly.20260907.1332
   ThreadWorkGroupToggle,
+  ThreadThinkingRow,
   ThreadWorkLog,
   WORK_GROUP_TOGGLE_HEIGHT,
 } from "./thread-work-log";
@@ -185,7 +190,9 @@ import * as Option from "effect/Option";
 import { useNativeReadAloud, type ReadAloudPhase } from "./useNativeReadAloud";
 import { readAloudChunks } from "@t3tools/client-runtime/state/read-aloud";
 import { fileChipMenu, resolveFileChipTarget, type FileChipAction } from "./fileChipMenu";
+import { useFileChipShare } from "./useFileChipShare";
 import {
+  MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
   ThreadMarkdownImageUnavailable,
   ThreadMarkdownImageView,
@@ -222,6 +229,7 @@ function formatMessageTime(input: string): string {
   return `${MESSAGE_DATE_FORMATTER.format(date)} ${time}`;
 }
 
+<<<<<<< HEAD
 // Pre-measurement heights for getFixedItemSize, mirroring renderFeedEntry's
 // classNames. The fold row's min-h-11 (44px) stays taller than its single
 // text-sm line at every supported base font size (26px at the 22pt maximum),
@@ -629,7 +637,8 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
   readonly onLongPress?: () => void;
 }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
-  const faviconUrl = faviconUrlForOrigin(`https://${props.host}`);
+  const linkIcon = resolveMarkdownLinkIcon(props.host);
+  const faviconUrl = linkIcon ? null : faviconUrlForOrigin(`https://${props.host}`);
 
   return (
     <NativeText
@@ -641,9 +650,15 @@ const MarkdownExternalLink = memo(function MarkdownExternalLink(props: {
         textDecorationLine: "none",
       }}
     >
-      {faviconUrl !== null &&
-      failedHost !== props.host &&
-      !failedMarkdownFaviconHosts.has(props.host) ? (
+      {linkIcon ? (
+        <Image
+          source={markdownLinkIconSource(linkIcon)}
+          style={markdownLinkStyles.inlineIcon}
+          tintColor={props.color}
+        />
+      ) : faviconUrl !== null &&
+        failedHost !== props.host &&
+        !failedMarkdownFaviconHosts.has(props.host) ? (
         <Image
           source={{
             uri: faviconUrl,
@@ -1293,6 +1308,7 @@ function renderFeedEntry(
     readonly markdownLinkHandlers: MarkdownLinkHandlers;
     readonly renderMarkdownImage: MarkdownImageRenderer;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
+    readonly screenColor: string;
     readonly userBubbleColor: string | import("react-native").ColorValue;
     readonly markdownStyles: MarkdownStyleSets;
     readonly reviewCommentColors: ReviewCommentColors;
@@ -1332,6 +1348,23 @@ function renderFeedEntry(
           type="monochrome"
         />
       </Pressable>
+    );
+  }
+
+  if (entry.type === "thinking") {
+    return <ThreadThinkingRow rowSizing={props.workRowSizing} iconSubtleColor={iconSubtleColor} />;
+  }
+
+  if (entry.type === "agent-spawn") {
+    return (
+      <ThreadAgentSpawnCard
+        summary={entry.summary}
+        expanded={entry.expanded}
+        iconSubtleColor={iconSubtleColor}
+        rowSizing={props.workRowSizing}
+        onToggle={() => props.onToggleWorkGroup(entry.id, entry.id)}
+        onCopy={() => props.onCopyWorkRow(entry.activity.id, entry.activity.getCopyText())}
+      />
     );
   }
 
@@ -1585,6 +1618,7 @@ function renderFeedEntry(
       environmentId={props.environmentId}
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
+      edgeFadeColor={props.screenColor}
       themeAppearance={props.themeAppearance}
       onCopyRow={props.onCopyWorkRow}
       onPressImage={props.onPressImage}
@@ -2058,6 +2092,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   });
   const contentWidth = Math.max(0, viewportWidth - contentHorizontalPadding * 2);
   const userBubbleMaxWidth = contentWidth * 0.85;
+  const markdownContentWidth = Math.max(0, contentWidth - ASSISTANT_ROW_HORIZONTAL_PADDING * 2);
   const reviewCommentBubbleWidth = Math.min(Math.max(280, contentWidth * 0.85), contentWidth);
   const insets = useSafeAreaInsets();
   const topContentInset = props.contentTopInset ?? insets.top + IOS_NAV_BAR_HEIGHT;
@@ -2091,6 +2126,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
 
   const theme = useUniwindTheme();
   const iconSubtleColor = theme["--color-icon-subtle"];
+  const screenColor = theme["--color-screen"];
   const userBubbleColor = theme["--color-user-bubble"];
   const onMarkdownLinkPress = useCallback(
     (href: string) => {
@@ -2208,10 +2244,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           case "open-file":
             onMarkdownLinkPress(href);
             return;
+          case "save":
+            shareFileChip(target);
+            return;
         }
       },
     }),
-    [onMarkdownLinkPress, props.workspaceRoot],
+    [onMarkdownLinkPress, props.workspaceRoot, shareFileChip],
   );
   const renderMarkdownImage = useCallback<MarkdownImageRenderer>(
     (image) => {
@@ -2727,6 +2766,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         case "turn-fold":
           return TURN_FOLD_HEIGHT;
         case "work-toggle":
+        case "thinking":
           return WORK_GROUP_TOGGLE_HEIGHT;
         case "working":
           return workingRowHeight;
@@ -2788,6 +2828,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       terminalAssistantMessageIds,
       unsettledTurnId,
       iconSubtleColor,
+      screenColor,
       userBubbleColor,
       markdownStyles,
       reviewCommentColors,
@@ -2826,7 +2867,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   }
 
   return (
-    <>
+    <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
       <View className="flex-1" onLayout={handleViewportLayout}>
         <Animated.View className="flex-1" style={feedContainerStyle}>
           <KeyboardAwareLegendList
@@ -2996,6 +3037,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             />
           </Animated.View>
         ) : null}
+        <VideoPreviewModal source={expandedVideo} onRequestClose={() => setExpandedVideo(null)} />
+        <FilePreviewModal source={expandedFile} onRequestClose={() => setExpandedFile(null)} />
       </View>
 
       <FilePreviewModal source={expandedFile} onRequestClose={() => setExpandedFile(null)} />

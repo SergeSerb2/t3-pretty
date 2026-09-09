@@ -50,7 +50,7 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  * observed threads stays around 100K gzipped while median threads load fully.
  */
 export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
-export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
+const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
 
 /**
  * Streamed provider deltas arrive one WS event at a time; publishing each one
@@ -250,7 +250,7 @@ export const warmThreadStatesLayer = Layer.sync(WarmThreadStates, makeWarmThread
  * instance is shared with the sync `requestOlderThreadTurns` entry point so
  * the apps get working wiring without providing anything.
  */
-export class ThreadOlderTurnRequests extends Context.Reference<ThreadOlderTurnRequestRegistry>(
+class ThreadOlderTurnRequests extends Context.Reference<ThreadOlderTurnRequestRegistry>(
   "@t3tools/client-runtime/state/threads/ThreadOlderTurnRequests",
   { defaultValue: () => defaultOlderTurnRequestRegistry },
 ) {}
@@ -307,10 +307,18 @@ function matchesThreadSnapshot(
         currentPage.hasMore === page.hasMore;
 }
 
+// A retained "live" state stays live: the cursor resume that follows only
+// replays what the thread missed, and on servers that send the completion
+// marker the first replayed event moves the status to "synchronizing" on its
+// own. Downgrading here would flash a sync label on every return to a
+// recently viewed thread.
 function cachedThreadState(value: EnvironmentThreadState): EnvironmentThreadState {
   return {
     ...value,
-    status: value.status === "deleted" ? "deleted" : statusWithoutLiveData(value.data),
+    status:
+      value.status === "deleted" || (value.status === "live" && Option.isSome(value.data))
+        ? value.status
+        : statusWithoutLiveData(value.data),
     error: Option.none(),
     page: Option.map(value.page, (page) => ({ ...page, loadingOlder: false })),
   };
@@ -513,8 +521,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Effect.forkScoped,
   );
 
-  const setSynchronizing = SubscriptionRef.update(state, (current) =>
-    current.status === "deleted"
+  const setConnecting = SubscriptionRef.update(state, (current) =>
+    current.status === "deleted" || Option.isSome(current.error)
       ? current
       : {
           ...current,
@@ -523,7 +531,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         },
   );
   const setReady = SubscriptionRef.update(state, (current) =>
-    current.status === "live" || current.status === "deleted"
+    current.status === "live" || current.status === "deleted" || Option.isSome(current.error)
       ? current
       : {
           ...current,
@@ -551,7 +559,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           ...current,
           status:
             current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
-          error: Option.some(formatThreadError(cause)),
+          error: Option.some(message),
         })),
       ),
     );
@@ -587,8 +595,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* SubscriptionRef.set(lastSequence, snapshotSequence);
     yield* SubscriptionRef.update(state, (current) => ({
       data: Option.some(thread),
-      status: waiting ? ("synchronizing" as const) : ("live" as const),
-      error: Option.none(),
+      // Buffered values from the failed attempt can still arrive after its error.
+      status: Option.isSome(current.error)
+        ? ("cached" as const)
+        : waiting
+          ? ("synchronizing" as const)
+          : ("live" as const),
+      error: current.error,
       page: page === "keep" ? current.page : page,
     }));
     // Active threads can update many times per second and retain large tool
@@ -934,7 +947,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
-          return setSynchronizing;
+          return setConnecting;
         case "disconnected":
           return setDisconnected;
         case "ready":
@@ -965,7 +978,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         const supportsPagination = config.threadSnapshotPagination === true;
         yield* Ref.set(paginationSupported, supportsPagination);
         yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
-        yield* setSynchronizing;
+        yield* markSynchronizing;
+        yield* Ref.set(resumingLive, false);
 
         let current = yield* SubscriptionRef.get(state);
         // A windowed cache resuming against a server without pagination is a
@@ -1042,7 +1056,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         };
       }),
       {
-        onExpectedFailure: setStreamError,
+        onDefect: () => setStreamError("Could not synchronize the thread."),
+        onExpectedFailure: (cause) => setStreamError(formatThreadError(cause)),
         retryExpectedFailureAfter: "250 millis",
       },
     ).pipe(
@@ -1108,7 +1123,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   return state;
 });
 
-export function threadStateChanges(
+function threadStateChanges(
   environmentId: EnvironmentIdType,
   threadId: ThreadIdType,
   resumeCache?: ThreadResumeCache,

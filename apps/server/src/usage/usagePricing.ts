@@ -123,6 +123,14 @@ export function normalizeModelName(model: string): string {
 
 function normalizeRateKey(model: string): string {
   return model.trim().toLowerCase();
+<<<<<<< HEAD
+=======
+}
+
+function bareModelName(key: string): string {
+  const slash = key.lastIndexOf("/");
+  return slash === -1 ? key : key.slice(slash + 1);
+>>>>>>> v0.0.39-nightly.20260907.1332
 }
 
 /**

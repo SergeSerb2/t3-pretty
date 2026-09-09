@@ -908,6 +908,7 @@ export function deriveAgentPanelModel({
 }
 
 /**
+<<<<<<< HEAD
  * Members ordered by urgency for the capped inline workflow card: running and
  * failed first, then waiting, then most recently updated.
  */
@@ -963,6 +964,8 @@ export function isTimelineBypassActivity(activity: OrchestrationThreadActivity):
 }
 
 /**
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
  * Compact model chip text: strips vendor prefixes/date-or-context suffixes
  * ("claude-sonnet-5[1m]" → "sonnet-5[1m]", "claude-opus-4-20250514" →
  * "opus-4"). Unknown ids pass through untouched; effort appends as "· high".

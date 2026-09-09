@@ -46,6 +46,7 @@ import {
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import {
+  filterSharedServerPatch,
   findSharedSettingsMismatches,
   pickSharedServerSettings,
   supportsSharedSettingsSync,
@@ -705,6 +706,9 @@ function AutoSettleSettingsRows() {
             onPress={() => {
               const { sidebarAutoSettleAfterDays } = pickSharedServerSettings(referenceSettings);
               for (const mismatch of mismatches) {
+                const target = environments.find(
+                  (candidate) => candidate.environmentId === mismatch.environmentId,
+                );
                 void updateSettings({
                   environmentId: mismatch.environmentId,
                   input: { patch: { sidebarAutoSettleAfterDays } },

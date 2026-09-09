@@ -49,7 +49,7 @@ const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
 ];
 
 /** Classifies stderr into a safe label, dropping the text itself. */
-export const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
+const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
   if (stderr.trim().length === 0) {
     return undefined;
   }
@@ -68,7 +68,7 @@ export class TailscaleCommandSpawnError extends Schema.TaggedErrorClass<Tailscal
   }
 }
 
-export class TailscaleCommandOutputError extends Schema.TaggedErrorClass<TailscaleCommandOutputError>()(
+class TailscaleCommandOutputError extends Schema.TaggedErrorClass<TailscaleCommandOutputError>()(
   "TailscaleCommandOutputError",
   {
     ...TailscaleCommandContext,
@@ -139,7 +139,6 @@ const TailscaleStatusJson = Schema.Struct({
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
-export type TailscaleStatusSelf = typeof TailscaleStatusSelf.Type;
 export type TailscaleStatusJson = typeof TailscaleStatusJson.Type;
 
 export interface TailscaleStatus {

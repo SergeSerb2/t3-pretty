@@ -80,6 +80,7 @@ export type StartThreadTurnInput = Omit<CommandInput<"thread.turn.start">, "boot
 export type InterruptThreadTurnInput = CommandInput<"thread.turn.interrupt">;
 export type RespondToThreadApprovalInput = CommandInput<"thread.approval.respond">;
 export type RespondToThreadUserInputInput = CommandInput<"thread.user-input.respond">;
+export type DismissThreadUserInputInput = CommandInput<"thread.user-input.dismiss">;
 export type RevertThreadCheckpointInput = CommandInput<"thread.checkpoint.revert">;
 export type StopThreadSessionInput = CommandInput<"thread.session.stop">;
 
@@ -316,6 +317,7 @@ export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEf
   });
 });
 
+<<<<<<< HEAD
 export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.setThreadSkills",
 )(function* (input) {
@@ -339,6 +341,8 @@ export const setThreadSubagentPolicy: (input: SetThreadSubagentPolicyInput) => C
     });
   });
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 export const updateThreadMetadata: (input: UpdateThreadMetadataInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.updateThreadMetadata",
 )(function* (input) {
@@ -432,6 +436,17 @@ export const respondToThreadUserInput: (input: RespondToThreadUserInputInput) =>
     return yield* dispatch({
       ...input,
       type: "thread.user-input.respond",
+      commandId: metadata.commandId,
+      createdAt: metadata.createdAt,
+    });
+  });
+
+export const dismissThreadUserInput: (input: DismissThreadUserInputInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.dismissThreadUserInput")(function* (input) {
+    const metadata = yield* timestampedCommandMetadata(input);
+    return yield* dispatch({
+      ...input,
+      type: "thread.user-input.dismiss",
       commandId: metadata.commandId,
       createdAt: metadata.createdAt,
     });

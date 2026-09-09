@@ -94,6 +94,7 @@ class PromptRejectedError extends Schema.TaggedErrorClass<PromptRejectedError>()
   { message: Schema.String },
 ) {}
 
+<<<<<<< HEAD
 it("formats loopback authorization with a headless-host fallback", () => {
   assert.equal(
     CliTokenManager.formatLoopbackAuthorizationPrompt("https://clerk.example.test/authorize"),
@@ -107,6 +108,8 @@ it("formats loopback authorization with a headless-host fallback", () => {
   );
 });
 
+=======
+>>>>>>> v0.0.39-nightly.20260907.1332
 const makeTestTerminal = (queue: Queue.Queue<Terminal.UserInput>) =>
   Terminal.make({
     columns: Effect.succeed(80),

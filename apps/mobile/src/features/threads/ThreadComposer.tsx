@@ -378,6 +378,30 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const sendStartedAtRef = useRef(0);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
+=======
+  const showStopAction =
+    !hasContent &&
+    (props.selectedThread.session?.status === "running" ||
+      props.selectedThread.session?.status === "starting");
+
+  const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
+  const attachmentsUploading =
+    props.connectionState === "connected" &&
+    composerAttachmentsStillUploading({
+      environmentId: props.environmentId,
+      attachments: props.draftAttachments,
+      serverConfig: props.serverConfig,
+      states: uploadStates,
+    });
+  // Every send goes through the outbox; the label says whether it leaves now
+  // or waits (for the connection, an earlier queued message, or an upload).
+  const sendLabel =
+    props.connectionState !== "connected" || props.queueCount > 0 || attachmentsUploading
+      ? "Queue"
+      : "Send";
+  const currentModelSelection = props.selectedThread.modelSelection;
+  const currentRuntimeMode = props.selectedThread.runtimeMode;
+>>>>>>> v0.0.39-nightly.20260907.1332
   const modelUnavailable =
     props.connectionState === "connected" &&
     isModelSelectionUnavailable(props.serverConfig, props.selectedThread.modelSelection);
@@ -410,6 +434,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     const attachedUris = new Set(
       props.draftAttachments.map((image) => (image.type === "image" ? image.previewUri : null)),
     );
+<<<<<<< HEAD
     return [
       ...props.draftAttachments,
       ...pendingPreviews.filter(

@@ -46,13 +46,14 @@ export const ExecutionEnvironmentPlatformArch = Schema.Literals(["arm64", "x64",
 export type ExecutionEnvironmentPlatformArch = typeof ExecutionEnvironmentPlatformArch.Type;
 
 /**
- * The curated set of machine shapes an environment can wear as its icon.
+ * The curated set of machine shapes and OS identities an environment can wear as its icon.
  * Servers detect one from the hardware they run on (`platform.machine`), and
  * the `environmentIcon` server setting lets a user pick one instead.
  */
 export const ENVIRONMENT_MACHINE_KINDS = [
   "server",
   "cloud",
+  "linux",
   "desktop",
   "laptop",
   "mac-mini",
@@ -125,6 +126,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadSettlement: Schema.optionalKey(Schema.Boolean),
   /** Server evaluates merge and inactivity settlement without a client. */
   threadAutoSettlement: Schema.optionalKey(Schema.Boolean),
+  /** Server persists the opt-in for continuing interrupted threads after restarts. */
+  threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.snooze / thread.unsnooze commands. Same
       version-skew contract as threadSettlement. */
   threadSnooze: Schema.optionalKey(Schema.Boolean),

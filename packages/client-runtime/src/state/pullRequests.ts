@@ -43,7 +43,7 @@ export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
 
-export const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
+const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
 function createPullRequestRefreshAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
