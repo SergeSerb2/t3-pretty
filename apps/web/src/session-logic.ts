@@ -19,6 +19,7 @@ import {
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
 import {
   isToolLifecycleItemType,
+  ProviderDriverKind,
   type AssetResource,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
@@ -42,6 +43,28 @@ import {
 export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
 
 export { formatDuration } from "@t3tools/shared/orchestrationTiming";
+
+export const PROVIDER_OPTIONS: Array<{
+  value: ProviderDriverKind;
+  label: string;
+  available: boolean;
+  pickerSidebarBadge?: "new" | "soon";
+}> = [
+  { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
+  { value: ProviderDriverKind.make("claudeAgent"), label: "Claude", available: true },
+  { value: ProviderDriverKind.make("cursor"), label: "Cursor", available: true },
+  { value: ProviderDriverKind.make("grok"), label: "Grok", available: true },
+  { value: ProviderDriverKind.make("kimi"), label: "Kimi", available: true },
+  { value: ProviderDriverKind.make("antigravity"), label: "Antigravity", available: true },
+];
+
+export type ChangedFileDiffKind = "add" | "delete" | "update";
+
+export interface ChangedFileDiff {
+  readonly path: string;
+  readonly kind?: ChangedFileDiffKind;
+  readonly diff?: string;
+}
 
 export {
   workEntryDisplayIndicatesToolFailure,
