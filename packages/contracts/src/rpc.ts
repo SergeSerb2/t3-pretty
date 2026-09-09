@@ -38,6 +38,27 @@ import {
   AgentSessionScanError,
 } from "./agentSessions.ts";
 import {
+  AgentInstructionsError,
+  AgentInstructionsListInput,
+  AgentInstructionsListResult,
+  AgentInstructionsReadInput,
+  AgentInstructionsReadResult,
+  AgentInstructionsWriteInput,
+  AgentInstructionsWriteResult,
+} from "./agentInstructions.ts";
+import { AutomationsError } from "./automations.ts";
+import {
+  ProjectTransferCancelInput,
+  ProjectTransferCancelResult,
+  ProjectTransferError,
+  ProjectTransferInspectInput,
+  ProjectTransferInspectResult,
+  ProjectTransferPrepareInput,
+  ProjectTransferPrepareResult,
+  ProjectTransferResult,
+  ProjectTransferSendInput,
+} from "./projectTransfer.ts";
+import {
   AssetAccessError,
   AssetCreateUrlInput,
   AssetCreateUrlResult,
@@ -134,6 +155,9 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  ProjectImportFaviconError,
+  ProjectImportFaviconInput,
+  ProjectImportFaviconResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -245,6 +269,20 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsImportFavicon: "projects.importFavicon",
+  projectTransfersInspect: "projectTransfers.inspect",
+  projectTransfersPrepare: "projectTransfers.prepare",
+  projectTransfersSend: "projectTransfers.send",
+  projectTransfersCancel: "projectTransfers.cancel",
+
+  // Agent instruction file methods
+  agentInstructionsList: "agentInstructions.list",
+  agentInstructionsRead: "agentInstructions.read",
+  agentInstructionsWrite: "agentInstructions.write",
+
+  // Automation run methods
+  automationsListRuns: "automations.listRuns",
+  automationsGetRun: "automations.getRun",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -809,6 +847,66 @@ const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   payload: ProjectWriteFileInput,
   success: ProjectWriteFileResult,
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsImportFaviconRpc = Rpc.make(WS_METHODS.projectsImportFavicon, {
+  payload: ProjectImportFaviconInput,
+  success: ProjectImportFaviconResult,
+  error: Schema.Union([ProjectImportFaviconError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectTransfersInspectRpc = Rpc.make(WS_METHODS.projectTransfersInspect, {
+  payload: ProjectTransferInspectInput,
+  success: ProjectTransferInspectResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectTransfersPrepareRpc = Rpc.make(WS_METHODS.projectTransfersPrepare, {
+  payload: ProjectTransferPrepareInput,
+  success: ProjectTransferPrepareResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectTransfersSendRpc = Rpc.make(WS_METHODS.projectTransfersSend, {
+  payload: ProjectTransferSendInput,
+  success: ProjectTransferResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectTransfersCancelRpc = Rpc.make(WS_METHODS.projectTransfersCancel, {
+  payload: ProjectTransferCancelInput,
+  success: ProjectTransferCancelResult,
+  error: Schema.Union([ProjectTransferError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentInstructionsListRpc = Rpc.make(WS_METHODS.agentInstructionsList, {
+  payload: AgentInstructionsListInput,
+  success: AgentInstructionsListResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentInstructionsReadRpc = Rpc.make(WS_METHODS.agentInstructionsRead, {
+  payload: AgentInstructionsReadInput,
+  success: AgentInstructionsReadResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentInstructionsWriteRpc = Rpc.make(WS_METHODS.agentInstructionsWrite, {
+  payload: AgentInstructionsWriteInput,
+  success: AgentInstructionsWriteResult,
+  error: Schema.Union([AgentInstructionsError, EnvironmentAuthorizationError]),
+});
+
+const WsAutomationsListRunsRpc = Rpc.make(WS_METHODS.automationsListRuns, {
+  payload: OrchestrationRpcSchemas.automationsListRuns.input,
+  success: OrchestrationRpcSchemas.automationsListRuns.output,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
+});
+
+const WsAutomationsGetRunRpc = Rpc.make(WS_METHODS.automationsGetRun, {
+  payload: OrchestrationRpcSchemas.automationsGetRun.input,
+  success: OrchestrationRpcSchemas.automationsGetRun.output,
+  error: Schema.Union([AutomationsError, EnvironmentAuthorizationError]),
 });
 
 const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
