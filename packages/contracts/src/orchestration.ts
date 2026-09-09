@@ -654,6 +654,8 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
+  automationRun: Schema.optional(Schema.Unknown),
+  enabledSkillIds: Schema.optional(Schema.Array(Schema.String)),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 
