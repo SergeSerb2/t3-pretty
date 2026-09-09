@@ -607,6 +607,18 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
   ) => void;
+  /**
+   * Replace a draft session's per-thread skill picks. `null`/`undefined`/an
+   * empty array all clear the slice back to "no per-thread picks".
+   */
+  setEnabledSkillIds: (
+    threadRef: ComposerThreadTarget,
+    enabledSkillIds: ReadonlyArray<SkillId> | null | undefined,
+  ) => void;
+  setSubagentPolicy: (
+    threadRef: ComposerThreadTarget,
+    policy: ThreadSubagentPolicy | null | undefined,
+  ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
@@ -3259,6 +3271,78 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               interactionMode: nextInteractionMode,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setEnabledSkillIds: (threadRef, enabledSkillIds) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextEnabledSkillIds =
+            enabledSkillIds && enabledSkillIds.length > 0 ? [...enabledSkillIds] : undefined;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && nextEnabledSkillIds === undefined) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            const currentEnabledSkillIds = base.enabledSkillIds;
+            const isUnchanged =
+              (currentEnabledSkillIds === undefined && nextEnabledSkillIds === undefined) ||
+              (currentEnabledSkillIds !== undefined &&
+                nextEnabledSkillIds !== undefined &&
+                currentEnabledSkillIds.length === nextEnabledSkillIds.length &&
+                currentEnabledSkillIds.every((id, index) => id === nextEnabledSkillIds[index]));
+            if (isUnchanged) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              enabledSkillIds: nextEnabledSkillIds,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setSubagentPolicy: (threadRef, policy) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextPolicy = policy == null || policy.mode === "inherit" ? undefined : policy;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && nextPolicy === undefined) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            const currentPolicy = base.subagentPolicy;
+            const isUnchanged =
+              (currentPolicy === undefined && nextPolicy === undefined) ||
+              (currentPolicy !== undefined &&
+                nextPolicy !== undefined &&
+                currentPolicy.mode === nextPolicy.mode &&
+                JSON.stringify(currentPolicy.child ?? null) ===
+                  JSON.stringify(nextPolicy.child ?? null));
+            if (isUnchanged) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              subagentPolicy: nextPolicy,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
