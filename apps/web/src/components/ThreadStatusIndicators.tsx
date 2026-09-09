@@ -208,6 +208,7 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview: null,
     };
   }
   if (pr.state === "closed") {
@@ -218,6 +219,7 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview: null,
     };
   }
   if (pr.state === "merged") {
@@ -228,6 +230,7 @@ export function prStatusIndicator(
       tooltipLead,
       tooltipTitle: pr.title,
       url: pr.url,
+      automatedReview: null,
     };
   }
   return null;

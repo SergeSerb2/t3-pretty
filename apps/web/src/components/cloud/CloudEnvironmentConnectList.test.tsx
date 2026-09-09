@@ -132,6 +132,7 @@ beforeEach(() => {
   discovery.listeners.clear();
   discovery.state = {
     environments: new Map(),
+    loaded: false,
     refreshing: false,
     offline: false,
     error: Option.none(),
@@ -139,9 +140,9 @@ beforeEach(() => {
   discovery.listEnvironments.mockReset().mockResolvedValue(new Map());
   discovery.register.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   discovery.refresh.mockReset().mockImplementation(async () => {
-    publish({ environments: new Map(), refreshing: true, offline: false, error: Option.none() });
+    publish({ environments: new Map(), loaded: true, refreshing: true, offline: false, error: Option.none() });
     const environments = await discovery.listEnvironments();
-    publish({ environments, refreshing: false, offline: false, error: Option.none() });
+    publish({ environments, loaded: true, refreshing: false, offline: false, error: Option.none() });
     return AsyncResult.success(undefined);
   });
 });
