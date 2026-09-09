@@ -29,9 +29,11 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 
-// Mirror check-nightly-release.cjs isNightlyTag
+// Mirror check-nightly-release.cjs isNightlyTag, but also match unprefixed appVersions.
+// Tags from GitHub: vX.Y.Z-nightly.* or nightly-v*
+// appVersions from environment: X.Y.Z-nightly.* or vX.Y.Z-nightly.* or nightly-v*
 const isNightlyTag = (tag: string): boolean =>
-  /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
+  /^v?\d+\.\d+\.\d+-nightly\./.test(tag) || tag.startsWith("nightly-v");
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -1049,7 +1051,7 @@ export const make = Effect.gen(function* () {
               (client) => client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
             ),
           ).pipe(Effect.map(Option.getOrNull))
-        : Effect.succeed<string | null>(null);
+        : null;
 
       const githubFeed = Option.getOrUndefined(
         Option.flatMap(appUpdateYmlConfig, (ymlConfig) =>

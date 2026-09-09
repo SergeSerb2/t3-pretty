@@ -97,7 +97,7 @@ describe("DesktopUpdates", () => {
   });
 
   it("rewrites nightly /releases/latest URLs with latest nightly tag when provided", () => {
-    // When latest nightly tag is provided (from GitHub fetch), use it
+    // Unprefixed appVersion (0.0.38-nightly.*) with latestNightlyTag
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {
@@ -106,6 +106,24 @@ describe("DesktopUpdates", () => {
         },
         {
           appVersion: "0.0.38-nightly.20260906.1000",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Prefixed appVersion (v0.0.38-nightly.*) with latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "v0.0.38-nightly.20260906.1000",
           latestNightlyTag: "v0.0.39-nightly.20260907.1332",
         },
       ),
@@ -136,7 +154,7 @@ describe("DesktopUpdates", () => {
   });
 
   it("falls back to appVersion when latestNightlyTag unavailable", () => {
-    // Modern format: vX.Y.Z-nightly.DATE.BUILD
+    // Modern format unprefixed: X.Y.Z-nightly.DATE.BUILD
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {

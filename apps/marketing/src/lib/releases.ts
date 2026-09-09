@@ -7,9 +7,11 @@ const PRERELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases`;
 const CACHE_KEY = "t3code-latest-release";
 const NIGHTLY_CACHE_KEY = "t3code-latest-nightly";
 
-// Mirror check-nightly-release.cjs isNightlyTag
+// Mirror check-nightly-release.cjs isNightlyTag, but also match unprefixed versions.
+// Tags from GitHub: vX.Y.Z-nightly.* or nightly-v*
+// Also accept: X.Y.Z-nightly.* (unprefixed modern format)
 const isNightlyTag = (tag: string): boolean =>
-  /^v.*-nightly\./.test(tag) || tag.startsWith("nightly-v");
+  /^v?\d+\.\d+\.\d+-nightly\./.test(tag) || tag.startsWith("nightly-v");
 const RELEASE_CACHE_MAX_AGE_MS = 15 * 60 * 1_000;
 const RELEASE_REQUEST_TIMEOUT_MS = 10_000;
 const RELEASE_RESPONSE_MAX_BYTES = 1024 * 1024;
