@@ -236,7 +236,7 @@ export class GitHubReleasesClient extends Context.Service<
     readonly fetchLatestNightlyTag: (repo: {
       readonly owner: string;
       readonly name: string;
-    }) => Effect.Effect<string | null>;
+    }) => Effect.Effect<string | null | undefined>;
   }
 >()("@t3tools/desktop/GitHubReleasesClient") {}
 
@@ -244,7 +244,7 @@ export class GitHubReleasesClient extends Context.Service<
 export const liveGitHubReleasesClient = Layer.effect(
   GitHubReleasesClient,
   Effect.gen(function* () {
-    const fetchLatestNightlyTag = (repo: { readonly owner: string; readonly name: string }): Effect.Effect<string | null> =>
+    const fetchLatestNightlyTag = (repo: { readonly owner: string; readonly name: string }): Effect.Effect<string | null | undefined> =>
       Effect.gen(function* () {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10_000);
@@ -318,7 +318,7 @@ export const liveGitHubReleasesClient = Layer.effect(
         } finally {
           clearTimeout(timeoutId);
         }
-      }).pipe(Effect.catch((_error) => Effect.succeed(null)));
+      }).pipe(Effect.catch((_error) => Effect.succeed(undefined)));
 
     return GitHubReleasesClient.of({
       fetchLatestNightlyTag,
@@ -1092,16 +1092,7 @@ export const make = Effect.gen(function* () {
       // Distinguish fetch failure (undefined) from success-with-no-nightly (null) vs success-with-tag (string)
       const isNightlyVersion = isNightlyTag(environment.appVersion);
       const latestNightlyTag: string | null | undefined = isNightlyVersion
-        ? yield* githubReleasesClient
-            .fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
-            .pipe(
-              Effect.catch((_error) =>
-                // Fetch failed (HTTP error, timeout, parse error) - log and return undefined
-                logUpdaterWarning(
-                  "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-                ).pipe(Effect.as(undefined)),
-              ),
-            )
+        ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
         : null;
 
       // Store latestNightlyTag for use in download path
