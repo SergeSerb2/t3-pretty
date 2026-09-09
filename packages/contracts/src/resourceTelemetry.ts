@@ -258,6 +258,9 @@ export const DesktopElectronProcessType = Schema.Literals([
 ]);
 export type DesktopElectronProcessType = typeof DesktopElectronProcessType.Type;
 
+export const DESKTOP_ELECTRON_PROCESS_MAX_COUNT = 256;
+export const DESKTOP_ELECTRON_PROCESS_NAME_MAX_LENGTH = 512;
+
 export const DesktopElectronProcessMetric = Schema.Struct({
   pid: PositiveInt,
   creationTimeMs: NonNegativeInt,
