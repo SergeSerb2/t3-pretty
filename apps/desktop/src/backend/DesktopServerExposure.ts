@@ -107,18 +107,25 @@ const resolveLanAdvertisedHost = (
     return normalizedExplicitHost;
   }
 
+  let tailscaleIp: string | null = null;
   for (const interfaceAddresses of Object.values(networkInterfaces)) {
     if (!interfaceAddresses) continue;
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
       if (address.family !== "IPv4") continue;
-      if (!isUsableLanIpv4Address(address.address)) continue;
-      return address.address;
+      if (isUsableLanIpv4Address(address.address)) {
+        return address.address;
+      }
+      // Remember the first Tailscale IP as fallback
+      if (!tailscaleIp && isTailscaleIpv4Address(address.address)) {
+        tailscaleIp = address.address;
+      }
     }
   }
 
-  return null;
+  // When no LAN IP exists, use Tailscale IP for endpointUrl if available
+  return tailscaleIp;
 };
 
 const resolveDesktopServerExposure = (input: {

@@ -96,6 +96,52 @@ describe("DesktopUpdates", () => {
     );
   });
 
+  it("rewrites nightly /releases/latest URLs to version-specific tags", () => {
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        "0.0.39-nightly.20260907.1332",
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        },
+        "v0.0.39-nightly.20260907.1332",
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Stable versions keep /latest
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        "1.0.0",
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
 

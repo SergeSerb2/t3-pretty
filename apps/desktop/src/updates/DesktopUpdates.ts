@@ -225,6 +225,7 @@ function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYm
 
 export function resolveGitHubGenericUpdaterFeed(
   config: AppUpdateYmlConfig,
+  appVersion?: string,
 ): ElectronUpdater.ElectronUpdaterFeedUrl | undefined {
   if (config.provider !== "generic") return undefined;
   const trimmed = config.url?.trim() ?? "";
@@ -238,11 +239,23 @@ export function resolveGitHubGenericUpdaterFeed(
     return undefined;
   }
 
+  // For nightly builds, rewrite /releases/latest/download to the specific
+  // nightly tag so updates find the correct versioned assets.
+  let finalUrl = trimmed;
+  if (
+    appVersion &&
+    /\/releases\/latest\/download\/?$/i.test(trimmed) &&
+    /-nightly\.\d{8}\.\d+$/.test(appVersion)
+  ) {
+    const versionTag = appVersion.startsWith("v") ? appVersion : `v${appVersion}`;
+    finalUrl = trimmed.replace(/\/releases\/latest\/download\/?$/i, `/releases/download/${versionTag}/`);
+  }
+
   // GitHub's latest/download feed 302s to Azure blobs that reject multi-range
   // requests. electron-updater's generic provider enables those by default.
   return {
     provider: "generic",
-    url: trimmed.endsWith("/") ? trimmed : `${trimmed}/`,
+    url: finalUrl.endsWith("/") ? finalUrl : `${finalUrl}/`,
     useMultipleRangeRequest: false,
   };
 }
@@ -499,7 +512,7 @@ export const make = Effect.gen(function* () {
         isArm64HostRunningIntelBuild(environment.runtimeInfo) ||
           Option.exists(
             yield* Ref.get(appUpdateYmlConfigRef),
-            (ymlConfig) => resolveGitHubGenericUpdaterFeed(ymlConfig) !== undefined,
+            (ymlConfig) => resolveGitHubGenericUpdaterFeed(ymlConfig, environment.appVersion) !== undefined,
           ),
       );
       yield* logUpdaterInfo("downloading update");
@@ -949,7 +962,7 @@ export const make = Effect.gen(function* () {
 
       const githubFeed = Option.getOrUndefined(
         Option.flatMap(appUpdateYmlConfig, (ymlConfig) =>
-          Option.fromNullishOr(resolveGitHubGenericUpdaterFeed(ymlConfig)),
+          Option.fromNullishOr(resolveGitHubGenericUpdaterFeed(ymlConfig, environment.appVersion)),
         ),
       );
       if (config.mockUpdates) {
