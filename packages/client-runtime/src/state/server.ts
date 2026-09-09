@@ -1167,5 +1167,13 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    removeOrphan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:remove-orphan",
+      tag: WS_METHODS.storageRemoveOrphan,
+      concurrency: {
+        mode: "singleFlight",
+        key: environmentRpcKey,
+      },
+    }),
   };
 }

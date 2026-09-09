@@ -132,8 +132,24 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
+  /** Server understands thread.scenery.assign and carries thread.scenery in
+      snapshots. Absent on older servers, so clients keep scenery assignments
+      device-local instead of syncing them. */
+  threadScenery: Schema.optionalKey(Schema.Boolean),
+  /** Server can start a fresh provider session and replay bounded thread
+      context when a started thread switches to an incompatible provider. */
+  providerHandoff: Schema.optionalKey(Schema.Boolean),
+  /** Server exposes storage.getInventory / storage.removeOrphan for managed
+      worktrees. Absent on older servers, so clients must not probe them. */
+  storageInventory: Schema.optionalKey(Schema.Boolean),
+  /** Server streams storage.streamInventory snapshots while a scan is still
+      walking disk. Absent on older servers, so clients fall back to the
+      unary getInventory result. */
+  storageInventoryStream: Schema.optionalKey(Schema.Boolean),
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
+  /** Server can copy a project checkout and thread history to another reachable environment. */
+  projectTransfer: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
@@ -159,6 +175,11 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       desktop servers whose app predates the remote trigger, where clients
       must keep telling the user to update the app on that machine. */
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server runs automations: the `automation.*` commands, the
+      `automations.*` RPCs, and the `t3-code-automations` MCP toolkit.
+      Absent on older servers, so clients hide the feature instead of
+      dispatching commands the decider would reject. */
+  automations: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

@@ -2057,6 +2057,14 @@ export const OrchestrationRpcSchemas = {
     input: OrchestrationSubscribeShellInput,
     output: OrchestrationShellStreamItem,
   },
+  automationsListRuns: {
+    input: AutomationsListRunsInput,
+    output: AutomationsListRunsResult,
+  },
+  automationsGetRun: {
+    input: AutomationsGetRunInput,
+    output: AutomationsGetRunResult,
+  },
 } as const;
 
 export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<OrchestrationGetSnapshotError>()(
