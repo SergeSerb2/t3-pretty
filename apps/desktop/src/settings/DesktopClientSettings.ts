@@ -39,19 +39,6 @@ const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
 });
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 
-export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
-  "DesktopClientSettingsReadError",
-  {
-    operation: Schema.Literals(["read-file", "decode-document"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
-  }
-}
-
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
   "encode-document",
