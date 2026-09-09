@@ -355,8 +355,19 @@ export const stopThreadSession: (input: StopThreadSessionInput) => CommandEffect
   });
 });
 
+export type AssignThreadSceneryInput = CommandInput<"thread.scenery.assign">;
 export type SetThreadSkillsInput = CommandInput<"thread.skills.set">;
 export type SetThreadSubagentPolicyInput = CommandInput<"thread.subagent-policy.set">;
+
+export const assignThreadScenery: (input: AssignThreadSceneryInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.assignThreadScenery",
+)(function* (input) {
+  return yield* dispatch({
+    ...input,
+    type: "thread.scenery.assign",
+    commandId: yield* commandId(input),
+  });
+});
 
 export const setThreadSkills: (input: SetThreadSkillsInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.setThreadSkills",
