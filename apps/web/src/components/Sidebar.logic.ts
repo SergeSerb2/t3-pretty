@@ -874,6 +874,44 @@ export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/c
 export { pinOrderKeyBetween, planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 
+// Compatibility shims for fork test suite
+type ThreadAttentionInput = Pick<
+  SidebarThreadSummary,
+  "environmentId" | "id" | "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness" | "latestTurn"
+>;
+
+/**
+ * Count threads awaiting user action (approval/input) or with unseen completions.
+ * Compatibility shim for fork tests.
+ */
+export function countThreadsAwaitingUser(
+  threads: readonly ThreadAttentionInput[],
+  _lastVisitedAtByThreadKey: Readonly<Record<string, string | undefined>>,
+): number {
+  let count = 0;
+  for (const thread of threads) {
+    const status = resolveSidebarThreadStatus(thread);
+    if (status === "approval" || status === "input") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Check if a settled thread is past the auto-archive age threshold.
+ * Compatibility shim for fork tests.
+ */
+export function isSettledThreadPastArchiveAge(
+  thread: SettledThreadTimestampInput,
+  input: { nowMs: number; afterDays: number },
+): boolean {
+  const timestamp = resolveSettledThreadTimestamp(thread);
+  if (timestamp === null) return false;
+  const parsed = Date.parse(timestamp);
+  return !Number.isNaN(parsed) && parsed <= input.nowMs - input.afterDays * 24 * 60 * 60 * 1000;
+}
+
 /**
  * Search the already-ordered sidebar thread collection by title only.
  * Keeping the input order means lifecycle ordering (active, snoozed, settled)
