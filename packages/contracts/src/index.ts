@@ -35,6 +35,7 @@ export * from "./project.ts";
 export * from "./projectTransfer.ts";
 export * from "./filesystem.ts";
 export * from "./agentInstructions.ts";
+export * from "./agentSessions.ts";
 export * from "./skills.ts";
 export * from "./apps.ts";
 export * from "./automations.ts";

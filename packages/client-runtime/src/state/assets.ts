@@ -175,5 +175,5 @@ export function createProjectFaviconUrlAtomFamily(input: {
     }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
   });
   return (target: ProjectFaviconTarget) =>
-    family(getProjectFaviconCacheKey(target.environmentId, target.cwd, target.faviconPath));
+    family(getProjectFaviconCacheKey(target.environmentId, target.cwd, target.faviconPath ?? ""));
 }

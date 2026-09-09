@@ -39,7 +39,7 @@ const decodeEntry = Schema.decodeUnknownOption(Entry);
 const isImageDataUrl = Schema.is(ImageDataUrl);
 
 function keyFor(target: ProjectFaviconTarget) {
-  return getProjectFaviconCacheKey(target.environmentId, target.cwd, target.faviconPath);
+  return getProjectFaviconCacheKey(target.environmentId, target.cwd, target.faviconPath ?? "");
 }
 
 export interface ProjectFaviconStorage {
