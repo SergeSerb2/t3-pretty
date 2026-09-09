@@ -23,6 +23,19 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import {
+  effectiveRuntimeModeForProviderDriver,
+  resolveRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
+  defaultRuntimeModeForProviderDriver,
+} from "./modelSelection.ts";
+
+export {
+  effectiveRuntimeModeForProviderDriver,
+  resolveRuntimeModeForProviderDriver,
+  displayRuntimeModeForProviderDriver,
+  defaultRuntimeModeForProviderDriver,
+};
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
