@@ -27,10 +27,12 @@ const decodeLegacyClientSettingsDocumentJson = Schema.decodeEffect(
 );
 const decodeClientSettingsJsonValue = Schema.decodeEffect(ClientSettingsJson);
 const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
-  decodeLegacyClientSettingsDocumentJson(raw).pipe(
-    Effect.map((document) => document.settings),
+  decodeClientSettingsJsonValue(raw).pipe(
     Effect.catchTags({
-      SchemaError: () => decodeClientSettingsJsonValue(raw),
+      SchemaError: () =>
+        decodeLegacyClientSettingsDocumentJson(raw).pipe(
+          Effect.map((document) => document.settings),
+        ),
     }),
   );
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
@@ -38,7 +40,7 @@ const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
   "DesktopClientSettingsReadError",
   {
-    operation: Schema.Literals(["read-document", "decode-document"]),
+    operation: Schema.Literals(["read-file", "decode-document"]),
     path: Schema.String,
     cause: Schema.Defect(),
   },
@@ -93,7 +95,7 @@ const readClientSettings = (
               Effect.annotateLogs({ settingsPath }),
               Effect.andThen(
                 new DesktopClientSettingsReadError({
-                  operation: "read-document",
+                  operation: "read-file",
                   path: settingsPath,
                   cause,
                 }),
@@ -104,7 +106,7 @@ const readClientSettings = (
           Effect.annotateLogs({ settingsPath }),
           Effect.andThen(
             new DesktopClientSettingsReadError({
-              operation: "read-document",
+              operation: "read-file",
               path: settingsPath,
               cause,
             }),

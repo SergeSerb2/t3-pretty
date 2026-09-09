@@ -304,8 +304,17 @@ jobs:
           
           # Validate relay_domain hostname
           if [[ -n "$relay_domain" ]]; then
-            if [[ ! "$relay_domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-              echo "Invalid relay domain: $relay_domain (must be a valid hostname)" >&2
+            if [[ "$relay_domain" =~ \.$  ]]; then
+              echo "Invalid relay domain: trailing dot not allowed" >&2
+              exit 1
+            fi
+            relay_domain_lower="${relay_domain,,}"
+            if [[ "$relay_domain" != "$relay_domain_lower" ]]; then
+              echo "Invalid relay domain: must be lowercase" >&2
+              exit 1
+            fi
+            if [[ ! "$relay_domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$ ]]; then
+              echo "Invalid relay domain: $relay_domain (must be a valid hostname with lowercase letters, digits, hyphens, and dots; each label max 63 chars)" >&2
               exit 1
             fi
             if [[ "$relay_domain" =~ [[:cntrl:]] ]]; then
@@ -1018,7 +1027,7 @@ jobs:
   publish_aur:
     name: Publish AUR package
     needs: [preflight, release]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.release.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && github.repository == 'pingdotgg/t3code' && needs.preflight.result == 'success' && needs.release.result == 'success' }}
     uses: ./.github/workflows/publish-aur.yml
     with:
       release_tag: ${{ needs.preflight.outputs.tag }}
@@ -1028,7 +1037,7 @@ jobs:
   deploy_web:
     name: Deploy hosted web app
     needs: [preflight, relay_public_config, release]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.release.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && github.repository == 'pingdotgg/t3code' && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.release.result == 'success' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     env:
@@ -1097,6 +1106,12 @@ jobs:
           latest_domain="${T3CODE_WEB_LATEST_DOMAIN:-latest.app.t3.codes}"
           nightly_domain="${T3CODE_WEB_NIGHTLY_DOMAIN:-nightly.app.t3.codes}"
           
+          # Validate router_url (reject credentials/userinfo)
+          if [[ "$router_url" =~ ^[^:]+://[^@/]*@  ]]; then
+            echo "Invalid router URL: credentials/userinfo not allowed" >&2
+            exit 1
+          fi
+          
           # Validate and parse router_domain
           router_domain="${router_url#http://}"
           router_domain="${router_domain#https://}"
@@ -1104,8 +1119,17 @@ jobs:
           
           # Validate router_domain format
           if [[ -n "$router_domain" ]]; then
-            if [[ ! "$router_domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-              echo "Invalid router domain: $router_domain (must be a valid hostname)" >&2
+            if [[ "$router_domain" =~ \.$  ]]; then
+              echo "Invalid router domain: trailing dot not allowed" >&2
+              exit 1
+            fi
+            router_domain_lower="${router_domain,,}"
+            if [[ "$router_domain" != "$router_domain_lower" ]]; then
+              echo "Invalid router domain: must be lowercase" >&2
+              exit 1
+            fi
+            if [[ ! "$router_domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$ ]]; then
+              echo "Invalid router domain: $router_domain (must be a valid hostname with lowercase letters, digits, hyphens, and dots; each label max 63 chars)" >&2
               exit 1
             fi
             if [[ "$router_domain" =~ [[:cntrl:]] ]]; then
@@ -1117,8 +1141,17 @@ jobs:
           # Validate latest and nightly domains
           for domain_var in "latest_domain" "nightly_domain"; do
             domain="${!domain_var}"
-            if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
-              echo "Invalid $domain_var: $domain (must be a valid hostname)" >&2
+            if [[ "$domain" =~ \.$  ]]; then
+              echo "Invalid $domain_var: trailing dot not allowed" >&2
+              exit 1
+            fi
+            domain_lower="${domain,,}"
+            if [[ "$domain" != "$domain_lower" ]]; then
+              echo "Invalid $domain_var: must be lowercase" >&2
+              exit 1
+            fi
+            if [[ ! "$domain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$ ]]; then
+              echo "Invalid $domain_var: $domain (must be a valid hostname with lowercase letters, digits, hyphens, and dots; each label max 63 chars)" >&2
               exit 1
             fi
             if [[ "$domain" =~ [[:cntrl:]] ]]; then
@@ -1189,7 +1222,7 @@ jobs:
   deploy_marketing:
     name: Deploy marketing site
     needs: [preflight, release]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'nightly' }}
+    if: ${{ !failure() && !cancelled() && github.repository == 'pingdotgg/t3code' && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'nightly' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     env:
@@ -1242,7 +1275,7 @@ jobs:
 
   finalize:
     name: Finalize release
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'stable' }}
+    if: ${{ !failure() && !cancelled() && github.repository == 'pingdotgg/t3code' && needs.preflight.result == 'success' && needs.release.result == 'success' && needs.preflight.outputs.release_channel == 'stable' }}
     needs: [preflight, release]
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
