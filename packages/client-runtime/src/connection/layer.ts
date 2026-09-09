@@ -41,6 +41,39 @@ const connectionStartupLayer = Layer.effectDiscard(
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 
+export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
+  const driverLayerWithOptions = ConnectionDriver.layer.pipe(
+    Layer.provide(Layer.mergeAll(resolverLayer, RpcSession.layerWithOptions(options))),
+  );
+  const registryLayerWithOptions = EnvironmentRegistry.layer.pipe(
+    Layer.provide(driverLayerWithOptions),
+  );
+  const onboardingLayerWithOptions = ConnectionOnboarding.layer.pipe(
+    Layer.provide(registryLayerWithOptions),
+  );
+  const connectionServicesLayerWithOptions = Layer.mergeAll(
+    registryLayerWithOptions,
+    onboardingLayerWithOptions,
+  ).pipe(Layer.provideMerge(RelayEnvironmentDiscovery.layer));
+  const connectionStartupLayerWithOptions = Layer.effectDiscard(
+    Effect.gen(function* () {
+      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+      const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
+      yield* registry.start;
+      yield* platformSource.registrations.pipe(
+        Stream.runForEach(registry.reconcilePlatform),
+        Effect.forkScoped,
+      );
+    }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
+  );
+  return connectionStartupLayerWithOptions.pipe(
+    Layer.provideMerge(connectionServicesLayerWithOptions),
+    Layer.provideMerge(authorizationLayer),
+    Layer.provideMerge(threadLifecycleOutboxLayer),
+    Layer.provideMerge(warmThreadStatesLayer),
+  );
+}
+
 export const layer = connectionStartupLayer.pipe(
   Layer.provideMerge(connectionServicesLayer),
   Layer.provideMerge(authorizationLayer),
