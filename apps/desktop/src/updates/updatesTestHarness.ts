@@ -32,6 +32,7 @@ export interface UpdatesHarnessOptions {
   readonly stopBackend?: Effect.Effect<void>;
   readonly startBackend?: Effect.Effect<void>;
   readonly env?: Record<string, string | undefined>;
+  readonly githubReleasesClient?: DesktopUpdates.GitHubReleasesClient["Service"];
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -202,9 +203,12 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       : DesktopAppSettings.layer;
 
   // Mock GitHubReleasesClient for tests (returns null to avoid network calls)
-  const mockGitHubReleasesClient = Layer.succeed(DesktopUpdates.GitHubReleasesClient, {
-    fetchLatestNightlyTag: () => Effect.succeed(null),
-  });
+  const mockGitHubReleasesClient = Layer.succeed(
+    DesktopUpdates.GitHubReleasesClient,
+    options.githubReleasesClient ?? {
+      fetchLatestNightlyTag: () => Effect.succeed(null),
+    },
+  );
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(mockGitHubReleasesClient),

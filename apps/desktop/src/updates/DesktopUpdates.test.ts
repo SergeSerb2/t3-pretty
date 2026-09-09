@@ -30,20 +30,23 @@ describe("DesktopUpdates", () => {
   it.effect("recovers when GitHub nightly tag fetch fails (Effect.catch)", () =>
     Effect.gen(function* () {
       // Regression test for Mac Nightly crash: Effect.catchAll doesn't exist in v4,
-      // must use Effect.catch. Verify that configure path with failing GitHub client
-      // recovers gracefully and continues startup.
-      const harness = makeHarness();
-
-      // Mock GitHubReleasesClient that fails
-      const failingGitHubClient = Layer.succeed(DesktopUpdates.GitHubReleasesClient, {
-        fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API unavailable")),
+      // must use Effect.catch with proper error parameter. Verify that configure path
+      // with failing GitHub client recovers gracefully (returns undefined) and continues startup.
+      const harness = makeHarness({
+        githubReleasesClient: {
+          fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API unavailable")),
+        },
       });
 
-      // Replace the mock layer with the failing one
-      const testLayer = harness.layer.pipe(Layer.provide(failingGitHubClient));
-
-      // This should not throw - the Effect.catch should recover
-      yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(testLayer));
+      // Configure should not throw - Effect.catch should recover error and return undefined
+      const updates = yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(harness.layer));
+      
+      // Verify configure completes successfully (main test goal)
+      yield* updates.configure;
+      
+      // With failing client, latestNightlyTag becomes undefined (recovered), so
+      // nightly builds fall back to /latest feed (see resolveGitHubGenericUpdaterFeed logic)
+      assert.isAtLeast(harness.feedUrls().length, 1);
     }),
   );
 
