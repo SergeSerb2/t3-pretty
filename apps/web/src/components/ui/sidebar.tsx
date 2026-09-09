@@ -40,7 +40,8 @@ type SidebarContextProps = {
 };
 
 type SidebarResizableOptions = {
-  maxWidth?: number;
+  getCssWidth?: (width: number) => string;
+  maxWidth?: number | (() => number);
   minWidth?: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {

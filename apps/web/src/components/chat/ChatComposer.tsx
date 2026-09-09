@@ -847,6 +847,11 @@ const runtimeModeConfig: Record<
     description: "Supported providers approve routine actions; others still ask.",
     icon: SparklesIcon,
   },
+  yolo: {
+    label: "Yolo",
+    description: "Full access. Can stop to ask questions.",
+    icon: SparklesIcon,
+  },
   "full-access": {
     label: "Full access",
     description: "Allow commands and edits without prompts.",
