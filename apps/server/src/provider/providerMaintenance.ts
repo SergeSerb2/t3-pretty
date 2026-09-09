@@ -516,6 +516,14 @@ export function makePackageManagedProviderMaintenanceResolver(
   };
 }
 
+export function makeStaticProviderMaintenanceResolver(
+  capabilities: ProviderMaintenanceCapabilities,
+): ProviderMaintenanceCapabilitiesResolver {
+  return {
+    resolve: () => capabilities,
+  };
+}
+
 function makeManualProviderMaintenanceCapabilities(
   provider: ProviderDriverKind,
 ): ProviderMaintenanceCapabilities {

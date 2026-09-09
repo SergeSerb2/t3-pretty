@@ -825,9 +825,14 @@ export type OrchestrationSubscribeThreadInput = typeof OrchestrationSubscribeThr
  * strictly opt-in so older clients keep today's behavior on both HTTP and the
  * WebSocket fallback snapshot.
  */
+export const ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH = 4_096;
+export const OrchestrationThreadDetailCursor = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ORCHESTRATION_THREAD_DETAIL_CURSOR_MAX_LENGTH),
+);
+
 export const OrchestrationThreadDetailWindow = Schema.Struct({
   turnLimit: Schema.optionalKey(PositiveInt),
-  beforeCursor: Schema.optionalKey(TrimmedNonEmptyString),
+  beforeCursor: Schema.optionalKey(OrchestrationThreadDetailCursor),
 });
 export type OrchestrationThreadDetailWindow = typeof OrchestrationThreadDetailWindow.Type;
 
@@ -1507,6 +1512,14 @@ export const ThreadCreatedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ThreadTransferredPayload = Schema.Struct({
+  thread: Schema.suspend(() => OrchestrationThread),
+  sourceEnvironmentId: Schema.String,
+  sourceThreadId: ThreadId,
+  includesGitMetadata: Schema.Boolean,
+  skippedAttachmentCount: NonNegativeInt,
+});
+
 export const ThreadDeletedPayload = Schema.Struct({
   threadId: ThreadId,
   deletedAt: IsoDateTime,
@@ -1749,6 +1762,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.transferred"),
+    payload: ThreadTransferredPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -2004,17 +2022,20 @@ export const OrchestrationSearchThreadsResult = Schema.Struct({
 });
 export type OrchestrationSearchThreadsResult = typeof OrchestrationSearchThreadsResult.Type;
 
+export const WORKFLOW_SCRIPT_PATH_MAX_LENGTH = 32 * 1024;
+export const WORKFLOW_SCRIPT_MAX_BYTES = 256 * 1024;
+
 export const OrchestrationGetWorkflowScriptInput = Schema.Struct({
   threadId: ThreadId,
   /** Absolute path from the workflow's runHandles.scriptPath. The server
    * re-derives containment; the client value is a hint, never trusted. */
-  scriptPath: TrimmedNonEmptyString,
+  scriptPath: TrimmedNonEmptyString.check(Schema.isMaxLength(WORKFLOW_SCRIPT_PATH_MAX_LENGTH)),
 });
 export type OrchestrationGetWorkflowScriptInput = typeof OrchestrationGetWorkflowScriptInput.Type;
 
 export const OrchestrationGetWorkflowScriptResult = Schema.Struct({
-  scriptPath: TrimmedNonEmptyString,
-  contents: Schema.String,
+  scriptPath: TrimmedNonEmptyString.check(Schema.isMaxLength(WORKFLOW_SCRIPT_PATH_MAX_LENGTH)),
+  contents: Schema.String.check(Schema.isMaxLength(WORKFLOW_SCRIPT_MAX_BYTES)),
   truncated: Schema.Boolean,
 });
 export type OrchestrationGetWorkflowScriptResult = typeof OrchestrationGetWorkflowScriptResult.Type;

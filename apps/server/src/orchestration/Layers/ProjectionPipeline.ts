@@ -73,6 +73,25 @@ type ProjectorName =
   (typeof ORCHESTRATION_PROJECTOR_NAMES)[keyof typeof ORCHESTRATION_PROJECTOR_NAMES];
 
 /**
+ * Approval and user-input activities affect the thread shell summary (the
+ * pending-approval count and latest-question-time hints the UI needs for
+ * settled thread cards), so they trigger a shell refresh. Other activities do
+ * not; their rows are appended, but the denormalized summary is not re-
+ * changed. Tool activities stream in constantly during a turn, which makes
+ * an unguarded refresh the hottest query path in the pipeline.
+ */
+// Exported so the shell stream (ShellStream.ts) refetches the shell row for
+// exactly these appends and sends a `thread-touched` delta for the rest.
+export const SHELL_SUMMARY_COUNT_ACTIVITY_KINDS: ReadonlySet<string> = new Set([
+  "approval.requested",
+  "approval.resolved",
+  "provider.approval.respond.failed",
+  "user-input.requested",
+  "user-input.resolved",
+  "provider.user-input.respond.failed",
+]);
+
+/**
  * Turn state to settle still-running turns with when their session leaves the
  * "running" status, or null while the session is (re)starting or running and
  * turns must stay unsettled.

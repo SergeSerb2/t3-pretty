@@ -215,6 +215,8 @@ export interface ThreadListV2Item {
   readonly snoozed: boolean;
   /** Pinned-block row: renders the pin glyph and offers Unpin. */
   readonly pinned: boolean;
+  /** Settled-shelf row: part of the settled threads section. */
+  readonly settled: boolean;
   readonly isLast: boolean;
 }
 
@@ -476,6 +478,7 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: true,
+      settled: false,
       isLast: false,
     });
   }
@@ -485,6 +488,7 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: false,
+      settled: false,
       isLast: false,
     });
   }
@@ -495,6 +499,7 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: true,
       pinned: false,
+      settled: false,
       isLast: false,
     });
   }
@@ -505,6 +510,7 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: false,
       pinned: false,
+      settled: true,
       isLast: false,
     });
   }
