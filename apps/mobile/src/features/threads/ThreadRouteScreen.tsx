@@ -73,6 +73,8 @@ import { useSelectedThreadWorktree } from "../../state/use-selected-thread-workt
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
+import { useThreadListActions } from "../home/useThreadListActions";
+import { useServerConfigs } from "../../state/entities";
 import {
   useAdaptiveWorkspaceLayout,
   useAdaptiveWorkspacePaneRole,
@@ -336,6 +338,16 @@ function ThreadRouteContent(
     [knownTerminalSessions, selectedThreadProject?.workspaceRoot],
   );
   const selectedThreadDetailWorktreePath = selectedThreadDetail?.worktreePath ?? null;
+
+  const serverConfigs = useServerConfigs();
+  const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
+  const settlementSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSettlement ===
+      true;
+  const snoozeSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSnooze === true;
   const handleReconnectEnvironment = useCallback(() => {
     if (!environmentId) {
       return;
@@ -649,16 +661,32 @@ function ThreadRouteContent(
     onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
-    settlementSupported: false,
-    snoozeSupported: false,
-    settled: false,
-    snoozed: false,
-    canSettleThread: false,
-    canSnoozeThread: false,
-    onSettle: () => {},
-    onUnsettle: () => {},
-    onSnooze: () => {},
-    onUnsnooze: () => {},
+    settlementSupported,
+    snoozeSupported,
+    settled: selectedThread?.settledAt !== null,
+    snoozed: selectedThread?.snoozedUntil !== null,
+    canSettleThread: selectedThread?.settledAt === null,
+    canSnoozeThread: selectedThread?.snoozedUntil === null,
+    onSettle: () => {
+      if (selectedThread) {
+        void settleThread(selectedThread);
+      }
+    },
+    onUnsettle: () => {
+      if (selectedThread) {
+        void unsettleThread(selectedThread);
+      }
+    },
+    onSnooze: (snoozedUntil: string) => {
+      if (selectedThread) {
+        void snoozeThread(selectedThread, snoozedUntil);
+      }
+    },
+    onUnsnooze: () => {
+      if (selectedThread) {
+        void unsnoozeThread(selectedThread);
+      }
+    },
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);

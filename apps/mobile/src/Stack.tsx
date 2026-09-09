@@ -543,9 +543,11 @@ export const RootStack = createNativeStackNavigator({
       screen: PullRequestReviewersSheet,
       linking: "pull-requests/:environmentId/:projectId/:number/reviewers",
       options: {
-        ...FORM_SHEET_PRESENTATION_OPTIONS,
-        sheetAllowedDetents: [0.55, 0.92],
-        sheetGrabberVisible: true,
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
+        sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.55, 0.92],
+        sheetGrabberVisible: Platform.OS !== "android",
       },
     }),
     PullRequestDiff: createNativeStackScreen({

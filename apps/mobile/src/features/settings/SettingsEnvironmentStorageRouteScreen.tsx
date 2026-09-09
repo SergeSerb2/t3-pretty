@@ -185,9 +185,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
               }
             }
             break;
-          case "remove-orphans":
-            // removeOrphan is not available in mobile environment
-            break;
           case "remove-worktree":
             await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
             break;
@@ -204,10 +201,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
               reportFailure("Failed to delete thread", result);
             }
             break;
-          case "remove-orphan": {
-            // removeOrphan is not available in mobile environment
-            break;
-          }
         }
         refreshStorageInventory(environmentId);
       } finally {

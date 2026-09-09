@@ -1827,6 +1827,7 @@ export const OrchestrationEvent = Schema.Union([
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
   }),
+  // Thread ownership transferred between environments or projects
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("thread.transferred"),
