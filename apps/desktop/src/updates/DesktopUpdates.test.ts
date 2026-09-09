@@ -27,6 +27,26 @@ describe("DesktopUpdates", () => {
     assert.strictEqual(DesktopUpdates.GitHubReleasesClient.key, "@t3tools/desktop/GitHubReleasesClient");
   });
 
+  it.effect("recovers when GitHub nightly tag fetch fails (Effect.catch)", () =>
+    Effect.gen(function* () {
+      // Regression test for Mac Nightly crash: Effect.catchAll doesn't exist in v4,
+      // must use Effect.catch. Verify that configure path with failing GitHub client
+      // recovers gracefully and continues startup.
+      const harness = makeHarness();
+
+      // Mock GitHubReleasesClient that fails
+      const failingGitHubClient = Layer.succeed(DesktopUpdates.GitHubReleasesClient, {
+        fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API unavailable")),
+      });
+
+      // Replace the mock layer with the failing one
+      const testLayer = harness.layer.pipe(Layer.provide(failingGitHubClient));
+
+      // This should not throw - the Effect.catch should recover
+      yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(testLayer));
+    }),
+  );
+
   it("preserves complete causes for update poller and event failures", () => {
     const cause = Cause.combine(
       Cause.fail(new Error("updater failed")),
