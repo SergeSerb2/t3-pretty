@@ -48,7 +48,7 @@ const CLOUD_CLI_TOKEN_EXCHANGE_TIMEOUT = Duration.seconds(30);
 const CLOUD_CLI_TOKEN_RESPONSE_MAX_BYTES = 64 * 1024;
 const boldTerminalText = (value: string): string => `\u001b[1m${value}\u001b[22m`;
 
-export function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
+function formatLoopbackAuthorizationPrompt(authorizationUrl: string): string {
   return [
     `Open this URL to authorize ${SURGE_CONNECT_NAME}:`,
     `  ${authorizationUrl}`,

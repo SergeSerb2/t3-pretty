@@ -7,16 +7,12 @@
  * @module ProjectionSnapshotQuery
  */
 import type {
+  AgentSessionImportSource,
   ApprovalRequestId,
-  AutomationId,
-  AutomationRun,
-  AutomationRunId,
-  AutomationShell,
-  AutomationsListRunsInput,
-  AutomationsListRunsResult,
   CheckpointRef,
-  EventId,
+  MessageId,
   OrchestrationCheckpointSummary,
+  OrchestrationMessage,
   OrchestrationProject,
   OrchestrationProjectShell,
   OrchestrationReadModel,
@@ -68,23 +64,6 @@ export interface ProjectionFullThreadDiffContext {
   readonly toCheckpointRef: CheckpointRef | null;
 }
 
-export interface ProjectionMergedPullRequestCandidate {
-  readonly threadId: ThreadId;
-  readonly branch: string;
-  readonly cwd: string;
-  readonly branchObservedAt: string;
-  readonly branchEventId: EventId;
-  readonly branchHeadRef: string | null;
-  readonly branchHeadRepository: string | null;
-  readonly branchHeadOwner: string | null;
-  readonly branchHeadIsCrossRepository: boolean | null;
-}
-
-export interface ProjectionMergedPullRequestCandidatePageInput {
-  readonly afterThreadId?: ThreadId;
-  readonly limit?: number;
-}
-
 export interface ProjectionThreadDetailQuery {
   /**
    * Limit activities before SQLite returns and decodes their payloads.
@@ -129,18 +108,6 @@ export interface ProjectionSnapshotQueryShape {
    */
   readonly getShellSnapshot: () => Effect.Effect<
     OrchestrationShellSnapshot,
-    ProjectionRepositoryError
-  >;
-
-  /**
-   * Read only active thread rows that can be considered for merged pull
-   * request settlement. The caller still verifies branch-specific provider
-   * status and the command decider remains authoritative for state races.
-   */
-  readonly listMergedPullRequestCandidates: (
-    input?: ProjectionMergedPullRequestCandidatePageInput,
-  ) => Effect.Effect<
-    ReadonlyArray<ProjectionMergedPullRequestCandidate>,
     ProjectionRepositoryError
   >;
 
@@ -206,6 +173,15 @@ export interface ProjectionSnapshotQueryShape {
     projectId: ProjectId,
   ) => Effect.Effect<Option.Option<ThreadId>, ProjectionRepositoryError>;
 
+  /** Read completed import sources without loading thread history. */
+  readonly getImportedAgentSessionSources: (projectId: ProjectId) => Effect.Effect<
+    ReadonlyArray<{
+      readonly threadId: ThreadId;
+      readonly source: AgentSessionImportSource;
+    }>,
+    ProjectionRepositoryError
+  >;
+
   /**
    * Read the checkpoint context needed to resolve a single thread diff.
    */
@@ -222,29 +198,6 @@ export interface ProjectionSnapshotQueryShape {
     toTurnCount: number,
   ) => Effect.Effect<Option.Option<ProjectionFullThreadDiffContext>, ProjectionRepositoryError>;
 
-  /** Read one automation's projected shell row. */
-  readonly getAutomationShellById: (
-    automationId: AutomationId,
-  ) => Effect.Effect<Option.Option<AutomationShell>, ProjectionRepositoryError>;
-
-  /** Every automation shell row across projects, in creation order. */
-  readonly listAutomationShells: () => Effect.Effect<
-    ReadonlyArray<AutomationShell>,
-    ProjectionRepositoryError
-  >;
-
-  /**
-   * One page of an automation's runs, newest first. `beforeCursor` is the
-   * opaque `nextCursor` of the previous page.
-   */
-  readonly listAutomationRuns: (
-    input: AutomationsListRunsInput,
-  ) => Effect.Effect<AutomationsListRunsResult, ProjectionRepositoryError>;
-
-  readonly getAutomationRunById: (
-    runId: AutomationRunId,
-  ) => Effect.Effect<Option.Option<AutomationRun>, ProjectionRepositoryError>;
-
   /**
    * Read a single active thread shell row by id.
    */
@@ -257,6 +210,21 @@ export interface ProjectionSnapshotQueryShape {
     threadId: ThreadId,
   ) => Effect.Effect<
     Option.Option<Pick<OrchestrationThreadShell, "id" | "title" | "session">>,
+    ProjectionRepositoryError
+  >;
+
+  /**
+   * Read one requested message and whether another non-compaction user message exists.
+   * Newer queued messages count too, preserving first-turn title eligibility.
+   */
+  readonly getTurnStartMessage: (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<
+    Option.Option<{
+      readonly message: OrchestrationMessage;
+      readonly hasOtherUserMessages: boolean;
+    }>,
     ProjectionRepositoryError
   >;
 

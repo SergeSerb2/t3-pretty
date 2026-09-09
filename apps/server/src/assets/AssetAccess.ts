@@ -12,7 +12,6 @@ import {
   AssetWorkspacePathValidationError,
   AssetWorkspaceResolutionError,
   AssetWorkspaceRootNormalizationError,
-  PROJECT_IMPORT_FAVICON_MAX_BYTES,
   ToolActivityNativeAppReference,
 } from "@t3tools/contracts";
 import {
@@ -23,12 +22,11 @@ import {
   WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
 } from "@t3tools/shared/filePreview";
 import {
-  isManagedProjectFaviconPath,
-  managedProjectFaviconFileName,
-  PROJECT_FAVICON_FALLBACK_MARKER,
-} from "@t3tools/shared/projectFavicon";
-import * as NodeOS from "node:os";
-
+  IMAGE_DIMENSIONS_HEADER_BYTES,
+  readImageDimensions,
+  type ImageDimensions,
+} from "@t3tools/shared/imageDimensions";
+import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -49,11 +47,9 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
-import { resolveManagedProjectFaviconFile } from "../project/ProjectFaviconStore.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-import { resolveGrokSessionImageFile } from "./GrokSessionImages.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
-import { openMediaFile, type OpenMediaFile } from "./MediaFile.ts";
+import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
@@ -123,14 +119,6 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("project-favicon"),
     workspaceRoot: Schema.String,
     relativePath: Schema.NullOr(Schema.String),
-    absolutePath: Schema.optional(Schema.String),
-    expiresAt: Schema.Number,
-  }),
-  Schema.Struct({
-    version: Schema.Literal(1),
-    kind: Schema.Literal("generated-image"),
-    allowedRoot: Schema.String,
-    absolutePath: Schema.String,
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -152,20 +140,9 @@ const AssetClaimsJson = Schema.fromJsonString(AssetClaimsSchema);
 const decodeAssetClaims = Schema.decodeUnknownOption(AssetClaimsJson);
 const encodeAssetClaims = Schema.encodeSync(AssetClaimsJson);
 
-export type ResolvedAssetSource =
-  | "attachment"
-  | "workspace-file"
-  | "project-favicon"
-  | "generated-image"
-  | "native-app-icon"
-  | "media-file";
-
 export type ResolvedAsset = {
   readonly kind: "file";
   readonly path: string;
-  /** Which claim kind authorized the bytes; drives response caching and CORS. */
-  readonly source: ResolvedAssetSource;
-  readonly attachmentId?: string;
   readonly download?: boolean;
   readonly fileName?: string;
   readonly mimeType?: string;
@@ -252,69 +229,38 @@ const resolveCanonicalWorkspaceFileForRequest = (input: {
     Effect.orElseSucceed(() => null),
   );
 
-const resolveCanonicalManagedFaviconFile = Effect.fn(
-  "AssetAccess.resolveCanonicalManagedFaviconFile",
-)(function* (absolutePath: string) {
-  if (!isWorkspaceImagePreviewPath(absolutePath)) return null;
-  const config = yield* ServerConfig.ServerConfig;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const [canonicalRoot, canonicalFile] = yield* Effect.all([
-    optionOnNotFound(fileSystem.realPath(config.projectIconsDir)),
-    optionOnNotFound(fileSystem.realPath(absolutePath)),
-  ]).pipe(
-    Effect.tapError((cause) =>
-      Effect.logError("Failed to resolve managed project favicon.", {
-        path: absolutePath,
-        cause,
-      }),
-    ),
-    Effect.orElseSucceed(() => [Option.none<string>(), Option.none<string>()] as const),
-  );
-  if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) return null;
-  const relative = path.relative(canonicalRoot.value, canonicalFile.value);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
-  const info = yield* optionOnNotFound(fileSystem.stat(canonicalFile.value)).pipe(
-    Effect.orElseSucceed(() => Option.none()),
-  );
-  return Option.isSome(info) && info.value.type === "File" ? canonicalFile.value : null;
-});
+/**
+ * Reads pixel dimensions from an image's header so clients can reserve the
+ * exact box before the bytes arrive. Best effort: an unreadable or unsupported
+ * file just leaves the field out, and the client measures after decode. Only
+ * formats the parser understands are opened; SVG and the rest are skipped.
+ */
+const HEADER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
-const resolveCanonicalGeneratedImageFile = Effect.fn(
-  "AssetAccess.resolveCanonicalGeneratedImageFile",
-)(function* (input: { readonly allowedRoot: string; readonly absolutePath: string }) {
-  if (!isWorkspaceImagePreviewPath(input.absolutePath)) return null;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const [canonicalRoot, canonicalFile] = yield* Effect.all([
-    optionOnNotFound(fileSystem.realPath(input.allowedRoot)),
-    optionOnNotFound(fileSystem.realPath(input.absolutePath)),
-  ]).pipe(
-    Effect.tapError((cause) =>
-      Effect.logError("Failed to resolve generated image asset.", {
-        path: input.absolutePath,
-        cause,
-      }),
+/** From the identity-checked, non-blocking handle the caller already holds. */
+const readImageDimensionsFromOpenFile = (filePath: string, file: OpenMediaFile) =>
+  readMediaFileHeader(filePath, file, IMAGE_DIMENSIONS_HEADER_BYTES).pipe(
+    Effect.map(readImageDimensions),
+    Effect.orElseSucceed((): ImageDimensions | null => null),
+  );
+
+/**
+ * Opens through `openMediaFile` so a path swapped for a FIFO cannot block the
+ * request; a regular open would wait for a writer that never comes.
+ */
+const readImageDimensionsFromHeader = (filePath: string) =>
+  openMediaFile(filePath).pipe(
+    Effect.flatMap((file) =>
+      file === null ? Effect.succeed(null) : readImageDimensionsFromOpenFile(filePath, file),
     ),
-    Effect.orElseSucceed(() => [Option.none<string>(), Option.none<string>()] as const),
+    Effect.scoped,
+    Effect.orElseSucceed((): ImageDimensions | null => null),
   );
-  if (Option.isNone(canonicalRoot) || Option.isNone(canonicalFile)) return null;
-  const relative = path.relative(canonicalRoot.value, canonicalFile.value);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
-  const info = yield* optionOnNotFound(fileSystem.stat(canonicalFile.value)).pipe(
-    Effect.orElseSucceed(() => Option.none()),
-  );
-  return Option.isSome(info) && info.value.type === "File" ? canonicalFile.value : null;
-});
 
 export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
-  readonly projectId?: string;
-  readonly extraGrokWorkspaceRoots?: ReadonlyArray<string>;
-  readonly grokSessionId?: string;
-  readonly homeDir?: string;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -323,6 +269,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let claims: AssetClaims;
   let fileName: string;
   let sourcePath: string | undefined;
+  let imageDimensions: ImageDimensions | null = null;
 
   switch (input.resource._tag) {
     case "media-file": {
@@ -352,18 +299,33 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       if (hostPreviewMimeTypeFromExtension(path.extname(canonicalFile)) === null) {
         return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
-      const identity = yield* openMediaFile(canonicalFile).pipe(
-        Effect.map((file) =>
-          file ? { device: file.info.dev.toString(), inode: file.info.ino.toString() } : null,
+      const wantsDimensions = HEADER_IMAGE_EXTENSIONS.has(
+        path.extname(canonicalFile).toLowerCase(),
+      );
+      const opened = yield* openMediaFile(canonicalFile).pipe(
+        Effect.flatMap((file) =>
+          file === null
+            ? Effect.succeed(null)
+            : Effect.map(
+                wantsDimensions
+                  ? readImageDimensionsFromOpenFile(canonicalFile, file)
+                  : Effect.succeed(null),
+                (dimensions) => ({
+                  identity: { device: file.info.dev.toString(), inode: file.info.ino.toString() },
+                  dimensions,
+                }),
+              ),
         ),
         Effect.scoped,
         Effect.mapError(
           (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
         ),
       );
-      if (!identity) {
+      if (!opened) {
         return yield* new AssetWorkspaceAssetNotFoundError({ resource: input.resource });
       }
+      const identity = opened.identity;
+      imageDimensions = opened.dimensions;
       claims = {
         version: 1,
         kind: "media-file-exact",
@@ -392,111 +354,68 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       const relativePath = path.isAbsolute(input.resource.path)
         ? path.relative(workspaceRoot, input.resource.path)
         : input.resource.path;
-      const resolvedOrOutside = yield* workspacePaths
+      const resolved = yield* workspacePaths
         .resolveRelativePathWithinRoot({ workspaceRoot, relativePath })
         .pipe(
-          Effect.map((resolved) => ({ _tag: "inside" as const, resolved })),
-          Effect.catchTag("WorkspacePathOutsideRootError", (cause) =>
-            Effect.succeed({ _tag: "outside" as const, cause }),
-          ),
-        );
-      if (
-        resolvedOrOutside._tag === "inside" &&
-        !isWorkspacePreviewEntryPath(resolvedOrOutside.resolved.relativePath)
-      ) {
-        return yield* new AssetPreviewTypeValidationError({
-          resource: input.resource,
-        });
-      }
-      const workspaceCanonicalFile =
-        resolvedOrOutside._tag === "inside"
-          ? yield* resolveCanonicalWorkspaceFile({
-              workspaceRoot,
-              relativePath: resolvedOrOutside.resolved.relativePath,
-            }).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new AssetWorkspaceAssetInspectionError({
-                    resource: input.resource,
-                    cause,
-                  }),
-              ),
-            )
-          : null;
-      if (workspaceCanonicalFile && resolvedOrOutside._tag === "inside") {
-        const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot).pipe(
           Effect.mapError(
             (cause) =>
-              new AssetWorkspaceResolutionError({
+              new AssetWorkspacePathValidationError({
                 resource: input.resource,
                 cause,
               }),
           ),
         );
-        claims = isWorkspaceImagePreviewPath(resolvedOrOutside.resolved.relativePath)
-          ? {
-              version: 1,
-              kind: "workspace-file-exact",
-              workspaceRoot: canonicalWorkspaceRoot,
-              relativePath: resolvedOrOutside.resolved.relativePath,
-              expiresAt,
-            }
-          : {
-              version: 1,
-              kind: "workspace-file",
-              workspaceRoot: canonicalWorkspaceRoot,
-              baseRelativePath: path.dirname(resolvedOrOutside.resolved.relativePath),
-              expiresAt,
-            };
-        fileName = path.basename(resolvedOrOutside.resolved.relativePath);
-        break;
-      }
-      const grokRequestedPath =
-        resolvedOrOutside._tag === "inside"
-          ? resolvedOrOutside.resolved.relativePath
-          : input.resource.path;
-      const grokImage =
-        isWorkspaceImagePreviewPath(grokRequestedPath) ||
-        isWorkspaceImagePreviewPath(input.resource.path)
-          ? yield* resolveGrokSessionImageFile({
-              homeDir: input.homeDir ?? NodeOS.homedir(),
-              workspaceRoot,
-              requestedPath: grokRequestedPath,
-              ...(input.grokSessionId ? { grokSessionId: input.grokSessionId } : {}),
-              ...(input.extraGrokWorkspaceRoots && input.extraGrokWorkspaceRoots.length > 0
-                ? { extraWorkspaceRoots: input.extraGrokWorkspaceRoots }
-                : {}),
-            }).pipe(
-              Effect.tapError((cause) =>
-                Effect.logError("Failed to resolve Grok session image.", {
-                  workspaceRoot,
-                  requestedPath: grokRequestedPath,
-                  cause,
-                }),
-              ),
-              Effect.orElseSucceed(() => null),
-            )
-          : null;
-      if (grokImage) {
-        claims = {
-          version: 1,
-          kind: "generated-image",
-          allowedRoot: grokImage.allowedRoot,
-          absolutePath: grokImage.file,
-          expiresAt,
-        };
-        fileName = path.basename(grokImage.file);
-        break;
-      }
-      if (resolvedOrOutside._tag === "outside") {
-        return yield* new AssetWorkspacePathValidationError({
+      if (!isWorkspacePreviewEntryPath(resolved.relativePath)) {
+        return yield* new AssetPreviewTypeValidationError({
           resource: input.resource,
-          cause: resolvedOrOutside.cause,
         });
       }
-      return yield* new AssetWorkspaceAssetNotFoundError({
-        resource: input.resource,
-      });
+      const canonicalFile = yield* resolveCanonicalWorkspaceFile({
+        workspaceRoot,
+        relativePath: resolved.relativePath,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new AssetWorkspaceAssetInspectionError({
+              resource: input.resource,
+              cause,
+            }),
+        ),
+      );
+      if (!canonicalFile) {
+        return yield* new AssetWorkspaceAssetNotFoundError({
+          resource: input.resource,
+        });
+      }
+      const canonicalWorkspaceRoot = yield* fileSystem.realPath(workspaceRoot).pipe(
+        Effect.mapError(
+          (cause) =>
+            new AssetWorkspaceResolutionError({
+              resource: input.resource,
+              cause,
+            }),
+        ),
+      );
+      if (HEADER_IMAGE_EXTENSIONS.has(path.extname(resolved.relativePath).toLowerCase())) {
+        imageDimensions = yield* readImageDimensionsFromHeader(canonicalFile);
+      }
+      claims = isWorkspaceImagePreviewPath(resolved.relativePath)
+        ? {
+            version: 1,
+            kind: "workspace-file-exact",
+            workspaceRoot: canonicalWorkspaceRoot,
+            relativePath: resolved.relativePath,
+            expiresAt,
+          }
+        : {
+            version: 1,
+            kind: "workspace-file",
+            workspaceRoot: canonicalWorkspaceRoot,
+            baseRelativePath: path.dirname(resolved.relativePath),
+            expiresAt,
+          };
+      fileName = path.basename(resolved.relativePath);
+      break;
     }
     case "attachment": {
       const config = yield* ServerConfig.ServerConfig;
@@ -523,6 +442,9 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         INLINE_DOCUMENT_EXTENSIONS.has(extension)
           ? INLINE_DOCUMENT_MIME_TYPES[extension]
           : undefined;
+      if (!isGenericFile) {
+        imageDimensions = yield* readImageDimensionsFromHeader(attachmentPath);
+      }
       claims = {
         version: 1,
         kind: "attachment",
@@ -551,85 +473,49 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
             }),
         ),
       );
-      let relativePath: string | null = null;
-      let canonicalFaviconPath: string | null = null;
-      let managedAbsolutePath: string | undefined;
-      let sourceFaviconPath: string | null = null;
-      let isExternalOverride = false;
-      if (
-        input.projectId &&
-        input.projectFaviconPath &&
-        isManagedProjectFaviconPath(input.projectFaviconPath)
-      ) {
-        canonicalFaviconPath = yield* resolveManagedProjectFaviconFile({
-          projectId: input.projectId,
-          faviconPath: input.projectFaviconPath,
-        }).pipe(
+      const faviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+      const faviconPath = yield* faviconResolver
+        .resolvePath(workspaceRoot, input.projectFaviconPath ?? undefined)
+        .pipe(
           Effect.mapError(
             (cause) =>
-              new AssetProjectFaviconInspectionError({
+              new AssetProjectFaviconResolutionError({
                 resource: input.resource,
                 cause,
               }),
           ),
         );
-        if (canonicalFaviconPath) {
-          managedAbsolutePath = canonicalFaviconPath;
-          relativePath = managedProjectFaviconFileName(input.projectFaviconPath);
-          sourceFaviconPath = relativePath;
-          sourcePath = relativePath ?? undefined;
-        }
+      const isExternalOverride =
+        faviconPath !== null &&
+        input.projectFaviconPath !== undefined &&
+        path.isAbsolute(input.projectFaviconPath) &&
+        path.normalize(faviconPath) === path.normalize(input.projectFaviconPath);
+      const relativePath =
+        faviconPath && !isExternalOverride ? path.relative(workspaceRoot, faviconPath) : null;
+      const sourceFaviconPath = isExternalOverride ? faviconPath : relativePath;
+      if (sourceFaviconPath && !isWorkspaceImagePreviewPath(sourceFaviconPath)) {
+        return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
       }
-      if (!canonicalFaviconPath) {
-        const faviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
-        const workspaceFaviconPath = input.projectFaviconPath
-          ? isManagedProjectFaviconPath(input.projectFaviconPath)
-            ? undefined
-            : input.projectFaviconPath
-          : undefined;
-        const faviconPath = yield* faviconResolver
-          .resolvePath(workspaceRoot, workspaceFaviconPath)
-          .pipe(
+      sourcePath = sourceFaviconPath ?? undefined;
+      const canonicalFaviconPath = sourceFaviconPath
+        ? yield* (
+            isExternalOverride
+              ? resolveCanonicalFile(sourceFaviconPath)
+              : resolveCanonicalWorkspaceFile({ workspaceRoot, relativePath: sourceFaviconPath })
+          ).pipe(
             Effect.mapError(
               (cause) =>
-                new AssetProjectFaviconResolutionError({
+                new AssetProjectFaviconInspectionError({
                   resource: input.resource,
                   cause,
                 }),
             ),
-          );
-        isExternalOverride =
-          faviconPath !== null &&
-          input.projectFaviconPath !== undefined &&
-          path.isAbsolute(input.projectFaviconPath) &&
-          path.normalize(faviconPath) === path.normalize(input.projectFaviconPath);
-        relativePath =
-          faviconPath && !isExternalOverride ? path.relative(workspaceRoot, faviconPath) : null;
-        sourceFaviconPath = isExternalOverride ? faviconPath : relativePath;
-        if (sourceFaviconPath && !isWorkspaceImagePreviewPath(sourceFaviconPath)) {
-          return yield* new AssetPreviewTypeValidationError({ resource: input.resource });
-        }
-        sourcePath = sourceFaviconPath ?? undefined;
-        canonicalFaviconPath = sourceFaviconPath
-          ? yield* (
-              isExternalOverride
-                ? resolveCanonicalFile(sourceFaviconPath)
-                : resolveCanonicalWorkspaceFile({ workspaceRoot, relativePath: sourceFaviconPath })
-            ).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new AssetProjectFaviconInspectionError({
-                    resource: input.resource,
-                    cause,
-                  }),
-              ),
-            )
-          : null;
-        if (sourceFaviconPath && !canonicalFaviconPath) {
-          return yield* new AssetProjectFaviconNotFoundError({
-            resource: input.resource,
-          });
-        }
+          )
+        : null;
+      if (sourceFaviconPath && !canonicalFaviconPath) {
+        return yield* new AssetProjectFaviconNotFoundError({
+          resource: input.resource,
+        });
       }
       claims =
         isExternalOverride && canonicalFaviconPath
@@ -651,19 +537,12 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
                     }),
                 ),
               ),
-              relativePath: managedAbsolutePath ? null : relativePath,
-              ...(managedAbsolutePath ? { absolutePath: managedAbsolutePath } : {}),
+              relativePath,
               expiresAt,
             };
       if (sourceFaviconPath && canonicalFaviconPath) {
         const crypto = yield* Crypto.Crypto;
-        const faviconBytes = yield* Effect.scoped(
-          Effect.gen(function* () {
-            const handle = yield* fileSystem.open(canonicalFaviconPath, { flag: "r" });
-            return yield* handle.readAlloc(PROJECT_IMPORT_FAVICON_MAX_BYTES + 1);
-          }),
-        ).pipe(
-          Effect.map(Option.getOrElse(() => new Uint8Array())),
+        const faviconBytes = yield* fileSystem.readFile(canonicalFaviconPath).pipe(
           Effect.mapError(
             (cause) =>
               new AssetProjectFaviconInspectionError({
@@ -672,12 +551,6 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
               }),
           ),
         );
-        if (faviconBytes.byteLength > PROJECT_IMPORT_FAVICON_MAX_BYTES) {
-          return yield* new AssetProjectFaviconInspectionError({
-            resource: input.resource,
-            cause: new Error("Project favicon exceeds the 2 MiB inspection limit."),
-          });
-        }
         const revision = yield* crypto.digest("SHA-256", faviconBytes).pipe(
           Effect.map(Encoding.encodeHex),
           Effect.mapError(
@@ -729,6 +602,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
     ...(sourcePath !== undefined ? { sourcePath } : {}),
+    ...(imageDimensions !== null ? { imageDimensions } : {}),
   };
 });
 
@@ -772,8 +646,6 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       ? ({
           kind: "file",
           path: attachmentPath,
-          source: "attachment",
-          attachmentId: claims.attachmentId,
           ...(claims.download ? { download: true } : {}),
           ...(claims.fileName !== undefined ? { fileName: claims.fileName } : {}),
           ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
@@ -781,43 +653,13 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       : null;
   }
 
-  if (claims.kind === "generated-image") {
-    const decodedPath = decodeRelativePath(relativePath);
-    if (decodedPath === null) return null;
-    const path = yield* Path.Path;
-    if (decodedPath !== path.basename(claims.absolutePath)) return null;
-    const generatedImagePath = yield* resolveCanonicalGeneratedImageFile({
-      allowedRoot: claims.allowedRoot,
-      absolutePath: claims.absolutePath,
-    });
-    return generatedImagePath
-      ? ({
-          kind: "file",
-          path: generatedImagePath,
-          source: "generated-image",
-        } satisfies ResolvedAsset)
-      : null;
-  }
-
   if (claims.kind === "project-favicon") {
-    if (claims.absolutePath) {
-      const managedFaviconPath = yield* resolveCanonicalManagedFaviconFile(claims.absolutePath);
-      return managedFaviconPath
-        ? ({
-            kind: "file",
-            path: managedFaviconPath,
-            source: "project-favicon",
-          } satisfies ResolvedAsset)
-        : null;
-    }
     if (claims.relativePath === null) return null;
     const faviconPath = yield* resolveCanonicalWorkspaceFileForRequest({
       workspaceRoot: claims.workspaceRoot,
       relativePath: claims.relativePath,
     });
-    return faviconPath
-      ? ({ kind: "file", path: faviconPath, source: "project-favicon" } satisfies ResolvedAsset)
-      : null;
+    return faviconPath ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset) : null;
   }
 
   if (claims.kind === "project-favicon-external") {
@@ -831,16 +673,14 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.orElseSucceed(() => null),
     );
     return faviconPath === claims.filePath
-      ? ({ kind: "file", path: faviconPath, source: "project-favicon" } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset)
       : null;
   }
 
   if (claims.kind === "native-app-icon") {
     const nativeAppIconResolver = yield* NativeAppIconResolver.NativeAppIconResolver;
     const iconPath = yield* nativeAppIconResolver.resolve(claims.app);
-    return iconPath
-      ? ({ kind: "file", path: iconPath, source: "native-app-icon" } satisfies ResolvedAsset)
-      : null;
+    return iconPath ? ({ kind: "file", path: iconPath } satisfies ResolvedAsset) : null;
   }
 
   const decodedPath = decodeRelativePath(relativePath);
@@ -867,13 +707,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       Effect.orElseSucceed(() => null),
     );
     return file
-      ? ({
-          kind: "file",
-          path: canonicalFile,
-          mimeType,
-          file,
-          source: "media-file",
-        } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: canonicalFile, mimeType, file } satisfies ResolvedAsset)
       : null;
   }
   if (claims.kind === "workspace-file-exact") {
@@ -883,11 +717,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return exactWorkspaceFile
-      ? ({
-          kind: "file",
-          path: exactWorkspaceFile,
-          source: "workspace-file",
-        } satisfies ResolvedAsset)
+      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
       : null;
   }
   const segments = decodedPath.split(/[\\/]/);
@@ -905,7 +735,5 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     workspaceRoot: claims.workspaceRoot,
     relativePath: joinedRelativePath,
   });
-  return workspaceFile
-    ? ({ kind: "file", path: workspaceFile, source: "workspace-file" } satisfies ResolvedAsset)
-    : null;
+  return workspaceFile ? ({ kind: "file", path: workspaceFile } satisfies ResolvedAsset) : null;
 });

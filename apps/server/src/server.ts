@@ -3,11 +3,10 @@ import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
-import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
+import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -17,27 +16,19 @@ import {
   otlpTracesProxyRouteLayer,
   assetRouteLayer,
   attachmentUploadRouteLayer,
-  projectTransferUploadRouteLayer,
   serverEnvironmentHttpApiLayer,
-  serverConfigHttpApiLayer,
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
-  shouldEnablePermessageDeflate,
-  stripPermessageDeflateExtensionOffer,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
-import { dictationHttpApiLayer } from "./dictation/http.ts";
-import { readAloudHttpApiLayer } from "./readAloud/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
-import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
-import { ProjectionThreadRepositoryLive } from "./persistence/Layers/ProjectionThreads.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
@@ -53,24 +44,19 @@ import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRe
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
 import { ProviderUsageLimitsIngestionLive } from "./provider/Layers/ProviderUsageLimitsIngestion.ts";
+import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
-import * as OriginCli from "./sourceControl/OriginCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
-import * as AppsHttp from "./apps/AppsHttp.ts";
-import * as AutomationScheduler from "./automations/AutomationScheduler.ts";
-import * as AutomationWebhookHttp from "./automations/AutomationWebhookHttp.ts";
-import * as AppsService from "./apps/AppsService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
-import * as ComputerUseService from "./computerUse/ComputerUseService.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -84,9 +70,8 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import * as ThreadMergedPullRequestReactor from "./orchestration/ThreadMergedPullRequestReactor.ts";
-import * as ProjectIconReactor from "./project/ProjectIconReactor.ts";
-import * as ActivityHeadlineReactor from "./orchestration/Layers/ActivityHeadlineReactor.ts";
+import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
+import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -98,9 +83,6 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
-import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
-import * as SkillLibrary from "./skills/SkillLibrary.ts";
-import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -134,6 +116,7 @@ import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
+import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as DesktopTelemetryReceiver from "./resourceTelemetry/DesktopTelemetryReceiver.ts";
@@ -143,9 +126,7 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
-import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
-import * as ShellStream from "./orchestration/ShellStream.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -168,15 +149,6 @@ export const HTTP_ROUTER_CONFIG = {
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
-// One turn may carry eight compact 14M-character image data URLs plus a
-// 120k-character prompt. Keep a finite transport bound, but leave enough room
-// for the RPC envelope and JSON escaping around that contract-valid payload.
-export const WEBSOCKET_MAX_MESSAGE_BYTES = 128 * 1024 * 1024;
-// HTTP orchestration dispatch accepts the same command envelope as WebSocket.
-// Apply the ceiling while Effect is collecting the body, before HttpApi schema
-// decoding; this also bounds chunked requests without a Content-Length header.
-export const HTTP_MAX_REQUEST_BODY_BYTES = WEBSOCKET_MAX_MESSAGE_BYTES;
-const HTTP_MAX_REQUEST_BODY_SIZE = FileSystem.Size(HTTP_MAX_REQUEST_BODY_BYTES);
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
 const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
@@ -203,21 +175,22 @@ const NativeTelemetryLayerLive = NativeTelemetryClient.layer.pipe(
   Layer.provide(ResourceMonitorBinary.layer),
 );
 const DesktopTelemetryReceiverLayerLive = DesktopTelemetryReceiver.layer.pipe(
-  Layer.provide(ServerSettingsLayerLive),
-);
-// One memoized desktop services graph owns the Electron telemetry FD and
-// exposes both the receiver and the update driver to outer runtime consumers.
-const DesktopServicesLayerLive = DesktopAppUpdate.layer.pipe(
-  Layer.provideMerge(DesktopTelemetryReceiverLayerLive),
+  Layer.provideMerge(ServerSettingsLayerLive),
 );
 
 const ResourceTelemetryLayerLive = ResourceTelemetry.layer.pipe(
   Layer.provideMerge(NativeTelemetryLayerLive),
-  Layer.provide(DesktopServicesLayerLive),
+  Layer.provideMerge(DesktopTelemetryReceiverLayerLive),
 );
 
 const HostPowerMonitorLayerLive = HostPowerMonitor.layer.pipe(
-  Layer.provide(DesktopServicesLayerLive),
+  Layer.provide(DesktopTelemetryReceiverLayerLive),
+);
+
+// Reuses DesktopTelemetryReceiverLayerLive: a fresh receiver layer here
+// would open a second reader on the desktop telemetry fd.
+const DesktopAppUpdateLayerLive = DesktopAppUpdate.layer.pipe(
+  Layer.provide(DesktopTelemetryReceiverLayerLive),
 );
 
 const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
@@ -227,22 +200,8 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
-const SkillLibraryLayerLive = SkillLibrary.layer.pipe(Layer.provide(ServerSettingsLayerLive));
-
-const AppsLayerLive = AppsService.layer.pipe(
-  Layer.provide(ServerSettingsLayerLive),
-  Layer.provide(ServerSecretStore.layer),
-);
-
-const SkillsLayerLive = Layer.mergeAll(
-  SkillLibraryLayerLive,
-  SkillMarketplace.layer.pipe(
-    Layer.provide(SkillLibraryLayerLive),
-    Layer.provide(ServerSettingsLayerLive),
-  ),
-);
-
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
+  HostResources.layer,
   ResourceTelemetryLayerLive,
   ProcessDiagnostics.layer.pipe(Layer.provide(ResourceTelemetryLayerLive)),
   ProcessResourceMonitor.layer.pipe(Layer.provide(ResourceTelemetryLayerLive)),
@@ -265,12 +224,8 @@ const HttpServerLive = Layer.unwrap(
       return BunHttpServer.layer({
         port: config.port,
         hostname: config.host ?? "127.0.0.1",
-        maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
         websocket: {
-          maxPayloadLength: WEBSOCKET_MAX_MESSAGE_BYTES,
-          backpressureLimit: WEBSOCKET_MAX_MESSAGE_BYTES,
-          closeOnBackpressureLimit: true,
           // Negotiate permessage-deflate with clients that offer it; clients
           // that don't still get uncompressed frames on their connection. A
           // dedicated compressor keeps a per-connection sliding window
@@ -290,51 +245,18 @@ const HttpServerLive = Layer.unwrap(
         Effect.promise(() => import("@effect/platform-node/NodeHttpServer")),
         Effect.promise(() => import("node:http")),
       ]);
-      return NodeHttpServer.layer(
-        () => {
-          const server = guardHttpResponseWriteErrors(NodeHttp.createServer());
-          // Runs before Effect's upgrade handler so loopback / desktop-renderer
-          // peers never negotiate permessage-deflate (pure CPU on both ends).
-          server.on("upgrade", (request) => {
-            const origin =
-              typeof request.headers.origin === "string" ? request.headers.origin : null;
-            if (
-              shouldEnablePermessageDeflate({
-                remoteAddress: request.socket.remoteAddress,
-                origin,
-              })
-            ) {
-              return;
-            }
-            const next = stripPermessageDeflateExtensionOffer(
-              typeof request.headers["sec-websocket-extensions"] === "string"
-                ? request.headers["sec-websocket-extensions"]
-                : undefined,
-            );
-            if (next) {
-              request.headers["sec-websocket-extensions"] = next;
-            } else {
-              delete request.headers["sec-websocket-extensions"];
-            }
-          });
-          return server;
-        },
-        {
-          host: config.host ?? "127.0.0.1",
-          port: config.port,
-          gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
-          // Negotiate permessage-deflate with clients that offer it; clients
-          // that don't still get uncompressed frames on their connection.
-          // Context takeover stays enabled (ws default) so the compression
-          // window is shared across frames — that also makes small frames cheap
-          // to compress, so no size threshold is set (ws only honors
-          // `threshold` when context takeover is disabled).
-          websocket: {
-            maxPayload: WEBSOCKET_MAX_MESSAGE_BYTES,
-            perMessageDeflate: true,
-          },
-        },
-      );
+      return NodeHttpServer.layer(() => guardHttpResponseWriteErrors(NodeHttp.createServer()), {
+        host: config.host ?? "127.0.0.1",
+        port: config.port,
+        gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
+        // Negotiate permessage-deflate with clients that offer it; clients
+        // that don't still get uncompressed frames on their connection.
+        // Context takeover stays enabled (ws default) so the compression
+        // window is shared across frames — that also makes small frames cheap
+        // to compress, so no size threshold is set (ws only honors
+        // `threshold` when context takeover is disabled).
+        websocket: { perMessageDeflate: true },
+      });
     }
   }),
 );
@@ -356,12 +278,10 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(ThreadMergedPullRequestReactor.layer),
   Layer.provideMerge(ThreadDeletionReactorLive),
-  Layer.provideMerge(ProjectIconReactor.layer),
-  Layer.provideMerge(ActivityHeadlineReactor.layer),
+  Layer.provideMerge(ThreadSettlementReactor.layer),
+  Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
-  Layer.provideMerge(AutomationScheduler.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -382,26 +302,13 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
-const StorageInventoryLayerLive = StorageInventoryService.layer.pipe(
-  Layer.provide(VcsProcess.layer),
-  Layer.provide(ProjectionProjectRepositoryLive),
-  Layer.provide(ProjectionThreadRepositoryLive),
-  Layer.provide(PersistenceLayerLive),
-);
-
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
 const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      AzureDevOpsCli.layer,
-      BitbucketApi.layer,
-      GitHubCli.layer,
-      GitLabCli.layer,
-      OriginCli.layer,
-    ),
+    Layer.mergeAll(AzureDevOpsCli.layer, BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer),
   ),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
@@ -414,7 +321,7 @@ const PullRequestServiceLive = PullRequestService.layer.pipe(
 );
 
 const GitManagerLayerLive = GitManager.layer.pipe(
-  Layer.provideMerge(ProjectSetupScriptRunner.layer),
+  Layer.provideMerge(ProjectSetupScriptRunner.layer.pipe(Layer.provide(ServerSettingsLayerLive))),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(TextGeneration.layer),
@@ -450,7 +357,9 @@ const VcsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(
     VcsStatusBroadcaster.layer.pipe(
       Layer.provide(GitWorkflowLayerLive),
-      Layer.provide(VcsStatusBroadcaster.autoPullPolicyLayer),
+      Layer.provide(
+        VcsStatusBroadcaster.autoPullPolicyLayer.pipe(Layer.provide(ServerSettingsLayerLive)),
+      ),
     ),
   ),
 );
@@ -465,6 +374,7 @@ const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.
 const TerminalLayerLive = TerminalManager.layer.pipe(
   Layer.provide(PtyAdapterLive),
   Layer.provide(PortScannerLayerLive),
+  Layer.provide(NativeTelemetryLayerLive),
 );
 
 const PreviewLayerLive = Layer.empty.pipe(
@@ -547,10 +457,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(AntigravityInstallationRefreshLive),
   Layer.provideMerge(ProviderAuthServiceLive),
   // Core Services
-  // SkillsLayerLive rides the settings merge to stay inside pipe()'s
-  // 20-argument ceiling (see the AgentInstructionFiles note below); layer
-  // memoization dedupes the shared ServerSettingsLayerLive dependency.
-  Layer.provideMerge(Layer.mergeAll(ServerSettingsLayerLive, SkillsLayerLive, AppsLayerLive)),
+  Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(
     Layer.mergeAll(SourceControlProviderRegistryLayerLive, PullRequestServiceLive),
@@ -585,17 +492,13 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(
     Layer.mergeAll(ProviderEventLoggers.layer, ModelManifest.layer, CodexResetCredit.layer),
   ),
-  // AgentInstructionFiles rides the workspace entry to stay inside pipe()'s
-  // 20-argument ceiling; layer memoization dedupes the shared dependencies.
-  Layer.provideMerge(
-    Layer.mergeAll(
-      WorkspaceLayerLive,
-      AgentInstructionFiles.layer.pipe(
-        Layer.provide(WorkspaceEntriesLayerLive),
-        Layer.provide(ServerSettingsLayerLive),
-      ),
-    ),
-  ),
+  // `OpenCodeDriver.create()` yields `OpenCodeRuntime`; previously the old
+  // `ProviderRegistryLive` pulled `OpenCodeRuntimeLive` in for itself, but
+  // the rewritten registry reads snapshots off the instance registry and
+  // no longer transitively provides it. Exposing it at the runtime level
+  // keeps a single Live for all opencode consumers.
+  Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+  Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(Layer.mergeAll(NativeAppIconResolver.layer, ProjectFaviconResolverLayerLive)),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(ServerEnvironmentLayerLive),
@@ -616,7 +519,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.
   Layer.provideMerge(BackgroundLayerLive),
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
-  Layer.provideMerge(Layer.mergeAll(UsageLayerLive, StorageInventoryLayerLive)),
+  Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
@@ -633,14 +536,6 @@ const commandReadinessLayer = HttpRouter.middleware(
   { global: true },
 );
 
-const requestBodyLimitLayer = HttpRouter.middleware(
-  (httpEffect) =>
-    httpEffect.pipe(
-      Effect.provideService(HttpServerRequest.MaxBodySize, HTTP_MAX_REQUEST_BODY_SIZE),
-    ),
-  { global: true },
-);
-
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
@@ -648,40 +543,23 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
-      Layer.provide(dictationHttpApiLayer),
-      Layer.provide(readAloudHttpApiLayer),
       Layer.provide(serverEnvironmentHttpApiLayer),
-      Layer.provide(serverConfigHttpApiLayer),
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
-    projectTransferUploadRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
-  // `/mcp/apps/*` authenticates against the same registry through its
-  // module-global accessor, so it needs no layer of its own.
-  AppsHttp.layer,
-  // Token-in-path webhook trigger; outside environment auth like `/mcp`.
-  AutomationWebhookHttp.layer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),
-  // One projector per server: shell events are coalesced and built once and
-  // fanned out to every WebSocket subscriber (see ShellStream).
-  Layer.provide(ShellStream.layer),
   Layer.provide(PreviewAutomationBroker.layer),
-  Layer.provide(ComputerUseService.layer),
-  Layer.provide(ServerSelfUpdate.layer),
-  // Supply the same memoized desktop graph used by diagnostics directly at
-  // the route boundary where ServerSelfUpdate requires its update driver.
-  Layer.provide(DesktopServicesLayerLive),
+  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
   Layer.provide(commandReadinessLayer),
-  Layer.provide(requestBodyLimitLayer),
   Layer.provide(browserApiCorsLayer),
   Layer.provide(httpCompressionLayer),
 );

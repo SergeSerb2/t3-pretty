@@ -1,5 +1,4 @@
 import { readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
-import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -93,19 +92,6 @@ class PromptRejectedError extends Schema.TaggedErrorClass<PromptRejectedError>()
   "PromptRejectedError",
   { message: Schema.String },
 ) {}
-
-it("formats loopback authorization with a headless-host fallback", () => {
-  assert.equal(
-    CliTokenManager.formatLoopbackAuthorizationPrompt("https://clerk.example.test/authorize"),
-    [
-      `Open this URL to authorize ${CONNECT_BRANDING.connectName}:`,
-      "  https://clerk.example.test/authorize",
-      "",
-      "Press \u001b[1mEnter\u001b[22m to open it in your browser.",
-      "No browser on this device? Press \u001b[1mH\u001b[22m to switch to headless mode.",
-    ].join("\n"),
-  );
-});
 
 const makeTestTerminal = (queue: Queue.Queue<Terminal.UserInput>) =>
   Terminal.make({
@@ -247,42 +233,6 @@ it.layer(NodeServices.layer)("CliTokenManager.outOfBandOAuthLogin", (it) => {
 
       assert.isNull(identity);
       assert.lengthOf(requests, 1);
-    }),
-  );
-
-  it.effect("keeps issued tokens out of invalid-response diagnostics", () =>
-    Effect.gen(function* () {
-      const tokenEndpointLayer = Layer.succeed(
-        HttpClient.HttpClient,
-        HttpClient.make((request) =>
-          Effect.succeed(
-            HttpClientResponse.fromWeb(
-              request,
-              new Response(
-                JSON.stringify({
-                  access_token: "must-not-appear-in-diagnostics",
-                  refresh_token: "also-secret",
-                  expires_in: "not-a-number",
-                  token_type: "bearer",
-                }),
-                { status: 200, headers: { "content-type": "application/json" } },
-              ),
-            ),
-          ),
-        ),
-      );
-
-      const error = yield* CliTokenManager.outOfBandOAuthLogin(
-        ({ authorizeUrl }: OutOfBandOAuthPromptInput) => {
-          const request = readConnectAuthorizeRequest(new URL(authorizeUrl));
-          assert.isNotNull(request);
-          return Effect.succeed(`clerk-code-123.${request!.state}`);
-        },
-      ).pipe(Effect.provide(tokenEndpointLayer), provideTestEnv, Effect.flip);
-
-      assert.strictEqual(error._tag, "CloudCliTokenExchangeFailure");
-      assert.notInclude(error.message, "must-not-appear-in-diagnostics");
-      assert.notInclude(error.message, "also-secret");
     }),
   );
 

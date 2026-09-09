@@ -29,23 +29,17 @@ custom setting changes `CLAUDE_CONFIG_DIR`, leaving `HOME` and the system keycha
 location intact. Use the same variable for the login command. Setting `HOME`
 instead can put credentials where this provider will not find them.
 
-Check the account reported in provider settings after signing in. In an existing
-thread, choose another Claude account or provider from the model picker and send
-the next message. When the selected instance uses a different config directory,
-T3 Code starts a fresh Claude session with a bounded handoff of the T3 Code
-conversation and completed tool work. See
-[Continue A Thread With Another Provider](./provider-handoff.md).
-
-Separate account directories stay isolated, including their provider-native
-local conversation state. Claude does not have Codex's shared-home and
-shadow-home arrangement.
+Check the account reported in provider settings after signing in. Existing
+threads can switch only between Claude instances with the same config directory.
+Separate account directories stay isolated, including their local conversation
+state. Claude does not have Codex's shared-home and shadow-home arrangement.
 
 For presets that differ only in API keys or endpoints, use the instance's
 **Environment variables**. Variable assignments do not belong in **Launch arguments**.
 
-For child-model choices, **Settings → Agents** is the usual configuration. T3 Code
-sets `CLAUDE_CODE_SUBAGENT_MODEL` on the next new Claude session unless that
-environment variable is already set on the provider instance.
+Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
+thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
+T3 Code uses the Claude configuration on the connected server.
 
 ## Compact long conversations
 

@@ -1,17 +1,16 @@
-import { ArchiveIcon, ArchiveX, ChevronRightIcon, LoaderIcon, SettingsIcon } from "lucide-react";
+import { Spinner } from "~/components/ui/spinner";
+import { ArchiveIcon, ArchiveX, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ProviderInstanceId,
-  type QuitConfirmationMode,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
-  DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -21,7 +20,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
-  DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS,
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
   type EnvironmentIdentificationMode,
@@ -41,6 +39,7 @@ import {
   MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_TERMINAL_FONT_SIZE,
+  type QuitConfirmationMode,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -48,26 +47,22 @@ import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-import { openWhatsNewDialog } from "../../changelog/whatsNewStore";
 import {
   canCheckForUpdate,
-  getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
-import { showDesktopUpdateDownloadedToast } from "../../components/desktopUpdate.toast";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
   resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
-import { compareIsoDateTimes } from "../../lib/threadSort";
+import { useCustomThemes } from "../../hooks/useCustomThemes";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -75,11 +70,7 @@ import {
   useTheme,
 } from "../../hooks/useTheme";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import {
-  resolveEnvironmentIdentificationSetting,
-  usePrimarySettings,
-  useUpdatePrimarySettings,
-} from "../../hooks/useSettings";
+import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
@@ -127,6 +118,7 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
+import { SharedSettingsMismatchAlert } from "./SharedSettingsMismatchAlert";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import {
   NumberField,
@@ -139,7 +131,6 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { useSceneryThemeActive } from "../../scenery/useHtmlAttributes";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
   backgroundActivityOverrideSettings,
@@ -171,8 +162,6 @@ import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 
-const SceneryAppearanceSettings = lazy(() => import("../../scenery/SceneryAppearanceSettings"));
-
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
   pill: "Version pill",
@@ -184,12 +173,6 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
-
-const COMPOSER_COLLAPSE_TRIGGER_LABELS = {
-  blur: "On unfocus",
-  scroll: "On scroll",
-} as const;
-type ComposerCollapseTrigger = keyof typeof COMPOSER_COLLAPSE_TRIGGER_LABELS;
 
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
@@ -309,31 +292,15 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          if (result.completed) {
-            showDesktopUpdateDownloadedToast(bridge, result.state);
-          }
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not download update",
-              description: actionError,
-            }),
-          );
-        })
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not download update",
-              description: error instanceof Error ? error.message : "Download failed.",
-            }),
-          );
-        });
+      void bridge.downloadUpdate().catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not download update",
+            description: error instanceof Error ? error.message : "Download failed.",
+          }),
+        );
+      });
       return;
     }
 
@@ -364,17 +331,6 @@ function AboutVersionSection() {
       }
       void bridge
         .installUpdate()
-        .then((result) => {
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: actionError,
-            }),
-          );
-        })
         .catch((error: unknown) => {
           toastManager.add(
             stackedThreadToast({
@@ -444,8 +400,8 @@ function AboutVersionSection() {
             <TooltipTrigger
               render={
                 <Button
-                  size="xs"
-                  variant={action === "install" ? "default" : "outline"}
+                  size="sm"
+                  variant="outline"
                   disabled={buttonDisabled || isUpdateActionPending}
                   onClick={handleButtonClick}
                 >
@@ -567,16 +523,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
         ? ["Project Grouping"]
         : []),
-      ...(settings.autoGenerateProjectIcons !== DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons
-        ? ["Auto-generate project icons"]
-        : []),
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
         : []),
-      ...(settings.sidebarAutoArchiveSettledAfterDays !==
-      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays
-        ? ["Auto-archive settled threads"]
+      ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
+        ? ["Auto-settle merged threads"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...getChangedTypographySettingLabels(settings),
@@ -590,9 +542,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
         ? ["Show skills in slash menu"]
         : []),
-      ...(settings.composerCollapseOnBlur !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnBlur ||
-      settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
-        ? ["Collapse composer"]
+      ...(settings.composerCollapseOnScroll !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll
+        ? ["Collapse composer on scroll"]
+        : []),
+      ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
+        ? ["Context window indicator"]
         : []),
       ...(settings.enableLegacyTokenStreaming !==
       DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming
@@ -602,7 +556,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
-
+      ...(settings.continueThreadsAfterServerUpdate !==
+      DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
+        ? ["Continue threads after restarts"]
+        : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
@@ -623,19 +580,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
-      ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit
-        ? ["Quit confirmation"]
-        : []),
+      ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
-      ...(settings.generateActivityHeadlines !== DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines
-        ? ["Live activity headlines"]
-        : []),
       ...getChangedBrowserSettingLabels(settings),
       ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
         ? ["Agent browser access"]
-        : []),
-      ...(settings.enableComputerUse !== DEFAULT_UNIFIED_SETTINGS.enableComputerUse
-        ? ["Agent computer control"]
         : []),
     ],
     [
@@ -649,14 +598,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.enableAgentBrowserAccess,
-      settings.enableComputerUse,
-      settings.autoGenerateProjectIcons,
-      settings.generateActivityHeadlines,
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
-      settings.composerCollapseOnBlur,
       settings.composerCollapseOnScroll,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
@@ -665,6 +610,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffLayout,
       settings.proactivePanelsEnabled,
       settings.environmentIdentificationMode,
+      settings.contextWindowMeterEnabled,
       settings.fontFamilyCode,
       settings.fontFamilyComposer,
       settings.fontFamilySans,
@@ -677,8 +623,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.panelAnimationDurationMs,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
+      settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
-      settings.sidebarAutoArchiveSettledAfterDays,
+      settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
       settings.sidebarThreadPreviewCount,
       settings.showSkillsInSlashMenu,
@@ -760,18 +707,18 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-      composerCollapseOnBlur: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnBlur,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
+      contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-      sidebarAutoArchiveSettledAfterDays:
-        DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
+      sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -784,7 +731,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-      generateActivityHeadlines: DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
       fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
       fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
@@ -803,8 +749,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       // name, so a user restoring defaults is told the agent regains access
       // rather than discovering it later.
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
-      enableComputerUse: DEFAULT_UNIFIED_SETTINGS.enableComputerUse,
-      autoGenerateProjectIcons: DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons,
     });
     onRestored?.();
   }, [
@@ -1098,17 +1042,23 @@ function BackgroundActivityAdvancedDialog({
 }
 
 export function AppearanceSettingsPanel() {
-  const { appearanceMode, setAppearanceMode, theme, setTheme } = useTheme();
+  const {
+    appearanceMode,
+    refreshTheme,
+    resolvedTheme,
+    setAppearanceMode,
+    setTheme,
+    setThemeHalf,
+    theme,
+    themeHalves,
+  } = useTheme();
+  const customThemes = useCustomThemes();
+  const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const environmentStageLabel = useEnvironmentStageLabel();
   const showEnvironmentIdentification =
-    resolveSidebarStageBackdropVariant(environmentStageLabel) !== null;
-  const environmentIdentification = resolveEnvironmentIdentificationSetting({
-    mode: settings.environmentIdentificationMode,
-    pillAvailable: resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null,
-  });
-  const sceneryThemeActive = useSceneryThemeActive();
+    resolveEnvironmentIdentificationPillLabel(environmentStageLabel) !== null;
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -1136,9 +1086,16 @@ export function AppearanceSettingsPanel() {
         <div id={searchableSetting("theme").id}>
           <ThemeLibrary
             appearanceMode={appearanceMode}
+            customThemes={customThemes}
+            initialAppearance={resolvedTheme}
+            refreshTheme={refreshTheme}
+            isImportOpen={isImportThemeOpen}
             setAppearanceMode={setAppearanceMode}
             setTheme={setTheme}
+            setThemeHalf={setThemeHalf}
             theme={theme}
+            themeHalves={themeHalves}
+            onImportOpenChange={setIsImportThemeOpen}
           />
         </div>
       </SettingsSection>
@@ -1238,18 +1195,12 @@ export function AppearanceSettingsPanel() {
           }
         />
 
-        {sceneryThemeActive ? (
-          <Suspense fallback={null}>
-            <SceneryAppearanceSettings />
-          </Suspense>
-        ) : null}
-
         {showEnvironmentIdentification ? (
           <SettingsRow
             {...searchableSetting("environment-identification")}
-            description="Choose how Dev environments are identified."
+            description="Choose how Dev and Nightly environments are identified."
             resetAction={
-              environmentIdentification.value !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
                   label="environment identification"
                   onClick={() =>
@@ -1262,12 +1213,9 @@ export function AppearanceSettingsPanel() {
             }
             control={
               <Select
-                value={environmentIdentification.value}
+                value={settings.environmentIdentificationMode}
                 onValueChange={(value) => {
-                  if (
-                    (value === "artwork" || value === "pill" || value === "none") &&
-                    environmentIdentification.modes.includes(value)
-                  ) {
+                  if (value === "artwork" || value === "pill" || value === "none") {
                     updateSettings({ environmentIdentificationMode: value });
                   }
                 }}
@@ -1278,13 +1226,13 @@ export function AppearanceSettingsPanel() {
                   aria-label="Environment identification"
                 >
                   <SelectValue>
-                    {ENVIRONMENT_IDENTIFICATION_LABELS[environmentIdentification.value]}
+                    {ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {environmentIdentification.modes.map((value) => (
+                  {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
                     <SelectItem hideIndicator key={value} value={value}>
-                      {ENVIRONMENT_IDENTIFICATION_LABELS[value]}
+                      {label}
                     </SelectItem>
                   ))}
                 </SelectPopup>
@@ -1877,15 +1825,9 @@ const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfter
 function AutoSettleDaysInput({
   value,
   onCommit,
-  ariaLabel = "Days of inactivity before auto-settle",
-  min = MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  max = MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
 }: {
   value: number;
   onCommit: (days: number) => void;
-  ariaLabel?: string;
-  min?: number;
-  max?: number;
 }) {
   // Local draft so the field can be emptied mid-edit; the setting only moves
   // on valid input and snaps back to the persisted value on blur.
@@ -1898,8 +1840,8 @@ function AutoSettleDaysInput({
     <Input
       size="sm"
       type="number"
-      min={min}
-      max={max}
+      min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
+      max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
       className="w-full sm:w-24"
       value={draft}
       onChange={(event) => {
@@ -1908,12 +1850,16 @@ function AutoSettleDaysInput({
         // committed 3 while the field shows 3.5) — commit only when the
         // persisted value matches the displayed one.
         const parsed = Number(event.target.value);
-        if (Number.isInteger(parsed) && parsed >= min && parsed <= max) {
+        if (
+          Number.isInteger(parsed) &&
+          parsed >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
+          parsed <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
+        ) {
           onCommit(parsed);
         }
       }}
       onBlur={() => setDraft(String(value))}
-      aria-label={ariaLabel}
+      aria-label="Days of inactivity before auto-settle"
     />
   );
 }
@@ -1922,6 +1868,7 @@ function AutoSettleDaysInput({
 // expand the section before its target can mount and scroll.
 const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
   "legacy-plan-mode",
+  "legacy-context-window-indicator",
   "legacy-token-streaming",
   "legacy-sidebar",
 ]);
@@ -2000,6 +1947,20 @@ function LegacyFeaturesSection() {
               }
             />
             <SettingsRow
+              {...searchableSetting("legacy-context-window-indicator")}
+              description="Shows context window usage as a circular indicator in the composer."
+              control={
+                <Switch
+                  checked={settings.contextWindowMeterEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ contextWindowMeterEnabled: Boolean(checked) })
+                  }
+                  aria-label="Context window indicator (legacy)"
+                />
+              }
+            />
+            <SettingsRow
+              serverScoped
               {...searchableSetting("legacy-token-streaming")}
               description="Stream output token by token. This legacy mode is slower and harder to follow."
               control={
@@ -2056,14 +2017,8 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
-  const primaryServerConfig = useAtomValue(primaryServerConfigAtom);
-  const composerCollapseTriggers = useMemo<ComposerCollapseTrigger[]>(
-    () => [
-      ...(settings.composerCollapseOnBlur ? (["blur"] as const) : []),
-      ...(settings.composerCollapseOnScroll ? (["scroll"] as const) : []),
-    ],
-    [settings.composerCollapseOnBlur, settings.composerCollapseOnScroll],
-  );
+  const supportsAutoSettlement =
+    useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2119,7 +2074,8 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="organization" title="General">
+      <SharedSettingsMismatchAlert />
+      <SettingsSection id="organization" title="Organization">
         <SettingsRow
           {...searchableSetting("project-grouping")}
           description="Combine matching repositories across environments."
@@ -2156,117 +2112,80 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          {...searchableSetting("auto-generate-project-icons")}
-          description="Grok or Codex generates an icon for new projects and for existing projects that do not already have a stored icon."
-          resetAction={
-            settings.autoGenerateProjectIcons !==
-            DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons ? (
-              <SettingResetButton
-                label="auto-generate project icons"
-                onClick={() =>
-                  updateSettings({
-                    autoGenerateProjectIcons: DEFAULT_UNIFIED_SETTINGS.autoGenerateProjectIcons,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.autoGenerateProjectIcons}
-              onCheckedChange={(checked) =>
-                updateSettings({ autoGenerateProjectIcons: Boolean(checked) })
+        {supportsAutoSettlement ? (
+          <>
+            <SettingsRow
+              serverScoped
+              {...searchableSetting("auto-settle-merged-threads")}
+              description="Settle a thread when its pull request merges. Closed pull requests still settle automatically."
+              resetAction={
+                settings.sidebarAutoSettleOnMerge !==
+                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
+                  <SettingResetButton
+                    label="auto-settle on merge"
+                    onClick={() =>
+                      updateSettings({
+                        sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+                      })
+                    }
+                  />
+                ) : null
               }
-              aria-label="Auto-generate project icons"
+              control={
+                <Switch
+                  checked={settings.sidebarAutoSettleOnMerge}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
+                  }
+                  aria-label="Auto-settle merged threads"
+                />
+              }
             />
-          }
-        />
 
-        <SettingsRow
-          {...searchableSetting("auto-settle-inactive-threads")}
-          description="Sidebar threads with no activity for this long settle automatically."
-          resetAction={
-            settings.sidebarAutoSettleAfterDays !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
-              <SettingResetButton
-                label="auto-settle"
-                onClick={() =>
-                  updateSettings({
-                    sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-                  })
+            <SettingsRow
+              serverScoped
+              {...searchableSetting("auto-settle-inactive-threads")}
+              description="Sidebar threads with no activity for this long settle automatically."
+              resetAction={
+                settings.sidebarAutoSettleAfterDays !==
+                DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
+                  <SettingResetButton
+                    label="auto-settle"
+                    onClick={() =>
+                      updateSettings({
+                        sidebarAutoSettleAfterDays:
+                          DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Switch
+                  checked={settings.sidebarAutoSettleAfterDays !== null}
+                  onCheckedChange={(checked) =>
+                    updateSettings({
+                      sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
+                    })
+                  }
+                  aria-label="Auto-settle inactive threads"
+                />
+              }
+            />
+            {settings.sidebarAutoSettleAfterDays !== null ? (
+              <SettingsRow
+                serverScoped
+                title={searchableSetting("days-before-auto-settle").title}
+                description="Any new activity un-settles a thread automatically."
+                control={
+                  <AutoSettleDaysInput
+                    value={settings.sidebarAutoSettleAfterDays}
+                    onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
+                  />
                 }
               />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarAutoSettleAfterDays !== null}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
-                })
-              }
-              aria-label="Auto-settle inactive threads"
-            />
-          }
-        />
-        {settings.sidebarAutoSettleAfterDays !== null ? (
-          <SettingsRow
-            title={searchableSetting("days-before-auto-settle").title}
-            description="Any new activity un-settles a thread automatically."
-            control={
-              <AutoSettleDaysInput
-                value={settings.sidebarAutoSettleAfterDays}
-                onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
-              />
-            }
-          />
-        ) : null}
-
-        <SettingsRow
-          {...searchableSetting("auto-archive-settled-threads")}
-          description="Threads settled longer than this are archived automatically, so the settled list doesn't grow forever."
-          resetAction={
-            settings.sidebarAutoArchiveSettledAfterDays !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays ? (
-              <SettingResetButton
-                label="auto-archive"
-                onClick={() =>
-                  updateSettings({
-                    sidebarAutoArchiveSettledAfterDays:
-                      DEFAULT_UNIFIED_SETTINGS.sidebarAutoArchiveSettledAfterDays,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarAutoArchiveSettledAfterDays !== null}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  sidebarAutoArchiveSettledAfterDays: checked
-                    ? DEFAULT_SIDEBAR_AUTO_ARCHIVE_SETTLED_AFTER_DAYS
-                    : null,
-                })
-              }
-              aria-label="Auto-archive settled threads"
-            />
-          }
-        />
-        {settings.sidebarAutoArchiveSettledAfterDays !== null ? (
-          <SettingsRow
-            title="Days settled before auto-archive"
-            description="Archived threads stay available in each project's archived list."
-            control={
-              <AutoSettleDaysInput
-                value={settings.sidebarAutoArchiveSettledAfterDays}
-                onCommit={(days) => updateSettings({ sidebarAutoArchiveSettledAfterDays: days })}
-                ariaLabel="Days settled before auto-archive"
-              />
-            }
-          />
+            ) : null}
+          </>
         ) : null}
       </SettingsSection>
 
@@ -2426,16 +2345,14 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("composer-collapse")}
-          description="Rest the composer of an existing thread into a single line when it loses focus, when you scroll the conversation, or both. Pick neither to keep it expanded."
+          description="Rest the composer of an existing thread into a single line when you scroll the conversation. Focus the composer or start typing to expand it again."
           resetAction={
-            settings.composerCollapseOnBlur !== DEFAULT_UNIFIED_SETTINGS.composerCollapseOnBlur ||
             settings.composerCollapseOnScroll !==
-              DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
+            DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll ? (
               <SettingResetButton
-                label="collapse composer"
+                label="collapse composer on scroll"
                 onClick={() =>
                   updateSettings({
-                    composerCollapseOnBlur: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnBlur,
                     composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
                   })
                 }
@@ -2443,38 +2360,18 @@ export function GeneralSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              multiple
-              value={composerCollapseTriggers}
-              onValueChange={(next) =>
-                updateSettings({
-                  composerCollapseOnBlur: next.includes("blur"),
-                  composerCollapseOnScroll: next.includes("scroll"),
-                })
+            <Switch
+              checked={settings.composerCollapseOnScroll}
+              onCheckedChange={(checked) =>
+                updateSettings({ composerCollapseOnScroll: Boolean(checked) })
               }
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Collapse composer">
-                <SelectValue>
-                  {composerCollapseTriggers.length === 0
-                    ? "Never"
-                    : composerCollapseTriggers
-                        .map((trigger) => COMPOSER_COLLAPSE_TRIGGER_LABELS[trigger])
-                        .join(", ")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem showCheck value="blur">
-                  {COMPOSER_COLLAPSE_TRIGGER_LABELS.blur}
-                </SelectItem>
-                <SelectItem showCheck value="scroll">
-                  {COMPOSER_COLLAPSE_TRIGGER_LABELS.scroll}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              aria-label="Collapse composer on scroll"
+            />
           }
         />
 
         <SettingsRow
+          serverScoped
           {...searchableSetting("provider-update-checks")}
           description="Check installed provider CLIs for newer available versions."
           resetAction={
@@ -2502,6 +2399,36 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("continue-threads-after-server-update")}
+          serverScoped
+          description="Automatically resume interrupted threads after an update, crash, or machine restart. Applies to this environment and all connected environments that support it. Update older servers first."
+          resetAction={
+            settings.continueThreadsAfterServerUpdate !==
+            DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate ? (
+              <SettingResetButton
+                label="continue threads after restarts"
+                onClick={() =>
+                  updateSettings({
+                    continueThreadsAfterServerUpdate:
+                      DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.continueThreadsAfterServerUpdate}
+              onCheckedChange={(checked) =>
+                updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
+              }
+              aria-label="Continue threads after restarts"
+            />
+          }
+        />
+
+        <SettingsRow
+          serverScoped
           id={searchableSetting("background-activity").id}
           title={
             <span className="inline-flex items-center gap-1.5">
@@ -2592,52 +2519,23 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="projects-and-threads" title="Projects & threads">
         <SettingsRow
           {...searchableSetting("new-threads")}
-          description="Pick the default workspace mode for newly created draft threads."
-          resetAction={
-            settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode ||
-            settings.newWorktreesStartFromOrigin !==
-              DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin ? (
-              <SettingResetButton
-                label="new threads"
-                onClick={() =>
-                  updateSettings({
-                    defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
-                    newWorktreesStartFromOrigin:
-                      DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-                  })
-                }
-              />
-            ) : null
-          }
+          description="Choose the default model and workspace for all projects or a specific project."
           control={
-            <Select
-              value={settings.defaultThreadEnvMode}
-              onValueChange={(value) => {
-                if (value === "local" || value === "worktree") {
-                  updateSettings({ defaultThreadEnvMode: value });
-                }
-              }}
+            <Button
+              render={
+                <Link to="/settings/projects" search={{ project: undefined, machine: undefined }} />
+              }
+              size="sm"
+              variant="outline"
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Default thread mode">
-                <SelectValue>
-                  {settings.defaultThreadEnvMode === "worktree" ? "New worktree" : "Local"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="local">
-                  Local
-                </SelectItem>
-                <SelectItem hideIndicator value="worktree">
-                  New worktree
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              Project settings
+            </Button>
           }
         />
 
         <SettingsRow
-          className="bg-muted/20 sm:pl-9"
-          title={searchableSetting("start-from-origin").title}
+          serverScoped
+          {...searchableSetting("start-from-origin")}
           description="Creates the worktree from the latest matching branch on origin instead of your local branch."
           resetAction={
             settings.newWorktreesStartFromOrigin !==
@@ -2664,6 +2562,7 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
+          serverScoped
           {...searchableSetting("add-project-starts-in")}
           description='Leave empty to use "~/" when the Add Project browser opens.'
           resetAction={
@@ -2817,6 +2716,7 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="text-generation" title="Text generation">
         <SettingsRow
+          serverScoped
           {...searchableSetting("text-generation-model")}
           description="Used for thread titles and other generated text. Source control can override it."
           resetAction={
@@ -2908,33 +2808,6 @@ export function GeneralSettingsPanel() {
             )
           }
         />
-
-        <SettingsRow
-          {...searchableSetting("live-activity-headlines")}
-          description="The text generation model rewrites the live activity line of a running turn into a short readable status instead of raw tool and error text."
-          resetAction={
-            settings.generateActivityHeadlines !==
-            DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines ? (
-              <SettingResetButton
-                label="live activity headlines"
-                onClick={() =>
-                  updateSettings({
-                    generateActivityHeadlines: DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.generateActivityHeadlines}
-              onCheckedChange={(checked) =>
-                updateSettings({ generateActivityHeadlines: Boolean(checked) })
-              }
-              aria-label="Live activity headlines"
-            />
-          }
-        />
       </SettingsSection>
 
       <SettingsSection id="about" title="About">
@@ -2947,15 +2820,6 @@ export function GeneralSettingsPanel() {
           />
         )}
         <SettingsRow
-          {...searchableSetting("whats-new")}
-          description="See what changed in recent updates."
-          control={
-            <Button size="xs" variant="outline" onClick={() => openWhatsNewDialog()}>
-              Open
-            </Button>
-          }
-        />
-        <SettingsRow
           {...searchableSetting("diagnostics")}
           description={diagnosticsDescription}
           control={
@@ -2965,56 +2829,6 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
-
-      {primaryServerConfig?.environment.capabilities.automations === true ? (
-        <SettingsSection id="automations" title="Automations">
-          <SettingsRow
-            serverScoped
-            {...searchableSetting("pause-automations")}
-            description="Stops schedules, in-app events, webhooks, and git polling on this environment. Run now still works."
-            control={
-              <Switch
-                checked={!settings.automations.enabled}
-                aria-label="Pause automations on this environment"
-                onCheckedChange={(checked) =>
-                  updateSettings({ automations: { enabled: !checked } })
-                }
-              />
-            }
-          />
-          <SettingsRow
-            serverScoped
-            {...searchableSetting("automation-git-poll-interval")}
-            description="How often git triggers fetch their remote branch, in seconds."
-            resetAction={
-              settings.automations.gitPollIntervalSeconds !==
-              DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS ? (
-                <SettingResetButton
-                  label="automation git poll interval"
-                  onClick={() =>
-                    updateSettings({
-                      automations: {
-                        gitPollIntervalSeconds: DEFAULT_AUTOMATIONS_GIT_POLL_INTERVAL_SECONDS,
-                      },
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <AutoSettleDaysInput
-                value={settings.automations.gitPollIntervalSeconds}
-                min={60}
-                max={86_400}
-                ariaLabel="Automation git poll interval in seconds"
-                onCommit={(seconds) =>
-                  updateSettings({ automations: { gitPollIntervalSeconds: seconds } })
-                }
-              />
-            }
-          />
-        </SettingsSection>
-      ) : null}
 
       <LegacyFeaturesSection />
     </SettingsPageContainer>
@@ -3079,7 +2893,7 @@ export function ArchivedThreadsPanel() {
           threads: projectThreads.toSorted((left, right) => {
             const leftKey = left.archivedAt ?? left.createdAt;
             const rightKey = right.archivedAt ?? right.createdAt;
-            return compareIsoDateTimes(rightKey, leftKey) || right.id.localeCompare(left.id);
+            return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
           }),
         });
       }
@@ -3146,7 +2960,7 @@ export function ArchivedThreadsPanel() {
             title={
               <span className="inline-flex items-center gap-2">
                 {isLoadingArchive ? (
-                  <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
+                  <Spinner className="size-3.5 text-muted-foreground" />
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}

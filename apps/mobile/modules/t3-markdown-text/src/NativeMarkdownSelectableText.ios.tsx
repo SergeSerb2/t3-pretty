@@ -12,6 +12,8 @@ import {
 
 import { MarkdownTextPrimitive } from "./MarkdownTextPrimitive";
 import { markdownFileIconSource } from "./markdownFileIcons";
+import { markdownLinkIconSource } from "./markdownLinkIcons";
+import { resolveMarkdownLinkIcon } from "./markdownLinks";
 import type { NativeMarkdownTextRun } from "./nativeMarkdownText";
 import type {
   MarkdownFileContextMenu,
@@ -190,10 +192,14 @@ export function NativeMarkdownSelectableText(props: {
   const onLinkLongPress = props.onLinkLongPress ?? linkCallbacks.onLinkLongPress;
   const colorScheme = useColorScheme();
   const menu = useContext(MarkdownFileContextMenuContext);
-  const containsInlineFileIcon = props.runs.some((run) => run.fileIcon != null);
+  const containsInlineIcon = props.runs.some(
+    (run) =>
+      run.fileIcon != null ||
+      (run.externalHost != null && resolveMarkdownLinkIcon(run.externalHost) !== null),
+  );
   const attachAndroidText = useCallback(
     (textView: RNText | null) => {
-      if (Platform.OS !== "android" || !containsInlineFileIcon || textView === null) {
+      if (Platform.OS !== "android" || !containsInlineIcon || textView === null) {
         return;
       }
       const reactTag = findNodeHandle(textView);
@@ -201,7 +207,7 @@ export function NativeMarkdownSelectableText(props: {
         installMarkdownCopySanitizer(reactTag);
       }
     },
-    [containsInlineFileIcon],
+    [containsInlineIcon],
   );
   const occurrences = new Map<string, number>();
   const prefixedExternalLinks = new Set<string>();
@@ -211,6 +217,7 @@ export function NativeMarkdownSelectableText(props: {
     occurrences.set(signature, occurrence + 1);
 
     let text = run.text;
+    let linkIcon = null;
     if (run.fileIcon && Platform.OS === "ios") {
       text = `${INLINE_ATTACHMENT_PREFIX}${text}`;
     } else if (run.skillName && run.skillLabel) {
@@ -220,10 +227,15 @@ export function NativeMarkdownSelectableText(props: {
           : `$${run.skillName}`;
     } else if (run.externalHost && run.href && !prefixedExternalLinks.has(run.href)) {
       prefixedExternalLinks.add(run.href);
-      text = `${EXTERNAL_LINK_PREFIX}${text}`;
+      linkIcon = resolveMarkdownLinkIcon(run.externalHost);
+      if (linkIcon === null) {
+        text = `${EXTERNAL_LINK_PREFIX}${text}`;
+      } else if (Platform.OS === "ios") {
+        text = `${INLINE_ATTACHMENT_PREFIX}${text}`;
+      }
     }
 
-    return { key: `${signature}:${occurrence}`, run, text };
+    return { key: `${signature}:${occurrence}`, run, text, linkIcon };
   });
   // T3MarkdownText only rebuilds its attributed string during native layout. A
   // color-only child update can otherwise leave the previous appearance cached.
@@ -261,7 +273,7 @@ export function NativeMarkdownSelectableText(props: {
         lineHeight: props.textStyle.lineHeight,
       }}
     >
-      {keyedRuns.map(({ key, run, text }) => {
+      {keyedRuns.map(({ key, run, text, linkIcon }) => {
         const href = run.href;
         const contextMenu = run.fileIcon && href ? menu?.fileContextMenu(href) : undefined;
         return (
@@ -273,7 +285,9 @@ export function NativeMarkdownSelectableText(props: {
                   ? `t3-file:${Image.resolveAssetSource(markdownFileIconSource(run.fileIcon)).uri}`
                   : run.skillName
                     ? "t3-skill:sf:cube"
-                    : undefined
+                    : linkIcon
+                      ? `t3-link:${Image.resolveAssetSource(markdownLinkIconSource(linkIcon)).uri}`
+                      : undefined
                 : undefined
             }
             contextMenuConfig={contextMenu ? JSON.stringify(contextMenu) : undefined}
@@ -304,6 +318,12 @@ export function NativeMarkdownSelectableText(props: {
           >
             {Platform.OS === "android" && run.fileIcon ? (
               <Image source={markdownFileIconSource(run.fileIcon)} style={styles.inlineIcon} />
+            ) : Platform.OS === "android" && linkIcon ? (
+              <Image
+                source={markdownLinkIconSource(linkIcon)}
+                style={styles.inlineIcon}
+                tintColor={props.textStyle.linkColor}
+              />
             ) : null}
             {text}
           </MarkdownTextPrimitive>

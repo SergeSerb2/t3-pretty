@@ -21,7 +21,7 @@ export const ClientCacheKind = Schema.Literals([
   "thread",
   "server-config",
   "vcs-refs",
-  "thread-lifecycle-outbox",
+  "project-favicon",
 ]);
 export type ClientCacheKind = typeof ClientCacheKind.Type;
 
@@ -50,13 +50,12 @@ const MobileDatabaseOperation = Schema.Literals([
   "open",
   "migrate",
   "load-cache",
+  "list-cache",
   "save-cache",
   "remove-cache",
-  "prune-cache-kind",
   "clear-cache-kind",
   "clear-environment-cache",
   "clear-all-caches",
-  "compact-caches",
   "inspect-caches",
   "load-preferences",
   "save-preferences",
@@ -200,6 +199,9 @@ export class MobileDatabase extends Context.Service<
       kind: ClientCacheKind,
       cacheKey: string,
     ) => Effect.Effect<Option.Option<string>, MobileDatabaseError>;
+    readonly listCache: (
+      kind: ClientCacheKind,
+    ) => Effect.Effect<ReadonlyArray<string>, MobileDatabaseError>;
     readonly saveCache: (
       environmentId: EnvironmentId,
       kind: ClientCacheKind,
@@ -211,11 +213,6 @@ export class MobileDatabase extends Context.Service<
       environmentId: EnvironmentId,
       kind: ClientCacheKind,
       cacheKey: string,
-    ) => Effect.Effect<void, MobileDatabaseError>;
-    readonly pruneCacheKind: (
-      environmentId: EnvironmentId,
-      kind: ClientCacheKind,
-      keep: number,
     ) => Effect.Effect<void, MobileDatabaseError>;
     readonly clearCacheKind: (
       environmentId: EnvironmentId,
@@ -290,19 +287,6 @@ const makeAvailable = Effect.gen(function* () {
     catch: databaseError("migrate"),
   });
 
-  const compactCaches = Effect.tryPromise({
-    try: () =>
-      database.execAsync(
-        "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
-      ),
-    catch: databaseError("compact-caches"),
-  }).pipe(
-    Effect.tapError((cause) =>
-      Effect.logWarning("Could not compact the mobile client cache database.", { cause }),
-    ),
-    Effect.ignore,
-  );
-
   return MobileDatabase.of({
     loadCache: Effect.fn("MobileDatabase.loadCache")((environmentId, kind, cacheKey) =>
       Effect.tryPromise({
@@ -317,6 +301,16 @@ const makeAvailable = Effect.gen(function* () {
           ),
         catch: databaseError("load-cache"),
       }).pipe(Effect.map((row) => Option.fromNullishOr(row?.payload))),
+    ),
+    listCache: Effect.fn("MobileDatabase.listCache")((kind) =>
+      Effect.tryPromise({
+        try: () =>
+          database.getAllAsync<{ readonly payload: string }>(
+            "SELECT payload FROM client_cache WHERE kind = ? ORDER BY updated_at",
+            kind,
+          ),
+        catch: databaseError("list-cache"),
+      }).pipe(Effect.map((rows) => rows.map((row) => row.payload))),
     ),
     saveCache: Effect.fn("MobileDatabase.saveCache")(
       (environmentId, kind, cacheKey, schemaVersion, payload) =>
@@ -353,28 +347,6 @@ const makeAvailable = Effect.gen(function* () {
         catch: databaseError("remove-cache"),
       }).pipe(Effect.asVoid),
     ),
-    pruneCacheKind: Effect.fn("MobileDatabase.pruneCacheKind")((environmentId, kind, keep) =>
-      Effect.tryPromise({
-        // The client_cache_environment_updated index (environment_id, updated_at DESC)
-        // serves the keep-newest subquery.
-        try: () =>
-          database.runAsync(
-            `DELETE FROM client_cache
-                     WHERE environment_id = ? AND kind = ? AND cache_key NOT IN (
-                       SELECT cache_key FROM client_cache
-                       WHERE environment_id = ? AND kind = ?
-                       ORDER BY updated_at DESC, cache_key
-                       LIMIT ?
-                     )`,
-            environmentId,
-            kind,
-            environmentId,
-            kind,
-            keep,
-          ),
-        catch: databaseError("prune-cache-kind"),
-      }).pipe(Effect.asVoid),
-    ),
     clearCacheKind: Effect.fn("MobileDatabase.clearCacheKind")((environmentId, kind) =>
       Effect.tryPromise({
         try: () =>
@@ -391,18 +363,12 @@ const makeAvailable = Effect.gen(function* () {
         try: () =>
           database.runAsync("DELETE FROM client_cache WHERE environment_id = ?", environmentId),
         catch: databaseError("clear-environment-cache"),
-      }).pipe(
-        Effect.asVoid,
-        Effect.tap(() => compactCaches),
-      ),
+      }).pipe(Effect.asVoid),
     ),
     clearAllCaches: Effect.tryPromise({
       try: () => database.runAsync("DELETE FROM client_cache"),
       catch: databaseError("clear-all-caches"),
-    }).pipe(
-      Effect.asVoid,
-      Effect.tap(() => compactCaches),
-    ),
+    }).pipe(Effect.asVoid),
     inspectCaches: Effect.tryPromise({
       try: () =>
         database.getAllAsync<unknown>(`
@@ -459,9 +425,9 @@ function makeUnavailable(error: MobileDatabaseError): MobileDatabase["Service"] 
   const fail = Effect.fail(error);
   return MobileDatabase.of({
     loadCache: () => fail,
+    listCache: () => fail,
     saveCache: () => fail,
     removeCache: () => fail,
-    pruneCacheKind: () => fail,
     clearCacheKind: () => fail,
     clearEnvironmentCache: () => fail,
     clearAllCaches: fail,

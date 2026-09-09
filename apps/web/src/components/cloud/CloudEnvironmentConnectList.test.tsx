@@ -1,153 +1,324 @@
+import type { Discovery } from "@t3tools/client-runtime/relay";
+import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId } from "@t3tools/contracts";
-import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import * as Option from "effect/Option";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { act, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { visitElements } from "../../test/reactElementTree";
-import { reactHookHarness as hooks } from "../../test/reactHookHarness";
+type DiscoveredEnvironments = Discovery.RelayEnvironmentDiscoveryState["environments"];
 
-const atoms = vi.hoisted(() => ({
-  refresh: Symbol("refresh"),
-  register: Symbol("register"),
-}));
-const commands = vi.hoisted(() => ({
-  refresh: vi.fn(),
+const discovery = vi.hoisted(() => ({
+  state: null as Discovery.RelayEnvironmentDiscoveryState | null,
+  listeners: new Set<() => void>(),
+  refreshCommand: Symbol("refresh"),
+  registerCommand: Symbol("register"),
+  refresh: vi.fn<() => Promise<AtomCommandResult<void, never>>>(),
   register: vi.fn(),
-}));
-const cloudLink = vi.hoisted(() => ({
-  managedTunnelActive: false,
-  storedPublishAgentActivity: false,
-  reconcileCloudState: vi.fn(),
+  listEnvironments: vi.fn<() => Promise<DiscoveredEnvironments>>(),
 }));
 
-vi.mock("react", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react")>();
-  const { reactHookHarness } = await import("../../test/reactHookHarness");
-  return {
-    ...actual,
-    useCallback: reactHookHarness.useCallback,
-    useEffect: (effect: () => void | (() => void)) => {
-      effect();
-    },
-    useMemo: reactHookHarness.useMemo,
-    useRef: reactHookHarness.useRef,
-    useState: reactHookHarness.useState,
-  };
-});
-
-vi.mock("react/compiler-runtime", async () => {
-  const { reactHookHarness } = await import("../../test/reactHookHarness");
-  return { c: reactHookHarness.useMemoCache };
-});
-
-vi.mock("@clerk/react", () => ({
-  useAuth: () => ({ userId: "user-1" }),
+vi.mock("~/state/relay", () => ({
+  relayEnvironmentDiscovery: { refresh: discovery.refreshCommand },
 }));
 vi.mock("~/connection/catalog", () => ({
-  environmentCatalog: { refresh: atoms.refresh, register: atoms.register },
-}));
-vi.mock("~/env", () => ({ isElectron: true }));
-vi.mock("~/state/relay", () => ({
-  relayEnvironmentDiscovery: { refresh: atoms.refresh },
-}));
-vi.mock("~/state/environments", () => ({
-  useRelayEnvironmentDiscovery: () => ({
-    environments: new Map([
-      [
-        "remote-environment",
-        {
-          environment: REMOTE_ENVIRONMENT,
-          availability: "online",
-          status: Option.none(),
-          error: Option.none(),
-        },
-      ],
-    ]),
-    loaded: true,
-    refreshing: false,
-    offline: false,
-    error: Option.none(),
-  }),
+  environmentCatalog: { register: discovery.registerCommand },
 }));
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: (atom: symbol) =>
-    atom === atoms.register ? commands.register : commands.refresh,
+  useAtomCommand: (command: unknown) =>
+    command === discovery.refreshCommand ? discovery.refresh : discovery.register,
 }));
-vi.mock("~/cloud/useCloudLinkController", () => ({
-  useCloudLinkController: () => cloudLink,
+vi.mock("~/state/environments", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (listener: () => void) => {
+    discovery.listeners.add(listener);
+    return () => discovery.listeners.delete(listener);
+  };
+  const read = () => {
+    if (discovery.state === null) throw new Error("Discovery fixture is not initialized");
+    return discovery.state;
+  };
+  return { useRelayEnvironmentDiscovery: () => useSyncExternalStore(subscribe, read, read) };
+});
+vi.mock("../ConnectionStatusDot", () => ({ ConnectionStatusDot: () => null }));
+vi.mock("../ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipPopup: () => null,
 }));
-vi.mock("~/hooks/useCopyTraceId", () => ({ useCopyTraceId: () => vi.fn() }));
+vi.mock("../ui/checkbox", () => ({
+  Checkbox: (props: {
+    checked: boolean;
+    disabled: boolean;
+    onCheckedChange: (checked: boolean) => void;
+  }) => (
+    <input
+      type="checkbox"
+      checked={props.checked}
+      disabled={props.disabled}
+      onChange={(event) => props.onCheckedChange(event.target.checked)}
+    />
+  ),
+}));
+vi.mock("../ui/button", () => ({
+  Button: ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button {...props}>{children}</button>
+  ),
+}));
 vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 
 import { CloudEnvironmentConnectRows } from "./CloudEnvironmentConnectList";
 
-const REMOTE_ENVIRONMENT: RelayClientEnvironmentRecord = {
-  environmentId: EnvironmentId.make("remote-environment"),
-  label: "Remote Mac",
-  endpoint: {
-    httpBaseUrl: "https://remote.example.test",
-    wsBaseUrl: "wss://remote.example.test",
-    providerKind: "cloudflare_tunnel",
-  },
-  linkedAt: "2026-08-27T00:00:00.000Z",
-};
+const newMachineId = EnvironmentId.make("new-computer");
+const linkedMachines: DiscoveredEnvironments = new Map([
+  [
+    newMachineId,
+    {
+      environment: {
+        environmentId: newMachineId,
+        label: "Work laptop",
+        endpoint: {
+          httpBaseUrl: "https://relay.example.test",
+          wsBaseUrl: "wss://relay.example.test/ws",
+          providerKind: "manual",
+        },
+        linkedAt: "2026-09-05T12:00:00.000Z",
+      },
+      availability: "online",
+      status: Option.none(),
+      error: Option.none(),
+    },
+  ],
+]);
 
-function renderConnectButton() {
-  hooks.beginRender();
-  const rows = CloudEnvironmentConnectRows({
-    primaryEnvironmentId: EnvironmentId.make("local-environment"),
-    savedEnvironments: [],
-  });
-  return visitElements(rows, (element) => element.props.children === "Connect");
+let renderer: ReactTestRenderer | null;
+let page: EventTarget & { visibilityState: DocumentVisibilityState };
+let browserWindow: EventTarget;
+
+function publish(state: Discovery.RelayEnvironmentDiscoveryState) {
+  discovery.state = state;
+  for (const listener of discovery.listeners) listener();
 }
 
-async function flushPromises(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+async function mount(refreshWhileEmpty = true) {
+  await act(async () => {
+    renderer = create(
+      <CloudEnvironmentConnectRows
+        primaryEnvironmentId={null}
+        savedEnvironments={[]}
+        showSavedEnvironments
+        refreshWhileEmpty={refreshWhileEmpty}
+        empty={<p>Waiting for your computer to connect.</p>}
+      />,
+    );
+  });
 }
 
-describe("CloudEnvironmentConnectRows", () => {
-  beforeEach(() => {
-    hooks.reset();
-    commands.refresh.mockReset().mockResolvedValue({ _tag: "Success" });
-    commands.register.mockReset().mockResolvedValue({ _tag: "Success" });
-    cloudLink.managedTunnelActive = false;
-    cloudLink.storedPublishAgentActivity = false;
-    cloudLink.reconcileCloudState.mockReset();
+async function advance(milliseconds: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(milliseconds);
   });
+}
 
-  it("publishes the local desktop before saving the remote connection", async () => {
-    let finishLink: ((linked: boolean) => void) | undefined;
-    cloudLink.reconcileCloudState.mockReturnValue(
-      new Promise<boolean>((resolve) => {
-        finishLink = resolve;
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  page = Object.assign(new EventTarget(), { visibilityState: "visible" as const });
+  browserWindow = new EventTarget();
+  vi.stubGlobal("document", page);
+  vi.stubGlobal("window", browserWindow);
+  renderer = null;
+  discovery.listeners.clear();
+  discovery.state = {
+    environments: new Map(),
+    refreshing: false,
+    offline: false,
+    error: Option.none(),
+  };
+  discovery.listEnvironments.mockReset().mockResolvedValue(new Map());
+  discovery.register.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  discovery.refresh.mockReset().mockImplementation(async () => {
+    publish({ environments: new Map(), refreshing: true, offline: false, error: Option.none() });
+    const environments = await discovery.listEnvironments();
+    publish({ environments, refreshing: false, offline: false, error: Option.none() });
+    return AsyncResult.success(undefined);
+  });
+});
+
+afterEach(async () => {
+  await act(async () => renderer?.unmount());
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("cloud onboarding discovery", () => {
+  it("signals that the section can expand after initial discovery settles", async () => {
+    let finishDiscovery!: (environments: DiscoveredEnvironments) => void;
+    discovery.listEnvironments.mockReturnValue(
+      new Promise((resolve) => {
+        finishDiscovery = resolve;
       }),
     );
-    const button = renderConnectButton();
-
-    expect(button).not.toBeNull();
-    (button?.props.onClick as (() => void) | undefined)?.();
-    await flushPromises();
-
-    expect(cloudLink.reconcileCloudState).toHaveBeenCalledWith({
-      managedTunnel: true,
-      publish: false,
+    const onDiscoveryReady = vi.fn();
+    await act(async () => {
+      renderer = create(
+        <CloudEnvironmentConnectRows
+          primaryEnvironmentId={null}
+          savedEnvironments={[]}
+          onDiscoveryReady={onDiscoveryReady}
+        />,
+      );
     });
-    expect(commands.register).not.toHaveBeenCalled();
-
-    finishLink?.(true);
-    await flushPromises();
-
-    expect(commands.register).toHaveBeenCalledTimes(1);
+    expect(onDiscoveryReady).not.toHaveBeenCalled();
+    await act(async () => {
+      finishDiscovery(linkedMachines);
+    });
+    expect(onDiscoveryReady).toHaveBeenCalledTimes(1);
+    expect(renderer!.root.findByType("button").children).toEqual(["Connect"]);
   });
 
-  it("does not leave a one-way remote connection when local publishing fails", async () => {
-    cloudLink.reconcileCloudState.mockResolvedValue(false);
-    const button = renderConnectButton();
+  it("connects and selects discovered computers by default without overwriting deselection", async () => {
+    discovery.listEnvironments.mockResolvedValue(linkedMachines);
+    const autoSelectedComputers = new Set<EnvironmentId>();
+    function Setup() {
+      const [selectedIds, setSelectedIds] = useState<ReadonlySet<EnvironmentId>>(new Set());
+      return (
+        <CloudEnvironmentConnectRows
+          primaryEnvironmentId={null}
+          savedEnvironments={[]}
+          showSavedEnvironments
+          selection={{
+            autoSelectedComputers,
+            selectedIds,
+            onChange: (id, checked) =>
+              setSelectedIds((current) => {
+                const next = new Set(current);
+                if (checked) next.add(id);
+                else next.delete(id);
+                return next;
+              }),
+          }}
+        />
+      );
+    }
+    await act(async () => {
+      renderer = create(<Setup />);
+    });
 
-    (button?.props.onClick as (() => void) | undefined)?.();
-    await flushPromises();
+    expect(discovery.register).toHaveBeenCalledTimes(1);
+    expect(renderer!.root.findByType("input").props.checked).toBe(true);
+    await act(async () => {
+      await renderer!.root.findByType("input").props.onChange({ target: { checked: false } });
+    });
+    await act(async () => {
+      publish({ ...discovery.state!, environments: new Map(linkedMachines) });
+    });
+    expect(renderer!.root.findByType("input").props.checked).toBe(false);
+    expect(discovery.register).toHaveBeenCalledTimes(1);
+  });
 
-    expect(commands.register).not.toHaveBeenCalled();
+  it("shows a newly linked computer without remounting and stops polling once found", async () => {
+    discovery.listEnvironments
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(linkedMachines);
+    await mount();
+    expect(renderer!.root.findByType("p").children).toEqual([
+      "Waiting for your computer to connect.",
+    ]);
+
+    await advance(5_000);
+
+    expect(renderer!.root.findAllByType("p").map((node) => node.children)).toContainEqual([
+      "Work laptop",
+    ]);
+    expect(renderer!.root.findByType("button").children).toEqual(["Connect"]);
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a discovered computer visible when it is added to the browser", async () => {
+    discovery.listEnvironments.mockResolvedValue(linkedMachines);
+    await mount();
+    expect(renderer!.root.findByType("button").children).toEqual(["Connect"]);
+    await act(async () => {
+      renderer!.update(
+        <CloudEnvironmentConnectRows
+          primaryEnvironmentId={null}
+          savedEnvironments={[
+            {
+              environmentId: newMachineId,
+              connection: { phase: "connected", error: null, traceId: null },
+            },
+          ]}
+          showSavedEnvironments
+          refreshWhileEmpty
+        />,
+      );
+    });
+    expect(renderer!.root.findAllByType("p").map((node) => node.children)).toContainEqual([
+      "Work laptop",
+    ]);
+    expect(renderer!.root.findByType("button").children).toEqual(["Connected"]);
+  });
+
+  it("waits while hidden and refreshes immediately when visible again", async () => {
+    page.visibilityState = "hidden";
+    await mount();
+    await advance(30_000);
+    expect(discovery.listEnvironments).not.toHaveBeenCalled();
+
+    await act(async () => {
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(1);
+
+    page.visibilityState = "hidden";
+    page.dispatchEvent(new Event("visibilitychange"));
+    browserWindow.dispatchEvent(new Event("focus"));
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overlap a slow refresh or restart polling after unmount", async () => {
+    let resolveRefresh!: (environments: DiscoveredEnvironments) => void;
+    const pending = new Promise<DiscoveredEnvironments>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    discovery.listEnvironments.mockResolvedValueOnce(new Map()).mockReturnValueOnce(pending);
+    await mount();
+    await advance(5_000);
+    expect(renderer!.root.findByType("p").children).toEqual([
+      "Waiting for your computer to connect.",
+    ]);
+
+    browserWindow.dispatchEvent(new Event("focus"));
+    page.dispatchEvent(new Event("visibilitychange"));
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(2);
+
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    await act(async () => resolveRefresh(new Map()));
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(2);
+  });
+
+  it("pauses while offline and resumes when discovery is online", async () => {
+    await mount();
+    await act(async () => publish({ ...discovery.state!, offline: true }));
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(1);
+
+    await act(async () => publish({ ...discovery.state!, offline: false }));
+    await advance(5_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not add polling to other cloud lists", async () => {
+    await mount(false);
+    await advance(30_000);
+    expect(discovery.listEnvironments).toHaveBeenCalledTimes(1);
   });
 });

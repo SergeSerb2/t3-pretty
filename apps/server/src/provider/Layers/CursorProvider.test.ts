@@ -15,15 +15,11 @@ import {
   buildCursorProviderSnapshot,
   buildCursorCapabilitiesFromConfigOptions,
   checkCursorProviderStatus,
-  cursorCliVariantBaseSlug,
   discoverCursorModelsViaAcp,
-  enrichCursorAutoModelCapabilities,
-  getCursorFallbackModels,
+  makeCursorModelDiscovery,
   getCursorParameterizedModelPickerUnsupportedMessage,
-  mergeCursorCliModelsIntoDiscoveredModels,
   parseCursorAboutOutput,
   parseCursorCliConfigChannel,
-  parseCursorListModelsOutput,
   parseCursorVersionDate,
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
@@ -36,8 +32,6 @@ import {
 } from "../Drivers/CursorSkills.ts";
 import { execScriptSource, writeFakeCli } from "../../testUtils/fakeCli.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-
-const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 
 const runNode = <A, E>(
   effect: Effect.Effect<
@@ -112,15 +106,6 @@ const makeMockAgentWithAboutWrapper = Effect.fn("makeMockAgentWithAboutWrapper")
       'if (process.argv[2] === "about") {',
       '  process.stdout.write("CLI Version         2026.04.09-f2b0fcd\\n");',
       '  process.stdout.write("User Email          cursor@example.com\\n");',
-      "  process.exit(0);",
-      "}",
-      'if (process.argv[2] === "--list-models" || process.argv[2] === "models") {',
-      '  process.stdout.write("Available models\\n");',
-      '  process.stdout.write("auto - Auto (default)\\n");',
-      '  process.stdout.write("composer-2 - Composer 2\\n");',
-      '  process.stdout.write("gpt-5.4 - GPT-5.4\\n");',
-      '  process.stdout.write("claude-opus-4-6 - Opus 4.6\\n");',
-      '  process.stdout.write("glm-5.3-flash - GLM 5.3 Flash\\n");',
       "  process.exit(0);",
       "}",
       execScriptSource({ scriptPath: mockAgentPath }),
@@ -340,12 +325,10 @@ describe("Cursor skills", () => {
           directory: NodeOS.tmpdir(),
           prefix: "cursor-skills-home-",
         });
-        const workspace = yield* fileSystem
-          .makeTempDirectory({
-            directory: NodeOS.tmpdir(),
-            prefix: "cursor-skills-workspace-",
-          })
-          .pipe(Effect.flatMap(fileSystem.realPath));
+        const workspace = yield* fileSystem.makeTempDirectory({
+          directory: NodeOS.tmpdir(),
+          prefix: "cursor-skills-workspace-",
+        });
         const writeSkill = Effect.fn("writeCursorSkill")(function* (
           root: string,
           name: string,
@@ -492,16 +475,6 @@ describe("Cursor skills", () => {
   });
 });
 
-describe("getCursorFallbackModels", () => {
-  it("does not publish any built-in cursor models before ACP discovery", () => {
-    expect(
-      getCursorFallbackModels({
-        customModels: ["internal/cursor-model"],
-      }).map((model) => model.slug),
-    ).toEqual(["internal/cursor-model"]);
-  });
-});
-
 describe("buildCursorProviderSnapshot", () => {
   it("downgrades ready status to warning when ACP model discovery times out", () => {
     expect(
@@ -519,33 +492,6 @@ describe("buildCursorProviderSnapshot", () => {
       status: "warning",
       message: "Cursor ACP model discovery timed out after 15000ms.",
       models: [],
-    });
-  });
-
-  it("keeps ACP discovery warnings when CLI fill-in still produced models", () => {
-    expect(
-      buildCursorProviderSnapshot({
-        checkedAt: "2026-01-01T00:00:00.000Z",
-        cursorSettings: baseCursorSettings,
-        parsed: {
-          version: "2026.04.09-f2b0fcd",
-          status: "ready",
-          auth: { status: "authenticated", type: "Team", label: "Cursor Team Subscription" },
-        },
-        discoveredModels: [
-          {
-            slug: "glm-5.3-flash",
-            name: "GLM 5.3 Flash",
-            isCustom: false,
-            capabilities: EMPTY_CAPABILITIES,
-          },
-        ],
-        discoveryWarning: "Cursor ACP model discovery timed out after 15000ms.",
-      }),
-    ).toMatchObject({
-      status: "warning",
-      message: "Cursor ACP model discovery timed out after 15000ms.",
-      models: [{ slug: "glm-5.3-flash" }],
     });
   });
 
@@ -632,63 +578,6 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
       }),
     );
   });
-
-  it("maps Cursor Router Optimize For modes from Auto config options", () => {
-    expect(
-      buildCursorCapabilitiesFromConfigOptions([
-        {
-          type: "select",
-          currentValue: "balanced",
-          options: [
-            { name: "Cost", value: "cost" },
-            { name: "Balance", value: "balanced" },
-            { name: "Intelligence", value: "intelligence" },
-          ],
-          category: "model_option",
-          id: "optimize_for",
-          name: "Optimize For",
-        },
-      ]),
-    ).toEqual(
-      createModelCapabilities({
-        optionDescriptors: [
-          {
-            ...selectDescriptor("optimizeFor", "Optimize For", [
-              { id: "cost", label: "Cost" },
-              { id: "balanced", label: "Balance", isDefault: true },
-              { id: "intelligence", label: "Intelligence" },
-            ]),
-            description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-          },
-        ],
-      }),
-    );
-  });
-});
-
-describe("enrichCursorAutoModelCapabilities", () => {
-  it("synthesizes Optimize For for Auto when ACP omits the config option", () => {
-    expect(enrichCursorAutoModelCapabilities(EMPTY_CAPABILITIES, "default", "Auto")).toEqual(
-      createModelCapabilities({
-        optionDescriptors: [
-          {
-            ...selectDescriptor("optimizeFor", "Optimize For", [
-              { id: "cost", label: "Cost" },
-              { id: "balanced", label: "Balance", isDefault: true },
-              { id: "intelligence", label: "Intelligence" },
-            ]),
-            description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-          },
-        ],
-      }),
-    );
-  });
-
-  it("leaves non-Auto models unchanged", () => {
-    expect(
-      enrichCursorAutoModelCapabilities(EMPTY_CAPABILITIES, "composer-2.5", "Composer 2.5"),
-    ).toEqual(EMPTY_CAPABILITIES);
-  });
 });
 
 describe("checkCursorProviderStatus", () => {
@@ -733,13 +622,48 @@ describe("checkCursorProviderStatus", () => {
       "composer-2",
       "gpt-5.4",
       "claude-opus-4-6",
-      "glm-5.3-flash",
     ]);
     await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
   });
 });
 
 describe("discoverCursorModelsViaAcp", () => {
+  it("reuses successful discovery until the CLI version or account changes", async () => {
+    await runNode(
+      Effect.gen(function* () {
+        const { requestLogPath, wrapperPath } = yield* makeProviderStatusEnvFixture();
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = {
+          enabled: true,
+          binaryPath: wrapperPath,
+          apiEndpoint: "",
+          customModels: [],
+        };
+        const discover = yield* makeCursorModelDiscovery(settings, {
+          ...process.env,
+          T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+        });
+        const about = {
+          version: "2026.08.11",
+          auth: { status: "authenticated" as const, label: "first@example.test" },
+        };
+        const first = yield* discover(about);
+        expect(first.length).toBeGreaterThan(0);
+        yield* fileSystem.writeFileString(requestLogPath, "");
+        expect(yield* discover(about)).toEqual(first);
+        expect(yield* fileSystem.readFileString(requestLogPath)).toBe("");
+        yield* discover({ ...about, version: "2026.08.12" });
+        expect(yield* fileSystem.readFileString(requestLogPath)).toContain("initialize");
+        yield* fileSystem.writeFileString(requestLogPath, "");
+        yield* discover({
+          version: "2026.08.12",
+          auth: { ...about.auth, label: "second@example.test" },
+        });
+        expect(yield* fileSystem.readFileString(requestLogPath)).toContain("initialize");
+      }),
+    );
+  });
+
   it("keeps the ACP probe runtime alive long enough to discover models", async () => {
     const wrapperPath = await runNode(makeMockAgentWrapper());
 
@@ -758,11 +682,6 @@ describe("discoverCursorModelsViaAcp", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
-    expect(
-      models
-        .find((model) => model.slug === "default")
-        ?.capabilities?.optionDescriptors?.map((descriptor) => descriptor.id),
-    ).toEqual(["optimizeFor"]);
   });
 
   it.skipIf(windowsHost)("closes the ACP probe runtime after discovery completes", async () => {
@@ -865,18 +784,11 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(parseCursorCliConfigChannel("not-json")).toBeUndefined();
   });
 
-  it("returns no warning when the Cursor Agent is new enough", () => {
+  it("returns no warning when the preview requirements are met", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.08-c4e73a3",
-      }),
-    ).toBeUndefined();
-  });
-
-  it("does not require the lab channel for model discovery", () => {
-    expect(
-      getCursorParameterizedModelPickerUnsupportedMessage({
-        version: "2026.08.11-e8db854",
+        channel: "lab",
       }),
     ).toBeUndefined();
   });
@@ -885,81 +797,18 @@ describe("Cursor parameterized model picker preview gating", () => {
     expect(
       getCursorParameterizedModelPickerUnsupportedMessage({
         version: "2026.04.07-c4e73a3",
+        channel: "lab",
       }),
     ).toContain("too old");
   });
-});
 
-describe("cursor CLI model list parsing", () => {
-  it("parses `cursor-agent --list-models` output including glm-5.3-flash", () => {
+  it("explains when the Cursor Agent channel is not lab", () => {
     expect(
-      parseCursorListModelsOutput(`Available models
-
-auto - Auto (default)
-glm-5.2-high - GLM 5.2
-glm-5.2-max - GLM 5.2 Max
-glm-5.3-flash - GLM 5.3 Flash
-composer-2.5-fast - Composer 2.5 Fast
-`),
-    ).toEqual([
-      { slug: "default", name: "Auto" },
-      { slug: "glm-5.2-high", name: "GLM 5.2" },
-      { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
-      { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
-      { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
-    ]);
-  });
-
-  it("strips CLI effort/fast suffixes without treating flash as a variant", () => {
-    expect(cursorCliVariantBaseSlug("glm-5.3-flash")).toBe("glm-5.3-flash");
-    expect(cursorCliVariantBaseSlug("glm-5.2-high")).toBe("glm-5.2");
-    expect(cursorCliVariantBaseSlug("gpt-5.5-extra-high-fast")).toBe("gpt-5.5");
-    expect(cursorCliVariantBaseSlug("claude-opus-5-thinking-high-fast")).toBe("claude-opus-5");
-    expect(cursorCliVariantBaseSlug("composer-2.5-fast")).toBe("composer-2.5");
-    expect(cursorCliVariantBaseSlug("gemini-3.7-flash")).toBe("gemini-3.7-flash");
-  });
-
-  it("adds CLI-only families without duplicating ACP parameterized bases", () => {
-    const merged = mergeCursorCliModelsIntoDiscoveredModels(
-      [
-        {
-          slug: "glm-5.2",
-          name: "GLM 5.2",
-          isCustom: false,
-          capabilities: EMPTY_CAPABILITIES,
-        },
-        {
-          slug: "default",
-          name: "Auto",
-          isCustom: false,
-          capabilities: EMPTY_CAPABILITIES,
-        },
-      ],
-      [
-        { slug: "default", name: "Auto" },
-        { slug: "glm-5.2-high", name: "GLM 5.2" },
-        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
-        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
-      ],
-    );
-    expect(merged.map((model) => model.slug)).toEqual(["glm-5.2", "default", "glm-5.3-flash"]);
-  });
-
-  it("keeps advertised CLI ids when ACP omitted the family", () => {
-    const merged = mergeCursorCliModelsIntoDiscoveredModels(
-      [],
-      [
-        { slug: "glm-5.2-high", name: "GLM 5.2" },
-        { slug: "glm-5.2-max", name: "GLM 5.2 Max" },
-        { slug: "glm-5.3-flash", name: "GLM 5.3 Flash" },
-        { slug: "composer-2.5-fast", name: "Composer 2.5 Fast" },
-      ],
-    );
-    expect(merged.map((model) => model.slug)).toEqual([
-      "glm-5.2-high",
-      "glm-5.3-flash",
-      "composer-2.5-fast",
-    ]);
+      getCursorParameterizedModelPickerUnsupportedMessage({
+        version: "2026.04.08-c4e73a3",
+        channel: "stable",
+      }),
+    ).toContain("lab channel");
   });
 });
 
@@ -971,8 +820,7 @@ describe("resolveCursorAcpBaseModelId", () => {
       "claude-4.6-opus-high-thinking",
     );
     expect(resolveCursorAcpBaseModelId("composer-2")).toBe("composer-2");
-    expect(resolveCursorAcpBaseModelId("auto")).toBe("default");
-    expect(resolveCursorAcpBaseModelId("auto-smart")).toBe("default");
+    expect(resolveCursorAcpBaseModelId("auto")).toBe("auto");
   });
 });
 
@@ -1017,27 +865,5 @@ describe("resolveCursorAcpConfigUpdates", () => {
       { configId: "effort", value: "max" },
       { configId: "thinking", value: "false" },
     ]);
-  });
-
-  it("maps Optimize For selections onto the Cursor Router config option", () => {
-    expect(
-      resolveCursorAcpConfigUpdates(
-        [
-          {
-            type: "select",
-            currentValue: "balanced",
-            options: [
-              { name: "Cost", value: "cost" },
-              { name: "Balance", value: "balanced" },
-              { name: "Intelligence", value: "intelligence" },
-            ],
-            category: "model_option",
-            id: "optimize_for",
-            name: "Optimize For",
-          },
-        ],
-        [{ id: "optimizeFor", value: "intelligence" }],
-      ),
-    ).toEqual([{ configId: "optimize_for", value: "intelligence" }]);
   });
 });

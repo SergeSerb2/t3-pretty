@@ -9,31 +9,6 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 
-export const ENVIRONMENT_LABEL_MAX_LENGTH = 512;
-export const ENVIRONMENT_SERVER_VERSION_MAX_LENGTH = 256;
-export const REPOSITORY_IDENTITY_REMOTE_MAX_COUNT = 256;
-export const REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH = 1_024;
-export const REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH = 16 * 1_024;
-export const REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH = 16 * 1_024;
-export const REPOSITORY_IDENTITY_PATH_MAX_LENGTH = 32 * 1_024;
-export const REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH = 16 * 1_024;
-export const REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH = 128;
-export const REPOSITORY_IDENTITY_OWNER_MAX_LENGTH = 4_096;
-export const REPOSITORY_IDENTITY_NAME_MAX_LENGTH = 4_096;
-
-const EnvironmentLabel = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(ENVIRONMENT_LABEL_MAX_LENGTH),
-);
-const EnvironmentServerVersion = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(ENVIRONMENT_SERVER_VERSION_MAX_LENGTH),
-);
-const RepositoryIdentityRemoteName = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_NAME_MAX_LENGTH),
-);
-const RepositoryIdentityRemoteUrl = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(REPOSITORY_IDENTITY_REMOTE_URL_MAX_LENGTH),
-);
-
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
   "linux",
@@ -46,13 +21,14 @@ export const ExecutionEnvironmentPlatformArch = Schema.Literals(["arm64", "x64",
 export type ExecutionEnvironmentPlatformArch = typeof ExecutionEnvironmentPlatformArch.Type;
 
 /**
- * The curated set of machine shapes an environment can wear as its icon.
+ * The curated set of machine shapes and OS identities an environment can wear as its icon.
  * Servers detect one from the hardware they run on (`platform.machine`), and
  * the `environmentIcon` server setting lets a user pick one instead.
  */
 export const ENVIRONMENT_MACHINE_KINDS = [
   "server",
   "cloud",
+  "linux",
   "desktop",
   "laptop",
   "mac-mini",
@@ -102,8 +78,6 @@ export type ServerSelfUpdateCapability = typeof ServerSelfUpdateCapability.Type;
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
-  /** Server exposes gzip-compressible initial configuration over HTTP. */
-  serverConfigHttp: Schema.optionalKey(Schema.Boolean),
   /** Missing on older servers, which still accept inline image attachments. */
   attachmentUploads: Schema.optionalKey(Schema.Boolean),
   /** Missing on servers that only accept image attachments. */
@@ -115,16 +89,14 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server exposes the pull-request list, detail, activity, diff, and mutation APIs. Absent on
       servers from before the pull-request workspace shipped, so clients must not probe them. */
   pullRequests: Schema.optionalKey(Schema.Boolean),
-  /** Internal server can proxy Groq transcription and cleanup for connected clients. */
-  voiceDictation: Schema.optionalKey(Schema.Boolean),
-  /** Internal server can proxy Groq speech generation for connected clients. */
-  readAloud: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.settle / thread.unsettle commands. Absent on
       pre-settlement servers, so clients treat missing as unsupported and
       never send the commands under version skew. */
   threadSettlement: Schema.optionalKey(Schema.Boolean),
   /** Server evaluates merge and inactivity settlement without a client. */
   threadAutoSettlement: Schema.optionalKey(Schema.Boolean),
+  /** Server persists the opt-in for continuing interrupted threads after restarts. */
+  threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.snooze / thread.unsnooze commands. Same
       version-skew contract as threadSettlement. */
   threadSnooze: Schema.optionalKey(Schema.Boolean),
@@ -144,27 +116,13 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands thread.pin.reorder (and orderKey on thread.pin).
       Same version-skew contract as threadSettlement. */
   threadPinReorder: Schema.optionalKey(Schema.Boolean),
-  /** Server understands thread.scenery.assign and carries thread.scenery in
-      snapshots. Absent on older servers, so clients keep scenery assignments
-      device-local instead of syncing them. */
-  threadScenery: Schema.optionalKey(Schema.Boolean),
+  /** Server persists manual Active order through thread.active.reorder. */
+  threadActiveReorder: Schema.optionalKey(Schema.Boolean),
   /** Server understands regenerateTitle on thread.meta.update. Absent on
       older servers, so clients hide the action instead of sending it. */
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
-  /** Server can start a fresh provider session and replay bounded thread
-      context when a started thread switches to an incompatible provider. */
-  providerHandoff: Schema.optionalKey(Schema.Boolean),
-  /** Server exposes storage.getInventory / storage.removeOrphan for managed
-      worktrees. Absent on older servers, so clients must not probe them. */
-  storageInventory: Schema.optionalKey(Schema.Boolean),
-  /** Server streams storage.streamInventory snapshots while a scan is still
-      walking disk. Absent on older servers, so clients fall back to the
-      unary getInventory result. */
-  storageInventoryStream: Schema.optionalKey(Schema.Boolean),
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
-  /** Server can copy a project checkout and thread history to another reachable environment. */
-  projectTransfer: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
@@ -190,19 +148,14 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       desktop servers whose app predates the remote trigger, where clients
       must keep telling the user to update the app on that machine. */
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
-  /** Server runs automations: the `automation.*` commands, the
-      `automations.*` RPCs, and the `t3-code-automations` MCP toolkit.
-      Absent on older servers, so clients hide the feature instead of
-      dispatching commands the decider would reject. */
-  automations: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
-  label: EnvironmentLabel,
+  label: TrimmedNonEmptyString,
   platform: ExecutionEnvironmentPlatform,
-  serverVersion: EnvironmentServerVersion,
+  serverVersion: TrimmedNonEmptyString,
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
@@ -217,31 +170,19 @@ export type EnvironmentConnectionState = typeof EnvironmentConnectionState.Type;
 
 export const RepositoryIdentityLocator = Schema.Struct({
   source: Schema.Literal("git-remote"),
-  remoteName: RepositoryIdentityRemoteName,
-  remoteUrl: RepositoryIdentityRemoteUrl,
+  remoteName: TrimmedNonEmptyString,
+  remoteUrl: TrimmedNonEmptyString,
 });
 export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 
 export const RepositoryIdentity = Schema.Struct({
-  canonicalKey: TrimmedNonEmptyString.check(
-    Schema.isMaxLength(REPOSITORY_IDENTITY_CANONICAL_KEY_MAX_LENGTH),
-  ),
+  canonicalKey: TrimmedNonEmptyString,
   locator: RepositoryIdentityLocator,
-  rootPath: Schema.optionalKey(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_PATH_MAX_LENGTH)),
-  ),
-  displayName: Schema.optionalKey(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_DISPLAY_NAME_MAX_LENGTH)),
-  ),
-  provider: Schema.optionalKey(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_PROVIDER_MAX_LENGTH)),
-  ),
-  owner: Schema.optionalKey(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_OWNER_MAX_LENGTH)),
-  ),
-  name: Schema.optionalKey(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(REPOSITORY_IDENTITY_NAME_MAX_LENGTH)),
-  ),
+  rootPath: Schema.optionalKey(TrimmedNonEmptyString),
+  displayName: Schema.optionalKey(TrimmedNonEmptyString),
+  provider: Schema.optionalKey(TrimmedNonEmptyString),
+  owner: Schema.optionalKey(TrimmedNonEmptyString),
+  name: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
 

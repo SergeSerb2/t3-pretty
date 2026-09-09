@@ -56,9 +56,18 @@ is unavailable or has changed, the saved quote remains readable.
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.
 
-## Activity indicators
+## Recall a sent prompt
 
-Loading, syncing, and server-update icons are static. Live tool labels carry a soft moving highlight while the agent works; it is disabled when your system prefers reduced motion.
+Press `ArrowUp` in an empty composer to bring back the last prompt you sent in this thread. Press
+`ArrowUp` again to go further back, and `ArrowDown` to come forward. Moving forward past the newest
+prompt clears the composer. Recall walks the prompts loaded in the thread. Attachments, terminal
+context, and other extras from the original message are not restored, only the text you typed. A
+composer that holds an attachment or a picked element does not count as empty.
+
+When the composer has text, the arrow keys move the caret as usual. Recall takes over only while
+the text is an unedited recalled prompt, with the caret on the first visual line for `ArrowUp` or
+the last visual line for `ArrowDown`, counting wrapped lines. Editing a recalled prompt turns it
+into a normal draft.
 
 ## Prompt stash
 
@@ -84,17 +93,6 @@ recording and preserves your existing draft.
 
 Transcription runs on your device. T3 Code deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
-
-## Hosted voice features
-
-Outside the native iPhone transcription described above, builds and connected environments that
-offer hosted voice input can use the composer's microphone to dictate a message. Settled final agent
-responses on supported builds also show a play button beside the copy button; select it to read the
-complete response aloud, and select it again to stop.
-
-Hosted dictation and read-aloud processing run through the external Groq account configured on the
-connected host. Audio and response text travel through that host, and provider credentials are never
-sent to the client.
 
 ## Commands and skills
 
@@ -138,60 +136,3 @@ automatically. HTML previews cannot access your T3 Code session.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens the system chooser.
-
-On desktop, press `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux from a new thread to
-start it in the background. T3 Code opens another new thread and shows an **Open** action for the
-thread that started. The new thread keeps the selected workspace mode and base branch. If **New
-worktree** is selected, each background thread creates its own worktree.
-
-## Sending while the agent is working
-
-While a turn is running, the composer keeps a send button next to stop, and every provider
-behaves the same way:
-
-- **Send now** (the send button, or **Enter** on desktop) steers the running turn: the message
-  is delivered into the work in progress as soon as the agent can accept it.
-- **Queue for next turn** (the menu next to the send button, or **Option+Enter** /
-  **Alt+Enter**) holds the message until the current turn finishes, then starts a new turn
-  with it. Queued messages are held by the server, so they still send if you close the app
-  or disconnect; restarting the server clears the queue. Several queued messages start one
-  turn each, in order.
-
-On mobile, tap send to steer, or long-press it to queue.
-
-## Slash commands
-
-Type `/` at the start of a line to open the command menu. Keep typing to filter; **Enter** or
-**Tab** runs the highlighted entry.
-
-**Built-in** commands run inside T3 Code and never send text to the agent:
-
-| Command                                                      | What it does                                                                                        |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `/model`                                                     | Open the model picker for this thread.                                                              |
-| `/plan`, `/default`                                          | Switch between plan mode and build mode (when plan mode is on).                                     |
-| `/supervised`, `/auto`, `/full-access`, `/auto-accept-edits` | Change the permission mode. The provider's own names appear where they differ (Kimi shows `/yolo`). |
-| `/skills`                                                    | Open the skills list in the composer `⋯` menu.                                                      |
-| `/auto-pr`                                                   | Toggle opening a pull request when the thread finishes (where available).                           |
-| `/new`                                                       | Start a new thread.                                                                                 |
-| `/commands`                                                  | Open the command palette.                                                                           |
-| `/settings`                                                  | Open settings.                                                                                      |
-
-**Provider** commands are the ones the selected agent reports — custom commands, plugin
-commands, and the like. Picking one inserts it into the message and the agent runs it when
-you send.
-
-To continue a session that began in a provider's native CLI, create a new T3 Code thread with the
-same provider and send `/resume <native-session-id>` as its first command. Use the session ID shown
-by the native CLI's history or resume picker. T3 Code reconnects to the provider's stored context;
-it does not copy the earlier messages into the T3 Code timeline. Send your next message normally
-after the resume completes.
-
-The configured provider must use the same native data directory or account that owns the session.
-The command is available for Claude, Codex, Cursor, Grok, and Kimi providers that are installed and
-ready.
-
-## Linking files and skills
-
-Type `@` to link a workspace file or folder, or an app. Skills live behind `$`: type `$` to
-pick a skill the selected agent knows about, and it is inserted as a `$skill` mention.

@@ -1,8 +1,6 @@
-import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import * as Cause from "effect/Cause";
 
 import {
   CommandId,
@@ -11,27 +9,17 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type EnvironmentId,
   type ModelSelection,
-  type OrchestrationThreadActivity,
   type ProviderInteractionMode,
-  resolveRuntimeModeForProviderDriver,
   type RuntimeMode,
   type ThreadId,
-  type TurnDeliveryMode,
 } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
-  codexFeedbackMessage,
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
-import {
-  isNativeResumeSessionReady,
-  parseNativeResumeCommand,
-  restoreFailedNativeResumePrompt,
-} from "@t3tools/shared/nativeResume";
 
 import { makeQueuedMessageMetadata } from "../lib/commandMetadata";
 import { isModelSelectionUnavailable } from "../lib/modelOptions";
@@ -43,15 +31,8 @@ import {
   pickComposerMedia,
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
-import {
-  isOptimisticStartingThreadPending,
-  mergeOptimisticThreadMessages,
-  resolveOptimisticSendStartedAt,
-} from "../lib/optimisticThreadSend";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
-import { createThreadFeedBuilder } from "../lib/threadActivity";
-import { recordThreadFeedBuildPerformanceSpan } from "../features/observability/threadPerformance";
+import { buildThreadFeed } from "../lib/threadActivity";
 import { appAtomRegistry } from "../state/atom-registry";
 import {
   appendComposerDraftAttachments,
@@ -67,14 +48,10 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
 } from "./use-composer-drafts";
+import { setPendingConnectionError } from "../state/use-remote-environment-registry";
 import { useSelectedThreadDetail } from "../state/use-thread-detail";
 import { useThreadSelection } from "../state/use-thread-selection";
-import {
-  clearOptimisticStartingThread,
-  useOptimisticStartingThread,
-} from "./optimistic-thread-send";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
-import { retryingQueuedMessageIdsAtom } from "./use-thread-outbox-drain";
 import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
@@ -105,8 +82,6 @@ export function appendReviewCommentToDraft(input: {
   }
 }
 
-const EMPTY_THREAD_FEED_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
-
 export function useThreadDraftForThread(input: {
   readonly environmentId?: EnvironmentId;
   readonly threadId?: ThreadId;
@@ -129,8 +104,6 @@ export function useThreadComposerState() {
   const composerDrafts = useAtomValue(composerDraftsAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
-  const retryingQueuedMessageIds = useAtomValue(retryingQueuedMessageIdsAtom);
-  const feedBuilder = useMemo(() => createThreadFeedBuilder(), []);
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
   >({});
@@ -149,114 +122,37 @@ export function useThreadComposerState() {
     () => (selectedThreadKey ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []) : []),
     [queuedMessagesByThreadKey, selectedThreadKey],
   );
-  const optimisticStarting = useOptimisticStartingThread({
-    environmentId: selectedThreadShell?.environmentId ?? null,
-    threadId: selectedThreadShell?.id ?? null,
-  });
-  const selectedThreadMessages = selectedThreadDetail?.messages ?? null;
-  const selectedThreadActivities = selectedThreadDetail?.activities ?? null;
-  const selectedThreadFeedbackMessages = useMemo(() => {
-    const submissions = selectedThreadKey
-      ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
-      : [];
-    return submissions.flatMap((submission) =>
-      submission.status === "interrupted"
-        ? []
-        : [codexFeedbackMessage(submission), codexFeedbackMessage(submission, "assistant")],
-    );
-  }, [feedbackSubmissionsByThreadKey, selectedThreadKey]);
-  const selectedThreadFeedMessages = useMemo(
-    () => [
-      ...mergeOptimisticThreadMessages(
-        selectedThreadMessages,
-        selectedThreadQueuedMessages,
-        optimisticStarting,
-      ),
-      ...selectedThreadFeedbackMessages,
-    ],
-    [
-      optimisticStarting,
-      selectedThreadFeedbackMessages,
-      selectedThreadMessages,
-      selectedThreadQueuedMessages,
-    ],
+  const feedbackSubmissions = useMemo(
+    () => (selectedThreadKey ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? []) : []),
+    [feedbackSubmissionsByThreadKey, selectedThreadKey],
   );
-  const selectedThreadFeedBuild = useMemo(() => {
-    if (
-      selectedThreadMessages === null &&
-      selectedThreadActivities === null &&
-      selectedThreadFeedMessages.length === 0
-    ) {
-      return { feed: [], durationMs: 0 };
-    }
-    const startedAt = performance.now();
-    const feed = feedBuilder({
-      messages: selectedThreadFeedMessages,
-      activities: selectedThreadActivities ?? EMPTY_THREAD_FEED_ACTIVITIES,
-    });
-    return { feed, durationMs: performance.now() - startedAt };
-  }, [feedBuilder, selectedThreadActivities, selectedThreadFeedMessages, selectedThreadMessages]);
-  const selectedThreadFeed = selectedThreadFeedBuild.feed;
-  useEffect(() => {
-    if (optimisticStarting === null || selectedThreadMessages === null) {
-      return;
-    }
-    const nativeResume = parseNativeResumeCommand(optimisticStarting.message.text);
-    const nativeResumeSettled =
-      selectedThreadMessages.length === 0 &&
-      nativeResume?._tag === "Resume" &&
-      (isNativeResumeSessionReady(selectedThreadDetail?.session?.status) ||
-        selectedThreadDetail?.session?.status === "error");
-    if (
-      selectedThreadMessages.some(
-        (message) => message.id === optimisticStarting.message.messageId,
-      ) ||
-      nativeResumeSettled
-    ) {
-      if (nativeResumeSettled && selectedThreadDetail?.session?.status === "error") {
-        const threadKey = scopedThreadKey(
-          optimisticStarting.environmentId,
-          optimisticStarting.threadId,
-        );
-        const retryPrompt = restoreFailedNativeResumePrompt(
-          getComposerDraftSnapshot(threadKey).text,
-          [optimisticStarting.message.text],
-        );
-        if (retryPrompt !== null) {
-          setComposerDraftText(threadKey, retryPrompt);
-        }
-      }
-      clearOptimisticStartingThread(optimisticStarting.environmentId, optimisticStarting.threadId);
-    }
-  }, [optimisticStarting, selectedThreadDetail?.session, selectedThreadMessages]);
-  useEffect(() => {
-    if (!selectedThreadDetail || !selectedThreadShell) return;
-    recordThreadFeedBuildPerformanceSpan(
-      String(selectedThreadShell.environmentId),
-      String(selectedThreadShell.id),
-      {
-        "thread.environmentId": String(selectedThreadShell.environmentId),
-        "thread.id": String(selectedThreadShell.id),
-        "thread.feed.durationMs": selectedThreadFeedBuild.durationMs,
-        "thread.feed.entries": selectedThreadFeedBuild.feed.length,
-        "thread.messages": selectedThreadDetail.messages.length,
-        "thread.activities": selectedThreadDetail.activities.length,
-      },
-    );
-  }, [selectedThreadDetail, selectedThreadFeedBuild, selectedThreadShell]);
+  const dismissFeedback = useCallback(
+    (id: MessageId) => {
+      if (!selectedThreadKey) return;
+      setFeedbackSubmissionsByThreadKey((current) => ({
+        ...current,
+        [selectedThreadKey]: (current[selectedThreadKey] ?? []).filter((entry) => entry.id !== id),
+      }));
+    },
+    [selectedThreadKey],
+  );
+  const selectedThreadMessages = selectedThreadDetail?.messages;
+  const selectedThreadActivities = selectedThreadDetail?.activities;
+  const selectedThreadFeed = useMemo(
+    () =>
+      selectedThreadMessages && selectedThreadActivities
+        ? buildThreadFeed({
+            messages: selectedThreadMessages,
+            activities: selectedThreadActivities,
+          })
+        : [],
+    [selectedThreadActivities, selectedThreadMessages],
+  );
 
   const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;
   const draftMessage = selectedDraft?.text ?? "";
   const draftAttachments = selectedDraft?.attachments ?? [];
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
-  const headQueuedMessageId = selectedThreadQueuedMessages[0]?.messageId ?? null;
-  const isDeliveringQueuedMessage =
-    dispatchingQueuedMessageId !== null &&
-    selectedThreadQueuedMessages.some(
-      (message) => message.messageId === dispatchingQueuedMessageId,
-    );
-  const isHeadQueuedMessageRetrying =
-    headQueuedMessageId !== null && retryingQueuedMessageIds[headQueuedMessageId] === true;
   const selectedThread = selectedThreadDetail ?? selectedThreadShell;
   const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
   const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
@@ -330,256 +226,193 @@ export function useThreadComposerState() {
       return null;
     }
 
-    const sendStartedAt = resolveOptimisticSendStartedAt({
-      latestTurnStartedAt: selectedThread.latestTurn?.startedAt ?? null,
-      latestTurnCompletedAt: selectedThread.latestTurn?.completedAt ?? null,
-      sessionStatus: selectedThread.session?.status ?? null,
-      sessionUpdatedAt: selectedThread.session?.updatedAt ?? null,
-      optimisticSendStartedAt: optimisticStarting?.sendStartedAt ?? null,
-      queuedHeadCreatedAt: selectedThreadQueuedMessages[0]?.createdAt ?? null,
-      isDeliveringQueuedMessage,
-      environmentConnected: selectedEnvironmentRuntime?.connectionState === "connected",
-    });
-
     return deriveActiveWorkStartedAt(
       selectedThread.latestTurn,
       selectedThreadSessionActivity,
-      sendStartedAt,
+      null,
     );
-  }, [
-    isDeliveringQueuedMessage,
-    optimisticStarting?.sendStartedAt,
-    selectedEnvironmentRuntime?.connectionState,
-    selectedThreadDetail,
-    selectedThreadQueuedMessages,
-    selectedThreadSessionActivity,
-    selectedThreadShell,
-  ]);
+  }, [selectedThreadDetail, selectedThreadSessionActivity, selectedThreadShell]);
 
-  const activeThreadBusy =
-    !!selectedThread &&
-    (selectedThread.session?.status === "running" ||
-      selectedThread.session?.status === "starting" ||
-      isOptimisticStartingThreadPending(optimisticStarting, selectedThread.session?.status) ||
-      isDeliveringQueuedMessage);
+  const onSendMessage = useCallback(async () => {
+    if (!selectedThreadShell) {
+      return null;
+    }
 
-  const onSendMessage = useCallback(
-    async (delivery?: TurnDeliveryMode) => {
-      if (!selectedThreadShell) {
-        return null;
-      }
-
-      const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-      const draft = getComposerDraftSnapshot(threadKey);
-      const thread = selectedThreadDetail ?? selectedThreadShell;
-      const text = draft.text.trim();
-      const attachments = draft.attachments;
-      if (
-        composerAttachmentUploadBlockReason({
-          environmentId: selectedThreadShell.environmentId,
-          attachments,
-          connected: selectedEnvironmentRuntime?.connectionState === "connected",
-          serverConfig: selectedEnvironmentRuntime?.serverConfig ?? null,
-          states: appAtomRegistry.get(composerAttachmentUploadsAtom),
-        }) !== null
-      ) {
-        return null;
-      }
-
-      const modelSelection = draft.modelSelection ?? thread.modelSelection;
-      const serverConfig = selectedEnvironmentRuntime?.serverConfig;
-      if (
-        selectedEnvironmentRuntime?.connectionState === "connected" &&
-        isModelSelectionUnavailable(serverConfig, modelSelection)
-      ) {
-        Alert.alert(
-          "Antigravity model unavailable",
-          "Open model settings to finish setup or choose another model.",
-        );
-        return null;
-      }
-
-      const provider = serverConfig?.providers.find(
-        (entry) => entry.instanceId === modelSelection.instanceId,
+    const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+    const draft = getComposerDraftSnapshot(threadKey);
+    const thread = selectedThreadDetail ?? selectedThreadShell;
+    const text = draft.text.trim();
+    const attachments = draft.attachments;
+    if (
+      composerAttachmentUploadBlockReason({
+        environmentId: selectedThreadShell.environmentId,
+        attachments,
+        connected: selectedEnvironmentRuntime?.connectionState === "connected",
+        serverConfig: selectedEnvironmentRuntime?.serverConfig ?? null,
+        states: appAtomRegistry.get(composerAttachmentUploadsAtom),
+      }) !== null
+    )
+      return null;
+    if (text.length === 0 && attachments.length === 0) {
+      return null;
+    }
+    // A send-failure restore appends with allowOverflow so it never drops the
+    // user's files, which can leave the draft over the cap. Sending it anyway
+    // would enqueue a message that outbox recovery rejects forever, so block
+    // here until the user removes attachments.
+    if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+      Alert.alert(
+        "Too many attachments",
+        `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
       );
-      const feedbackCommand =
-        attachments.length === 0 &&
-        (provider?.driver === "codex" || thread.session?.providerName === "codex")
-          ? parseCodexFeedbackCommand(text)
-          : null;
-      if (feedbackCommand && thread.session === null) {
+      return null;
+    }
+
+    const modelSelection = draft.modelSelection ?? thread.modelSelection;
+    const serverConfig = selectedEnvironmentRuntime?.serverConfig;
+    if (
+      selectedEnvironmentRuntime?.connectionState === "connected" &&
+      isModelSelectionUnavailable(serverConfig, modelSelection)
+    ) {
+      Alert.alert(
+        "Antigravity model unavailable",
+        "Set up Antigravity on web or desktop, or choose another model.",
+      );
+      return null;
+    }
+    const provider = serverConfig?.providers.find(
+      (entry) => entry.instanceId === modelSelection.instanceId,
+    );
+    const feedbackCommand =
+      attachments.length === 0 &&
+      (provider?.driver === "codex" || thread.session?.providerName === "codex")
+        ? parseCodexFeedbackCommand(text)
+        : null;
+    if (feedbackCommand) {
+      if (thread.session === null) {
         Alert.alert("Start a Codex thread first", "Send a message before you submit feedback.");
         return null;
       }
-      if (text.length === 0 && attachments.length === 0) {
-        return null;
-      }
-      // A send-failure restore appends with allowOverflow so it never drops the
-      // user's files, which can leave the draft over the cap. Sending it anyway
-      // would enqueue a message that outbox recovery rejects forever, so block
-      // here until the user removes attachments.
-      if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        Alert.alert(
-          "Too many attachments",
-          `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
-        );
-        return null;
-      }
-
-      if (feedbackCommand) {
-        const metadata = makeQueuedMessageMetadata();
-        const result = await submitCodexFeedback({
-          submission: {
-            id: MessageId.make(metadata.messageId),
-            command: text,
-            createdAt: metadata.createdAt,
-          },
-          clearDraft: () => clearComposerDraftContent(threadKey),
-          onUpdate: (submission) => {
-            setFeedbackSubmissionsByThreadKey((current) => {
-              const existing = current[threadKey] ?? [];
-              const found = existing.some((entry) => entry.id === submission.id);
-              return {
-                ...current,
-                [threadKey]: found
-                  ? existing.map((entry) => (entry.id === submission.id ? submission : entry))
-                  : [...existing, submission],
-              };
-            });
-          },
-          upload: () =>
-            uploadThreadFeedback({
-              environmentId: selectedThreadShell.environmentId,
-              input: {
-                threadId: selectedThreadShell.id,
-                ...feedbackCommand,
-              },
-            }),
-        });
-        if (result._tag === "Failure") {
-          if (isAtomCommandInterrupted(result)) {
-            return null;
-          }
-          const error = Cause.squash(result.cause);
-          Alert.alert(
-            "Could not send feedback to OpenAI",
-            error instanceof Error ? error.message : "An error occurred.",
-          );
-          return null;
-        }
-        const feedbackId = result.value.feedbackId;
-        Alert.alert("Feedback sent to OpenAI", `Thread ID: ${feedbackId}`, [
-          { text: "OK", style: "cancel" },
-          {
-            text: "Copy ID",
-            onPress: () => copyTextWithHaptic(feedbackId, { target: "Codex feedback thread ID" }),
-          },
-        ]);
-        return null;
-      }
-
       const metadata = makeQueuedMessageMetadata();
-      const messageId = MessageId.make(metadata.messageId);
-      // Enqueue publishes the queued atom synchronously (the durable write
-      // happens behind it), so clearing the draft here gives send feedback on
-      // the tap frame instead of after file I/O. If the write fails the message
-      // is rolled out of the queue and the content is merged back into the
-      // draft, preserving anything typed since.
-      const enqueuePromise = enqueueThreadOutboxMessage({
-        environmentId: selectedThreadShell.environmentId,
-        threadId: selectedThreadShell.id,
-        messageId,
-        commandId: CommandId.make(metadata.commandId),
-        text,
-        attachments,
-        modelSelection,
-        runtimeMode: resolveRuntimeModeForProviderDriver(
-          provider?.driver ?? null,
-          draft.runtimeMode ?? thread.runtimeMode,
-        ),
-        interactionMode: resolveProviderInteractionMode(
-          provider,
-          draft.interactionMode ?? thread.interactionMode,
-        ),
-        createdAt: metadata.createdAt,
-        ...(delivery ? { delivery } : {}),
+      await submitCodexFeedback({
+        submission: {
+          id: MessageId.make(metadata.messageId),
+          command: text,
+          createdAt: metadata.createdAt,
+        },
+        clearDraft: () => clearComposerDraftContent(threadKey),
+        onUpdate: (submission) => {
+          setFeedbackSubmissionsByThreadKey((current) => {
+            const existing = current[threadKey] ?? [];
+            const found = existing.some((entry) => entry.id === submission.id);
+            return {
+              ...current,
+              [threadKey]: found
+                ? existing.map((entry) => (entry.id === submission.id ? submission : entry))
+                : [...existing, submission],
+            };
+          });
+        },
+        upload: () =>
+          uploadThreadFeedback({
+            environmentId: selectedThreadShell.environmentId,
+            input: {
+              threadId: selectedThreadShell.id,
+              ...feedbackCommand,
+            },
+          }),
       });
-      clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
-      enqueuePromise.then(
-        () => {
-          // The queued message owns the files now; the sweep sees that and
-          // spares them. Deferred to here so a failed write cannot roll the
-          // message out of the queue mid-sweep and lose the bytes.
-          scheduleUnusedComposerAttachmentCleanup(attachments);
-        },
-        (error: unknown) => {
-          // Restore text via merge (idempotent) but attachments via the uncapped
-          // append: the merge path slots existing attachments first and truncates
-          // at the send limit, which would silently drop this message's images if
-          // the user attached new ones while the write was in flight.
-          void mergeComposerDraftContent(threadKey, { text, attachments: [] });
-          appendComposerDraftAttachments(threadKey, attachments, { allowOverflow: true });
-          Alert.alert(
-            "Could not queue message",
-            error instanceof Error ? error.message : "Failed to save the queued message.",
-          );
-        },
-      );
-      return messageId;
-    },
-    [
-      selectedEnvironmentRuntime?.connectionState,
-      selectedEnvironmentRuntime?.serverConfig,
-      selectedThreadDetail,
-      selectedThreadShell,
-      uploadThreadFeedback,
-    ],
-  );
+      return null;
+    }
+
+    const metadata = makeQueuedMessageMetadata();
+    const messageId = MessageId.make(metadata.messageId);
+    // Enqueue publishes the queued atom synchronously (the durable write
+    // happens behind it), so clearing the draft here gives send feedback on
+    // the tap frame instead of after file I/O. If the write fails the message
+    // is rolled out of the queue and the content is merged back into the
+    // draft, preserving anything typed since.
+    const enqueuePromise = enqueueThreadOutboxMessage({
+      environmentId: selectedThreadShell.environmentId,
+      threadId: selectedThreadShell.id,
+      messageId,
+      commandId: CommandId.make(metadata.commandId),
+      text,
+      attachments,
+      modelSelection,
+      runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
+      interactionMode: resolveProviderInteractionMode(
+        provider,
+        draft.interactionMode ?? thread.interactionMode,
+      ),
+      createdAt: metadata.createdAt,
+    });
+    clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
+    enqueuePromise.then(
+      () => {
+        // The queued message owns the files now; the sweep sees that and
+        // spares them. Deferred to here so a failed write cannot roll the
+        // message out of the queue mid-sweep and lose the bytes.
+        scheduleUnusedComposerAttachmentCleanup(attachments);
+      },
+      (error: unknown) => {
+        // Restore text via merge (idempotent) but attachments via the uncapped
+        // append: the merge path slots existing attachments first and truncates
+        // at the send limit, which would silently drop this message's images if
+        // the user attached new ones while the write was in flight.
+        void mergeComposerDraftContent(threadKey, { text, attachments: [] });
+        appendComposerDraftAttachments(threadKey, attachments, { allowOverflow: true });
+        setPendingConnectionError(
+          error instanceof Error ? error.message : "Failed to save the queued message.",
+        );
+      },
+    );
+    return messageId;
+  }, [
+    selectedEnvironmentRuntime?.connectionState,
+    selectedEnvironmentRuntime?.serverConfig,
+    selectedThreadDetail,
+    selectedThreadShell,
+    uploadThreadFeedback,
+  ]);
 
   const onChangeDraftMessage = useCallback(
     (value: string) => {
-      if (!selectedThreadKey) {
-        return;
-      }
-
-      setComposerDraftText(selectedThreadKey, value);
-    },
-    [selectedThreadKey],
-  );
-
-  const onPickDraftMedia = useCallback(
-    async (input?: {
-      readonly onPicked?: (
-        previews: ReadonlyArray<{ readonly id: string; readonly previewUri: string }>,
-      ) => void;
-    }) => {
       if (!selectedThreadShell) {
         return;
       }
 
       const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
-      const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
-      const result = await pickComposerMedia({
-        existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
-        maxVideoBytes:
-          capabilities?.attachmentUploads === true
-            ? capabilities.fileAttachments?.maxUploadBytes
-            : undefined,
-        onPicked: input?.onPicked,
-      });
-      const rejectedCount = appendComposerDraftAttachments(threadKey, result.attachments);
-      const problems = [
-        ...(result.error ? [result.error] : []),
-        ...(rejectedCount > 0
-          ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
-          : []),
-      ];
-      if (problems.length > 0) {
-        Alert.alert("Could not attach photo or video", problems.join("\n\n"));
-      }
+      setComposerDraftText(threadKey, value);
     },
-    [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell],
+    [selectedThreadShell],
   );
+
+  const onPickDraftMedia = useCallback(async () => {
+    if (!selectedThreadShell) {
+      return;
+    }
+
+    const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+    const capabilities = selectedEnvironmentRuntime?.serverConfig?.environment.capabilities;
+    const result = await pickComposerMedia({
+      existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
+      maxVideoBytes:
+        capabilities?.attachmentUploads === true
+          ? capabilities.fileAttachments?.maxUploadBytes
+          : undefined,
+    });
+    const rejectedCount = appendComposerDraftAttachments(threadKey, result.attachments);
+    const problems = [
+      ...(result.error ? [result.error] : []),
+      ...(rejectedCount > 0
+        ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
+        : []),
+    ];
+    if (problems.length > 0) {
+      Alert.alert("Could not attach photo or video", problems.join("\n\n"));
+    }
+  }, [composerDrafts, selectedEnvironmentRuntime?.serverConfig, selectedThreadShell]);
 
   const onPickDraftFiles = useCallback(async () => {
     if (!selectedThreadShell) {
@@ -627,10 +460,9 @@ export function useThreadComposerState() {
       appendComposerDraftText(threadKey, result.text);
     }
     if (result.error) {
-      Alert.alert("Could not attach image", result.error);
+      setPendingConnectionError(result.error);
     } else if (rejectedPasteCount > 0) {
-      Alert.alert(
-        "Could not attach image",
+      setPendingConnectionError(
         `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
       );
     }
@@ -644,15 +476,12 @@ export function useThreadComposerState() {
 
       const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
       try {
-        const result = await convertPastedImagesToAttachments({
+        const images = await convertPastedImagesToAttachments({
           uris,
           existingCount: composerDrafts[threadKey]?.attachments.length ?? 0,
         });
-        if (result.images.length > 0) {
-          appendComposerDraftAttachments(threadKey, result.images);
-        }
-        if (result.error) {
-          Alert.alert("Could not attach image", result.error);
+        if (images.length > 0) {
+          appendComposerDraftAttachments(threadKey, images);
         }
       } catch (error) {
         console.error("[native paste] error converting images", {
@@ -725,11 +554,10 @@ export function useThreadComposerState() {
   );
 
   return {
+    feedbackSubmissions,
+    dismissFeedback,
     selectedThreadFeed,
     selectedThreadQueueCount,
-    headQueuedMessageId,
-    isHeadQueuedMessageRetrying,
-    isDeliveringQueuedMessage,
     activeWorkStartedAt,
     isCompacting,
     draftMessage,
@@ -737,7 +565,6 @@ export function useThreadComposerState() {
     modelSelection,
     runtimeMode,
     interactionMode,
-    activeThreadBusy,
     onChangeDraftMessage,
     onPickDraftMedia,
     onPickDraftFiles,

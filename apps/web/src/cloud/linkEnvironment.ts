@@ -16,7 +16,6 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import {
-  type RelayClientEnvironmentRecord,
   type RelayEnvironmentLinkResponse,
   type RelayManagedEndpointProviderKind,
 } from "@t3tools/contracts/relay";
@@ -24,7 +23,6 @@ import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 import { ManagedRelay, relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
-import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import { resolveCloudPublicConfig } from "./publicConfig";
@@ -33,37 +31,6 @@ import {
   reportRelayClientInstallProgress,
   requestRelayClientInstallConfirmation,
 } from "./relayClientInstallDialog";
-
-export function normalizeRelayBaseUrl(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed.replace(/\/+$/g, "");
-}
-
-export function isCloudLinkOnConfiguredRelay(
-  state: EnvironmentCloudLinkStateResult | null,
-  configuredRelayUrl: string | null,
-): boolean {
-  if (!state?.linked || state.relayUrl === null || configuredRelayUrl === null) {
-    return false;
-  }
-  const linkedRelayUrl = normalizeSecureRelayUrl(state.relayUrl);
-  const normalizedConfiguredRelayUrl = normalizeSecureRelayUrl(configuredRelayUrl);
-  return linkedRelayUrl !== null && linkedRelayUrl === normalizedConfiguredRelayUrl;
-}
-
-export function isCloudLinkOnConfiguredRelayForAccount(
-  state: EnvironmentCloudLinkStateResult | null,
-  configuredRelayUrl: string | null,
-  accountId: string | null | undefined,
-): boolean {
-  return (
-    isCloudLinkOnConfiguredRelay(state, configuredRelayUrl) &&
-    (accountId === null || (accountId !== undefined && state?.cloudUserId === accountId))
-  );
-}
 
 function relayUrl(): string | null {
   return resolveCloudPublicConfig().relayUrl;
@@ -92,7 +59,7 @@ function ensureRelayClientAvailable(
     if (status.status === "available") return;
     if (status.status === "unsupported") {
       return yield* new CloudEnvironmentLinkError({
-        message: `T3 Pretty cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
+        message: `T3 Code cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
       });
     }
 
@@ -128,7 +95,7 @@ function ensureRelayClientAvailable(
       return yield* new CloudEnvironmentLinkError({
         message:
           installedStatus.status === "unsupported"
-            ? `T3 Pretty cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
+            ? `T3 Code cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
             : "The relay client is still unavailable after installation.",
       });
     }
@@ -160,25 +127,14 @@ function decodedRelayClientError(message: string) {
   };
 }
 
-const MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES = 64;
-
-export function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
-  const seen = new Set<object>();
-  let current = cause;
-  for (let inspected = 0; inspected < MAX_ENVIRONMENT_API_ERROR_CAUSE_NODES; inspected += 1) {
-    if (isEnvironmentCloudApiError(current)) {
-      return current;
-    }
-    if (typeof current !== "object" || current === null || seen.has(current)) {
-      return null;
-    }
-    seen.add(current);
-    if (!("cause" in current)) {
-      return null;
-    }
-    current = current.cause;
+function findEnvironmentCloudApiError(cause: unknown): { readonly message: string } | null {
+  if (isEnvironmentCloudApiError(cause)) {
+    return cause;
   }
-  return null;
+  if (typeof cause !== "object" || cause === null) {
+    return null;
+  }
+  return "cause" in cause ? findEnvironmentCloudApiError(cause.cause) : null;
 }
 
 const environmentApiError = (message: string) => (cause: unknown) => {
@@ -228,53 +184,6 @@ export interface CloudLinkTarget {
 }
 
 export type CloudLinkState = EnvironmentCloudLinkStateResult;
-
-export function collectCloudLinkTargets(input: {
-  readonly primary: CloudLinkTarget | null;
-  readonly saved: ReadonlyArray<CloudLinkTarget>;
-}): ReadonlyArray<CloudLinkTarget> {
-  const byId = new Map<string, CloudLinkTarget>();
-  if (input.primary) {
-    byId.set(input.primary.environmentId, input.primary);
-  }
-  for (const environment of input.saved) {
-    if (!byId.has(environment.environmentId)) {
-      byId.set(environment.environmentId, environment);
-    }
-  }
-  return [...byId.values()];
-}
-
-export function listManagedCloudEnvironments(input: {
-  readonly clerkToken: string;
-}): Effect.Effect<
-  ReadonlyArray<RelayClientEnvironmentRecord>,
-  CloudEnvironmentLinkError,
-  ManagedRelay.ManagedRelayClient
-> {
-  return Effect.gen(function* () {
-    const configuredRelayUrl = relayUrl();
-    if (!configuredRelayUrl) {
-      return yield* new CloudEnvironmentLinkError({
-        message: "T3CODE_RELAY_URL is not configured.",
-      });
-    }
-    const relayClient = yield* ManagedRelay.ManagedRelayClient;
-    return yield* relayClient
-      .listEnvironments({
-        clerkToken: input.clerkToken,
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new CloudEnvironmentLinkError({
-              message: "Could not list relay-managed environments.",
-              cause,
-            }),
-        ),
-      );
-  });
-}
 
 export function readPrimaryCloudLinkState(input: {
   readonly target: CloudLinkTarget;
@@ -339,7 +248,7 @@ export function unlinkPrimaryEnvironmentFromCloud(input: {
 
 // "publish_only" links the environment to the relay for agent-activity
 // publishing alone: no managed tunnel is provisioned, so it can be toggled
-// independently of Surge Connect while clients reach the environment out of band.
+// independently of T3 Connect while clients reach the environment out of band.
 export type CloudLinkMode = "managed" | "publish_only";
 
 const PUBLISH_ONLY_PROVIDER_KIND = "manual" satisfies RelayManagedEndpointProviderKind;

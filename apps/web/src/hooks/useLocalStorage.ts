@@ -15,7 +15,7 @@ export class LocalStorageOperationError extends Schema.TaggedErrorClass<LocalSto
   }
 }
 
-function createMemoryLocalStorage(): Storage {
+const fallbackStorage: Storage = (() => {
   const store = new Map<string, string>();
   return {
     clear: () => store.clear(),
@@ -27,21 +27,14 @@ function createMemoryLocalStorage(): Storage {
     removeItem: (_) => store.delete(_),
     setItem: (_, value) => store.set(_, value),
   };
-}
+})();
 
-function resolveIsomorphicLocalStorage(): Storage {
-  try {
-    return typeof window !== "undefined" ? window.localStorage : createMemoryLocalStorage();
-  } catch {
-    return createMemoryLocalStorage();
-  }
-}
-
-const isomorphicLocalStorage = resolveIsomorphicLocalStorage();
+const getStorage = (): Storage =>
+  typeof window !== "undefined" ? window.localStorage : fallbackStorage;
 
 const read = (key: string) => {
   try {
-    return isomorphicLocalStorage.getItem(key);
+    return getStorage().getItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "read", storageKey: key, cause });
   }
@@ -63,71 +56,15 @@ const encode = <T, E>(key: string, schema: Schema.Codec<T, E>, value: T) => {
   }
 };
 
-export interface LocalStorageItemSizeOptions {
-  readonly maxEncodedBytes: number;
-}
-
-function exceedsUtf8ByteLimit(value: string, maximumBytes: number): boolean {
-  let bytes = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit <= 0x7f) {
-      bytes += 1;
-    } else if (codeUnit <= 0x7ff) {
-      bytes += 2;
-    } else if (
-      codeUnit >= 0xd800 &&
-      codeUnit <= 0xdbff &&
-      index + 1 < value.length &&
-      value.charCodeAt(index + 1) >= 0xdc00 &&
-      value.charCodeAt(index + 1) <= 0xdfff
-    ) {
-      bytes += 4;
-      index += 1;
-    } else {
-      bytes += 3;
-    }
-    if (bytes > maximumBytes) return true;
-  }
-  return false;
-}
-
-function enforceEncodedSizeLimit(
-  key: string,
-  encoded: string,
-  operation: "read" | "write",
-  options?: LocalStorageItemSizeOptions,
-): void {
-  if (!options || !exceedsUtf8ByteLimit(encoded, options.maxEncodedBytes)) return;
-  throw new LocalStorageOperationError({
-    operation,
-    storageKey: key,
-    cause: new RangeError(
-      `Encoded local storage value exceeds ${options.maxEncodedBytes} UTF-8 bytes.`,
-    ),
-  });
-}
-
-export const getLocalStorageItem = <T, E>(
-  key: string,
-  schema: Schema.Codec<T, E>,
-  options?: LocalStorageItemSizeOptions,
-): T | null => {
+export const getLocalStorageItem = <T, E>(key: string, schema: Schema.Codec<T, E>): T | null => {
   const item = read(key);
-  if (item) enforceEncodedSizeLimit(key, item, "read", options);
-  return item ? decode(key, schema, item) : null;
+  return item === null ? null : decode(key, schema, item);
 };
 
-export const setLocalStorageItem = <T, E>(
-  key: string,
-  value: T,
-  schema: Schema.Codec<T, E>,
-  options?: LocalStorageItemSizeOptions,
-) => {
+export const setLocalStorageItem = <T, E>(key: string, value: T, schema: Schema.Codec<T, E>) => {
   const valueToSet = encode(key, schema, value);
-  enforceEncodedSizeLimit(key, valueToSet, "write", options);
   try {
-    isomorphicLocalStorage.setItem(key, valueToSet);
+    getStorage().setItem(key, valueToSet);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "write", storageKey: key, cause });
   }
@@ -135,7 +72,7 @@ export const setLocalStorageItem = <T, E>(
 
 export const removeLocalStorageItem = (key: string) => {
   try {
-    isomorphicLocalStorage.removeItem(key);
+    getStorage().removeItem(key);
   } catch (cause) {
     throw new LocalStorageOperationError({ operation: "remove", storageKey: key, cause });
   }
@@ -177,10 +114,7 @@ export function useLocalStorage<T, E>(
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       const handleStorageChange = (event: StorageEvent) => {
-        if (
-          (event.storageArea === null || event.storageArea === isomorphicLocalStorage) &&
-          (event.key === key || event.key === null)
-        ) {
+        if (event.key === key) {
           onStoreChange();
         }
       };

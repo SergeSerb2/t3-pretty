@@ -12,26 +12,15 @@ import {
   ListProjectionThreadsByProjectInput,
   ProjectionThread,
   ProjectionThreadRepository,
-  RecordProjectionThreadBranchHeadInput,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import {
-  ModelSelection,
-  SkillId,
-  ThreadAutomationRun,
-  ThreadLinkedPullRequest,
-  ThreadSceneryAssignment,
-  ThreadSubagentPolicy,
-} from "@t3tools/contracts";
+import { ModelSelection, ThreadLinkedPullRequest } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
-    scenery: Schema.NullOr(Schema.fromJsonString(ThreadSceneryAssignment)),
-    enabledSkillIds: Schema.fromJsonString(Schema.Array(SkillId)),
-    subagentPolicy: Schema.NullOr(Schema.fromJsonString(ThreadSubagentPolicy)),
-    automationRun: Schema.NullOr(Schema.fromJsonString(ThreadAutomationRun)),
+    branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -51,13 +40,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode,
           interaction_mode,
           branch,
-          branch_event_id,
-          branch_head_ref,
-          branch_head_repository,
-          branch_head_owner,
-          branch_head_is_cross_repository,
           worktree_path,
           linked_pull_request_json,
+          branch_pull_request_json,
           latest_turn_id,
           created_at,
           updated_at,
@@ -69,10 +54,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           snoozed_at,
           pinned_at,
           pin_order_key,
-          scenery_json,
-          enabled_skill_ids,
-          subagent_policy_json,
-          automation_run_json,
+          active_order_key,
           title_regeneration_request_id,
           title_regeneration_started_at,
           latest_user_message_at,
@@ -89,13 +71,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.runtimeMode},
           ${row.interactionMode},
           ${row.branch},
-          ${row.branchEventId ?? null},
-          ${row.branchHeadRef ?? null},
-          ${row.branchHeadRepository ?? null},
-          ${row.branchHeadOwner ?? null},
-          ${row.branchHeadIsCrossRepository ?? null},
           ${row.worktreePath},
           ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
+          ${row.branchPullRequest === undefined || row.branchPullRequest === null ? null : JSON.stringify(row.branchPullRequest)},
           ${row.latestTurnId},
           ${row.createdAt},
           ${row.updatedAt},
@@ -107,10 +85,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.snoozedAt},
           ${row.pinnedAt},
           ${row.pinOrderKey ?? null},
-          ${row.scenery == null ? null : JSON.stringify(row.scenery)},
-          ${JSON.stringify(row.enabledSkillIds)},
-          ${row.subagentPolicy == null ? null : JSON.stringify(row.subagentPolicy)},
-          ${row.automationRun == null ? null : JSON.stringify(row.automationRun)},
+          ${row.activeOrderKey ?? null},
           ${row.titleRegenerationRequestId ?? null},
           ${row.titleRegenerationStartedAt ?? null},
           ${row.latestUserMessageAt},
@@ -127,29 +102,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
-          branch_event_id = excluded.branch_event_id,
-          branch_head_ref = CASE
-            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
-              THEN projection_threads.branch_head_ref
-            ELSE excluded.branch_head_ref
-          END,
-          branch_head_repository = CASE
-            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
-              THEN projection_threads.branch_head_repository
-            ELSE excluded.branch_head_repository
-          END,
-          branch_head_owner = CASE
-            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
-              THEN projection_threads.branch_head_owner
-            ELSE excluded.branch_head_owner
-          END,
-          branch_head_is_cross_repository = CASE
-            WHEN projection_threads.branch_event_id IS excluded.branch_event_id
-              THEN projection_threads.branch_head_is_cross_repository
-            ELSE excluded.branch_head_is_cross_repository
-          END,
           worktree_path = excluded.worktree_path,
           linked_pull_request_json = excluded.linked_pull_request_json,
+          branch_pull_request_json = excluded.branch_pull_request_json,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -161,10 +116,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           snoozed_at = excluded.snoozed_at,
           pinned_at = excluded.pinned_at,
           pin_order_key = excluded.pin_order_key,
-          scenery_json = excluded.scenery_json,
-          enabled_skill_ids = excluded.enabled_skill_ids,
-          subagent_policy_json = excluded.subagent_policy_json,
-          automation_run_json = excluded.automation_run_json,
+          active_order_key = excluded.active_order_key,
           title_regeneration_request_id = excluded.title_regeneration_request_id,
           title_regeneration_started_at = excluded.title_regeneration_started_at,
           latest_user_message_at = excluded.latest_user_message_at,
@@ -188,13 +140,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
-          branch_event_id AS "branchEventId",
-          branch_head_ref AS "branchHeadRef",
-          branch_head_repository AS "branchHeadRepository",
-          branch_head_owner AS "branchHeadOwner",
-          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
           linked_pull_request_json AS "linkedPullRequest",
+          branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -206,10 +154,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
-          scenery_json AS "scenery",
-          enabled_skill_ids AS "enabledSkillIds",
-          subagent_policy_json AS "subagentPolicy",
-          automation_run_json AS "automationRun",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -235,13 +180,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
-          branch_event_id AS "branchEventId",
-          branch_head_ref AS "branchHeadRef",
-          branch_head_repository AS "branchHeadRepository",
-          branch_head_owner AS "branchHeadOwner",
-          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
           worktree_path AS "worktreePath",
           linked_pull_request_json AS "linkedPullRequest",
+          branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -253,10 +194,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
-          scenery_json AS "scenery",
-          enabled_skill_ids AS "enabledSkillIds",
-          subagent_policy_json AS "subagentPolicy",
-          automation_run_json AS "automationRun",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -270,74 +208,12 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       `,
   });
 
-  const listAllProjectionThreadRows = SqlSchema.findAll({
-    Request: Schema.Void,
-    Result: ProjectionThreadDbRow,
-    execute: () =>
-      sql`
-        SELECT
-          thread_id AS "threadId",
-          project_id AS "projectId",
-          title,
-          model_selection_json AS "modelSelection",
-          runtime_mode AS "runtimeMode",
-          interaction_mode AS "interactionMode",
-          branch,
-          branch_event_id AS "branchEventId",
-          branch_head_ref AS "branchHeadRef",
-          branch_head_repository AS "branchHeadRepository",
-          branch_head_owner AS "branchHeadOwner",
-          branch_head_is_cross_repository AS "branchHeadIsCrossRepository",
-          worktree_path AS "worktreePath",
-          linked_pull_request_json AS "linkedPullRequest",
-          latest_turn_id AS "latestTurnId",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt",
-          archived_at AS "archivedAt",
-          settled_override AS "settledOverride",
-          settled_at AS "settledAt",
-          unsettled_at AS "unsettledAt",
-          snoozed_until AS "snoozedUntil",
-          snoozed_at AS "snoozedAt",
-          pinned_at AS "pinnedAt",
-          pin_order_key AS "pinOrderKey",
-          scenery_json AS "scenery",
-          enabled_skill_ids AS "enabledSkillIds",
-          subagent_policy_json AS "subagentPolicy",
-          automation_run_json AS "automationRun",
-          title_regeneration_request_id AS "titleRegenerationRequestId",
-          title_regeneration_started_at AS "titleRegenerationStartedAt",
-          latest_user_message_at AS "latestUserMessageAt",
-          pending_approval_count AS "pendingApprovalCount",
-          pending_user_input_count AS "pendingUserInputCount",
-          has_actionable_proposed_plan AS "hasActionableProposedPlan",
-          deleted_at AS "deletedAt"
-        FROM projection_threads
-        ORDER BY created_at ASC, thread_id ASC
-      `,
-  });
-
   const deleteProjectionThreadRow = SqlSchema.void({
     Request: DeleteProjectionThreadInput,
     execute: ({ threadId }) =>
       sql`
         DELETE FROM projection_threads
         WHERE thread_id = ${threadId}
-      `,
-  });
-
-  const recordProjectionThreadBranchHead = SqlSchema.void({
-    Request: RecordProjectionThreadBranchHeadInput,
-    execute: (input) =>
-      sql`
-        UPDATE projection_threads
-        SET
-          branch_head_ref = ${input.headRef},
-          branch_head_repository = ${input.repositoryNameWithOwner},
-          branch_head_owner = ${input.ownerLogin},
-          branch_head_is_cross_repository = ${input.isCrossRepository ? 1 : 0}
-        WHERE thread_id = ${input.threadId}
-          AND branch_event_id = ${input.branchEventId}
       `,
   });
 
@@ -351,19 +227,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
     );
 
-  const listAll: ProjectionThreadRepositoryShape["listAll"] = () =>
-    listAllProjectionThreadRows().pipe(
-      Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listAll:query")),
-    );
-
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
-    );
-
-  const recordBranchHead: ProjectionThreadRepositoryShape["recordBranchHead"] = (input) =>
-    recordProjectionThreadBranchHead(input).pipe(
-      Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.recordBranchHead:query")),
     );
 
   const deleteById: ProjectionThreadRepositoryShape["deleteById"] = (input) =>
@@ -374,9 +240,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   return {
     upsert,
     getById,
-    listAll,
     listByProjectId,
-    recordBranchHead,
     deleteById,
   } satisfies ProjectionThreadRepositoryShape;
 });

@@ -8,7 +8,6 @@ import {
   type ServerSelfUpdateResult,
   WS_METHODS,
 } from "@t3tools/contracts";
-import { serverConfigDigest } from "@t3tools/shared/serverConfigDigest";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
@@ -27,11 +26,10 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
+  createEnvironmentQueryAtomFamily,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
-  createEnvironmentSubscriptionAtomFamily,
   createRuntimeCommand,
-  environmentRpcKey,
   scheduleAtomCommandEffect,
 } from "./runtime.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
@@ -43,10 +41,10 @@ import {
   request,
   runStream,
   subscribe,
-  subscribeDynamic,
   subscribeDynamicWithSession,
   type EnvironmentRpcInput,
 } from "../rpc/client.ts";
+import type { RpcSession } from "../rpc/session.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 import {
   applyServerConfigProjection,
@@ -361,6 +359,7 @@ const cachedConfigSnapshotEvent = (config: ServerConfig): ServerConfigStreamEven
 export interface ServerConfigSubscriptionOptions {
   readonly environmentThemes?: boolean;
   readonly usageLimitSources?: boolean;
+  readonly usageLimitsCommand?: boolean;
 }
 
 export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
@@ -425,45 +424,11 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       Effect.forkScoped,
     );
 
-    const subscriptionOptions = {
-      ...(subscription.environmentThemes === true ? { environmentThemes: true as const } : {}),
-      ...(subscription.usageLimitSources === true ? { usageLimitSources: true as const } : {}),
-    };
-
-    yield* subscribeDynamic(WS_METHODS.subscribeServerConfig, (session) =>
-      (
-        session.initialConfigSnapshot ??
-        session.initialConfig.pipe(
-          Effect.map((config) => ({ config, digest: serverConfigDigest(config) })),
-        )
-      ).pipe(
-        Effect.tap((snapshot) =>
-          Effect.gen(function* () {
-            const current = yield* SubscriptionRef.get(state);
-            const shouldPersist = Option.match(current, {
-              onNone: () => true,
-              onSome: (projection) => serverConfigDigest(projection.config) !== snapshot.digest,
-            });
-            const event = cachedConfigSnapshotEvent(snapshot.config);
-            const projection: ServerConfigProjection = {
-              config: snapshot.config,
-              latestEvent: event,
-              source: "live",
-            };
-            yield* SubscriptionRef.set(state, Option.some(projection));
-            if (shouldPersist) {
-              yield* Ref.set(pendingPersistence, Option.some(snapshot.config));
-              yield* Queue.offer(persistence, snapshot.config);
-            }
-          }),
-        ),
-        Effect.map((snapshot) => ({
-          ...subscriptionOptions,
-          knownConfigDigest: snapshot.digest,
-        })),
-        Effect.orElseSucceed(() => subscriptionOptions),
-      ),
-    ).pipe(
+    yield* subscribe(WS_METHODS.subscribeServerConfig, {
+      ...(subscription.environmentThemes === true ? { environmentThemes: true } : {}),
+      ...(subscription.usageLimitSources === true ? { usageLimitSources: true } : {}),
+      ...(subscription.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+    }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);
@@ -493,7 +458,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
   },
 );
 
-export function serverConfigStateChanges(
+function serverConfigStateChanges(
   environmentId: EnvironmentId,
   subscription: ServerConfigSubscriptionOptions,
 ) {
@@ -516,21 +481,119 @@ export function serverConfigStateChanges(
   );
 }
 
-export function projectServerWelcome(
-  current: Option.Option<ServerLifecycleWelcomePayload>,
+export function applyServerWelcomeEvent(
+  current: EnvironmentServerWelcomeState,
+  session: RpcSession,
   event: {
     readonly type: "welcome" | "ready";
     readonly payload: unknown;
   },
-): readonly [
-  Option.Option<ServerLifecycleWelcomePayload>,
-  ReadonlyArray<ServerLifecycleWelcomePayload>,
-] {
-  if (event.type !== "welcome") {
-    return [current, []];
-  }
-  const welcome = event.payload as ServerLifecycleWelcomePayload;
-  return [Option.some(welcome), [welcome]];
+): EnvironmentServerWelcomeState {
+  return event.type === "welcome" && current.currentSession === session
+    ? {
+        ...current,
+        welcomeSession: session,
+        welcome: event.payload as ServerLifecycleWelcomePayload,
+      }
+    : current;
+}
+
+export interface EnvironmentServerWelcomeState {
+  readonly currentSession: RpcSession | null;
+  readonly welcomeSession: RpcSession | null;
+  readonly welcome: ServerLifecycleWelcomePayload | null;
+}
+
+export function resolveServerWelcomeState(
+  state: EnvironmentServerWelcomeState,
+): ServerLifecycleWelcomePayload | null {
+  return state.currentSession === state.welcomeSession ? state.welcome : null;
+}
+
+export const makeEnvironmentServerWelcomeState = Effect.fn("EnvironmentServerWelcomeState.make")(
+  function* () {
+    const supervisor = yield* EnvironmentSupervisor;
+    const initialSession = Option.getOrNull(yield* SubscriptionRef.get(supervisor.session));
+    const state = yield* SubscriptionRef.make<EnvironmentServerWelcomeState>({
+      currentSession: initialSession,
+      welcomeSession: null,
+      welcome: null,
+    });
+
+    const updateWithCurrentSession = Effect.fn(
+      "EnvironmentServerWelcomeState.updateWithCurrentSession",
+    )(function* (
+      update: (
+        current: EnvironmentServerWelcomeState,
+        currentSession: RpcSession | null,
+      ) => EnvironmentServerWelcomeState,
+    ) {
+      return yield* SubscriptionRef.modifyEffect(state, (current) =>
+        SubscriptionRef.get(supervisor.session).pipe(
+          Effect.map(
+            (latestSession) =>
+              [undefined, update(current, Option.getOrNull(latestSession))] as const,
+          ),
+        ),
+      );
+    });
+
+    yield* SubscriptionRef.changes(supervisor.session).pipe(
+      Stream.runForEach(() =>
+        updateWithCurrentSession((current, currentSession) => ({
+          ...current,
+          currentSession,
+        })),
+      ),
+      Effect.forkScoped,
+    );
+
+    yield* subscribeDynamicWithSession(
+      WS_METHODS.subscribeServerLifecycle,
+      Effect.fn("EnvironmentServerWelcomeState.makeSubscribeInput")(function* (session) {
+        yield* updateWithCurrentSession((current, currentSession) =>
+          currentSession === session
+            ? {
+                ...current,
+                currentSession,
+                welcomeSession: session,
+                welcome: null,
+              }
+            : { ...current, currentSession },
+        );
+        return {};
+      }),
+    ).pipe(
+      Stream.runForEach(([session, event]) =>
+        updateWithCurrentSession((current, currentSession) =>
+          applyServerWelcomeEvent(
+            {
+              ...current,
+              currentSession,
+            },
+            session,
+            event,
+          ),
+        ),
+      ),
+      Effect.forkScoped,
+    );
+
+    return state;
+  },
+);
+
+function serverWelcomeStateChanges(environmentId: EnvironmentId) {
+  return followStreamInEnvironment(
+    environmentId,
+    Stream.unwrap(
+      makeEnvironmentServerWelcomeState().pipe(
+        Effect.map((state) =>
+          SubscriptionRef.changes(state).pipe(Stream.map(resolveServerWelcomeState)),
+        ),
+      ),
+    ),
+  );
 }
 
 export function resolveServerConfigValue(
@@ -561,6 +624,7 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly environmentThemes?: boolean;
     /** Whether this surface renders quota from configured usage-limit sources. */
     readonly usageLimitSources?: boolean;
+    readonly usageLimitsCommand?: boolean;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -576,6 +640,7 @@ export function createServerEnvironmentAtoms<R, E>(
         serverConfigStateChanges(environmentId, {
           ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
           ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+          ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
         }),
       )
       .pipe(
@@ -873,6 +938,27 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
     ),
   );
+  const welcomeStateFamily = Atom.family((environmentId: EnvironmentId) =>
+    runtime
+      .atom(serverWelcomeStateChanges(environmentId), { initialValue: null })
+      .pipe(
+        Atom.setIdleTTL(5 * 60_000),
+        Atom.withLabel(`environment-data:server:welcome-state:${environmentId}`),
+      ),
+  );
+  const welcomeFamily = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => {
+      const result = get(welcomeStateFamily(environmentId));
+      if (result._tag !== "Success") return result;
+      return result.value === null
+        ? AsyncResult.initial<ServerLifecycleWelcomePayload, never>(result.waiting)
+        : AsyncResult.success(result.value, result);
+    }).pipe(Atom.withLabel(`environment-data:server:welcome:${environmentId}`)),
+  );
+  const welcome = (target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: EnvironmentRpcInput<typeof WS_METHODS.subscribeServerLifecycle>;
+  }) => welcomeFamily(target.environmentId);
 
   return {
     configValueAtom,
@@ -889,7 +975,7 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.providerAuthStart,
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.instanceId]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
       },
     }),
     completeProviderAuth: createEnvironmentRpcCommand(runtime, {
@@ -933,6 +1019,13 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:process-diagnostics",
       tag: WS_METHODS.serverGetProcessDiagnostics,
     }),
+    hostResources: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:server:host-resources",
+      idleTtlMs: 0,
+      staleTimeMs: 5_000,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.serverGetHostResources>) =>
+        request(WS_METHODS.serverGetHostResources, input).pipe(Effect.timeout("5 seconds")),
+    }),
     processResourceHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,
@@ -955,43 +1048,29 @@ export function createServerEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => usagePricesAtom(environmentId),
     }),
-    storageInventory: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:server:storage-inventory",
-      tag: WS_METHODS.storageGetInventory,
-      staleTimeMs: 60_000,
-    }),
-    storageInventoryStream: createEnvironmentSubscriptionAtomFamily(runtime, {
-      label: "environment-data:server:storage-inventory-stream",
-      idleTtlMs: 60_000,
-      restartOnReconnect: true,
-      subscribe: () => runStream(WS_METHODS.storageStreamInventory, {}),
-    }),
     configProjection,
-    welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:server:welcome",
-      tag: WS_METHODS.subscribeServerLifecycle,
-      transform: (stream) =>
-        stream.pipe(
-          Stream.mapAccum(Option.none<ServerLifecycleWelcomePayload>, projectServerWelcome),
-        ),
-    }),
+    welcome,
     consumeResetCredit: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:consume-reset-credit",
       tag: WS_METHODS.providerConsumeResetCredit,
       concurrency: {
         mode: "singleFlight",
         // Both ids are free-form strings; a delimiter could collide.
-        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.instanceId]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
       },
     }),
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,
-      // A refresh requested mid-flight (e.g. several host skill toggles in a
-      // row) queues exactly one trailing pass so the last change is seen.
       concurrency: {
-        mode: "latest",
-        key: ({ environmentId }) => environmentId,
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([
+            environmentId,
+            input.instanceId ?? null,
+            input.cwd ?? null,
+            input.refreshModels ?? false,
+          ]),
       },
     }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
@@ -1019,44 +1098,6 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
-    // Apps (external services over remote MCP). Results land in
-    // `settings.apps` through the ordinary settings stream.
-    appsUpsert: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-upsert",
-      tag: WS_METHODS.appsUpsert,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    appsRemove: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-remove",
-      tag: WS_METHODS.appsRemove,
-      scheduler: configScheduler,
-      concurrency: configConcurrency,
-    }),
-    appsAuthorize: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-authorize",
-      tag: WS_METHODS.appsAuthorize,
-    }),
-    appsSetToken: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-set-token",
-      tag: WS_METHODS.appsSetToken,
-    }),
-    appsSetOAuthClient: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-set-oauth-client",
-      tag: WS_METHODS.appsSetOAuthClient,
-    }),
-    appsDisconnect: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-disconnect",
-      tag: WS_METHODS.appsDisconnect,
-    }),
-    appsTest: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:apps-test",
-      tag: WS_METHODS.appsTest,
-      concurrency: {
-        mode: "singleFlight",
-        key: ({ environmentId, input }) => `${environmentId}:${input.connectionId}`,
-      },
-    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
@@ -1075,14 +1116,6 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId }) => environmentId,
-      },
-    }),
-    removeOrphan: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:remove-orphan",
-      tag: WS_METHODS.storageRemoveOrphan,
-      concurrency: {
-        mode: "singleFlight",
-        key: environmentRpcKey,
       },
     }),
   };

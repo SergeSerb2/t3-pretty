@@ -3,15 +3,12 @@ import { BUILT_IN_THEME_IDS, BUILT_IN_THEMES } from "@t3tools/shared/themePalett
 import { readDefaultMobileThemeVariables } from "./mobileTheme.test-support";
 
 import {
-  BORING_MOBILE_THEME_ID,
   createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
   createMobileThemeVariables,
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemePreviewColors,
   getMobileThemeVariables,
-  isBoringMobileTheme,
-  MOBILE_THEME_IDS,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
   resolveMobileThemeIds,
@@ -61,14 +58,6 @@ describe("mobile themes", () => {
     );
   });
 
-  it("keeps the static stylesheet in lockstep with the default palette", () => {
-    for (const appearance of ["light", "dark"] as const) {
-      expect(readDefaultMobileThemeVariables(appearance)).toEqual(
-        getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, appearance),
-      );
-    }
-  });
-
   it("shares all built-in desktop palettes", () => {
     expect(BUILT_IN_THEMES.map((theme) => theme.id)).toEqual(BUILT_IN_THEME_IDS);
     for (const themeId of BUILT_IN_THEME_IDS) {
@@ -77,35 +66,12 @@ describe("mobile themes", () => {
     }
   });
 
-  it("uses the World Scenery palette as the default", () => {
-    expect(readDefaultMobileThemeVariables("light")["--color-screen"]).toBe("#f4f6f4");
-    expect(readDefaultMobileThemeVariables("dark")["--color-screen"]).toBe("#0e1110");
+  it("preserves the existing mobile palette as the default", () => {
+    expect(readDefaultMobileThemeVariables("light")["--color-screen"]).toBe("#f2f2f7");
+    expect(readDefaultMobileThemeVariables("dark")["--color-screen"]).toBe("#0a0a0a");
     expect(readDefaultMobileThemeVariables("light")["--color-user-bubble-skill-foreground"]).toBe(
-      "#27633f",
+      "#f0abfc",
     );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-screen"]).toBe(
-      "#f4f6f4",
-    );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-screen"]).toBe(
-      "#0e1110",
-    );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-primary"]).toBe(
-      "#27633f",
-    );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-primary"]).toBe(
-      "#98d2ac",
-    );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")["--color-user-bubble"]).toBe(
-      "#dfefe3",
-    );
-    expect(getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "dark")["--color-user-bubble"]).toBe(
-      "#2a4a36",
-    );
-    expect(
-      getMobileThemeVariables(DEFAULT_MOBILE_THEME_ID, "light")[
-        "--color-user-bubble-skill-foreground"
-      ],
-    ).toBe("#27633f");
   });
 
   it("applies palette overrides on top of the selected built-in theme", () => {
@@ -117,16 +83,11 @@ describe("mobile themes", () => {
     expect(variables["--color-screen"]).toMatch(/^#/);
   });
 
-  it("uses World Scenery preview colors for the default theme", () => {
+  it("uses the same preview roles and standard artwork as desktop", () => {
     expect(getMobileThemePreviewColors(DEFAULT_MOBILE_THEME_ID, "light")).toEqual({
-      canvas: "#f4f6f4",
-      accent: "#27633f",
-      messageAction: "#27633f",
-    });
-    expect(getMobileThemePreviewColors(DEFAULT_MOBILE_THEME_ID, "dark")).toEqual({
-      canvas: "#0e1110",
-      accent: "#98d2ac",
-      messageAction: "#98d2ac",
+      canvas: "#fcfcfc",
+      accent: "#f4f4f5",
+      messageAction: "#4f46e5",
     });
     const desktopOcean = BUILT_IN_THEMES.find((theme) => theme.id === "ocean")!;
     expect(getMobileThemePreviewColors("ocean", "light")).toEqual({
@@ -137,30 +98,23 @@ describe("mobile themes", () => {
   });
 
   it("normalizes persisted theme preferences", () => {
-    expect(normalizeMobileThemeId("ocean")).toBe(DEFAULT_MOBILE_THEME_ID);
+    expect(normalizeMobileThemeId("ocean")).toBe("ocean");
     expect(normalizeMobileThemeId("missing-theme")).toBe(DEFAULT_MOBILE_THEME_ID);
-    expect(normalizeMobileThemeId(BORING_MOBILE_THEME_ID)).toBe(BORING_MOBILE_THEME_ID);
     expect(normalizeMobileThemeMode("dark")).toBe("dark");
     expect(normalizeMobileThemeMode("sepia")).toBe("system");
   });
 
-  it("keeps Boring (T3 Chat) and migrates every other stored palette to World Scenery", () => {
-    expect(isBoringMobileTheme(BORING_MOBILE_THEME_ID)).toBe(true);
-    expect(isBoringMobileTheme(DEFAULT_MOBILE_THEME_ID)).toBe(false);
-    expect(resolveMobileThemeIds({ themeId: BORING_MOBILE_THEME_ID })).toEqual({
-      light: BORING_MOBILE_THEME_ID,
-      dark: BORING_MOBILE_THEME_ID,
-    });
+  it("migrates one theme choice to both appearances and preserves independent choices", () => {
     expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
-      light: DEFAULT_MOBILE_THEME_ID,
-      dark: DEFAULT_MOBILE_THEME_ID,
+      light: "grove",
+      dark: "grove",
     });
     expect(
       resolveMobileThemeIds({ themeId: "grove", lightThemeId: "iris", darkThemeId: "ocean" }),
-    ).toEqual({ light: DEFAULT_MOBILE_THEME_ID, dark: DEFAULT_MOBILE_THEME_ID });
+    ).toEqual({ light: "iris", dark: "ocean" });
     expect(resolveMobileThemeIds({ themeId: "grove", lightThemeId: "missing" })).toEqual({
       light: DEFAULT_MOBILE_THEME_ID,
-      dark: DEFAULT_MOBILE_THEME_ID,
+      dark: "grove",
     });
   });
 
@@ -199,9 +153,15 @@ describe("mobile themes", () => {
 
   it("maps semantic palette roles onto every mobile color variable", () => {
     const variables = createMobileThemeVariables(BUILT_IN_THEMES[0].colors, "light");
-    expect(Object.keys(variables)).toHaveLength(67);
+    expect(Object.keys(variables)).toHaveLength(68);
     expect(variables["--color-sheet-solid"]).toBe(
       themeColorToNativeColor(BUILT_IN_THEMES[0].colors.chrome),
+    );
+    expect(variables["--color-warning"]).toBe(
+      themeColorToNativeColor(BUILT_IN_THEMES[0].colors.warningSurface),
+    );
+    expect(variables["--color-warning-foreground"]).toBe(
+      themeColorToNativeColor(BUILT_IN_THEMES[0].colors.warningForeground),
     );
     expect(variables["--color-primary"]).not.toBe(variables["--color-screen"]);
     expect(variables["--color-primary-shadow"]).toBe("#000000");
@@ -229,7 +189,7 @@ describe("mobile themes", () => {
       }
     }
 
-    for (const themeId of MOBILE_THEME_IDS) {
+    for (const themeId of BUILT_IN_THEME_IDS) {
       for (const appearance of ["light", "dark"] as const) {
         const variables = getMobileThemeVariables(themeId, appearance);
         expect(

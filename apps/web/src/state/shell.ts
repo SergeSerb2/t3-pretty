@@ -4,10 +4,8 @@ import {
 } from "@t3tools/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
-  createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
-  createThreadLifecyclePendingValueAtom,
   type EnvironmentShellState,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentCatalogState } from "@t3tools/client-runtime/state/connections";
@@ -21,16 +19,7 @@ import { isHostedStaticApp } from "../hostedPairing";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
-export const threadLifecyclePendingAtom =
-  createThreadLifecyclePendingValueAtom(connectionAtomRuntime);
-export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(
-  environmentShell.stateAtom,
-  threadLifecyclePendingAtom,
-);
-export const environmentShellSummaryAtom = createEnvironmentShellSummaryAtom({
-  catalogValueAtom: environmentCatalog.catalogValueAtom,
-  shellStateValueAtom: environmentShell.stateValueAtom,
-});
+export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environmentShell.stateAtom);
 
 export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));

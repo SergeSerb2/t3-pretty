@@ -19,8 +19,6 @@
  */
 import type { OrchestrationThreadActivity } from "@t3tools/contracts";
 
-import { compareIsoDateTimes } from "./threadSort.ts";
-
 export type RuntimeSubagentStatus =
   | "pending"
   | "running"
@@ -142,36 +140,6 @@ function appendActivity(
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function isSameOrTruncatedText(value: string, candidate: string): boolean {
-  if (value === candidate) {
-    return true;
-  }
-  const truncatedPrefix = candidate.endsWith("...") ? candidate.slice(0, -3) : null;
-  return truncatedPrefix !== null && value.startsWith(truncatedPrefix);
-}
-
-/**
- * Older servers persisted a provider progress summary only in `detail`, but
- * current ingestion also uses `detail` for the task description when no
- * summary exists. Accept the compatibility field only when a known title
- * proves it is not that description; otherwise the tool heartbeat is the
- * only trustworthy live signal.
- */
-function legacyProgressSummary(
-  payload: Record<string, unknown>,
-  agent: MutableAgent,
-): string | undefined {
-  const detail = asString(payload.detail);
-  if (!detail) {
-    return undefined;
-  }
-  const titles = [asString(payload.title), agent.title === agent.id ? undefined : agent.title];
-  if (titles.some((title) => title && isSameOrTruncatedText(detail, title))) {
-    return undefined;
-  }
-  return detail;
 }
 
 function asCount(value: unknown): number | undefined {
@@ -555,10 +523,7 @@ export function foldSubagentActivities(
         ) {
           applyStatus(agent, "running", at);
         }
-        // Current servers preserve Claude's natural-language progress in
-        // `summary`; older/remotely skewed servers stored the same text in
-        // `detail`. Reject detail that merely mirrors the task description.
-        const summary = asString(payload.summary) ?? legacyProgressSummary(payload, agent);
+        const summary = asString(payload.summary);
         if (summary) {
           agent.progress = bounded(summary);
           agent.recentActivity = appendActivity(agent.recentActivity, at, summary);
@@ -667,28 +632,19 @@ export function foldSubagentActivities(
     }
   }
 
-  const membersByParent = new Map<string, MutableAgent[]>();
-  for (const member of agents.values()) {
-    if (member.parentAgentId === null) continue;
-    const siblings = membersByParent.get(member.parentAgentId);
-    if (siblings) {
-      siblings.push(member);
-    } else {
-      membersByParent.set(member.parentAgentId, [member]);
-    }
-  }
-
   // Consistency pass: when a workflow coordinator has settled, members that
   // never received their own terminal row cannot still be in-flight — the
   // run is over. Cascade the coordinator's outcome so stalled member rows
   // don't read as working forever (live-test finding: statuses drifted
-  // whenever member terminal rows were lost or never emitted). The one-time
-  // index avoids rescanning every agent for every settled workflow.
+  // whenever member terminal rows were lost or never emitted).
   for (const agent of agents.values()) {
     if (agent.kind !== "workflow" || !isTerminalSubagentStatus(agent.status)) {
       continue;
     }
-    for (const member of membersByParent.get(agent.id) ?? []) {
+    for (const member of agents.values()) {
+      if (member.parentAgentId !== agent.id) {
+        continue;
+      }
       if (isTerminalSubagentStatus(member.status) || member.status === "idle") {
         continue;
       }
@@ -717,7 +673,7 @@ export function foldSubagentActivities(
       isActiveSubagentStatus(agent.status) ? 0 : agent.status === "idle" ? 1 : 2;
     roster = roster
       .slice()
-      .sort((a, b) => rank(a) - rank(b) || compareIsoDateTimes(b.updatedAt, a.updatedAt))
+      .sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, ROSTER_LIMIT);
   }
 
@@ -788,7 +744,7 @@ export function deriveAgentPanelModel({
   const workflows = source
     .filter((agent) => agent.kind === "workflow")
     .slice()
-    .sort((a, b) => compareIsoDateTimes(a.firstSeenAt, b.firstSeenAt) || a.id.localeCompare(b.id));
+    .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id));
   const workflowIds = new Set(workflows.map((workflow) => workflow.id));
   const members = new Map<string, RuntimeSubagent[]>();
   const direct: RuntimeSubagent[] = [];
@@ -894,9 +850,7 @@ export function deriveAgentPanelModel({
     // that remain visible.
     directAgents: direct
       .slice()
-      .sort(
-        (a, b) => compareIsoDateTimes(a.firstSeenAt, b.firstSeenAt) || a.id.localeCompare(b.id),
-      ),
+      .sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt) || a.id.localeCompare(b.id)),
     runningCount,
     waitingCount,
     idleCount,
@@ -905,61 +859,6 @@ export function deriveAgentPanelModel({
     hasAgents: true,
     liveCount: runningCount + waitingCount,
   };
-}
-
-/**
- * Members ordered by urgency for the capped inline workflow card: running and
- * failed first, then waiting, then most recently updated.
- */
-export function workflowCardMembers(
-  group: AgentPanelWorkflowGroup,
-  limit: number,
-): { readonly visible: ReadonlyArray<RuntimeSubagent>; readonly overflow: number } {
-  const all = [...group.phases.flatMap((phase) => phase.members), ...group.unphasedMembers];
-  const urgency = (agent: RuntimeSubagent): number => {
-    if (agent.status === "failed") return 0;
-    if (agent.status === "running") return 1;
-    if (agent.status === "waiting") return 2;
-    return 3;
-  };
-  const ordered = all
-    .slice()
-    .sort((a, b) => urgency(a) - urgency(b) || compareIsoDateTimes(b.updatedAt, a.updatedAt));
-  return {
-    visible: ordered.slice(0, limit),
-    overflow: Math.max(0, ordered.length - limit),
-  };
-}
-
-/** Kinds the timeline should not render as generic rows (fold input only). */
-export function isSubagentActivityKind(kind: string): boolean {
-  return (
-    kind === "task.started" ||
-    kind === "task.progress" ||
-    kind === "task.updated" ||
-    kind === "task.completed" ||
-    kind === "tool.progress"
-  );
-}
-
-/**
- * Quiet-timeline guarantee: tool rows attributed to an owning agent belong in
- * the Agents surface, not the parent chat. Unattributed rows must stay.
- */
-export function isAgentAttributedToolActivity(activity: OrchestrationThreadActivity): boolean {
-  if (typeof activity.payload !== "object" || activity.payload === null) {
-    return false;
-  }
-  const payload = activity.payload as Record<string, unknown>;
-  return typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
-}
-
-/** Timeline-bypassing synthesized rows (Codex children, workflow members). */
-export function isTimelineBypassActivity(activity: OrchestrationThreadActivity): boolean {
-  if (typeof activity.payload !== "object" || activity.payload === null) {
-    return false;
-  }
-  return (activity.payload as Record<string, unknown>).timelineBypass === true;
 }
 
 /**

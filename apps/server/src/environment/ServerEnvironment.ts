@@ -14,17 +14,13 @@ import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { readTextWithinLimit } from "../boundedFileRead.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import { resolveDictationAvailability } from "../dictation/availability.ts";
 import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
-
-const ENVIRONMENT_ID_FILE_MAX_BYTES = 1024;
 
 export class ServerEnvironmentIdPersistenceError extends Schema.TaggedErrorClass<ServerEnvironmentIdPersistenceError>()(
   "ServerEnvironmentIdPersistenceError",
@@ -103,11 +99,7 @@ const makeIdentity = Effect.gen(function* () {
       return null;
     }
 
-    const raw = yield* readTextWithinLimit(
-      fileSystem,
-      serverConfig.environmentIdPath,
-      ENVIRONMENT_ID_FILE_MAX_BYTES,
-    ).pipe(
+    const raw = yield* fileSystem.readFileString(serverConfig.environmentIdPath).pipe(
       Effect.map((value) => value.trim()),
       Effect.mapError(
         (cause) =>
@@ -222,27 +214,22 @@ export const make = Effect.gen(function* () {
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
-      serverConfigHttp: true,
       attachmentUploads: true,
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       threadSettlement: true,
       threadAutoSettlement: true,
+      threadRestartContinuation: true,
       threadSnooze: true,
       environmentThemes: true,
       usageLimitSources: true,
       usagePriceOverrides: true,
       threadPinning: true,
       threadPinReorder: true,
-      threadScenery: true,
+      threadActiveReorder: true,
       threadTitleRegeneration: true,
-      providerHandoff: true,
-      storageInventory: true,
-      storageInventoryStream: true,
       threadPullRequestLinking: true,
-      projectTransfer: true,
       environmentIcon: true,
-      automations: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? {
@@ -262,13 +249,7 @@ export const make = Effect.gen(function* () {
     getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
       Effect.map((agentActivityPublishing) => ({
         ...descriptor,
-        capabilities: {
-          ...descriptor.capabilities,
-          ...(resolveDictationAvailability().available
-            ? { voiceDictation: true, readAloud: true }
-            : {}),
-          agentActivityPublishing,
-        },
+        capabilities: { ...descriptor.capabilities, agentActivityPublishing },
       })),
     ),
   });

@@ -1,4 +1,3 @@
-import { skillMentionToken } from "@t3tools/shared/skillTool";
 import { LexicalComposer, type InitialConfigType } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -84,8 +83,6 @@ import {
 } from "./composerInlineChip";
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
-import { getComposerAppMention, useComposerAppMention } from "./chat/composerAppMentions";
-import { AppIcon } from "./apps/AppIcon";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
 import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -120,6 +117,7 @@ const BACKTICK_SURROUND_CLOSE_SYMBOL = SURROUND_SYMBOLS_MAP.get("`") ?? null;
 type SerializedComposerMentionNode = Spread<
   {
     path: string;
+    source?: string;
     type: "composer-mention";
     version: 1;
   },
@@ -154,7 +152,6 @@ const ComposerTerminalContextActionsContext = createContext<{
 
 function ComposerMentionDecorator(props: { path: string }) {
   const theme = resolvedThemeFromDocument();
-  const app = useComposerAppMention(props.path.toLowerCase());
   const chip = (
     <span
       className={FILE_TAG_CHIP_CLASS_NAME}
@@ -162,20 +159,7 @@ function ComposerMentionDecorator(props: { path: string }) {
       spellCheck={false}
       data-composer-mention-chip="true"
     >
-      {app ? (
-        <>
-          <AppIcon
-            name={app.name}
-            color={app.color}
-            iconDomain={app.iconDomain}
-            size={12}
-            className="opacity-85"
-          />
-          <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{app.name}</span>
-        </>
-      ) : (
-        <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
-      )}
+      <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
     </span>
   );
 
@@ -183,7 +167,7 @@ function ComposerMentionDecorator(props: { path: string }) {
     <Tooltip>
       <TooltipTrigger render={chip} />
       <TooltipPopup side="top" className="max-w-120 whitespace-normal leading-tight wrap-anywhere">
-        {app ? `App · @${app.slug}` : props.path}
+        {props.path}
       </TooltipPopup>
     </Tooltip>
   );
@@ -191,28 +175,33 @@ function ComposerMentionDecorator(props: { path: string }) {
 
 class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   __path: string;
+  __source: string;
 
   static override getType(): string {
     return "composer-mention";
   }
 
   static override clone(node: ComposerMentionNode): ComposerMentionNode {
-    return new ComposerMentionNode(node.__path, node.__key);
+    return new ComposerMentionNode(node.__path, node.__source, node.__key);
   }
 
   static override importJSON(serializedNode: SerializedComposerMentionNode): ComposerMentionNode {
-    return $createComposerMentionNode(serializedNode.path).updateFromJSON(serializedNode);
+    return $createComposerMentionNode(serializedNode.path, serializedNode.source).updateFromJSON(
+      serializedNode,
+    );
   }
 
-  constructor(path: string, key?: NodeKey) {
+  constructor(path: string, source = serializeComposerFileLink(path), key?: NodeKey) {
     super(key);
     this.__path = path;
+    this.__source = source;
   }
 
   override exportJSON(): SerializedComposerMentionNode {
     return {
       ...super.exportJSON(),
       path: this.__path,
+      source: this.__source,
       type: "composer-mention",
       version: 1,
     };
@@ -229,12 +218,7 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 
   override getTextContent(): string {
-    // App mentions stay bare `@slug` text: that is the token the server
-    // resolves against connected apps. Only paths fold into markdown links.
-    if (getComposerAppMention(this.__path.toLowerCase())) {
-      return `@${this.__path}`;
-    }
-    return serializeComposerFileLink(this.__path);
+    return this.__source;
   }
 
   override isInline(): true {
@@ -246,8 +230,8 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 }
 
-function $createComposerMentionNode(path: string): ComposerMentionNode {
-  return $applyNodeReplacement(new ComposerMentionNode(path));
+function $createComposerMentionNode(path: string, source?: string): ComposerMentionNode {
+  return $applyNodeReplacement(new ComposerMentionNode(path, source));
 }
 
 function resolveSkillDescription(
@@ -269,18 +253,15 @@ type ComposerSkillMetadata = {
 function skillMetadataByName(
   skills: ReadonlyArray<ServerProviderSkill>,
 ): ReadonlyMap<string, ComposerSkillMetadata> {
-  const metadata = new Map<string, ComposerSkillMetadata>();
-  for (const skill of skills) {
-    const entry = {
-      label: formatProviderSkillDisplayName(skill),
-      description: resolveSkillDescription(skill),
-    };
-    // The composer inserts the folded token for names outside the mention
-    // grammar; both spellings must decorate.
-    metadata.set(skill.name, entry);
-    metadata.set(skillMentionToken(skill.name), entry);
-  }
-  return metadata;
+  return new Map(
+    skills.map((skill) => [
+      skill.name,
+      {
+        label: formatProviderSkillDisplayName(skill),
+        description: resolveSkillDescription(skill),
+      },
+    ]),
+  );
 }
 
 function ComposerSkillDecorator(props: { skillLabel: string; skillDescription: string | null }) {
@@ -876,7 +857,7 @@ function $setComposerEditorPrompt(
       continue;
     }
     if (segment.type === "mention") {
-      paragraph.append($createComposerMentionNode(segment.path));
+      paragraph.append($createComposerMentionNode(segment.path, segment.source));
       continue;
     }
     if (segment.type === "skill") {
@@ -921,6 +902,13 @@ export interface ComposerPromptEditorHandle {
     expandedCursor: number;
     terminalContextIds: string[];
   };
+  /**
+   * True when a collapsed caret sits on the first ("start") or last ("end")
+   * visual line, counting soft wraps. Prompt history only claims ArrowUp and
+   * ArrowDown at these edges so arrows still move the caret inside multiline
+   * text.
+   */
+  isCaretOnVisualEdge: (edge: "start" | "end") => boolean;
 }
 
 interface ComposerPromptEditorProps {
@@ -952,6 +940,66 @@ interface ComposerPromptEditorProps {
   onCitationSubmitAndSend?: () => void;
   onPaste: React.ClipboardEventHandler<HTMLElement>;
   editorRef: React.RefObject<ComposerPromptEditorHandle | null>;
+}
+
+/**
+ * Client rect of the line the collapsed caret is on, as seen from `edge`.
+ * A caret at a soft-wrap boundary belongs to two visual lines and the
+ * range reports a rect for each, so take the one farthest from the edge
+ * under test: an ambiguous caret then never claims the key and the arrow
+ * moves the caret as usual. A collapsed range reports zero-height rects at
+ * some positions, so probe the adjacent character on the same side. When
+ * the range container is the paragraph itself (an empty line, or a caret
+ * beside an inline chip) measure the child next to the caret before
+ * falling back to the paragraph.
+ */
+function caretLineRect(range: Range, edge: "start" | "end"): DOMRect | null {
+  const collapsedRects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);
+  const collapsedRect = edge === "start" ? collapsedRects.at(-1) : collapsedRects[0];
+  if (collapsedRect) return collapsedRect;
+
+  const container = range.startContainer;
+  if (container.nodeType === Node.TEXT_NODE) {
+    const textNode = container as Text;
+    if (textNode.data.length === 0) return null;
+    const probeStart = Math.max(
+      0,
+      Math.min(
+        edge === "start" ? range.startOffset : range.startOffset - 1,
+        textNode.data.length - 1,
+      ),
+    );
+    const probeRange = document.createRange();
+    probeRange.setStart(textNode, probeStart);
+    probeRange.setEnd(textNode, probeStart + 1);
+    const probeRect = Array.from(probeRange.getClientRects()).find((rect) => rect.height > 0);
+    if (probeRect) return probeRect;
+    const boundingRect = probeRange.getBoundingClientRect();
+    return boundingRect.height > 0 ? boundingRect : null;
+  }
+
+  if (!(container instanceof HTMLElement)) return null;
+  // The caret sits between the paragraph's children, which is where Lexical
+  // puts it next to an inline chip. Measure the neighbouring child.
+  const neighbour =
+    container.childNodes[Math.max(0, range.startOffset - 1)] ??
+    container.childNodes[range.startOffset];
+  if (neighbour instanceof HTMLElement) {
+    const neighbourRect = neighbour.getBoundingClientRect();
+    if (neighbourRect.height > 0) return neighbourRect;
+  } else if (neighbour instanceof Text && neighbour.data.length > 0) {
+    // Probe the character on the caret's side. A soft-wrapped text node's
+    // first rect is its first visual line, which may not be the caret's.
+    const isBeforeCaret = neighbour === container.childNodes[range.startOffset - 1];
+    const probeStart = isBeforeCaret ? neighbour.data.length - 1 : 0;
+    const probeRange = document.createRange();
+    probeRange.setStart(neighbour, probeStart);
+    probeRange.setEnd(neighbour, probeStart + 1);
+    const probeRect = Array.from(probeRange.getClientRects()).find((rect) => rect.height > 0);
+    if (probeRect) return probeRect;
+  }
+  const containerRect = container.getBoundingClientRect();
+  return containerRect.height > 0 ? containerRect : null;
 }
 
 function ComposerCommandKeyPlugin(props: {
@@ -1824,6 +1872,36 @@ function ComposerPromptEditorInner({
         if (target) setOpenCitationComment(target);
       },
       readSnapshot,
+      isCaretOnVisualEdge: (edge) => {
+        const snapshot = readSnapshot();
+        if (snapshot.value.length === 0) return true;
+        const beforeCaret = snapshot.value.slice(0, snapshot.expandedCursor);
+        const afterCaret = snapshot.value.slice(snapshot.expandedCursor);
+        if (edge === "start" ? beforeCaret.includes("\n") : afterCaret.includes("\n")) {
+          return false;
+        }
+        const rootElement = editor.getRootElement();
+        const selection = window.getSelection();
+        if (
+          !rootElement ||
+          !selection ||
+          !selection.isCollapsed ||
+          selection.rangeCount === 0 ||
+          !selection.anchorNode ||
+          !rootElement.contains(selection.anchorNode)
+        ) {
+          return false;
+        }
+        const caretRect = caretLineRect(selection.getRangeAt(0), edge);
+        if (!caretRect) return false;
+        const edgeElement =
+          edge === "start" ? rootElement.firstElementChild : rootElement.lastElementChild;
+        const edgeRect = (edgeElement ?? rootElement).getBoundingClientRect();
+        const threshold = caretRect.height / 2;
+        return edge === "start"
+          ? caretRect.top - edgeRect.top < threshold
+          : edgeRect.bottom - caretRect.bottom < threshold;
+      },
     }),
     [editor, focusAt, readSnapshot],
   );

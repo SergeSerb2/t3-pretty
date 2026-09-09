@@ -1,46 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  detectComposerTrigger,
-  serializeComposerFileLink,
-  serializeComposerMentionPath,
-} from "./composerTrigger.ts";
-
-describe("detectComposerTrigger", () => {
-  it("bounds trigger scanning at the path-search query contract", () => {
-    const accepted = `@${"a".repeat(256)}`;
-    expect(detectComposerTrigger(accepted, accepted.length)).toMatchObject({
-      kind: "path",
-      query: "a".repeat(256),
-    });
-
-    const rejected = `@${"a".repeat(257)}`;
-    expect(detectComposerTrigger(rejected, rejected.length)).toBeNull();
-    expect(detectComposerTrigger(`/${"a".repeat(257)}`, 258)).toBeNull();
-
-    const model = `/model ${"a".repeat(256)}`;
-    expect(detectComposerTrigger(model, model.length)).toMatchObject({
-      kind: "slash-model",
-      query: "a".repeat(256),
-    });
-    const longModel = `/model ${"a".repeat(257)}`;
-    expect(detectComposerTrigger(longModel, longModel.length)).toBeNull();
-  });
-});
-
-describe("serializeComposerMentionPath", () => {
-  it("keeps simple mention paths unquoted", () => {
-    expect(serializeComposerMentionPath("src/index.ts")).toBe("src/index.ts");
-  });
-
-  it("quotes mention paths containing whitespace", () => {
-    expect(serializeComposerMentionPath("docs/My File.md")).toBe('"docs/My File.md"');
-  });
-
-  it("escapes quoted mention path content", () => {
-    expect(serializeComposerMentionPath('docs/My "File".md')).toBe('"docs/My \\"File\\".md"');
-  });
-});
+import { serializeComposerFileLink } from "./composerTrigger.ts";
 
 describe("serializeComposerFileLink", () => {
   it("uses the basename as the markdown label", () => {
@@ -65,9 +25,5 @@ describe("serializeComposerFileLink", () => {
     expect(serializeComposerFileLink("@scope/package.json")).toBe(
       "[package.json](@scope/package.json)",
     );
-  });
-
-  it("replaces malformed UTF-16 instead of throwing during URL encoding", () => {
-    expect(serializeComposerFileLink("docs/\uD800.md")).toBe("[�.md](docs/%EF%BF%BD.md)");
   });
 });

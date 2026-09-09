@@ -1,6 +1,4 @@
 export {
-  activeThreadAnchorTimestampMs,
-  compareIsoDateTimes,
   getLatestThreadForProject,
   getThreadSortTimestamp,
   resolveSettledThreadTimestamp,

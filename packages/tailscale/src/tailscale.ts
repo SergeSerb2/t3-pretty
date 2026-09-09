@@ -9,10 +9,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 export const TAILSCALE_STATUS_TIMEOUT = Duration.millis(1_500);
-export const TAILSCALE_SERVE_TIMEOUT = Duration.seconds(10);
-export const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
-const TAILSCALE_STATUS_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
-const TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES = 64 * 1024;
+const TAILSCALE_SERVE_TIMEOUT = Duration.seconds(10);
+const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
 
 // tailscale is a real executable everywhere (`tailscale.exe` on Windows), so
 // it is always spawned directly rather than through cmd.exe shell mode.
@@ -49,7 +47,7 @@ const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
 ];
 
 /** Classifies stderr into a safe label, dropping the text itself. */
-export const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
+const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
   if (stderr.trim().length === 0) {
     return undefined;
   }
@@ -68,7 +66,7 @@ export class TailscaleCommandSpawnError extends Schema.TaggedErrorClass<Tailscal
   }
 }
 
-export class TailscaleCommandOutputError extends Schema.TaggedErrorClass<TailscaleCommandOutputError>()(
+class TailscaleCommandOutputError extends Schema.TaggedErrorClass<TailscaleCommandOutputError>()(
   "TailscaleCommandOutputError",
   {
     ...TailscaleCommandContext,
@@ -139,7 +137,6 @@ const TailscaleStatusJson = Schema.Struct({
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
-export type TailscaleStatusSelf = typeof TailscaleStatusSelf.Type;
 export type TailscaleStatusJson = typeof TailscaleStatusJson.Type;
 
 export interface TailscaleStatus {
@@ -147,47 +144,16 @@ export interface TailscaleStatus {
   readonly tailnetIpv4Addresses: readonly string[];
 }
 
-interface CollectedTailscaleOutput {
-  readonly text: string;
-  readonly bytesSeen: number;
-  readonly truncated: boolean;
-}
-
-const collectBoundedOutput = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  maxBytes: number,
-): Effect.Effect<CollectedTailscaleOutput, E> =>
+const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
   stream.pipe(
+    Stream.decodeText(),
     Stream.runFold(
-      () => ({ chunks: [] as Uint8Array[], retainedBytes: 0, bytesSeen: 0 }),
-      (state, chunk) => {
-        const remainingBytes = maxBytes - state.retainedBytes;
-        if (remainingBytes > 0) {
-          state.chunks.push(
-            chunk.byteLength > remainingBytes ? chunk.slice(0, remainingBytes) : chunk,
-          );
-        }
-        return {
-          chunks: state.chunks,
-          retainedBytes: Math.min(maxBytes, state.retainedBytes + chunk.byteLength),
-          bytesSeen: state.bytesSeen + chunk.byteLength,
-        };
-      },
+      () => "",
+      (acc, chunk) => acc + chunk,
     ),
-    Effect.map((state) => {
-      const retained = new Uint8Array(state.retainedBytes);
-      let offset = 0;
-      for (const chunk of state.chunks) {
-        retained.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return {
-        text: new TextDecoder("utf-8").decode(retained),
-        bytesSeen: state.bytesSeen,
-        truncated: state.bytesSeen > state.retainedBytes,
-      };
-    }),
   );
+
+const collectStderr = collectStdout;
 
 const decodeTailscaleStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleStatusJson));
 
@@ -272,8 +238,8 @@ export const readTailscaleStatus = Effect.gen(function* () {
     );
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
-        collectBoundedOutput(child.stdout, TAILSCALE_STATUS_OUTPUT_MAX_BYTES),
-        collectBoundedOutput(child.stderr, TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES),
+        collectStdout(child.stdout),
+        collectStderr(child.stderr),
         child.exitCode.pipe(Effect.map(Number)),
       ],
       { concurrency: "unbounded" },
@@ -284,20 +250,14 @@ export const readTailscaleStatus = Effect.gen(function* () {
       return yield* new TailscaleCommandExitError({
         ...commandContext,
         exitCode,
-        stdoutLength: stdout.bytesSeen,
-        stderrLength: stderr.bytesSeen,
-        ...(stderrDiagnosticOf(stderr.text) !== undefined
-          ? { stderrDiagnostic: stderrDiagnosticOf(stderr.text) }
+        stdoutLength: stdout.length,
+        stderrLength: stderr.length,
+        ...(stderrDiagnosticOf(stderr) !== undefined
+          ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
           : {}),
       });
     }
-    if (stdout.truncated) {
-      return yield* new TailscaleCommandOutputError({
-        ...commandContext,
-        cause: new Error("tailscale status output exceeded its byte limit"),
-      });
-    }
-    return yield* parseTailscaleStatus(stdout.text);
+    return yield* parseTailscaleStatus(stdout);
   }).pipe(
     Effect.scoped,
     Effect.timeout(TAILSCALE_STATUS_TIMEOUT),
@@ -348,12 +308,8 @@ const runTailscaleCommand = (
           Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),
         ),
       );
-      const [stderr, , exitCode] = yield* Effect.all(
-        [
-          collectBoundedOutput(child.stderr, TAILSCALE_DIAGNOSTIC_OUTPUT_MAX_BYTES),
-          Stream.runDrain(child.stdout),
-          child.exitCode.pipe(Effect.map(Number)),
-        ],
+      const [stderr, exitCode] = yield* Effect.all(
+        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
         { concurrency: "unbounded" },
       ).pipe(
         Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
@@ -362,9 +318,9 @@ const runTailscaleCommand = (
         return yield* new TailscaleCommandExitError({
           ...commandContext,
           exitCode,
-          stderrLength: stderr.bytesSeen,
-          ...(stderrDiagnosticOf(stderr.text) !== undefined
-            ? { stderrDiagnostic: stderrDiagnosticOf(stderr.text) }
+          stderrLength: stderr.length,
+          ...(stderrDiagnosticOf(stderr) !== undefined
+            ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
             : {}),
         });
       }

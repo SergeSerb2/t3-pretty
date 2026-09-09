@@ -1,9 +1,9 @@
 import {
-  type AppsSettings,
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
   type ModelSelection,
+  type ProjectId,
   type ProviderDriverKind,
   type ServerProvider,
   ServerSettings,
@@ -23,6 +23,27 @@ import {
 
 const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownOption(ServerSettingsJson);
+
+export function resolveProjectAgentBrowserAccess(
+  settings: Pick<ServerSettings, "enableAgentBrowserAccess" | "projectAgentBrowserAccessOverrides">,
+  projectId: ProjectId,
+): boolean {
+  return (
+    settings.projectAgentBrowserAccessOverrides[projectId] ?? settings.enableAgentBrowserAccess
+  );
+}
+
+export function resolveProjectAutoPull(
+  settings: Pick<ServerSettings, "defaultAutoPull" | "projectAutoPullOverrides">,
+  projectId: ProjectId,
+  legacyAutoPull: boolean | undefined,
+): boolean {
+  // Existing opt-ins stay enabled until explicitly overridden or reset.
+  return (
+    settings.projectAutoPullOverrides[projectId] ??
+    (legacyAutoPull === true || settings.defaultAutoPull)
+  );
+}
 
 type LegacyProviderSettings = ServerSettings["providers"][keyof ServerSettings["providers"]];
 
@@ -70,14 +91,14 @@ export interface PersistedServerObservabilitySettings {
   readonly otlpMetricsUrl: string | undefined;
 }
 
-export function normalizePersistedServerSettingString(
+function normalizePersistedServerSettingString(
   value: string | null | undefined,
 ): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function extractPersistedServerObservabilitySettings(input: {
+function extractPersistedServerObservabilitySettings(input: {
   readonly observability?: {
     readonly otlpTracesUrl?: string;
     readonly otlpMetricsUrl?: string;
@@ -123,15 +144,6 @@ function mergeModelSelectionOptionsById(input: {
   return [...merged.entries()].map(([id, value]) => ({ id, value }));
 }
 
-/**
- * `apps` is server-written only (see `ServerSettings.apps`), so it rides a
- * wider patch type the wire schema never accepts. Whole-value replacement:
- * the server always writes the full map it wants.
- */
-export type ServerSettingsInternalPatch = ServerSettingsPatch & {
-  readonly apps?: AppsSettings;
-};
-
 /** Upsert each patched entry; `null` removes it. Entries the patch omits are untouched. */
 function mergeSettingsEntries<Value>(
   current: Readonly<Record<string, Value>>,
@@ -150,7 +162,7 @@ function mergeSettingsEntries<Value>(
 
 export function applyServerSettingsPatch(
   current: ServerSettings,
-  patch: ServerSettingsInternalPatch,
+  patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
   const {
@@ -158,11 +170,11 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
-    apps,
-    providers: providersPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
+    projectAgentBrowserAccessOverrides: projectAgentBrowserAccessOverridesPatch,
+    projectAutoPullOverrides: projectAutoPullOverridesPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -200,77 +212,7 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
-  const providersPatchForMerge = (() => {
-    if (providersPatch === undefined) return undefined;
-    const { codex, claudeAgent, cursor, grok, ...otherProviders } = providersPatch;
-    const codexForMerge = (() => {
-      if (codex === undefined) return undefined;
-      const { customModels, ...codexWithoutCustomModels } = codex;
-      return {
-        ...codexWithoutCustomModels,
-        ...(customModels === undefined
-          ? {}
-          : {
-              customModels: customModels.map((model) =>
-                typeof model === "string" ? model : model.slug,
-              ),
-            }),
-      };
-    })();
-    const claudeAgentForMerge = (() => {
-      if (claudeAgent === undefined) return undefined;
-      const { customModels, ...claudeAgentWithoutCustomModels } = claudeAgent;
-      return {
-        ...claudeAgentWithoutCustomModels,
-        ...(customModels === undefined
-          ? {}
-          : {
-              customModels: customModels.map((model) =>
-                typeof model === "string" ? model : model.slug,
-              ),
-            }),
-      };
-    })();
-    const cursorForMerge = (() => {
-      if (cursor === undefined) return undefined;
-      const { customModels, ...cursorWithoutCustomModels } = cursor;
-      return {
-        ...cursorWithoutCustomModels,
-        ...(customModels === undefined
-          ? {}
-          : {
-              customModels: customModels.map((model) =>
-                typeof model === "string" ? model : model.slug,
-              ),
-            }),
-      };
-    })();
-    const grokForMerge = (() => {
-      if (grok === undefined) return undefined;
-      const { customModels, ...grokWithoutCustomModels } = grok;
-      return {
-        ...grokWithoutCustomModels,
-        ...(customModels === undefined
-          ? {}
-          : {
-              customModels: customModels.map((model) =>
-                typeof model === "string" ? model : model.slug,
-              ),
-            }),
-      };
-    })();
-    return {
-      ...otherProviders,
-      ...(codexForMerge === undefined ? {} : { codex: codexForMerge }),
-      ...(claudeAgentForMerge === undefined ? {} : { claudeAgent: claudeAgentForMerge }),
-      ...(cursorForMerge === undefined ? {} : { cursor: cursorForMerge }),
-      ...(grokForMerge === undefined ? {} : { grok: grokForMerge }),
-    };
-  })();
-  const next = deepMerge(current, {
-    ...patchForMerge,
-    ...(providersPatchForMerge === undefined ? {} : { providers: providersPatchForMerge }),
-  });
+  const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
     ...(backgroundActivity !== undefined
@@ -289,7 +231,36 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
-    ...(apps !== undefined ? { apps } : {}),
+    ...(projectAgentBrowserAccessOverridesPatch !== undefined
+      ? {
+          projectAgentBrowserAccessOverrides: mergeSettingsEntries(
+            current.projectAgentBrowserAccessOverrides,
+            projectAgentBrowserAccessOverridesPatch,
+          ),
+        }
+      : {}),
+    ...(projectAutoPullOverridesPatch !== undefined
+      ? {
+          projectAutoPullOverrides: mergeSettingsEntries(
+            current.projectAutoPullOverrides,
+            projectAutoPullOverridesPatch,
+          ),
+        }
+      : {}),
+    ...(patch.defaultModelSelection !== undefined
+      ? { defaultModelSelection: patch.defaultModelSelection }
+      : {}),
+    ...(patch.defaultProjectScripts !== undefined
+      ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(patch.projectScriptOverrides !== undefined
+      ? {
+          projectScriptOverrides: {
+            ...current.projectScriptOverrides,
+            ...patch.projectScriptOverrides,
+          },
+        }
+      : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {
           usageLimitSources: mergeSettingsEntries(
