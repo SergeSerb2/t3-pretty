@@ -629,9 +629,60 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
+  .add(
+    HttpApiEndpoint.get("status", "/api/dictation/status", {
+      headers: OptionalBearerHeaders,
+      success: DictationStatusResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("transcribe", "/api/dictation/transcribe", {
+      headers: OptionalBearerHeaders,
+      payload: DictationTranscriptionRequest,
+      success: DictationTranscriptionResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("cleanup", "/api/dictation/cleanup", {
+      headers: OptionalBearerHeaders,
+      payload: DictationCleanupRequest,
+      success: DictationCleanupResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
+export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").add(
+  HttpApiEndpoint.post("synthesize", "/api/read-aloud/synthesize", {
+    headers: OptionalBearerHeaders,
+    payload: ReadAloudRequest,
+    success: ReadAloudResult,
+    error: [
+      ReadAloudUnavailableError,
+      ReadAloudUpstreamError,
+      EnvironmentScopeRequiredError,
+      EnvironmentInternalError,
+    ],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
-  .add(EnvironmentConnectHttpApi) {}
+  .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentDictationHttpApi)
+  .add(EnvironmentReadAloudHttpApi) {}
