@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
+  EnvironmentAutomation,
+  ScopedAutomationRef,
+} from "@t3tools/client-runtime/state/automations";
+import type {
   EnvironmentProject,
   EnvironmentThread,
   EnvironmentThreadShell,
@@ -18,6 +22,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { automationEnvironment } from "./automations";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
 import {
@@ -29,6 +34,9 @@ import { environmentThreadDetails, environmentThreadShells } from "./threads";
 const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 const EMPTY_CHECKPOINTS: ReadonlyArray<OrchestrationCheckpointSummary> = Object.freeze([]);
 
+const EMPTY_AUTOMATION_ATOM = Atom.make<EnvironmentAutomation | null>(null).pipe(
+  Atom.withLabel("web-automation:empty"),
+);
 const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
   Atom.withLabel("web-project:empty"),
 );
@@ -103,6 +111,12 @@ export function useThreadShellsForProjectRefs(
 
 export function useProject(ref: ScopedProjectRef | null): EnvironmentProject | null {
   return useAtomValue(ref === null ? EMPTY_PROJECT_ATOM : environmentProjects.projectAtom(ref));
+}
+
+export function useAutomationShell(ref: ScopedAutomationRef | null): EnvironmentAutomation | null {
+  return useAtomValue(
+    ref === null ? EMPTY_AUTOMATION_ATOM : automationEnvironment.automationShellAtom(ref),
+  );
 }
 
 export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadShell | null {
