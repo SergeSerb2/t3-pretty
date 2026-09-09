@@ -8,6 +8,10 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+export const COMPOSER_TRIGGER_QUERY_MAX_LENGTH = 256;
+export const COMPOSER_TRIGGER_TOKEN_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + 1;
+export const COMPOSER_SLASH_LINE_MAX_LENGTH = COMPOSER_TRIGGER_QUERY_MAX_LENGTH + "/model ".length;
+
 function composerFileLinkBasename(path: string): string {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;

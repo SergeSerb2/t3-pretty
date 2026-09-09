@@ -5,6 +5,14 @@ import { HostPowerSnapshot } from "./background.ts";
 import { DesktopUpdateStateSchema } from "./ipc.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
+export const RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT = 256;
+export const RESOURCE_MONITOR_PROCESS_MAX_COUNT = 20_000;
+export const RESOURCE_MONITOR_HISTORY_CHUNK_MAX_SNAPSHOTS = 32;
+export const RESOURCE_MONITOR_PROCESS_NAME_MAX_LENGTH = 1_024;
+export const RESOURCE_MONITOR_PROCESS_COMMAND_MAX_LENGTH = 16 * 1_024;
+export const RESOURCE_MONITOR_PROCESS_STATUS_MAX_LENGTH = 1_024;
+export const RESOURCE_MONITOR_ERROR_CODE_MAX_LENGTH = 256;
+export const RESOURCE_MONITOR_ERROR_MESSAGE_MAX_LENGTH = 2_048;
 
 /** Whole-host capacity, independent of T3's process diagnostics. */
 export const HostResourcesSnapshot = Schema.Struct({
@@ -62,6 +70,9 @@ export type ResourceMonitorExternalProcess = typeof ResourceMonitorExternalProce
 const ResourceMonitorExternalProcesses = Schema.Array(ResourceMonitorExternalProcess).check(
   Schema.isMaxLength(RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT),
 );
+
+export const ResourceMonitorRequestId = TrimmedNonEmptyString;
+export type ResourceMonitorRequestId = typeof ResourceMonitorRequestId.Type;
 
 export const ResourceMonitorCapabilities = Schema.Struct({
   cumulativeCpuTime: Schema.Boolean,

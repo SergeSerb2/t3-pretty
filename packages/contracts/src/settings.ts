@@ -42,6 +42,32 @@ import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy
 
 // ── Client Settings (local-only) ───────────────────────────────
 
+export const CLIENT_SETTINGS_LIST_MAX_LENGTH = 128;
+export const CLIENT_SETTINGS_VALUE_MAX_LENGTH = 4_096;
+
+const ClientSettingsValue = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(CLIENT_SETTINGS_VALUE_MAX_LENGTH),
+);
+
+const ClientSettingsFavorite = Schema.Struct({
+  provider: ProviderInstanceId,
+  model: ClientSettingsValue,
+});
+const ClientSettingsFavorites = Schema.Array(ClientSettingsFavorite).check(
+  Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH),
+);
+const ClientSettingsFavoriteSkillIds = Schema.Array(
+  SkillId.check(Schema.isMaxLength(CLIENT_SETTINGS_VALUE_MAX_LENGTH)),
+).check(Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH));
+const ClientSettingsProviderModelPreferences = Schema.Record(
+  ProviderInstanceId,
+  ClientSettingsValue,
+);
+const ClientSettingsProjectGroupingOverrides = Schema.Record(ProjectId, Schema.String);
+const DismissedProviderUpdateNotificationKeys = Schema.Array(ClientSettingsValue).check(
+  Schema.isMaxLength(CLIENT_SETTINGS_LIST_MAX_LENGTH),
+);
+
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
 const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
@@ -169,22 +195,6 @@ const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
-
-export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
-export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
-const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
-
-const LegacyConfirmQuit = Schema.Boolean.pipe(
-  Schema.decodeTo(
-    QuitConfirmationMode,
-    SchemaTransformation.transform({
-      decode: (confirmQuit): QuitConfirmationMode => (confirmQuit ? "hold" : "direct"),
-      encode: (mode) => mode === "hold",
-    }),
-  ),
-);
-
-const QuitConfirmationModeSetting = Schema.Union([QuitConfirmationMode, LegacyConfirmQuit]);
 
 /**
  * A user-chosen font family (a single name or a comma-separated list). Empty

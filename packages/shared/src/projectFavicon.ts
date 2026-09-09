@@ -1,6 +1,10 @@
 import { isWorkspaceImagePreviewPath } from "./filePreview.ts";
 
 export const PROJECT_FAVICON_FALLBACK_MARKER = "project-favicon-missing";
+export const MANAGED_PROJECT_FAVICON_PREFIX = ".t3-project-icon/";
+export const MANAGED_PROJECT_FAVICON_REVISION_LENGTH = 12;
+export const MANAGED_PROJECT_FAVICON_REVISION_RE = /^[a-f0-9]{12}$/;
+export const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 256;
 
 export function getProjectFaviconResourceKey(
   environmentId: string,

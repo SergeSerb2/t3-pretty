@@ -1633,23 +1633,6 @@ const ThreadPullRequestSyncCommand = Schema.Struct({
   linkedPullRequest: Schema.optional(ThreadLinkedPullRequest),
 });
 
-const ThreadPullRequestSyncCommand = Schema.Struct({
-  type: Schema.Literal("thread.pull-request.sync"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  projectId: ProjectId,
-  snapshotSequence: NonNegativeInt,
-  expected: Schema.Struct({
-    workspaceRoot: TrimmedNonEmptyString,
-    branch: Schema.NullOr(TrimmedNonEmptyString),
-    worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-    linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
-    branchPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
-  }),
-  branchPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
-  linkedPullRequest: Schema.optional(ThreadLinkedPullRequest),
-});
-
 const InternalOrchestrationCommand = Schema.Union([
   AutomationRunStartedCommand,
   AutomationRunFinishedCommand,

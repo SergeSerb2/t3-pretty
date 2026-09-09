@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ENTITY_ID_MAX_LENGTH,
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import { PROJECT_PATH_MAX_LENGTH } from "./project.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 /**

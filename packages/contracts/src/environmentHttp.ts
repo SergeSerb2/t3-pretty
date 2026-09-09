@@ -658,10 +658,7 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
 
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
-  .add(EnvironmentServerHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
-  .add(EnvironmentDictationHttpApi)
-  .add(EnvironmentReadAloudHttpApi)
   .add(EnvironmentConnectHttpApi) {}
