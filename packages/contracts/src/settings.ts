@@ -32,7 +32,9 @@ import {
   type ProviderDriverKind,
 } from "./providerInstance.ts";
 import { SkillId, SkillsSettings } from "./skills.ts";
-import { SubagentPolicySettings } from "./subagentPolicy.ts";
+import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
+import { AppsSettings } from "./apps.ts";
+import { AutomationsSettings } from "./automations.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -902,6 +904,7 @@ export const ServerSettings = Schema.Struct({
   projectAgentBrowserAccessOverrides: Schema.Record(ProjectId, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  enableComputerUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1009,6 +1012,8 @@ export const ServerSettings = Schema.Struct({
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  apps: AppsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  automations: AutomationsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
   // this build cannot decode round-trip untouched, as provider instances do.
   usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
@@ -1221,6 +1226,14 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
+  skills: Schema.optionalKey(SkillsSettings),
+  subagentPolicy: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      children: Schema.optionalKey(SubagentPolicyChildren),
+    }),
+  ),
+  enableComputerUse: Schema.optionalKey(Schema.Boolean),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
@@ -1288,6 +1301,7 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  favoriteSkillIds: Schema.optionalKey(Schema.Array(SkillId)),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,

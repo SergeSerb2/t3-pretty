@@ -684,3 +684,10 @@ export const AutomationsValidateScheduleResult = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 export type AutomationsValidateScheduleResult = typeof AutomationsValidateScheduleResult.Type;
+
+// ── Settings ─────────────────────────────────────────────────────────
+
+export const AutomationsSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type AutomationsSettings = typeof AutomationsSettings.Type;
