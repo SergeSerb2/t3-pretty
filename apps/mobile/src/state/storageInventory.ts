@@ -71,16 +71,13 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       continue;
     }
     // Storage inventory APIs are not available in mobile environment
-    const inventory = null;
-    const isPending = false;
-    const error = "Storage inventory not available in mobile";
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,
-      isPending,
-      unsupported: false,
-      error,
-      inventory,
+      isPending: false,
+      unsupported: true,
+      error: null,
+      inventory: null,
     });
   }
   return statuses;

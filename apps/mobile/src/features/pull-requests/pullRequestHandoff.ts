@@ -8,6 +8,8 @@ import {
 } from "../../state/use-composer-drafts";
 import { handoffPrompt } from "./pullRequestDetail.logic";
 
+const lastHandoffPromptByDraft = new Map<string, string>();
+
 export function newTaskComposerDraftKey(
   environmentId: EnvironmentId,
   projectId: ProjectId,
@@ -41,10 +43,11 @@ export function writePullRequestHandoffDraft(input: {
   const prompt = handoffPrompt(
     {
       prompt: existing.text,
-      lastHandoffPrompt: undefined,
+      lastHandoffPrompt: lastHandoffPromptByDraft.get(draftKey),
     },
     input.prompt,
   );
   setComposerDraftText(draftKey, prompt);
+  lastHandoffPromptByDraft.set(draftKey, input.prompt);
   return draftKey;
 }

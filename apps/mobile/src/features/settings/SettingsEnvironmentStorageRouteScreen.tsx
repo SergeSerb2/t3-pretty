@@ -47,8 +47,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
-  // removeOrphan is not available in mobile environment
-  const removeOrphan = null;
   const [isOperating, setIsOperating] = useState(false);
   const operatingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -219,7 +217,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
         }
       }
     },
-    [deleteThread, removeOrphan, reportFailure, unlinkAndMaybeDelete],
+    [deleteThread, reportFailure, unlinkAndMaybeDelete],
   );
 
   const refreshing = environments.some(
