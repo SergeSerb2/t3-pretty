@@ -269,7 +269,7 @@ export const liveGitHubReleasesClient = Layer.effect(
             });
 
             // Fail the Effect on non-OK responses (rate limit, 5xx, 404, etc.)
-            // Errors are caught below and converted to null
+            // Errors are caught below and converted to undefined
             if (!response.ok) {
               return yield* Effect.fail(
                 new Error(`GitHub releases API returned ${response.status} ${response.statusText}`),
@@ -1099,7 +1099,9 @@ export const make = Effect.gen(function* () {
       // Distinguish fetch failure (undefined) from success-with-no-nightly (null) vs success-with-tag (string)
       const isNightlyVersion = isNightlyTag(environment.appVersion);
       const latestNightlyTag: string | null | undefined = isNightlyVersion
-        ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
+        ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          )
         : null;
 
       // Log warning if fetch failed (undefined indicates error was caught)

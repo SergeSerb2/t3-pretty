@@ -1,5 +1,4 @@
-import { assert, describe, it } from "@effect/vitest";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, describe, it, vi, afterEach } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -13,17 +12,17 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
-import * as DesktopConfig from "../app/DesktopConfig.ts";
-import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
-import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("GitHubReleasesClient service is properly initialized (Effect 4 Context.Service)", () => {
     // Regression test for Mac Nightly crash: ensure the service tag is a real function,
     // not (void 0) from using removed Effect v3 Context.GenericTag API.
@@ -38,25 +37,20 @@ describe("DesktopUpdates", () => {
       // must use Effect.catch with proper error parameter. This test verifies that 
       // liveGitHubReleasesClient's Effect.catch properly recovers from fetch failures
       // (network errors, timeouts, API errors) and returns undefined.
-      const originalFetch = globalThis.fetch;
       
       // Mock fetch to simulate a network failure
-      globalThis.fetch = async () => {
+      vi.stubGlobal('fetch', async () => {
         throw new Error("Network timeout");
-      };
+      });
 
-      try {
-        // Use the production liveGitHubReleasesClient layer to test its catch block
-        const client = yield* DesktopUpdates.GitHubReleasesClient;
-        
-        // Call should not throw - Effect.catch should recover the error and return undefined
-        const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
-        
-        // Verify the catch block converted the error to undefined
-        assert.strictEqual(result, undefined);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      // Use the production liveGitHubReleasesClient layer to test its catch block
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+      
+      // Call should not throw - Effect.catch should recover the error and return undefined
+      const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
+      
+      // Verify the catch block converted the error to undefined
+      assert.strictEqual(result, undefined);
     }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient)),
   );
 
@@ -1110,10 +1104,8 @@ describe("DesktopUpdates", () => {
     // liveGitHubReleasesClient so production code can access GitHubReleasesClient
     // without "Service not found". Uses a mocked fetch to avoid real API calls.
     return Effect.gen(function* () {
-      const originalFetch = globalThis.fetch;
-      
       // Mock fetch to return a successful response with a nightly release
-      globalThis.fetch = async (_input: string | URL | Request) => {
+      vi.stubGlobal('fetch', async (_input: string | URL | Request) => {
         return {
           ok: true,
           status: 200,
@@ -1125,28 +1117,23 @@ describe("DesktopUpdates", () => {
             },
           ],
         } as Response;
-      };
+      });
 
-      try {
-        // Access GitHubReleasesClient through liveGitHubReleasesClient layer
-        const client = yield* DesktopUpdates.GitHubReleasesClient;
-        assert.isNotNull(client);
-        assert.isFunction(client.fetchLatestNightlyTag);
-        
-        // Verify the method returns a string with the mocked nightly tag
-        const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
-        assert.strictEqual(result, "v0.0.39-nightly.20260907.1332");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      // Access GitHubReleasesClient through liveGitHubReleasesClient layer
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+      assert.isNotNull(client);
+      assert.isFunction(client.fetchLatestNightlyTag);
+      
+      // Verify the method returns a string with the mocked nightly tag
+      const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
+      assert.strictEqual(result, "v0.0.39-nightly.20260907.1332");
     }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient));
   });
 
   it.effect("liveLayer wires DesktopUpdates with liveGitHubReleasesClient (configure path)", () =>
     Effect.gen(function* () {
       // Test that liveLayer (which uses liveGitHubReleasesClient) works with mocked fetch
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (_input: string | URL | Request) => {
+      vi.stubGlobal('fetch', async (_input: string | URL | Request) => {
         return {
           ok: true,
           status: 200,
@@ -1158,32 +1145,28 @@ describe("DesktopUpdates", () => {
             },
           ],
         } as Response;
-      };
+      });
 
-      try {
-        // Use harness to get all dependencies except DesktopUpdates itself
-        const harness = makeHarness();
-        
-        // Provide all harness dependencies to liveLayer
-        const testLayer = DesktopUpdates.liveLayer.pipe(
-          Layer.provide(harness.layer),
-        );
+      // Use harness to get all dependencies except DesktopUpdates itself
+      const harness = makeHarness();
+      
+      // Provide all harness dependencies to liveLayer
+      const testLayer = DesktopUpdates.liveLayer.pipe(
+        Layer.provide(harness.layer),
+      );
 
-        yield* Effect.scoped(
-          Effect.gen(function* () {
-            const updates = yield* DesktopUpdates.DesktopUpdates;
-            
-            // Exercise configure which uses liveGitHubReleasesClient
-            yield* updates.configure;
-            
-            const state = yield* updates.getState;
-            assert.isNotNull(state);
-            // State can be 'idle' or 'disabled' depending on config, but should not throw
-          }),
-        ).pipe(Effect.provide(Layer.mergeAll(testLayer, TestClock.layer())));
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          
+          // Exercise configure which uses liveGitHubReleasesClient
+          yield* updates.configure;
+          
+          const state = yield* updates.getState;
+          assert.isNotNull(state);
+          // State can be 'idle' or 'disabled' depending on config, but should not throw
+        }),
+      ).pipe(Effect.provide(Layer.mergeAll(testLayer, TestClock.layer())));
     }),
   );
 });
