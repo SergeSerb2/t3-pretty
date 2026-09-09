@@ -409,6 +409,8 @@ function resolveRuntimeState(input: {
     networkInterfaces: input.networkInterfaces,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
+  // resolveLanAdvertisedHost already falls back to Tailscale IP when no LAN exists,
+  // so endpointUrl will be non-null if any usable IP is available.
   const unavailable =
     input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
   const exposure = unavailable

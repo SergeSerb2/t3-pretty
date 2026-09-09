@@ -4,12 +4,12 @@ import { decodeRelease, fetchLatestRelease } from "./releases.ts";
 
 const release = {
   tag_name: "v1.2.3",
-  html_url: "https://github.com/pingdotgg/t3code/releases/tag/v1.2.3",
+  html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v1.2.3",
   assets: [
     {
       name: "T3-Code.dmg",
       browser_download_url:
-        "https://github.com/pingdotgg/t3code/releases/download/v1.2.3/T3-Code.dmg",
+        "https://github.com/SergeSerb2/t3-pretty/releases/download/v1.2.3/T3-Code.dmg",
     },
   ],
 };
@@ -65,7 +65,9 @@ describe("fetchLatestRelease", () => {
     );
 
     await expect(fetchLatestRelease()).resolves.toEqual(release);
-    expect(JSON.parse(store.getItem("t3code-latest-release") ?? "")).toMatchObject({ release });
+    const cached = JSON.parse(store.getItem("t3code-latest-release") ?? "");
+    expect(cached).toMatchObject({ release });
+    expect(cached.release.html_url).toContain("SergeSerb2/t3-pretty");
   });
 
   it("rejects unsuccessful and oversized responses when no stale release exists", async () => {

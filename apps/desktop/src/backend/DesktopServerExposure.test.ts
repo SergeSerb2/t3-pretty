@@ -157,6 +157,7 @@ describe("DesktopServerExposure", () => {
         const state = yield* serverExposure.configureFromSettings({ port: 4173 });
         assert.equal(state.mode, "local-only");
         assert.equal(state.endpointUrl, null);
+        assert.equal(state.advertisedHost, null);
         assert.equal((yield* settings.get).serverExposureMode, "network-accessible");
 
         const backendConfig = yield* serverExposure.backendConfig;
