@@ -14,9 +14,11 @@ import {
   type PreviewAnnotationPayload,
   RuntimeMode,
   type ServerProvider,
+  SkillId,
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  ThreadSubagentPolicy,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -390,6 +392,13 @@ export interface ComposerThreadDraftState {
   modelSelectionExplicit?: boolean;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
+  /**
+   * Per-thread skill picks for a draft session, sent as
+   * `bootstrap.createThread.enabledSkillIds` on the first turn. Absent means
+   * "no per-thread picks" — global settings-enabled skills never land here.
+   */
+  enabledSkillIds?: ReadonlyArray<SkillId> | undefined;
+  subagentPolicy?: ThreadSubagentPolicy | undefined;
 }
 
 /**
