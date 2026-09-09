@@ -1107,7 +1107,8 @@ function startAnnotation(): void {
   };
 
   const removeTargetAtPoint = (x: number, y: number): boolean => {
-    for (const target of Array.from(selected.values()).toReversed()) {
+    // Array.prototype.toReversed is not available in Electron's preload V8 runtime; use reverse() on a copy.
+    for (const target of Array.from(selected.values()).reverse()) {
       const rect = target.element.getBoundingClientRect();
       if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
         removeSelected(target);

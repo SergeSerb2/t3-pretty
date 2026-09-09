@@ -117,7 +117,8 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
     items.push(truncateReleaseNoteItem(item));
     if (items.length > MAX_RELEASE_NOTE_ITEMS_PER_GROUP) items.shift();
   }
-  return { items: items.toReversed(), totalItems };
+  // Array.prototype.toReversed is not available in Electron's V8 runtime; use slice().reverse() instead.
+  return { items: items.slice().reverse(), totalItems };
 }
 
 interface NormalizedDesktopUpdateReleaseNotes {

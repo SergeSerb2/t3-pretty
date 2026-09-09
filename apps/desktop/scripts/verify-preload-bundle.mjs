@@ -118,7 +118,7 @@ export const verifyPreloadBundle = (source) => {
   const sandboxModules = createSandboxModules(exposedGlobals);
   const unsupportedImports = [...new Set(runtimeImports)]
     .filter((moduleName) => !sandboxModules.has(moduleName))
-    .toSorted();
+    .sort();
 
   if (unsupportedImports.length > 0) {
     throw new Error(
