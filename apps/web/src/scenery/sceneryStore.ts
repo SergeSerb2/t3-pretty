@@ -183,7 +183,7 @@ export function photoFromAssignment(assignment: ThreadSceneryAssignment): Scener
 }
 
 /** The inverse: what a client sends to bind its picked photo to the thread. */
-export function photoToAssignmentPayload(photo: SceneryPhoto): ThreadSceneryPhoto {
+export function photoToAssignmentPayload(photo: SceneryPhoto) {
   return {
     photoId: photo.id,
     name: photo.name,
@@ -194,6 +194,7 @@ export function photoToAssignmentPayload(photo: SceneryPhoto): ThreadSceneryPhot
     downloadLocationURL: photo.downloadLocationURL,
     photographerName: photo.photographerName,
     photographerProfileURL: photo.photographerProfileURL,
+    assignedAt: new Date().toISOString(),
   };
 }
 
