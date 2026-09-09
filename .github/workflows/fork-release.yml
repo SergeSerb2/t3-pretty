@@ -49,7 +49,7 @@ concurrency:
 jobs:
   preflight:
     name: Resolve T3 Pretty release
-    if: github.repository != 'SergeSerb2/t3-pretty'
+    if: github.repository == 'SergeSerb2/t3-pretty'
     continue-on-error: true
     permissions:
       contents: read
