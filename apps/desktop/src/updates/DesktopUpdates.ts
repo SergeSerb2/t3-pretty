@@ -230,15 +230,35 @@ function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYm
 }
 
 // Injectable capability for fetching the latest nightly tag from GitHub
-export interface GitHubReleasesClient {
-  readonly fetchLatestNightlyTag: (repo: {
-    readonly owner: string;
-    readonly name: string;
-  }) => Effect.Effect<string | null>;
+export class GitHubReleasesClient extends Context.Service<
+  GitHubReleasesClient,
+  {
+    readonly fetchLatestNightlyTag: (repo: {
+      readonly owner: string;
+      readonly name: string;
+    }) => Effect.Effect<string | null>;
+  }
+>()("@t3tools/desktop/updates/DesktopUpdates/GitHubReleasesClient") {}
+
+// Error types for GitHub releases client
+export class GitHubReleasesFetchError extends Schema.TaggedErrorClass<GitHubReleasesFetchError>()(
+  "GitHubReleasesFetchError",
+  {
+    message: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to fetch GitHub releases: ${this.cause}`;
+  }
 }
 
-export const GitHubReleasesClient = Context.GenericTag<GitHubReleasesClient>(
-  "@t3tools/desktop/GitHubReleasesClient",
+// Failing implementation: returns null, used as default when no live client is provided
+export const failingGitHubReleasesClient = Layer.succeed(
+  GitHubReleasesClient,
+  GitHubReleasesClient.of({
+    fetchLatestNightlyTag: () => Effect.succeed(null),
+  }),
 );
 
 // Production implementation: fetch from GitHub API with pagination
@@ -248,9 +268,8 @@ export const liveGitHubReleasesClient = Layer.succeed(
     fetchLatestNightlyTag: (repo) =>
         Effect.gen(function* () {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-          try {
+          const fetchReleases = Effect.gen(function* () {
             // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
             const allReleases: unknown[] = [];
             for (let page = 1; page <= 3; page++) {
@@ -268,17 +287,20 @@ export const liveGitHubReleasesClient = Layer.succeed(
               );
 
               // Fail the Effect on non-OK responses (rate limit, 5xx, 404, etc.)
-              // so Either catches it and latestNightlyTag becomes undefined → keeps /latest
               if (!response.ok) {
-                return yield* Effect.fail(
-                  new Error(`GitHub releases API returned ${response.status} ${response.statusText}`),
-                );
+                return yield* new GitHubReleasesFetchError({
+                  message: `GitHub releases API returned ${response.status} ${response.statusText}`,
+                  cause: `HTTP ${response.status}`,
+                });
               }
 
               // Keep abort signal through JSON parse
               const releases: unknown = yield* Effect.promise(() => response.json());
               if (!Array.isArray(releases)) {
-                return yield* Effect.fail(new Error("GitHub releases response was not an array"));
+                return yield* new GitHubReleasesFetchError({
+                  message: "GitHub releases response was not an array",
+                  cause: "Invalid response format",
+                });
               }
               if (releases.length === 0) break; // No more pages
 
@@ -315,10 +337,22 @@ export const liveGitHubReleasesClient = Layer.succeed(
               return Date.parse(b.published_at) - Date.parse(a.published_at);
             });
 
-            return candidates[0].tag_name;
-          } finally {
-            clearTimeout(timeoutId);
-          }
+            const latest = candidates[0];
+            return latest?.tag_name ?? null;
+          }).pipe(
+            Effect.timeout(Duration.seconds(10)),
+            Effect.catchTag("TimeoutError", () =>
+              new GitHubReleasesFetchError({
+                message: "GitHub releases fetch timed out",
+                cause: "Timeout",
+              }),
+            ),
+          );
+
+          return yield* fetchReleases.pipe(
+            Effect.ensuring(Effect.sync(() => controller.abort())),
+            Effect.orElseSucceed(() => null),
+          );
         }),
   }),
 );
@@ -448,6 +482,12 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const githubReleasesClient = yield* GitHubReleasesClient;
+
+  // Helper to fetch latest nightly tag, capturing the client instance
+  const fetchLatestNightlyTag = (
+    repo: { readonly owner: string; readonly name: string },
+  ): Effect.Effect<string | null> => githubReleasesClient.fetchLatestNightlyTag(repo);
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const latestNightlyTagRef = yield* Ref.make<string | null | undefined>(undefined);
@@ -1085,19 +1125,9 @@ export const make = Effect.gen(function* () {
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
       // For nightly channel, fetch the latest nightly tag from GitHub to enable moving feed
-      // Distinguish fetch failure (undefined) from success-with-no-nightly (null) vs success-with-tag (string)
       const isNightlyVersion = isNightlyTag(environment.appVersion);
-      const latestNightlyTag: string | null | undefined = isNightlyVersion
-        ? yield* Effect.andThen(GitHubReleasesClient, (client) =>
-            client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
-          ).pipe(
-            Effect.catchAll(() =>
-              // Fetch failed (HTTP error, timeout, parse error) - log and return undefined
-              logUpdaterWarning(
-                "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-              ).pipe(Effect.as(undefined)),
-            ),
-          )
+      const latestNightlyTag: string | null = isNightlyVersion
+        ? yield* fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
         : null;
 
       // Store latestNightlyTag for use in download path
@@ -1239,8 +1269,12 @@ export const make = Effect.gen(function* () {
   });
 });
 
-// Base layer that requires GitHubReleasesClient to be provided by the caller
-export const layer = Layer.effect(DesktopUpdates, make);
+// Base layer with failing GitHubReleasesClient (configure will handle fetch failures gracefully)
+export const layer = Layer.effect(DesktopUpdates, make).pipe(
+  Layer.provide(failingGitHubReleasesClient),
+);
 
 // Production layer with live GitHub client
-export const liveLayer = layer.pipe(Layer.provide(liveGitHubReleasesClient));
+export const liveLayer = Layer.effect(DesktopUpdates, make).pipe(
+  Layer.provide(liveGitHubReleasesClient),
+);
