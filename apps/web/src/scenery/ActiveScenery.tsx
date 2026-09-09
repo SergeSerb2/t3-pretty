@@ -18,7 +18,6 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { getMediaQueryEntry } from "../hooks/useMediaQuery";
 import { environmentCatalog } from "../connection/catalog";
-import { readEnvironmentSupportsScenery } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentThreadShells, threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
