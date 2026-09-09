@@ -135,6 +135,7 @@ export function PreviewView({
   );
   const addPreviewAnnotation = useComposerDraftStore((store) => store.addPreviewAnnotation);
   const addImage = useComposerDraftStore((store) => store.addImage);
+  const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const environmentHostname = environmentHttpBaseUrl
     ? new URL(environmentHttpBaseUrl).hostname
@@ -664,13 +665,18 @@ export function PreviewView({
               } satisfies ComposerImageAttachment)
             : null;
         if (image) {
-          if (!addImage(threadRef, image)) {
+          const draft = getComposerDraft(threadRef);
+          const attachmentCount =
+            (draft?.images.length ?? 0) + (draft?.files.length ?? 0);
+          if (attachmentCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
             image = null;
             toastManager.add({
               type: "warning",
               title: "Annotation attached without screenshot",
               description: `A message can carry ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images. Remove one to attach this screenshot.`,
             });
+          } else {
+            addImage(threadRef, image);
           }
         }
         if (submission === "send") {

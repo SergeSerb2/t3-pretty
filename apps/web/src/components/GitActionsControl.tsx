@@ -1298,6 +1298,7 @@ export default function GitActionsControl({
     const previous = turnCompleteRefreshRef.current;
     turnCompleteRefreshRef.current = { threadId, completedAt };
     if (
+      !threadId ||
       !shouldRefreshGitStatusAfterTurnComplete({
         previousThreadId: previous.threadId,
         threadId,

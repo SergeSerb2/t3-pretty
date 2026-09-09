@@ -41,7 +41,6 @@ export function usageLimitsBannerItem(
     description: summary,
     dismissLabel: "Dismiss usage limits",
     onDismiss,
-    children: <UsageLimitsBannerBody report={report} environmentId={environmentId} />,
   };
 }
 
