@@ -192,7 +192,7 @@ const makeFactory = Effect.fn("TestRpcSessionFactory.make")(function* (options?:
     sockets.push(socket);
     return socket as unknown as globalThis.WebSocket;
   });
-  const layer = RpcSession.layer.pipe(
+  const layer = RpcSession.layerWithOptions({}).pipe(
     Layer.provide(
       options?.fetch === undefined
         ? constructorLayer
