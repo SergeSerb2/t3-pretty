@@ -29,7 +29,14 @@ import {
   displayRuntimeModeForProviderDriver,
   defaultRuntimeModeForProviderDriver,
 } from "./modelSelection.ts";
-import { AutomationShell } from "./automations.ts";
+import {
+  AutomationShell,
+  AutomationId,
+  AutomationRunId,
+  AutomationEditableFields,
+  AutomationPatch,
+  AutomationRunTrigger,
+} from "./automations.ts";
 
 export {
   effectiveRuntimeModeForProviderDriver,
@@ -1149,6 +1156,41 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
 
+const AutomationCreateCommand = Schema.Struct({
+  type: Schema.Literal("automation.create"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  projectId: ProjectId,
+  ...AutomationEditableFields.fields,
+  sourceThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+const AutomationUpdateCommand = Schema.Struct({
+  type: Schema.Literal("automation.update"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  patch: AutomationPatch,
+  rotateWebhookToken: Schema.optional(Schema.Literal(true)),
+  updatedAt: IsoDateTime,
+});
+
+const AutomationDeleteCommand = Schema.Struct({
+  type: Schema.Literal("automation.delete"),
+  commandId: CommandId,
+  automationId: AutomationId,
+});
+
+const AutomationRunRequestCommand = Schema.Struct({
+  type: Schema.Literal("automation.run.request"),
+  commandId: CommandId,
+  automationId: AutomationId,
+  runId: AutomationRunId,
+  trigger: AutomationRunTrigger,
+  requestedAt: IsoDateTime,
+});
+
 export const ClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -1175,6 +1217,10 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputDismissCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  AutomationCreateCommand,
+  AutomationUpdateCommand,
+  AutomationDeleteCommand,
+  AutomationRunRequestCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
 

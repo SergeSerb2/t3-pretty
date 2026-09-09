@@ -48,6 +48,13 @@ import {
 } from "./agentInstructions.ts";
 import { AutomationsError } from "./automations.ts";
 import {
+  SkillsError,
+  SkillsState,
+  SkillId,
+  SkillMarketplaceListing,
+  SkillLocationKey,
+} from "./skills.ts";
+import {
   ProjectTransferCancelInput,
   ProjectTransferCancelResult,
   ProjectTransferError,
@@ -283,6 +290,14 @@ export const WS_METHODS = {
   // Automation run methods
   automationsListRuns: "automations.listRuns",
   automationsGetRun: "automations.getRun",
+
+  // Skills registry and marketplace methods
+  skillsGetState: "skills.getState",
+  skillsInstall: "skills.install",
+  skillsUninstall: "skills.uninstall",
+  skillsListMarketplace: "skills.listMarketplace",
+  skillsRefreshMarketplace: "skills.refreshMarketplace",
+  skillsSetLocationEnabled: "skills.setLocationEnabled",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
