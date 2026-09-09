@@ -4090,7 +4090,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       />
     ) : null
   ) : null;
-  const activityStackItem: ComposerBannerStackContent | null = activityStackContent
+  const activityStackItem: ComposerBannerStackItem | null = activityStackContent
     ? {
         id: "composer-activity",
         variant: "default",
