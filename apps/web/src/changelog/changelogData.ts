@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001747",
+    date: "2026-09-09",
+    items: [
+      {
+        kind: "new",
+        title: "PendingRequests module (incremental upstream sync fix)",
+      },
+      {
+        kind: "fixed",
+        title: "Provide GitHubReleasesClient layer at updates configure",
+      },
+      {
+        kind: "fixed",
+        title: "Properly handle Effect 4 error recovery in updates",
+      },
+      {
+        kind: "fixed",
+        title: "Effect.catch for nightly tag fetch (Effect 4)",
+      },
+      {
+        kind: "fixed",
+        title: "Use Context.Service for GitHubReleasesClient (Effect 4)",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid Array.toReversed for Electron runtime",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001741",
     date: "2026-09-09",
     items: [
