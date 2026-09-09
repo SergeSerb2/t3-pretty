@@ -230,8 +230,9 @@ describe("DesktopUpdates", () => {
     );
   });
 
-  it("keeps /latest when nightly tag fetch fails", () => {
+  it("keeps /latest when nightly tag fetch fails (HTTP error, timeout, etc.)", () => {
     // Fetch failure (latestNightlyTag: undefined) should NOT rewrite to appVersion
+    // This verifies that non-OK responses, timeouts, parse errors → undefined → keep /latest
     assert.deepEqual(
       DesktopUpdates.resolveGitHubGenericUpdaterFeed(
         {

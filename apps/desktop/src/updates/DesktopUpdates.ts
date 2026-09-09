@@ -11,7 +11,6 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Either from "effect/Either";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -248,72 +247,77 @@ export const liveGitHubReleasesClient = Layer.succeed(
   GitHubReleasesClient.of({
     fetchLatestNightlyTag: (repo) =>
         Effect.gen(function* () {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
           try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
-            try {
-              // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
-              const allReleases: unknown[] = [];
-              for (let page = 1; page <= 3; page++) {
-                const response = yield* Effect.promise(() =>
-                  fetch(
-                    `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
-                    {
-                      headers: {
-                        Accept: "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28",
-                      },
-                      signal: controller.signal,
+            // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
+            const allReleases: unknown[] = [];
+            for (let page = 1; page <= 3; page++) {
+              const response = yield* Effect.promise(() =>
+                fetch(
+                  `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
+                  {
+                    headers: {
+                      Accept: "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
                     },
-                  ),
+                    signal: controller.signal,
+                  },
+                ),
+              );
+
+              // Fail the Effect on non-OK responses (rate limit, 5xx, 404, etc.)
+              // so Either catches it and latestNightlyTag becomes undefined → keeps /latest
+              if (!response.ok) {
+                return yield* Effect.fail(
+                  new Error(`GitHub releases API returned ${response.status} ${response.statusText}`),
                 );
-
-                if (!response.ok) return null;
-
-                // Keep abort signal through JSON parse
-                const releases: unknown = yield* Effect.promise(() => response.json());
-                if (!Array.isArray(releases)) return null;
-                if (releases.length === 0) break; // No more pages
-
-                allReleases.push(...releases);
               }
 
-              // Mirror check-nightly-release.cjs findLatestNightly:
-              // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
-              const candidates: Array<{ tag_name: string; published_at: string }> = [];
-              for (const release of allReleases) {
-                if (
-                  typeof release === "object" &&
-                  release !== null &&
-                  "draft" in release &&
-                  release.draft !== true &&
-                  "published_at" in release &&
-                  typeof release.published_at === "string" &&
-                  "tag_name" in release &&
-                  typeof release.tag_name === "string" &&
-                  isNightlyTag(release.tag_name)
-                ) {
-                  candidates.push({
-                    tag_name: release.tag_name,
-                    published_at: release.published_at,
-                  });
-                }
+              // Keep abort signal through JSON parse
+              const releases: unknown = yield* Effect.promise(() => response.json());
+              if (!Array.isArray(releases)) {
+                return yield* Effect.fail(new Error("GitHub releases response was not an array"));
               }
+              if (releases.length === 0) break; // No more pages
 
-              if (candidates.length === 0) return null;
-
-              // Sort by Date.parse(published_at) descending
-              candidates.sort((a, b) => {
-                return Date.parse(b.published_at) - Date.parse(a.published_at);
-              });
-
-              return candidates[0].tag_name;
-            } finally {
-              clearTimeout(timeoutId);
+              allReleases.push(...releases);
             }
-          } catch {
-            return null;
+
+            // Mirror check-nightly-release.cjs findLatestNightly:
+            // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
+            const candidates: Array<{ tag_name: string; published_at: string }> = [];
+            for (const release of allReleases) {
+              if (
+                typeof release === "object" &&
+                release !== null &&
+                "draft" in release &&
+                release.draft !== true &&
+                "published_at" in release &&
+                typeof release.published_at === "string" &&
+                "tag_name" in release &&
+                typeof release.tag_name === "string" &&
+                isNightlyTag(release.tag_name)
+              ) {
+                candidates.push({
+                  tag_name: release.tag_name,
+                  published_at: release.published_at,
+                });
+              }
+            }
+
+            // Successful fetch with no nightlies → return null (not an error)
+            if (candidates.length === 0) return null;
+
+            // Sort by Date.parse(published_at) descending
+            candidates.sort((a, b) => {
+              return Date.parse(b.published_at) - Date.parse(a.published_at);
+            });
+
+            return candidates[0].tag_name;
+          } finally {
+            clearTimeout(timeoutId);
           }
         }),
   }),
@@ -446,6 +450,7 @@ export const make = Effect.gen(function* () {
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
+  const latestNightlyTagRef = yield* Ref.make<string | null | undefined>(undefined);
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
   const updateInstallInFlightRef = yield* Ref.make(false);
   const installRecoveryInstancesRef = yield* Ref.make<
@@ -622,12 +627,16 @@ export const make = Effect.gen(function* () {
 
     return yield* Effect.gen(function* () {
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
+      const latestNightlyTag = yield* Ref.get(latestNightlyTagRef);
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo) ||
           Option.exists(
             yield* Ref.get(appUpdateYmlConfigRef),
             (ymlConfig) =>
-              resolveGitHubGenericUpdaterFeed(ymlConfig, { appVersion: environment.appVersion }) !== undefined,
+              resolveGitHubGenericUpdaterFeed(ymlConfig, {
+                appVersion: environment.appVersion,
+                latestNightlyTag,
+              }) !== undefined,
           ),
       );
       yield* logUpdaterInfo("downloading update");
@@ -1082,19 +1091,17 @@ export const make = Effect.gen(function* () {
         ? yield* Effect.andThen(GitHubReleasesClient, (client) =>
             client.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }),
           ).pipe(
-            Effect.either,
-            Effect.flatMap((either) =>
-              Either.match(either, {
-                onLeft: () =>
-                  // Fetch failed (HTTP error, timeout, parse error) - log and return undefined
-                  logUpdaterWarning(
-                    "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-                  ).pipe(Effect.as(undefined)),
-                onRight: (value) => Effect.succeed(value),
-              }),
+            Effect.catchAll(() =>
+              // Fetch failed (HTTP error, timeout, parse error) - log and return undefined
+              logUpdaterWarning(
+                "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
+              ).pipe(Effect.as(undefined)),
             ),
           )
         : null;
+
+      // Store latestNightlyTag for use in download path
+      yield* Ref.set(latestNightlyTagRef, latestNightlyTag);
 
       const githubFeed = Option.getOrUndefined(
         Option.flatMap(appUpdateYmlConfig, (ymlConfig) =>
