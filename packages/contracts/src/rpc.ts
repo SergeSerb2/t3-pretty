@@ -303,6 +303,11 @@ export const WS_METHODS = {
   automationsListRuns: "automations.listRuns",
   automationsGetRun: "automations.getRun",
 
+  // Storage methods
+  storageGetInventory: "storage.getInventory",
+  storageStreamInventory: "storage.streamInventory",
+  storageRemoveOrphan: "storage.removeOrphan",
+
   // Skills registry and marketplace methods
   skillsGetState: "skills.getState",
   skillsInstall: "skills.install",
