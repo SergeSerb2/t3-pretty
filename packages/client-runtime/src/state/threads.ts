@@ -897,5 +897,17 @@ export const warmThreadStatesLayer = Layer.empty;
 
 // Test utilities (functionality removed, stubs for compatibility)
 export const WARM_THREAD_STATE_CAPACITY = 100;
-export interface WarmThreadStates {}
-export const makeWarmThreadStateRegistry = () => ({} as WarmThreadStates);
+export interface WarmThreadStates {
+  set(key: string, value: unknown): void;
+  get(key: string): unknown;
+  drop(key: string): void;
+  remove(key: string): void;
+  isDeleted(key: string): boolean;
+}
+export const makeWarmThreadStateRegistry = (): WarmThreadStates => ({
+  set: () => {},
+  get: () => undefined,
+  drop: () => {},
+  remove: () => {},
+  isDeleted: () => false,
+});
