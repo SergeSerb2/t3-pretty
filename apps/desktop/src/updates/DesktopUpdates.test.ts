@@ -1133,6 +1133,7 @@ describe("DesktopUpdates", () => {
   it.effect("liveLayer wires DesktopUpdates with liveGitHubReleasesClient (configure path)", () =>
     Effect.gen(function* () {
       // Test that liveLayer (which uses liveGitHubReleasesClient) works with mocked fetch
+      // Mock returns a nightly tag that should be used in the feed URL
       vi.stubGlobal('fetch', async (_input: string | URL | Request) => {
         return {
           ok: true,
@@ -1147,12 +1148,16 @@ describe("DesktopUpdates", () => {
         } as Response;
       });
 
-      // Use harness to get all dependencies except DesktopUpdates itself
-      const harness = makeHarness();
+      // Build harness with nightly appVersion to trigger GitHub fetch path
+      // Use dependenciesLayer (not layer) to exclude DesktopUpdates and GitHubReleasesClient
+      const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999", // Nightly version to trigger GitHub fetch
+      });
       
-      // Provide all harness dependencies to liveLayer
+      // Provide liveLayer with only the non-GitHub, non-DesktopUpdates dependencies
+      // liveLayer will use its own liveGitHubReleasesClient which calls the mocked fetch
       const testLayer = DesktopUpdates.liveLayer.pipe(
-        Layer.provide(harness.layer),
+        Layer.provide(harness.dependenciesLayer),
       );
 
       yield* Effect.scoped(
@@ -1164,7 +1169,14 @@ describe("DesktopUpdates", () => {
           
           const state = yield* updates.getState;
           assert.isNotNull(state);
-          // State can be 'idle' or 'disabled' depending on config, but should not throw
+          
+          // Assert that the mocked nightly tag was used in the feed URL
+          // This proves liveGitHubReleasesClient (not a mock) fetched and used the mocked release
+          const feedUrls = harness.feedUrls();
+          const hasNightlyTag = feedUrls.some((feed) => 
+            "url" in feed && typeof feed.url === "string" && feed.url.includes("v0.0.40-nightly.20260908.1000")
+          );
+          assert.isTrue(hasNightlyTag, "Feed URL should include the mocked nightly tag from GitHub API");
         }),
       ).pipe(Effect.provide(Layer.mergeAll(testLayer, TestClock.layer())));
     }),

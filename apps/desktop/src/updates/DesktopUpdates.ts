@@ -324,6 +324,11 @@ export const liveGitHubReleasesClient = Layer.effect(
           clearTimeout(timeoutId);
         }
       }).pipe(
+        Effect.tapError((error) =>
+          logUpdaterWarning("Failed to fetch latest nightly tag from GitHub", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        ),
         Effect.orElseSucceed(() => undefined),
       );
 
