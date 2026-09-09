@@ -23,6 +23,7 @@ import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { request, runStream } from "@t3tools/client-runtime/rpc";
 import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
 import { ManagedRelay, relayProtectedErrorMessage } from "@t3tools/client-runtime/relay";
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import { resolveCloudPublicConfig } from "./publicConfig";
@@ -31,6 +32,37 @@ import {
   reportRelayClientInstallProgress,
   requestRelayClientInstallConfirmation,
 } from "./relayClientInstallDialog";
+
+export function normalizeRelayBaseUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/\/+$/g, "");
+}
+
+export function isCloudLinkOnConfiguredRelay(
+  state: EnvironmentCloudLinkStateResult | null,
+  configuredRelayUrl: string | null,
+): boolean {
+  if (!state?.linked || state.relayUrl === null || configuredRelayUrl === null) {
+    return false;
+  }
+  const linkedRelayUrl = normalizeSecureRelayUrl(state.relayUrl);
+  const normalizedConfiguredRelayUrl = normalizeSecureRelayUrl(configuredRelayUrl);
+  return linkedRelayUrl !== null && linkedRelayUrl === normalizedConfiguredRelayUrl;
+}
+
+export function isCloudLinkOnConfiguredRelayForAccount(
+  state: EnvironmentCloudLinkStateResult | null,
+  configuredRelayUrl: string | null,
+  accountId: string | null | undefined,
+): boolean {
+  return (
+    isCloudLinkOnConfiguredRelay(state, configuredRelayUrl) &&
+    (accountId === null || (accountId !== undefined && state?.cloudUserId === accountId))
+  );
+}
 
 function relayUrl(): string | null {
   return resolveCloudPublicConfig().relayUrl;
