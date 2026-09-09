@@ -2308,7 +2308,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "codex",
                 "cursor",
                 "grok",
-                "grokBot",
                 "kimi",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);

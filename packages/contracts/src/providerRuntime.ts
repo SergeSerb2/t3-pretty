@@ -59,7 +59,7 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("opencode.sdk.event"),
   Schema.Literal("acp.jsonrpc"),
   Schema.TemplateLiteral(["acp.", Schema.String, ".extension"]),
-  // Grok Bot box gateway server-sent events.
+  // Historical Grok Bot sessions may still persist this source.
   Schema.Literal("grokBot.gateway"),
 ]);
 export type RuntimeEventRawSource = typeof RuntimeEventRawSource.Type;

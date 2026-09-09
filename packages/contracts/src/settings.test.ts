@@ -532,6 +532,14 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     });
   });
 
+  it("loads leftover grokBot settings without failing decode", () => {
+    const decoded = decodeServerSettings({
+      providers: { grokBot: { enabled: true, accessToken: "leftover" } },
+    });
+    expect(decoded.providers.codex.enabled).toBe(true);
+    expect("grokBot" in decoded.providers).toBe(false);
+  });
+
   it("rejects instance keys that violate the slug pattern", () => {
     expect(() =>
       decodeServerSettings({
