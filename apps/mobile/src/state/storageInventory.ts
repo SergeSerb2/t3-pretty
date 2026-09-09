@@ -70,7 +70,12 @@ const storageInventoriesAtom = Atom.make((get): readonly EnvironmentStorageStatu
       });
       continue;
     }
-    // Storage inventory APIs are not available in mobile environment
+    // Mobile: storage inventory is intentionally unsupported. The worktree
+    // management APIs require server-side file enumeration that assumes
+    // direct filesystem access patterns only safe on desktop. Mobile has no
+    // SettingsEnvironmentStorage route in Stack and never navigates here.
+    // This atom exists only to satisfy shared state shape; always returns
+    // unsupported for consistency with web's capability check above.
     statuses.push({
       environmentId,
       label: presentation.entry.target.label,

@@ -21,6 +21,8 @@ import { environmentSnapshotAtom } from "./shell";
 export const MOBILE_THREAD_STATE_IDLE_TTL_MS = 15_000;
 
 export const threadEnvironment = createThreadEnvironmentAtoms(connectionAtomRuntime);
+// createEnvironmentThreadStateAtoms no longer accepts idleTtlMs (API removed
+// the options parameter). TTL is applied at the detail layer below instead.
 export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
