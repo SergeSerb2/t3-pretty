@@ -108,10 +108,8 @@ export type StoragePendingAction =
   | { readonly kind: "remove-clean-settled" }
   | { readonly kind: "remove-all-settled" }
   | { readonly kind: "delete-archived" }
-  | { readonly kind: "remove-orphans" }
   | { readonly kind: "remove-worktree"; readonly entry: StorageWorktreeEntry }
-  | { readonly kind: "delete-thread"; readonly entry: StorageWorktreeEntry }
-  | { readonly kind: "remove-orphan"; readonly orphan: StorageOrphanEntry };
+  | { readonly kind: "delete-thread"; readonly entry: StorageWorktreeEntry };
 
 export function pendingActionCopy(action: StoragePendingAction): {
   readonly title: string;
@@ -140,13 +138,6 @@ export function pendingActionCopy(action: StoragePendingAction): {
           "Archived threads that keep a managed worktree are permanently deleted, along with those worktrees. This can't be undone.",
         confirmLabel: "Delete",
       };
-    case "remove-orphans":
-      return {
-        title: "Remove orphan checkouts?",
-        message:
-          "Deletes managed worktree folders that no thread owns. Only paths under this environment's worktrees folder are removed.",
-        confirmLabel: "Remove",
-      };
     case "remove-worktree":
       return {
         title: `Remove worktree for “${action.entry.threadTitle}”?`,
@@ -168,12 +159,6 @@ export function pendingActionCopy(action: StoragePendingAction): {
             ? `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted. The worktree's status could not be read, so it may contain unrecoverable changes.`
             : `“${action.entry.threadTitle}” and its managed worktree will be permanently deleted.`,
         confirmLabel: "Delete",
-      };
-    case "remove-orphan":
-      return {
-        title: `Remove orphan “${action.orphan.displayName}”?`,
-        message: `Deletes ${action.orphan.path}. Only managed worktree paths can be removed this way.`,
-        confirmLabel: "Remove",
       };
   }
 }

@@ -47,7 +47,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
-  const removeOrphan = useAtomCommand(serverEnvironment.removeOrphan, { reportFailure: false });
   const [isOperating, setIsOperating] = useState(false);
   const operatingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -186,15 +185,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
               }
             }
             break;
-          case "remove-orphans":
-            for (const orphan of inventory.orphanWorktrees) {
-              const result = await removeOrphan({
-                environmentId,
-                input: { path: orphan.path },
-              });
-              reportFailure("Failed to remove orphan", result);
-            }
-            break;
           case "remove-worktree":
             await unlinkAndMaybeDelete(environmentId, inventory, [action.entry]);
             break;
@@ -211,14 +201,6 @@ export function SettingsEnvironmentStorageRouteScreen() {
               reportFailure("Failed to delete thread", result);
             }
             break;
-          case "remove-orphan": {
-            const result = await removeOrphan({
-              environmentId,
-              input: { path: action.orphan.path },
-            });
-            reportFailure("Failed to remove orphan", result);
-            break;
-          }
         }
         refreshStorageInventory(environmentId);
       } finally {
@@ -228,7 +210,7 @@ export function SettingsEnvironmentStorageRouteScreen() {
         }
       }
     },
-    [deleteThread, removeOrphan, reportFailure, unlinkAndMaybeDelete],
+    [deleteThread, reportFailure, unlinkAndMaybeDelete],
   );
 
   const refreshing = environments.some(
@@ -410,11 +392,7 @@ function EnvironmentStorageCard(props: {
             onAction(environment.environmentId, inventory, { kind: "delete-archived" })
           }
         />
-        <ActionRow
-          title="Remove orphan checkouts"
-          disabled={bulkActionsDisabled || inventory.orphanWorktrees.length === 0}
-          onPress={() => onAction(environment.environmentId, inventory, { kind: "remove-orphans" })}
-        />
+        {/* Remove orphan checkouts is not available on mobile */}
       </SettingsSection>
 
       <SettingsSection title="Active worktrees">
@@ -478,19 +456,7 @@ function EnvironmentStorageCard(props: {
                     {formatStorageBytes(orphan.diskUsageBytes)}
                   </Text>
                 </View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={actionsDisabled}
-                  onPress={() =>
-                    onAction(environment.environmentId, inventory, {
-                      kind: "remove-orphan",
-                      orphan,
-                    })
-                  }
-                  className="px-3 py-2 disabled:opacity-40"
-                >
-                  <Text className="font-t3-medium text-danger-foreground">Remove</Text>
-                </Pressable>
+                {/* Remove button hidden: orphan removal not available on mobile */}
               </View>
             ))
           )}

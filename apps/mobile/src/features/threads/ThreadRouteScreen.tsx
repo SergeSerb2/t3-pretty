@@ -73,6 +73,8 @@ import { useSelectedThreadWorktree } from "../../state/use-selected-thread-workt
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
+import { useThreadListActions } from "../home/useThreadListActions";
+import { useServerConfigs } from "../../state/entities";
 import {
   useAdaptiveWorkspaceLayout,
   useAdaptiveWorkspacePaneRole,
@@ -336,6 +338,16 @@ function ThreadRouteContent(
     [knownTerminalSessions, selectedThreadProject?.workspaceRoot],
   );
   const selectedThreadDetailWorktreePath = selectedThreadDetail?.worktreePath ?? null;
+
+  const serverConfigs = useServerConfigs();
+  const { settleThread, snoozeThread, unsnoozeThread, unsettleThread } = useThreadListActions();
+  const settlementSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSettlement ===
+      true;
+  const snoozeSupported =
+    selectedThread != null &&
+    serverConfigs.get(selectedThread.environmentId)?.environment.capabilities.threadSnooze === true;
   const handleReconnectEnvironment = useCallback(() => {
     if (!environmentId) {
       return;
@@ -433,7 +445,7 @@ function ThreadRouteContent(
   // bar); elsewhere the pane content pads itself below the top inset.
   const safeAreaInsets = useSafeAreaInsets();
   const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
-  const GitInspector = useCallback(
+  const GitInspector = useMemo(
     () => (
       <GitOverviewSheet
         headerInset={inspectorHeaderInset}
@@ -443,7 +455,7 @@ function ThreadRouteContent(
     ),
     [inspectorHeaderInset, props.route.params],
   );
-  const FilesInspector = useCallback(
+  const FilesInspector = useMemo(
     () =>
       selectedThread !== null && selectedThreadCwd !== null ? (
         <ThreadFileNavigatorPane
@@ -463,7 +475,7 @@ function ThreadRouteContent(
       selectedThreadProject?.title,
     ],
   );
-  const RouteInspector = useCallback(
+  const RouteInspector = useMemo(
     () => props.renderInspector?.(inspectorHeaderInset),
     [inspectorHeaderInset, props.renderInspector],
   );
@@ -471,10 +483,10 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
-          Files={FilesInspector}
-          Git={GitInspector}
+          files={FilesInspector}
+          git={GitInspector}
           mode={inspectorMode}
-          Route={props.renderInspector ? RouteInspector : undefined}
+          route={props.renderInspector ? RouteInspector : undefined}
         />
       ),
     [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
@@ -649,6 +661,32 @@ function ThreadRouteContent(
     onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
+    settlementSupported,
+    snoozeSupported,
+    settled: selectedThread?.settledAt !== null,
+    snoozed: selectedThread?.snoozedUntil !== null,
+    canSettleThread: selectedThread?.settledAt === null,
+    canSnoozeThread: selectedThread?.snoozedUntil === null,
+    onSettle: () => {
+      if (selectedThread) {
+        void settleThread(selectedThread);
+      }
+    },
+    onUnsettle: () => {
+      if (selectedThread) {
+        void unsettleThread(selectedThread);
+      }
+    },
+    onSnooze: (snoozedUntil: string) => {
+      if (selectedThread) {
+        void snoozeThread(selectedThread, snoozedUntil);
+      }
+    },
+    onUnsnooze: () => {
+      if (selectedThread) {
+        void unsnoozeThread(selectedThread);
+      }
+    },
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);

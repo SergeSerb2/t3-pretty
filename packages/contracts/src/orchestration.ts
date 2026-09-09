@@ -19,6 +19,7 @@ import {
   PositiveInt,
   ProjectId,
   ProviderItemId,
+  ProviderNativeSessionId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -1432,6 +1433,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.transferred",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1442,10 +1444,14 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.pinned",
   "thread.unpinned",
   "thread.pin-reordered",
+  "thread.scenery-assigned",
+  "thread.skills-set",
+  "thread.subagent-policy-set",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.native-resume-requested",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1585,6 +1591,27 @@ export const ThreadPinReorderedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ThreadSceneryAssignedPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The winning assignment: the command's photo on first assign, the existing
+  // binding on raced/duplicate assigns (write-once, like re-pinning).
+  scenery: ThreadSceneryAssignment,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSkillsSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  // The new per-thread enabled skill set (full replacement).
+  enabledSkillIds: EnabledSkillIds,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadSubagentPolicySetPayload = Schema.Struct({
+  threadId: ThreadId,
+  policy: ThreadSubagentPolicy,
+  updatedAt: IsoDateTime,
+});
+
 export const ThreadMetaUpdatedPayload = Schema.Struct({
   threadId: ThreadId,
   // Order updates use this existing event so older clients can ignore the
@@ -1630,6 +1657,12 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadNativeResumeRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
+  nativeSessionId: ProviderNativeSessionId,
+  createdAt: IsoDateTime,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1707,6 +1740,37 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export type ThreadCreatedPayload = typeof ThreadCreatedPayload.Type;
+export type ThreadTransferredPayload = typeof ThreadTransferredPayload.Type;
+export type ThreadDeletedPayload = typeof ThreadDeletedPayload.Type;
+export type ThreadArchivedPayload = typeof ThreadArchivedPayload.Type;
+export type ThreadUnarchivedPayload = typeof ThreadUnarchivedPayload.Type;
+export type ThreadSettledPayload = typeof ThreadSettledPayload.Type;
+export type ThreadUnsettledPayload = typeof ThreadUnsettledPayload.Type;
+export type ThreadSnoozedPayload = typeof ThreadSnoozedPayload.Type;
+export type ThreadUnsnoozedPayload = typeof ThreadUnsnoozedPayload.Type;
+export type ThreadPinnedPayload = typeof ThreadPinnedPayload.Type;
+export type ThreadUnpinnedPayload = typeof ThreadUnpinnedPayload.Type;
+export type ThreadPinReorderedPayload = typeof ThreadPinReorderedPayload.Type;
+export type ThreadSceneryAssignedPayload = typeof ThreadSceneryAssignedPayload.Type;
+export type ThreadSkillsSetPayload = typeof ThreadSkillsSetPayload.Type;
+export type ThreadSubagentPolicySetPayload = typeof ThreadSubagentPolicySetPayload.Type;
+export type ThreadMetaUpdatedPayload = typeof ThreadMetaUpdatedPayload.Type;
+export type ThreadRuntimeModeSetPayload = typeof ThreadRuntimeModeSetPayload.Type;
+export type ThreadInteractionModeSetPayload = typeof ThreadInteractionModeSetPayload.Type;
+export type ThreadMessageSentPayload = typeof ThreadMessageSentPayload.Type;
+export type ThreadNativeResumeRequestedPayload = typeof ThreadNativeResumeRequestedPayload.Type;
+export type ThreadTurnStartRequestedPayload = typeof ThreadTurnStartRequestedPayload.Type;
+export type ThreadTurnInterruptRequestedPayload = typeof ThreadTurnInterruptRequestedPayload.Type;
+export type ThreadApprovalResponseRequestedPayload = typeof ThreadApprovalResponseRequestedPayload.Type;
+export type ThreadCheckpointRevertRequestedPayload = typeof ThreadCheckpointRevertRequestedPayload.Type;
+export type ThreadRevertedPayload = typeof ThreadRevertedPayload.Type;
+export type ThreadSessionStopRequestedPayload = typeof ThreadSessionStopRequestedPayload.Type;
+export type ThreadSessionSetPayload = typeof ThreadSessionSetPayload.Type;
+export type ThreadProposedPlanUpsertedPayload = typeof ThreadProposedPlanUpsertedPayload.Type;
+export type ThreadTurnDiffCompletedPayload = typeof ThreadTurnDiffCompletedPayload.Type;
+export type ThreadActivityAppendedPayload = typeof ThreadActivityAppendedPayload.Type;
+
 /**
  * Which client connection dispatched the command that produced an event.
  * Stamped by the orchestration engine on client-dispatched commands; absent on
@@ -1763,6 +1827,7 @@ export const OrchestrationEvent = Schema.Union([
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
   }),
+  // Thread ownership transferred between environments or projects
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("thread.transferred"),
@@ -1820,6 +1885,21 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.scenery-assigned"),
+    payload: ThreadSceneryAssignedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.skills-set"),
+    payload: ThreadSkillsSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.subagent-policy-set"),
+    payload: ThreadSubagentPolicySetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.meta-updated"),
     payload: ThreadMetaUpdatedPayload,
   }),
@@ -1837,6 +1917,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.message-sent"),
     payload: ThreadMessageSentPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.native-resume-requested"),
+    payload: ThreadNativeResumeRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
