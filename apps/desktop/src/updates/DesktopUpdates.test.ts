@@ -19,6 +19,14 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  it("GitHubReleasesClient service is properly initialized (Effect 4 Context.Service)", () => {
+    // Regression test for Mac Nightly crash: ensure the service tag is a real function,
+    // not (void 0) from using removed Effect v3 Context.GenericTag API.
+    assert.strictEqual(typeof DesktopUpdates.GitHubReleasesClient, "function");
+    assert.isDefined(DesktopUpdates.GitHubReleasesClient);
+    assert.strictEqual(DesktopUpdates.GitHubReleasesClient.key, "@t3tools/desktop/GitHubReleasesClient");
+  });
+
   it("preserves complete causes for update poller and event failures", () => {
     const cause = Cause.combine(
       Cause.fail(new Error("updater failed")),

@@ -237,14 +237,14 @@ export interface GitHubReleasesClient {
   }) => Effect.Effect<string | null>;
 }
 
-export const GitHubReleasesClient = Context.GenericTag<GitHubReleasesClient>(
+export const GitHubReleasesClient = Context.Service<GitHubReleasesClient>(
   "@t3tools/desktop/GitHubReleasesClient",
 );
 
 // Production implementation: fetch from GitHub API with pagination
 export const liveGitHubReleasesClient = Layer.succeed(
   GitHubReleasesClient,
-  GitHubReleasesClient.of({
+  {
     fetchLatestNightlyTag: (repo) =>
         Effect.gen(function* () {
           const controller = new AbortController();
@@ -320,7 +320,7 @@ export const liveGitHubReleasesClient = Layer.succeed(
             clearTimeout(timeoutId);
           }
         }),
-  }),
+  },
 );
 
 export function resolveGitHubGenericUpdaterFeed(
