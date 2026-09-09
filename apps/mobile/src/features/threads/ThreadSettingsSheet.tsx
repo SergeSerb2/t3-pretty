@@ -1596,3 +1596,11 @@ export function ExistingThreadSettingsRouteScreen() {
     </ThreadSettingsSessionProvider>
   );
 }
+
+/** New-task model picker hosted by the root RNS form-sheet route. */
+export function NewTaskThreadSettingsRouteScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  return (
+    <ThreadSettingsPickerNavigator onClose={() => navigation.goBack()} />
+  );
+}
