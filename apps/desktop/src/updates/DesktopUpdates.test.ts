@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -12,7 +13,11 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -1136,4 +1141,49 @@ describe("DesktopUpdates", () => {
       }
     }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient));
   });
+
+  it.effect("liveLayer wires DesktopUpdates with liveGitHubReleasesClient (configure path)", () =>
+    Effect.gen(function* () {
+      // Test that liveLayer (which uses liveGitHubReleasesClient) works with mocked fetch
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (_input: string | URL | Request) => {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              tag_name: "v0.0.40-nightly.20260908.1000",
+              published_at: "2026-09-08T10:00:00Z",
+              draft: false,
+            },
+          ],
+        } as Response;
+      };
+
+      try {
+        // Use harness to get all dependencies except DesktopUpdates itself
+        const harness = makeHarness();
+        
+        // Provide all harness dependencies to liveLayer
+        const testLayer = DesktopUpdates.liveLayer.pipe(
+          Layer.provide(harness.layer),
+        );
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const updates = yield* DesktopUpdates.DesktopUpdates;
+            
+            // Exercise configure which uses liveGitHubReleasesClient
+            yield* updates.configure;
+            
+            const state = yield* updates.getState;
+            assert.isNotNull(state);
+            // State can be 'idle' or 'disabled' depending on config, but should not throw
+          }),
+        ).pipe(Effect.provide(Layer.mergeAll(testLayer, TestClock.layer())));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }),
+  );
 });

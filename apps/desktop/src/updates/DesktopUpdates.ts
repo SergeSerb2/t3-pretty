@@ -253,18 +253,20 @@ export const liveGitHubReleasesClient = Layer.effect(
           // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
           const allReleases: unknown[] = [];
           for (let page = 1; page <= 3; page++) {
-            const response = yield* Effect.promise(() =>
-              fetch(
-                `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
-                {
-                  headers: {
-                    Accept: "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
+            const response = yield* Effect.tryPromise({
+              try: () =>
+                fetch(
+                  `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
+                  {
+                    headers: {
+                      Accept: "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    signal: controller.signal,
                   },
-                  signal: controller.signal,
-                },
-              ),
-            );
+                ),
+              catch: (error) => error as Error,
+            });
 
             // Fail the Effect on non-OK responses (rate limit, 5xx, 404, etc.)
             // Errors are caught below and converted to null
@@ -275,7 +277,10 @@ export const liveGitHubReleasesClient = Layer.effect(
             }
 
             // Keep abort signal through JSON parse
-            const releases: unknown = yield* Effect.promise(() => response.json());
+            const releases: unknown = yield* Effect.tryPromise({
+              try: () => response.json(),
+              catch: (error) => error as Error,
+            });
             if (!Array.isArray(releases)) {
               return yield* Effect.fail(new Error("GitHub releases response was not an array"));
             }
@@ -318,7 +323,9 @@ export const liveGitHubReleasesClient = Layer.effect(
         } finally {
           clearTimeout(timeoutId);
         }
-      }).pipe(Effect.catch((_error) => Effect.succeed(undefined)));
+      }).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
 
     return GitHubReleasesClient.of({
       fetchLatestNightlyTag,
@@ -1094,6 +1101,13 @@ export const make = Effect.gen(function* () {
       const latestNightlyTag: string | null | undefined = isNightlyVersion
         ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
         : null;
+
+      // Log warning if fetch failed (undefined indicates error was caught)
+      if (isNightlyVersion && latestNightlyTag === undefined) {
+        yield* logUpdaterWarning(
+          "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
+        );
+      }
 
       // Store latestNightlyTag for use in download path
       yield* Ref.set(latestNightlyTagRef, latestNightlyTag);
