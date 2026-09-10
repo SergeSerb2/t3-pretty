@@ -66,7 +66,7 @@ class BackendReadyLatchError extends Schema.TaggedErrorClass<BackendReadyLatchEr
 ) {}
 
 const makePoolLayer = (options?: {
-  readonly waitForReady?: Effect.Effect<boolean, unknown>;
+  readonly waitForReady?: Effect.Effect<boolean, BackendReadyLatchError>;
 }): Layer.Layer<DesktopBackendPool.DesktopBackendPool> =>
   Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
     list: Effect.succeed([
@@ -84,7 +84,9 @@ describe("DesktopLocalEnvironmentAuth", () => {
     const rendererIpcTimeoutMs = 40_000;
     assert.isAtMost(
       Duration.toMillis(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT) +
-        Duration.toMillis(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT),
+        Duration.toMillis(
+          DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT,
+        ),
       rendererIpcTimeoutMs,
     );
   });
@@ -224,7 +226,9 @@ describe("DesktopLocalEnvironmentAuth", () => {
         Effect.provide(testLayer),
       );
       const fiber = yield* auth.getBearerToken.pipe(Effect.forkChild({ startImmediately: true }));
-      yield* TestClock.adjust(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING);
+      yield* TestClock.adjust(
+        DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING,
+      );
 
       assert.strictEqual(yield* Fiber.join(fiber), "desktop-bearer-token");
       assert.strictEqual(yield* Ref.get(requestCount), 2);
@@ -281,7 +285,9 @@ describe("DesktopLocalEnvironmentAuth", () => {
         Effect.flip,
         Effect.forkChild({ startImmediately: true }),
       );
-      yield* TestClock.adjust(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT);
+      yield* TestClock.adjust(
+        DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT,
+      );
       yield* TestClock.adjust(Duration.millis(1));
 
       const error = yield* Fiber.join(fiber);

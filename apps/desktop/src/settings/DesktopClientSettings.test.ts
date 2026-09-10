@@ -33,6 +33,7 @@ const clientSettings: ClientSettings = {
   diffLayout: "stacked",
   environmentIdentificationMode: "artwork",
   favorites: [],
+  favoriteSkillIds: [],
   fontFamilyCode: "",
   fontFamilyComposer: "",
   fontFamilySans: "",

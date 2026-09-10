@@ -582,7 +582,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [arrangementMenuItems, thread.pinnedAt, titleRegenerationMenuItems],
   );
   const snoozedMenuActions = useMemo<MenuAction[]>(
-    () => [SNOOZED_MENU_ACTIONS[0]!, THREAD_RENAME_MENU_ACTION, ...titleRegenerationMenuItems, SNOOZED_MENU_ACTIONS[1]!],
+    () => [
+      SNOOZED_MENU_ACTIONS[0]!,
+      THREAD_RENAME_MENU_ACTION,
+      ...titleRegenerationMenuItems,
+      SNOOZED_MENU_ACTIONS[1]!,
+    ],
     [titleRegenerationMenuItems],
   );
   const legacyMenuActions = useMemo<MenuAction[]>(

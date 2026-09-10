@@ -63,8 +63,7 @@ const isRetryableLocalBearerBootstrapError = (error: { readonly _tag: string }):
       return true;
     case "RemoteEnvironmentAuthUndeclaredStatusError":
       return (
-        "status" in error &&
-        (error.status === 502 || error.status === 503 || error.status === 504)
+        "status" in error && (error.status === 502 || error.status === 503 || error.status === 504)
       );
     default:
       return false;
@@ -140,10 +139,11 @@ export const make = Effect.gen(function* () {
             schedule: Schedule.spaced(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING),
           }),
           Effect.timeoutOption(LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT),
-          Effect.mapError((cause) =>
-            new DesktopLocalEnvironmentAuthSessionBootstrapError({
-              cause: describeLocalBearerBootstrapCause(cause),
-            }),
+          Effect.mapError(
+            (cause) =>
+              new DesktopLocalEnvironmentAuthSessionBootstrapError({
+                cause: describeLocalBearerBootstrapCause(cause),
+              }),
           ),
           Effect.flatMap((option) =>
             Option.match(option, {

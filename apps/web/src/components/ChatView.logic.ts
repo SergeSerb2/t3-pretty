@@ -35,10 +35,7 @@ import {
 } from "../types";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { videoMimeType } from "@t3tools/shared/video";
-import type {
-  AssetCreateUrlInput,
-  AssetCreateUrlResult,
-} from "@t3tools/contracts";
+import type { AssetCreateUrlInput, AssetCreateUrlResult } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";

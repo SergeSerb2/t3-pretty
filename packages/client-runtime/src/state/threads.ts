@@ -906,10 +906,9 @@ export interface WarmThreadStatesService {
   isDeleted(key: string): boolean;
 }
 
-export class WarmThreadStates extends Context.Service<
-  WarmThreadStates,
-  WarmThreadStatesService
->()("@t3tools/client-runtime/state/threads/WarmThreadStates") {}
+export class WarmThreadStates extends Context.Service<WarmThreadStates, WarmThreadStatesService>()(
+  "@t3tools/client-runtime/state/threads/WarmThreadStates",
+) {}
 
 export const makeWarmThreadStateRegistry = (): WarmThreadStatesService => {
   const store = new Map<string, unknown>();

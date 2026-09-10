@@ -204,7 +204,7 @@ function Sidebar({
     const maxWidth =
       typeof options.maxWidth === "function"
         ? options.maxWidth()
-        : options.maxWidth ?? Number.POSITIVE_INFINITY;
+        : (options.maxWidth ?? Number.POSITIVE_INFINITY);
     return {
       maxWidth,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,

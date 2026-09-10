@@ -116,14 +116,16 @@ describe("fetchLatestRelease", () => {
   it("sorts by published_at desc after filtering, older in API order loses", async () => {
     const olderNightly = {
       tag_name: "v0.0.38-nightly.20260906.1000",
-      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.38-nightly.20260906.1000",
+      html_url:
+        "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.38-nightly.20260906.1000",
       draft: false,
       published_at: "2026-09-06T10:00:00Z",
       assets: [],
     };
     const newestNightly = {
       tag_name: "v0.0.39-nightly.20260907.1332",
-      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.39-nightly.20260907.1332",
+      html_url:
+        "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.39-nightly.20260907.1332",
       draft: false,
       published_at: "2026-09-07T13:32:00Z",
       assets: [
@@ -136,7 +138,8 @@ describe("fetchLatestRelease", () => {
     };
     const draftNightly = {
       tag_name: "v0.0.40-nightly.20260908.1000",
-      html_url: "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.40-nightly.20260908.1000",
+      html_url:
+        "https://github.com/SergeSerb2/t3-pretty/releases/tag/v0.0.40-nightly.20260908.1000",
       draft: true,
       published_at: "2026-09-08T10:00:00Z",
       assets: [],
@@ -161,7 +164,7 @@ describe("fetchLatestRelease", () => {
     const result = await fetchLatestNightlyRelease();
     expect(result).toEqual(newestNightly);
     expect(result.tag_name).toBe("v0.0.39-nightly.20260907.1332");
-    
+
     const cached = JSON.parse(store.getItem("t3code-latest-nightly") ?? "");
     expect(cached).toMatchObject({ release: newestNightly });
     expect(cached.release.html_url).toContain("SergeSerb2/t3-pretty");

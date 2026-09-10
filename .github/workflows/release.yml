@@ -298,7 +298,7 @@ jobs:
           if [[ -z "$relay_domain" && -n "${RELAY_API_ZONE_NAME:-}" ]]; then
             relay_domain="relay.$RELAY_API_ZONE_NAME"
           fi
-          
+
           # Validate relay_domain hostname
           if [[ -n "$relay_domain" ]]; then
             if [[ "$relay_domain" =~ \.$  ]]; then
@@ -319,7 +319,7 @@ jobs:
               exit 1
             fi
           fi
-          
+
           required=(
             relay_domain
             CLERK_PUBLISHABLE_KEY
@@ -922,10 +922,10 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          
+
           # Remove any debug manifests before verification
           rm -f release-assets/builder-debug*.yml
-          
+
           arm64_manifests=(release-assets/*-mac.yml)
           x64_manifests=(release-assets/*-mac-x64.yml)
           if (( ${#arm64_manifests[@]} != 1 || ${#x64_manifests[@]} != 1 )); then
@@ -1102,18 +1102,18 @@ jobs:
           router_url="${T3CODE_WEB_ROUTER_URL:-https://app.t3.codes}"
           latest_domain="${T3CODE_WEB_LATEST_DOMAIN:-latest.app.t3.codes}"
           nightly_domain="${T3CODE_WEB_NIGHTLY_DOMAIN:-nightly.app.t3.codes}"
-          
+
           # Validate router_url (reject credentials/userinfo)
           if [[ "$router_url" =~ ^[^:]+://[^@/]*@  ]]; then
             echo "Invalid router URL: credentials/userinfo not allowed" >&2
             exit 1
           fi
-          
+
           # Validate and parse router_domain
           router_domain="${router_url#http://}"
           router_domain="${router_domain#https://}"
           router_domain="${router_domain%%/*}"
-          
+
           # Validate router_domain format
           if [[ -n "$router_domain" ]]; then
             if [[ "$router_domain" =~ \.$  ]]; then
@@ -1134,7 +1134,7 @@ jobs:
               exit 1
             fi
           fi
-          
+
           # Validate latest and nightly domains
           for domain_var in "latest_domain" "nightly_domain"; do
             domain="${!domain_var}"
@@ -1156,7 +1156,7 @@ jobs:
               exit 1
             fi
           done
-          
+
           # Validate Vercel public config values for control characters and reasonable bounds
           for env_var in "T3CODE_CLERK_PUBLISHABLE_KEY" "T3CODE_CLERK_JWT_TEMPLATE" "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID" "T3CODE_RELAY_URL"; do
             value="${!env_var:-}"

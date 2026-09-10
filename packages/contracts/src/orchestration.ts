@@ -1762,8 +1762,10 @@ export type ThreadMessageSentPayload = typeof ThreadMessageSentPayload.Type;
 export type ThreadNativeResumeRequestedPayload = typeof ThreadNativeResumeRequestedPayload.Type;
 export type ThreadTurnStartRequestedPayload = typeof ThreadTurnStartRequestedPayload.Type;
 export type ThreadTurnInterruptRequestedPayload = typeof ThreadTurnInterruptRequestedPayload.Type;
-export type ThreadApprovalResponseRequestedPayload = typeof ThreadApprovalResponseRequestedPayload.Type;
-export type ThreadCheckpointRevertRequestedPayload = typeof ThreadCheckpointRevertRequestedPayload.Type;
+export type ThreadApprovalResponseRequestedPayload =
+  typeof ThreadApprovalResponseRequestedPayload.Type;
+export type ThreadCheckpointRevertRequestedPayload =
+  typeof ThreadCheckpointRevertRequestedPayload.Type;
 export type ThreadRevertedPayload = typeof ThreadRevertedPayload.Type;
 export type ThreadSessionStopRequestedPayload = typeof ThreadSessionStopRequestedPayload.Type;
 export type ThreadSessionSetPayload = typeof ThreadSessionSetPayload.Type;

@@ -45,8 +45,7 @@ export function useFileSaveCoordinator({
               stackedThreadToast({
                 type: "error",
                 title: `Unable to save ${relativePath}`,
-                description:
-                  error instanceof Error ? error.message : "The file is still unsaved.",
+                description: error instanceof Error ? error.message : "The file is still unsaved.",
               }),
             );
           },

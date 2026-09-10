@@ -666,8 +666,7 @@ export function PreviewView({
             : null;
         if (image) {
           const draft = getComposerDraft(threadRef);
-          const attachmentCount =
-            (draft?.images.length ?? 0) + (draft?.files.length ?? 0);
+          const attachmentCount = (draft?.images.length ?? 0) + (draft?.files.length ?? 0);
           if (attachmentCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
             image = null;
             toastManager.add({

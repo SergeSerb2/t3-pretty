@@ -43,7 +43,6 @@ const RELAY_STATUS_AND_CONNECT_SCOPES = [
   RelayEnvironmentConnectScope,
 ] satisfies ReadonlyArray<RelayDpopAccessTokenScope>;
 const CLOUD_STATUS_CONCURRENCY = 6;
-
 function readRelayUrl(): string | null {
   return resolveCloudPublicConfig().relay.url;
 }

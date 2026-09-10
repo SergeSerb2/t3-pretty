@@ -74,7 +74,6 @@ export {
 
 export type ProviderPickerKind = ProviderDriverKind;
 
-
 export interface WorkLogEntry {
   id: string;
   createdAt: string;

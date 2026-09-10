@@ -43,8 +43,7 @@ export function presentThreadPr(
           state: automatedReviewSignal === null ? "no_signal" : automatedReviewSignal.state,
         }
       : null;
-  const automatedReviewLabel =
-    automatedReview !== null ? `, ${automatedReview.label}` : "";
+  const automatedReviewLabel = automatedReview !== null ? `, ${automatedReview.label}` : "";
   return {
     number: pr.number,
     state: pr.state,

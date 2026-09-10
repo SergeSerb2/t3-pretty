@@ -74,7 +74,7 @@ export function applyWindowsGpuStabilitySwitches(
   }
 }
 
-export function readCommandLineSwitchValue(
+function readCommandLineSwitchValue(
   commandLine: DesktopPreReadyCommandLineReader,
   switchName: string,
 ): string | null {

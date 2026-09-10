@@ -48,12 +48,7 @@ export const UsageProviderKind = Schema.Literals(USAGE_PROVIDER_KINDS);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 export function isUsageProviderKind(value: unknown): value is UsageProviderKind {
-  return (
-    value === "claude" ||
-    value === "codex" ||
-    value === "cursor" ||
-    value === "grok"
-  );
+  return value === "claude" || value === "codex" || value === "cursor" || value === "grok";
 }
 
 /**

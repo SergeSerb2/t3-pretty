@@ -13,7 +13,7 @@ export const WSL_DISTRO_NAME_MAX_LENGTH = 512;
 
 // Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
 // Trailing char must also be \w so hand-edited config like "Ubuntu " / "Ubuntu-" / "Ubuntu." rejects.
-export const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
+const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
 
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   const hasUtf16Bom = stdout.length >= 2 && stdout[0] === 0xff && stdout[1] === 0xfe;

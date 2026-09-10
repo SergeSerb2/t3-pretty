@@ -112,14 +112,10 @@ export function UsagePage() {
     useState<ReadonlySet<EnvironmentId> | null>(null);
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const {
-    merged,
-    environments,
-    selectedEnvironments,
-    isPending,
-    isPartial,
-    refresh,
-  } = useUsage(window, selectedEnvironmentIds);
+  const { merged, environments, selectedEnvironments, isPending, isPartial, refresh } = useUsage(
+    window,
+    selectedEnvironmentIds,
+  );
   const omittedEnvironmentCount = 0;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);

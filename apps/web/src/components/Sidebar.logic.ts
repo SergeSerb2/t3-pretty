@@ -877,7 +877,13 @@ export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3t
 // Compatibility shims for fork test suite
 type ThreadAttentionInput = Pick<
   SidebarThreadSummary,
-  "environmentId" | "id" | "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness" | "latestTurn"
+  | "environmentId"
+  | "id"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "session"
+  | "backgroundLiveness"
+  | "latestTurn"
 >;
 
 /**

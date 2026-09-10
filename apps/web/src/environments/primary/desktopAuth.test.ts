@@ -1,10 +1,7 @@
 import type { DesktopBridge } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 
-import {
-  DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS,
-  DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS,
-} from "./auth";
+import { DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS, DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS } from "./auth";
 import {
   __resetDesktopPrimaryAuthForTests,
   beginDesktopAuthDeadline,

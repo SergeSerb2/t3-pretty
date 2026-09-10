@@ -97,9 +97,7 @@ export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
-  return runtimeMode === "yolo" &&
-    providerDriver != null &&
-    providerDriver !== "unconfigured"
+  return runtimeMode === "yolo" && providerDriver != null && providerDriver !== "unconfigured"
     ? "full-access"
     : runtimeMode;
 }

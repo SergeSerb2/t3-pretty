@@ -62,6 +62,7 @@ export interface RemoteT3RunnerOptions {
   readonly packageSpec?: string;
   readonly nodeScriptPath?: string | null;
   readonly nodeEngineRange?: string | null;
+  readonly publicEnvironment?: Readonly<Record<string, string>>;
 }
 
 export interface SshEnvironmentManagerOptions {
@@ -650,15 +651,24 @@ if [ -f "$LOG_FILE" ]; then
 fi
 `;
 
+function buildRemotePublicEnvironmentScript(input?: RemoteT3RunnerOptions): string {
+  return Object.entries(input?.publicEnvironment ?? {})
+    .filter(([name]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+    .map(([name, value]) => `export ${name}=${shellSingleQuote(value)}`)
+    .join("\n");
+}
+
 export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string {
   const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || "t3@latest");
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
+  const runnerScript = applyScriptPlaceholders(REMOTE_RUNNER_SCRIPT, {
+    T3_PACKAGE_SPEC: packageSpec,
+    T3_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
+    T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
+  });
+  const publicEnvironmentScript = buildRemotePublicEnvironmentScript(input);
   return stripTrailingNewlines(
-    applyScriptPlaceholders(REMOTE_RUNNER_SCRIPT, {
-      T3_PACKAGE_SPEC: packageSpec,
-      T3_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
-      T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
-    }),
+    publicEnvironmentScript ? `${publicEnvironmentScript}\n${runnerScript}` : runnerScript,
   );
 }
 

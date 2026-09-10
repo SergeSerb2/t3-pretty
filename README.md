@@ -102,12 +102,12 @@ Remote is a first-class path: pair over your tailnet, scan the QR from a running
 
 T3 Pretty does not sell models. It drives provider CLIs you already installed and logged into.
 
-| Provider       | CLI                                                                                          | Login               | Default |
-| -------------- | -------------------------------------------------------------------------------------------- | ------------------- | ------- |
-| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex login`       | On      |
-| **Claude**     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude auth login` | On      |
-| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)                                        | `agent login`       | Off     |
-| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                                                           | `grok login`        | Off     |
+| Provider       | CLI                                                   | Login               | Default |
+| -------------- | ----------------------------------------------------- | ------------------- | ------- |
+| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex login`       | On      |
+| **Claude**     | [Claude Code](https://claude.com/product/claude-code) | `claude auth login` | On      |
+| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`) | `agent login`       | Off     |
+| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                    | `grok login`        | Off     |
 
 Install and authenticate at least one provider on the machine that runs the server. Cursor is the
 one to watch: the binary is `cursor-agent`, the login command is `agent login`.

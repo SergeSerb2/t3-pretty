@@ -808,8 +808,12 @@ describe("EnvironmentThreads", () => {
       warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
     }
 
-    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
-    expect((warmStates.get("environment-1:thread-8") as WarmBlob | null)?.thread.title).toBe("Thread 8");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe(
+      "Thread 0",
+    );
+    expect((warmStates.get("environment-1:thread-8") as WarmBlob | null)?.thread.title).toBe(
+      "Thread 8",
+    );
   });
 
   it("treats a restore as recent so a later write cannot evict it", () => {
@@ -818,12 +822,18 @@ describe("EnvironmentThreads", () => {
       warmStates.set(`environment-1:thread-${index}`, warmBlob(`Thread ${index}`, 1, 1));
     }
 
-    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe(
+      "Thread 0",
+    );
     warmStates.set("environment-1:thread-new", warmBlob("New", 1, 1));
 
-    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe("Thread 0");
+    expect((warmStates.get("environment-1:thread-0") as WarmBlob | null)?.thread.title).toBe(
+      "Thread 0",
+    );
     expect(warmStates.get("environment-1:thread-1")).toBeNull();
-    expect((warmStates.get("environment-1:thread-new") as WarmBlob | null)?.thread.title).toBe("New");
+    expect((warmStates.get("environment-1:thread-new") as WarmBlob | null)?.thread.title).toBe(
+      "New",
+    );
   });
 
   it("does not let callers mutate the stored warm blob", () => {
@@ -878,13 +888,19 @@ describe("EnvironmentThreads", () => {
     expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Newer");
 
     warmStates.set(key, warmBlob("Same sequence same generation", 5, 1));
-    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence same generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe(
+      "Same sequence same generation",
+    );
 
     warmStates.set(key, warmBlob("Same sequence newer generation", 5, 2));
-    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence newer generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe(
+      "Same sequence newer generation",
+    );
 
     warmStates.set(key, warmBlob("Same sequence older generation", 5, 1));
-    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe("Same sequence newer generation");
+    expect((warmStates.get(key) as WarmBlob | null)?.thread.title).toBe(
+      "Same sequence newer generation",
+    );
   });
 
   it("forgets a dropped blob without tombstoning", () => {
