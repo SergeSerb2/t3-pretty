@@ -1423,3 +1423,5 @@
   - omitted parent change: Preserve the legacy GitHubReleasesClient context key "@t3tools/desktop/GitHubReleasesClient".. Reason: Effect's deterministicKeys error requires this Context.Service declaration to use "@t3tools/desktop/updates/DesktopUpdates/GitHubReleasesClient"; retaining the fork's legacy key cannot pass the mandatory desktop typecheck.
 - `server-bundle` failed after merging `v0.0.39-nightly.20260907.1332`; repaired with `gpt-5.6-sol`: Removed the accidental duplicate processTable declaration that caused the server bundle parse failure. The composed telemetry behavior and upstream API remain intact.
   - edited `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts`
+- `mobile-typecheck` failed after merging `v0.0.39-nightly.20260907.1332`; repaired with `gpt-5.6-sol`: Removed the stale import and preserved T3 Pretty’s model-detail labels with a local resolver compatible with the current provider descriptor API.
+  - edited `apps/mobile/src/features/threads/threadModelIdentity.ts`
