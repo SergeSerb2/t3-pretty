@@ -38,6 +38,7 @@ export const fetchEnvironmentShellSnapshot = Effect.fn(
     request: ({ client, headers }) =>
       client.orchestration.shellSnapshot({
         headers,
+        payload: {},
       }),
   });
 });

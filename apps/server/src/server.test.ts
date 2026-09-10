@@ -2097,6 +2097,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("serves the initial shell snapshot with and without automation opt-in", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+
+      for (const query of ["", "?acceptAutomations=true"]) {
+        const response = yield* fetchEffect(
+          yield* getHttpServerUrl(`/api/orchestration/shell${query}`),
+          { headers: { cookie } },
+        );
+        assert.equal(response.status, 200);
+        const snapshot = yield* HttpClientResponse.schemaBodyJson(OrchestrationShellSnapshot)(
+          response,
+        );
+        assert.deepEqual(snapshot.threads, []);
+        assert.equal(snapshot.snapshotSequence, 0);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("serves snapshots for MCP handoff thread IDs above the router default", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make(
