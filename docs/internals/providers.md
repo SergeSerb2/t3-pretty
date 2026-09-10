@@ -11,17 +11,15 @@ session or catalog state.
 
 ## T3 Pretty provider set
 
-[`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) registers six drivers:
-`codex`, `claudeAgent`, `cursor`, `grok`, `kimi`, and `antigravity`. T3 Pretty
-intentionally includes its Kimi integration and does not register the parent OpenCode provider.
+[`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts) registers five drivers:
+`codex`, `claudeAgent`, `cursor`, `grok`, and `antigravity`. T3 Pretty
+does not register Kimi or the parent OpenCode provider.
 
-Cursor, Grok, and Kimi share
+Cursor and Grok share
 [`AcpSessionRuntime.ts`](../../apps/server/src/provider/acp/AcpSessionRuntime.ts). Cursor's picker
 catalog merges the ACP `cursor/list_available_models` list with `cursor-agent --list-models`, so
 models advertised by the CLI are not dropped when ACP omits them or one model fails schema decode.
-Kimi opts into `clientCapabilities.terminal`, allowing Kimi 0.37+ to run shell, glob, and grep
-through [`AcpTerminalHost.ts`](../../apps/server/src/provider/acp/AcpTerminalHost.ts) in the session
-working directory. Other ACP drivers leave the capability off unless they explicitly pass
+ACP drivers leave the terminal capability off unless they explicitly pass
 `clientCapabilities.terminal: true`.
 
 ## Process and account isolation

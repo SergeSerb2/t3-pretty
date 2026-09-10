@@ -44,7 +44,7 @@ export const AUTOMATION_SCHEDULE_MIN_GAP_MILLIS = 5 * 60_000;
 
 /**
  * Ordering used to clamp the runtime mode an agent may grant an automation to
- * the mode its own thread runs with. `yolo` is Kimi's full-access spelling.
+ * the mode its own thread runs with. `yolo` is the historical full-access spelling.
  */
 export const AUTOMATION_RUNTIME_MODE_RANK: Record<RuntimeMode, number> = {
   "approval-required": 0,

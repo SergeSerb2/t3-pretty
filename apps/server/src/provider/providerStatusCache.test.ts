@@ -22,7 +22,7 @@ import {
 const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
-const KIMI_DRIVER = ProviderDriverKind.make("kimi");
+const GROK_DRIVER = ProviderDriverKind.make("grok");
 
 const makeProvider = (
   provider: ProviderDriverKind,
@@ -85,9 +85,9 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         status: "warning",
         auth: { status: "unknown" },
       });
-      const kimiProvider = makeProvider(KIMI_DRIVER, {
+      const grokProvider = makeProvider(GROK_DRIVER, {
         status: "warning",
-        auth: { status: "unknown", type: "kimi" },
+        auth: { status: "unknown", type: "grok" },
       });
       const codexPath = yield* resolveProviderStatusCachePath({
         cacheDir: tempDir,
@@ -97,9 +97,9 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         cacheDir: tempDir,
         instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make("claudeAgent")),
       });
-      const kimiPath = yield* resolveProviderStatusCachePath({
+      const grokPath = yield* resolveProviderStatusCachePath({
         cacheDir: tempDir,
-        instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make("kimi")),
+        instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make("grok")),
       });
 
       yield* writeProviderStatusCache({
@@ -111,13 +111,13 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         provider: claudeProvider,
       });
       yield* writeProviderStatusCache({
-        filePath: kimiPath,
-        provider: kimiProvider,
+        filePath: grokPath,
+        provider: grokProvider,
       });
 
       assert.deepStrictEqual(yield* readProviderStatusCache(codexPath), codexProvider);
       assert.deepStrictEqual(yield* readProviderStatusCache(claudePath), claudeProvider);
-      assert.deepStrictEqual(yield* readProviderStatusCache(kimiPath), kimiProvider);
+      assert.deepStrictEqual(yield* readProviderStatusCache(grokPath), grokProvider);
     }),
   );
 

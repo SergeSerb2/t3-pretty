@@ -101,10 +101,9 @@ computer.
 | Claude      | [Claude Code](https://claude.com/product/claude-code)                                                      | `claude`           | `claude auth login`                |
 | Cursor      | [Cursor CLI](https://cursor.com/cli)                                                                       | `cursor-agent`     | `agent login`                      |
 | Grok Build  | [Grok Build CLI](https://x.ai/cli)                                                                         | `grok`             | `grok login`                       |
-| Kimi Code   | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html)               | `kimi`             | `kimi login`                       |
 | Antigravity | [Official ACP agent](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json) | Managed by T3 Code | **Sign in with Google** in T3 Code |
 
-Codex, Claude, and Kimi are on by default. Cursor, Grok Build, and Antigravity are off
+Codex and Claude are on by default. Cursor, Grok Build, and Antigravity are off
 by default. Turn them on in **Settings** → **Providers** using each provider's card when you want
 to use them.
 
@@ -152,8 +151,7 @@ T3 Code. You can install T3 Code, open it, and add providers afterwards. A provi
 authenticated shows its status and setup instructions in **Settings**.
 
 For provider-specific setup and multi-account configuration, see
-[Codex](./providers-codex.md), [Claude](./providers-claude.md),
-[Kimi](./providers-kimi.md), and
+[Codex](./providers-codex.md), [Claude](./providers-claude.md), and
 [Antigravity](./providers-antigravity.md#accounts-and-removal).
 
 ## Next steps

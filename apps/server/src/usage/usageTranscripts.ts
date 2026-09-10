@@ -99,8 +99,6 @@ export function mightCarryUsage(line: string, provider: UsageProviderKind): bool
       return line.includes('"token_count"');
     case "grok":
       return line.includes('"turn_completed"');
-    case "kimi":
-      return line.includes('"usage.record"');
     case "cursor":
       // Cursor's ACP session store does not persist token usage today.
       return false;
@@ -544,65 +542,6 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
     });
   }
   return results;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Kimi                                                                       */
-/* -------------------------------------------------------------------------- */
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
-}
-
-/**
- * Parses one line of a Kimi `wire.jsonl`. Only `usage.record` events are
- * counted: the matching `step.end` loop event repeats the same totals.
- */
-export function parseKimiLine(line: string, sessionId: string): UsageRecord | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  const record = asRecord(parsed);
-  if (record === null || record["type"] !== "usage.record") return null;
-
-  const model = boundedString(record["model"], USAGE_MODEL_MAX_LENGTH);
-  if (model === null || model.length === 0) return null;
-  if (sessionId.length > USAGE_SESSION_ID_MAX_LENGTH) return null;
-
-  const usage = asRecord(record["usage"]);
-  if (usage === null) return null;
-
-  const time = record["time"];
-  if (typeof time !== "number" || !Number.isFinite(time) || time <= 0) return null;
-  const timestampMs = time < 1e12 ? Math.trunc(time * 1000) : Math.trunc(time);
-
-  const totals: UsageTokenTotals = {
-    uncachedInputTokens: int(usage["inputOther"]),
-    cachedInputTokens: int(usage["inputCacheRead"]),
-    cacheCreationTokens: int(usage["inputCacheCreation"]),
-    outputTokens: int(usage["output"]),
-    reasoningTokens: 0,
-  };
-  if (totalTokens(totals) === 0) return null;
-
-  return {
-    provider: "kimi",
-    timestampMs,
-    model,
-    sessionId,
-    totals,
-    reportedCostUsd: null,
-    dedupeKey: `${sessionId}:${timestampMs}:${model}`,
-  };
-}
-
-/** Session folder name (`session_<uuid>`) from a Kimi `wire.jsonl` path. */
-export function kimiSessionIdFromPath(filePath: string): string {
-  const match = filePath.match(/session_[0-9a-fA-F-]{36}/);
-  return match?.[0] ?? "";
 }
 
 export { EMPTY_TOTALS };

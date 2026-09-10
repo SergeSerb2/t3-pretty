@@ -83,29 +83,23 @@ export const RuntimeMode = Schema.Literals([
   "auto-accept-edits",
   "auto",
   "full-access",
-  // Kimi-only full-access variant: the session runs with full access, but
-  // permission requests are forwarded to the user instead of being
-  // auto-approved. Clients normalize it to "full-access" when switching to
-  // another provider (see resolveRuntimeModeForProviderDriver); adapters
-  // should not rely on receiving it.
+  // Historical Kimi-only spelling of full access. Persist it so old threads
+  // still decode; clients remap it to "full-access" for every known driver.
   "yolo",
 ]);
 export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
-// "yolo" is a Kimi-only mode that other providers never offer. Remap it to
-// generic "full-access" when the destination provider is known and is not
-// Kimi. A missing driver keeps the stored mode: guessing "not kimi" would
-// wipe Kimi yolo after a stale lookup, and guessing "kimi" would leak yolo
-// onto Grok.
+// "yolo" was Kimi-only. Remap it to generic "full-access" whenever the
+// destination provider is known. A missing driver keeps the stored mode so
+// a stale lookup cannot invent a different access level.
 export function resolveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode,
 ): RuntimeMode {
   return runtimeMode === "yolo" &&
     providerDriver != null &&
-    providerDriver !== "unconfigured" &&
-    providerDriver !== "kimi"
+    providerDriver !== "unconfigured"
     ? "full-access"
     : runtimeMode;
 }
@@ -117,18 +111,14 @@ export function displayRuntimeModeForProviderDriver(
   return resolveRuntimeModeForProviderDriver(providerDriver, runtimeMode);
 }
 
-// Kimi's default access mode is "yolo": the same unrestricted session as
-// "full-access", but Kimi can still stop to ask questions. Other providers
-// keep the generic "full-access" default.
 export function defaultRuntimeModeForProviderDriver(
-  providerDriver: string | null | undefined,
+  _providerDriver: string | null | undefined,
 ): RuntimeMode {
-  return providerDriver === "kimi" ? "yolo" : DEFAULT_RUNTIME_MODE;
+  return DEFAULT_RUNTIME_MODE;
 }
 
-// Compose the provider default with the Kimi-only yolo remap. Pass `null`
-// when the mode is still unset so Kimi inherits yolo; an explicit
-// "full-access" pick stays "full-access" even on Kimi.
+// Compose the provider default with the historical yolo remap. Pass `null`
+// when the mode is still unset so every driver inherits full-access.
 export function effectiveRuntimeModeForProviderDriver(
   providerDriver: string | null | undefined,
   runtimeMode: RuntimeMode | null | undefined,

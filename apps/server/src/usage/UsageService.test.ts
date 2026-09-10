@@ -59,7 +59,6 @@ const setup = Effect.gen(function* () {
       providers: {
         claudeAgent: { homePath: NodePath.join(home, "claude") },
         codex: { homePath: NodePath.join(home, "codex") },
-        kimi: { homePath: NodePath.join(home, "kimi") },
       },
     },
   };

@@ -19,12 +19,10 @@ import type { UsageProviderKind } from "@t3tools/contracts";
 
 import {
   initialCodexScanState,
-  kimiSessionIdFromPath,
   mightCarryUsage,
   parseClaudeLine,
   parseCodexLine,
   parseGrokLine,
-  parseKimiLine,
   type UsageRecord,
 } from "./usageTranscripts.ts";
 
@@ -38,7 +36,7 @@ export const TRANSCRIPT_FILE_MAX = 50_000;
 /**
  * Walk budget in directory entries. Every opened directory is itself an entry,
  * so this also bounds directory count and the pending-directory queue. Grok
- * and Kimi keep one directory per session forever (~13 entries each), so a
+ * keeps one directory per session forever (~13 entries each), so a
  * long-lived machine reaches tens of thousands of session directories.
  */
 export const TRANSCRIPT_ENTRY_MAX = 2_000_000;
@@ -260,8 +258,6 @@ export async function readTranscriptRecords(
       },
     );
 
-    const kimiSessionId = provider === "kimi" ? kimiSessionIdFromPath(filePath) : "";
-
     for await (const line of lines) {
       if (provider === "codex") {
         if (
@@ -284,8 +280,7 @@ export async function readTranscriptRecords(
 
       if (!mightCarryUsage(line, provider)) continue;
 
-      const record =
-        provider === "kimi" ? parseKimiLine(line, kimiSessionId) : parseClaudeLine(line);
+      const record = parseClaudeLine(line);
       if (appendRecord(record)) break;
     }
   } catch {

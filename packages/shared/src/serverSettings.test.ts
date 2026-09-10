@@ -294,13 +294,13 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(current, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("kimi"),
-          model: "kimi-code/k3",
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "kimi",
-      model: "kimi-code/k3",
+      instanceId: "grok",
+      model: "grok-build",
     });
   });
 
@@ -317,8 +317,8 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("kimi"),
-          model: "kimi-code/k3",
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
           options: [
             { id: "variant", value: "prod" },
             { id: "agent", value: "build" },
@@ -326,8 +326,8 @@ describe("serverSettings helpers", () => {
         },
       }).textGenerationModelSelection,
     ).toEqual({
-      instanceId: "kimi",
-      model: "kimi-code/k3",
+      instanceId: "grok",
+      model: "grok-build",
       options: [
         { id: "variant", value: "prod" },
         { id: "agent", value: "build" },
@@ -348,13 +348,13 @@ describe("serverSettings helpers", () => {
     expect(
       applyServerSettingsPatch(current, {
         sourceControlWriterModelSelection: {
-          instanceId: ProviderInstanceId.make("kimi"),
-          model: "kimi-code/k3",
+          instanceId: ProviderInstanceId.make("grok"),
+          model: "grok-build",
         },
       }).sourceControlWriterModelSelection,
     ).toEqual({
-      instanceId: "kimi",
-      model: "kimi-code/k3",
+      instanceId: "grok",
+      model: "grok-build",
     });
   });
 

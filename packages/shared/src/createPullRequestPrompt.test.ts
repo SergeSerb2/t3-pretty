@@ -69,12 +69,12 @@ describe("applyCreatePullRequestSuffix", () => {
       text: "Fix the login bug",
       autoCreatePullRequest: true,
       threadHasStarted: false,
-      model: "kimi-code/k3",
+      model: "grok-build",
     });
 
-    expect(result).toBe(`Fix the login bug${buildCreatePullRequestMessageSuffix("kimi-code/k3")}`);
+    expect(result).toBe(`Fix the login bug${buildCreatePullRequestMessageSuffix("grok-build")}`);
     expect(result).toContain(
-      'T3 Code recorded the current thread\'s selected model as "kimi-code/k3".',
+      'T3 Code recorded the current thread\'s selected model as "grok-build".',
     );
     expect(result).toContain("copy this exact identifier");
     expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
