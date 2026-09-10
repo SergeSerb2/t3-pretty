@@ -311,16 +311,17 @@ export function useBrowserDictation(input: {
     setPhase("preparing");
     const snapshot = current.readComposer();
     let stream: MediaStream | null = null;
+    const startStillValid = () =>
+      !abort.signal.aborted &&
+      mountedRef.current &&
+      inputRef.current.enabled &&
+      inputRef.current.canStart !== false &&
+      inputRef.current.ownerKey === current.ownerKey;
     try {
       const status = await runtime.runPromise(fetchDictationStatus(current.prepared), {
         signal: abort.signal,
       });
-      if (
-        abort.signal.aborted ||
-        !mountedRef.current ||
-        !inputRef.current.enabled ||
-        inputRef.current.ownerKey !== current.ownerKey
-      ) {
+      if (!startStillValid()) {
         return;
       }
       if (!status.available) {
@@ -340,16 +341,12 @@ export function useBrowserDictation(input: {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
-      if (
-        abort.signal.aborted ||
-        !mountedRef.current ||
-        !inputRef.current.enabled ||
-        inputRef.current.ownerKey !== current.ownerKey
-      ) {
+      if (!startStillValid()) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
-      if (inputRef.current.readComposer().value !== snapshot.value) {
+      const next = inputRef.current.readComposer();
+      if (next.value !== snapshot.value || next.cursor !== snapshot.cursor) {
         throw new Error("The composer changed before recording started. Please try again.");
       }
       const session: DictationSession = {
@@ -358,9 +355,9 @@ export function useBrowserDictation(input: {
         abort,
         startedAt: Date.now(),
         stream,
-        start: snapshot.cursor,
-        before: snapshot.value.slice(0, snapshot.cursor),
-        after: snapshot.value.slice(snapshot.cursor),
+        start: next.cursor,
+        before: next.value.slice(0, next.cursor),
+        after: next.value.slice(next.cursor),
         transcript: "",
         insertion: "",
         recorder: null,
@@ -394,11 +391,6 @@ export function useBrowserDictation(input: {
     }
   }, [closeSession]);
 
-  const toggle = useCallback(() => {
-    if (sessionRef.current) return stop();
-    return start();
-  }, [start, stop]);
-
   const cancel = useCallback(() => {
     startingRef.current?.abort();
     startingRef.current = null;
@@ -410,6 +402,12 @@ export function useBrowserDictation(input: {
     }
     if (mountedRef.current) setPhase("idle");
   }, [closeSession, replaceSessionInsertion]);
+
+  const toggle = useCallback(() => {
+    if (sessionRef.current) return stop();
+    if (startingRef.current) return cancel();
+    return start();
+  }, [cancel, start, stop]);
 
   useEffect(() => {
     if (!input.enabled) cancel();
