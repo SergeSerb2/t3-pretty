@@ -54,13 +54,13 @@ const setup = Layer.effectDiscard(
     // Fork slot collisions skip 048 when id 48 was already recorded under
     // another name. Re-run the idempotent ADD COLUMN so old ~/.t3 DBs boot.
     yield* ensureProjectionThreadBranchPullRequest;
-    // Migration 47 marks the switch to live-only tool progress; the bulk
+    // The tool-progress migration marks the switch to live-only progress; the bulk
     // delete of the superseded per-tick rows runs here, best-effort and
     // batched, while this is the only connection (no client has served a
     // request yet), then VACUUM reclaims the pages (measured ~8 s + ~4 s for
     // a 3 GB file that shrank to 1 GB). A failure (e.g. disk full) only
     // means the rows / space stay; the read side already hides them.
-    if (ranMigrations.some(([id]) => id === 47)) {
+    if (ranMigrations.some(([, name]) => name === "DeleteSupersededToolUpdatedActivities")) {
       yield* cleanupSupersededToolUpdates().pipe(
         Effect.tap((deleted) =>
           Effect.log("deleted superseded tool progress rows").pipe(Effect.annotateLogs(deleted)),

@@ -13,7 +13,7 @@ layer("041_OrchestrationEventRecordedAt", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 40 });
+      yield* runMigrations({ toMigrationInclusive: 50 });
       yield* sql`
         INSERT INTO orchestration_events (
           event_id,
@@ -39,7 +39,7 @@ layer("041_OrchestrationEventRecordedAt", (it) => {
         )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 41 });
+      yield* runMigrations({ toMigrationInclusive: 51 });
 
       const rows = yield* sql<{ readonly occurredAt: string; readonly recordedAt: string }>`
         SELECT
