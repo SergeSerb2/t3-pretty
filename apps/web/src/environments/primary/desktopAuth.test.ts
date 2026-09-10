@@ -5,6 +5,7 @@ import { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS } from "./auth";
 import {
   __resetDesktopPrimaryAuthForTests,
   DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
+  PrimaryEnvironmentDesktopBearerTimeoutError,
   readDesktopPrimaryBearerToken,
 } from "./desktopAuth";
 
@@ -56,7 +57,7 @@ describe("desktop primary auth", () => {
       );
       await vi.advanceTimersByTimeAsync(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
 
-      expect(await firstError).toBeInstanceOf(Error);
+      expect(await firstError).toBeInstanceOf(PrimaryEnvironmentDesktopBearerTimeoutError);
       getLocalEnvironmentBearerToken.mockResolvedValueOnce("desktop-bearer-token");
       await expect(readDesktopPrimaryBearerToken()).resolves.toBe("desktop-bearer-token");
       expect(getLocalEnvironmentBearerToken).toHaveBeenCalledTimes(2);

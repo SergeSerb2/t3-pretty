@@ -18,7 +18,15 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "../../pairingUrl";
 
-import { DESKTOP_BEARER_TOKEN_TIMEOUT_MS } from "./desktopAuth";
+import {
+  DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
+  isPrimaryEnvironmentDesktopBearerTimeoutError,
+} from "./desktopAuth";
+
+export {
+  isPrimaryEnvironmentDesktopBearerTimeoutError,
+  PrimaryEnvironmentDesktopBearerTimeoutError,
+} from "./desktopAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { loadDesktopPrimaryEnvironmentBootstrap } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
@@ -349,6 +357,20 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
   });
 }
 
+function isDesktopBearerTimeoutError(error: unknown): boolean {
+  if (isPrimaryEnvironmentDesktopBearerTimeoutError(error)) {
+    return true;
+  }
+  if (isPrimaryEnvironmentRequestError(error)) {
+    return isDesktopBearerTimeoutError(error.cause);
+  }
+  return (
+    HttpClientError.isHttpClientError(error) &&
+    error.reason._tag === "TransportError" &&
+    isDesktopBearerTimeoutError(error.reason.cause)
+  );
+}
+
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
     // No response at all (connection refused, desktop bearer IPC failing):
@@ -367,11 +389,26 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function readDesktopAuthUnavailableMessage(error: unknown): string {
+  if (isPrimaryEnvironmentDesktopBearerTimeoutError(error)) {
+    return error.message;
+  }
+  if (isPrimaryEnvironmentRequestError(error)) {
+    return readDesktopAuthUnavailableMessage(error.cause);
+  }
+  if (HttpClientError.isHttpClientError(error) && error.reason._tag === "TransportError") {
+    return readDesktopAuthUnavailableMessage(error.reason.cause);
+  }
+  return error instanceof Error && error.message.length > 0
+    ? error.message
+    : "Local backend did not become ready.";
+}
+
 function desktopAuthUnavailableState(error: unknown): ServerAuthGateState {
   return {
     status: "requires-auth",
     auth: DESKTOP_MANAGED_AUTH,
-    errorMessage: error instanceof Error ? error.message : "Local backend did not become ready.",
+    errorMessage: readDesktopAuthUnavailableMessage(error),
   };
 }
 
@@ -396,6 +433,7 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
     if (
       window.desktopBridge !== undefined &&
       (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error) ||
+        isDesktopBearerTimeoutError(error) ||
         isTransientBootstrapError(error))
     ) {
       return desktopAuthUnavailableState(error);

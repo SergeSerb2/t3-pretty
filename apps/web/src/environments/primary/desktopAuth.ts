@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+
 // One in-flight mint is shared across renderer HTTP calls. A hung IPC
 // (Electron failing to clone a main-process Effect rejection) used to pin
 // this promise forever and leave #boot-shell up after the backend was ready.
@@ -5,12 +7,25 @@
 // timeout fail-opens splash while the child is still coming up.
 export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = 40_000;
 
+export class PrimaryEnvironmentDesktopBearerTimeoutError extends Schema.TaggedErrorClass<PrimaryEnvironmentDesktopBearerTimeoutError>()(
+  "PrimaryEnvironmentDesktopBearerTimeoutError",
+  { timeoutMs: Schema.Number },
+) {
+  override get message(): string {
+    return "Timed out waiting for the desktop local bearer token.";
+  }
+}
+
+export const isPrimaryEnvironmentDesktopBearerTimeoutError = Schema.is(
+  PrimaryEnvironmentDesktopBearerTimeoutError,
+);
+
 let desktopBearerTokenPromise: Promise<string> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error("Timed out waiting for the desktop local bearer token."));
+      reject(new PrimaryEnvironmentDesktopBearerTimeoutError({ timeoutMs }));
     }, timeoutMs);
     promise.then(
       (value) => {

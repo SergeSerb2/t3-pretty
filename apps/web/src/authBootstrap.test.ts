@@ -285,6 +285,43 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 
+  it("fail-opens splash when the desktop bearer IPC hangs", async () => {
+    const { PrimaryEnvironmentDesktopBearerTimeoutError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new PrimaryEnvironmentDesktopBearerTimeoutError({ timeoutMs: 40_000 });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the desktop local bearer token.",
+    });
+  });
+
+  it("fail-opens splash when a hung bearer timeout is wrapped as a primary request error", async () => {
+    const { PrimaryEnvironmentDesktopBearerTimeoutError, PrimaryEnvironmentRequestError } =
+      await import("./environments/primary");
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw PrimaryEnvironmentRequestError.fromCause({
+        operation: "fetch-session-state",
+        cause: new PrimaryEnvironmentDesktopBearerTimeoutError({ timeoutMs: 40_000 }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the desktop local bearer token.",
+    });
+  });
+
   it("does not map a web session 401 to desktop-managed auth", async () => {
     const runner: PrimaryHttpEffectRunner = async () => {
       throw new EnvironmentAuthInvalidError({
