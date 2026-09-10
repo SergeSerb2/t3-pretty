@@ -78,9 +78,29 @@ function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
     }),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
-      webContentsListeners.set(eventName, listener);
+      const previous = webContentsListeners.get(eventName);
+      webContentsListeners.set(
+        eventName,
+        previous
+          ? (...args: readonly unknown[]) => {
+              previous(...args);
+              listener(...args);
+            }
+          : listener,
+      );
     }),
-    once: vi.fn(),
+    once: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
+      const previous = webContentsListeners.get(eventName);
+      webContentsListeners.set(
+        eventName,
+        previous
+          ? (...args: readonly unknown[]) => {
+              previous(...args);
+              listener(...args);
+            }
+          : listener,
+      );
+    }),
     openDevTools: vi.fn(),
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
@@ -240,6 +260,7 @@ function makeTestLayer(input: {
   readonly dockBadges?: string[];
   readonly dockBounces?: number[];
   readonly dockBounceCancels?: number[];
+  readonly reveals?: Electron.BrowserWindow[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -288,7 +309,10 @@ function makeTestLayer(input: {
     focusedMainOrFirst: Ref.get(input.mainWindow),
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
-    reveal: () => Effect.void,
+    reveal: (window) =>
+      Effect.sync(() => {
+        input.reveals?.push(window);
+      }),
     sendAll: (channel) =>
       Effect.sync(() => {
         input.broadcastChannels?.push(channel);
@@ -699,6 +723,120 @@ describe("DesktopWindow", () => {
         }
         readyToShow();
         assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reveals the hidden Mac window when ready-to-show never fires but load finishes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!didFinishLoad) {
+          return yield* Effect.die("window did-finish-load listener was not registered");
+        }
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reveals the hidden window after a bound wait when no reveal event arrives", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        reveals,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS - 1);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        yield* TestClock.adjust(1);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+        assert.deepEqual(reveals, [fakeWindow.window]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("does not reveal or dismiss splash after the window is destroyed", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        reveals,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        fakeWindow.isDestroyed.mockReturnValue(true);
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.maximize.mock.calls.length, 0);
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        assert.deepEqual(reveals, []);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("interrupts the reveal fallback when the window closes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        reveals,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const closed = fakeWindow.windowListeners.get("closed");
+        if (!closed) {
+          return yield* Effect.die("window closed listener was not registered");
+        }
+        fakeWindow.isDestroyed.mockReturnValue(true);
+        closed();
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.maximize.mock.calls.length, 0);
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        assert.deepEqual(reveals, []);
       }).pipe(Effect.provide(layer));
     }),
   );

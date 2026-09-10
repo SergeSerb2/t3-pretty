@@ -352,11 +352,15 @@ const startup = Effect.gen(function* () {
     });
   }
   yield* applicationMenu.configure;
-  yield* updates.configure;
-  yield* DesktopRemoteUpdates.listen;
   yield* linuxUrlHandler.register;
   yield* Fiber.join(installShellEnvironment);
+  // Open the window before talking to GitHub. Nightly configure used to
+  // await fetchLatestNightlyTag on this path; a hung fetch (AbortSignal not
+  // honored in some Electron builds) left Mac installs on the boot splash
+  // with no window.
   yield* bootstrap.pipe(Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)));
+  yield* updates.configure;
+  yield* DesktopRemoteUpdates.listen;
 }).pipe(Effect.withSpan("desktop.startup"));
 
 const scopedProgram = Effect.scoped(

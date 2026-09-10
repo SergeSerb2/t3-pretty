@@ -238,6 +238,191 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 
+  it("stops waiting for a missing desktop bootstrap URL so the splash can clear", async () => {
+    vi.useFakeTimers();
+    const testWindow = installTestBrowser("http://localhost/");
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () => [],
+    } as unknown as DesktopBridge;
+
+    const { DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the local desktop backend to publish its address.",
+    });
+  });
+
+  it("shares one desktop splash budget across entry wait and session retry", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const testWindow = installTestBrowser("http://localhost/");
+    const bootStartedAt = Date.now();
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () =>
+        Date.now() - bootStartedAt < 25_000
+          ? []
+          : [
+              {
+                id: "primary",
+                label: "Local environment",
+                httpBaseUrl: "http://localhost:3773",
+                wsBaseUrl: "ws://localhost:3773",
+                bootstrapToken: "desktop-bootstrap-token",
+              },
+            ],
+    } as unknown as DesktopBridge;
+
+    const { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toMatchObject({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+    });
+  });
+
+  it("stops retrying a silent desktop session so the splash can clear", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    const { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toMatchObject({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+    });
+  });
+
+  it("fail-opens splash when the desktop bearer IPC hangs", async () => {
+    const { PrimaryEnvironmentDesktopBearerTimeoutError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new PrimaryEnvironmentDesktopBearerTimeoutError({ timeoutMs: 40_000 });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the desktop local bearer token.",
+    });
+  });
+
+  it("fail-opens splash when a hung bearer timeout is wrapped as a primary request error", async () => {
+    const { PrimaryEnvironmentDesktopBearerTimeoutError, PrimaryEnvironmentRequestError } =
+      await import("./environments/primary");
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw PrimaryEnvironmentRequestError.fromCause({
+        operation: "fetch-session-state",
+        cause: new PrimaryEnvironmentDesktopBearerTimeoutError({ timeoutMs: 40_000 }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the desktop local bearer token.",
+    });
+  });
+
+  it("does not map a web session 401 to desktop-managed auth", async () => {
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new EnvironmentAuthInvalidError({
+        code: "auth_invalid",
+        reason: "missing_credential",
+        traceId: "trace-web-401",
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const { PrimaryEnvironmentRequestError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const error = await resolveInitialServerAuthGateState().then(
+      () => null,
+      (failure: unknown) => failure,
+    );
+
+    expect(error).toBeInstanceOf(PrimaryEnvironmentRequestError);
+    expect(error).toMatchObject({
+      _tag: "PrimaryEnvironmentRequestError",
+      operation: "fetch-session-state",
+      status: 401,
+    });
+  });
+
+  it("does not map a web session retry timeout to desktop-managed auth", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const { PrimaryEnvironmentRequestError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const failure = resolveInitialServerAuthGateState().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(PrimaryEnvironmentRequestError);
+    expect(error).toMatchObject({
+      _tag: "PrimaryEnvironmentRequestError",
+      operation: "fetch-session-state",
+      status: 502,
+    });
+  });
+
   it("retries transient auth session bootstrap failures after restart", async () => {
     vi.useFakeTimers();
     let attempts = 0;
