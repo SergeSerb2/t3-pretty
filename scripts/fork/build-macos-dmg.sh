@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Native macos-release arm64 DMG. Imported GHA macos-latest jobs now land on
-# hosted Macs that cannot sign or see the Origin git store.
+# Native hosted macos-large arm64 DMG. Signing imports CSC_LINK into a
+# per-job temp keychain from cluster secrets. Feed upload is R2/S3 via
+# origin-forge upload-assets (not the Origin CLI / CURSOR_API_KEY).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -220,6 +221,8 @@ for file in "$publish"/*.{dmg,zip,blockmap,yml}; do
   assets+=(--asset "$file")
 done
 (( ${#assets[@]} > 0 ))
+# R2/S3 updater-feed upload. This does not call the Origin CLI or need
+# CURSOR_API_KEY; hosted M4 can run it with the cluster S3 credentials.
 node scripts/fork/origin-forge.mjs upload-assets "${assets[@]}"
 
 # Push the baked notes only now that the feed lists this version. The notes

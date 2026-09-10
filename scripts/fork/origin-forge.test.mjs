@@ -663,7 +663,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(sync, "mapfile ");
     assert.include(sync, "Prepare macOS runner PATH");
     assert.include(sync, "checkout-origin.sh");
-    assert.include(mobile, "macos-release (m5-dev)");
+    assert.include(mobile, "hosted macos-large (M4)");
     assert.notInclude(mobile, "keeping importer tree");
     assert.notInclude(mobile, "t3_require_ota");
     assert.include(desktop, "ensure-linux-node.sh");
@@ -733,7 +733,7 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(releaseStep, "T3_SKIP_UNRESOLVABLE_MINT");
     assert.notInclude(releaseStep, "continue-on-error:");
-    assert.include(preflight, "Mac signing secrets are resolved on macos-release");
+    assert.include(preflight, "Mac signing secrets are resolved on macos-large");
     assert.include(preflight, "git fetch --force --tags origin");
     assert.include(mobile, "origin-forge.mjs merge-pr");
     const pipeline = NodeFS.readFileSync(
@@ -761,12 +761,14 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(reviewCi, "api.x.ai");
     assert.include(pipeline, "deploy-relay-ci.sh");
     assert.notInclude(pipeline, "deploy-relay.yml");
+    assert.include(pipeline, "queue: macos-medium");
+    assert.include(pipeline, "queue: macos-large");
     assert.include(pipeline, "queue: macos-release");
     assert.notInclude(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
     const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
-    assert.include(dmgStep.slice(0, 900), "queue: macos-release");
+    assert.include(dmgStep.slice(0, 900), "queue: macos-large");
     const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
     assert.include(linuxStep.slice(0, 900), "queue: linux-small");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
@@ -781,6 +783,8 @@ describe("Origin release and blocked-sync helpers", () => {
     );
     assert.include(importerStep, "queue: macos-release");
     assert.include(importerStep, "os: macos");
+    assert.notInclude(importerStep, "queue: macos-medium");
+    assert.notInclude(importerStep, "queue: macos-large");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");

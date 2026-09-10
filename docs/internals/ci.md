@@ -47,13 +47,15 @@ T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
 preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
-builds the x64 AppImage onto the same updater feed. On the shared
-`macos-release` queue, packaging steps select `os: macos` so they only run
-on m5-dev (`REVIEW_ONLY=0`, two workers): signing the DMG, publishing iOS
-OTA, submitting TestFlight IPAs, deploying the relay, and upstream sync.
-Origin PR Review stays queue-wide (one reviewer per PR branch via a
-Buildkite concurrency group) so the review-only Linux agent
-`m1-linux-t3code-fork` — the previous packaging Mac, now a Linux server —
-can take it. Windows NSIS is native `windows-release`.
+builds the x64 AppImage onto the same updater feed. Mac-capable jobs run
+on a hybrid of hosted M4 and self-hosted `macos-release`. Hosted
+`macos-medium` runs pipeline upload, the GitHub mirror, Android
+orchestration, and relay. Hosted `macos-large` signs the DMG and compiles
+iOS OTA/TestFlight. Signing imports `CSC_LINK` / `APPLE_API_KEY` from
+cluster secrets into a per-job temp keychain. Origin PR review, comments,
+the GHA importer, and upstream sync stay on self-hosted `macos-release`
+because hosted M4 cannot load `CURSOR_API_KEY`, has no `origin` CLI, and
+currently fails to compile buildkite-gha. Windows NSIS stays on
+`windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

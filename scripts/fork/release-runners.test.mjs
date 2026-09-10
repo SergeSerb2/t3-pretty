@@ -64,6 +64,8 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(importer, 'cache: "/cache/bkcache/mise"');
     assert.include(importer, "queue: macos-release");
     assert.include(importer, "os: macos");
+    assert.notInclude(importer, "queue: macos-medium");
+    assert.notInclude(importer, "queue: macos-large");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
@@ -177,12 +179,62 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
 
-  it("pins macos-release packaging steps to os=macos agents", () => {
-    // m1-linux-t3code-fork shares the macos-release queue as a review-only
-    // agent; DMG/mobile/relay/sync must never be assigned to a Linux box.
-    // importer, upstream-sync, macos-dmg, three mobile jobs, deploy-relay —
-    // reviews stay queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 8);
+  it("keeps Origin gates on macos-release and Mac packaging on hosted M4", () => {
+    // Hosted M4 cannot load CURSOR_API_KEY or compile buildkite-gha today.
+    // Origin review/comments/importer/sync stay on self-hosted macos-release.
+    // Packaging that does not need those secrets uses hosted M4 by queue key
+    // only: extra os=macos tags can leave hosted agents unmatched.
+    assert.include(pipeline, "queue: macos-release");
+    assert.include(pipeline, "queue: macos-medium");
+    assert.include(pipeline, "queue: macos-large");
+    assert.include(pipeline, "queue: windows-release");
+    assert.include(pipeline, "queue: linux-small");
+    const dmgStep = pipeline.slice(
+      pipeline.indexOf(":mac: macOS arm64 DMG"),
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+    );
+    const iosStep = pipeline.slice(
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+      pipeline.indexOf(":android: Android Internal"),
+    );
+    const syncStep = pipeline.slice(
+      pipeline.indexOf(":git: Upstream Sync"),
+      pipeline.indexOf(":mag: Origin PR Review"),
+    );
+    const reviewStep = pipeline.slice(
+      pipeline.indexOf(":mag: Origin PR Review"),
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+    );
+    const commentsStep = pipeline.slice(
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+      pipeline.indexOf(":npm: CLI tarball"),
+    );
+    const windowsStep = pipeline.slice(
+      pipeline.indexOf(":windows: Windows NSIS"),
+      pipeline.indexOf(":linux: Linux x64 AppImage"),
+    );
+    const mirrorStep = pipeline.slice(
+      pipeline.indexOf(":github: Mirror Origin main and release tags"),
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+    );
+    const androidStep = pipeline.slice(
+      pipeline.indexOf(":android: Android Internal"),
+      pipeline.indexOf(":android: Android public closed test"),
+    );
+    const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
+    assert.include(dmgStep, "queue: macos-large");
+    assert.notInclude(dmgStep, "os: macos");
+    assert.include(iosStep, "queue: macos-large");
+    assert.notInclude(iosStep, "os: macos");
+    assert.include(syncStep, "queue: macos-release");
+    assert.include(syncStep, "os: macos");
+    assert.include(reviewStep, "queue: macos-release");
+    assert.notInclude(reviewStep, "os: macos");
+    assert.include(commentsStep, "queue: macos-release");
+    assert.include(windowsStep, "queue: windows-release");
+    assert.include(mirrorStep, "queue: macos-medium");
+    assert.include(androidStep, "queue: macos-medium");
+    assert.include(relayStep, "queue: macos-medium");
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
@@ -204,7 +256,7 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
-    assert.include(mobileRelease, "macos-release (m5-dev)");
+    assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");

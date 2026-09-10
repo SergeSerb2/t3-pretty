@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Native macos-release iOS OTA + TestFlight. Same machine as the signed DMG
-# (m5-dev; m1-dev is now Linux). The GitHub Actions importer cannot load
+# Native hosted macos-large iOS OTA + TestFlight. Same M4 class as the signed
+# DMG. The GitHub Actions importer cannot load
 # cluster secrets or keep PATH across steps, so imported Expo/EAS jobs die
 # in seconds and TestFlight
 # never sees the update.
@@ -60,7 +60,7 @@ esac
 commit="${BUILDKITE_COMMIT:-${GITHUB_SHA:-$(git rev-parse HEAD)}}"
 update_message="${T3CODE_MOBILE_UPDATE_MESSAGE:-Production OTA (${commit})}"
 
-echo "T3 Pretty mobile release on macos-release (m5-dev) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
+echo "T3 Pretty mobile release on hosted macos-large (M4) mode=${MODE} platform=${PLATFORM} force_ios=${FORCE_IOS}"
 
 load_secret() {
   local name="$1"

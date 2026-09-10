@@ -90,7 +90,7 @@ pin_public_env() {
 
 if [[ "$flavor" == "internal" ]]; then
   if [[ "${T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED:-}" != "1" ]]; then
-    annotate warning "Internal Android delivery is wired but inactive. Create the Play app, upload its service-account key to EAS, then set T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1 on macos-release."
+    annotate warning "Internal Android delivery is wired but inactive. Create the Play app, upload its service-account key to EAS, then set T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED=1 in the Buildkite cluster secret store."
     exit 0
   fi
   export T3CODE_MOBILE_EAS_PROJECT_ID="${T3CODE_MOBILE_EAS_PROJECT_ID:-1eb51d67-48c5-4100-8aa8-f5ac9e1ada65}"
