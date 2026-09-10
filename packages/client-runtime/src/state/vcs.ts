@@ -40,6 +40,8 @@ const VCS_REFS_RETRY_SCHEDULE = Schedule.exponential("1 second").pipe(
   ),
 );
 
+export { VCS_STATUS_IDLE_TTL_MS };
+
 function canUseVcsRefsCache(input: VcsListRefsInput): boolean {
   return (
     input.query === undefined &&
@@ -356,5 +358,3 @@ export function shouldRefreshGitStatusAfterTurnComplete(_input: {
 }): boolean {
   return true;
 }
-
-export { VCS_STATUS_IDLE_TTL_MS };

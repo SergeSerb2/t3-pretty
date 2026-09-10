@@ -54,6 +54,8 @@ function createPullRequestRefreshAtomFamily<R, E>(
   });
 }
 
+export { LINKED_PULL_REQUEST_IDLE_TTL_MS };
+
 /** Refresh only the live fields a linked thread renders. */
 export function createLinkedPullRequestSummaryAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -271,5 +273,3 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
   };
 }
-
-export { LINKED_PULL_REQUEST_IDLE_TTL_MS };
