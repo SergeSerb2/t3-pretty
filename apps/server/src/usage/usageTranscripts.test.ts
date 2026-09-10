@@ -3,12 +3,10 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   GROK_COST_USD_TICKS_PER_DOLLAR,
   initialCodexScanState,
-  kimiSessionIdFromPath,
   mightCarryUsage,
   parseClaudeLine,
   parseCodexLine,
   parseGrokLine,
-  parseKimiLine,
   totalTokens,
 } from "./usageTranscripts.ts";
 
@@ -249,83 +247,11 @@ describe("parseCodexLine", () => {
   });
 });
 
-describe("parseKimiLine", () => {
-  const usageRecord = (overrides?: {
-    model?: string;
-    time?: number;
-    inputOther?: number;
-    inputCacheRead?: number;
-    inputCacheCreation?: number;
-    output?: number;
-  }) =>
-    JSON.stringify({
-      type: "usage.record",
-      model: overrides?.model ?? "kimi-code/k3",
-      usage: {
-        inputOther: overrides?.inputOther ?? 5564,
-        output: overrides?.output ?? 287,
-        inputCacheRead: overrides?.inputCacheRead ?? 19200,
-        inputCacheCreation: overrides?.inputCacheCreation ?? 0,
-      },
-      usageScope: "turn",
-      time: overrides?.time ?? 1784871468283,
-    });
-
-  it("extracts turn usage and keeps the session id from the caller", () => {
-    const record = parseKimiLine(usageRecord(), "session_c408be6c-ce98-410b-8533-894db7b0867a");
-
-    expect(record).not.toBeNull();
-    expect(record?.provider).toBe("kimi");
-    expect(record?.model).toBe("kimi-code/k3");
-    expect(record?.sessionId).toBe("session_c408be6c-ce98-410b-8533-894db7b0867a");
-    expect(record?.timestampMs).toBe(1784871468283);
-    expect(record?.totals).toEqual({
-      uncachedInputTokens: 5564,
-      cachedInputTokens: 19200,
-      cacheCreationTokens: 0,
-      outputTokens: 287,
-      reasoningTokens: 0,
-    });
-    expect(record?.reportedCostUsd).toBeNull();
-  });
-
-  it("ignores the duplicated step.end usage payload", () => {
-    expect(
-      parseKimiLine(
-        JSON.stringify({
-          type: "context.append_loop_event",
-          event: {
-            type: "step.end",
-            usage: { inputOther: 5564, output: 287, inputCacheRead: 19200, inputCacheCreation: 0 },
-          },
-          time: 1784871468283,
-        }),
-        "session_1",
-      ),
-    ).toBeNull();
-  });
-
-  it("rejects an oversized caller-provided session identifier", () => {
-    expect(parseKimiLine(usageRecord(), "s".repeat(1_025))).toBeNull();
-  });
-});
-
-describe("kimiSessionIdFromPath", () => {
-  it("reads the session folder out of a wire transcript path", () => {
-    expect(
-      kimiSessionIdFromPath(
-        "/Users/serge/.kimi-code/sessions/wd_dev/session_c408be6c-ce98-410b-8533-894db7b0867a/agents/main/wire.jsonl",
-      ),
-    ).toBe("session_c408be6c-ce98-410b-8533-894db7b0867a");
-  });
-});
-
 describe("mightCarryUsage", () => {
   it("gates each provider on the substring that actually carries tokens", () => {
     expect(mightCarryUsage('{"usage":{}}', "claude")).toBe(true);
     expect(mightCarryUsage('{"token_count":{}}', "codex")).toBe(true);
     expect(mightCarryUsage('{"sessionUpdate":"turn_completed"}', "grok")).toBe(true);
-    expect(mightCarryUsage('{"type":"usage.record"}', "kimi")).toBe(true);
     expect(mightCarryUsage('{"usage":{}}', "cursor")).toBe(false);
   });
 });

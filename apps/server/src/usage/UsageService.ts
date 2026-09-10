@@ -47,7 +47,6 @@ import { releaseHttpClientResponseBody } from "../stream/releaseHttpClientRespon
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
-import { resolveKimiHomePath } from "../provider/Drivers/KimiHome.ts";
 import { isValidUsageTimeZone, UsageAggregator } from "./usageAggregation.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
@@ -301,7 +300,6 @@ export const make = Effect.gen(function* () {
     const claudeHome = yield* resolveClaudeHomePath(settings.providers.claudeAgent);
     const claudeDir = yield* resolveClaudeTranscriptDir(claudeHome);
     const codexLayout = yield* resolveCodexHomeLayout(settings.providers.codex);
-    const kimiHome = yield* resolveKimiHomePath(settings.providers.kimi);
     // Grok Settings only expose the binary path; home is `$GROK_HOME` or `~/.grok`.
     // Empty/whitespace GROK_HOME must fall back: coalescing alone would scan cwd.
     const grokHomeEnv = hostEnvironment["GROK_HOME"]?.trim() ?? "";
@@ -317,11 +315,6 @@ export const make = Effect.gen(function* () {
         provider: "grok" as const,
         dir: path.join(grokHome, "sessions"),
         fileName: "updates.jsonl",
-      },
-      {
-        provider: "kimi" as const,
-        dir: path.join(kimiHome, "sessions"),
-        fileName: "wire.jsonl",
       },
     ];
   });

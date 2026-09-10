@@ -552,8 +552,7 @@ function ThreadSettingsSessionProvider(
     () => visibleSheetOptionDescriptors(displayedDescriptors),
     [displayedDescriptors],
   );
-  // Runtime modes follow the same staged model as the option rows above, so
-  // a staged Kimi pick already shows Kimi's Auto/Yolo naming before Save.
+  // Runtime modes follow the same staged model as the option rows above.
   const runtimeModeChoices = useMemo(
     () =>
       runtimeModeChoicesForProvider(

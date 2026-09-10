@@ -556,9 +556,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
-  // Untouched drafts inherit the provider's own default access mode: "yolo"
-  // for Kimi, the generic "full-access" everywhere else. Carried Kimi "yolo"
-  // remaps off Kimi so a Grok draft cannot show or send a mode Grok lacks.
+  // Untouched drafts inherit the generic "full-access" default. Historical
+  // "yolo" values remap to full-access on every known provider.
   const runtimeMode = effectiveRuntimeModeForProviderDriver(
     selectedModelOption?.providerDriver,
     selectedProjectDraft.runtimeMode,

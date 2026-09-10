@@ -205,15 +205,6 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.totals.outputTokens).toBe(50);
   });
 
-  it("prices Kimi Code models at official API rates when the table has no entry", () => {
-    const result = aggregate([record({ provider: "kimi", model: "kimi-code/k3" })]);
-
-    // 100*3e-6 + 1000*3e-7 + 10*3e-6 + 50*1.5e-5
-    expect(result.buckets[0]?.costUsd).toBeCloseTo(0.00138, 9);
-    expect(result.buckets[0]?.costSource).toBe("modelPriced");
-    expect(result.buckets[0]?.unpricedRecords).toBe(0);
-  });
-
   it("prefers a reported cost over the rate table", () => {
     const result = aggregate([record({ reportedCostUsd: 1.25 })]);
 

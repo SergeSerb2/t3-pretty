@@ -29,7 +29,7 @@ User-facing doc: [Apps](../user/apps.md). This page is the architecture.
   one entry per attachable app (`enabled && (auth === "none" || authorizedAt !== null)`) at
   `${endpoint}/apps/<id>`. Each adapter maps that list into its own dialect (Claude
   `mcpServers` record, Codex `-c mcp_servers.<name>.*` with the shared
-  `T3_MCP_BEARER_TOKEN` env var, ACP `mcpServers` array for Cursor/Grok/Kimi).
+  `T3_MCP_BEARER_TOKEN` env var, ACP `mcpServers` array for Cursor/Grok).
   Toggling or connecting an app applies to new sessions.
 - **Mentions:** `packages/shared/src/appMentions.ts` — `@slug` in the user text, matched
   against attachable apps, adds a short `[Connected apps]` prelude in

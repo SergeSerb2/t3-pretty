@@ -580,7 +580,7 @@ export const make = (
         writeTextFile: false,
         ...options.clientCapabilities?.fs,
       },
-      // Off unless the driver opts in. Kimi sets terminal: true so 0.37+
+      // Off unless the driver opts in. Terminal-capable ACP drivers set this so
       // can route Bash/Glob/Grep through the handlers above.
       terminal: options.clientCapabilities?.terminal ?? false,
       ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),

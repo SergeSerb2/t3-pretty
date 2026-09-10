@@ -4,7 +4,7 @@
  * Every provider drives the same t3-code MCP browser tools, but each reports
  * the call differently: Claude as `toolName: "mcp__t3-code__preview_click"`
  * with normalized `arguments`, Codex as `item.tool: "preview_click"` with
- * `item.arguments`, and ACP providers (Cursor, Grok, Kimi) as a free-text
+ * `item.arguments`, and ACP providers (Cursor, Grok) as a free-text
  * title. This module recognizes all three and produces one human sentence,
  * so chat timelines render "Clicked “Send”" instead of raw JSON.
  */

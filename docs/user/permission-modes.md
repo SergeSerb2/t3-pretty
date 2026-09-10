@@ -4,7 +4,7 @@ Permission modes control when an agent needs your approval to act. Choose a mode
 composer; it applies to that thread.
 
 The mode is set per thread, from the mode control in the message composer. Changing it in one
-thread does not change any other thread. New threads start in **Full access** (**Yolo** on Kimi)
+thread does not change any other thread. New threads start in **Full access**
 unless you choose another mode before sending. A thread created from another thread inherits its
 mode.
 
@@ -29,16 +29,10 @@ Supervised.
 **Full access**: allow commands and edits without prompts. The default. The agent runs
 unattended until it finishes or asks a question of its own.
 
-Kimi offers **Supervised**, **Yolo**, and **Full access** — the generic Auto and Auto-accept
-edits modes are not offered for Kimi. Both unattended modes run with full access; they differ in
-whether Kimi can stop to ask you questions: **Yolo** can (and is the default for Kimi), while
-**Full access** never does.
-
 For Grok, **Always allow this session** remembers the matching command or tool input. Other
 actions still require approval.
 
-Mobile offers the same modes with the same labels and descriptions: the four generic modes above,
-or **Supervised**, **Yolo**, and **Full access** for Kimi threads.
+Mobile offers the same modes with the same labels and descriptions.
 
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.

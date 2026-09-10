@@ -399,12 +399,11 @@ export function resolveThreadMetadataUpdateForNextTurn(input: {
 }
 
 // Composer pick wins, including an explicit "full-access" that a carry or
-// picker wrote there. A server thread's stored mode is authoritative — even
-// "full-access" on Kimi, which may be an explicit pick or the pre-Yolo
-// default. A draft whose thread mode still reads as the generic default
-// (never picked, never recorded on the composer) inherits the provider's
-// own default. Remapped carries must land in composerRuntimeMode so they
-// are not treated as unset.
+// picker wrote there. A server thread's stored mode is authoritative. A
+// draft whose thread mode still reads as the generic default (never picked,
+// never recorded on the composer) inherits the provider's own default.
+// Remapped carries must land in composerRuntimeMode so they are not treated
+// as unset.
 export function storedComposerRuntimeMode(input: {
   readonly composerRuntimeMode: RuntimeMode | null;
   readonly threadRuntimeMode: RuntimeMode | null | undefined;
@@ -420,8 +419,8 @@ export function storedComposerRuntimeMode(input: {
   );
 }
 
-// Apply the provider default, then remap Kimi-only "yolo" off Kimi so the
-// composer never offers a mode the current provider does not have.
+// Apply the provider default, then remap historical "yolo" to full-access
+// so the composer never offers a mode the current provider does not have.
 export function resolveComposerRuntimeMode(input: {
   readonly providerDriver: string | null | undefined;
   readonly composerRuntimeMode: RuntimeMode | null;
@@ -435,9 +434,9 @@ export function resolveComposerRuntimeMode(input: {
 }
 
 // New threads copy the viewed thread's access mode. When the destination
-// provider is known and is not Kimi, Kimi-only "yolo" becomes generic
-// full-access so it cannot land on Grok/Codex/Claude. Unknown destination
-// keeps the carried value; the composer remaps at display/send time.
+// provider is known, historical "yolo" becomes generic full-access. Unknown
+// destination keeps the carried value; the composer remaps at display/send
+// time.
 export function resolveCarriedRuntimeMode(input: {
   readonly runtimeMode: RuntimeMode | null;
   readonly destinationProviderDriver: string | null | undefined;
@@ -453,8 +452,8 @@ export function resolveCarriedRuntimeMode(input: {
 
 // The composer pick a new-thread carry should record. Only a carry with real
 // information becomes an explicit pick: a non-default mode, or "full-access"
-// that remapping yolo off Kimi produced. A plain carried "full-access" stays
-// unset on the composer so a new Kimi draft still inherits the yolo default.
+// that remapping historical yolo produced. A plain carried "full-access"
+// stays unset so a new draft still inherits the provider default.
 export function resolveCarriedComposerRuntimeMode(input: {
   readonly runtimeMode: RuntimeMode | null;
   readonly destinationProviderDriver: string | null | undefined;

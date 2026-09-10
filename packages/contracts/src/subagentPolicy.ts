@@ -87,7 +87,6 @@ const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 const GROK_DRIVER = ProviderDriverKind.make("grok");
-const KIMI_DRIVER = ProviderDriverKind.make("kimi");
 
 export const CLAUDE_SUBAGENT_MODEL_ENV = "CLAUDE_CODE_SUBAGENT_MODEL";
 
@@ -104,7 +103,7 @@ export function subagentPolicyBindForDriver(driver: ProviderDriverKind): Subagen
 export function defaultSubagentChildOptions(
   driver: ProviderDriverKind,
 ): ReadonlyArray<ProviderOptionSelection> {
-  if (driver === CLAUDE_DRIVER || driver === KIMI_DRIVER) {
+  if (driver === CLAUDE_DRIVER) {
     return [{ id: "effort", value: "low" }];
   }
   return [{ id: "reasoningEffort", value: "low" }];

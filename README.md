@@ -106,7 +106,6 @@ T3 Pretty does not sell models. It drives provider CLIs you already installed an
 | -------------- | -------------------------------------------------------------------------------------------- | ------------------- | ------- |
 | **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex login`       | On      |
 | **Claude**     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude auth login` | On      |
-| **Kimi Code**  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login`        | On      |
 | **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)                                        | `agent login`       | Off     |
 | **Grok Build** | [Grok Build CLI](https://x.ai/cli)                                                           | `grok login`        | Off     |
 
@@ -122,7 +121,7 @@ and let the agent open a pull request when it finishes.
 
 Everything you would expect from T3 Code is still here:
 
-- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi offers Supervised / Yolo / Full access, defaulting to Yolo)
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access)
 - Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
 - Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
 - Automatic pull requests, usage, storage cleanup, project icons
@@ -232,7 +231,7 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 - [Project settings](./docs/user/project-settings.md) (including project icons) · [Mobile appearance](./docs/user/mobile-appearance.md)
 - [Keeping client and server in sync](./docs/user/updating.md)
 - [Run T3 Pretty as a background service](./docs/user/background-service.md) (Linux and macOS)
-- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md) · [Kimi](./docs/user/providers-kimi.md)
+- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 
 **Working on the fork**
 

@@ -1,5 +1,5 @@
 /**
- * ACP client terminal host. Kimi 0.37+ routes Bash/Glob/Grep through
+ * ACP client terminal host. Drivers that opt in route Bash/Glob/Grep through
  * `terminal/*` once the client advertises `clientCapabilities.terminal`.
  * T3 runs those commands in the session cwd and keeps output until release.
  */
@@ -59,7 +59,7 @@ const emptyOutput: TerminalOutputBuffer = {
   truncated: false,
 };
 
-/** Kimi currently sends the full shell line in `command` and omits `args`. */
+/** Some ACP agents send the full shell line in `command` and omit `args`. */
 export function resolveAcpTerminalSpawn(input: {
   readonly command: string;
   readonly args?: ReadonlyArray<string>;

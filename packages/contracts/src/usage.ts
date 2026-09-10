@@ -3,7 +3,7 @@
  *
  * Each environment scans the provider CLIs' own on-disk session transcripts
  * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`,
- * `~/.grok/sessions/**\/updates.jsonl`, `~/.kimi-code/sessions/**\/wire.jsonl`,
+ * `~/.grok/sessions/**\/updates.jsonl`,
  * `~/.cursor/acp-sessions`) rather than relying on T3 Code's own orchestration
  * projections, so usage stays complete even for turns that were never driven
  * through T3 Code. This mirrors the approach `ccusage` takes. Cursor's local
@@ -35,7 +35,7 @@ export const USAGE_CONTRACT_VERSION = 5 as const;
  */
 export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
 
-export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok", "kimi"] as const;
+export const USAGE_PROVIDER_KINDS = ["claude", "codex", "cursor", "grok"] as const;
 
 export const USAGE_MODEL_MAX_LENGTH = 512;
 export const USAGE_TIME_ZONE_MAX_LENGTH = 128;
@@ -52,8 +52,7 @@ export function isUsageProviderKind(value: unknown): value is UsageProviderKind 
     value === "claude" ||
     value === "codex" ||
     value === "cursor" ||
-    value === "grok" ||
-    value === "kimi"
+    value === "grok"
   );
 }
 

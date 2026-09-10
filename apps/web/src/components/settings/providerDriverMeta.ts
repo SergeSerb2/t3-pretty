@@ -4,7 +4,6 @@ import {
   CodexSettings,
   CursorSettings,
   GrokSettings,
-  KimiSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
@@ -14,7 +13,6 @@ import {
   CursorIcon,
   GrokIcon,
   type Icon,
-  KimiIcon,
   OpenAI,
 } from "../Icons";
 
@@ -69,13 +67,6 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
     icon: GrokIcon,
     badgeLabel: "Early Access",
     settingsSchema: GrokSettings,
-  },
-  {
-    value: ProviderDriverKind.make("kimi"),
-    label: "Kimi",
-    icon: KimiIcon,
-    badgeLabel: "Early Access",
-    settingsSchema: KimiSettings,
   },
   {
     value: ProviderDriverKind.make("antigravity"),
