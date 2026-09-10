@@ -78,9 +78,29 @@ function makeFakeBrowserWindow(options?: { readonly focused?: boolean }) {
     }),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
-      webContentsListeners.set(eventName, listener);
+      const previous = webContentsListeners.get(eventName);
+      webContentsListeners.set(
+        eventName,
+        previous
+          ? (...args: readonly unknown[]) => {
+              previous(...args);
+              listener(...args);
+            }
+          : listener,
+      );
     }),
-    once: vi.fn(),
+    once: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
+      const previous = webContentsListeners.get(eventName);
+      webContentsListeners.set(
+        eventName,
+        previous
+          ? (...args: readonly unknown[]) => {
+              previous(...args);
+              listener(...args);
+            }
+          : listener,
+      );
+    }),
     openDevTools: vi.fn(),
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
@@ -698,6 +718,58 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("window ready-to-show listener was not registered");
         }
         readyToShow();
+        assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reveals the hidden Mac window when ready-to-show never fires but load finishes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!didFinishLoad) {
+          return yield* Effect.die("window did-finish-load listener was not registered");
+        }
+        didFinishLoad();
+        assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reveals the hidden window after a bound wait when no reveal event arrives", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS - 1);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        yield* TestClock.adjust(1);
+        yield* Effect.promise(() => Promise.resolve());
         assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
       }).pipe(Effect.provide(layer));
     }),

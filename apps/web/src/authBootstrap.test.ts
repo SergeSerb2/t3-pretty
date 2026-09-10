@@ -238,6 +238,53 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 
+  it("stops waiting for a missing desktop bootstrap URL so the splash can clear", async () => {
+    vi.useFakeTimers();
+    const testWindow = installTestBrowser("http://localhost/");
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () => [],
+    } as unknown as DesktopBridge;
+
+    const { DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toEqual({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+      errorMessage: "Timed out waiting for the local desktop backend to publish its address.",
+    });
+  });
+
+  it("stops retrying a silent desktop session so the splash can clear", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+    installDesktopBootstrap();
+
+    const { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toMatchObject({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+    });
+  });
+
   it("retries transient auth session bootstrap failures after restart", async () => {
     vi.useFakeTimers();
     let attempts = 0;

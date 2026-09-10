@@ -45,6 +45,9 @@ const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linu
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
+// ready-to-show is not guaranteed on every Electron/macOS build. Reveal
+// after did-finish-load or this bound so the window cannot stay hidden.
+export const MAIN_WINDOW_REVEAL_FALLBACK_MS = 3_000;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 // Renderer crash (usually V8 OOM on long sessions) recovery: reload after a
 // short delay, at most MAX_ATTEMPTS times per rolling WINDOW so a renderer
@@ -302,7 +305,7 @@ type RevealSubscription = (listener: () => void) => void;
 function bindFirstRevealTrigger(
   subscribers: readonly RevealSubscription[],
   reveal: () => void,
-): void {
+): () => void {
   let revealed = false;
   const fire = () => {
     if (revealed) return;
@@ -312,6 +315,7 @@ function bindFirstRevealTrigger(
   for (const subscribe of subscribers) {
     subscribe(fire);
   }
+  return fire;
 }
 
 export const make = Effect.gen(function* () {
@@ -875,11 +879,12 @@ export const make = Effect.gen(function* () {
       );
     });
 
-    const revealSubscribers: RevealSubscription[] = [(fire) => window.once("ready-to-show", fire)];
-    if (environment.platform === "linux") {
-      revealSubscribers.push((fire) => window.webContents.once("did-finish-load", fire));
-    }
-    bindFirstRevealTrigger(revealSubscribers, () => {
+    const revealSubscribers: RevealSubscription[] = [
+      (fire) => window.once("ready-to-show", fire),
+      // Linux historically missed ready-to-show; macOS Nightly can too.
+      (fire) => window.webContents.once("did-finish-load", fire),
+    ];
+    const fireReveal = bindFirstRevealTrigger(revealSubscribers, () => {
       // Boot is done; hand the window back to normal hidden-window throttling
       // (see the backgroundThrottling comment on the create options above).
       if (!window.isDestroyed()) {
@@ -892,6 +897,9 @@ export const make = Effect.gen(function* () {
       }
       void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
     });
+    runFork(
+      Effect.sleep(MAIN_WINDOW_REVEAL_FALLBACK_MS).pipe(Effect.andThen(Effect.sync(fireReveal))),
+    );
 
     loadApplication();
     if (environment.isDevelopment) {

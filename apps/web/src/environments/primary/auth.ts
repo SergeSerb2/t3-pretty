@@ -96,6 +96,22 @@ export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedErro
   }
 }
 
+export class PrimaryEnvironmentDesktopBootstrapTimeoutError extends Schema.TaggedErrorClass<PrimaryEnvironmentDesktopBootstrapTimeoutError>()(
+  "PrimaryEnvironmentDesktopBootstrapTimeoutError",
+  {
+    timeoutMs: Schema.Number,
+    elapsedMs: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return "Timed out waiting for the local desktop backend to publish its address.";
+  }
+}
+
+export const isPrimaryEnvironmentDesktopBootstrapTimeoutError = Schema.is(
+  PrimaryEnvironmentDesktopBootstrapTimeoutError,
+);
+
 export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedErrorClass<PrimaryEnvironmentPairingCredentialRequiredError>()(
   "PrimaryEnvironmentPairingCredentialRequiredError",
   {
@@ -176,9 +192,20 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
   // The desktop opens its window before the local backend has a start
   // config. Until the primary entry carries an httpBaseUrl the HTTP client
   // would resolve to the window origin (t3code:) and memoize that failure
-  // for the renderer's lifetime, so wait for the entry first.
+  // for the renderer's lifetime, so wait for the entry first — but never
+  // forever. `#boot-shell` cannot dissolve until this promise settles, and
+  // getLocalEnvironmentBootstraps omits the primary while config is missing,
+  // so an unbounded loop is a splash hang.
+  const startedAt = Date.now();
   let primary = await loadDesktopPrimaryEnvironmentBootstrap();
   while (primary?.httpBaseUrl == null) {
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS) {
+      throw new PrimaryEnvironmentDesktopBootstrapTimeoutError({
+        timeoutMs: DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS,
+        elapsedMs,
+      });
+    }
     await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
     primary = await loadDesktopPrimaryEnvironmentBootstrap();
   }
@@ -279,11 +306,19 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
-// The desktop renderer loads before its local backend listens (cold boot,
-// large-DB migration, restart) and the desktop keeps that backend alive, so
-// there is no point giving up: keep retrying until it answers.
-const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = Number.POSITIVE_INFINITY;
+// Wait for a cold-booting desktop backend, but the root beforeLoad that
+// calls this is on the first-paint path (`main.tsx` startup → router.load).
+// Infinity left `#boot-shell` up forever when the child never listened.
+export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = 30_000;
+export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
+
+const DESKTOP_MANAGED_AUTH = {
+  policy: "desktop-managed-local",
+  bootstrapMethods: ["desktop-bootstrap"],
+  sessionMethods: ["browser-session-cookie"],
+  sessionCookieName: "t3_session",
+} as const;
 
 export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
@@ -332,9 +367,32 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function desktopAuthUnavailableState(error: unknown): ServerAuthGateState {
+  return {
+    status: "requires-auth",
+    auth: DESKTOP_MANAGED_AUTH,
+    errorMessage: error instanceof Error ? error.message : "Local backend did not become ready.",
+  };
+}
+
 async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
-  const bootstrapCredential = await getDesktopBootstrapCredential();
-  const currentSession = await fetchSessionState();
+  let bootstrapCredential: string | null;
+  try {
+    bootstrapCredential = await getDesktopBootstrapCredential();
+  } catch (error) {
+    if (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error)) {
+      return desktopAuthUnavailableState(error);
+    }
+    throw error;
+  }
+
+  let currentSession: AuthSessionState;
+  try {
+    currentSession = await fetchSessionState();
+  } catch (error) {
+    return desktopAuthUnavailableState(error);
+  }
+
   if (currentSession.authenticated) {
     return { status: "authenticated" };
   }

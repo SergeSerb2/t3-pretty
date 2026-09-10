@@ -55,6 +55,7 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "30 minutes";
 const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
+const NIGHTLY_TAG_FETCH_TIMEOUT = Duration.seconds(3);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
@@ -1096,14 +1097,20 @@ export const make = Effect.gen(function* () {
       // Distinguish fetch failure (undefined) from success-with-no-nightly (null) vs success-with-tag (string)
       const isNightlyVersion = isNightlyTag(environment.appVersion);
       const latestNightlyTag: string | null | undefined = isNightlyVersion
-        ? yield* githubReleasesClient.fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" }).pipe(
-            Effect.catch((error) =>
-              logUpdaterWarning(
-                "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-                { error: error instanceof Error ? error.message : String(error) },
-              ).pipe(Effect.as(undefined)),
-            ),
-          )
+        ? yield* githubReleasesClient
+            .fetchLatestNightlyTag({ owner: "SergeSerb2", name: "t3-pretty" })
+            .pipe(
+              Effect.catch((error) =>
+                logUpdaterWarning(
+                  "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
+                  { error: error instanceof Error ? error.message : String(error) },
+                ).pipe(Effect.as(undefined)),
+              ),
+              // Electron fetch abort is not reliable on every Mac build. A second
+              // Effect clock bound keeps configure from blocking first window.
+              Effect.timeoutOption(NIGHTLY_TAG_FETCH_TIMEOUT),
+              Effect.map((result) => (Option.isSome(result) ? result.value : undefined)),
+            )
         : null;
 
       // Store latestNightlyTag for use in download path

@@ -7,8 +7,12 @@ export {
 
 export {
   createServerPairingCredential,
+  DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS,
+  DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS,
+  isPrimaryEnvironmentDesktopBootstrapTimeoutError,
   isPrimaryEnvironmentPairingCredentialRejectedError,
   peekPairingTokenFromUrl,
+  PrimaryEnvironmentDesktopBootstrapTimeoutError,
   PrimaryEnvironmentPairingCredentialRejectedError,
   PrimaryEnvironmentRequestError,
   resolveInitialServerAuthGateState,
