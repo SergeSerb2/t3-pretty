@@ -10,11 +10,11 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    Origin PR diff and posts `origin pr review --comment`. It does not approve or merge.
    It does not call api.x.ai. Automation sync branches are skipped. Origin pull-request
    builds become a GitHub Actions `pull_request` event, so `.buildkite/pipeline.yml`
-   does not import `fork-pr-review.yml`. A native hosted `macos-medium` step runs
-   `scripts/fork/run-trusted-origin-pr-ci.sh` instead, which prefers the review
-   scripts on `origin/main` so a feature branch cannot swap the secret loader
-   or the Origin child runner.
-   Hosted `linux-small` cannot load `CURSOR_API_KEY`. The step runs on every
+   does not import `fork-pr-review.yml`. A native self-hosted `macos-release`
+   step runs `scripts/fork/run-trusted-origin-pr-ci.sh` instead, which prefers
+   the review scripts on `origin/main` so a feature branch cannot swap the
+   secret loader or the Origin child runner.
+   Hosted `linux-small` and hosted M4 cannot load `CURSOR_API_KEY`. The step runs on every
    non-`main`, non-`automation/*` branch (Buildkite New Build is the manual
    path). Push builds briefly wait for PR creation because Origin does not
    reliably start a second Buildkite build when the PR opens. The script resolves the PR from the
@@ -29,12 +29,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    (`t3-pretty/origin-pr-review/$BUILDKITE_BRANCH`, limit 1) keeps a second
    reviewer for the same PR waiting instead of duplicating the review.
 2. `T3 Pretty Upstream Sync` runs every four hours at 00:00, 04:00, 08:00, 12:00, 16:00,
-   and 20:00 UTC as a native hosted `macos-large` Buildkite step
+   and 20:00 UTC as a native self-hosted `macos-release` Buildkite step
    (`scripts/fork/run-upstream-sync.sh`). The imported GitHub Actions wrapper
    is not scheduled: imported macos GHA steps often have no `GITHUB_OUTPUT`, and
    the old discover step died under `set -u` before the merge started. Each
    check finds the newest `pingdotgg/t3code` nightly tag. The job
-   starts from a fresh hosted checkout, so it still aborts leftover merge/rebase state, unsets
+   starts from a fresh self-hosted checkout, so it still aborts leftover merge/rebase state, unsets
    Buildkite's `NO_COLOR`/`FORCE_COLOR` pair (that pair can make Origin's bun git
    helper exit 255), and updates an existing `upstream` remote instead of
    `git remote add`. If a previous run already resolved an older nightly onto
@@ -161,11 +161,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
-   limit before any job starts.    Publish and Origin CLI packaging stay on
-   hosted M4 because hosted Linux cannot resolve `CURSOR_API_KEY`.
+   limit before any job starts.    Origin CLI work (review, comments, upstream
+   sync) stays on self-hosted `macos-release` because hosted Linux and hosted
+   M4 cannot resolve `CURSOR_API_KEY` and hosted M4 has no `origin` CLI.
    `T3 Pretty Origin PR Review` is a native
-   hosted `macos-medium` step that prefers review scripts from `origin/main`: hosted
-   Linux cannot load `CURSOR_API_KEY`, and the importer cannot run the old
+   self-hosted `macos-release` step that prefers review scripts from `origin/main`: hosted
+   Linux and hosted M4 cannot load `CURSOR_API_KEY`, and the importer cannot run the old
    review workflow on Origin pull-request events.
    Hosted `macos-large` signs the macOS arm64 DMG. `serge-pc` builds Windows x64 on `windows-release` for
    push/UI builds of `main`, not the four-hour scheduled sync. Hosted `linux-small` builds the
@@ -176,7 +177,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
    deploys from hosted `macos-medium`. Only trusted `main` commits run desktop packaging
    and relay deploys; Origin PR review is the
-   hosted `macos-medium` job on feature branches, running scripts from `origin/main`
+   self-hosted `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
    shipped desktop app (mobile-only, docs-only, marketing, or relay-only commits).
    Native Mac, Windows, and Linux packaging still run on every `main` push so the public
@@ -210,18 +211,21 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
   the fork workflows. Use these agent queues: `linux-small` (Buildkite hosted Linux: imported
   ubuntu-latest jobs, WSL node-pty, and the x64 AppImage),
-  `macos-medium` (hosted M4 6 vCPU: pipeline upload, reviews, mirror, GHA importer,
-  Android orchestration, relay),
-  `macos-large` (hosted M4 12 vCPU: signed DMG, iOS, upstream sync), and
+  `macos-medium` (hosted M4 6 vCPU: pipeline upload, mirror, Android
+  orchestration, relay),
+  `macos-large` (hosted M4 12 vCPU: signed DMG, iOS),
+  `macos-release` (self-hosted: Origin PR review, comments, GHA importer,
+  upstream sync — these need `CURSOR_API_KEY`, the origin CLI, and a
+  matching Go toolchain that hosted M4 does not have today), and
   `windows-release` (serge-pc).
-  Self-hosted `macos-release` remains in the cluster but this pipeline does not
-  target it. The default Buildkite upload step is `macos-medium` (pipeline
-  settings, not `.buildkite/pipeline.yml`). Register an optional leftover Mac
+  The default Buildkite upload step is `macos-medium` (pipeline
+  settings, not `.buildkite/pipeline.yml`); upload does not need Origin
+  secrets. Register a leftover Mac
   with `scripts/fork/setup-buildkite-macos-agent.sh` and Windows with
   `scripts/fork/setup-buildkite-windows-agent.ps1`. Schedule the pipeline at
-  `0 */4 * * *` so the native `macos-large` upstream-sync step still runs.
+  `0 */4 * * *` so the native `macos-release` upstream-sync step still runs.
   Imported Mac jobs use `macos-latest` so the plugin can map them onto
-  `macos-medium`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
+  `macos-release`. Rust is installed with `rustup`, not `dtolnay/rust-toolchain`.
   The importer cannot run Windows jobs; `.buildkite/pipeline.yml` runs
   `scripts/fork/build-windows-nsis.ps1` on `windows-release` in parallel with the importer
   for push/UI builds of `main`, not the four-hour schedule. The Linux AppImage is the
@@ -231,8 +235,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   That script installs official Vite+ (`vp.exe`) under `C:\buildkite-agent\vite-plus`
   and refuses the npm `vp` stub. Mac-only desktop publishes are still allowed if
   that step is skipped. Depot can take Linux jobs but has no macOS/Windows sandboxes.
-  Hosted Linux cannot resolve `CURSOR_API_KEY`. Origin CLI work for reviews
-  runs on hosted `macos-medium`; publish and upstream sync use `macos-large`.
+  Hosted Linux and hosted M4 cannot resolve `CURSOR_API_KEY`. Origin CLI
+  work for reviews and upstream sync stays on self-hosted `macos-release`.
   Hosted preflight must not
   mention that secret or the Mac signing certificate names. The Windows agent
   runs as LocalSystem; Origin HTTPS checkout uses
@@ -298,19 +302,22 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                    |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` (Origin CLI)                    |
+| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | self-hosted `macos-release` (Origin CLI)             |
 | Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | hosted `macos-large` (`publish-mobile-release.sh`)    |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | hosted `macos-medium` (`deploy-relay-ci.sh`)          |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy a hosted M4 only for the signed DMG and iOS jobs. Changelog, WSL, and Linux publish stay on `linux-small`.
 
-### Hosted M4 is the packaging Mac
+### Hosted M4 is the packaging Mac; Origin gates stay self-hosted
 
-Mac-capable jobs use Buildkite hosted macOS M4 queues (`macos-medium` /
-`macos-large`). Apple signing does not use the self-hosted login keychain:
-`build-macos-dmg.sh` imports `CSC_LINK` into a per-job temp keychain and
-notarizes with `APPLE_API_KEY` from the cluster. Self-hosted `macos-release`
-(m5-dev) is unused by this pipeline. Never give a leftover self-hosted agent
+Signed DMG and iOS compile on hosted M4 (`macos-large`). Mirror, Android,
+relay, and pipeline upload use `macos-medium`. Apple signing does not use
+the self-hosted login keychain: `build-macos-dmg.sh` imports `CSC_LINK`
+into a per-job temp keychain and notarizes with `APPLE_API_KEY` from the
+cluster. Origin PR review, comments, the GHA importer, and upstream sync
+stay on self-hosted `macos-release` (m5-dev / review-only Linux). Hosted
+M4 cannot load `CURSOR_API_KEY` and has no `origin` CLI; do not add that
+secret to hosted queues. Never give a leftover self-hosted agent
 `pull_request` labels.
 
 ## Runner recovery

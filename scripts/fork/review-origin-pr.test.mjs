@@ -183,7 +183,7 @@ here you go
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs Origin PR review from hosted macos-medium with Grok 4.6", () => {
+  it("runs Origin PR review from self-hosted macos-release with Grok 4.6", () => {
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -212,7 +212,7 @@ describe("Origin Grok review workflow wiring", () => {
     assert.isAbove(updateIndex, trusted.indexOf("export GIT_TERMINAL_PROMPT=0"));
     assert.isBelow(updateIndex, trusted.indexOf('ROOT="'));
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
-    assert.include(reviewStep.slice(0, 1200), "queue: macos-medium");
+    assert.include(reviewStep.slice(0, 1200), "queue: macos-release");
     assert.include(reviewStep, "automation");
     assert.notInclude(reviewStep, "build.pull_request");
     assert.include(reviewStep, "briefly waits for the PR");

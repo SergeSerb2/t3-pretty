@@ -62,9 +62,10 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(importer, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(importer, 'version: "0.35.1"');
     assert.notInclude(importer, 'cache: "/cache/bkcache/mise"');
-    assert.include(importer, "queue: macos-medium");
-    assert.notInclude(importer, "queue: macos-release");
-    assert.notInclude(importer, "os: macos");
+    assert.include(importer, "queue: macos-release");
+    assert.include(importer, "os: macos");
+    assert.notInclude(importer, "queue: macos-medium");
+    assert.notInclude(importer, "queue: macos-large");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
@@ -178,11 +179,12 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
 
-  it("sends Mac-capable jobs to hosted M4 queues and keeps Windows on serge-pc", () => {
-    // Hosted M4 agents match on queue key. Extra os=macos tags were for the
-    // mixed macos-release pool and can leave hosted agents unmatched.
-    assert.notInclude(pipeline, "queue: macos-release");
-    assert.notInclude(pipeline, "os: macos");
+  it("keeps Origin gates on macos-release and Mac packaging on hosted M4", () => {
+    // Hosted M4 cannot load CURSOR_API_KEY or compile buildkite-gha today.
+    // Origin review/comments/importer/sync stay on self-hosted macos-release.
+    // Packaging that does not need those secrets uses hosted M4 by queue key
+    // only: extra os=macos tags can leave hosted agents unmatched.
+    assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: macos-medium");
     assert.include(pipeline, "queue: macos-large");
     assert.include(pipeline, "queue: windows-release");
@@ -203,15 +205,36 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf(":mag: Origin PR Review"),
       pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
     );
+    const commentsStep = pipeline.slice(
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+      pipeline.indexOf(":npm: CLI tarball"),
+    );
     const windowsStep = pipeline.slice(
       pipeline.indexOf(":windows: Windows NSIS"),
       pipeline.indexOf(":linux: Linux x64 AppImage"),
     );
+    const mirrorStep = pipeline.slice(
+      pipeline.indexOf(":github: Mirror Origin main and release tags"),
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+    );
+    const androidStep = pipeline.slice(
+      pipeline.indexOf(":android: Android Internal"),
+      pipeline.indexOf(":android: Android public closed test"),
+    );
+    const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
     assert.include(dmgStep, "queue: macos-large");
+    assert.notInclude(dmgStep, "os: macos");
     assert.include(iosStep, "queue: macos-large");
-    assert.include(syncStep, "queue: macos-large");
-    assert.include(reviewStep, "queue: macos-medium");
+    assert.notInclude(iosStep, "os: macos");
+    assert.include(syncStep, "queue: macos-release");
+    assert.include(syncStep, "os: macos");
+    assert.include(reviewStep, "queue: macos-release");
+    assert.notInclude(reviewStep, "os: macos");
+    assert.include(commentsStep, "queue: macos-release");
     assert.include(windowsStep, "queue: windows-release");
+    assert.include(mirrorStep, "queue: macos-medium");
+    assert.include(androidStep, "queue: macos-medium");
+    assert.include(relayStep, "queue: macos-medium");
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {

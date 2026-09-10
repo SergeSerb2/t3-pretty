@@ -763,7 +763,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.notInclude(pipeline, "deploy-relay.yml");
     assert.include(pipeline, "queue: macos-medium");
     assert.include(pipeline, "queue: macos-large");
-    assert.notInclude(pipeline, "queue: macos-release");
+    assert.include(pipeline, "queue: macos-release");
     assert.notInclude(pipeline, "queue: macos-package");
     assert.include(pipeline, "queue: windows-release");
     assert.include(pipeline, "queue: linux-small");
@@ -772,7 +772,7 @@ describe("Origin release and blocked-sync helpers", () => {
     const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
     assert.include(linuxStep.slice(0, 900), "queue: linux-small");
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
-    assert.include(reviewStep.slice(0, 900), "queue: macos-medium");
+    assert.include(reviewStep.slice(0, 900), "queue: macos-release");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(pipeline, 'version: "0.35.1"');
@@ -781,9 +781,10 @@ describe("Origin release and blocked-sync helpers", () => {
       pipeline.indexOf(":github: T3 Pretty Origin workflows"),
       pipeline.indexOf(":git: Upstream Sync"),
     );
-    assert.include(importerStep, "queue: macos-medium");
-    assert.notInclude(importerStep, "queue: macos-release");
-    assert.notInclude(importerStep, "os: macos");
+    assert.include(importerStep, "queue: macos-release");
+    assert.include(importerStep, "os: macos");
+    assert.notInclude(importerStep, "queue: macos-medium");
+    assert.notInclude(importerStep, "queue: macos-large");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");

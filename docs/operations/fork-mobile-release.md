@@ -7,8 +7,8 @@ Google Play internal testing.
 ## Upstream ingestion (shared with desktop)
 
 `.buildkite/pipeline.yml` runs `scripts/fork/run-upstream-sync.sh` every four
-hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on hosted
-`macos-large`.
+hours at 00:00, 04:00, 08:00, 12:00, 16:00, and 20:00 UTC on self-hosted
+`macos-release`.
 The job merges the newest upstream nightly tag (AI-resolving conflicts via
 `scripts/fork/resolve-git-conflicts.mjs`) and lands it on Origin `main` through
 an immediately merged pull request. Mobile code rides along — there is no separate

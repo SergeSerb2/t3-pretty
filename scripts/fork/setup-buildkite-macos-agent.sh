@@ -1,10 +1,10 @@
 #!/bin/bash
 # Register a trusted macOS Buildkite agent for T3 Pretty Origin CI.
 #
-# Optional self-hosted leftover. Packaging, reviews, and sync now target
-# hosted macos-medium / macos-large. Default queue is still macos-release
-# so an old local agent can take leftover jobs; REVIEW_ONLY=1 refuses
-# packaging if a stale pipeline.yml still matches this queue.
+# Self-hosted macos-release still runs Origin PR review, comments, the
+# GHA importer, and upstream sync (CURSOR_API_KEY / origin CLI / matching
+# Go). Hosted macos-medium / macos-large take Mac packaging. REVIEW_ONLY=1
+# refuses packaging if a stale pipeline.yml still matches this queue.
 # Review-only machines spawn REVIEW_WORKERS (default 10) workers so many PRs
 # review in parallel; the pipeline's per-branch concurrency group keeps one
 # reviewer per PR. Packaging machines register two workers so review and a
