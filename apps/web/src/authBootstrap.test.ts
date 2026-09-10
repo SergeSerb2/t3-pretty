@@ -285,6 +285,64 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 
+  it("does not map a web session 401 to desktop-managed auth", async () => {
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new EnvironmentAuthInvalidError({
+        code: "auth_invalid",
+        reason: "missing_credential",
+        traceId: "trace-web-401",
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const { PrimaryEnvironmentRequestError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const error = await resolveInitialServerAuthGateState().then(
+      () => null,
+      (failure: unknown) => failure,
+    );
+
+    expect(error).toBeInstanceOf(PrimaryEnvironmentRequestError);
+    expect(error).toMatchObject({
+      _tag: "PrimaryEnvironmentRequestError",
+      operation: "fetch-session-state",
+      status: 401,
+    });
+  });
+
+  it("does not map a web session retry timeout to desktop-managed auth", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const { PrimaryEnvironmentRequestError, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const failure = resolveInitialServerAuthGateState().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(PrimaryEnvironmentRequestError);
+    expect(error).toMatchObject({
+      _tag: "PrimaryEnvironmentRequestError",
+      operation: "fetch-session-state",
+      status: 502,
+    });
+  });
+
   it("retries transient auth session bootstrap failures after restart", async () => {
     vi.useFakeTimers();
     let attempts = 0;

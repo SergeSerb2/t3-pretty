@@ -1,5 +1,6 @@
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -109,7 +110,15 @@ export const make = Effect.gen(function* () {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
 
-        yield* primary.waitForReady(LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT);
+        yield* primary.waitForReady(LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT).pipe(
+          Effect.catchCause((cause) =>
+            Effect.fail(
+              new DesktopLocalEnvironmentAuthSessionBootstrapError({
+                cause: describeLocalBearerBootstrapCause(Cause.squash(cause)),
+              }),
+            ),
+          ),
+        );
 
         const session = yield* bootstrapRemoteBearerSession({
           httpBaseUrl: config.httpBaseUrl.href,

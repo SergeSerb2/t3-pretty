@@ -7,6 +7,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
@@ -59,8 +60,13 @@ const tokenResponse = (request: HttpClientRequest.HttpClientRequest) =>
     ),
   );
 
+class BackendReadyLatchError extends Schema.TaggedErrorClass<BackendReadyLatchError>()(
+  "BackendReadyLatchError",
+  { message: Schema.String },
+) {}
+
 const makePoolLayer = (options?: {
-  readonly waitForReady?: Effect.Effect<boolean>;
+  readonly waitForReady?: Effect.Effect<boolean, unknown>;
 }): Layer.Layer<DesktopBackendPool.DesktopBackendPool> =>
   Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
     list: Effect.succeed([
@@ -125,6 +131,38 @@ describe("DesktopLocalEnvironmentAuth", () => {
       yield* Deferred.succeed(ready, true);
       assert.strictEqual(yield* Fiber.join(fiber), "desktop-bearer-token");
       assert.strictEqual(yield* Ref.get(requestCount), 1);
+    }),
+  );
+
+  it.effect("maps a ready-latch failure to a serializable session bootstrap error", () =>
+    Effect.gen(function* () {
+      const requestCount = yield* Ref.make(0);
+      const httpClientLayer = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Ref.update(requestCount, (count) => count + 1).pipe(Effect.as(tokenResponse(request))),
+        ),
+      );
+      const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            makePoolLayer({
+              waitForReady: new BackendReadyLatchError({ message: "ready latch failed" }),
+            }),
+            httpClientLayer,
+          ),
+        ),
+      );
+
+      const error = yield* Effect.gen(function* () {
+        const auth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+        return yield* auth.getBearerToken;
+      }).pipe(Effect.provide(testLayer), Effect.flip);
+
+      assert.strictEqual(error._tag, "DesktopLocalEnvironmentAuthSessionBootstrapError");
+      assert.strictEqual(typeof error.cause, "string");
+      assert.strictEqual(error.cause, "ready latch failed");
+      assert.strictEqual(yield* Ref.get(requestCount), 0);
     }),
   );
 

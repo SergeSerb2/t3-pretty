@@ -390,7 +390,17 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
   try {
     currentSession = await fetchSessionState();
   } catch (error) {
-    return desktopAuthUnavailableState(error);
+    // Desktop session retries are bounded so #boot-shell can clear. Web 401 /
+    // 5xx / network failures must keep their own auth policy, not
+    // desktop-managed-local.
+    if (
+      window.desktopBridge !== undefined &&
+      (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error) ||
+        isTransientBootstrapError(error))
+    ) {
+      return desktopAuthUnavailableState(error);
+    }
+    throw error;
   }
 
   if (currentSession.authenticated) {
