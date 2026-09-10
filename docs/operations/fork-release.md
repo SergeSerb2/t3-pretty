@@ -161,7 +161,7 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    the version. What's New notes are written by the native Mac and Windows packagers. It does not call GitHub Actions
    (`uses:`) — the importer resolves every action from api.github.com at parse
    time, and a burst of main merges then fails the workflow with a GitHub rate
-   limit before any job starts.    Origin CLI work (review, comments, upstream
+   limit before any job starts. Origin CLI work (review, comments, upstream
    sync) stays on self-hosted `macos-release` because hosted Linux and hosted
    M4 cannot resolve `CURSOR_API_KEY` and hosted M4 has no `origin` CLI.
    `T3 Pretty Origin PR Review` is a native
@@ -175,7 +175,8 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    HTTPS has no credentials there, and git waits forever on the username prompt. iOS TestFlight
    IPAs and OTA exports compile on hosted `macos-large` through the native
    `scripts/fork/publish-mobile-release.sh` step (not the GitHub Actions importer). Relay
-   deploys from hosted `macos-medium`. Only trusted `main` commits run desktop packaging
+   deploys from self-hosted `macos-release` (`PLANETSCALE_*` is not available on
+   hosted M4). Only trusted `main` commits run desktop packaging
    and relay deploys; Origin PR review is the
    self-hosted `macos-release` job on feature branches, running scripts from `origin/main`
    when they exist. Imported desktop preflight is skipped when the push cannot change the
@@ -211,11 +212,12 @@ without pretending that a newer upstream tag was integrated before its sync pull
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
   the fork workflows. Use these agent queues: `linux-small` (Buildkite hosted Linux: imported
   ubuntu-latest jobs, WSL node-pty, and the x64 AppImage),
-  `macos-medium` (hosted M4 6 vCPU: pipeline upload, mirror, Android
-  orchestration, relay),
+  `macos-medium` (hosted M4 6 vCPU: pipeline upload, Android
+  orchestration),
   `macos-large` (hosted M4 12 vCPU: signed DMG, iOS),
   `macos-release` (self-hosted: Origin PR review, comments, GHA importer,
-  upstream sync — these need `CURSOR_API_KEY`, the origin CLI, and a
+  upstream sync, GitHub mirror, and relay — these need `CURSOR_API_KEY`,
+  the origin CLI, `GITHUB_MIRROR_SSH_KEY`, `PLANETSCALE_*`, and/or a
   matching Go toolchain that hosted M4 does not have today), and
   `windows-release` (serge-pc).
   The default Buildkite upload step is `macos-medium` (pipeline
@@ -295,30 +297,32 @@ SmartScreen prompts should go away.
 
 Measured from recent successful runs on the current two runners (2026-08-16):
 
-| Job                         | Where it used to run                  | Typical time                                | Where it runs now                                    |
-| --------------------------- | ------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
-| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                      |
-| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                       |
-| Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
-| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                    |
-| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
+| Job                         | Where it used to run                  | Typical time                                | Where it runs now                                                             |
+| --------------------------- | ------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| Changelog + version + smoke | m1-dev                                | 10 min (6.5 min model + 3 min install)      | `ubuntu-latest`                                                               |
+| WSL `node-pty` linux-x64    | m1-dev (Docker/`linux/amd64`)         | 1 min, and it blocked the DMG               | `ubuntu-latest` native compile                                                |
+| Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)                              |
+| macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                                             |
+| Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                                            |
 | Updater-feed upload (R2/S3) | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` DMG (`origin-forge upload-assets` is S3, not Origin CLI) |
-| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | hosted `macos-large` (`publish-mobile-release.sh`)    |
-| Relay production deploy     | m1-dev                                | queued behind releases                      | hosted `macos-medium` (`deploy-relay-ci.sh`)          |
+| Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | hosted `macos-large` (`publish-mobile-release.sh`)                            |
+| Relay production deploy     | m1-dev                                | queued behind releases                      | self-hosted `macos-release` (`deploy-relay-ci.sh`)                            |
+| GitHub mirror               | m1-dev                                | seconds                                     | self-hosted `macos-release` (`mirror-github.sh`)                              |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy a hosted M4 only for the signed DMG and iOS jobs. Changelog, WSL, and Linux publish stay on `linux-small`.
 
-### Hosted M4 is the packaging Mac; Origin gates stay self-hosted
+### Hosted M4 is the packaging Mac; Origin gates and secretful jobs stay self-hosted
 
-Signed DMG and iOS compile on hosted M4 (`macos-large`). Mirror, Android,
-relay, and pipeline upload use `macos-medium`. Apple signing does not use
-the self-hosted login keychain: `build-macos-dmg.sh` imports `CSC_LINK`
-into a per-job temp keychain and notarizes with `APPLE_API_KEY` from the
-cluster. Origin PR review, comments, the GHA importer, and upstream sync
-stay on self-hosted `macos-release` (m5-dev / review-only Linux). Hosted
-M4 cannot load `CURSOR_API_KEY` and has no `origin` CLI; do not add that
-secret to hosted queues. Never give a leftover self-hosted agent
-`pull_request` labels.
+Signed DMG and iOS compile on hosted M4 (`macos-large`). Android and
+pipeline upload use `macos-medium`. Apple signing does not use the
+self-hosted login keychain: `build-macos-dmg.sh` imports `CSC_LINK` into
+a per-job temp keychain and notarizes with `APPLE_API_KEY` from the
+cluster. Origin PR review, comments, the GHA importer, upstream sync,
+the GitHub mirror, and relay stay on self-hosted `macos-release`
+(m5-dev / review-only Linux). Hosted M4 cannot load `CURSOR_API_KEY`,
+`GITHUB_MIRROR_SSH_KEY`, or `PLANETSCALE_*`, and has no `origin` CLI or
+macos-release file-store fallbacks; do not add those secrets to hosted
+queues. Never give a leftover self-hosted agent `pull_request` labels.
 
 ## Runner recovery
 

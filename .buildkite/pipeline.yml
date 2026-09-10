@@ -4,29 +4,33 @@
 # for that event. Path filters are not supported by the importer, so the
 # workflows themselves skip no-op desktop/mobile work.
 #
-# Queues (hybrid: Origin secrets stay self-hosted; Mac packaging is hosted M4):
+# Queues (hybrid: Origin gates + fork cluster secrets stay self-hosted;
+# Mac packaging is hosted M4):
 #   linux-small     — hosted Linux (imported ubuntu-latest jobs, AppImage, CLI)
-#   macos-medium    — hosted MACOS_ARM64_M4_6X28 (pipeline upload, mirror,
-#                     Android orchestration, relay). No Origin CLI / no
-#                     CURSOR_API_KEY required. Hosted agents currently cannot
-#                     resolve that secret; do not assign Origin gates here.
+#   macos-medium    — hosted MACOS_ARM64_M4_6X28 (pipeline upload, Android
+#                     orchestration). No Origin CLI / no CURSOR_API_KEY /
+#                     no GITHUB_MIRROR_SSH_KEY / no PLANETSCALE_* . Hosted
+#                     agents cannot resolve those cluster secrets; do not
+#                     assign Origin gates or secretful Mirror/Relay here.
 #   macos-large     — hosted MACOS_ARM64_M4_12X56 (signed DMG, iOS). Apple
 #                     signing imports CSC_LINK / APPLE_API_KEY from cluster
 #                     secrets into a per-job temp keychain; it does not need
 #                     the self-hosted login keychain or CURSOR_API_KEY.
 #   macos-release   — self-hosted Serge Mac / review-only Linux. Origin PR
-#                     review, comments, GHA importer, and upstream sync stay
-#                     here: they need CURSOR_API_KEY, the origin CLI, and a
-#                     matching Go toolchain. Hosted M4 lacks those today.
+#                     review, comments, GHA importer, upstream sync, GitHub
+#                     mirror, and relay stay here: they need CURSOR_API_KEY,
+#                     the origin CLI, GITHUB_MIRROR_SSH_KEY, PLANETSCALE_*,
+#                     and/or the macos-release file-store fallbacks. Hosted
+#                     M4 lacks those today (BK 1876/1878/1880).
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # Target hosted Mac queues by key only. Extra tags like os=macos were for
 # the mixed macos-release pool (Linux review agents) and can leave hosted
-# M4 agents unmatched. macos-release packaging/importer steps keep os=macos
-# so they do not land on the Linux review-only agent. Origin PR review and
-# comments stay queue-wide so that agent can take them. The Buildkite
-# default upload step is macos-medium (pipeline settings, not this file);
-# upload does not need Origin secrets.
+# M4 agents unmatched. macos-release secretful/importer/sync steps keep
+# os=macos so they do not land on the Linux review-only agent. Origin PR
+# review and comments stay queue-wide so that agent can take them. The
+# Buildkite default upload step is macos-medium (pipeline settings, not
+# this file); upload does not need Origin secrets.
 #
 # Do not list cluster secrets on hosted steps. Hosted agents currently 500
 # while fetching YAML `secrets:`, and the GitHub Actions importer fails the
@@ -60,7 +64,12 @@ steps:
     # This independent step does not gate the internal packaging steps below.
     if: 'build.branch == "main" && build.source != "schedule"'
     agents:
-      queue: macos-medium
+      # GITHUB_MIRROR_SSH_KEY is a fork cluster secret. Hosted macos-medium
+      # cannot resolve it (BK 1878/1880: "cluster secret ... is not
+      # available on this agent"). Keep this on macos-release with os=macos
+      # so the Linux review-only agent cannot take it.
+      queue: macos-release
+      os: macos
     # Buildkite interpolates ${VAR} in command: before the step runs.
     # Check the sourced secret in mirror-github.sh, not in this block.
     command: |
@@ -293,12 +302,15 @@ steps:
 
   - label: ":cloud: Relay"
     key: deploy-relay
-    # Production deploys load cluster secrets after checkout. Hosted M4
-    # does that the same way as the native Mac step.
+    # PLANETSCALE_* / Clerk / Axiom tokens live in the macos-release
+    # cluster secret store and file-store fallbacks. Hosted macos-medium
+    # cannot resolve them (BK 1878/1880: "Missing relay secret:
+    # PLANETSCALE_API_TOKEN_ID"). Keep production deploys on macos-release.
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 20
     agents:
-      queue: macos-medium
+      queue: macos-release
+      os: macos
     env:
       CLOUDFLARE_ACCOUNT_ID: a6f705b8c6459d937d32d31555f9fbf6
       PLANETSCALE_ORGANIZATION: serge-serbinenko

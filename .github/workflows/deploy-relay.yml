@@ -36,9 +36,10 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     if: github.repository == 'SergeSerb2/t3-pretty'
-    # Hosted macos-medium can load cluster secrets that hosted linux-small
-    # cannot. Clerk / PlanetScale / Axiom tokens are not interpolatable on
-    # the importer without risking a failed `secrets.*` resolve.
+    # macos-release can read the file-store fallbacks that hosted
+    # linux-small and hosted M4 cannot. Clerk / PlanetScale / Axiom tokens
+    # are not interpolatable on the importer without risking a failed
+    # `secrets.*` resolve.
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
