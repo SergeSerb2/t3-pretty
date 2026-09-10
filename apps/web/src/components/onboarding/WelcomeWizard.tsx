@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { openClerkGate, useClerkGateOpen } from "../../cloud/clerkGate";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
@@ -268,6 +269,7 @@ function ConnectionStep({
 }) {
   const { environments } = useEnvironments();
   const cloudEnabled = hasCloudPublicConfig();
+  const clerkGateOpen = useClerkGateOpen();
   const directEnvironments = environments.filter(
     (environment) => !cloudEnabled || !isOnboardingRelayEnvironment(environment),
   );
@@ -337,13 +339,25 @@ function ConnectionStep({
         </fieldset>
       ) : null}
       <div className="mt-4 space-y-2">
-        {cloudEnabled ? (
+        {cloudEnabled && clerkGateOpen ? (
           <ConnectAccountOption
             autoSelectedComputers={autoSelectedComputers}
             disabled={isPairing}
             selectedIds={selectedIds}
             onToggleEnvironment={onToggleEnvironment}
           />
+        ) : cloudEnabled ? (
+          <Button
+            variant="ghost"
+            disabled={isPairing}
+            onClick={() => openClerkGate({ promptSignIn: true })}
+            className="h-auto min-h-14 w-full justify-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left whitespace-normal sm:h-auto"
+          >
+            <CloudIcon className="size-4 text-muted-foreground" />
+            <span className="flex-1">T3 Connect</span>
+            <span className="text-xs text-muted-foreground">Sign in</span>
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
+          </Button>
         ) : null}
         <Collapsible
           open={pairingOpen}
