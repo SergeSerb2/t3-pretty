@@ -35,7 +35,6 @@ export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
 )<{ readonly message: string }> {}
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
-export { LINKED_PULL_REQUEST_IDLE_TTL_MS };
 
 /**
  * How often an open pull-request view re-reads the host. One change request, not a
@@ -272,3 +271,5 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
   };
 }
+
+export { LINKED_PULL_REQUEST_IDLE_TTL_MS };
