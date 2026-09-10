@@ -1,4 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { cn } from "~/lib/utils";
 import { CheckIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
 
@@ -163,8 +164,11 @@ export function DesktopUpdateStatusIcon({
 
   return (
     <RefreshIcon
-      className="size-4"
-      refreshing={status === "checking" && isCheckAnimating === true}
+      className={cn(
+        "size-4",
+        isCheckSettling && "animate-desktop-update-check-settle motion-reduce:animate-none",
+      )}
+      refreshing={status === "checking" && isCheckAnimating === true && !isCheckSettling}
       onAnimationEnd={
         isCheckSettling && onCheckAnimationEnd
           ? (event) => {
