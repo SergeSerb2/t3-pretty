@@ -1,7 +1,7 @@
 name: T3 Pretty Desktop Release
 
 # Origin is the fork's forge and updater host. GitHub Releases are not used.
-# Signed Mac/Windows installers are the native macos-release and
+# Signed Mac/Windows installers are the native macos-large and
 # windows-release steps in .buildkite/pipeline.yml. This imported workflow
 # only resolves the fork version, writes What's New notes, and compiles the
 # WSL node-pty smoke binary on hosted Linux.
@@ -254,7 +254,8 @@ jobs:
           # Read Buildkite pipeline env directly. Mapping `${{ env.NAME }}`
           # here overwrites those values with empty GHA context.
           # Hosted Linux cannot resolve CURSOR_API_KEY. Origin CLI login
-          # happens on macos-release during publish.
+          # stays on self-hosted macos-release. DMG feed upload on
+          # macos-large is R2/S3, not the Origin CLI.
           test -n "${T3CODE_DESKTOP_UPDATE_FEED_URL:-}"
           test -n "${T3CODE_RELEASE_S3_BUCKET:-}"
           case "$T3CODE_DESKTOP_UPDATE_FEED_URL" in
@@ -286,10 +287,10 @@ jobs:
         run: |
           set -euo pipefail
           # The importer does not pass BUILDKITE=* or Mac signing secrets
-          # into this hosted job. macos-release still receives the
+          # into this hosted job. macos-large still receives the
           # certificate secrets and fails the release if they are missing.
           if [[ -z "${CSC_LINK:-}" ]]; then
-            echo "Mac signing secrets are resolved on macos-release, not this hosted job."
+            echo "Mac signing secrets are resolved on macos-large, not this hosted job."
             echo 'configured=true' >> "$GITHUB_OUTPUT"
             echo 'windows_signed=false' >> "$GITHUB_OUTPUT"
             echo 'windows=true' >> "$GITHUB_OUTPUT"

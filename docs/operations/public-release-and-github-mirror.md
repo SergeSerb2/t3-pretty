@@ -14,7 +14,8 @@ The first run preserves the old GitHub `main` tip in
 archive exists, any non-ancestor GitHub `main` tip aborts the mirror. Configure
 `GITHUB_MIRROR_SSH_KEY` as a dedicated deploy key with write access only to the
 mirror repository, and allow deploy keys to bypass the GitHub `main` pull-request
-ruleset. Do not use a personal token. Do not expand that variable in the
+ruleset. The mirror step stays on self-hosted `macos-release`: hosted M4
+cannot resolve that cluster secret. Do not use a personal token. Do not expand that variable in the
 Buildkite `command:` block: the agent interpolates `${}` before
 `load-buildkite-secrets.sh` runs, so a YAML `test -n "${GITHUB_MIRROR_SSH_KEY:-}"`
 becomes `test -n ""` and the step dies with the key still on disk.
@@ -49,7 +50,9 @@ Start a Buildkite UI build of Origin `main` with
 `T3CODE_PUBLIC_ANDROID_RELEASE=1`; it builds package
 `com.sergeserbinenko.t3pretty.app` against official T3 Connect and submits the
 exact AAB to Google Play's internal track. The public EAS project identifiers
-live on `macos-release`, and its Google service-account key lives in EAS—not in
+live in the Buildkite cluster secret store (hosted `macos-medium` Android
+jobs load public Expo identifiers after checkout), and its Google
+service-account key lives in EAS—not in
 GitHub or Buildkite.
 
 One-time repository setup: enable GitHub Actions for Pages with the `github-pages`
