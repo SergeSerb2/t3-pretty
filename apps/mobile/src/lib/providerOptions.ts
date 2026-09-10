@@ -5,9 +5,12 @@ import type {
 } from "@t3tools/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
-  getProviderOptionCurrentLabel,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
+
+// Own line so a parent merge that drops this name from the grouped import
+// still leaves the fork label helper below typechecking.
+import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 
 export function resolveProviderOptionDescriptors(input: {
   readonly capabilities: ModelCapabilities | null | undefined;
@@ -19,23 +22,6 @@ export function resolveProviderOptionDescriptors(input: {
   return getProviderOptionDescriptors({
     caps: input.capabilities,
     selections: input.selections,
-  });
-}
-
-/**
- * Labels for the option values currently in effect (select values plus
- * enabled booleans), used to summarize the thread configuration in the
- * composer trigger pill.
- */
-export function providerOptionValueLabels(
-  descriptors: ReadonlyArray<ProviderOptionDescriptor>,
-): ReadonlyArray<string> {
-  return descriptors.flatMap((descriptor) => {
-    if (descriptor.type === "boolean") {
-      return descriptor.currentValue ? [descriptor.label] : [];
-    }
-    const label = getProviderOptionCurrentLabel(descriptor);
-    return label ? [label] : [];
   });
 }
 
@@ -71,4 +57,24 @@ export function applyProviderOptionSelection(
   ) as ReadonlyArray<ProviderOptionDescriptor>;
 
   return buildProviderOptionSelectionsFromDescriptors(nextDescriptors) ?? [];
+}
+
+/**
+ * Labels for the option values currently in effect (select values plus
+ * enabled booleans), used to summarize the thread configuration in the
+ * composer trigger pill.
+ *
+ * Lives after the upstream-owned helpers so a parent merge that deletes the
+ * mid-file copy still keeps this fork export. Select choices are `{id,label}`.
+ */
+export function providerOptionValueLabels(
+  descriptors: ReadonlyArray<ProviderOptionDescriptor>,
+): ReadonlyArray<string> {
+  return descriptors.flatMap((descriptor) => {
+    if (descriptor.type === "boolean") {
+      return descriptor.currentValue ? [descriptor.label] : [];
+    }
+    const label = getProviderOptionCurrentLabel(descriptor);
+    return label ? [label] : [];
+  });
 }

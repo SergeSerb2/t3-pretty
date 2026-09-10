@@ -1,6 +1,5 @@
 import type { ProviderOptionDescriptor } from "@t3tools/contracts";
-
-import { providerOptionValueLabels } from "../../lib/providerOptions";
+import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 
 export type ThreadModelIdentityTrait = {
   readonly id: string;
@@ -34,7 +33,10 @@ export function buildThreadModelIdentity(input: {
         ? [{ id: descriptor.id, name: descriptor.label, label: descriptor.label }]
         : [];
     }
-    const label = providerOptionValueLabels([descriptor])[0];
+    // Choices are `{id,label}`; look up the current select by id. A `.value`
+    // read is what Upstream Sync auto-repair oscillated on after the helper
+    // export disappeared from `providerOptions`.
+    const label = getProviderOptionCurrentLabel(descriptor);
     return label ? [{ id: descriptor.id, name: descriptor.label, label }] : [];
   });
   const traitSummary = traits.map((trait) => trait.label).join(" · ");
