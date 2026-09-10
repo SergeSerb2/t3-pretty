@@ -2,10 +2,13 @@
 
 Transcription edits a composer draft. It does not submit an agent turn. Audio is
 temporary client input, and only normal message submission sends the resulting
-text. The current implementation transcribes locally on supported iOS devices;
-environment-backed transcription is not implemented.
+text. Internal clients can use a connected Groq host independently of the draft's
+environment. The host is chosen from live advertised capabilities and bound for
+the recording, so another machine coming online cannot redirect captured audio.
+Only the host holds the Groq key. Supported iOS devices retain local transcription
+when no Groq host is available.
 
-The [shared controller](../../packages/client-runtime/src/voice-input/controller.ts)
+The mobile [shared controller](../../packages/client-runtime/src/voice-input/controller.ts)
 owns the operation while the client supplies capture and transcription. Preparation
 binds the transcriber and resolved locale for the whole recording. Draft ownership,
 text, and revision are captured before recording and checked before insertion, so

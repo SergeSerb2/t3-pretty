@@ -12,6 +12,7 @@ import {
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -45,6 +46,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   MessageSquareIcon,
+  MicIcon,
   PaletteIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -578,6 +580,7 @@ function OpenCommandPaletteDialog(props: {
   const deferredQuery = useDeferredValue(query);
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
+  const composerHandleRef = useComposerHandleContext();
   const clientSettings = useClientSettings();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
@@ -1551,6 +1554,20 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+
+  if (T3CODE_BUILD_FLAVOR === "internal" && (activeThread || activeDraftThread)) {
+    actionItems.push({
+      kind: "action",
+      value: "action:dictation",
+      searchTerms: ["voice", "speech", "microphone", "dictation", "groq"],
+      title: "Start or finish dictation",
+      icon: <MicIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "composer.dictation",
+      run: async () => {
+        composerHandleRef?.current?.toggleDictation();
+      },
+    });
+  }
 
   if (projects.length > 0) {
     const activeProjectTitle =

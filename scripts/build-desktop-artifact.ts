@@ -1354,6 +1354,8 @@ ${associatedDomains}
     </array>
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
@@ -2922,6 +2924,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      ...(buildFlavor === "internal"
+        ? {
+            extendInfo: {
+              NSMicrophoneUsageDescription:
+                "T3 Pretty uses your microphone to dictate messages. Audio is transcribed through your connected Groq host.",
+            },
+          }
+        : {}),
       protocols: [
         {
           name: productName,

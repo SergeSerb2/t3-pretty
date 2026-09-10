@@ -10,6 +10,7 @@ import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   parseKeybindingWhenExpression,
 } from "@t3tools/shared/keybindings";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 
 import { isMacPlatform } from "../../lib/utils";
 
@@ -276,7 +277,11 @@ export function buildWhenVariableOptions(): ReadonlyArray<WhenVariableOption> {
 export function buildKeybindingCommandOptions(
   keybindings: ResolvedKeybindingsConfig,
 ): ReadonlyArray<KeybindingCommandOption> {
-  const commands = new Set<KeybindingCommand>(STATIC_KEYBINDING_COMMANDS);
+  const commands = new Set<KeybindingCommand>(
+    STATIC_KEYBINDING_COMMANDS.filter(
+      (command) => T3CODE_BUILD_FLAVOR === "internal" || command !== "composer.dictation",
+    ),
+  );
   for (const binding of keybindings) {
     commands.add(binding.command);
   }

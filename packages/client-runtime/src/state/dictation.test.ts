@@ -4,11 +4,14 @@ import * as Effect from "effect/Effect";
 
 import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import { remoteHttpClientLayer } from "../rpc/http.ts";
+import { ManagedRelayDpopSigner, type ManagedRelayDpopProofInput } from "../relay/managedRelay.ts";
 import {
   appendDictationSegment,
   formatDictationInsertion,
   replaceDictationInsertion,
   transcribeDictationAudio,
+  cleanupDictation,
+  fetchDictationStatus,
 } from "./dictation.ts";
 
 const target = new PrimaryConnectionTarget({
@@ -77,6 +80,68 @@ describe("dictation composer insertion", () => {
 });
 
 describe("transcribeDictationAudio", () => {
+  it.effect("authenticates every dictation request with a request-bound Surge Connect proof", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ url: string; init: RequestInit }> = [];
+      const proofs: ManagedRelayDpopProofInput[] = [];
+      const signer = ManagedRelayDpopSigner.of({
+        thumbprint: Effect.succeed("test-thumbprint"),
+        createProof: (input) =>
+          Effect.sync(() => {
+            proofs.push(input);
+            return `proof-${proofs.length}`;
+          }),
+      });
+      const sharedHost: PreparedConnection = {
+        ...prepared,
+        httpAuthorization: {
+          _tag: "Dpop",
+          accessToken: "relay-session",
+          expiresAtEpochMs: 3_600_000,
+        },
+      };
+      const fetchFn: typeof fetch = async (url, init) => {
+        calls.push({ url: String(url), init: init ?? {} });
+        return Response.json(
+          String(url).endsWith("status")
+            ? { available: true, reason: null }
+            : { text: "dictation" },
+        );
+      };
+      yield* Effect.gen(function* () {
+        yield* fetchDictationStatus(sharedHost);
+        yield* transcribeDictationAudio({
+          prepared: sharedHost,
+          audioBase64: "YXVkaW8=",
+          mimeType: "audio/webm",
+        });
+        yield* cleanupDictation({
+          prepared: sharedHost,
+          transcript: "dictation",
+          before: "",
+          after: "",
+        });
+      }).pipe(
+        Effect.provide(remoteHttpClientLayer(fetchFn)),
+        Effect.provideService(ManagedRelayDpopSigner, signer),
+      );
+      expect(calls.map((call) => call.url)).toEqual([
+        "https://environment.example.test/api/dictation/status",
+        "https://environment.example.test/api/dictation/transcribe",
+        "https://environment.example.test/api/dictation/cleanup",
+      ]);
+      for (const [index, call] of calls.entries()) {
+        const headers = new Headers(call.init.headers);
+        expect(headers.get("authorization")).toBe("DPoP relay-session");
+        expect(headers.get("dpop")).toBe(`proof-${index + 1}`);
+        expect(proofs[index]).toMatchObject({
+          url: call.url,
+          method: index === 0 ? "GET" : "POST",
+        });
+      }
+    }),
+  );
+
   it.effect("routes audio through the prepared environment HTTP endpoint", () =>
     Effect.gen(function* () {
       const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
