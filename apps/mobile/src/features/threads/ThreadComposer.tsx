@@ -402,6 +402,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       usageLimitsOffered && props.draftAttachments.length === 0 ? openUsageLimits : undefined,
   });
   const voiceInput = useVoiceInputController({
+    environmentId: props.environmentId,
     ownerKey: composerOwnerKey,
     draftMessage: props.draftMessage,
     selection: composerMenu.selection,

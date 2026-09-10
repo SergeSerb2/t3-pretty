@@ -12,7 +12,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { runtime } from "../../lib/runtime";
 
-const CHUNK_DURATION_MS = 5_000;
+const CHUNK_DURATION_MS = 4_000;
+const RECORDING_LIMIT_MS = 5 * 60_000;
 const CONTEXT_LENGTH = 8_000;
 const RECORDING_FORMATS = [
   { mimeType: "audio/webm;codecs=opus", apiMimeType: "audio/webm" as const },
@@ -20,10 +21,13 @@ const RECORDING_FORMATS = [
   { mimeType: "audio/webm", apiMimeType: "audio/webm" as const },
 ];
 
-type DictationPhase = "idle" | "recording" | "processing";
+export type DictationPhase = "idle" | "preparing" | "recording" | "processing";
 
 interface DictationSession {
+  readonly ownerKey: string;
   readonly prepared: PreparedConnection;
+  readonly abort: AbortController;
+  readonly startedAt: number;
   readonly stream: MediaStream;
   readonly start: number;
   readonly before: string;
@@ -41,6 +45,9 @@ interface DictationSession {
 }
 
 function errorMessage(error: unknown): string {
+  if (error instanceof DOMException && error.name === "NotAllowedError") {
+    return "Microphone access was denied. Allow T3 Pretty to use your microphone in system or browser settings.";
+  }
   if (typeof error === "object" && error !== null && "message" in error) {
     const message = Reflect.get(error, "message");
     if (typeof message === "string" && message.trim()) return message;
@@ -79,15 +86,19 @@ function blobBase64(blob: Blob): Promise<string> {
 }
 
 export function useBrowserDictation(input: {
+  readonly ownerKey: string;
   readonly enabled: boolean;
+  /** When false, refuse to begin a new capture. Does not cancel an in-flight session. */
+  readonly canStart?: boolean;
   readonly prepared: PreparedConnection | null;
   readonly readComposer: () => { readonly value: string; readonly cursor: number };
   readonly replaceInsertion: (start: number, previous: string, next: string) => boolean;
   readonly reportError: (message: string) => void;
 }) {
   const [phase, setPhase] = useState<DictationPhase>("idle");
+  const [hostLabel, setHostLabel] = useState<string | null>(null);
   const sessionRef = useRef<DictationSession | null>(null);
-  const startingRef = useRef(false);
+  const startingRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -100,6 +111,7 @@ export function useBrowserDictation(input: {
     if (recorder) {
       recorder.ondataavailable = null;
       recorder.onstop = null;
+      recorder.onerror = null;
       if (recorder.state === "recording") recorder.stop();
     }
     for (const track of session.stream.getTracks()) track.stop();
@@ -109,6 +121,7 @@ export function useBrowserDictation(input: {
     (session: DictationSession) => {
       if (session.closed) return;
       session.closed = true;
+      session.abort.abort();
       releaseCapture(session);
       if (sessionRef.current === session) sessionRef.current = null;
       if (mountedRef.current) setPhase("idle");
@@ -119,6 +132,7 @@ export function useBrowserDictation(input: {
   const replaceSessionInsertion = useCallback((session: DictationSession, next: string) => {
     const current = inputRef.current;
     if (
+      current.ownerKey !== session.ownerKey ||
       replaceDictationInsertion({
         value: current.readComposer().value,
         start: session.start,
@@ -155,6 +169,7 @@ export function useBrowserDictation(input: {
                 before: session.before.slice(-CONTEXT_LENGTH),
                 after: session.after.slice(0, CONTEXT_LENGTH),
               }),
+              { signal: session.abort.signal },
             );
             if (!session.cancelled && !session.closed) {
               const insertion = formatDictationInsertion({
@@ -189,6 +204,7 @@ export function useBrowserDictation(input: {
           audioBase64,
           mimeType: apiMimeType,
         }),
+        { signal: session.abort.signal },
       );
       if (session.cancelled || session.closed) return;
       session.transcript = appendDictationSegment(session.transcript, result.text);
@@ -214,7 +230,10 @@ export function useBrowserDictation(input: {
     try {
       const format = recordingFormat();
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(session.stream, { mimeType: format.mimeType });
+      const recorder = new MediaRecorder(session.stream, {
+        mimeType: format.mimeType,
+        audioBitsPerSecond: 48_000,
+      });
       session.recorder = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.push(event.data);
@@ -224,6 +243,7 @@ export function useBrowserDictation(input: {
         if (session.timer !== null) window.clearTimeout(session.timer);
         session.timer = null;
         if (session.recorder === recorder) session.recorder = null;
+        if (Date.now() - session.startedAt >= RECORDING_LIMIT_MS) session.stopRequested = true;
         const blob = new Blob(chunks, { type: format.mimeType });
         if (blob.size > 0 && !session.error) {
           session.queue = session.queue.then(async () => {
@@ -250,8 +270,15 @@ export function useBrowserDictation(input: {
           beginChunkRef.current(session);
         }
       };
+      recorder.onerror = () => {
+        session.error = new Error("The microphone stopped recording. Please try again.");
+        session.stopRequested = true;
+        void finishSession(session);
+      };
       recorder.start();
-      session.timer = window.setTimeout(() => recorder.stop(), CHUNK_DURATION_MS);
+      session.timer = window.setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, CHUNK_DURATION_MS);
     } catch (error) {
       session.error = error;
       session.stopRequested = true;
@@ -270,22 +297,36 @@ export function useBrowserDictation(input: {
 
   const start = useCallback(async () => {
     const current = inputRef.current;
-    if (!current.enabled || !current.prepared || sessionRef.current || startingRef.current) return;
-    startingRef.current = true;
+    if (!current.enabled || current.canStart === false || sessionRef.current || startingRef.current)
+      return;
+    if (!current.prepared) {
+      current.reportError(
+        "Set GROQ_API_KEY on a connected internal host to use dictation on all your devices.",
+      );
+      return;
+    }
+    const abort = new AbortController();
+    startingRef.current = abort;
+    setHostLabel(current.prepared.label);
+    setPhase("preparing");
+    const snapshot = current.readComposer();
     let stream: MediaStream | null = null;
     try {
-      const status = await runtime.runPromise(fetchDictationStatus(current.prepared));
+      const status = await runtime.runPromise(fetchDictationStatus(current.prepared), {
+        signal: abort.signal,
+      });
       if (
+        abort.signal.aborted ||
         !mountedRef.current ||
         !inputRef.current.enabled ||
-        inputRef.current.prepared !== current.prepared
+        inputRef.current.ownerKey !== current.ownerKey
       ) {
         return;
       }
       if (!status.available) {
         current.reportError(
           status.reason === "groq_api_key_missing"
-            ? "Add GROQ_API_KEY to the connected host to use voice dictation."
+            ? "Set GROQ_API_KEY on a connected internal host to use dictation on all your devices."
             : "Voice dictation is available only in internal builds.",
         );
         return;
@@ -293,18 +334,29 @@ export function useBrowserDictation(input: {
       if (typeof MediaRecorder === "undefined") {
         throw new Error("This browser does not support audio recording.");
       }
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Microphone access requires HTTPS or the T3 Pretty desktop app.");
+      }
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
       if (
+        abort.signal.aborted ||
         !mountedRef.current ||
         !inputRef.current.enabled ||
-        inputRef.current.prepared !== current.prepared
+        inputRef.current.ownerKey !== current.ownerKey
       ) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
-      const snapshot = inputRef.current.readComposer();
+      if (inputRef.current.readComposer().value !== snapshot.value) {
+        throw new Error("The composer changed before recording started. Please try again.");
+      }
       const session: DictationSession = {
+        ownerKey: current.ownerKey,
         prepared: current.prepared,
+        abort,
+        startedAt: Date.now(),
         stream,
         start: snapshot.cursor,
         before: snapshot.value.slice(0, snapshot.cursor),
@@ -325,41 +377,63 @@ export function useBrowserDictation(input: {
       setPhase("recording");
       beginChunkRef.current(session);
     } catch (error) {
+      if (stream) for (const track of stream.getTracks()) track.stop();
+      if (abort.signal.aborted) return;
       const session = sessionRef.current;
       if (session) {
         session.cancelled = true;
         closeSession(session);
-      } else if (stream) {
-        for (const track of stream.getTracks()) track.stop();
       }
       if (mountedRef.current) current.reportError(errorMessage(error));
       if (mountedRef.current) setPhase("idle");
     } finally {
-      startingRef.current = false;
+      if (startingRef.current === abort) {
+        startingRef.current = null;
+        if (!sessionRef.current && mountedRef.current) setPhase("idle");
+      }
     }
   }, [closeSession]);
 
-  useEffect(() => {
+  const toggle = useCallback(() => {
+    if (sessionRef.current) return stop();
+    return start();
+  }, [start, stop]);
+
+  const cancel = useCallback(() => {
+    startingRef.current?.abort();
+    startingRef.current = null;
     const session = sessionRef.current;
-    if (!session) return;
-    if (input.prepared !== session.prepared) {
+    if (session) {
+      session.cancelled = true;
+      replaceSessionInsertion(session, "");
+      closeSession(session);
+    }
+    if (mountedRef.current) setPhase("idle");
+  }, [closeSession, replaceSessionInsertion]);
+
+  useEffect(() => {
+    if (!input.enabled) cancel();
+  }, [cancel, input.enabled]);
+
+  const previousOwnerRef = useRef(input.ownerKey);
+  useEffect(() => {
+    if (previousOwnerRef.current === input.ownerKey) return;
+    previousOwnerRef.current = input.ownerKey;
+    startingRef.current?.abort();
+    startingRef.current = null;
+    const session = sessionRef.current;
+    if (session) {
       session.cancelled = true;
       closeSession(session);
-      return;
     }
-    if (input.enabled) return;
-    if (phase === "recording") {
-      stop();
-      return;
-    }
-    session.cancelled = true;
-    closeSession(session);
-  }, [closeSession, input.enabled, input.prepared, phase, stop]);
+    setPhase("idle");
+  }, [closeSession, input.ownerKey]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      startingRef.current?.abort();
       const session = sessionRef.current;
       if (!session) return;
       session.cancelled = true;
@@ -372,6 +446,8 @@ export function useBrowserDictation(input: {
   return {
     phase,
     active: phase !== "idle",
-    toggle: phase === "recording" ? stop : start,
+    hostLabel: phase === "idle" ? (input.prepared?.label ?? null) : hostLabel,
+    cancel,
+    toggle,
   } as const;
 }

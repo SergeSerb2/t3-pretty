@@ -24,6 +24,10 @@ import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
+import { useDictationHost } from "../../state/dictation";
+import { useBrowserDictation } from "./useBrowserDictation";
+import { ComposerDictationControl } from "./ComposerDictationControl";
 import {
   Fragment,
   memo,
@@ -1125,6 +1129,7 @@ export interface ChatComposerHandle {
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
   compactContext: () => void;
+  toggleDictation: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -2680,6 +2685,74 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [composerCursor, composerTerminalContexts, promptRef]);
 
+  const dictationHost = useDictationHost(environmentId);
+  const dictationAvailable =
+    T3CODE_BUILD_FLAVOR === "internal" &&
+    !isComposerApprovalState &&
+    !projectSelectionRequired &&
+    pendingUserInputs.length === 0;
+  const dictationCanStart = dictationAvailable && !isConnecting && !isSendBusy;
+  const dictation = useBrowserDictation({
+    ownerKey: composerTargetKey(composerDraftTarget),
+    enabled: dictationAvailable,
+    canStart: dictationCanStart,
+    prepared: dictationHost,
+    readComposer: () => {
+      const snapshot = readComposerSnapshot();
+      return { value: promptRef.current, cursor: snapshot.expandedCursor };
+    },
+    replaceInsertion: (start, previous, next) =>
+      applyPromptReplacement(start, start + previous.length, next, { expectedText: previous }),
+    reportError: (message) => toastManager.add({ type: "error", title: message }),
+  });
+  const dictationControl =
+    T3CODE_BUILD_FLAVOR === "internal" ? (
+      <ComposerDictationControl
+        phase={dictation.phase}
+        disabled={dictation.active ? !dictationAvailable : !dictationCanStart}
+        hostLabel={dictation.hostLabel}
+        shortcut={shortcutLabelForCommand(keybindings, "composer.dictation") ?? undefined}
+        onToggle={() => {
+          expandComposerForEditorChange();
+          void dictation.toggle();
+        }}
+        onCancel={dictation.cancel}
+      />
+    ) : null;
+
+  useEffect(() => {
+    if (T3CODE_BUILD_FLAVOR !== "internal") return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing || isCommandPaletteOpen())
+        return;
+      if (dictation.active && event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        dictation.cancel();
+        return;
+      }
+      if (
+        resolveShortcutCommand(event, keybindings, {
+          context: { terminalFocus: getTerminalFocusOwner() !== null, terminalOpen },
+        }) !== "composer.dictation"
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      expandComposerForEditorChange();
+      void dictation.toggle();
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [
+    dictation.active,
+    dictation.cancel,
+    dictation.toggle,
+    expandComposerForEditorChange,
+    keybindings,
+    terminalOpen,
+  ]);
+
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -2868,7 +2941,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
-      if (noProviderAvailable || isSendDisabled) {
+      if (dictation.active || noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
       }
@@ -2908,6 +2981,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activePendingProgress,
       blurMobileComposerAfterSend,
       isSendDisabled,
+      dictation.active,
       noProviderAvailable,
       onSend,
       promptRef,
@@ -3703,6 +3777,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // it, so they do not hold the composer open; only surface-internal chrome
   // does.
   const composerHasExpandedChrome =
+    dictation.active ||
     showComposerTopDrawer ||
     isTasksDrawerOpen ||
     composerMenuOpen ||
@@ -4564,6 +4639,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
       },
       compactContext: compactThreadContext,
+      toggleDictation: () => {
+        expandComposerForEditorChange();
+        void dictation.toggle();
+      },
       isModelPickerOpen: () => isComposerModelPickerOpen,
       readSnapshot: () => {
         return readComposerSnapshot();
@@ -4640,6 +4719,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         interactionModeEnabled: planModeUiEnabled,
       }),
       validateProviderInput: (providerInput: string) => {
+        if (dictation.active) {
+          providerInputRejectedRef.current = true;
+          toastManager.add({ type: "info", title: "Finish or cancel dictation before sending." });
+          return false;
+        }
         const validationMessage = getComposerSubmissionValidationMessage({
           prompt: promptRef.current,
           providerInput,
@@ -4676,6 +4760,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isComposerModelPickerOpen,
       openModelPicker,
       readComposerSnapshot,
+      dictation.toggle,
+      dictation.active,
+      expandComposerForEditorChange,
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
@@ -4985,6 +5072,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
+                {dictationControl}
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
@@ -5380,10 +5468,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isComposerResting && "flex min-w-0 items-center gap-1",
                   isComposerResting &&
                     (settings.contextWindowMeterEnabled && activeContextWindow
-                      ? "pr-28"
+                      ? T3CODE_BUILD_FLAVOR === "internal"
+                        ? "pr-36"
+                        : "pr-28"
                       : showComposerAttachAction
-                        ? "pr-20"
-                        : "pr-12"),
+                        ? T3CODE_BUILD_FLAVOR === "internal"
+                          ? "pr-28"
+                          : "pr-20"
+                        : T3CODE_BUILD_FLAVOR === "internal"
+                          ? "pr-20"
+                          : "pr-12"),
                 )}
               >
                 <ComposerPromptEditor
@@ -5440,6 +5534,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 : "Ask anything, @tag files/folders, $use skills, or / for commands"
                   }
                   disabled={
+                    dictation.active ||
                     isConnecting ||
                     isComposerApprovalState ||
                     projectSelectionRequired ||
@@ -5550,6 +5645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </Tooltip>
                     </>
                   ) : null}
+                  {isComposerCollapsedMobile ? null : dictationControl}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     activeContextWindow={
@@ -5563,7 +5659,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={
+                      dictation.active
+                        ? "Finish or cancel dictation before sending."
+                        : sendDisabledReason
+                    }
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||

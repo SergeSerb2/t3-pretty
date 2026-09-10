@@ -2,11 +2,15 @@ import {
   DictationUnavailableError,
   DictationUpstreamError,
   type DictationAudioMimeType,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { Atom } from "effect/unstable/reactivity";
 
 import type { PreparedConnection } from "../connection/model.ts";
+import type { EnvironmentPresentation } from "../connection/presentation.ts";
 import { ManagedRelayDpopSigner } from "../relay/managedRelay.ts";
 import {
   executeEnvironmentHttpRequestWithAdditionalError,
@@ -19,6 +23,37 @@ const DEFAULT_DICTATION_TIMEOUT_MS = 45_000;
 const isDictationHttpError = Schema.is(
   Schema.Union([DictationUnavailableError, DictationUpstreamError]),
 );
+
+/** Prefer the draft's host, then share any connected host that advertises dictation. */
+export function createDictationHostAtoms(input: {
+  readonly presentationsAtom: Atom.Atom<ReadonlyMap<EnvironmentId, EnvironmentPresentation>>;
+  readonly preparedConnectionValueAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<Option.Option<PreparedConnection>>;
+}) {
+  return Atom.family((preferredEnvironmentId: EnvironmentId | null) =>
+    Atom.make((get): PreparedConnection | null => {
+      const presentations = get(input.presentationsAtom);
+      const ids = [...presentations.keys()];
+      if (preferredEnvironmentId !== null) {
+        ids.sort(
+          (a, b) => Number(b === preferredEnvironmentId) - Number(a === preferredEnvironmentId),
+        );
+      }
+      for (const id of ids) {
+        const presentation = presentations.get(id);
+        if (
+          presentation?.connection.phase !== "connected" ||
+          presentation.serverConfig?.environment.capabilities.voiceDictation !== true
+        )
+          continue;
+        const prepared = get(input.preparedConnectionValueAtom(id));
+        if (Option.isSome(prepared)) return prepared.value;
+      }
+      return null;
+    }).pipe(Atom.withLabel(`dictation-host:${preferredEnvironmentId ?? "any"}`)),
+  );
+}
 
 export const fetchDictationStatus = Effect.fn("clientRuntime.state.dictation.status")(function* (
   prepared: PreparedConnection,

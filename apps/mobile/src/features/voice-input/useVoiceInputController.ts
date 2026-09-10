@@ -14,6 +14,10 @@ import { useSharedValue } from "react-native-reanimated";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
+import { createGroqVoiceTranscriber } from "../../native/groqVoiceTranscription";
+import { useDictationHost } from "../../state/dictation";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VoiceInputController,
@@ -29,6 +33,10 @@ const INITIAL_STATE: VoiceInputState = { phase: "idle", error: null, errorAction
 const VOICE_METERING_INTERVAL_MS = 80;
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
+  // Five minutes of mono AAC stays within the host's audio upload limit.
+  ...(T3CODE_BUILD_FLAVOR === "internal"
+    ? { sampleRate: 16_000, numberOfChannels: 1, bitRate: 48_000 }
+    : {}),
   isMeteringEnabled: true,
 };
 
@@ -62,6 +70,7 @@ async function configureVoiceRecordingAudio(): Promise<void> {
 }
 
 export function useVoiceInputController(input: {
+  readonly environmentId: EnvironmentId | null;
   readonly ownerKey: string | null;
   readonly draftMessage: string;
   readonly selection: ComposerEditorSelection;
@@ -69,6 +78,9 @@ export function useVoiceInputController(input: {
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onChangeSelection: (selection: ComposerEditorSelection) => void;
 }) {
+  const dictationHost = useDictationHost(input.environmentId);
+  const dictationHostRef = useRef(dictationHost);
+  dictationHostRef.current = dictationHost;
   const [state, setState] = useState<VoiceInputState>(INITIAL_STATE);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const elapsedSecondsRef = useRef(0);
@@ -100,7 +112,16 @@ export function useVoiceInputController(input: {
   if (!controllerRef.current) {
     controllerRef.current = new VoiceInputController({
       recorder,
-      getTranscriber: getLocalVoiceTranscriber,
+      getTranscriber: () => {
+        const prepared = dictationHostRef.current;
+        if (!prepared) return getLocalVoiceTranscriber();
+        const current = latestInputRef.current;
+        return createGroqVoiceTranscriber({
+          prepared,
+          before: current.draftMessage.slice(0, current.selection.start),
+          after: current.draftMessage.slice(current.selection.end),
+        });
+      },
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };
@@ -206,7 +227,10 @@ export function useVoiceInputController(input: {
   return {
     // Store screenshots show the dictation button even on simulators, whose
     // on-device transcription is unavailable.
-    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
+    isAvailable:
+      dictationHost !== null ||
+      getLocalVoiceTranscriber() !== null ||
+      getNativeShowcaseScene() !== null,
     state,
     audioLevels,
     elapsedSeconds,

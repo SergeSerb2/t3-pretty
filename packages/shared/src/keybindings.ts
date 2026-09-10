@@ -9,6 +9,7 @@ import {
   type ResolvedKeybindingsConfig,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
+import { T3CODE_BUILD_FLAVOR } from "./connectBranding.ts";
 
 type WhenToken =
   | { type: "identifier"; value: string }
@@ -40,6 +41,9 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
+  ...(T3CODE_BUILD_FLAVOR === "internal"
+    ? [{ key: "mod+shift+space", command: "composer.dictation" as const, when: "!terminalFocus" }]
+    : []),
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
