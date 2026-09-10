@@ -318,7 +318,10 @@ const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 // Same budget as the bearer IPC timeout: ready latch + token retries.
 // A shorter window fail-opens to requires-auth while main is still minting.
 export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
-export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = 15_000;
+// Same 40s budget as bearer/session retry. getLocalEnvironmentBootstraps
+// omits the primary until start config exists; 15s failed-open to login
+// while main was still in the 30s waitForReady latch.
+export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
 const DESKTOP_MANAGED_AUTH = {
