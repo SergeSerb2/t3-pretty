@@ -2686,16 +2686,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [composerCursor, composerTerminalContexts, promptRef]);
 
   const dictationHost = useDictationHost(environmentId);
-  const dictationEnabled =
+  const dictationAvailable =
     T3CODE_BUILD_FLAVOR === "internal" &&
     !isComposerApprovalState &&
     !projectSelectionRequired &&
-    pendingUserInputs.length === 0 &&
-    !isConnecting &&
-    !isSendBusy;
+    pendingUserInputs.length === 0;
+  const dictationCanStart = dictationAvailable && !isConnecting && !isSendBusy;
   const dictation = useBrowserDictation({
     ownerKey: composerTargetKey(composerDraftTarget),
-    enabled: dictationEnabled,
+    enabled: dictationAvailable,
+    canStart: dictationCanStart,
     prepared: dictationHost,
     readComposer: () => {
       const snapshot = readComposerSnapshot();
@@ -2709,7 +2709,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     T3CODE_BUILD_FLAVOR === "internal" ? (
       <ComposerDictationControl
         phase={dictation.phase}
-        disabled={!dictationEnabled}
+        disabled={dictation.active ? !dictationAvailable : !dictationCanStart}
         hostLabel={dictation.hostLabel}
         shortcut={shortcutLabelForCommand(keybindings, "composer.dictation") ?? undefined}
         onToggle={() => {
@@ -5072,6 +5072,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
+                {dictationControl}
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
@@ -5541,9 +5542,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                 />
                 {isComposerResting ? collapsedComposerImagePreviews : null}
-                {isComposerCollapsedMobile && pendingUserInputs.length === 0 ? (
-                  <div className="flex justify-end">{dictationControl}</div>
-                ) : null}
                 {showMobilePendingAnswerActions ? (
                   <div
                     data-chat-composer-mobile-pending-actions="true"
@@ -5647,7 +5645,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </Tooltip>
                     </>
                   ) : null}
-                  {dictationControl}
+                  {isComposerCollapsedMobile ? null : dictationControl}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     activeContextWindow={

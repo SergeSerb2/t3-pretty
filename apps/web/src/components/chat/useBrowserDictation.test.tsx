@@ -283,4 +283,38 @@ describe("browser composer dictation", () => {
     expect(dictation.phase).toBe("idle");
     expect(reportError).toHaveBeenCalledWith(expect.stringContaining("microphone stopped"));
   });
+
+  it("keeps an in-flight recording when starting is blocked", async () => {
+    await act(async () => {
+      await dictation.toggle();
+    });
+    expect(dictation.phase).toBe("recording");
+    input = { ...input, canStart: false };
+    await act(() => root.render(<Probe />));
+    expect(dictation.phase).toBe("recording");
+    expect(stopTrack).not.toHaveBeenCalled();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels capture when the composer becomes unavailable", async () => {
+    await act(async () => {
+      await dictation.toggle();
+    });
+    expect(dictation.phase).toBe("recording");
+    input = { ...input, enabled: false };
+    await act(() => root.render(<Probe />));
+    expect(stopTrack).toHaveBeenCalled();
+    expect(dictation.phase).toBe("idle");
+    expect(value).toBe("Before after");
+  });
+
+  it("does not begin a new recording while starting is blocked", async () => {
+    input = { ...input, canStart: false };
+    await act(() => root.render(<Probe />));
+    await act(async () => {
+      await dictation.toggle();
+    });
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(dictation.phase).toBe("idle");
+  });
 });

@@ -88,6 +88,8 @@ function blobBase64(blob: Blob): Promise<string> {
 export function useBrowserDictation(input: {
   readonly ownerKey: string;
   readonly enabled: boolean;
+  /** When false, refuse to begin a new capture. Does not cancel an in-flight session. */
+  readonly canStart?: boolean;
   readonly prepared: PreparedConnection | null;
   readonly readComposer: () => { readonly value: string; readonly cursor: number };
   readonly replaceInsertion: (start: number, previous: string, next: string) => boolean;
@@ -295,7 +297,8 @@ export function useBrowserDictation(input: {
 
   const start = useCallback(async () => {
     const current = inputRef.current;
-    if (!current.enabled || sessionRef.current || startingRef.current) return;
+    if (!current.enabled || current.canStart === false || sessionRef.current || startingRef.current)
+      return;
     if (!current.prepared) {
       current.reportError(
         "Set GROQ_API_KEY on a connected internal host to use dictation on all your devices.",

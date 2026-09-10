@@ -36,6 +36,8 @@ export function createGroqVoiceTranscriber(input: {
         transcribe: async (uri, { signal }) => {
           throwIfVoiceTranscriptionAborted(signal);
           const file = new File(uri);
+          // Expo often reports size 0 until contents are read; treat a known
+          // oversized size as a fast path and always re-check the encoded payload.
           if (file.size > (DICTATION_AUDIO_BASE64_MAX_LENGTH / 4) * 3) {
             throw new VoiceTranscriptionError(
               "transcription-failed",
@@ -45,6 +47,12 @@ export function createGroqVoiceTranscriber(input: {
           const audioBase64 = await file.base64();
           throwIfVoiceTranscriptionAborted(signal);
           if (!audioBase64) return "";
+          if (audioBase64.length > DICTATION_AUDIO_BASE64_MAX_LENGTH) {
+            throw new VoiceTranscriptionError(
+              "transcription-failed",
+              "The recording is too large.",
+            );
+          }
           const transcript = await runtime.runPromise(
             transcribeDictationAudio({
               prepared: input.prepared,

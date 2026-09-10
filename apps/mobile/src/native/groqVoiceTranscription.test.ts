@@ -84,6 +84,17 @@ describe("Groq native transcription", () => {
     expect(mocks.runPromise).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects oversized audio after reading when Expo reports size 0", async () => {
+    const session = await transcriber().prepare(options());
+    mocks.fileSize = 0;
+    mocks.readAudio.mockResolvedValueOnce("a".repeat(DICTATION_AUDIO_BASE64_MAX_LENGTH + 1));
+    await expect(session.transcribe("file:///unknown-size.m4a", options())).rejects.toMatchObject({
+      code: "transcription-failed",
+    });
+    expect(mocks.readAudio).toHaveBeenCalledTimes(1);
+    expect(mocks.runPromise).toHaveBeenCalledTimes(1);
+  });
+
   it("fails preparation before recording when the host no longer has Groq configured", async () => {
     mocks.runPromise
       .mockReset()
