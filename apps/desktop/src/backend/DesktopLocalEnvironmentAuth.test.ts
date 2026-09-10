@@ -80,6 +80,15 @@ const makePoolLayer = (options?: {
   } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]);
 
 describe("DesktopLocalEnvironmentAuth", () => {
+  it("keeps the ready-plus-retry budget inside the renderer IPC timeout", () => {
+    const rendererIpcTimeoutMs = 40_000;
+    assert.isAtMost(
+      Duration.toMillis(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT) +
+        Duration.toMillis(DesktopLocalEnvironmentAuth.LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT),
+      rendererIpcTimeoutMs,
+    );
+  });
+
   it.effect("exchanges the desktop bootstrap credential only once", () =>
     Effect.gen(function* () {
       const requestCount = yield* Ref.make(0);

@@ -1,6 +1,7 @@
 import type { DesktopBridge } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 
+import { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS } from "./auth";
 import {
   __resetDesktopPrimaryAuthForTests,
   DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
@@ -33,6 +34,12 @@ describe("desktop primary auth", () => {
 
   it("does not require desktop auth in a browser", async () => {
     await expect(readDesktopPrimaryBearerToken()).resolves.toBeNull();
+  });
+
+  it("waits at least as long as main ready latch plus token retries", () => {
+    const mainReadyAndRetryBudgetMs = 30_000 + 8_000;
+    expect(DESKTOP_BEARER_TOKEN_TIMEOUT_MS).toBeGreaterThanOrEqual(mainReadyAndRetryBudgetMs);
+    expect(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
   });
 
   it("clears a hung bearer IPC so splash auth can retry", async () => {

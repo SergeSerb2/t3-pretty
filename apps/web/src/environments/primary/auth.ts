@@ -18,6 +18,7 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "../../pairingUrl";
 
+import { DESKTOP_BEARER_TOKEN_TIMEOUT_MS } from "./desktopAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { loadDesktopPrimaryEnvironmentBootstrap } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
@@ -306,10 +307,9 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
-// Wait for a cold-booting desktop backend, but the root beforeLoad that
-// calls this is on the first-paint path (`main.tsx` startup → router.load).
-// Infinity left `#boot-shell` up forever when the child never listened.
-export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = 30_000;
+// Same budget as the bearer IPC timeout: ready latch + token retries.
+// A shorter window fail-opens to requires-auth while main is still minting.
+export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
 export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 

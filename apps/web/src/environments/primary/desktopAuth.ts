@@ -1,7 +1,9 @@
 // One in-flight mint is shared across renderer HTTP calls. A hung IPC
 // (Electron failing to clone a main-process Effect rejection) used to pin
 // this promise forever and leave #boot-shell up after the backend was ready.
-export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = 10_000;
+// Must cover main waitForReady (30s) + /oauth/token retries (8s); a shorter
+// timeout fail-opens splash while the child is still coming up.
+export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = 40_000;
 
 let desktopBearerTokenPromise: Promise<string> | null = null;
 
