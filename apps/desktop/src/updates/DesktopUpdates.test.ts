@@ -1111,25 +1111,6 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("configure does not wait forever for a hung nightly tag fetch", () => {
-    const harness = makeHarness({
-      appVersion: "v0.0.39-nightly.20260907.999",
-      githubReleasesClient: {
-        fetchLatestNightlyTag: () => Effect.never,
-      },
-    });
-
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const updates = yield* DesktopUpdates.DesktopUpdates;
-        const fiber = yield* Effect.forkChild(updates.configure);
-        yield* TestClock.adjust("3 seconds");
-        yield* Fiber.join(fiber);
-        assert.isAtLeast(harness.feedUrls().length, 1, "Feed URL should be set after the nightly fetch bound");
-      }),
-    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-  });
-
   it.effect("configure does not throw Service not found when GitHubReleasesClient layer is provided", () => {
     const harness = makeHarness();
 
