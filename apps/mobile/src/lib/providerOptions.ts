@@ -8,10 +8,6 @@ import {
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
 
-// Own line so a parent merge that drops this name from the grouped import
-// still leaves the fork label helper below typechecking.
-import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
-
 export function resolveProviderOptionDescriptors(input: {
   readonly capabilities: ModelCapabilities | null | undefined;
   readonly selections: ReadonlyArray<ProviderOptionSelection> | null | undefined;
@@ -65,7 +61,9 @@ export function applyProviderOptionSelection(
  * composer trigger pill.
  *
  * Lives after the upstream-owned helpers so a parent merge that deletes the
- * mid-file copy still keeps this fork export. Select choices are `{id,label}`.
+ * mid-file copy still keeps this fork export. Select choices are `{id,label}`;
+ * look up the current value by `id` (not `.value`) so this file does not need
+ * a second `@t3tools/shared/model` import that lint/auto-fix would collapse.
  */
 export function providerOptionValueLabels(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
@@ -74,7 +72,12 @@ export function providerOptionValueLabels(
     if (descriptor.type === "boolean") {
       return descriptor.currentValue ? [descriptor.label] : [];
     }
-    const label = getProviderOptionCurrentLabel(descriptor);
+    const currentValue =
+      descriptor.currentValue || descriptor.options.find((option) => option.isDefault)?.id;
+    const label =
+      typeof currentValue === "string"
+        ? descriptor.options.find((option) => option.id === currentValue)?.label
+        : undefined;
     return label ? [label] : [];
   });
 }
