@@ -7,6 +7,7 @@ import type { SqlError } from "effect/unstable/sql/SqlError";
 
 import { runMigrations } from "../Migrations.ts";
 import { cleanupSupersededToolUpdates } from "../Migrations/047_DeleteSupersededToolUpdatedActivities.ts";
+import ensureProjectionThreadBranchPullRequest from "../Migrations/050_EnsureProjectionThreadBranchPullRequest.ts";
 import { ServerConfig } from "../../config.ts";
 
 type RuntimeSqliteLayerConfig = {
@@ -50,6 +51,9 @@ const setup = Layer.effectDiscard(
     // 2 MB cache re-reads hot projection pages on every snapshot query.
     yield* sql`PRAGMA cache_size = -65536;`;
     const ranMigrations = yield* runMigrations();
+    // Fork slot collisions skip 048 when id 48 was already recorded under
+    // another name. Re-run the idempotent ADD COLUMN so old ~/.t3 DBs boot.
+    yield* ensureProjectionThreadBranchPullRequest;
     // Migration 47 marks the switch to live-only tool progress; the bulk
     // delete of the superseded per-tick rows runs here, best-effort and
     // batched, while this is the only connection (no client has served a
