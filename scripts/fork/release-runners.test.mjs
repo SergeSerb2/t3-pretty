@@ -243,7 +243,7 @@ describe("T3 Pretty release runner placement", () => {
     assert.notInclude(relayStep, "queue: macos-medium");
   });
 
-  it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
+  it("publishes mobile OTA on hosted macos-large and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.equal(
@@ -262,6 +262,13 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
+    const iosStep = pipeline.slice(
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+      pipeline.indexOf(":android: Android Internal"),
+    );
+    assert.include(iosStep, "queue: macos-large");
+    assert.notInclude(iosStep, "os: macos");
+    assert.include(iosStep, "publish-mobile-release.sh");
     assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
