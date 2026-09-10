@@ -206,6 +206,13 @@ describe("T3 Pretty release runner placement", () => {
     );
     assert.include(mobileRelease, "macos-release (m5-dev)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
+    assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
+    assert.include(mobileRelease, 'ensure_vite_plus "to publish mobile OTA"');
+    assert.notInclude(mobileRelease, "vp is required on macos-release to publish mobile OTA.");
+    const vitePlus = NodeFS.readFileSync(NodePath.resolve(here, "ensure-vite-plus.sh"), "utf8");
+    assert.include(vitePlus, "https://vite.plus");
+    assert.include(vitePlus, "T3CODE_VITE_PLUS_INSTALLER");
+    assert.include(vitePlus, "VP_HOME:-${HOME}/.vite-plus");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");
     assert.include(mobileRelease, "eas build");

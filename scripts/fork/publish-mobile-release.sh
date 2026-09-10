@@ -29,8 +29,11 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 # shellcheck source=apple-signing-lock.sh
 source "$root/scripts/fork/apple-signing-lock.sh"
+# shellcheck source=ensure-vite-plus.sh
+source "$root/scripts/fork/ensure-vite-plus.sh"
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
+vite_plus_on_path
 export APP_VARIANT="${APP_VARIANT:-production}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 export LANG="${LANG:-en_US.UTF-8}"
@@ -226,8 +229,14 @@ if [[ "${T3CODE_MOBILE_SKIP_PATH_FILTER:-}" != "1" ]]; then
     fi
   done
   if [[ -n "$helper" ]]; then
-    "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
-      echo "checkout-origin failed; keeping current tree"
+    # Hosted macos-large has no Origin git-credentials store. Fail open and
+    # keep the Buildkite checkout; do not require CURSOR_API_KEY here.
+    if [[ -s "${HOME}/.git-credentials" || -s /opt/homebrew/var/buildkite-agent/.git-credentials ]]; then
+      "$helper" "${BUILDKITE_COMMIT:-$(git rev-parse HEAD)}" --full ||
+        echo "checkout-origin failed; keeping current tree"
+    else
+      echo "No Origin git-credentials store on this agent; keeping current tree."
+    fi
   fi
 fi
 
@@ -319,8 +328,7 @@ if ! load_secret EXPO_TOKEN; then
   exit 1
 fi
 
-if ! command -v vp >/dev/null; then
-  echo "vp is required on macos-release to publish mobile OTA." >&2
+if ! ensure_vite_plus "to publish mobile OTA"; then
   exit 1
 fi
 
