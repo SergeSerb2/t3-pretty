@@ -27,7 +27,7 @@ export interface EnvironmentHttpAuthHeaders {
  * per-request via `FetchHttpClient.RequestInit`, which the fetch client reads
  * from the fiber context at request time.
  */
-export const withEnvironmentCredentials = <A, E, R>(
+const withEnvironmentCredentials = <A, E, R>(
   authorization: PreparedHttpAuthorization | null,
   request: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
@@ -46,7 +46,7 @@ export const withEnvironmentCredentials = <A, E, R>(
  * for relay/DPoP connections, so bearer/primary connections work even when no
  * signer is available.
  */
-export const buildEnvironmentAuthHeaders = (
+const buildEnvironmentAuthHeaders = (
   authorization: PreparedHttpAuthorization | null,
   method: HttpMethod.HttpMethod,
   url: string,
@@ -78,6 +78,10 @@ export const buildEnvironmentAuthHeaders = (
       );
     return { authorization: `DPoP ${authorization.accessToken}`, dpop: proof };
   });
+
+// Named exports live on their own lines so a parent merge that drops `export`
+// from the declarations above cannot un-export these from the package.
+export { buildEnvironmentAuthHeaders, withEnvironmentCredentials };
 
 /**
  * Resolve relay credentials at request time without replacing the live socket.
