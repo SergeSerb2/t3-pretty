@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001848",
+    date: "2026-09-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Remove Kimi provider so Mac nightly can leave splash",
+      },
+      {
+        kind: "fixed",
+        title: "Clear Mac splash hang on local bearer race",
+      },
+      {
+        kind: "fixed",
+        title: "Survive v0.0.39 Upstream Sync typecheck",
+      },
+      {
+        kind: "fixed",
+        title: "Export desktop electron process telemetry constants",
+      },
+      {
+        kind: "fixed",
+        title: "Null/undefined nightly fetch polish",
+      },
+      {
+        kind: "new",
+        title: "PendingRequests module (incremental upstream sync fix)",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001846",
     date: "2026-09-10",
     items: [
