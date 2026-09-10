@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260907.1332001861",
+    date: "2026-09-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Guard welcome sign-in behind the Clerk gate",
+      },
+      {
+        kind: "fixed",
+        title: "Declare the startup shell snapshot query",
+      },
+      {
+        kind: "fixed",
+        title: "Omitted database migrations after fork collisions",
+      },
+      {
+        kind: "fixed",
+        title: "Desktop startup HTTP API groups",
+      },
+      {
+        kind: "fixed",
+        title: "Provide OriginCli so packaged desktop backend can boot",
+      },
+      {
+        kind: "fixed",
+        title: "Remove Kimi provider so Mac nightly can leave splash",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260907.1332001859",
     date: "2026-09-10",
     items: [
