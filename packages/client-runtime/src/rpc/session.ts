@@ -374,4 +374,6 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
 export const layerWithOptions = (options: RpcSessionOptions) =>
   Layer.effect(RpcSessionFactory, make(options));
 
+// Fork alias: a parent merge that deletes `layer` still leaves tests and
+// older callers a default session factory after they switch to layerWithOptions.
 export const layer = layerWithOptions({});

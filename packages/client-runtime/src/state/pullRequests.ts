@@ -34,7 +34,7 @@ export class EnvironmentHttpConnectionNotReadyError extends Data.TaggedError(
   "EnvironmentHttpConnectionNotReadyError",
 )<{ readonly message: string }> {}
 
-export const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
+const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
 /**
  * How often an open pull-request view re-reads the host. One change request, not a
@@ -53,6 +53,8 @@ function createPullRequestRefreshAtomFamily<R, E>(
     tag: WS_METHODS.pullRequestsSubscribeRefreshes,
   });
 }
+
+export { LINKED_PULL_REQUEST_IDLE_TTL_MS };
 
 /** Refresh only the live fields a linked thread renders. */
 export function createLinkedPullRequestSummaryAtomFamily<R, E>(
