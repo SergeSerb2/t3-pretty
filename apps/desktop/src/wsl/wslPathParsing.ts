@@ -8,6 +8,9 @@ export interface WslConfig {
   readonly distro: string | null;
 }
 
+export const WSL_DISTRO_MAX_COUNT = 64;
+export const WSL_DISTRO_NAME_MAX_LENGTH = 512;
+
 // Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
 // Trailing char must also be \w so hand-edited config like "Ubuntu " / "Ubuntu-" / "Ubuntu." rejects.
 export const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
@@ -24,15 +27,17 @@ export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
 
   const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const distros: WslDistro[] = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = 1; i < lines.length && distros.length < WSL_DISTRO_MAX_COUNT; i++) {
     const line = lines[i]!;
     const isDefault = line.startsWith("*");
     const cleaned = isDefault ? line.slice(1).trim() : line.trim();
     const fields = cleaned.split(/\s{2,}/);
     if (fields.length < 3) continue;
     const name = fields[0]!.trim();
+    if (!name || name.length > WSL_DISTRO_NAME_MAX_LENGTH || !DISTRO_NAME_PATTERN.test(name))
+      continue;
     const versionNum = parseInt(fields[2]!, 10);
-    if (!name || (versionNum !== 1 && versionNum !== 2)) continue;
+    if (versionNum !== 1 && versionNum !== 2) continue;
     distros.push({ name, isDefault, version: versionNum as 1 | 2 });
   }
   return distros;
@@ -61,10 +66,7 @@ export function wslUncPathToLinuxPath(windowsPath: string): string | null {
   return `/${rest.split("\\").filter(Boolean).join("/")}`;
 }
 
-export function resolveWslHomeUncPath(
-  config: WslConfig,
-  distros: readonly WslDistro[],
-): string | null {
+function resolveWslHomeUncPath(config: WslConfig, distros: readonly WslDistro[]): string | null {
   const distroName = config.distro ?? distros.find((distro) => distro.isDefault)?.name ?? null;
   return distroName ? `\\\\wsl.localhost\\${distroName}\\home` : null;
 }

@@ -6,7 +6,13 @@
  * hosts that have no pending review of their own. That also means a draft lives only as long
  * as the tab does, which is why this is deliberately not persisted.
  */
-import type { ProjectId, PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import {
+  PULL_REQUEST_REVIEW_MAX_COMMENTS,
+  type EnvironmentId,
+  type ProjectId,
+  type PullRequestRef,
+  type PullRequestReviewCommentDraft,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
@@ -24,15 +30,23 @@ export function nextPendingReviewCommentId(): string {
   return `pending-review-comment-${pendingCommentSequence}`;
 }
 
-/** One pull request's draft, scoped by project as well as repository: a repository can be checked out twice. */
-export function pullRequestReviewKey(reference: PullRequestRef): string {
-  return `${reference.projectId}/${reference.repository}#${reference.number}`;
+/** One pull request's transient state, scoped to the exact environment and checkout tuple. */
+export function pullRequestReviewKey(
+  environmentId: EnvironmentId,
+  reference: PullRequestRef,
+): string {
+  return JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.repository,
+    reference.number,
+  ]);
 }
 
 interface PullRequestReviewStoreState {
   readonly drafts: Readonly<Record<string, ReadonlyArray<PendingReviewComment>>>;
   readonly summaries: Readonly<Record<string, string>>;
-  readonly addComment: (key: string, comment: PendingReviewComment) => void;
+  readonly addComment: (key: string, comment: PendingReviewComment) => boolean;
   readonly removeComment: (key: string, commentId: string) => void;
   readonly removeComments: (key: string, commentIds: ReadonlyArray<string>) => void;
   readonly clear: (key: string) => void;
@@ -45,10 +59,16 @@ const EMPTY: ReadonlyArray<PendingReviewComment> = [];
 export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((set) => ({
   drafts: {},
   summaries: {},
-  addComment: (key, comment) =>
-    set((state) => ({
-      drafts: { ...state.drafts, [key]: [...(state.drafts[key] ?? EMPTY), comment] },
-    })),
+  addComment: (key, comment) => {
+    let added = false;
+    set((state) => {
+      const current = state.drafts[key] ?? EMPTY;
+      if (current.length >= PULL_REQUEST_REVIEW_MAX_COMMENTS) return state;
+      added = true;
+      return { drafts: { ...state.drafts, [key]: [...current, comment] } };
+    });
+    return added;
+  },
   removeComment: (key, commentId) =>
     set((state) => {
       const remaining = (state.drafts[key] ?? EMPTY).filter((entry) => entry.id !== commentId);
@@ -81,12 +101,15 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
 }));
 
 /** The comments a pull request's draft holds, stable across renders while it is empty. */
-export function usePendingReviewComments(reference: {
-  readonly projectId: ProjectId;
-  readonly repository: string;
-  readonly number: number;
-}): ReadonlyArray<PendingReviewComment> {
+export function usePendingReviewComments(
+  environmentId: EnvironmentId,
+  reference: {
+    readonly projectId: ProjectId;
+    readonly repository: string;
+    readonly number: number;
+  },
+): ReadonlyArray<PendingReviewComment> {
   return usePullRequestReviewStore(
-    (store) => store.drafts[pullRequestReviewKey(reference)] ?? EMPTY,
+    (store) => store.drafts[pullRequestReviewKey(environmentId, reference)] ?? EMPTY,
   );
 }

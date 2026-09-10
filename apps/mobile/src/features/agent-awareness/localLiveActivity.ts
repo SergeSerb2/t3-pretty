@@ -9,6 +9,7 @@ import type {
   AgentActivityProps,
   AgentActivityRowProps,
 } from "../../widgets/AgentActivity";
+import { compareTimestamps } from "../../lib/time";
 
 // Mirrors the relay aggregate windows (AgentActivityPublisher /
 // agentActivityPayloads) so a phone that's connected to the environment can
@@ -149,7 +150,7 @@ export function buildLocalLiveActivityProps(input: {
   const activeRows = rows.filter((row) => isActivePhase(row.phase));
   const terminalRows = rows
     .filter((row) => isRecentTerminal(row.phase, row.updatedAt, input.nowMs))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => compareTimestamps(b.updatedAt, a.updatedAt));
 
   if (activeRows.length === 0) {
     const newest = terminalRows[0];
@@ -168,7 +169,7 @@ export function buildLocalLiveActivityProps(input: {
 
   const displayed = [...activeRows, ...terminalRows].slice(0, MAX_ACTIVITY_ROWS);
   const updatedAt = displayed.reduce(
-    (latest, row) => (row.updatedAt.localeCompare(latest) > 0 ? row.updatedAt : latest),
+    (latest, row) => (compareTimestamps(row.updatedAt, latest) > 0 ? row.updatedAt : latest),
     displayed[0]?.updatedAt ?? "",
   );
   return {

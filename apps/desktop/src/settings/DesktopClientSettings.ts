@@ -8,9 +8,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Ref from "effect/Ref";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { readFileStringWithinLimit } from "../boundedFileRead.ts";
+
+export const CLIENT_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
 
 const ClientSettingsDocumentSchema = Schema.Struct({
   settings: ClientSettingsSchema,
@@ -23,13 +27,28 @@ const decodeLegacyClientSettingsDocumentJson = Schema.decodeEffect(
 );
 const decodeClientSettingsJsonValue = Schema.decodeEffect(ClientSettingsJson);
 const decodeClientSettingsJson = (raw: string): Effect.Effect<ClientSettings, Schema.SchemaError> =>
-  decodeLegacyClientSettingsDocumentJson(raw).pipe(
-    Effect.map((document) => document.settings),
+  decodeClientSettingsJsonValue(raw).pipe(
     Effect.catchTags({
-      SchemaError: () => decodeClientSettingsJsonValue(raw),
+      SchemaError: () =>
+        decodeLegacyClientSettingsDocumentJson(raw).pipe(
+          Effect.map((document) => document.settings),
+        ),
     }),
   );
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
+
+export class DesktopClientSettingsReadError extends Schema.TaggedErrorClass<DesktopClientSettingsReadError>()(
+  "DesktopClientSettingsReadError",
+  {
+    operation: Schema.Literals(["read-file", "decode-document"]),
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Desktop client settings read failed during ${this.operation} at ${this.path}.`;
+  }
+}
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
@@ -55,7 +74,7 @@ export class DesktopClientSettingsWriteError extends Schema.TaggedErrorClass<Des
 export class DesktopClientSettings extends Context.Service<
   DesktopClientSettings,
   {
-    readonly get: Effect.Effect<Option.Option<ClientSettings>>;
+    readonly get: Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError>;
     readonly set: (
       settings: ClientSettings,
     ) => Effect.Effect<void, DesktopClientSettingsWriteError>;
@@ -65,8 +84,8 @@ export class DesktopClientSettings extends Context.Service<
 const readClientSettings = (
   fileSystem: FileSystem.FileSystem,
   settingsPath: string,
-): Effect.Effect<Option.Option<ClientSettings>> =>
-  fileSystem.readFileString(settingsPath).pipe(
+): Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError> =>
+  readFileStringWithinLimit(fileSystem, settingsPath, CLIENT_SETTINGS_FILE_MAX_BYTES).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -74,8 +93,25 @@ const readClientSettings = (
           ? Effect.succeed(Option.none<string>())
           : Effect.logWarning("Could not read desktop client settings.", cause).pipe(
               Effect.annotateLogs({ settingsPath }),
-              Effect.as(Option.none<string>()),
+              Effect.andThen(
+                new DesktopClientSettingsReadError({
+                  operation: "read-file",
+                  path: settingsPath,
+                  cause,
+                }),
+              ),
             ),
+      DesktopFileSizeLimitExceededError: (cause) =>
+        Effect.logWarning("Desktop client settings exceed the supported size.", cause).pipe(
+          Effect.annotateLogs({ settingsPath }),
+          Effect.andThen(
+            new DesktopClientSettingsReadError({
+              operation: "read-file",
+              path: settingsPath,
+              cause,
+            }),
+          ),
+        ),
     }),
     Effect.flatMap(
       Option.match({
@@ -87,7 +123,13 @@ const readClientSettings = (
               SchemaError: (cause) =>
                 Effect.logWarning("Could not decode desktop client settings.", cause).pipe(
                   Effect.annotateLogs({ settingsPath }),
-                  Effect.as(Option.none<ClientSettings>()),
+                  Effect.andThen(
+                    new DesktopClientSettingsReadError({
+                      operation: "decode-document",
+                      path: settingsPath,
+                      cause,
+                    }),
+                  ),
                 ),
             }),
           ),
@@ -114,6 +156,14 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
         }),
     ),
   );
+  const serialized = `${encoded}\n`;
+  if (Buffer.byteLength(serialized, "utf8") > CLIENT_SETTINGS_FILE_MAX_BYTES) {
+    return yield* new DesktopClientSettingsWriteError({
+      operation: "encode-document",
+      path: input.settingsPath,
+      cause: new Error(`Encoded client settings exceed ${CLIENT_SETTINGS_FILE_MAX_BYTES} bytes.`),
+    });
+  }
   yield* input.fileSystem.makeDirectory(directory, { recursive: true }).pipe(
     Effect.mapError(
       (cause) =>
@@ -124,26 +174,28 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
         }),
     ),
   );
-  yield* input.fileSystem.writeFileString(tempPath, `${encoded}\n`).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopClientSettingsWriteError({
-          operation: "write-temporary-file",
-          path: tempPath,
-          cause,
-        }),
-    ),
-  );
-  yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopClientSettingsWriteError({
-          operation: "replace-settings-file",
-          path: input.settingsPath,
-          cause,
-        }),
-    ),
-  );
+  yield* Effect.gen(function* () {
+    yield* input.fileSystem.writeFileString(tempPath, serialized).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopClientSettingsWriteError({
+            operation: "write-temporary-file",
+            path: tempPath,
+            cause,
+          }),
+      ),
+    );
+    yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopClientSettingsWriteError({
+            operation: "replace-settings-file",
+            path: input.settingsPath,
+            cause,
+          }),
+      ),
+    );
+  }).pipe(Effect.ensuring(input.fileSystem.remove(tempPath, { force: true }).pipe(Effect.ignore)));
 });
 
 export const make = Effect.gen(function* () {
@@ -151,32 +203,35 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
+  const writeSemaphore = yield* Semaphore.make(1);
 
   return DesktopClientSettings.of({
     get: readClientSettings(fileSystem, environment.clientSettingsPath).pipe(
       Effect.withSpan("desktop.clientSettings.get"),
     ),
     set: (settings) =>
-      crypto.randomUUIDv4.pipe(
-        Effect.map((uuid) => uuid.replace(/-/g, "")),
-        Effect.mapError(
-          (cause) =>
-            new DesktopClientSettingsWriteError({
-              operation: "create-temporary-file-name",
-              path: environment.clientSettingsPath,
-              cause,
+      writeSemaphore.withPermits(1)(
+        crypto.randomUUIDv4.pipe(
+          Effect.map((uuid) => uuid.replace(/-/g, "")),
+          Effect.mapError(
+            (cause) =>
+              new DesktopClientSettingsWriteError({
+                operation: "create-temporary-file-name",
+                path: environment.clientSettingsPath,
+                cause,
+              }),
+          ),
+          Effect.flatMap((suffix) =>
+            writeClientSettings({
+              fileSystem,
+              path,
+              settingsPath: environment.clientSettingsPath,
+              settings,
+              suffix,
             }),
+          ),
+          Effect.withSpan("desktop.clientSettings.set"),
         ),
-        Effect.flatMap((suffix) =>
-          writeClientSettings({
-            fileSystem,
-            path,
-            settingsPath: environment.clientSettingsPath,
-            settings,
-            suffix,
-          }),
-        ),
-        Effect.withSpan("desktop.clientSettings.set"),
       ),
   });
 });

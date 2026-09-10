@@ -1,13 +1,14 @@
-import type {
-  RelayClientDeviceRecord,
-  RelayDeviceRegistrationRequest,
+import {
+  RELAY_DEVICE_MAX_COUNT,
+  type RelayClientDeviceRecord,
+  type RelayDeviceRegistrationRequest,
 } from "@t3tools/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
@@ -231,6 +232,8 @@ export const make = Effect.gen(function* () {
         })
         .from(relayMobileDevices)
         .where(eq(relayMobileDevices.userId, input.userId))
+        .orderBy(desc(relayMobileDevices.updatedAt), desc(relayMobileDevices.deviceId))
+        .limit(RELAY_DEVICE_MAX_COUNT)
         .pipe(
           Effect.mapError(
             (cause) => new DeviceListPersistenceError({ userId: input.userId, cause }),

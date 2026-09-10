@@ -115,6 +115,7 @@ function handleBeforeQuit(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
   allowQuit: () => boolean,
+  beginNormalQuit: () => boolean,
   markQuitAllowed: () => void,
 ): void {
   if (allowQuit()) {
@@ -128,7 +129,17 @@ function handleBeforeQuit(
     return;
   }
 
+  if (!beginNormalQuit()) return;
   event.preventDefault();
+  const finishNormalQuit = () => {
+    markQuitAllowed();
+    void runEffect(
+      Effect.gen(function* () {
+        const electronApp = yield* ElectronApp.ElectronApp;
+        yield* electronApp.quit;
+      }).pipe(Effect.withSpan("desktop.lifecycle.quitAfterShutdown")),
+    );
+  };
   void runEffect(
     Effect.gen(function* () {
       const state = yield* DesktopState.DesktopState;
@@ -143,15 +154,7 @@ function handleBeforeQuit(
         ),
       );
     }).pipe(Effect.withSpan("desktop.lifecycle.beforeQuit")),
-  ).finally(() => {
-    markQuitAllowed();
-    void runEffect(
-      Effect.gen(function* () {
-        const electronApp = yield* ElectronApp.ElectronApp;
-        yield* electronApp.quit;
-      }).pipe(Effect.withSpan("desktop.lifecycle.quitAfterShutdown")),
-    );
-  });
+  ).then(finishNormalQuit, finishNormalQuit);
 }
 
 function quitFromSignal(
@@ -182,7 +185,8 @@ export const make = DesktopLifecycle.of({
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
     yield* Effect.gen(function* () {
       yield* Effect.yieldNow;
-      yield* Ref.set(state.quitting, true);
+      const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
+      if (wasQuitting) return;
       yield* requestDesktopShutdownAndWait();
       if (environment.isDevelopment) {
         yield* electronApp.exit(75);
@@ -204,6 +208,7 @@ export const make = DesktopLifecycle.of({
   }),
   register: Effect.gen(function* () {
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
     const electronApp = yield* ElectronApp.ElectronApp;
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -211,6 +216,7 @@ export const make = DesktopLifecycle.of({
     const runEffect = Effect.runPromiseWith(context);
     let quitAllowed = false;
     let updaterQuitAllowed = false;
+    let normalQuitStarted = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
@@ -221,8 +227,16 @@ export const make = DesktopLifecycle.of({
       // Cancelling the following app "before-quit" event breaks that sequence,
       // most visibly on macOS where the native updater performs the relaunch.
       updaterQuitAllowed = true;
-      void runEffect(
-        logLifecycleInfo("allowing updater-controlled quit").pipe(
+      // This event is synchronous and the updater's quit proceeds as soon as
+      // the listener returns, so a forked destroyAll would race the quit
+      // and windows could still be open when the process exits (visible on
+      // macOS). Destroy them inline.
+      Effect.runSyncWith(context)(
+        electronWindow.destroyAll.pipe(
+          Effect.andThen(logLifecycleInfo("allowing updater-controlled quit")),
+          Effect.catchCause((cause) =>
+            logLifecycleError("failed to destroy windows before updater quit", { cause }),
+          ),
           Effect.withSpan("desktop.lifecycle.beforeQuitForUpdate"),
         ),
       );
@@ -243,6 +257,11 @@ export const make = DesktopLifecycle.of({
         event,
         runEffect,
         () => quitAllowed || updaterQuitAllowed,
+        () => {
+          if (normalQuitStarted) return false;
+          normalQuitStarted = true;
+          return true;
+        },
         () => {
           quitAllowed = true;
         },

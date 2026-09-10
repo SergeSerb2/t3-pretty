@@ -1,15 +1,21 @@
-import type {
-  RelayAgentActivityAggregateState,
-  RelayAgentActivityState,
+import {
+  RELAY_DETAIL_MAX_LENGTH,
+  RELAY_TRACE_ID_MAX_LENGTH,
+  type RelayAgentActivityAggregateState,
+  type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
 import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeCrypto from "node:crypto";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
 import * as References from "effect/References";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import {
   FetchHttpClient,
   HttpClient,
@@ -164,6 +170,10 @@ function makeLayer(input: {
   // Defaults to the fixture row so queued updates match unless a test is
   // explicitly exercising stale-state behavior.
   readonly activityStates?: ReadonlyArray<RelayAgentActivityState>;
+  readonly activityListEffect?: Effect.Effect<
+    ReadonlyArray<RelayAgentActivityState>,
+    AgentActivityRows.AgentActivityRowListPersistenceError
+  >;
   // Current per-thread rows used to reject queued updates/notifications that
   // have been superseded before APNs delivery.
   readonly currentActivityStates?: ReadonlyArray<RelayAgentActivityState>;
@@ -182,9 +192,10 @@ function makeLayer(input: {
           remove: () => Effect.void,
           pruneTerminal: () => Effect.void,
           listForUser: () =>
-            input.activityStates !== undefined
+            input.activityListEffect ??
+            (input.activityStates !== undefined
               ? Effect.succeed([...input.activityStates])
-              : Effect.succeed([state]),
+              : Effect.succeed([state])),
           getForUserThread: ({ environmentId, threadId }) =>
             Effect.succeed(
               (input.currentActivityStates ?? input.activityStates ?? [state]).find(
@@ -222,6 +233,7 @@ function makeLayer(input: {
                 Object.assign(attempt, completion);
               }
             }),
+          pruneBefore: () => Effect.void,
         }),
         Layer.succeed(LiveActivities.LiveActivities, {
           register: () => Effect.void,
@@ -951,6 +963,64 @@ describe("ApnsDeliveries", () => {
     }).pipe(Effect.provide(makeLayer({ attempts, clearedStarts, activityStates: [] })));
   });
 
+  it.effect("redacts fail-open activity recheck causes from queue logs", () => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const messages: unknown[] = [];
+    const secret = `sensitive-recheck-${"x".repeat(512)}`;
+    const logger = Logger.make(({ message }) => {
+      messages.push(message);
+    });
+    const payload = makeApnsDeliveryJobPayload({
+      kind: "live_activity_start",
+      userId: target.user_id,
+      deviceId: target.device_id,
+      token: target.push_to_start_token ?? "start-token",
+      aggregate,
+      createdAt: "1970-01-01T00:00:00.000Z",
+      expiresAt: "1970-01-01T00:10:00.000Z",
+      jobId: "job-start-recheck-failure",
+    });
+    const signed = signApnsDeliveryJob({
+      secret: config.apnsDeliveryJobSigningSecret,
+      payload,
+    });
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status: 200 })));
+
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      yield* deliveries.processSignedJob(signed);
+
+      const warning = messages.find(
+        (message) =>
+          Array.isArray(message) &&
+          message[0] === "live-work recheck failed; allowing queued start",
+      );
+      expect(warning).toBeDefined();
+      if (!Array.isArray(warning)) return;
+      const details = warning[1] as { readonly error?: unknown } | undefined;
+      expect(Redacted.isRedacted(details?.error)).toBe(true);
+      expect(String(messages)).not.toContain(secret);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          makeLayer({
+            attempts,
+            activityListEffect: Effect.fail(
+              new AgentActivityRows.AgentActivityRowListPersistenceError({
+                userId: target.user_id,
+                cause: new Error(secret),
+              }),
+            ),
+            config: signingConfig,
+            execute,
+          }),
+          Logger.layer([logger], { mergeWithExisting: false }),
+        ),
+      ),
+    );
+  });
+
   it.effect("processes signed jobs through APNs and records attempts", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
     const transportErrors: Array<ApnsDeliveries.ApnsDeliveryTransportError> = [];
@@ -1016,6 +1086,79 @@ describe("ApnsDeliveries", () => {
       ),
     );
   });
+
+  it.effect("continues a signed delivery batch after an APNs timeout", () =>
+    Effect.gen(function* () {
+      const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+      const markedDeliveries: Array<
+        Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]
+      > = [];
+      const secondTarget = {
+        ...target,
+        device_id: "device-2",
+        activity_push_token: "second-token",
+      };
+      const jobs = [target, secondTarget].map((device) =>
+        signApnsDeliveryJob({
+          secret: signingConfig.apnsDeliveryJobSigningSecret,
+          payload: makeApnsDeliveryJobPayload({
+            kind: "live_activity_update",
+            userId: device.user_id,
+            deviceId: device.device_id,
+            token: device.activity_push_token!,
+            aggregate,
+            createdAt: "1970-01-01T00:00:00.000Z",
+            expiresAt: "1970-01-01T00:10:00.000Z",
+            jobId: `job-timeout-${device.device_id}`,
+          }),
+        }),
+      );
+      const started = yield* Deferred.make<void>();
+      const results: Array<{ deviceId: string; ok: boolean }> = [];
+      const layer = makeLayer({
+        attempts,
+        markedDeliveries,
+        currentTargets: [target, secondTarget],
+        config: signingConfig,
+        execute: (request) =>
+          request.url.endsWith("/activity-token")
+            ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
+            : Effect.succeed(
+                HttpClientResponse.fromWeb(request, new Response("", { status: 200 })),
+              ),
+      });
+      const batch = yield* Effect.gen(function* () {
+        const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+        yield* Stream.fromIterable(jobs).pipe(
+          Stream.runForEach((job) =>
+            deliveries.processSignedJob(job).pipe(
+              Effect.tap((result) =>
+                Effect.sync(() => {
+                  results.push(result);
+                }),
+              ),
+            ),
+          ),
+        );
+      }).pipe(Effect.provide(layer), Effect.forkChild);
+
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("10 seconds");
+      yield* Fiber.join(batch);
+      expect(results).toMatchObject([
+        { deviceId: "device-1", ok: false },
+        { deviceId: "device-2", ok: true },
+      ]);
+      expect(attempts).toMatchObject([
+        {
+          sourceJobId: "job-timeout-device-1",
+          apnsReason: expect.stringContaining("request failed"),
+        },
+        { sourceJobId: "job-timeout-device-2", apnsStatus: 200 },
+      ]);
+      expect(markedDeliveries).toMatchObject([{ deviceId: "device-2" }]);
+    }),
+  );
 
   it.effect("processes signed push notification jobs through APNs and records attempts", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
@@ -1501,6 +1644,68 @@ describe("ApnsDeliveries", () => {
         makeLayer({
           attempts,
           invalidatedTokens,
+          currentTargets: [
+            {
+              ...target,
+              push_token: "apns-device-token",
+            },
+          ],
+          config: signingConfig,
+          execute,
+        }),
+      ),
+    );
+  });
+
+  it.effect("bounds upstream APNs diagnostics in queue results and durable attempts", () => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const upstreamReason = "r".repeat(5_000);
+    const upstreamApnsId = "a".repeat(300);
+    const payload = makeApnsDeliveryJobPayload({
+      kind: "push_notification",
+      userId: target.user_id,
+      deviceId: target.device_id,
+      token: "apns-device-token",
+      aggregate: null,
+      notification: {
+        title: "Thread",
+        body: "Failed: Project",
+        environmentId: "env",
+        threadId: "thread",
+        deepLink: "/",
+      },
+      createdAt: "1970-01-01T00:00:00.000Z",
+      expiresAt: "1970-01-01T00:10:00.000Z",
+      jobId: "job-push-bounded-diagnostics",
+    });
+    const signed = signApnsDeliveryJob({
+      secret: config.apnsDeliveryJobSigningSecret,
+      payload,
+    });
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json(
+            { reason: upstreamReason },
+            { status: 400, headers: { "apns-id": upstreamApnsId } },
+          ),
+        ),
+      );
+
+    return Effect.gen(function* () {
+      const deliveries = yield* ApnsDeliveries.ApnsDeliveries;
+      const result = yield* deliveries.processSignedJob(signed);
+
+      expect(result.apnsReason).toBe(upstreamReason.slice(0, RELAY_DETAIL_MAX_LENGTH));
+      expect(result.apnsId).toBe(upstreamApnsId.slice(0, RELAY_TRACE_ID_MAX_LENGTH));
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.apnsReason).toBe(upstreamReason.slice(0, RELAY_DETAIL_MAX_LENGTH));
+      expect(attempts[0]?.apnsId).toBe(upstreamApnsId.slice(0, RELAY_TRACE_ID_MAX_LENGTH));
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          attempts,
           currentTargets: [
             {
               ...target,

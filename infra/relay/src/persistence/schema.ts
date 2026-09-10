@@ -123,6 +123,7 @@ export const relayEnvironmentCredentials = pgTable(
   },
   (table) => [
     uniqueIndex("idx_relay_environment_credentials_hash").on(table.credentialHash),
+    index("idx_relay_environment_credentials_revoked_at").on(table.revokedAt),
     index("idx_relay_environment_credentials_environment").on(table.environmentId, table.revokedAt),
     index("idx_relay_environment_credentials_environment_key").on(
       table.environmentId,
@@ -166,6 +167,7 @@ export const relayDeliveryAttempts = pgTable(
     transportError: text("transport_error"),
   },
   (table) => [
+    index("idx_relay_delivery_attempts_created_at").on(table.createdAt),
     index("idx_relay_delivery_attempts_environment").on(
       table.environmentId,
       table.threadId,

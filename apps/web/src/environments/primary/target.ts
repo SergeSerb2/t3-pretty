@@ -76,7 +76,12 @@ export interface PrimaryEnvironmentTarget {
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 
 let cachedPrimaryDesktopBootstrap: DesktopEnvironmentBootstrap | null = null;
-let primaryDesktopBootstrapInflight: Promise<DesktopEnvironmentBootstrap | null> | null = null;
+let primaryDesktopBootstrapGeneration = 0;
+let primaryDesktopBootstrapInflight: {
+  readonly read: NonNullable<Window["desktopBridge"]>["getLocalEnvironmentBootstraps"];
+  readonly promise: Promise<DesktopEnvironmentBootstrap | null>;
+} | null = null;
+const PRIMARY_DESKTOP_BOOTSTRAP_TIMEOUT_MS = 5_000;
 
 // The primary (Windows-native) backend keeps the "primary" id. The plural list
 // may include a second WSL entry; the primary-target resolver only cares about
@@ -93,24 +98,58 @@ function selectPrimaryDesktopBootstrap(
  * primary HTTP call so a fresh renderer does not fall back to window-origin.
  */
 export function loadDesktopPrimaryEnvironmentBootstrap(): Promise<DesktopEnvironmentBootstrap | null> {
-  if (primaryDesktopBootstrapInflight !== null) {
-    return primaryDesktopBootstrapInflight;
+  const bridge = window.desktopBridge;
+  if (bridge === undefined) {
+    primaryDesktopBootstrapGeneration += 1;
+    primaryDesktopBootstrapInflight = null;
+    cachedPrimaryDesktopBootstrap = null;
+    return Promise.resolve(null);
   }
-  const result = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+  if (primaryDesktopBootstrapInflight?.read === bridge.getLocalEnvironmentBootstraps) {
+    return primaryDesktopBootstrapInflight.promise;
+  }
+  const generation = ++primaryDesktopBootstrapGeneration;
+  primaryDesktopBootstrapInflight = null;
+  let result: ReturnType<typeof bridge.getLocalEnvironmentBootstraps>;
+  try {
+    result = bridge.getLocalEnvironmentBootstraps();
+  } catch {
+    return Promise.resolve(cachedPrimaryDesktopBootstrap);
+  }
   if (Array.isArray(result)) {
     cachedPrimaryDesktopBootstrap = selectPrimaryDesktopBootstrap(result);
     return Promise.resolve(cachedPrimaryDesktopBootstrap);
   }
-  primaryDesktopBootstrapInflight = Promise.resolve(result)
-    .then((bootstraps) => {
-      cachedPrimaryDesktopBootstrap = selectPrimaryDesktopBootstrap(bootstraps);
-      return cachedPrimaryDesktopBootstrap;
-    })
-    .catch(() => cachedPrimaryDesktopBootstrap)
-    .finally(() => {
+  const promise = new Promise<DesktopEnvironmentBootstrap | null>((resolve) => {
+    const timeout = setTimeout(() => {
+      if (generation === primaryDesktopBootstrapGeneration) {
+        primaryDesktopBootstrapGeneration += 1;
+      }
+      resolve(cachedPrimaryDesktopBootstrap);
+    }, PRIMARY_DESKTOP_BOOTSTRAP_TIMEOUT_MS);
+    void Promise.resolve(result).then(
+      (bootstraps) => {
+        clearTimeout(timeout);
+        if (generation === primaryDesktopBootstrapGeneration) {
+          cachedPrimaryDesktopBootstrap = selectPrimaryDesktopBootstrap(bootstraps);
+        }
+        resolve(cachedPrimaryDesktopBootstrap);
+      },
+      () => {
+        clearTimeout(timeout);
+        resolve(cachedPrimaryDesktopBootstrap);
+      },
+    );
+  }).finally(() => {
+    if (primaryDesktopBootstrapInflight?.promise === promise) {
       primaryDesktopBootstrapInflight = null;
-    });
-  return primaryDesktopBootstrapInflight;
+    }
+  });
+  primaryDesktopBootstrapInflight = {
+    read: bridge.getLocalEnvironmentBootstraps,
+    promise,
+  };
+  return promise;
 }
 
 // Sync callers get the last snapshot while an async bridge read refreshes it.
@@ -229,14 +268,18 @@ function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
     return null;
   }
 
+  // Scheme checks run on the raw configured string, while the URL parser
+  // folds schemes to lowercase ("WSS://host" parses fine). Without the
+  // case folding an uppercase scheme would be classified as plaintext and
+  // swapped to http/ws, silently downgrading TLS.
   const resolvedHttpBaseUrl =
     configuredHttpBaseUrl ??
-    (configuredWsBaseUrl?.startsWith("wss:")
+    (configuredWsBaseUrl?.toLowerCase().startsWith("wss:")
       ? swapBaseUrlProtocol(configuredWsBaseUrl, "https:", "websocket-base-url")
       : swapBaseUrlProtocol(configuredWsBaseUrl!, "http:", "websocket-base-url"));
   const resolvedWsBaseUrl =
     configuredWsBaseUrl ??
-    (configuredHttpBaseUrl?.startsWith("https:")
+    (configuredHttpBaseUrl?.toLowerCase().startsWith("https:")
       ? swapBaseUrlProtocol(configuredHttpBaseUrl, "wss:", "http-base-url")
       : swapBaseUrlProtocol(configuredHttpBaseUrl!, "ws:", "http-base-url"));
 

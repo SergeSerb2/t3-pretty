@@ -36,9 +36,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientError from "effect/unstable/http/HttpClientError";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
@@ -126,8 +128,94 @@ export type EnvironmentConnectorError =
   | EnvironmentLinks.EnvironmentLinkLookupPersistenceError
   | ManagedEndpointAllocations.ManagedEndpointAllocationPersistenceError;
 
-export const ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS = 10_000;
+// Leave enough room for the relay's outer 9s request deadline to encode the
+// operation-specific offline/timeout response instead of pre-empting it with a
+// generic 504.
+export const ENVIRONMENT_MINT_REQUEST_TIMEOUT_MS = 8_000;
+export const ENVIRONMENT_RESPONSE_MAX_BYTES = 64 * 1024;
 const ENVIRONMENT_HEALTH_CLOCK_SKEW_MILLIS = 60 * 1_000;
+
+interface BoundedEnvironmentResponseChunk {
+  readonly bytes: Uint8Array;
+  readonly truncated: boolean;
+}
+
+function environmentResponseTooLarge(
+  response: HttpClientResponse.HttpClientResponse,
+): HttpClientError.HttpClientError {
+  return new HttpClientError.HttpClientError({
+    reason: new HttpClientError.DecodeError({
+      request: response.request,
+      response,
+      description: `response exceeded ${ENVIRONMENT_RESPONSE_MAX_BYTES} bytes`,
+    }),
+  });
+}
+
+const releaseEnvironmentResponse = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<void> => response.stream.pipe(Stream.take(1), Stream.runDrain, Effect.ignore);
+
+export const boundEnvironmentResponse = Effect.fnUntraced(function* (
+  response: HttpClientResponse.HttpClientResponse,
+) {
+  const declaredLength = Number(response.headers["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > ENVIRONMENT_RESPONSE_MAX_BYTES) {
+    yield* releaseEnvironmentResponse(response);
+    return yield* environmentResponseTooLarge(response);
+  }
+
+  const collected = yield* response.stream.pipe(
+    Stream.mapAccum(
+      () => 0,
+      (totalBytes, chunk): readonly [number, ReadonlyArray<BoundedEnvironmentResponseChunk>] => {
+        const remaining = Math.max(0, ENVIRONMENT_RESPONSE_MAX_BYTES - totalBytes);
+        const truncated = chunk.byteLength > remaining;
+        const bytes = truncated ? chunk.slice(0, remaining) : chunk;
+        return [totalBytes + bytes.byteLength, [{ bytes, truncated }]];
+      },
+    ),
+    Stream.takeUntil((chunk) => chunk.truncated),
+    Stream.runFold(
+      () => ({ chunks: [] as Uint8Array[], bytes: 0, truncated: false }),
+      (state, chunk) => {
+        if (chunk.bytes.byteLength > 0) {
+          state.chunks.push(chunk.bytes);
+        }
+        return {
+          chunks: state.chunks,
+          bytes: state.bytes + chunk.bytes.byteLength,
+          truncated: state.truncated || chunk.truncated,
+        };
+      },
+    ),
+  );
+  if (collected.truncated) {
+    return yield* environmentResponseTooLarge(response);
+  }
+
+  const bytes = new Uint8Array(collected.bytes);
+  let offset = 0;
+  for (const chunk of collected.chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (value !== undefined) headers.set(name, value);
+  }
+  const body =
+    bytes.byteLength === 0 ||
+    response.status === 204 ||
+    response.status === 205 ||
+    response.status === 304
+      ? null
+      : bytes;
+  return HttpClientResponse.fromWeb(
+    response.request,
+    new Response(body, { status: response.status, headers }),
+  );
+});
 
 export class EnvironmentConnector extends Context.Service<
   EnvironmentConnector,
@@ -295,9 +383,13 @@ const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const crypto = yield* Crypto.Crypto;
   const relayIssuer = normalizeRelayIssuer(settings.relayIssuer);
+  const boundedHttpClient = HttpClient.transformResponse(
+    httpClient,
+    Effect.flatMap(boundEnvironmentResponse),
+  );
   const makeEnvironmentClient = (httpBaseUrl: string) =>
     makeEnvironmentHttpApiClient(httpBaseUrl).pipe(
-      Effect.provideService(HttpClient.HttpClient, httpClient),
+      Effect.provideService(HttpClient.HttpClient, boundedHttpClient),
     );
   const resolveManagedEndpoint = Effect.fn("relay.environment_connector.resolve_managed_endpoint")(
     function* (input: {

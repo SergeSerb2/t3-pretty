@@ -18,6 +18,7 @@
  */
 import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
+  DISCOVERED_LOCAL_SERVERS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
   ThreadId,
   type DiscoveredLocalServer,
@@ -179,7 +180,9 @@ const projectWebProbeSnapshot = (
     const key = localServerKey(server.host, server.port);
     if (!visibleByServer.has(key)) visibleByServer.set(key, server);
   }
-  return [...visibleByServer.values()].toSorted((left, right) => left.port - right.port);
+  return [...visibleByServer.values()]
+    .toSorted((left, right) => left.port - right.port)
+    .slice(0, DISCOVERED_LOCAL_SERVERS_MAX_ITEMS);
 };
 
 const parseLsofOutput = (
@@ -218,6 +221,7 @@ const parseLsofOutput = (
         pid,
         terminal: pid === null ? null : (terminalByProcessId.get(pid) ?? null),
       });
+      if (seen.size >= DISCOVERED_LOCAL_SERVERS_MAX_ITEMS) break;
     }
   }
 
@@ -261,6 +265,7 @@ const parseWindowsListenerOutput = (
       pid: normalizedPid,
       terminal: normalizedPid === null ? null : (terminalByProcessId.get(normalizedPid) ?? null),
     });
+    if (seen.size >= DISCOVERED_LOCAL_SERVERS_MAX_ITEMS) break;
   }
   return [...seen.values()].toSorted((left, right) => left.port - right.port);
 };

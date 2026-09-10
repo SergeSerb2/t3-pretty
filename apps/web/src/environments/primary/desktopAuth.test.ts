@@ -1,7 +1,15 @@
 import type { DesktopBridge } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 
-import { __resetDesktopPrimaryAuthForTests, readDesktopPrimaryBearerToken } from "./desktopAuth";
+import { DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS, DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS } from "./auth";
+import {
+  __resetDesktopPrimaryAuthForTests,
+  beginDesktopAuthDeadline,
+  DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
+  PrimaryEnvironmentDesktopBearerTimeoutError,
+  readDesktopPrimaryBearerToken,
+  remainingDesktopAuthBudgetMs,
+} from "./desktopAuth";
 
 describe("desktop primary auth", () => {
   beforeEach(() => {
@@ -29,5 +37,47 @@ describe("desktop primary auth", () => {
 
   it("does not require desktop auth in a browser", async () => {
     await expect(readDesktopPrimaryBearerToken()).resolves.toBeNull();
+  });
+
+  it("waits at least as long as main ready latch plus token retries", () => {
+    const mainReadyAndRetryBudgetMs = 30_000 + 8_000;
+    expect(DESKTOP_BEARER_TOKEN_TIMEOUT_MS).toBeGreaterThanOrEqual(mainReadyAndRetryBudgetMs);
+    expect(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
+    expect(DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
+  });
+
+  it("shrinks the bearer IPC timeout to the remaining splash deadline", () => {
+    vi.useFakeTimers();
+    try {
+      const startedAt = Date.now();
+      beginDesktopAuthDeadline(startedAt);
+      vi.advanceTimersByTime(25_000);
+      expect(remainingDesktopAuthBudgetMs()).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS - 25_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears a hung bearer IPC so splash auth can retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const getLocalEnvironmentBearerToken = vi.fn(() => new Promise<string>(() => undefined));
+      window.desktopBridge = {
+        getLocalEnvironmentBearerToken,
+      } as unknown as DesktopBridge;
+
+      const firstError = readDesktopPrimaryBearerToken().then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
+
+      expect(await firstError).toBeInstanceOf(PrimaryEnvironmentDesktopBearerTimeoutError);
+      getLocalEnvironmentBearerToken.mockResolvedValueOnce("desktop-bearer-token");
+      await expect(readDesktopPrimaryBearerToken()).resolves.toBe("desktop-bearer-token");
+      expect(getLocalEnvironmentBearerToken).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

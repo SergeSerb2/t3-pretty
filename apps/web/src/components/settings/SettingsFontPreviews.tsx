@@ -80,7 +80,14 @@ function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
     promise = preloadPatchFile({
       patch: DIFF_PREVIEW_PATCH,
       options: { diffStyle: "unified", theme },
-    }).then((results) => results.map((result) => result.prerenderedHTML));
+    })
+      .then((results) => results.map((result) => result.prerenderedHTML))
+      .catch((error) => {
+        if (diffPreviewHtmlByTheme.get(theme) === promise) {
+          diffPreviewHtmlByTheme.delete(theme);
+        }
+        throw error;
+      });
     diffPreviewHtmlByTheme.set(theme, promise);
   }
   return promise;
@@ -127,9 +134,14 @@ export function CodeFontPreview() {
   const [htmlByFile, setHtmlByFile] = useState<readonly string[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void loadDiffPreviewHtml(themeName).then((html) => {
-      if (!cancelled) setHtmlByFile(html);
-    });
+    void loadDiffPreviewHtml(themeName).then(
+      (html) => {
+        if (!cancelled) setHtmlByFile(html);
+      },
+      () => {
+        if (!cancelled) setHtmlByFile(null);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -182,14 +194,31 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
   const mountRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
   const fontRef = useRef({ family, size });
+  const fontUpdateGenerationRef = useRef(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   const { theme, resolvedTheme } = useTheme();
+
+  const applyFont = useCallback((surface: GhosttyTerminalSurface, next: typeof fontRef.current) => {
+    const generation = ++fontUpdateGenerationRef.current;
+    void Promise.resolve()
+      .then(() => surface.setFont(previewTerminalFont(next.family, next.size)))
+      .then(
+        () => {
+          if (fontUpdateGenerationRef.current === generation) setLoadFailed(false);
+        },
+        () => {
+          if (fontUpdateGenerationRef.current === generation) setLoadFailed(true);
+        },
+      );
+  }, []);
 
   useEffect(() => {
     const current = fontRef.current;
     if (current.family === family && current.size === size) return;
     fontRef.current = { family, size };
-    void surfaceRef.current?.setFont(previewTerminalFont(family, size));
-  }, [family, size]);
+    const surface = surfaceRef.current;
+    if (surface !== null) applyFont(surface, fontRef.current);
+  }, [applyFont, family, size]);
 
   // Re-read the terminal tokens on any theme change — switching between two
   // palettes can leave resolvedTheme (light/dark) untouched.
@@ -197,7 +226,11 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const mount = mountRef.current;
     const surface = surfaceRef.current;
     if (!mount || !surface) return;
-    surface.setTheme(terminalThemeFromApp(mount));
+    try {
+      surface.setTheme(terminalThemeFromApp(mount));
+    } catch {
+      setLoadFailed(true);
+    }
   }, [theme, resolvedTheme]);
 
   useEffect(() => {
@@ -211,62 +244,100 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     const echo = (data: string) => {
       const surface = surfaceRef.current;
       if (!surface) return;
-      if (data === "\r") {
-        surface.write(`\r\n${TERMINAL_PROMPT}`);
-        lineLength = 0;
-        return;
-      }
-      if (data === "\x7f" || data === "\b") {
-        if (lineLength > 0) {
-          surface.write("\b \b");
-          lineLength -= 1;
+      try {
+        if (data === "\r") {
+          surface.write(`\r\n${TERMINAL_PROMPT}`);
+          lineLength = 0;
+          return;
         }
-        return;
+        if (data === "\x7f" || data === "\b") {
+          if (lineLength > 0) {
+            surface.write("\b \b");
+            lineLength -= 1;
+          }
+          return;
+        }
+        // Arrow keys and other escape reports have no cursor to move here.
+        if (data.startsWith("\x1b")) return;
+        const printable = [...data]
+          .filter((character) => character >= " " && character !== "\x7f")
+          .join("");
+        if (printable.length === 0) return;
+        surface.write(printable);
+        lineLength += printable.length;
+      } catch {
+        if (!cancelled) setLoadFailed(true);
       }
-      // Arrow keys and other escape reports have no cursor to move here.
-      if (data.startsWith("\x1b")) return;
-      const printable = [...data]
-        .filter((character) => character >= " " && character !== "\x7f")
-        .join("");
-      if (printable.length === 0) return;
-      surface.write(printable);
-      lineLength += printable.length;
     };
 
-    void GhosttyTerminalSurface.create(mount, {
-      theme: terminalThemeFromApp(mount),
-      font: previewTerminalFont(fontRef.current.family, fontRef.current.size),
-      onData: echo,
-      onResize: noop,
-      onSelectionChange: noop,
-      // Tab keeps walking the settings page instead of feeding the echo loop.
-      beforeKey: (event) => event.key !== "Tab",
-      onLinkActivate: noop,
-    }).then((surface) => {
-      if (cancelled) {
-        surface.dispose();
-        return;
-      }
-      surfaceRef.current = surface;
-      // The theme and font may both have changed while the WASM surface loaded.
-      surface.setTheme(terminalThemeFromApp(mount));
-      const font = fontRef.current;
-      void surface.setFont(previewTerminalFont(font.family, font.size));
-      surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
-    });
+    void Promise.resolve()
+      .then(() =>
+        GhosttyTerminalSurface.create(mount, {
+          theme: terminalThemeFromApp(mount),
+          font: previewTerminalFont(fontRef.current.family, fontRef.current.size),
+          onData: echo,
+          onResize: noop,
+          onSelectionChange: noop,
+          // Tab keeps walking the settings page instead of feeding the echo loop.
+          beforeKey: (event) => event.key !== "Tab",
+          onLinkActivate: noop,
+        }),
+      )
+      .then(
+        (surface) => {
+          if (cancelled) {
+            try {
+              surface.dispose();
+            } catch {
+              // The surface never became visible; disposal remains best-effort.
+            }
+            return;
+          }
+          try {
+            surfaceRef.current = surface;
+            // The theme and font may both have changed while the WASM surface loaded.
+            surface.setTheme(terminalThemeFromApp(mount));
+            applyFont(surface, fontRef.current);
+            surface.write(TERMINAL_PREVIEW_TRANSCRIPT);
+          } catch {
+            fontUpdateGenerationRef.current += 1;
+            surfaceRef.current = null;
+            try {
+              surface.dispose();
+            } catch {
+              // Initialization already failed; disposal remains best-effort.
+            }
+            if (!cancelled) setLoadFailed(true);
+          }
+        },
+        () => {
+          if (!cancelled) setLoadFailed(true);
+        },
+      );
 
     return () => {
       cancelled = true;
-      surfaceRef.current?.dispose();
+      fontUpdateGenerationRef.current += 1;
+      try {
+        surfaceRef.current?.dispose();
+      } catch {
+        // The renderer is already leaving; disposal remains best-effort.
+      }
       surfaceRef.current = null;
     };
-  }, []);
+  }, [applyFont]);
 
   return (
-    <div
-      ref={mountRef}
-      className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border"
-      aria-label="Terminal font preview"
-    />
+    <div className="relative mt-1 mb-2 h-52 overflow-hidden rounded-lg border border-border">
+      <div ref={mountRef} className="size-full" aria-label="Terminal font preview" />
+      {loadFailed ? (
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-muted/30 px-4 text-center text-muted-foreground text-xs"
+          role="status"
+        >
+          Terminal preview is temporarily unavailable.
+        </div>
+      ) : null}
+    </div>
   );
 }

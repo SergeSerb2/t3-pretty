@@ -5,9 +5,13 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-const API_URL = (
-  process.env.CLI_PROXY_API_URL ?? "https://cli-proxy-api-production-1615.up.railway.app/v1"
-).replace(/\/$/u, "");
+import {
+  redactCliProxyDiagnostic,
+  resolveCliProxyApiUrl,
+  resolveCliProxyToken,
+} from "./cli-proxy-config.mjs";
+
+const API_URL = resolveCliProxyApiUrl(process.env.CLI_PROXY_API_URL);
 const MODEL = process.env.CLI_PROXY_MODEL ?? "gpt-5.6-sol";
 // Changelog prose needs far less reasoning than conflict resolution, so the
 // default effort is lower than the resolver's xhigh.
@@ -24,6 +28,8 @@ const MAX_RELEASES_PER_RUN = Number.parseInt(
 const MAX_VERSIONS_PER_REQUEST = 4;
 const MAX_FORK_COMMITS = 40;
 const MAX_UPSTREAM_COMMITS = 60;
+const MAX_MODEL_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_MODEL_ERROR_BYTES = 64 * 1024;
 const PRINT_WIDTH = 100;
 const MAINTENANCE_TITLE = "Under-the-hood stability and maintenance";
 const INTERNAL_COMMIT =
@@ -38,10 +44,13 @@ const MODEL_TIME_BUDGET_MS = Number.parseInt(
 );
 
 function git(args, options = {}) {
+  const env = { ...process.env, ...options.env };
+  delete env.CLI_PROXY_API_KEY;
   return NodeChildProcess.execFileSync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
     ...options,
+    env,
   }).trim();
 }
 
@@ -203,11 +212,13 @@ ${sections.join("\n\n")}
 Rules:
 - Return one "releases" entry per release above, keyed by the exact version string.
 - kind: "new" for new capabilities, "improved" for enhancements to existing behavior, "fixed" for bug fixes.
-- title: at most 10 words, sentence case, no trailing period, no version numbers, no commit hashes, no PR numbers.
-- description: one short sentence explaining what the user gets; use "" when the title says it all.
+- title: at most 10 words, sentence case (capitalize the first letter), no trailing period, no version numbers, no commit hashes, no PR numbers.
+- Write each title as something a person using the app would notice, not as a commit subject. Prefer "New threads open in the intended clone" over "new threads land in the intended clone and start from current main".
+- Do not start titles with commit verbs such as "add", "fix", "restore", "keep", or "stop".
+- description: one short sentence of what the user can do now; use "" when the title says it all.
 - headline: one sentence only when a release has a clear standout theme; otherwise "".
 - Merge related commits into a single item; order items by user impact; at most 6 items per release.
-- Skip purely internal changes (CI, release plumbing, docs, test-only changes, refactors with no user-visible effect).
+- Skip purely internal changes (CI, typecheck, packaging, release plumbing, docs, test-only changes, sync plumbing, refactors with no user-visible effect).
 - Treat parent T3 Code changes as first-class entries: phrase them as app improvements without mentioning "upstream", "parent", "nightly", or "fork".
 - Never invent changes that are not implied by the commit lists.
 - If a release has no user-visible changes, give it a single "improved" item titled "Under-the-hood stability and maintenance" with an empty description.`;
@@ -261,7 +272,34 @@ function extractResponseText(response) {
   throw new Error("CLIProxyAPI response did not contain output text");
 }
 
+export async function readResponseTextBounded(response, maxBytes) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const bytes = new Uint8Array(maxBytes);
+  let length = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (length + value.byteLength > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`CLIProxyAPI response exceeded the ${maxBytes}-byte safety limit`);
+      }
+      bytes.set(value, length);
+      length += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+}
+
 async function callChangelogModel({ prompt, token }) {
+  if (!API_URL) {
+    throw new Error(
+      "CLI_PROXY_API_URL must be a bounded credential-free HTTPS URL or a loopback HTTP URL.",
+    );
+  }
   const response = await fetch(`${API_URL}/responses`, {
     method: "POST",
     headers: {
@@ -285,10 +323,16 @@ async function callChangelogModel({ prompt, token }) {
     }),
   });
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`CLIProxyAPI request failed with ${response.status}: ${body.slice(0, 500)}`);
+    const body = await readResponseTextBounded(response, MAX_MODEL_ERROR_BYTES).catch(
+      (error) => `[unavailable: ${error instanceof Error ? error.message : String(error)}]`,
+    );
+    const diagnostic = redactCliProxyDiagnostic(body, [token]);
+    throw new Error(
+      `CLIProxyAPI request failed with ${response.status}: ${diagnostic.slice(0, 500)}`,
+    );
   }
-  const payload = await response.json();
+  const responseText = await readResponseTextBounded(response, MAX_MODEL_RESPONSE_BYTES);
+  const payload = JSON.parse(responseText);
   const parsed = JSON.parse(extractResponseText(payload));
   if (!Array.isArray(parsed.releases)) {
     throw new Error("CLIProxyAPI response did not contain a releases list");
@@ -297,6 +341,17 @@ async function callChangelogModel({ prompt, token }) {
 }
 
 const ITEM_KINDS = new Set(["new", "improved", "fixed"]);
+
+function formatFallbackTitle(title) {
+  const stripped = title
+    .replace(/\s*\(#\d+\)\s*$/u, "")
+    .replace(/^(?:add|added|fix|fixed|restore|restored|keep|kept|stop|stopped)\s+/iu, "")
+    .trim();
+  if (stripped === "") {
+    return title.trim();
+  }
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
 
 function sanitizeItems(items) {
   const seen = new Set();
@@ -335,8 +390,8 @@ export function fallbackReleaseEntry({ version, date, forkCommits, upstream }) {
     if (!match) {
       continue;
     }
-    const title = match[2].trim();
-    if (items.some((item) => item.title === title)) {
+    const title = formatFallbackTitle(match[2]);
+    if (title === "" || items.some((item) => item.title === title)) {
       continue;
     }
     const kind = match[1] === "fix" ? "fixed" : match[1] === "feat" ? "new" : "improved";
@@ -547,8 +602,13 @@ async function generateEntries({ contexts, token, warn }) {
   return entries;
 }
 
+export function escapeGitHubWorkflowCommand(message) {
+  return message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+}
+
 function warn(message) {
-  process.stdout.write(`::warning::${message}\n`);
+  const escaped = escapeGitHubWorkflowCommand(message);
+  process.stdout.write(`::warning::${escaped}\n`);
 }
 
 /** Commit the working-tree notes and push them to main. Only a run sitting
@@ -596,6 +656,12 @@ function publishNotes({ baseSha, newest, entries }) {
     "commit",
     "-m",
     `docs(changelog): add release notes through v${newest}`,
+    // The packaging step pushes this while the rest of its own build (iOS,
+    // Linux, relay, CLI) is still running. Buildkite cancels intermediate
+    // main builds, so a build for this commit would only re-read the feed,
+    // skip packaging, and kill the release in flight. Skip it outright.
+    "-m",
+    "Pushed by the packaging step of the build that shipped this version. [skip ci]",
   ]);
 
   try {

@@ -74,6 +74,26 @@ interface PendingRequest {
   readonly context: PreviewAutomationRequestErrorContext;
 }
 
+const PREVIEW_AUTOMATION_MAX_PENDING_REQUESTS_PER_CLIENT = 64;
+export const PREVIEW_AUTOMATION_RESULT_MAX_JSON_BYTES = 24 * 1024 * 1024;
+export const PREVIEW_AUTOMATION_REMOTE_ERROR_MAX_JSON_BYTES = 64 * 1024;
+
+export type PreviewAutomationJsonPayloadValidation = "valid" | "too-large" | "malformed";
+
+export function validatePreviewAutomationJsonPayload(
+  value: unknown,
+  maximumBytes: number,
+): PreviewAutomationJsonPayloadValidation {
+  if (value === undefined) return "valid";
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) return "malformed";
+    return Buffer.byteLength(encoded, "utf8") <= maximumBytes ? "valid" : "too-large";
+  } catch {
+    return "malformed";
+  }
+}
+
 /**
  * A lease pinning one provider session to one desktop runtime. It lives exactly
  * as long as the connection it names: `connectionId`/`queue` identity is what
@@ -84,6 +104,7 @@ interface PendingRequest {
  */
 interface HostAssignment {
   readonly clientId: ClientConnection["clientId"];
+  readonly environmentId: ClientConnection["environmentId"];
   readonly connectionId: ClientConnection["connectionId"];
   readonly queue: ClientConnection["queue"];
   readonly tabId?: PreviewTabId;
@@ -115,14 +136,15 @@ interface BrokerState {
 
 const removeConnectionFromState = (
   current: BrokerState,
-  clientId: string,
+  identity: Pick<ClientConnection, "clientId" | "environmentId">,
   queue: ClientConnection["queue"],
 ): { readonly state: BrokerState; readonly disconnected: ReadonlyArray<PendingRequest> } => {
   const clients = new Map(current.clients);
   const assignments = new Map(current.assignments);
   const pending = new Map(current.pending);
   const disconnected: PendingRequest[] = [];
-  if (current.clients.get(clientId)?.queue === queue) clients.delete(clientId);
+  const clientKey = clientConnectionKey(identity.environmentId, identity.clientId);
+  if (current.clients.get(clientKey)?.queue === queue) clients.delete(clientKey);
   for (const [assignmentKey, assignment] of assignments) {
     if (assignment.queue === queue) assignments.delete(assignmentKey);
   }
@@ -150,8 +172,11 @@ const selectorDiagnosticsFromInput = (
   return {};
 };
 
+const clientConnectionKey = (environmentId: string, clientId: string): string =>
+  JSON.stringify([environmentId, clientId]);
+
 const hostAssignmentKey = (scope: McpInvocationContext.McpInvocationScope): string =>
-  `${scope.environmentId}\u0000${scope.providerSessionId}`;
+  JSON.stringify([scope.environmentId, scope.providerSessionId]);
 
 const isPreviewTabId = Schema.is(PreviewTabId);
 
@@ -309,11 +334,11 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
   });
 
   const disconnect = Effect.fn("PreviewAutomationBroker.disconnect")(function* (
-    clientId: string,
+    identity: Pick<ClientConnection, "clientId" | "environmentId">,
     queue: ClientConnection["queue"],
   ) {
     const disconnected = yield* SynchronizedRef.modify(state, (current) => {
-      const removed = removeConnectionFromState(current, clientId, queue);
+      const removed = removeConnectionFromState(current, identity, queue);
       return [removed.disconnected, removed.state] as const;
     });
     yield* closeConnection(queue, disconnected);
@@ -323,7 +348,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     host: PreviewAutomationHost,
   ) {
     const clientId = host.clientId;
-    const queue = yield* Queue.unbounded<PreviewAutomationStreamEvent>();
+    const queue = yield* Queue.dropping<PreviewAutomationStreamEvent>(
+      PREVIEW_AUTOMATION_MAX_PENDING_REQUESTS_PER_CLIENT,
+    );
     const connectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
     yield* Queue.offer(queue, { type: "connected", connectionId });
     const connection: ClientConnection = {
@@ -336,14 +363,15 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       queue,
     };
     const registration = yield* SynchronizedRef.modify(state, (current) => {
-      const previousConnection = current.clients.get(clientId);
+      const clientKey = clientConnectionKey(host.environmentId, clientId);
+      const previousConnection = current.clients.get(clientKey);
       const removed = previousConnection
-        ? removeConnectionFromState(current, clientId, previousConnection.queue)
+        ? removeConnectionFromState(current, previousConnection, previousConnection.queue)
         : { state: current, disconnected: [] };
       const clients = new Map(removed.state.clients);
       const focusSequence = removed.state.focusSequence + 1;
       const registeredConnection = { ...connection, focusOrder: focusSequence };
-      clients.set(clientId, registeredConnection);
+      clients.set(clientKey, registeredConnection);
       return [
         {
           previousConnection,
@@ -365,7 +393,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     Effect.succeed(
       Stream.unwrap(
         Effect.acquireRelease(acquireConnection(host), (connection) =>
-          disconnect(connection.clientId, connection.queue),
+          disconnect(connection, connection.queue),
         ).pipe(Effect.map((connection) => Stream.fromQueue(connection.queue))),
       ),
     ),
@@ -375,7 +403,8 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     "PreviewAutomationBroker.focusHost",
   )(function* (host) {
     yield* SynchronizedRef.update(state, (current) => {
-      const currentHost = current.clients.get(host.clientId);
+      const clientKey = clientConnectionKey(host.environmentId, host.clientId);
+      const currentHost = current.clients.get(clientKey);
       if (
         !currentHost ||
         currentHost.environmentId !== host.environmentId ||
@@ -385,7 +414,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       }
       const clients = new Map(current.clients);
       const focusSequence = host.focused ? current.focusSequence + 1 : current.focusSequence;
-      clients.set(host.clientId, {
+      clients.set(clientKey, {
         ...currentHost,
         focused: host.focused,
         focusOrder: host.focused ? focusSequence : currentHost.focusOrder,
@@ -412,11 +441,31 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     });
     if (!pending) return;
     if (response.ok) {
-      yield* Deferred.succeed(pending.deferred, response.result);
+      const validation = validatePreviewAutomationJsonPayload(
+        response.result,
+        PREVIEW_AUTOMATION_RESULT_MAX_JSON_BYTES,
+      );
+      if (validation === "valid") {
+        yield* Deferred.succeed(pending.deferred, response.result);
+      } else {
+        yield* Deferred.fail(
+          pending.deferred,
+          validation === "too-large"
+            ? new PreviewAutomationResultTooLargeError({
+                ...pending.context,
+                maximumBytes: PREVIEW_AUTOMATION_RESULT_MAX_JSON_BYTES,
+              })
+            : new PreviewAutomationMalformedResponseError(pending.context),
+        );
+      }
     } else {
+      const errorValidation = validatePreviewAutomationJsonPayload(
+        response.error,
+        PREVIEW_AUTOMATION_REMOTE_ERROR_MAX_JSON_BYTES,
+      );
       yield* Deferred.fail(
         pending.deferred,
-        response.error
+        response.error && errorValidation === "valid"
           ? classifyResponseError(pending.context, response.error)
           : new PreviewAutomationMalformedResponseError(pending.context),
       );
@@ -431,7 +480,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     const route = yield* SynchronizedRef.modify(state, (current) => {
       const assignments = new Map(
         Array.from(current.assignments).filter(([, assignment]) => {
-          const connection = current.clients.get(assignment.clientId);
+          const connection = current.clients.get(
+            clientConnectionKey(assignment.environmentId, assignment.clientId),
+          );
           return (
             connection?.connectionId === assignment.connectionId &&
             connection.queue === assignment.queue
@@ -440,7 +491,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       );
       const assignmentKey = hostAssignmentKey(input.scope);
       const assigned = assignments.get(assignmentKey);
-      const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
+      const assignedConnection = assigned
+        ? current.clients.get(clientConnectionKey(assigned.environmentId, assigned.clientId))
+        : undefined;
       const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
       // Keep one provider session on one physical desktop runtime so a
       // multi-step browser interaction cannot jump between independent
@@ -473,16 +526,6 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         assigned !== undefined &&
         assigned.connectionId === connection.connectionId &&
         assigned.queue === connection.queue;
-      assignments.set(assignmentKey, {
-        clientId: connection.clientId,
-        connectionId: connection.connectionId,
-        queue: connection.queue,
-        ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
-        ...(canReuseAssignedTab && assigned.tabSequence !== undefined
-          ? { tabSequence: assigned.tabSequence }
-          : {}),
-      });
-
       const requestSequence = current.requestSequence;
       const requestId = `preview-${requestSequence}`;
       const tabId = input.tabId ?? (canReuseAssignedTab ? assigned.tabId : undefined);
@@ -500,10 +543,42 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         timeoutMs,
         ...selectorDiagnostics,
       };
+      let pendingForConnection = 0;
+      for (const entry of current.pending.values()) {
+        if (entry.queue === connection.queue) pendingForConnection += 1;
+      }
+      if (pendingForConnection >= PREVIEW_AUTOMATION_MAX_PENDING_REQUESTS_PER_CLIENT) {
+        return [
+          {
+            connection,
+            requestId,
+            requestContext: context,
+            requestSequence,
+            accepted: false as boolean,
+          },
+          { ...current, assignments, requestSequence: current.requestSequence + 1 },
+        ] as const;
+      }
+      assignments.set(assignmentKey, {
+        clientId: connection.clientId,
+        environmentId: connection.environmentId,
+        connectionId: connection.connectionId,
+        queue: connection.queue,
+        ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
+        ...(canReuseAssignedTab && assigned.tabSequence !== undefined
+          ? { tabSequence: assigned.tabSequence }
+          : {}),
+      });
       const pending = new Map(current.pending);
       pending.set(requestId, { queue: connection.queue, deferred, context });
       return [
-        { connection, requestId, requestContext: context, requestSequence },
+        {
+          connection,
+          requestId,
+          requestContext: context,
+          requestSequence,
+          accepted: true,
+        },
         { ...current, assignments, pending, requestSequence: current.requestSequence + 1 },
       ] as const;
     });
@@ -517,6 +592,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       });
     }
     const { connection, requestId, requestContext, requestSequence } = route;
+    if (!route.accepted) {
+      return yield* new PreviewAutomationRequestQueueClosedError(requestContext);
+    }
     const removePending = SynchronizedRef.update(state, (next) => {
       if (!next.pending.has(requestId)) return next;
       const pending = new Map(next.pending);

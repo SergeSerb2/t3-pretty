@@ -8,7 +8,8 @@ import {
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
-const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
+// Version 1 stored card visibility, not folder expansion.
+const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
 const LEGACY_PERSISTED_STATE_KEYS = [
   "t3code:renderer-state:v8",
   "t3code:renderer-state:v7",
@@ -30,7 +31,8 @@ export interface PersistedUiState {
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
-  threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
+  sidebarProjectScopeKey?: string | null;
+  threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   autoCreatePullRequestByEnvMode?: Partial<Record<AutoCreatePullRequestEnvMode, boolean>>;
 }
@@ -42,6 +44,10 @@ export const DEFAULT_AUTO_CREATE_PULL_REQUEST = AUTO_CREATE_PULL_REQUEST_DEFAULT
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
+  // Logical project key the sidebar list is scoped to, or null for "all
+  // projects". Lives here so routes that unmount the sidebar (Settings)
+  // cannot reset the filter.
+  sidebarProjectScopeKey: string | null;
 }
 
 export interface UiThreadState {
@@ -62,6 +68,7 @@ export interface UiState extends UiProjectState, UiThreadState, UiEndpointState,
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
+  sidebarProjectScopeKey: null,
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -96,6 +103,10 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
     ),
   );
+}
+
+function sanitizeOptionalKey(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function sanitizeTimestampRecord(value: unknown): Record<string, string> {
@@ -145,11 +156,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
-    defaultAdvertisedEndpointKey:
-      typeof parsed.defaultAdvertisedEndpointKey === "string" &&
-      parsed.defaultAdvertisedEndpointKey.length > 0
-        ? parsed.defaultAdvertisedEndpointKey
-        : null,
+    defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
+    sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
     autoCreatePullRequestByEnvMode: sanitizeAutoCreatePullRequest(
       parsed.autoCreatePullRequestByEnvMode,
     ),
@@ -232,6 +240,7 @@ export function persistState(state: UiState): void {
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
+        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         autoCreatePullRequestByEnvMode: state.autoCreatePullRequestByEnvMode,
@@ -321,6 +330,24 @@ export function setThreadChangedFilesExpanded(
   };
 }
 
+export function removeThreadUiState(state: UiState, threadKey: string): UiState {
+  if (
+    !(threadKey in state.threadLastVisitedAtById) &&
+    !(threadKey in state.threadChangedFilesExpandedById)
+  ) {
+    return state;
+  }
+  const { [threadKey]: _removedVisitedAt, ...threadLastVisitedAtById } =
+    state.threadLastVisitedAtById;
+  const { [threadKey]: _removedChangedFiles, ...threadChangedFilesExpandedById } =
+    state.threadChangedFilesExpandedById;
+  return {
+    ...state,
+    threadLastVisitedAtById,
+    threadChangedFilesExpandedById,
+  };
+}
+
 export function setAutoCreatePullRequest(
   state: UiState,
   envMode: AutoCreatePullRequestEnvMode,
@@ -346,6 +373,17 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
   return {
     ...state,
     defaultAdvertisedEndpointKey: nextKey,
+  };
+}
+
+export function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): UiState {
+  const nextKey = sanitizeOptionalKey(projectKey);
+  if (state.sidebarProjectScopeKey === nextKey) {
+    return state;
+  }
+  return {
+    ...state,
+    sidebarProjectScopeKey: nextKey,
   };
 }
 
@@ -430,8 +468,10 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  removeThread: (threadKey: string) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setAutoCreatePullRequest: (envMode: AutoCreatePullRequestEnvMode, enabled: boolean) => void;
+  setSidebarProjectScopeKey: (projectKey: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -448,10 +488,13 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  removeThread: (threadKey) => set((state) => removeThreadUiState(state, threadKey)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setAutoCreatePullRequest: (envMode, enabled) =>
     set((state) => setAutoCreatePullRequest(state, envMode, enabled)),
+  setSidebarProjectScopeKey: (projectKey) =>
+    set((state) => setSidebarProjectScopeKey(state, projectKey)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
@@ -460,10 +503,20 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     ),
 }));
 
-useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
+const unsubscribeUiStatePersistence = useUiStateStore.subscribe((state) =>
+  debouncedPersistState.maybeExecute(state),
+);
+const flushUiState = () => {
+  debouncedPersistState.flush();
+};
 
 if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("beforeunload", () => {
-    debouncedPersistState.flush();
+  window.addEventListener("pagehide", flushUiState);
+  window.addEventListener("beforeunload", flushUiState);
+  import.meta.hot?.dispose(() => {
+    unsubscribeUiStatePersistence();
+    flushUiState();
+    window.removeEventListener("pagehide", flushUiState);
+    window.removeEventListener("beforeunload", flushUiState);
   });
 }

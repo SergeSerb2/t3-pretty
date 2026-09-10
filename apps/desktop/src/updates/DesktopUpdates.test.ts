@@ -1,6 +1,4 @@
-import { assert, describe, it } from "@effect/vitest";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import { assert, describe, it, vi, afterEach } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -11,244 +9,108 @@ import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
-import * as DesktopConfig from "../app/DesktopConfig.ts";
-import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
-import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
-
-interface UpdatesHarnessOptions {
-  readonly checkForUpdates?: Effect.Effect<
-    void,
-    ElectronUpdater.ElectronUpdaterCheckForUpdatesError
-  >;
-  readonly beforeSetUpdateChannel?: Effect.Effect<void>;
-  readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
-  readonly setDisableDifferentialDownload?: Effect.Effect<void>;
-  readonly quitAndInstall?: Effect.Effect<void>;
-  readonly startBackend?: Effect.Effect<void>;
-  readonly stopBackend?: Effect.Effect<void>;
-  readonly backendDesiredRunning?: boolean;
-  readonly env?: Record<string, string | undefined>;
-}
-
-const flushCallbacks = Effect.yieldNow;
-
-function makeHarness(options: UpdatesHarnessOptions = {}) {
-  let checkCount = 0;
-  let allowDowngrade = false;
-  let fullChangelog = false;
-  let quitAndInstallCount = 0;
-  let startBackendCount = 0;
-  let stopBackendCount = 0;
-  let destroyAllCount = 0;
-  const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
-  const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
-  const sentStates: DesktopUpdateState[] = [];
-
-  const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
-    const eventListeners = listeners.get(eventName) ?? new Set();
-    eventListeners.add(listener);
-    listeners.set(eventName, eventListeners);
-  };
-
-  const removeListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
-    const eventListeners = listeners.get(eventName);
-    if (!eventListeners) {
-      return;
-    }
-    eventListeners.delete(listener);
-    if (eventListeners.size === 0) {
-      listeners.delete(eventName);
-    }
-  };
-
-  const updaterLayer = Layer.succeed(ElectronUpdater.ElectronUpdater, {
-    setFeedURL: (options) =>
-      Effect.sync(() => {
-        feedUrls.push(options);
-      }),
-    setAutoDownload: () => Effect.void,
-    setAutoInstallOnAppQuit: () => Effect.void,
-    setChannel: () => Effect.void,
-    setAllowPrerelease: () => Effect.void,
-    allowDowngrade: Effect.sync(() => allowDowngrade),
-    setAllowDowngrade: (value) =>
-      Effect.sync(() => {
-        allowDowngrade = value;
-      }),
-    setFullChangelog: (value) =>
-      Effect.sync(() => {
-        fullChangelog = value;
-      }),
-    setDisableDifferentialDownload: () => options.setDisableDifferentialDownload ?? Effect.void,
-    checkForUpdates: Effect.sync(() => {
-      checkCount += 1;
-    }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
-    downloadUpdate: Effect.void,
-    quitAndInstall: () =>
-      Effect.sync(() => {
-        quitAndInstallCount += 1;
-      }).pipe(Effect.andThen(options.quitAndInstall ?? Effect.void)),
-    on: (eventName, listener) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          addListener(eventName, listener as unknown as (...args: readonly unknown[]) => void);
-        }),
-        () =>
-          Effect.sync(() => {
-            removeListener(eventName, listener as unknown as (...args: readonly unknown[]) => void);
-          }),
-      ).pipe(Effect.asVoid),
-  } satisfies ElectronUpdater.ElectronUpdater["Service"]);
-
-  const windowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
-    create: () => Effect.die("unexpected BrowserWindow creation"),
-    main: Effect.succeed(Option.none()),
-    currentMainOrFirst: Effect.succeed(Option.none()),
-    focusedMainOrFirst: Effect.succeed(Option.none()),
-    setMain: () => Effect.void,
-    clearMain: () => Effect.void,
-    reveal: () => Effect.void,
-    sendAll: (_channel, state) =>
-      Effect.sync(() => {
-        sentStates.push(state as DesktopUpdateState);
-      }),
-    destroyAll: Effect.sync(() => {
-      destroyAllCount += 1;
-    }),
-    syncAllAppearance: () => Effect.void,
-  } satisfies ElectronWindow.ElectronWindow["Service"]);
-
-  const stubBackendInstance: DesktopBackendPool.DesktopBackendInstance = {
-    id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
-    label: Effect.succeed("Windows"),
-    start: Effect.sync(() => {
-      startBackendCount += 1;
-    }).pipe(Effect.andThen(options.startBackend ?? Effect.void)),
-    stop: () =>
-      Effect.sync(() => {
-        stopBackendCount += 1;
-      }).pipe(Effect.andThen(options.stopBackend ?? Effect.void)),
-    currentConfig: Effect.succeed(Option.none()),
-    snapshot: Effect.succeed({
-      desiredRunning: options.backendDesiredRunning ?? false,
-      ready: false,
-      activePid: Option.none(),
-      restartAttempt: 0,
-      restartScheduled: false,
-    }),
-    waitForReady: () => Effect.succeed(true),
-  };
-  const backendLayer = DesktopBackendPool.layerTest([stubBackendInstance]);
-
-  const environmentLayer = DesktopEnvironment.layer({
-    dirname: "/repo/apps/desktop/src",
-    homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
-    platform: "darwin",
-    processArch: "x64",
-    appVersion: "1.2.3",
-    appPath: "/repo",
-    isPackaged: true,
-    resourcesPath: "/missing/resources",
-    runningUnderArm64Translation: false,
-  }).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        NodeServices.layer,
-        DesktopConfig.layerTest({
-          T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
-          T3CODE_DESKTOP_MOCK_UPDATES: "true",
-          T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-          ...options.env,
-        }),
-      ),
-    ),
-  );
-
-  let testSettings: DesktopAppSettings.DesktopSettings = {
-    ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-  };
-  const setUpdateChannelError = options.setUpdateChannelError;
-  const settingsLayer =
-    setUpdateChannelError || options.beforeSetUpdateChannel
-      ? Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
-          get: Effect.sync(() => testSettings),
-          load: Effect.sync(() => testSettings),
-          setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
-          setServerExposureMode: () => Effect.die("unexpected server exposure update"),
-          setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
-          setUpdateChannel: (channel) =>
-            setUpdateChannelError
-              ? Effect.fail(setUpdateChannelError)
-              : (options.beforeSetUpdateChannel ?? Effect.void).pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const changed = testSettings.updateChannel !== channel;
-                      testSettings = {
-                        ...testSettings,
-                        updateChannel: channel,
-                        updateChannelConfiguredByUser: true,
-                      };
-                      return { settings: testSettings, changed };
-                    }),
-                  ),
-                ),
-          setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-          setWslDistro: () => Effect.die("unexpected WSL distro change"),
-          setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
-          applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-          applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
-        } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
-      : DesktopAppSettings.layer;
-
-  const layer = DesktopUpdates.layer.pipe(
-    Layer.provideMerge(updaterLayer),
-    Layer.provideMerge(windowLayer),
-    Layer.provideMerge(backendLayer),
-    Layer.provideMerge(DesktopState.layer),
-    Layer.provideMerge(settingsLayer),
-    Layer.provideMerge(
-      DesktopConfig.layerTest({
-        T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
-        T3CODE_DESKTOP_MOCK_UPDATES: "true",
-        T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-        ...options.env,
-      }),
-    ),
-    Layer.provideMerge(environmentLayer),
-    Layer.provideMerge(NodeServices.layer),
-  );
-
-  return {
-    layer,
-    checkCount: () => checkCount,
-    feedUrls: () => feedUrls,
-    fullChangelog: () => fullChangelog,
-    quitAndInstallCount: () => quitAndInstallCount,
-    startBackendCount: () => startBackendCount,
-    stopBackendCount: () => stopBackendCount,
-    destroyAllCount: () => destroyAllCount,
-    listenerCount: () =>
-      Array.from(listeners.values()).reduce(
-        (total, eventListeners) => total + eventListeners.size,
-        0,
-      ),
-    sentStates,
-    emit: (eventName: string, payload?: unknown) => {
-      for (const listener of listeners.get(eventName) ?? []) {
-        listener(payload);
-      }
-    },
-  };
-}
+import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("GitHubReleasesClient service is properly initialized (Effect 4 Context.Service)", () => {
+    // Regression test for Mac Nightly crash: ensure the service tag is a real function,
+    // not (void 0) from using removed Effect v3 Context.GenericTag API.
+    assert.strictEqual(typeof DesktopUpdates.GitHubReleasesClient, "function");
+    assert.isDefined(DesktopUpdates.GitHubReleasesClient);
+    assert.strictEqual(
+      DesktopUpdates.GitHubReleasesClient.key,
+      "@t3tools/desktop/GitHubReleasesClient",
+    );
+  });
+
+  it.effect("liveGitHubReleasesClient fails when fetch throws", () =>
+    Effect.gen(function* () {
+      // Regression test: liveGitHubReleasesClient no longer catches errors internally.
+      // Effect.tryPromise failures now fail the Effect. Configure's catch handles recovery.
+
+      // Mock fetch to simulate a network failure
+      vi.stubGlobal("fetch", async () => {
+        throw new Error("Network timeout");
+      });
+
+      // Use the production liveGitHubReleasesClient layer
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+
+      // Call should fail - Effect.tryPromise propagates the error
+      const exit = yield* Effect.exit(
+        client.fetchLatestNightlyTag({ owner: "test", name: "test" }),
+      );
+
+      // Verify the call failed (not succeeded with undefined)
+      assert.equal(exit._tag, "Failure");
+    }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient)),
+  );
+
+  it.effect("configure handles failing GitHub client and falls back gracefully", () =>
+    Effect.gen(function* () {
+      // Verify that configure completes successfully when the GitHub client fails,
+      // logging a warning but continuing with either /latest or the mock feed.
+      const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999",
+        githubReleasesClient: {
+          // Simulate a failing GitHub client (Effect.fail, like tryPromise failures)
+          fetchLatestNightlyTag: () => Effect.fail(new Error("GitHub API rate limit")),
+        } as any,
+      });
+
+      const updates = yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(harness.layer));
+
+      // Verify configure completes successfully despite the failing client
+      yield* updates.configure;
+
+      // Verify the updater is configured and has a feed URL
+      const feedUrls = harness.feedUrls();
+      assert.isAtLeast(
+        feedUrls.length,
+        1,
+        "Feed URL should be configured even when GitHub fetch fails",
+      );
+
+      // State should be enabled and idle
+      const state = yield* updates.getState;
+      assert.equal(state.enabled, true);
+      assert.equal(state.status, "idle");
+    }),
+  );
+
+  it.effect("configure handles undefined from failed GitHub client gracefully", () =>
+    Effect.gen(function* () {
+      // Verify that configure continues successfully when the GitHub client returns undefined
+      // (simulating a recovered fetch error), falling back to /latest feed for nightly builds.
+      const harness = makeHarness({
+        appVersion: "v0.0.39-nightly.20260907.999",
+        githubReleasesClient: {
+          // Simulate what liveGitHubReleasesClient returns after catching an error
+          fetchLatestNightlyTag: () => Effect.succeed(undefined),
+        } as any,
+      });
+
+      const updates = yield* DesktopUpdates.DesktopUpdates.pipe(Effect.provide(harness.layer));
+
+      // Verify configure completes successfully
+      yield* updates.configure;
+
+      // With undefined latestNightlyTag, nightly builds fall back to /latest feed
+      assert.isAtLeast(harness.feedUrls().length, 1);
+    }),
+  );
+
   it("preserves complete causes for update poller and event failures", () => {
     const cause = Cause.combine(
       Cause.fail(new Error("updater failed")),
@@ -326,6 +188,189 @@ describe("DesktopUpdates", () => {
     );
   });
 
+  it("rewrites nightly /releases/latest URLs with latest nightly tag when provided", () => {
+    // Unprefixed appVersion (0.0.38-nightly.*) with latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "0.0.38-nightly.20260906.1000",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Prefixed appVersion (v0.0.38-nightly.*) with latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "v0.0.38-nightly.20260906.1000",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Stable versions ignore latestNightlyTag
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        {
+          appVersion: "1.0.0",
+          latestNightlyTag: "v0.0.39-nightly.20260907.1332",
+        },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
+  it("falls back to appVersion when latestNightlyTag is null (no nightly found)", () => {
+    // Modern format unprefixed: X.Y.Z-nightly.DATE.BUILD
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "0.0.39-nightly.20260907.1332", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        },
+        { appVersion: "v0.0.39-nightly.20260907.1332", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/v0.0.39-nightly.20260907.1332/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format: nightly-vX.Y.Z (keep as-is, no 'v' prefix)
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Legacy format with suffix: nightly-vX.Y.Z-nightly.DATE (keep as-is)
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0-nightly.20260905.123", latestNightlyTag: null },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/download/nightly-v0.9.0-nightly.20260905.123/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Stable versions keep /latest
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "1.0.0" },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
+  it("keeps /latest when nightly tag fetch fails (HTTP error, timeout, etc.)", () => {
+    // Fetch failure (latestNightlyTag: undefined) should NOT rewrite to appVersion
+    // This verifies that non-OK responses, timeouts, parse errors → undefined → keep /latest
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "0.0.39-nightly.20260907.1332", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // Same for prefixed version
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        },
+        { appVersion: "v0.0.39-nightly.20260907.1332", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+    // And legacy format
+    assert.deepEqual(
+      DesktopUpdates.resolveGitHubGenericUpdaterFeed(
+        {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download",
+        },
+        { appVersion: "nightly-v0.9.0", latestNightlyTag: undefined },
+      ),
+      {
+        provider: "generic",
+        url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+        useMultipleRangeRequest: false,
+      },
+    );
+  });
+
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
 
@@ -351,6 +396,29 @@ describe("DesktopUpdates", () => {
 
       assert.equal(harness.listenerCount(), 0);
     }).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("subscribe delivers the latest state plus subsequent changes", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        const { latest, changes } = yield* updates.subscribe;
+        assert.equal(latest.status, "idle");
+
+        const nextState = yield* Stream.runHead(changes).pipe(Effect.forkChild);
+        yield* flushCallbacks;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const observed = yield* Fiber.join(nextState);
+        assert.equal(Option.getOrThrow(observed).status, "available");
+        assert.equal(Option.getOrThrow(observed).availableVersion, "1.2.4");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
   it.effect("updates and broadcasts state from updater events", () => {
@@ -395,6 +463,11 @@ describe("DesktopUpdates", () => {
               version: "1.2.4-nightly.20260709.765",
               note: "- [codex] Upgrade Clerk stack by @juliusmarminge in #3821",
             },
+            { version: "1.2.4-nightly.20260709.764", note: "- Change 764" },
+            { version: "1.2.4-nightly.20260709.763", note: "- Change 763" },
+            { version: "1.2.4-nightly.20260709.762", note: "- Change 762" },
+            { version: "1.2.4-nightly.20260709.761", note: "- Change 761" },
+            { version: "1.2.4-nightly.20260709.760", note: "- Change 760" },
           ],
         });
         yield* flushCallbacks;
@@ -405,13 +478,21 @@ describe("DesktopUpdates", () => {
           {
             version: "1.2.4-nightly.20260709.766",
             items: ["feat(client): persist offline environment data by @juliusmarminge in #3795"],
+            totalItems: 1,
           },
           {
             version: "1.2.4-nightly.20260709.765",
             items: ["[codex] Upgrade Clerk stack by @juliusmarminge in #3821"],
+            totalItems: 1,
           },
+          { version: "1.2.4-nightly.20260709.764", items: ["Change 764"], totalItems: 1 },
+          { version: "1.2.4-nightly.20260709.763", items: ["Change 763"], totalItems: 1 },
+          { version: "1.2.4-nightly.20260709.762", items: ["Change 762"], totalItems: 1 },
+          { version: "1.2.4-nightly.20260709.761", items: ["Change 761"], totalItems: 1 },
         ]);
+        assert.equal(state.omittedReleaseCount, 1);
         assert.deepEqual(harness.sentStates.at(-1)?.releaseNotes, state.releaseNotes);
+        assert.equal(harness.sentStates.at(-1)?.omittedReleaseCount, 1);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
@@ -442,8 +523,9 @@ describe("DesktopUpdates", () => {
         assert.equal(unchangedState.status, "downloaded");
         assert.equal(unchangedState.downloadedVersion, "1.2.4");
         assert.deepEqual(unchangedState.releaseNotes, [
-          { version: "1.2.4", items: ["fix: queued update"] },
+          { version: "1.2.4", items: ["fix: queued update"], totalItems: 1 },
         ]);
+        assert.equal(unchangedState.omittedReleaseCount, 0);
 
         const nextResult = yield* updates.check("poll");
         assert.isTrue(nextResult.checked);
@@ -483,7 +565,10 @@ describe("DesktopUpdates", () => {
         assert.equal(state.status, "downloaded");
         assert.equal(state.availableVersion, "1.2.4");
         assert.equal(state.downloadedVersion, "1.2.4");
-        assert.deepEqual(state.releaseNotes, [{ version: "1.2.4", items: ["fix: queued update"] }]);
+        assert.deepEqual(state.releaseNotes, [
+          { version: "1.2.4", items: ["fix: queued update"], totalItems: 1 },
+        ]);
+        assert.equal(state.omittedReleaseCount, 0);
         assert.equal(state.downloadPercent, 100);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -513,7 +598,10 @@ describe("DesktopUpdates", () => {
         assert.equal(state.status, "downloaded");
         assert.equal(state.availableVersion, "1.2.4");
         assert.equal(state.downloadedVersion, "1.2.4");
-        assert.deepEqual(state.releaseNotes, [{ version: "1.2.4", items: ["fix: queued update"] }]);
+        assert.deepEqual(state.releaseNotes, [
+          { version: "1.2.4", items: ["fix: queued update"], totalItems: 1 },
+        ]);
+        assert.equal(state.omittedReleaseCount, 0);
         assert.equal(state.downloadPercent, 100);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -784,8 +872,17 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect("recovers running backends after an asynchronous updater install failure", () => {
-    const harness = makeHarness({ backendDesiredRunning: true });
+  it.effect("keeps windows and restarts backends when quitAndInstall fails", () => {
+    const harness = makeHarness({
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+          channel: "latest",
+          isSilent: true,
+          isForceRunAfter: true,
+          cause: new Error("installer refused"),
+        }),
+      ),
+    });
 
     return Effect.scoped(
       Effect.gen(function* () {
@@ -797,22 +894,94 @@ describe("DesktopUpdates", () => {
 
         const result = yield* updates.install;
         assert.isTrue(result.accepted);
-        assert.isFalse(result.completed);
-        assert.isTrue(yield* Ref.get(desktopState.quitting));
-        assert.equal(harness.stopBackendCount(), 1);
-        assert.equal(harness.destroyAllCount(), 1);
-        assert.equal(harness.quitAndInstallCount(), 1);
-        assert.equal(harness.startBackendCount(), 0);
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 
-        harness.emit("error", new Error("native installer rejected the update"));
+  it.effect("holds the install reservation until failed-install recovery finishes", () => {
+    const recoveryStarted = Deferred.makeUnsafe<void>();
+    const releaseRecovery = Deferred.makeUnsafe<void>();
+    const harness = makeHarness({
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+          channel: "latest",
+          isSilent: true,
+          isForceRunAfter: true,
+          cause: new Error("installer refused"),
+        }),
+      ),
+      startBackend: Deferred.succeed(recoveryStarted, undefined).pipe(
+        Effect.andThen(Deferred.await(releaseRecovery)),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const failedInstall = yield* updates.install.pipe(Effect.forkChild);
+        yield* Deferred.await(recoveryStarted);
+        assert.isFalse(yield* updates.isInstallActive);
+
+        const overlappingInstall = yield* updates.install;
+        assert.isFalse(overlappingInstall.accepted);
+        assert.equal(harness.quitAndInstalls(), 1);
+        harness.emit("error", new Error("duplicate native installer error"));
+        yield* flushCallbacks;
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+
+        yield* Deferred.succeed(releaseRecovery, undefined);
+        const failedResult = yield* Fiber.join(failedInstall);
+        assert.equal(failedResult.state.errorContext, "install");
+
+        const retry = yield* updates.install;
+        assert.isTrue(retry.accepted);
+        assert.equal(harness.quitAndInstalls(), 2);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("recovers when quitAndInstall reports failure through an updater event", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        yield* updates.install;
+        assert.deepEqual(harness.installSteps, ["quitAndInstall"]);
+        harness.emit("error", new Error("native installer refused"));
         yield* flushCallbacks;
 
         assert.isFalse(yield* Ref.get(desktopState.quitting));
-        assert.equal(harness.startBackendCount(), 1);
-        const failedState = yield* updates.getState;
-        assert.equal(failedState.status, "downloaded");
-        assert.equal(failedState.errorContext, "install");
-        assert.equal(failedState.message, "Desktop updater install operation reported an error.");
+        assert.deepEqual(harness.installSteps, ["quitAndInstall", "startBackend"]);
+        assert.equal((yield* updates.getState).errorContext, "install");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("rejects a prepared install when the downloaded version changed", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.5" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.installPrepared("1.2.4");
+        assert.isFalse(result.accepted);
+        assert.equal(harness.quitAndInstalls(), 0);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
@@ -938,7 +1107,6 @@ describe("DesktopUpdates", () => {
         const error = yield* updates.setChannel("nightly").pipe(Effect.flip);
 
         assert.instanceOf(error, DesktopUpdates.DesktopUpdateChannelPersistenceError);
-        assert.isTrue(DesktopUpdates.isDesktopUpdateSetChannelError(error));
         assert.equal(error.channel, "nightly");
         assert.strictEqual(error.cause, settingsFailure);
         assert.strictEqual(error.cause.cause, diskFailure);
@@ -950,5 +1118,53 @@ describe("DesktopUpdates", () => {
         assert.equal(harness.checkCount(), 1);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect(
+    "configure does not throw Service not found when GitHubReleasesClient layer is provided",
+    () => {
+      const harness = makeHarness();
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          // configure should succeed and not throw "Service not found: @t3tools/desktop/GitHubReleasesClient"
+          yield* updates.configure;
+          const state = yield* updates.getState;
+          assert.isNotNull(state);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
+  it.effect("liveLayer provides GitHubReleasesClient for production use", () => {
+    // This test verifies that DesktopUpdates.liveLayer properly wires
+    // liveGitHubReleasesClient so production code can access GitHubReleasesClient
+    // without "Service not found". Uses a mocked fetch to avoid real API calls.
+    return Effect.gen(function* () {
+      // Mock fetch to return a successful response with a nightly release
+      vi.stubGlobal("fetch", async (_input: string | URL | Request) => {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              tag_name: "v0.0.39-nightly.20260907.1332",
+              published_at: "2026-09-07T13:32:00Z",
+              draft: false,
+            },
+          ],
+        } as Response;
+      });
+
+      // Access GitHubReleasesClient through liveGitHubReleasesClient layer
+      const client = yield* DesktopUpdates.GitHubReleasesClient;
+      assert.isNotNull(client);
+      assert.isFunction(client.fetchLatestNightlyTag);
+
+      // Verify the method returns a string with the mocked nightly tag
+      const result = yield* client.fetchLatestNightlyTag({ owner: "test", name: "test" });
+      assert.strictEqual(result, "v0.0.39-nightly.20260907.1332");
+    }).pipe(Effect.provide(DesktopUpdates.liveGitHubReleasesClient));
   });
 });

@@ -6,7 +6,6 @@ import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Stream from "effect/Stream";
 import * as Etag from "effect/unstable/http/Etag";
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -57,6 +56,7 @@ import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublish
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
+import { processQueueBatch } from "./queueBatch.ts";
 
 const webcryptoLayer = Layer.succeed(
   Crypto.Crypto,
@@ -248,14 +248,13 @@ export const ApiLive = Api.make(
         deadLetterQueue: apnsDeliveryDeadLetterQueue.queueName as unknown as string,
       },
       (stream) =>
-        stream.pipe(
-          Stream.withSpan("relay.apn_delivery_queue.process_batch"),
-          Stream.runForEach((message) =>
-            ApnsDeliveries.ApnsDeliveries.pipe(
-              Effect.flatMap((deliveries) => deliveries.processSignedJob(message.body)),
-              Effect.withSpan("relay.apn_delivery_queue.process_message"),
-            ),
+        processQueueBatch(stream, (message) =>
+          ApnsDeliveries.ApnsDeliveries.pipe(
+            Effect.flatMap((deliveries) => deliveries.processSignedJob(message.body)),
+            Effect.withSpan("relay.apn_delivery_queue.process_message"),
           ),
+        ).pipe(
+          Effect.withSpan("relay.apn_delivery_queue.process_batch"),
           Effect.provide(runtimeLayer),
         ),
     );
@@ -266,12 +265,29 @@ export const ApiLive = Api.make(
         // Terminal thread rows are kept briefly so finished agents show as
         // Done/Failed in the Live Activity; sweep them once they age out.
         Effect.andThen(
-          Effect.all([AgentActivityRows.AgentActivityRows, DateTime.now]).pipe(
-            Effect.flatMap(([activityRows, now]) =>
-              activityRows.pruneTerminal({
-                updatedBefore: DateTime.formatIso(DateTime.subtract(now, { minutes: 30 })),
-              }),
-            ),
+          Effect.all([
+            AgentActivityRows.AgentActivityRows,
+            DeliveryAttempts.DeliveryAttempts,
+            DateTime.now,
+          ]).pipe(
+            Effect.flatMap(([activityRows, deliveryAttempts, now]) => {
+              const staleBefore = DateTime.formatIso(DateTime.subtract(now, { days: 30 }));
+              return activityRows
+                .pruneTerminal({
+                  updatedBefore: DateTime.formatIso(DateTime.subtract(now, { minutes: 30 })),
+                  staleUpdatedBefore: staleBefore,
+                })
+                .pipe(
+                  Effect.andThen(
+                    deliveryAttempts.pruneBefore({
+                      createdBefore: staleBefore,
+                    }),
+                  ),
+                  Effect.andThen(
+                    EnvironmentCredentials.pruneRevokedBefore({ revokedBefore: staleBefore }),
+                  ),
+                );
+            }),
           ),
         ),
         Effect.withSpan("relay.cron.prune_expired_state"),

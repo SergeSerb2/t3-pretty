@@ -115,7 +115,7 @@ function SubagentPolicyMenuContent(props: SubagentPolicyPickerProps) {
     }
     void setThreadPolicy({
       environmentId: props.environmentId,
-      input: { threadId: props.threadRef.threadId, policy },
+      input: { threadId: props.threadRef.threadId, subagentPolicy: policy },
     });
   };
 

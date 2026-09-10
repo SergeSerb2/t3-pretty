@@ -9,6 +9,7 @@ import {
 } from "effect/unstable/http";
 
 import { readDesktopPrimaryBearerToken } from "./desktopAuth";
+import { fetchPrimaryEnvironmentWithDeadline } from "./fetchDeadline";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
 
 function isSameOriginBrowserPrimary(): boolean {
@@ -51,23 +52,24 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
 export function makePrimaryEnvironmentHttpLayer() {
   return Layer.unwrap(
     Effect.sync(() => {
-      const baseLayer = remoteHttpClientLayer(globalThis.fetch);
-      if (isSameOriginBrowserPrimary()) {
-        return Layer.merge(
-          baseLayer,
-          Layer.succeed(FetchHttpClient.RequestInit, { credentials: "include" }),
-        );
-      }
-
-      const bearerClientLayer = Layer.effect(
-        HttpClient.HttpClient,
-        Effect.map(HttpClient.HttpClient, withPrimaryBearerToken),
-      ).pipe(Layer.provide(baseLayer));
-
-      return Layer.merge(
-        bearerClientLayer,
-        Layer.succeed(FetchHttpClient.RequestInit, { credentials: "omit" }),
+      const usesCookies = isSameOriginBrowserPrimary();
+      const baseLayer = remoteHttpClientLayer((input, init) =>
+        fetchPrimaryEnvironmentWithDeadline(globalThis.fetch, input, init),
       );
+      return Layer.effect(
+        HttpClient.HttpClient,
+        Effect.map(HttpClient.HttpClient, (client) =>
+          (usesCookies ? client : withPrimaryBearerToken(client)).pipe(
+            // Scope cookies to primary requests; an ambient RequestInit also
+            // reaches relay calls during linking and breaks their wildcard CORS.
+            HttpClient.transformResponse(
+              Effect.provideService(FetchHttpClient.RequestInit, {
+                credentials: usesCookies ? "include" : "omit",
+              }),
+            ),
+          ),
+        ),
+      ).pipe(Layer.provide(baseLayer));
     }),
   );
 }

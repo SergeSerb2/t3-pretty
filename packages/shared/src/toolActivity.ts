@@ -94,14 +94,23 @@ function maybePathLike(value: string | undefined): string | undefined {
   return undefined;
 }
 
-function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth: number): void {
-  if (depth > 4 || paths.length >= 8) {
+const MAX_PATH_TRAVERSAL_NODES = 256;
+
+function collectPaths(
+  value: unknown,
+  paths: string[],
+  seen: Set<string>,
+  depth: number,
+  budget: { remaining: number },
+): void {
+  if (depth > 4 || paths.length >= 8 || budget.remaining <= 0) {
     return;
   }
+  budget.remaining -= 1;
   if (Array.isArray(value)) {
     for (const entry of value) {
-      collectPaths(entry, paths, seen, depth + 1);
-      if (paths.length >= 8) {
+      collectPaths(entry, paths, seen, depth + 1, budget);
+      if (paths.length >= 8 || budget.remaining <= 0) {
         return;
       }
     }
@@ -143,8 +152,8 @@ function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth:
     if (!(nestedKey in record)) {
       continue;
     }
-    collectPaths(record[nestedKey], paths, seen, depth + 1);
-    if (paths.length >= 8) {
+    collectPaths(record[nestedKey], paths, seen, depth + 1, budget);
+    if (paths.length >= 8 || budget.remaining <= 0) {
       return;
     }
   }
@@ -152,7 +161,7 @@ function collectPaths(value: unknown, paths: string[], seen: Set<string>, depth:
 
 function extractPrimaryPath(data: Record<string, unknown> | undefined): string | undefined {
   const paths: string[] = [];
-  collectPaths(data, paths, new Set<string>(), 0);
+  collectPaths(data, paths, new Set<string>(), 0, { remaining: MAX_PATH_TRAVERSAL_NODES });
   return paths[0];
 }
 

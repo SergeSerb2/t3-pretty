@@ -2,11 +2,17 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
+  CONNECTION_ENVIRONMENT_ID_MAX_LENGTH,
+  CONNECTION_ID_MAX_LENGTH,
+  CONNECTION_LABEL_MAX_LENGTH,
+  CONNECTION_SECRET_MAX_LENGTH,
+  CONNECTION_URL_MAX_LENGTH,
   RelayConnectionRegistration,
   RelayConnectionTarget,
   BearerConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import {
+  CONNECTION_CATALOG_MAX_RECORDS_PER_KIND,
   type ConnectionCatalogDocument,
   EMPTY_CONNECTION_CATALOG_DOCUMENT,
   registerConnectionInCatalog,
@@ -44,10 +50,27 @@ function isRelayManaged(connection: typeof LegacySavedRemoteConnection.Type): bo
   return connection.relayManaged === true || connection.authenticationMethod === "dpop";
 }
 
+function hasValidCommonConnectionFields(
+  connection: typeof LegacySavedRemoteConnection.Type,
+): boolean {
+  return (
+    connection.environmentId.length <= CONNECTION_ENVIRONMENT_ID_MAX_LENGTH &&
+    connection.environmentLabel.length <= CONNECTION_LABEL_MAX_LENGTH
+  );
+}
+
 function migrateConnection(
   document: ConnectionCatalogDocument,
   connection: typeof LegacySavedRemoteConnection.Type,
 ): ConnectionCatalogDocument {
+  const alreadyRegistered = document.targets.some(
+    (target) => target.environmentId === connection.environmentId,
+  );
+  if (!alreadyRegistered && document.targets.length >= CONNECTION_CATALOG_MAX_RECORDS_PER_KIND) {
+    return document;
+  }
+  if (!hasValidCommonConnectionFields(connection)) return document;
+
   if (isRelayManaged(connection)) {
     return registerConnectionInCatalog(
       document,
@@ -60,11 +83,22 @@ function migrateConnection(
     );
   }
 
-  if (connection.bearerToken === null || connection.bearerToken.trim() === "") {
+  if (
+    connection.bearerToken === null ||
+    connection.bearerToken.length > CONNECTION_SECRET_MAX_LENGTH ||
+    connection.bearerToken.trim() === ""
+  ) {
     return document;
   }
 
   const connectionId = `bearer:${connection.environmentId}`;
+  if (
+    connectionId.length > CONNECTION_ID_MAX_LENGTH ||
+    connection.httpBaseUrl.length > CONNECTION_URL_MAX_LENGTH ||
+    connection.wsBaseUrl.length > CONNECTION_URL_MAX_LENGTH
+  ) {
+    return document;
+  }
   return registerConnectionInCatalog(
     document,
     new BearerConnectionRegistration({

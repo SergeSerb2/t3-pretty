@@ -1,8 +1,11 @@
+import * as NodeNet from "node:net";
+
 import {
   createAdvertisedEndpoint,
   type CreateAdvertisedEndpointInput,
 } from "@t3tools/shared/advertisedEndpoint";
 import {
+  ADVERTISED_ENDPOINTS_MAX_ITEMS,
   DesktopServerExposureModeSchema,
   type AdvertisedEndpoint,
   type AdvertisedEndpointProvider,
@@ -29,6 +32,7 @@ const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
 
 export const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
 const DESKTOP_LAN_BIND_HOST = "0.0.0.0";
+const DESKTOP_LAN_HOST_MAX_LENGTH = 1_024;
 
 interface ResolvedDesktopServerExposure {
   readonly mode: DesktopServerExposureMode;
@@ -61,15 +65,34 @@ const DESKTOP_MANUAL_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
 
 const normalizeOptionalHost = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : undefined;
+  if (!normalized || normalized.length > DESKTOP_LAN_HOST_MAX_LENGTH) return undefined;
+
+  try {
+    const urlHost = NodeNet.isIPv6(normalized) ? `[${normalized}]` : normalized;
+    const parsed = new URL(`http://${urlHost}`);
+    if (
+      parsed.username.length > 0 ||
+      parsed.password.length > 0 ||
+      parsed.port.length > 0 ||
+      parsed.pathname !== "/" ||
+      parsed.search.length > 0 ||
+      parsed.hash.length > 0
+    ) {
+      return undefined;
+    }
+    return parsed.host;
+  } catch {
+    return undefined;
+  }
 };
 
 const isUsableLanIpv4Address = (address: string): boolean =>
   !address.startsWith("127.") && !address.startsWith("169.254.");
 
-const isHttpsEndpointUrl = (value: string): boolean => {
+const isSecureEndpointUrl = (value: string): boolean => {
   try {
-    return new URL(value).protocol === "https:";
+    const protocol = new URL(value).protocol;
+    return protocol === "https:" || protocol === "wss:";
   } catch {
     return false;
   }
@@ -84,18 +107,25 @@ const resolveLanAdvertisedHost = (
     return normalizedExplicitHost;
   }
 
+  let tailscaleIp: string | null = null;
   for (const interfaceAddresses of Object.values(networkInterfaces)) {
     if (!interfaceAddresses) continue;
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
       if (address.family !== "IPv4") continue;
-      if (!isUsableLanIpv4Address(address.address)) continue;
-      return address.address;
+      if (isUsableLanIpv4Address(address.address)) {
+        return address.address;
+      }
+      // Remember the first Tailscale IP as fallback
+      if (!tailscaleIp && isTailscaleIpv4Address(address.address)) {
+        tailscaleIp = address.address;
+      }
     }
   }
 
-  return null;
+  // When no LAN IP exists, use Tailscale IP for endpointUrl if available
+  return tailscaleIp;
 };
 
 const resolveDesktopServerExposure = (input: {
@@ -166,35 +196,46 @@ const resolveDesktopCoreAdvertisedEndpoints = (
   ];
 
   if (input.exposure.endpointUrl) {
+    // When endpointUrl is a Tailscale IP (fallback), classify as private-network
+    const isTailscaleEndpoint = input.exposure.advertisedHost
+      ? isTailscaleIpv4Address(input.exposure.advertisedHost)
+      : false;
+
     endpoints.push(
       createDesktopEndpoint({
-        id: `desktop-lan:${input.exposure.endpointUrl}`,
-        label: "Local network",
+        id: isTailscaleEndpoint
+          ? `desktop-tailscale:${input.exposure.endpointUrl}`
+          : `desktop-lan:${input.exposure.endpointUrl}`,
+        label: isTailscaleEndpoint ? "Tailscale" : "Local network",
         httpBaseUrl: input.exposure.endpointUrl,
-        reachability: "lan",
+        reachability: isTailscaleEndpoint ? "private-network" : "lan",
         status: "available",
         isDefault: true,
-        description: "Reachable from devices on the same network.",
+        description: isTailscaleEndpoint
+          ? "Reachable from devices on the same Tailnet."
+          : "Reachable from devices on the same network.",
       }),
     );
   }
 
+  const seenManualHttpBaseUrls = new Set<string>();
   for (const customEndpointUrl of input.customHttpsEndpointUrls ?? []) {
     try {
-      const isHttpsEndpoint = isHttpsEndpointUrl(customEndpointUrl);
-      endpoints.push(
-        createManualEndpoint({
-          id: `manual:${customEndpointUrl}`,
-          label: isHttpsEndpoint ? "Custom HTTPS" : "Custom endpoint",
-          httpBaseUrl: customEndpointUrl,
-          reachability: "public",
-          ...(isHttpsEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
-          status: "unknown",
-          description: isHttpsEndpoint
-            ? "User-configured HTTPS endpoint for this desktop backend."
-            : "User-configured endpoint for this desktop backend.",
-        }),
-      );
+      const isSecureEndpoint = isSecureEndpointUrl(customEndpointUrl);
+      const endpoint = createManualEndpoint({
+        id: `manual:${customEndpointUrl}`,
+        label: isSecureEndpoint ? "Custom HTTPS" : "Custom endpoint",
+        httpBaseUrl: customEndpointUrl,
+        reachability: "public",
+        ...(isSecureEndpoint ? ({ hostedHttpsCompatibility: "compatible" } as const) : {}),
+        status: "unknown",
+        description: isSecureEndpoint
+          ? "User-configured HTTPS endpoint for this desktop backend."
+          : "User-configured endpoint for this desktop backend.",
+      });
+      if (seenManualHttpBaseUrls.has(endpoint.httpBaseUrl)) continue;
+      seenManualHttpBaseUrls.add(endpoint.httpBaseUrl);
+      endpoints.push(endpoint);
     } catch {
       // Ignore malformed user-configured endpoints without dropping valid endpoints.
     }
@@ -377,6 +418,8 @@ function resolveRuntimeState(input: {
     networkInterfaces: input.networkInterfaces,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
+  // resolveLanAdvertisedHost already falls back to Tailscale IP when no LAN exists,
+  // so endpointUrl will be non-null if any usable IP is available.
   const unavailable =
     input.requestedMode === "network-accessible" && requestedExposure.endpointUrl === null;
   const exposure = unavailable
@@ -547,7 +590,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
-    return [...coreEndpoints, ...tailscaleEndpoints];
+    return [...coreEndpoints, ...tailscaleEndpoints].slice(0, ADVERTISED_ENDPOINTS_MAX_ITEMS);
   }).pipe(Effect.withSpan("desktop.serverExposure.getAdvertisedEndpoints"));
 
   return DesktopServerExposure.of({

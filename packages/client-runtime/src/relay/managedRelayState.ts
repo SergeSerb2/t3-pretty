@@ -2,7 +2,7 @@ import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { AUTH_CREDENTIAL_MAX_LENGTH, type EnvironmentId } from "@t3tools/contracts";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -14,15 +14,18 @@ import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import { findErrorTraceId } from "../errors/errorTrace.ts";
 import * as ManagedRelay from "./managedRelay.ts";
+import { relayProtectedErrorMessage } from "./errorPresentation.ts";
 
 const DEFAULT_STALE_TIME_MS = 15_000;
 const DEFAULT_IDLE_TTL_MS = 5 * 60_000;
 const CLERK_TOKEN_EXPIRY_SKEW_MS = 5_000;
+const isManagedRelayRequestFailedError = Schema.is(ManagedRelay.ManagedRelayRequestFailedError);
 
 export interface ManagedRelaySession {
   readonly accountId: string;
@@ -178,47 +181,25 @@ function readSessionClerkToken(
   session: ManagedRelaySession,
 ): Effect.Effect<string, ManagedRelaySessionError> {
   return session.readClerkToken().pipe(
-    Effect.flatMap((token) =>
-      token
-        ? Effect.succeed(token)
-        : Effect.fail(
-            new ManagedRelaySessionError({
-              message: `The ${SURGE_CONNECT_NAME} session token is unavailable.`,
-            }),
-          ),
-    ),
+    Effect.flatMap((token) => {
+      if (!token) {
+        return Effect.fail(
+          new ManagedRelaySessionError({
+            message: `The ${SURGE_CONNECT_NAME} session token is unavailable.`,
+          }),
+        );
+      }
+      if (token.length > AUTH_CREDENTIAL_MAX_LENGTH) {
+        return Effect.fail(
+          new ManagedRelaySessionError({
+            message: `The ${SURGE_CONNECT_NAME} session token is invalid.`,
+          }),
+        );
+      }
+      return Effect.succeed(token);
+    }),
   );
 }
-
-export const waitForManagedRelayClerkToken = Effect.fn(
-  "clientRuntime.managedRelaySession.waitForClerkToken",
-)(function* (registry: AtomRegistry.AtomRegistry) {
-  return yield* Effect.callback<string, ManagedRelaySessionError>((resume) => {
-    let unsubscribe: (() => void) | undefined;
-    let completed = false;
-    const readCurrentSession = () => {
-      if (completed) {
-        return true;
-      }
-      const session = registry.get(managedRelaySessionAtom);
-      if (!session) {
-        return false;
-      }
-      completed = true;
-      unsubscribe?.();
-      resume(readSessionClerkToken(session));
-      return true;
-    };
-
-    if (readCurrentSession()) {
-      return;
-    }
-
-    unsubscribe = registry.subscribe(managedRelaySessionAtom, readCurrentSession);
-    readCurrentSession();
-    return Effect.sync(() => unsubscribe?.());
-  });
-});
 
 /** Removes an environment from the signed-in account without contacting that environment. */
 export const deregisterManagedRelayEnvironment = Effect.fn(
@@ -234,6 +215,11 @@ export const deregisterManagedRelayEnvironment = Effect.fn(
     });
   }
   const clerkToken = yield* readSessionClerkToken(session);
+  if (registry.get(managedRelaySessionAtom) !== session) {
+    return yield* new ManagedRelaySessionError({
+      message: "The signed-in account changed before the environment could be deregistered.",
+    });
+  }
   const relay = yield* ManagedRelay.ManagedRelayClient;
   yield* relay.unlinkEnvironment({ clerkToken, environmentId: input.environmentId });
 });
@@ -316,7 +302,12 @@ export function readManagedRelaySnapshotState<A>(
   let errorTraceId: string | null = null;
   if (result._tag === "Failure") {
     const cause = Cause.squash(result.cause);
-    error = cause instanceof Error ? cause.message : `Could not load ${SURGE_CONNECT_NAME} data.`;
+    error =
+      isManagedRelayRequestFailedError(cause) && cause.relayError
+        ? relayProtectedErrorMessage(cause.relayError)
+        : cause instanceof Error
+          ? cause.message
+          : `Could not load ${SURGE_CONNECT_NAME} data.`;
     errorTraceId = findErrorTraceId(cause);
   }
   return {

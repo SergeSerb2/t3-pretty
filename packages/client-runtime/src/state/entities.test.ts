@@ -1,8 +1,11 @@
 import {
+  AutomationId,
+  AutomationRunId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  type AutomationShell,
   type OrchestrationShellSnapshot,
   type OrchestrationThread,
 } from "@t3tools/contracts";
@@ -18,6 +21,8 @@ import {
   parseProjectKey,
   parseProjectRefCollectionKey,
   parseThreadKey,
+  projectKey,
+  threadKey,
 } from "./entities.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 import { EMPTY_ENVIRONMENT_THREAD_STATE, type EnvironmentThreadState } from "./threads.ts";
@@ -26,6 +31,7 @@ import { createEnvironmentSnapshotAtom } from "./snapshots.ts";
 import { createEnvironmentThreadDetailAtoms } from "./threadDetail.ts";
 import { mergeEnvironmentThread } from "./threadDetail.ts";
 import { createEnvironmentThreadShellAtoms } from "./threadShell.ts";
+import { applyShellStreamEvent } from "./shellReducer.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const PROJECT_ID = ProjectId.make("project-1");
@@ -34,6 +40,34 @@ const THREAD_ID = ThreadId.make("thread-1");
 const OTHER_THREAD_ID = ThreadId.make("thread-2");
 
 describe("scoped entity keys", () => {
+  it("round-trips scoped entity IDs containing the old delimiter", () => {
+    const projectRef = {
+      environmentId: EnvironmentId.make("environment\u0000part"),
+      projectId: ProjectId.make("project\u0000part"),
+    };
+    const threadRef = {
+      environmentId: projectRef.environmentId,
+      threadId: ThreadId.make("thread\u0000part"),
+    };
+
+    expect(parseProjectKey(projectKey(projectRef))).toEqual(projectRef);
+    expect(parseThreadKey(threadKey(threadRef))).toEqual(threadRef);
+  });
+
+  it("does not collide when scoped entity IDs contain delimiters", () => {
+    expect(
+      projectKey({
+        environmentId: EnvironmentId.make("environment\u0000project"),
+        projectId: ProjectId.make("tail"),
+      }),
+    ).not.toBe(
+      projectKey({
+        environmentId: EnvironmentId.make("environment"),
+        projectId: ProjectId.make("project\u0000tail"),
+      }),
+    );
+  });
+
   it("preserves an invalid project key as structured error data", () => {
     const key = "missing-project-key-separator";
     let error: unknown;
@@ -140,6 +174,7 @@ const SNAPSHOT: OrchestrationShellSnapshot = {
       title: "Other thread",
     },
   ],
+  automations: [],
 };
 
 function shellState(snapshot: OrchestrationShellSnapshot): EnvironmentShellState {
@@ -150,7 +185,7 @@ function shellState(snapshot: OrchestrationShellSnapshot): EnvironmentShellState
   };
 }
 
-function makeHarness() {
+function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [ENVIRONMENT_ID]) {
   const shellStateAtoms = Atom.family((_environmentId: EnvironmentId) =>
     Atom.make(AsyncResult.success(shellState(SNAPSHOT))),
   );
@@ -159,29 +194,41 @@ function makeHarness() {
   );
   const catalogValueAtom = Atom.make({
     isReady: true,
-    entries: new Map([
-      [
-        ENVIRONMENT_ID,
+    entries: new Map(
+      environmentIds.map((environmentId) => [
+        environmentId,
         {
           target: new PrimaryConnectionTarget({
-            environmentId: ENVIRONMENT_ID,
+            environmentId,
             label: "Environment",
             httpBaseUrl: "https://example.test",
             wsBaseUrl: "wss://example.test",
           }),
           profile: Option.none(),
         },
-      ],
-    ]),
+      ]),
+    ),
   });
   const snapshotAtom = createEnvironmentSnapshotAtom(shellStateAtoms);
   const projects = createEnvironmentProjectAtoms({
     catalogValueAtom,
     snapshotAtom,
   });
+  const automationIndexAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make(
+      (get): ReadonlyMap<AutomationId, AutomationShell> =>
+        new Map(
+          (get(snapshotAtom(environmentId))?.automations ?? []).map((automation) => [
+            automation.id,
+            automation,
+          ]),
+        ),
+    ),
+  );
   const threadShells = createEnvironmentThreadShellAtoms({
     catalogValueAtom,
     snapshotAtom,
+    automationIndexAtom,
   });
   const threadDetails = createEnvironmentThreadDetailAtoms((environmentId, threadId) =>
     threadStateAtoms(`${environmentId}\u0000${threadId}`),
@@ -189,13 +236,100 @@ function makeHarness() {
 
   return {
     registry: AtomRegistry.make(),
+    catalogValueAtom,
     shellStateAtom: shellStateAtoms(ENVIRONMENT_ID),
+    shellStateAtomForEnvironment: shellStateAtoms,
     threadStateAtom: (threadId: ThreadId) => threadStateAtoms(`${ENVIRONMENT_ID}\u0000${threadId}`),
     projects,
     threadShells,
     threadDetails,
   };
 }
+
+const AUTOMATION_ID = AutomationId.make("automation-1");
+const RUN_THREAD_ID = ThreadId.make("run-thread-1");
+
+const AUTOMATION: AutomationShell = {
+  id: AUTOMATION_ID,
+  projectId: PROJECT_ID,
+  name: "Nightly triage",
+  prompt: "Triage the inbox",
+  triggers: [],
+  enabled: true,
+  modelSelection: null,
+  runtimeMode: "full-access",
+  workspace: "checkout",
+  createPullRequest: false,
+  includeLastRunSummary: false,
+  catchUpMissedRuns: true,
+  minIntervalSeconds: 60,
+  timeoutMinutes: 120,
+  webhookToken: null,
+  sourceThreadId: null,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+  nextRunAt: null,
+  activeRun: null,
+  lastRun: null,
+  lastRequestedAt: null,
+  pendingTrigger: null,
+  consecutiveFailures: 0,
+  runCount: 0,
+  webhookPath: null,
+};
+
+describe("automation run threads", () => {
+  const runThread = {
+    ...THREAD_SHELL,
+    id: RUN_THREAD_ID,
+    title: "Nightly triage · Sep 6, 09:00",
+    automationRun: { automationId: AUTOMATION_ID, runId: AutomationRunId.make("run-1") },
+  };
+
+  function harnessWithRunThread(automations: ReadonlyArray<AutomationShell>) {
+    const harness = makeHarness();
+    harness.registry.set(
+      harness.shellStateAtom,
+      AsyncResult.success(
+        shellState({ ...SNAPSHOT, threads: [...SNAPSHOT.threads, runThread], automations }),
+      ),
+    );
+    return harness;
+  }
+
+  it("hides run threads from every list while point reads still resolve them", () => {
+    const harness = harnessWithRunThread([AUTOMATION]);
+    const runRef = { environmentId: ENVIRONMENT_ID, threadId: RUN_THREAD_ID };
+
+    expect(harness.registry.get(harness.threadShells.threadShellsAtom).map((t) => t.id)).toEqual([
+      THREAD_ID,
+      OTHER_THREAD_ID,
+    ]);
+    expect(harness.registry.get(harness.threadShells.allThreadShellsAtom).map((t) => t.id)).toEqual(
+      [THREAD_ID, OTHER_THREAD_ID, RUN_THREAD_ID],
+    );
+    expect(
+      harness.registry
+        .get(harness.threadShells.environmentThreadRefsAtom(ENVIRONMENT_ID))
+        .map((ref) => ref.threadId),
+    ).toEqual([THREAD_ID, OTHER_THREAD_ID]);
+    expect(harness.registry.get(harness.threadShells.threadShellAtom(runRef))?.id).toBe(
+      RUN_THREAD_ID,
+    );
+    harness.registry.dispose();
+  });
+
+  it("keeps a run thread visible when its automation is gone", () => {
+    const harness = harnessWithRunThread([]);
+
+    expect(harness.registry.get(harness.threadShells.threadShellsAtom).map((t) => t.id)).toEqual([
+      THREAD_ID,
+      OTHER_THREAD_ID,
+      RUN_THREAD_ID,
+    ]);
+    harness.registry.dispose();
+  });
+});
 
 describe("environment entity projections", () => {
   it("applies a client-specific retention window to every detail projection", () => {
@@ -227,6 +361,8 @@ describe("environment entity projections", () => {
       title: "Cached thread",
       branch: "stale-branch",
       worktreePath: "/repo/stale-worktree",
+      activeOrderKey: "t",
+      unsettledAt: "2026-03-09T10:00:00.000Z",
       deletedAt: null,
       messages,
       proposedPlans: [],
@@ -239,6 +375,8 @@ describe("environment entity projections", () => {
       title: "Current thread",
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
+      activeOrderKey: "f",
+      unsettledAt: "2026-03-09T12:00:00.000Z",
     };
 
     const merged = mergeEnvironmentThread(detail, shell);
@@ -247,6 +385,8 @@ describe("environment entity projections", () => {
       title: "Current thread",
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
+      activeOrderKey: "f",
+      unsettledAt: "2026-03-09T12:00:00.000Z",
     });
     expect(merged?.messages).toBe(messages);
   });
@@ -301,7 +441,8 @@ describe("environment entity projections", () => {
     const refsByProjectAtom =
       harness.threadShells.environmentThreadRefsByProjectAtom(ENVIRONMENT_ID);
     const threadsAtom = harness.threadShells.threadShellsForProjectRefsAtom([projectRef]);
-    const refs = harness.registry.get(refsByProjectAtom).get(PROJECT_ID);
+    const membership = harness.registry.get(refsByProjectAtom);
+    const refs = membership.get(PROJECT_ID);
     const threads = harness.registry.get(threadsAtom);
 
     expect(threads).toHaveLength(1);
@@ -321,7 +462,156 @@ describe("environment entity projections", () => {
     );
 
     expect(harness.registry.get(refsByProjectAtom).get(PROJECT_ID)).toBe(refs);
+    expect(harness.registry.get(refsByProjectAtom)).toBe(membership);
     expect(harness.registry.get(threadsAtom)).toBe(threads);
+  });
+
+  it("shares list values with point reads without retaining one atom per listed thread", () => {
+    const harness = makeHarness();
+    let snapshot: OrchestrationShellSnapshot = {
+      ...SNAPSHOT,
+      threads: Array.from({ length: 200 }, (_, index) => ({
+        ...THREAD_SHELL,
+        id: ThreadId.make(`listed-${index}`),
+      })),
+    };
+    harness.registry.set(harness.shellStateAtom, AsyncResult.success(shellState(snapshot)));
+    const listAtom = harness.threadShells.threadShellsAtom;
+    const projectListAtom = harness.threadShells.threadShellsForProjectRefsAtom([
+      { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
+    ]);
+    const disposeList = harness.registry.mount(listAtom);
+    const disposeProjectList = harness.registry.mount(projectListAtom);
+    try {
+      const before = harness.registry.get(listAtom);
+      expect(before).toHaveLength(200);
+      expect(harness.registry.get(projectListAtom)).toEqual(before);
+      expect(harness.registry.getNodes().size).toBeLessThan(20);
+      const firstAtom = harness.threadShells.threadShellAtom({
+        environmentId: ENVIRONMENT_ID,
+        threadId: snapshot.threads[0]!.id,
+      });
+      expect(harness.registry.get(firstAtom)).toBe(before[0]);
+
+      snapshot = applyShellStreamEvent(snapshot, {
+        kind: "thread-upserted",
+        sequence: 2,
+        thread: { ...snapshot.threads.at(-1)!, title: "Updated last thread" },
+      });
+      harness.registry.set(harness.shellStateAtom, AsyncResult.success(shellState(snapshot)));
+      const after = harness.registry.get(listAtom);
+      expect(after[0]).toBe(before[0]);
+      expect(after.at(-1)).not.toBe(before.at(-1));
+      expect(after.at(-1)?.title).toBe("Updated last thread");
+      expect(harness.registry.get(projectListAtom).at(-1)).toBe(after.at(-1));
+      expect(harness.registry.get(firstAtom)).toBe(after[0]);
+      expect(harness.registry.getNodes().size).toBeLessThan(20);
+    } finally {
+      disposeProjectList();
+      disposeList();
+      harness.registry.dispose();
+    }
+  });
+
+  it("keeps scoped identities and list order across project and environment changes", () => {
+    const remoteEnvironmentId = EnvironmentId.make("remote-environment");
+    const harness = makeHarness([ENVIRONMENT_ID, remoteEnvironmentId]);
+    const listAtom = harness.threadShells.threadShellsAtom;
+    const localRef = { environmentId: ENVIRONMENT_ID, threadId: THREAD_ID };
+    const remoteRef = { environmentId: remoteEnvironmentId, threadId: THREAD_ID };
+    const selectedAtom = harness.threadShells.threadShellsForProjectRefsAtom([
+      { environmentId: remoteEnvironmentId, projectId: PROJECT_ID },
+      { environmentId: ENVIRONMENT_ID, projectId: OTHER_PROJECT_ID },
+      { environmentId: remoteEnvironmentId, projectId: PROJECT_ID },
+      { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
+    ]);
+    const disposeList = harness.registry.mount(listAtom);
+    const disposeSelected = harness.registry.mount(selectedAtom);
+    try {
+      const original = harness.registry.get(listAtom);
+      const local = harness.registry.get(harness.threadShells.threadShellAtom(localRef));
+      const remote = harness.registry.get(harness.threadShells.threadShellAtom(remoteRef));
+      expect(original).toHaveLength(4);
+      expect(original[0]).toBe(local);
+      expect(original[2]).toBe(remote);
+      expect(local).not.toBe(remote);
+      expect(local?.environmentId).toBe(ENVIRONMENT_ID);
+      expect(remote?.environmentId).toBe(remoteEnvironmentId);
+      expect(harness.registry.get(selectedAtom)).toEqual([remote, original[1], local]);
+
+      harness.registry.set(
+        harness.shellStateAtomForEnvironment(remoteEnvironmentId),
+        AsyncResult.success(shellState({ ...SNAPSHOT, threads: SNAPSHOT.threads.toReversed() })),
+      );
+      expect([
+        ...harness.registry
+          .get(harness.threadShells.environmentThreadRefsByProjectAtom(remoteEnvironmentId))
+          .keys(),
+      ]).toEqual([OTHER_PROJECT_ID, PROJECT_ID]);
+      harness.registry.set(
+        harness.shellStateAtomForEnvironment(remoteEnvironmentId),
+        AsyncResult.success(shellState(SNAPSHOT)),
+      );
+
+      let snapshot = applyShellStreamEvent(SNAPSHOT, {
+        kind: "thread-upserted",
+        sequence: 2,
+        thread: { ...THREAD_SHELL, projectId: OTHER_PROJECT_ID, title: "Moved thread" },
+      });
+      harness.registry.set(harness.shellStateAtom, AsyncResult.success(shellState(snapshot)));
+      const moved = harness.registry.get(harness.threadShells.threadShellAtom(localRef));
+      expect(harness.registry.get(selectedAtom)).toEqual([remote, moved, original[1]]);
+      expect(harness.registry.get(listAtom)[2]).toBe(remote);
+
+      snapshot = applyShellStreamEvent(snapshot, {
+        kind: "thread-removed",
+        sequence: 3,
+        threadId: OTHER_THREAD_ID,
+      });
+      harness.registry.set(harness.shellStateAtom, AsyncResult.success(shellState(snapshot)));
+      expect(harness.registry.get(selectedAtom)).toEqual([remote, moved]);
+      expect(
+        harness.registry.get(
+          harness.threadShells.threadShellAtom({
+            environmentId: ENVIRONMENT_ID,
+            threadId: OTHER_THREAD_ID,
+          }),
+        ),
+      ).toBeNull();
+
+      const createdId = ThreadId.make("created-thread");
+      snapshot = applyShellStreamEvent(snapshot, {
+        kind: "thread-upserted",
+        sequence: 4,
+        thread: { ...THREAD_SHELL, id: createdId },
+      });
+      harness.registry.set(harness.shellStateAtom, AsyncResult.success(shellState(snapshot)));
+      const created = harness.registry.get(listAtom)[1];
+      expect(created?.id).toBe(createdId);
+      expect(harness.registry.get(selectedAtom)).toEqual([remote, moved, created]);
+
+      const catalog = harness.registry.get(harness.catalogValueAtom);
+      harness.registry.set(harness.catalogValueAtom, {
+        ...catalog,
+        entries: new Map([...catalog.entries].toReversed()),
+      });
+      expect(harness.registry.get(listAtom)).toEqual([remote, original[3], moved, created]);
+      harness.registry.set(harness.catalogValueAtom, {
+        ...catalog,
+        entries: new Map([[remoteEnvironmentId, catalog.entries.get(remoteEnvironmentId)!]]),
+      });
+      expect(harness.registry.get(listAtom)).toEqual([remote, original[3]]);
+      harness.registry.set(
+        harness.shellStateAtomForEnvironment(remoteEnvironmentId),
+        AsyncResult.success(shellState({ ...SNAPSHOT, threads: [] })),
+      );
+      expect(harness.registry.get(listAtom)).toEqual([]);
+      expect(harness.registry.get(harness.threadShells.threadShellAtom(remoteRef))).toBeNull();
+    } finally {
+      disposeSelected();
+      disposeList();
+      harness.registry.dispose();
+    }
   });
 
   it("updates only the requested thread detail and preserves untouched field identities", () => {

@@ -167,6 +167,14 @@ export type ThreadSnoozeShell = Pick<
   | "latestTurn"
 >;
 
+function happenedAfterSnooze(eventAt: string, snoozedAt: string | null | undefined): boolean {
+  if (snoozedAt == null) return true;
+  const eventAtMs = Date.parse(eventAt);
+  const snoozedAtMs = Date.parse(snoozedAt);
+  // Corrupt lifecycle timestamps must not hide a failure or completed run.
+  return Number.isNaN(eventAtMs) || Number.isNaN(snoozedAtMs) || eventAtMs > snoozedAtMs;
+}
+
 /**
  * A snoozed thread "raises its hand" when something happens that outranks
  * the user's snooze: the agent is blocked on them (approval / user input),
@@ -184,7 +192,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
   // the snooze is new information.
   if (
     shell.session?.status === "error" &&
-    (shell.snoozedAt == null || Date.parse(shell.session.updatedAt) > Date.parse(shell.snoozedAt))
+    happenedAfterSnooze(shell.session.updatedAt, shell.snoozedAt)
   ) {
     return true;
   }
@@ -192,7 +200,7 @@ export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean 
     shell.snoozedAt != null &&
     shell.latestTurn?.state === "completed" &&
     shell.latestTurn.completedAt != null &&
-    Date.parse(shell.latestTurn.completedAt) > Date.parse(shell.snoozedAt)
+    happenedAfterSnooze(shell.latestTurn.completedAt, shell.snoozedAt)
   ) {
     return true;
   }
@@ -232,9 +240,10 @@ export function effectiveSnoozed(
 ): boolean {
   if (shell.snoozedUntil == null) return false;
   const wakeAtMs = Date.parse(shell.snoozedUntil);
+  const nowMs = Date.parse(options.now);
   // Malformed data never hides a thread.
-  if (Number.isNaN(wakeAtMs)) return false;
-  if (wakeAtMs <= Date.parse(options.now)) return false;
+  if (Number.isNaN(wakeAtMs) || Number.isNaN(nowMs)) return false;
+  if (wakeAtMs <= nowMs) return false;
   return !threadRaisedHandWhileSnoozed(shell);
 }
 
@@ -265,7 +274,7 @@ export function threadWokeAt(
       shell.snoozedAt != null &&
       shell.latestTurn?.state === "completed" &&
       shell.latestTurn.completedAt != null &&
-      Date.parse(shell.latestTurn.completedAt) > Date.parse(shell.snoozedAt)
+      happenedAfterSnooze(shell.latestTurn.completedAt, shell.snoozedAt)
     ) {
       return shell.latestTurn.completedAt;
     }
@@ -391,7 +400,9 @@ function addSnoozeDays(base: Date, days: number): Date {
 /**
  * Shared "snooze until" choices for every client. "This evening" only
  * appears while it is meaningfully before evening; after that the calendar
- * choices start at "Tomorrow".
+ * choices start at "Tomorrow". Calendar presets that land on the same
+ * instant collapse: on Sundays "Tomorrow" and "Next week" are both Monday
+ * morning, so only "Tomorrow" is offered.
  */
 export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
   const inAnHour = new Date(now.getTime() + HOUR_MS);
@@ -431,12 +442,14 @@ export function resolveSnoozePresets(now: Date): ReadonlyArray<SnoozePreset> {
 
   const daysUntilMonday = (1 - now.getDay() + 7) % 7 || 7;
   const nextWeek = snoozeAtHour(addSnoozeDays(now, daysUntilMonday), MORNING_HOUR);
-  presets.push({
-    id: "next-week",
-    label: "Next week",
-    whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${snoozeTimeOfDayLabel(nextWeek)}`,
-    snoozedUntil: nextWeek.toISOString(),
-  });
+  if (nextWeek.getTime() !== tomorrow.getTime()) {
+    presets.push({
+      id: "next-week",
+      label: "Next week",
+      whenLabel: `${nextWeek.toLocaleDateString(undefined, { weekday: "short" })} ${snoozeTimeOfDayLabel(nextWeek)}`,
+      snoozedUntil: nextWeek.toISOString(),
+    });
+  }
 
   return presets;
 }

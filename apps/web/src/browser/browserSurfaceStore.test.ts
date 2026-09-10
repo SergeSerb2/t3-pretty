@@ -2,13 +2,25 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   acquireBrowserSurface,
+  acquireBrowserSurfaceActivity,
   resolveBrowserSurfacePanelRect,
   useBrowserSurfaceStore,
 } from "./browserSurfaceStore";
 
 describe("browserSurfaceStore", () => {
   beforeEach(() => {
-    useBrowserSurfaceStore.setState({ byTabId: {} });
+    useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
+  });
+
+  it("keeps concurrent background work active until every lease is released", () => {
+    const first = acquireBrowserSurfaceActivity("background-browser");
+    const second = acquireBrowserSurfaceActivity("background-browser");
+
+    first();
+    expect(useBrowserSurfaceStore.getState().activityByTabId["background-browser"]).toBe(1);
+
+    second();
+    expect(useBrowserSurfaceStore.getState().activityByTabId["background-browser"]).toBeUndefined();
   });
 
   it("freezes the source content dimensions for a fitted presentation", () => {
@@ -95,6 +107,7 @@ describe("browserSurfaceStore", () => {
           hidden: {
             rect: staleRect,
             visible: false,
+            zIndex: 30,
             content: null,
             fittedSourceContent: null,
             fitSourceContent: false,
@@ -105,6 +118,7 @@ describe("browserSurfaceStore", () => {
           active: {
             rect: liveRect,
             visible: true,
+            zIndex: 30,
             content: null,
             fittedSourceContent: null,
             fitSourceContent: false,
@@ -150,6 +164,17 @@ describe("browserSurfaceStore", () => {
     });
   });
 
+  it("keeps the requested layer with the active surface lease", () => {
+    const tabId = "layered-browser-surface";
+    const lease = acquireBrowserSurface(tabId);
+    lease.present({ x: 10, y: 20, width: 320, height: 200 }, true, 12, 48);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]).toMatchObject({
+      visible: true,
+      zIndex: 48,
+    });
+  });
+
   it("clears fitted presentation state when its lease is released", () => {
     const tabId = "released-fitted-browser-surface";
     const fittedLease = acquireBrowserSurface(tabId, true);
@@ -171,5 +196,33 @@ describe("browserSurfaceStore", () => {
       owner: null,
       visible: false,
     });
+  });
+
+  it("forgets presentation state when a runtime tab disappears", () => {
+    const removedTabId = "removed-browser-surface";
+    const retainedTabId = "retained-browser-surface";
+    useBrowserSurfaceStore.getState().presentContent(removedTabId, {
+      x: 0,
+      y: 0,
+      width: 1_280,
+      height: 720,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+    useBrowserSurfaceStore.getState().presentContent(retainedTabId, {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 480,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+
+    useBrowserSurfaceStore.getState().remove(removedTabId);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[removedTabId]).toBeUndefined();
+    expect(useBrowserSurfaceStore.getState().byTabId[retainedTabId]).toBeDefined();
   });
 });

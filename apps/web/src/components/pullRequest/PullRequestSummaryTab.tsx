@@ -5,6 +5,7 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
   PullRequestReviewThread,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   countGrokReviewSummaries,
@@ -15,18 +16,20 @@ import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GitPullRequestClosedIcon,
   MessageSquareIcon,
   PencilIcon,
+  RotateCcwIcon,
   SendIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
@@ -46,6 +49,7 @@ import {
   pullRequestReviewOutcomeRingClassName,
   pullRequestReviewOutcomeStaleLabel,
 } from "./pullRequestPresentation";
+import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import { FixFindingButton } from "./FixFindingButton";
@@ -68,6 +72,8 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { openPullRequestLinkOnHost } from "./pullRequestLinkContextMenu";
+import { pullRequestLabelColor } from "./pullRequestList.logic";
 import type {
   PullRequestPanelViewSnapshot,
   PullRequestSummarySection,
@@ -77,12 +83,6 @@ import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic
 /** One reviewer, however a host happens to have cased their login this time. */
 function reviewerKey(login: string): string {
   return login.toLowerCase();
-}
-
-/** A host colour only when it is one, so a malformed value falls back to the neutral dot. */
-function labelDotColor(color: string | null): string | null {
-  const hex = color?.trim().replace(/^#/, "") ?? "";
-  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
 }
 
 /** The avatar carries the attribution alone; who it is arrives on hover, like the reviewer row. */
@@ -109,6 +109,8 @@ function reviewStateLabel(state: string): string {
 /** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
   readonly cwd: string;
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
   readonly saving: boolean;
@@ -138,6 +140,8 @@ function CommentBody({
         className={className}
         value={comment.body}
         cwd={editing.cwd}
+        environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
         label="Edit comment"
         saving={editing.saving}
         onSave={(body) => editing.onSave(comment, body)}
@@ -150,7 +154,13 @@ function CommentBody({
   return (
     <div className={cn("flex items-start gap-1", className)}>
       {text.trim().length > 0 ? (
-        <PullRequestMarkdown className="min-w-0 flex-1" text={text} cwd={editing.cwd} />
+        <PullRequestMarkdown
+          className="min-w-0 flex-1"
+          text={text}
+          cwd={editing.cwd}
+          environmentId={editing.environmentId}
+          threadRef={editing.threadRef}
+        />
       ) : (
         <span className="min-w-0 flex-1" />
       )}
@@ -340,36 +350,82 @@ function Section({
 function CommentComposer({
   environmentId,
   detail,
+  actionPending,
+  onCommentAction,
   onCommented,
 }: {
   environmentId: EnvironmentId;
   detail: PullRequestDetailView;
+  actionPending: boolean;
+  onCommentAction: (
+    body: string,
+    action: "close" | "reopen",
+  ) => Promise<{ readonly commentPosted: boolean }>;
   onCommented: () => void;
 }) {
   const [body, setBody] = useState("");
-  const [posting, setPosting] = useState(false);
+  const [submitting, setSubmitting] = useState<"comment" | "close" | "reopen" | null>(null);
+  const submittingRef = useRef(false);
+  const mountedRef = useRef(false);
   const postComment = useAtomCommand(pullRequestEnvironment.comment, { reportFailure: false });
+  const followUpAction =
+    detail.state === "open" &&
+    detail.capabilities.actions.includes("close") &&
+    detail.viewerPermissions.actions.includes("close")
+      ? ("close" as const)
+      : detail.state === "closed" &&
+          detail.capabilities.actions.includes("reopen") &&
+          detail.viewerPermissions.actions.includes("reopen")
+        ? ("reopen" as const)
+        : null;
 
-  const submit = async () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const submit = async (action: "comment" | "close" | "reopen") => {
     const trimmed = body.trim();
-    if (trimmed.length === 0 || posting) return;
-    setPosting(true);
-    const result = await postComment({
-      environmentId,
-      input: {
-        projectId: detail.projectId,
-        repository: detail.repository,
-        number: detail.number,
-        body: trimmed,
-      },
-    });
-    setPosting(false);
-    if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Could not post the comment" });
+    if (trimmed.length === 0 || submittingRef.current || submitting !== null || actionPending)
       return;
+    submittingRef.current = true;
+    setSubmitting(action);
+    try {
+      if (action !== "comment") {
+        const result = await onCommentAction(trimmed, action);
+        if (!mountedRef.current) return;
+        if (result.commentPosted) setBody("");
+        return;
+      }
+      const result = await postComment({
+        environmentId,
+        input: {
+          projectId: detail.projectId,
+          repository: detail.repository,
+          number: detail.number,
+          body: trimmed,
+        },
+      });
+      if (!mountedRef.current) return;
+      if (result._tag === "Failure") {
+        toastManager.add({ type: "error", title: "Could not post the comment" });
+        return;
+      }
+      setBody("");
+      onCommented();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      toastManager.add({
+        type: "error",
+        title: "Could not post the comment",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      submittingRef.current = false;
+      if (mountedRef.current) setSubmitting(null);
     }
-    setBody("");
-    onCommented();
   };
 
   return (
@@ -377,22 +433,43 @@ function CommentComposer({
       <Textarea
         // Locked while posting: the body is cleared on success, which would otherwise throw
         // away a new draft typed while the request was still in flight.
-        disabled={posting}
+        disabled={submitting !== null || actionPending}
         value={body}
         rows={3}
         placeholder="Leave a comment"
         aria-label="Comment on this pull request"
         onChange={(event) => setBody(event.target.value)}
       />
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {followUpAction === null ? null : (
+          <Button
+            size="xs"
+            variant={followUpAction === "close" ? "destructive-outline" : "outline"}
+            disabled={body.trim().length === 0 || submitting !== null || actionPending}
+            onClick={() => void submit(followUpAction)}
+          >
+            {followUpAction === "close" ? (
+              <GitPullRequestClosedIcon className="size-3.5" />
+            ) : (
+              <RotateCcwIcon className="size-3.5" />
+            )}
+            {submitting === followUpAction
+              ? followUpAction === "close"
+                ? "Closing..."
+                : "Reopening..."
+              : followUpAction === "close"
+                ? "Close with comment"
+                : "Reopen with comment"}
+          </Button>
+        )}
         <Button
           size="xs"
           variant="outline"
-          disabled={body.trim().length === 0 || posting}
-          onClick={() => void submit()}
+          disabled={body.trim().length === 0 || submitting !== null || actionPending}
+          onClick={() => void submit("comment")}
         >
           <SendIcon className="size-3.5" />
-          {posting ? "Posting..." : "Comment"}
+          {submitting === "comment" ? "Posting..." : "Comment"}
         </Button>
       </div>
     </div>
@@ -407,6 +484,7 @@ const COMMENT_PAGE = 30;
 
 export function PullRequestSummaryTab({
   environmentId,
+  threadRef,
   reference,
   detail,
   activityPending,
@@ -417,11 +495,14 @@ export function PullRequestSummaryTab({
   fixCheckLabel = "Fix",
   canFixInThisThread = false,
   onFixFinding,
+  actionPending,
+  onCommentAction,
   onRefresh,
   restoredView,
   onViewChange,
 }: {
   environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
@@ -433,17 +514,39 @@ export function PullRequestSummaryTab({
   fixCheckLabel?: string;
   canFixInThisThread?: boolean;
   onFixFinding?: (finding: PullRequestFinding, destination: PullRequestFixDestination) => void;
+  actionPending: boolean;
+  onCommentAction: (
+    body: string,
+    action: "close" | "reopen",
+  ) => Promise<{ readonly commentPosted: boolean }>;
   onRefresh: () => void;
   restoredView?: PullRequestPanelViewSnapshot;
   onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
 }) {
+  const targetKey = JSON.stringify([
+    environmentId,
+    reference.projectId,
+    reference.repository,
+    reference.number,
+  ]);
+  const activeTargetKeyRef = useRef(targetKey);
+  const mountedRef = useRef(false);
+  activeTargetKeyRef.current = targetKey;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Keyed by the pull request, so opening another one starts at the end of its conversation
   // rather than wherever the last one had been read back to.
   const [shown, setShown] = useState({
-    url: detail.url,
+    key: targetKey,
     count: restoredView?.shownCommentCount ?? COMMENT_PAGE,
   });
-  const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
+  const shownComments = shown.key === targetKey ? shown.count : COMMENT_PAGE;
   const [summaryReveal, setSummaryReveal] = useState({
     url: detail.url,
     show: restoredView?.showGrokReviewSummaries ?? false,
@@ -457,8 +560,9 @@ export function PullRequestSummaryTab({
   // Windowed by recency regardless of display order: expanding always reaches further back in
   // time, whether the newest comment currently reads first or last. Summaries are taken out
   // first so a stack of auto-reviews cannot occupy the whole first page.
-  const recentComments = conversationComments.slice(
-    Math.max(0, conversationComments.length - shownComments),
+  const recentComments = useMemo(
+    () => conversationComments.slice(Math.max(0, conversationComments.length - shownComments)),
+    [conversationComments, shownComments],
   );
   const hiddenCommentCount = conversationComments.length - recentComments.length;
   const commentSectionCount = showGrokReviewSummaries
@@ -478,55 +582,101 @@ export function PullRequestSummaryTab({
   const rememberSection = (section: PullRequestSummarySection, open: boolean) => {
     onViewChange?.({ sectionOpen: { [section]: open } });
   };
-  const visibleComments = orderPullRequestComments(recentComments, commentOrder);
+  const visibleComments = useMemo(
+    () => orderPullRequestComments(recentComments, commentOrder),
+    [commentOrder, recentComments],
+  );
+  const showOldestCommentsButton =
+    hiddenCommentCount > 0 ? (
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full"
+        onClick={() => {
+          const nextCount = shownComments + COMMENT_PAGE;
+          setShown({ key: targetKey, count: nextCount });
+          onViewChange?.({ shownCommentCount: nextCount });
+        }}
+      >
+        Show {Math.min(hiddenCommentCount, COMMENT_PAGE)} oldest{" "}
+        {hiddenCommentCount === 1 ? "comment" : "comments"}
+      </Button>
+    ) : null;
   // Read from the whole conversation, not the window shown below it: a verdict older than the
   // last thirty comments still stands.
-  const reviewOutcomes = latestPullRequestReviewOutcomes(detail.comments, detail.commits);
+  const reviewOutcomes = useMemo(
+    () => latestPullRequestReviewOutcomes(detail.comments, detail.commits),
+    [detail.comments, detail.commits],
+  );
   // Hosts do not promise one casing for a login across two fields of the same response, and
   // none of them lets `Octocat` and `octocat` be two people — so matching on the literal string
   // would show one reviewer twice and drop the verdict off both.
-  const outcomeByLogin = new Map(
-    reviewOutcomes.flatMap((entry) =>
-      entry.actor ? [[reviewerKey(entry.actor.login), entry] as const] : [],
-    ),
+  const outcomeByLogin = useMemo(
+    () =>
+      new Map(
+        reviewOutcomes.flatMap((entry) =>
+          entry.actor ? [[reviewerKey(entry.actor.login), entry] as const] : [],
+        ),
+      ),
+    [reviewOutcomes],
   );
   // Everyone whose face belongs on this row: the people a review was asked of, then anyone who
   // ruled without being on that list. A host drops a reviewer from the requested set once they
   // have reviewed, and their verdict is the thing this row now exists to show.
-  const reviewerEntries = [
-    ...detail.reviewers.map((actor) => ({
-      key: actor.login,
-      actor,
-      outcome: outcomeByLogin.get(reviewerKey(actor.login))?.outcome ?? null,
-      stale: outcomeByLogin.get(reviewerKey(actor.login))?.stale ?? false,
-    })),
-    ...reviewOutcomes
-      .filter(
-        (entry) =>
-          !detail.reviewers.some(
-            (actor) =>
-              entry.actor !== null && reviewerKey(actor.login) === reviewerKey(entry.actor.login),
-          ),
-      )
-      .map((entry) => ({
-        key: entry.key,
-        actor: entry.actor,
-        outcome: entry.outcome,
-        stale: entry.stale,
-      })),
-  ];
+  const reviewerEntries = useMemo(() => {
+    const requestedReviewers = new Set(detail.reviewers.map((actor) => reviewerKey(actor.login)));
+    return [
+      ...detail.reviewers.map((actor) => {
+        const outcome = outcomeByLogin.get(reviewerKey(actor.login));
+        return {
+          key: actor.login,
+          actor,
+          outcome: outcome?.outcome ?? null,
+          stale: outcome?.stale ?? false,
+        };
+      }),
+      ...reviewOutcomes
+        .filter(
+          (entry) =>
+            entry.actor === null || !requestedReviewers.has(reviewerKey(entry.actor.login)),
+        )
+        .map((entry) => ({
+          key: entry.key,
+          actor: entry.actor,
+          outcome: entry.outcome,
+          stale: entry.stale,
+        })),
+    ];
+  }, [detail.reviewers, outcomeByLogin, reviewOutcomes]);
 
   // A comment that already lives on a review thread is that thread: the thread carries the line
   // and side the bare comment has lost, and a resolved one is finished work nobody should be
   // invited to fix again — the same call the whole-review hand-off makes.
-  const threadByCommentId = new Map(
-    detail.reviewThreads.flatMap((thread) =>
-      thread.comments.map((comment) => [comment.id, thread] as const),
-    ),
+  const threadByCommentId = useMemo(
+    () =>
+      new Map(
+        detail.reviewThreads.flatMap((thread) =>
+          thread.comments.map((comment) => [comment.id, thread] as const),
+        ),
+      ),
+    [detail.reviewThreads],
   );
+  const keyedChecks = useMemo(() => {
+    const occurrences = new Map<string, number>();
+    return detail.checks.map((check) => {
+      const signature = JSON.stringify([check.name, check.url]);
+      const occurrence = occurrences.get(signature) ?? 0;
+      occurrences.set(signature, occurrence + 1);
+      return { check, key: `${signature}:${occurrence}` };
+    });
+  }, [detail.checks]);
 
+  const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    void openLink(url).catch((error: unknown) => {
+      console.error(error);
+      toastManager.add({ type: "error", title: "Unable to open check details" });
+    });
   };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
@@ -539,28 +689,52 @@ export function PullRequestSummaryTab({
   const replyToThread = useAtomCommand(pullRequestEnvironment.replyToThread, {
     reportFailure: false,
   });
-  const [resolutionPending, setResolutionPending] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [replyPending, setReplyPending] = useState(false);
+  const [resolutionPendingTargets, setResolutionPendingTargets] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const resolutionPendingTargetsRef = useRef(new Set<string>());
+  const resolutionPending = resolutionPendingTargets.has(targetKey);
   // What is offered is the intersection of what this host can do at all and what this account
   // may do on this repository: either one saying no means a control that only ends in refusal.
   const canResolveThreads = detail.capabilities.review.resolve && detail.viewerPermissions.resolve;
   const canReplyThreads = detail.capabilities.review.reply && detail.viewerPermissions.comment;
 
   const toggleThreadResolution = async (thread: PullRequestReviewThread) => {
-    if (resolutionPending) return;
-    setResolutionPending(true);
-    const result = await setThreadResolution({
-      environmentId,
-      input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
-    });
-    setResolutionPending(false);
-    if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "The conversation could not be updated" });
-      return;
+    if (resolutionPendingTargetsRef.current.has(targetKey)) return;
+    resolutionPendingTargetsRef.current.add(targetKey);
+    setResolutionPendingTargets((current) => new Set(current).add(targetKey));
+    try {
+      const result = await setThreadResolution({
+        environmentId,
+        input: { ...reference, threadId: thread.id, resolved: !thread.isResolved },
+      });
+      if (!mountedRef.current || activeTargetKeyRef.current !== targetKey) return;
+      if (result._tag === "Failure") {
+        toastManager.add({ type: "error", title: "The conversation could not be updated" });
+        return;
+      }
+      onRefresh();
+    } catch (error) {
+      if (!mountedRef.current || activeTargetKeyRef.current !== targetKey) return;
+      toastManager.add({
+        type: "error",
+        title: "The conversation could not be updated",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      resolutionPendingTargetsRef.current.delete(targetKey);
+      if (mountedRef.current) {
+        setResolutionPendingTargets((current) => {
+          if (!current.has(targetKey)) return current;
+          const next = new Set(current);
+          next.delete(targetKey);
+          return next;
+        });
+      }
     }
-    onRefresh();
   };
 
   const sendThreadReply = async (thread: PullRequestReviewThread) => {
@@ -584,7 +758,9 @@ export function PullRequestSummaryTab({
   // Keyed by the pull request, like the comment window above it, so an editor left open never
   // reappears over the next pull request's description.
   const [bodyScope, setBodyScope] = useState<string | null>(null);
-  const [bodySaving, setBodySaving] = useState(false);
+  const [bodySavingTargets, setBodySavingTargets] = useState<ReadonlySet<string>>(() => new Set());
+  const bodySavingTargetsRef = useRef(new Set<string>());
+  const bodySaving = bodySavingTargets.has(targetKey);
   // The remark being rewritten, named with the pull request it belongs to: a comment id is the
   // host's own, and two hosts — or two pull requests on Azure DevOps, which numbers a remark
   // inside its thread — hand out the same one. Without the pull request beside it, opening a
@@ -593,45 +769,97 @@ export function PullRequestSummaryTab({
     readonly pullRequest: string;
     readonly commentId: string;
   } | null>(null);
-  const [commentSaving, setCommentSaving] = useState(false);
-  const editingCommentId = commentScope?.pullRequest === detail.url ? commentScope.commentId : null;
+  const [commentSavingTargets, setCommentSavingTargets] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const commentSavingTargetsRef = useRef(new Set<string>());
+  const commentSaving = commentSavingTargets.has(targetKey);
+  const editingCommentId = commentScope?.pullRequest === targetKey ? commentScope.commentId : null;
 
   const saveBody = async (body: string) => {
-    if (bodySaving) return;
-    setBodySaving(true);
-    const result = await update({ environmentId, input: { ...reference, body } });
-    setBodySaving(false);
-    if (result._tag === "Failure") {
-      toastManager.add({ type: "error", title: "Could not save the description" });
-      return;
+    if (bodySavingTargetsRef.current.has(targetKey)) return;
+    bodySavingTargetsRef.current.add(targetKey);
+    setBodySavingTargets((current) => new Set(current).add(targetKey));
+    try {
+      const result = await update({ environmentId, input: { ...reference, body } });
+      if (!mountedRef.current) return;
+      if (result._tag === "Failure") {
+        if (activeTargetKeyRef.current === targetKey) {
+          toastManager.add({ type: "error", title: "Could not save the description" });
+        }
+        return;
+      }
+      setBodyScope((current) => (current === targetKey ? null : current));
+      if (activeTargetKeyRef.current === targetKey) onRefresh();
+    } catch (error) {
+      if (!mountedRef.current || activeTargetKeyRef.current !== targetKey) return;
+      toastManager.add({
+        type: "error",
+        title: "Could not save the description",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    } finally {
+      bodySavingTargetsRef.current.delete(targetKey);
+      if (mountedRef.current) {
+        setBodySavingTargets((current) => {
+          if (!current.has(targetKey)) return current;
+          const next = new Set(current);
+          next.delete(targetKey);
+          return next;
+        });
+      }
     }
-    setBodyScope(null);
-    onRefresh();
   };
 
   const commentEditing: CommentEditing = {
     cwd: detail.workspaceRoot,
+    environmentId,
+    threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
     saving: commentSaving,
     onEdit: (comment) =>
-      setCommentScope(comment === null ? null : { pullRequest: detail.url, commentId: comment.id }),
+      setCommentScope(comment === null ? null : { pullRequest: targetKey, commentId: comment.id }),
     onSave: async (comment, body) => {
       // A review's own summary is not a kind any host rewrites, which is why no pencil is ever
       // offered on one; the check is here because the comment's own type still allows it.
-      if (commentSaving || comment.kind === "review") return;
-      setCommentSaving(true);
-      const result = await updateComment({
-        environmentId,
-        input: { ...reference, commentId: comment.id, kind: comment.kind, body },
-      });
-      setCommentSaving(false);
-      if (result._tag === "Failure") {
-        toastManager.add({ type: "error", title: "Could not save the comment" });
-        return;
+      if (commentSavingTargetsRef.current.has(targetKey) || comment.kind === "review") return;
+      commentSavingTargetsRef.current.add(targetKey);
+      setCommentSavingTargets((current) => new Set(current).add(targetKey));
+      try {
+        const result = await updateComment({
+          environmentId,
+          input: { ...reference, commentId: comment.id, kind: comment.kind, body },
+        });
+        if (!mountedRef.current) return;
+        if (result._tag === "Failure") {
+          if (activeTargetKeyRef.current === targetKey) {
+            toastManager.add({ type: "error", title: "Could not save the comment" });
+          }
+          return;
+        }
+        setCommentScope((current) =>
+          current?.pullRequest === targetKey && current.commentId === comment.id ? null : current,
+        );
+        if (activeTargetKeyRef.current === targetKey) onRefresh();
+      } catch (error) {
+        if (!mountedRef.current || activeTargetKeyRef.current !== targetKey) return;
+        toastManager.add({
+          type: "error",
+          title: "Could not save the comment",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      } finally {
+        commentSavingTargetsRef.current.delete(targetKey);
+        if (mountedRef.current) {
+          setCommentSavingTargets((current) => {
+            if (!current.has(targetKey)) return current;
+            const next = new Set(current);
+            next.delete(targetKey);
+            return next;
+          });
+        }
       }
-      setCommentScope(null);
-      onRefresh();
     },
   };
 
@@ -733,25 +961,39 @@ export function PullRequestSummaryTab({
               ) : null}
             </span>
           </MetaRow>
-          {detail.labels.length > 0 ? (
+          {/* The row is shown empty only where a label could be put on it from here; on a host
+              with none to offer, an empty row is a row about nothing. */}
+          {detail.labels.length > 0 || detail.capabilities.labels === true ? (
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
-                {detail.labels.map((label) => {
-                  const dot = labelDotColor(label.color);
-                  return (
-                    <span
-                      key={label.name}
-                      className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
-                    >
+                {detail.labels.length === 0 ? (
+                  <span className="text-muted-foreground">None</span>
+                ) : (
+                  detail.labels.map((label) => {
+                    const dot = pullRequestLabelColor(label.color);
+                    return (
                       <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full bg-muted-foreground"
-                        {...(dot ? { style: { backgroundColor: dot } } : {})}
-                      />
-                      <span className="truncate">{label.name}</span>
-                    </span>
-                  );
-                })}
+                        key={label.name}
+                        className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
+                      >
+                        <span
+                          aria-hidden
+                          className="size-2 shrink-0 rounded-full bg-muted-foreground"
+                          {...(dot ? { style: { backgroundColor: dot } } : {})}
+                        />
+                        <span className="truncate">{label.name}</span>
+                      </span>
+                    );
+                  })
+                )}
+                {detail.capabilities.labels === true ? (
+                  <PullRequestLabelPicker
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.labels !== false}
+                    onChanged={onRefresh}
+                  />
+                ) : null}
               </span>
             </MetaRow>
           ) : null}
@@ -773,12 +1015,14 @@ export function PullRequestSummaryTab({
         onOpenChange={(open) => rememberSection("description", open)}
       >
         <div className="group">
-          {bodyScope === detail.url ? (
+          {bodyScope === targetKey ? (
             <PullRequestMarkdownEditor
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
               cwd={detail.workspaceRoot}
+              environmentId={environmentId}
+              threadRef={threadRef}
               label="Pull request description"
               placeholder="Describe this pull request"
               saving={bodySaving}
@@ -791,6 +1035,8 @@ export function PullRequestSummaryTab({
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
                 cwd={detail.workspaceRoot}
+                environmentId={environmentId}
+                threadRef={threadRef}
               />
               {canEditPullRequestChangeRequest(detail) ? (
                 <Button
@@ -798,7 +1044,7 @@ export function PullRequestSummaryTab({
                   variant="ghost"
                   className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
                   aria-label="Edit description"
-                  onClick={() => setBodyScope(detail.url)}
+                  onClick={() => setBodyScope(targetKey)}
                 >
                   <PencilIcon className="size-3" />
                 </Button>
@@ -826,14 +1072,12 @@ export function PullRequestSummaryTab({
           <p className="text-xs text-muted-foreground">No checks reported.</p>
         ) : (
           <div className="space-y-0.5">
-            {detail.checks.map((check, index) => {
+            {keyedChecks.map(({ check, key }) => {
               const finding = { kind: "check", check } as const;
               const failing = check.status === "failure" || check.status === "cancelled";
               return (
                 <div
-                  // Position too: the host decides how many runs share a name, and a repeated
-                  // key would be a rendering fault on top of whatever the list already says.
-                  key={`${index}:${check.name}:${check.url ?? ""}`}
+                  key={key}
                   className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
                 >
                   <button
@@ -848,7 +1092,7 @@ export function PullRequestSummaryTab({
                     <PullRequestCheckStatusIcon status={check.status} />
                     <span className="min-w-0 flex-1 truncate">{check.name}</span>
                     <span className="shrink-0 text-muted-foreground">
-                      {pullRequestCheckStatusLabel(check.status)}
+                      {pullRequestCheckStatusLabel(check)}
                     </span>
                   </button>
                   {/* Only where there is something to fix. A passing check has no failure to
@@ -951,24 +1195,7 @@ export function PullRequestSummaryTab({
                         }`}
                   </Button>
                 ) : null}
-                {hiddenCommentCount > 0 ? (
-                  // Hundreds of comments are hundreds of markdown renders, and the ones worth
-                  // opening a pull request for are the recent ones. The rest are one press away and
-                  // stay rendered once asked for.
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      const count = shownComments + COMMENT_PAGE;
-                      setShown({ url: detail.url, count });
-                      onViewChange?.({ shownCommentCount: count });
-                    }}
-                  >
-                    Show {Math.min(hiddenCommentCount, COMMENT_PAGE)} earlier{" "}
-                    {hiddenCommentCount === 1 ? "comment" : "comments"}
-                  </Button>
-                ) : null}
+                {commentOrder === "oldest" ? showOldestCommentsButton : null}
                 {visibleComments.map((comment) => {
                   const thread = threadByCommentId.get(comment.id);
                   const body = visibleBody(comment.body);
@@ -1165,6 +1392,7 @@ export function PullRequestSummaryTab({
                     </article>
                   );
                 })}
+                {commentOrder === "newest" ? showOldestCommentsButton : null}
               </div>
             )}
           </>
@@ -1172,9 +1400,16 @@ export function PullRequestSummaryTab({
         {/* Posting is a core capability and remains usable even if the activity read failed. */}
         {detail.capabilities.comment && detail.viewerPermissions.comment ? (
           <CommentComposer
-            key={`${environmentId}:${detail.projectId}/${detail.repository}#${detail.number}`}
+            key={JSON.stringify([
+              environmentId,
+              detail.projectId,
+              detail.repository,
+              detail.number,
+            ])}
             environmentId={environmentId}
             detail={detail}
+            actionPending={actionPending}
+            onCommentAction={onCommentAction}
             onCommented={onRefresh}
           />
         ) : null}
