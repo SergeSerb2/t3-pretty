@@ -192,6 +192,9 @@ describe("DesktopTelemetryPublisher", () => {
         assert.equal(demandedSnapshot.electronProcesses[0]?.cpuPercent, 12.5);
         assert.equal(demandedSnapshot.electronProcesses[0]?.workingSetBytes, 2_048 * 1_024);
         assert.equal(demandedSnapshot.electronProcesses.length, DESKTOP_ELECTRON_PROCESS_MAX_COUNT);
+        if (!("electronProcessesTruncated" in demandedSnapshot)) {
+          return assert.fail("Expected the Electron process sample to report truncation.");
+        }
         assert.equal(demandedSnapshot.electronProcessesTruncated, true);
         assert.equal(metricsReadCount, 1);
         yield* publisher.handleControlForSource("secondary-backend", {

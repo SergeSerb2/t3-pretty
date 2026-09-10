@@ -21,6 +21,8 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -229,6 +231,18 @@ function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYm
   );
 }
 
+export class GitHubReleasesClientError extends Schema.TaggedErrorClass<GitHubReleasesClientError>()(
+  "GitHubReleasesClientError",
+  {
+    reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 // Injectable capability for fetching the latest nightly tag from GitHub
 export class GitHubReleasesClient extends Context.Service<
   GitHubReleasesClient,
@@ -236,96 +250,94 @@ export class GitHubReleasesClient extends Context.Service<
     readonly fetchLatestNightlyTag: (repo: {
       readonly owner: string;
       readonly name: string;
-    }) => Effect.Effect<string | null>;
+    }) => Effect.Effect<string | null | undefined, GitHubReleasesClientError>;
   }
->()("@t3tools/desktop/GitHubReleasesClient") {}
+>()("@t3tools/desktop/updates/DesktopUpdates/GitHubReleasesClient") {}
 
 // Production implementation: fetch from GitHub API with pagination
 export const liveGitHubReleasesClient = Layer.effect(
   GitHubReleasesClient,
   Effect.gen(function* () {
+    const httpClient = yield* HttpClient.HttpClient;
     const fetchLatestNightlyTag = (repo: {
       readonly owner: string;
       readonly name: string;
-    }): Effect.Effect<string | null> =>
+    }): Effect.Effect<string | null, GitHubReleasesClientError> =>
       Effect.gen(function* () {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10_000);
+        // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
+        const allReleases: unknown[] = [];
+        for (let page = 1; page <= 3; page++) {
+          const request = HttpClientRequest.get(
+            `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
+            {
+              headers: {
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+            },
+          );
+          const response = yield* httpClient.execute(request).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitHubReleasesClientError({
+                  reason: "Failed to request GitHub releases.",
+                  cause,
+                }),
+            ),
+          );
 
-        try {
-          // Paginate releases like check-nightly-release.cjs (up to 3 pages / 300 releases)
-          const allReleases: unknown[] = [];
-          for (let page = 1; page <= 3; page++) {
-            const response = yield* Effect.tryPromise({
-              try: () =>
-                fetch(
-                  `https://api.github.com/repos/${repo.owner}/${repo.name}/releases?per_page=100&page=${page}`,
-                  {
-                    headers: {
-                      Accept: "application/vnd.github+json",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                    },
-                    signal: controller.signal,
-                  },
-                ),
-              catch: (error) => error as Error,
+          if (response.status < 200 || response.status >= 300) {
+            return yield* new GitHubReleasesClientError({
+              reason: `GitHub releases API returned HTTP ${response.status}.`,
             });
-
-            // Fail the Effect on non-OK responses (rate limit, 5xx, 404, etc.)
-            // Errors are caught below and converted to undefined
-            if (!response.ok) {
-              return yield* Effect.fail(
-                new Error(`GitHub releases API returned ${response.status} ${response.statusText}`),
-              );
-            }
-
-            // Keep abort signal through JSON parse
-            const releases: unknown = yield* Effect.tryPromise({
-              try: () => response.json(),
-              catch: (error) => error as Error,
-            });
-            if (!Array.isArray(releases)) {
-              return yield* Effect.fail(new Error("GitHub releases response was not an array"));
-            }
-            if (releases.length === 0) break; // No more pages
-
-            allReleases.push(...releases);
           }
 
-          // Mirror check-nightly-release.cjs findLatestNightly:
-          // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
-          const candidates: Array<{ tag_name: string; published_at: string }> = [];
-          for (const release of allReleases) {
-            if (
-              typeof release === "object" &&
-              release !== null &&
-              "draft" in release &&
-              release.draft !== true &&
-              "published_at" in release &&
-              typeof release.published_at === "string" &&
-              "tag_name" in release &&
-              typeof release.tag_name === "string" &&
-              isNightlyTag(release.tag_name)
-            ) {
-              candidates.push({
-                tag_name: release.tag_name,
-                published_at: release.published_at,
-              });
-            }
+          const releases: unknown = yield* response.json.pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitHubReleasesClientError({
+                  reason: "Failed to decode the GitHub releases response.",
+                  cause,
+                }),
+            ),
+          );
+          if (!Array.isArray(releases)) {
+            return yield* new GitHubReleasesClientError({
+              reason: "GitHub releases response was not an array.",
+            });
           }
+          if (releases.length === 0) break;
 
-          // Successful fetch with no nightlies → return null (not an error)
-          if (candidates.length === 0) return null;
-
-          // Sort by Date.parse(published_at) descending
-          candidates.sort((a, b) => {
-            return Date.parse(b.published_at) - Date.parse(a.published_at);
-          });
-
-          return candidates[0]?.tag_name ?? null;
-        } finally {
-          clearTimeout(timeoutId);
+          allReleases.push(...releases);
         }
+
+        // Mirror check-nightly-release.cjs findLatestNightly:
+        // Filter !draft && published_at && isNightlyTag, sort by published_at desc, take [0]
+        const candidates: Array<{ tag_name: string; published_at: string }> = [];
+        for (const release of allReleases) {
+          if (
+            typeof release === "object" &&
+            release !== null &&
+            "draft" in release &&
+            release.draft !== true &&
+            "published_at" in release &&
+            typeof release.published_at === "string" &&
+            "tag_name" in release &&
+            typeof release.tag_name === "string" &&
+            isNightlyTag(release.tag_name)
+          ) {
+            candidates.push({
+              tag_name: release.tag_name,
+              published_at: release.published_at,
+            });
+          }
+        }
+
+        // Successful fetch with no nightlies → return null (not an error)
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
+        return candidates[0]?.tag_name ?? null;
       });
 
     return GitHubReleasesClient.of({
@@ -1112,7 +1124,7 @@ export const make = Effect.gen(function* () {
               Effect.catch((error) =>
                 logUpdaterWarning(
                   "Failed to fetch latest nightly tag from GitHub; keeping /latest feed",
-                  { error: error instanceof Error ? error.message : String(error) },
+                  { error: error.message },
                 ).pipe(Effect.as(undefined)),
               ),
               // Electron fetch abort is not reliable on every Mac build. A second

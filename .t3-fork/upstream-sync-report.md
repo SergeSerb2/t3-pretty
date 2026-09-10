@@ -1411,3 +1411,13 @@
   - edited `apps/web/src/components/settings/IntegrationsSettings.tsx`
   - edited `apps/web/src/state/threads.ts`
   - edited `apps/web/src/environments/primary/sessionState.ts`
+- `desktop-typecheck` failed after merging `v0.0.39-nightly.20260907.1332`; repaired with `gpt-5.6-sol`: Restored fork-specific Linux, SSH, settings, telemetry, and readiness behavior while integrating the parent's typed Effect APIs. The nightly release client now uses HttpClient with tagged failures and updated tests, eliminating the remaining error-level diagnostics.
+  - edited `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts`
+  - edited `apps/desktop/src/linuxSecretStorage.test.ts`
+  - edited `apps/desktop/src/linuxSecretStorage.ts`
+  - edited `packages/ssh/src/tunnel.ts`
+  - edited `apps/desktop/src/settings/DesktopClientSettings.test.ts`
+  - edited `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts`
+  - edited `apps/desktop/src/updates/DesktopUpdates.ts`
+  - edited `apps/desktop/src/updates/DesktopUpdates.test.ts`
+  - omitted parent change: Preserve the legacy GitHubReleasesClient context key "@t3tools/desktop/GitHubReleasesClient".. Reason: Effect's deterministicKeys error requires this Context.Service declaration to use "@t3tools/desktop/updates/DesktopUpdates/GitHubReleasesClient"; retaining the fork's legacy key cannot pass the mandatory desktop typecheck.

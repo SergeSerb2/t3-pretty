@@ -24,6 +24,23 @@ const ELECTRON_LIBSECRET_DESKTOPS = new Set([
 const ELECTRON_KDE_DESKTOP = "KDE";
 // Chromium recognizes LXQt and still selects basic text for it, so it does need a forced backend.
 const ELECTRON_UNPROTECTED_DESKTOPS = new Set(["LXQt"]);
+const KDE_NAME_PREFIXES = ["kde", "plasma"] as const;
+const NEGATIVE_FLAG_VALUES = new Set(["0", "false", "no", "off"]);
+
+function normalizeSelectedStorageBackend(value: string | null): LinuxPasswordStoreSwitch | null {
+  const normalized = value?.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "gnome-libsecret" ||
+    normalized === "kwallet" ||
+    normalized === "kwallet5" ||
+    normalized === "kwallet6"
+    ? normalized
+    : null;
+}
+
+function normalizeDesktopName(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
 
 export function normalizeLinuxPasswordStorePreference(
   value: unknown,

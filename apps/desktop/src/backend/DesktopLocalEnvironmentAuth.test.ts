@@ -66,7 +66,7 @@ class BackendReadyLatchError extends Schema.TaggedErrorClass<BackendReadyLatchEr
 ) {}
 
 const makePoolLayer = (options?: {
-  readonly waitForReady?: Effect.Effect<boolean, unknown>;
+  readonly waitForReady?: Effect.Effect<boolean, BackendReadyLatchError>;
 }): Layer.Layer<DesktopBackendPool.DesktopBackendPool> =>
   Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
     list: Effect.succeed([
