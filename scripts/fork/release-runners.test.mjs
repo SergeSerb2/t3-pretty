@@ -262,6 +262,8 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
+    // Queue lives on the iOS step. The M4 banner is an echo in the shell
+    // script, not in pipeline.yml.
     const iosStep = pipeline.slice(
       pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
       pipeline.indexOf(":android: Android Internal"),
