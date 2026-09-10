@@ -2,7 +2,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { ArchiveIcon, ArchiveX, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
@@ -131,6 +131,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useSceneryThemeActive } from "../../scenery/useHtmlAttributes";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
   backgroundActivityOverrideSettings,
@@ -1041,7 +1042,10 @@ function BackgroundActivityAdvancedDialog({
   );
 }
 
+const SceneryAppearanceSettings = lazy(() => import("../../scenery/SceneryAppearanceSettings"));
+
 export function AppearanceSettingsPanel() {
+  const sceneryThemeActive = useSceneryThemeActive();
   const {
     appearanceMode,
     refreshTheme,
@@ -1186,6 +1190,12 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
+
+        {sceneryThemeActive ? (
+          <Suspense fallback={null}>
+            <SceneryAppearanceSettings />
+          </Suspense>
+        ) : null}
 
         {showEnvironmentIdentification ? (
           <SettingsRow
