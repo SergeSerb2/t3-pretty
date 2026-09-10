@@ -7,9 +7,11 @@ import {
 } from "./auth";
 import {
   __resetDesktopPrimaryAuthForTests,
+  beginDesktopAuthDeadline,
   DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
   PrimaryEnvironmentDesktopBearerTimeoutError,
   readDesktopPrimaryBearerToken,
+  remainingDesktopAuthBudgetMs,
 } from "./desktopAuth";
 
 describe("desktop primary auth", () => {
@@ -45,6 +47,18 @@ describe("desktop primary auth", () => {
     expect(DESKTOP_BEARER_TOKEN_TIMEOUT_MS).toBeGreaterThanOrEqual(mainReadyAndRetryBudgetMs);
     expect(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
     expect(DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS);
+  });
+
+  it("shrinks the bearer IPC timeout to the remaining splash deadline", () => {
+    vi.useFakeTimers();
+    try {
+      const startedAt = Date.now();
+      beginDesktopAuthDeadline(startedAt);
+      vi.advanceTimersByTime(25_000);
+      expect(remainingDesktopAuthBudgetMs()).toBe(DESKTOP_BEARER_TOKEN_TIMEOUT_MS - 25_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clears a hung bearer IPC so splash auth can retry", async () => {

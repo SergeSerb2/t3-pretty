@@ -258,6 +258,49 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 
+  it("shares one desktop splash budget across entry wait and session retry", async () => {
+    vi.useFakeTimers();
+    const request = HttpClientRequest.get("http://localhost/api/auth/session");
+    const response = HttpClientResponse.fromWeb(
+      request,
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    const runner: PrimaryHttpEffectRunner = async () => {
+      throw new HttpClientError.HttpClientError({
+        reason: new HttpClientError.StatusCodeError({ request, response }),
+      });
+    };
+    __setPrimaryHttpRunnerForTests(runner);
+
+    const testWindow = installTestBrowser("http://localhost/");
+    const bootStartedAt = Date.now();
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () =>
+        Date.now() - bootStartedAt < 25_000
+          ? []
+          : [
+              {
+                id: "primary",
+                label: "Local environment",
+                httpBaseUrl: "http://localhost:3773",
+                wsBaseUrl: "ws://localhost:3773",
+                bootstrapToken: "desktop-bootstrap-token",
+              },
+            ],
+    } as unknown as DesktopBridge;
+
+    const { DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS, resolveInitialServerAuthGateState } =
+      await import("./environments/primary");
+
+    const gateStatePromise = resolveInitialServerAuthGateState();
+    await vi.advanceTimersByTimeAsync(DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS);
+
+    await expect(gateStatePromise).resolves.toMatchObject({
+      status: "requires-auth",
+      auth: DESKTOP_AUTH,
+    });
+  });
+
   it("stops retrying a silent desktop session so the splash can clear", async () => {
     vi.useFakeTimers();
     const request = HttpClientRequest.get("http://localhost/api/auth/session");

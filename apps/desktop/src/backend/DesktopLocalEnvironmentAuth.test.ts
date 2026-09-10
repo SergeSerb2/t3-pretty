@@ -143,6 +143,32 @@ describe("DesktopLocalEnvironmentAuth", () => {
     }),
   );
 
+  it.effect("fails before exchanging when the ready latch times out", () =>
+    Effect.gen(function* () {
+      const requestCount = yield* Ref.make(0);
+      const httpClientLayer = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Ref.update(requestCount, (count) => count + 1).pipe(Effect.as(tokenResponse(request))),
+        ),
+      );
+      const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(makePoolLayer({ waitForReady: Effect.succeed(false) }), httpClientLayer),
+        ),
+      );
+
+      const error = yield* Effect.gen(function* () {
+        const auth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+        return yield* auth.getBearerToken;
+      }).pipe(Effect.provide(testLayer), Effect.flip);
+
+      assert.strictEqual(error._tag, "DesktopLocalEnvironmentAuthSessionBootstrapError");
+      assert.strictEqual(error.cause, "Timed out waiting for the local backend to become ready.");
+      assert.strictEqual(yield* Ref.get(requestCount), 0);
+    }),
+  );
+
   it.effect("maps a ready-latch failure to a serializable session bootstrap error", () =>
     Effect.gen(function* () {
       const requestCount = yield* Ref.make(0);

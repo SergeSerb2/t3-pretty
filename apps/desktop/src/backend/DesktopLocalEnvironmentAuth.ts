@@ -110,7 +110,7 @@ export const make = Effect.gen(function* () {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
 
-        yield* primary.waitForReady(LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT).pipe(
+        const ready = yield* primary.waitForReady(LOCAL_ENVIRONMENT_AUTH_READY_TIMEOUT).pipe(
           Effect.catchCause((cause) =>
             Effect.fail(
               new DesktopLocalEnvironmentAuthSessionBootstrapError({
@@ -119,6 +119,11 @@ export const make = Effect.gen(function* () {
             ),
           ),
         );
+        if (!ready) {
+          return yield* new DesktopLocalEnvironmentAuthSessionBootstrapError({
+            cause: "Timed out waiting for the local backend to become ready.",
+          });
+        }
 
         const session = yield* bootstrapRemoteBearerSession({
           httpBaseUrl: config.httpBaseUrl.href,

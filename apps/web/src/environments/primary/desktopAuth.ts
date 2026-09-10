@@ -20,7 +20,19 @@ export const isPrimaryEnvironmentDesktopBearerTimeoutError = Schema.is(
   PrimaryEnvironmentDesktopBearerTimeoutError,
 );
 
+let desktopAuthDeadlineAt: number | null = null;
 let desktopBearerTokenPromise: Promise<string> | null = null;
+
+export function beginDesktopAuthDeadline(startedAt = Date.now()): void {
+  desktopAuthDeadlineAt = startedAt + DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
+}
+
+export function remainingDesktopAuthBudgetMs(): number {
+  if (desktopAuthDeadlineAt === null) {
+    return DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
+  }
+  return Math.max(0, desktopAuthDeadlineAt - Date.now());
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -51,7 +63,7 @@ export function readDesktopPrimaryBearerToken(): Promise<string | null> {
 
   desktopBearerTokenPromise ??= withTimeout(
     bridge.getLocalEnvironmentBearerToken(),
-    DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
+    remainingDesktopAuthBudgetMs(),
   ).catch((error) => {
     desktopBearerTokenPromise = null;
     throw error;
@@ -61,4 +73,5 @@ export function readDesktopPrimaryBearerToken(): Promise<string | null> {
 
 export function __resetDesktopPrimaryAuthForTests(): void {
   desktopBearerTokenPromise = null;
+  desktopAuthDeadlineAt = null;
 }

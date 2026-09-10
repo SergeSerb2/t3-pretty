@@ -19,8 +19,10 @@ import {
 } from "../../pairingUrl";
 
 import {
+  beginDesktopAuthDeadline,
   DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
   isPrimaryEnvironmentDesktopBearerTimeoutError,
+  __resetDesktopPrimaryAuthForTests,
 } from "./desktopAuth";
 
 export {
@@ -191,7 +193,7 @@ export function takePairingTokenFromUrl(): string | null {
   return token;
 }
 
-async function getDesktopBootstrapCredential(): Promise<string | null> {
+async function getDesktopBootstrapCredential(startedAt: number): Promise<string | null> {
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
@@ -205,7 +207,6 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
   // forever. `#boot-shell` cannot dissolve until this promise settles, and
   // getLocalEnvironmentBootstraps omits the primary while config is missing,
   // so an unbounded loop is a splash hang.
-  const startedAt = Date.now();
   let primary = await loadDesktopPrimaryEnvironmentBootstrap();
   while (primary?.httpBaseUrl == null) {
     const elapsedMs = Date.now() - startedAt;
@@ -223,7 +224,9 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
     : null;
 }
 
-export async function fetchSessionState(): Promise<AuthSessionState> {
+export async function fetchSessionState(options?: {
+  readonly startedAt?: number;
+}): Promise<AuthSessionState> {
   return retryTransientBootstrap(async () => {
     try {
       return await runPrimaryHttp(
@@ -237,7 +240,7 @@ export async function fetchSessionState(): Promise<AuthSessionState> {
         cause: error,
       });
     }
-  });
+  }, options);
 }
 
 function readHttpApiStatus(error: unknown): number | null {
@@ -315,12 +318,9 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
-// Same budget as the bearer IPC timeout: ready latch + token retries.
-// A shorter window fail-opens to requires-auth while main is still minting.
+// One splash deadline (ready latch + token retries). Entry wait, session
+// retry, and bearer IPC share startedAt so they cannot stack to 80s+.
 export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
-// Same 40s budget as bearer/session retry. getLocalEnvironmentBootstraps
-// omits the primary until start config exists; 15s failed-open to login
-// while main was still in the 30s waitForReady latch.
 export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
@@ -331,8 +331,11 @@ const DESKTOP_MANAGED_AUTH = {
   sessionCookieName: "t3_session",
 } as const;
 
-export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
-  const startedAt = Date.now();
+export async function retryTransientBootstrap<T>(
+  operation: () => Promise<T>,
+  options?: { readonly startedAt?: number },
+): Promise<T> {
+  const startedAt = options?.startedAt ?? Date.now();
   const timeoutMs =
     window.desktopBridge === undefined
       ? BOOTSTRAP_RETRY_TIMEOUT_MS
@@ -416,9 +419,14 @@ function desktopAuthUnavailableState(error: unknown): ServerAuthGateState {
 }
 
 async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
+  const startedAt = Date.now();
+  if (window.desktopBridge !== undefined) {
+    beginDesktopAuthDeadline(startedAt);
+  }
+
   let bootstrapCredential: string | null;
   try {
-    bootstrapCredential = await getDesktopBootstrapCredential();
+    bootstrapCredential = await getDesktopBootstrapCredential(startedAt);
   } catch (error) {
     if (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error)) {
       return desktopAuthUnavailableState(error);
@@ -428,7 +436,7 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
 
   let currentSession: AuthSessionState;
   try {
-    currentSession = await fetchSessionState();
+    currentSession = await fetchSessionState({ startedAt });
   } catch (error) {
     // Desktop session retries are bounded so #boot-shell can clear. Web 401 /
     // 5xx / network failures must keep their own auth policy, not
@@ -589,4 +597,5 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
 export function __resetServerAuthBootstrapForTests() {
   bootstrapPromise = null;
   resolvedAuthenticatedGateState = null;
+  __resetDesktopPrimaryAuthForTests();
 }
