@@ -126,9 +126,11 @@ DMG and an iOS compile no longer take turns on one self-hosted Mac.
 The four-hour upstream job uses the same whole-repository merge and
 gpt-5.6-sol/xhigh conflict resolver as desktop. After the Origin merge, if
 that integration changed mobile-relevant paths, the sync job runs
-`publish-mobile-release.sh` on hosted `macos-large` so a missed merge push still
-publishes OTA. The script takes `/tmp/t3-pretty-ios-mobile.lock`, so a
-follow-up native `ios-mobile` job cannot overlap eas update or a local IPA.
+`publish-mobile-release.sh` in-process on self-hosted `macos-release` so a
+missed merge push still publishes OTA. The dedicated native `ios-mobile`
+step on later `main` pushes stays on hosted `macos-large`. The script takes
+`/tmp/t3-pretty-ios-mobile.lock`, so a follow-up native `ios-mobile` job
+cannot overlap eas update or a local IPA.
 A leftover lock from a killed job is removed when no publisher process is
 still running; waiting on a live lock fails after 15 minutes instead of
 sitting until the 90-minute step timeout.
