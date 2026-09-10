@@ -1821,6 +1821,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
     assert.include(entitlements, "<key>com.apple.security.device.audio-input</key>");
+    assert.notInclude(
+      renderMacPasskeyEntitlements({ ...configuration, appId: "com.sergeserb.t3pretty" }),
+      "com.apple.security.device.audio-input",
+    );
   });
 
   it("rejects incomplete macOS passkey signing configuration", () => {

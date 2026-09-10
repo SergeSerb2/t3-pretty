@@ -1339,6 +1339,10 @@ export function renderMacPasskeyEntitlements(
   const associatedDomains = configuration.rpDomains
     .map((domain) => `      <string>webcredentials:${escapeXml(domain)}</string>`)
     .join("\n");
+  const microphoneEntitlement =
+    configuration.appId === INTERNAL_DESKTOP_APP_ID
+      ? "    <key>com.apple.security.device.audio-input</key>\n    <true/>"
+      : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1354,8 +1358,7 @@ ${associatedDomains}
     </array>
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
+${microphoneEntitlement}
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
