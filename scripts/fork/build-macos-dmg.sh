@@ -197,6 +197,8 @@ unzip -p "$zip_path" '*/Contents/Resources/app-update.yml' > "$tmp/app-update.ym
 grep -F 'provider: generic' "$tmp/app-update.yml"
 grep -F "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/" "$tmp/app-update.yml"
 
+node scripts/fork/smoke-macos-backend.mjs "$app_path"
+
 publish="$root/release-publish"
 rm -rf "$publish"
 mkdir -p "$publish"

@@ -36,6 +36,7 @@ import {
   type ProviderInstallState,
   ProviderSetupError,
   ResolvedKeybindingRule,
+  ServerConfig as ServerConfigSchema,
   type ServerLifecycleStreamEvent,
   ThreadId,
   TurnId,
@@ -2079,6 +2080,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.status, 200);
       assert.deepEqual(body, testEnvironmentDescriptor);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves valid server config through the composed HTTP API", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* fetchEffect(yield* getHttpServerUrl("/api/server/config"), {
+        headers: { cookie: yield* getAuthenticatedSessionCookieHeader() },
+      });
+
+      assert.equal(response.status, 200, yield* response.text);
+      const config = yield* HttpClientResponse.schemaBodyJson(ServerConfigSchema)(response);
+      assert.deepEqual(config.environment, testEnvironmentDescriptor);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

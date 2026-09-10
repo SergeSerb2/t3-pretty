@@ -405,7 +405,8 @@ export const serverConfigHttpApiLayer = HttpApiBuilder.group(
                 "server.config.transport": "http",
               }),
             ),
-            Effect.catch((error) => failEnvironmentInternal("server_config_failed", error)),
+            Effect.map((snapshot) => snapshot.config),
+            Effect.catch((error) => failEnvironmentInternal("internal_error", error)),
           );
         }, traceRelayRequest),
       ),

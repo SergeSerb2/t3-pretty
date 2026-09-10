@@ -683,7 +683,7 @@ class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
   HttpApiEndpoint.get("config", "/api/server/config", {
     headers: OptionalBearerHeaders,
     success: ServerConfig,
-    error: [EnvironmentInternalError],
+    error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
