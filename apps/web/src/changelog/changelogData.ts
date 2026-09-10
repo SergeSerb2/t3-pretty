@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260905.1284001835",
+    date: "2026-09-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Survive v0.0.39 Upstream Sync typecheck",
+      },
+      {
+        kind: "fixed",
+        title: "Export desktop electron process telemetry constants",
+      },
+      {
+        kind: "fixed",
+        title: "Null/undefined nightly fetch polish",
+      },
+      {
+        kind: "new",
+        title: "PendingRequests module (incremental upstream sync fix)",
+      },
+      {
+        kind: "fixed",
+        title: "Provide GitHubReleasesClient layer at updates configure",
+      },
+      {
+        kind: "fixed",
+        title: "Properly handle Effect 4 error recovery in updates",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001824",
     date: "2026-09-09",
     items: [
