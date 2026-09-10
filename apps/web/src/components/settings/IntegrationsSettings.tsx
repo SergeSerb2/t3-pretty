@@ -87,7 +87,6 @@ import {
   persistClientSettingsUpdate,
   useClientSettings,
   useClientSettingsHydrated,
-  usePrimarySettings,
   useUpdatePrimarySettings,
 } from "~/hooks/useSettings";
 
@@ -507,7 +506,7 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
 
 const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
   system: "Your default browser",
-  app: "T3 Code",
+  app: "T3 Pretty",
 };
 
 function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) {

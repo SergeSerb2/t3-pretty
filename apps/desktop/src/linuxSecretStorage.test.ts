@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   normalizeLinuxPasswordStorePreference,
   resolveLinuxPasswordStoreSwitch,
-  resolveLinuxSecretStorageUnavailableMessage,
 } from "./linuxSecretStorage.ts";
 
 const autoSwitch = (env: NodeJS.ProcessEnv) =>

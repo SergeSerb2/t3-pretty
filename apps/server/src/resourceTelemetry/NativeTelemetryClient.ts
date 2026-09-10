@@ -1150,6 +1150,60 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     );
   });
 
+  const processTable: NativeTelemetryClient["Service"]["processTable"] = Effect.gen(function* () {
+    const current = yield* Ref.get(state);
+    if (!canCommandNativeTelemetrySidecar(current.status, Option.isSome(current.handle))) {
+      return yield* new NativeTelemetryUnavailable({
+        reason: Option.getOrElse(current.lastError, () => "sidecar is not running"),
+      });
+    }
+
+    const requestId = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(
+        (cause) => new NativeTelemetryCommandFailed({ operation: "createRequestId", cause }),
+      ),
+    );
+    const deferred = yield* Deferred.make<
+      ReadonlyArray<ResourceMonitorProcessTableEntry>,
+      NativeTelemetryClientError
+    >();
+    yield* Ref.update(pendingProcessTables, (pending) => {
+      const next = new Map(pending);
+      next.set(requestId, deferred);
+      return next;
+    });
+    return yield* writeCommand(Option.getOrThrow(current.handle), {
+      version: RESOURCE_MONITOR_PROTOCOL_VERSION,
+      type: "processTable",
+      requestId,
+    }).pipe(
+      Effect.andThen(
+        Deferred.await(deferred).pipe(
+          Effect.timeoutOption(PROCESS_TABLE_REQUEST_TIMEOUT),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new NativeTelemetryRequestTimedOut({
+                    operation: "processTable",
+                    timeoutMs: Duration.toMillis(PROCESS_TABLE_REQUEST_TIMEOUT),
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
+          ),
+        ),
+      ),
+      Effect.ensuring(
+        Ref.update(pendingProcessTables, (pending) => {
+          const next = new Map(pending);
+          next.delete(requestId);
+          return next;
+        }),
+      ),
+    );
+  });
+
   const health = currentHealth;
 
   return NativeTelemetryClient.of({
