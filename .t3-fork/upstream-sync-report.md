@@ -1421,3 +1421,5 @@
   - edited `apps/desktop/src/updates/DesktopUpdates.ts`
   - edited `apps/desktop/src/updates/DesktopUpdates.test.ts`
   - omitted parent change: Preserve the legacy GitHubReleasesClient context key "@t3tools/desktop/GitHubReleasesClient".. Reason: Effect's deterministicKeys error requires this Context.Service declaration to use "@t3tools/desktop/updates/DesktopUpdates/GitHubReleasesClient"; retaining the fork's legacy key cannot pass the mandatory desktop typecheck.
+- `server-bundle` failed after merging `v0.0.39-nightly.20260907.1332`; repaired with `gpt-5.6-sol`: Removed the accidental duplicate processTable declaration that caused the server bundle parse failure. The composed telemetry behavior and upstream API remain intact.
+  - edited `apps/server/src/resourceTelemetry/NativeTelemetryClient.ts`
