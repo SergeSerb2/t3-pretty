@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Native macos-release arm64 DMG. Imported GHA macos-latest jobs now land on
-# hosted Macs that cannot sign or see the Origin git store.
+# Native hosted macos-large arm64 DMG. Signing imports CSC_LINK into a
+# per-job temp keychain from cluster secrets.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"

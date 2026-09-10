@@ -62,8 +62,9 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(importer, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(importer, 'version: "0.35.1"');
     assert.notInclude(importer, 'cache: "/cache/bkcache/mise"');
-    assert.include(importer, "queue: macos-release");
-    assert.include(importer, "os: macos");
+    assert.include(importer, "queue: macos-medium");
+    assert.notInclude(importer, "queue: macos-release");
+    assert.notInclude(importer, "os: macos");
     assert.include(preflight, "runs-on: ubuntu-latest");
     assert.include(wsl, "runs-on: ubuntu-latest");
     assert.notInclude(desktopWorkflow, "\n  build_macos:\n");
@@ -177,12 +178,40 @@ describe("T3 Pretty release runner placement", () => {
     assert.include(publishCli, "pub-8033bcab5baf492b81c605581ff028e0.r2.dev");
   });
 
-  it("pins macos-release packaging steps to os=macos agents", () => {
-    // m1-linux-t3code-fork shares the macos-release queue as a review-only
-    // agent; DMG/mobile/relay/sync must never be assigned to a Linux box.
-    // importer, upstream-sync, macos-dmg, three mobile jobs, deploy-relay —
-    // reviews stay queue-wide.
-    assert.equal((pipeline.match(/\n      os: macos\n/g) || []).length, 8);
+  it("sends Mac-capable jobs to hosted M4 queues and keeps Windows on serge-pc", () => {
+    // Hosted M4 agents match on queue key. Extra os=macos tags were for the
+    // mixed macos-release pool and can leave hosted agents unmatched.
+    assert.notInclude(pipeline, "queue: macos-release");
+    assert.notInclude(pipeline, "os: macos");
+    assert.include(pipeline, "queue: macos-medium");
+    assert.include(pipeline, "queue: macos-large");
+    assert.include(pipeline, "queue: windows-release");
+    assert.include(pipeline, "queue: linux-small");
+    const dmgStep = pipeline.slice(
+      pipeline.indexOf(":mac: macOS arm64 DMG"),
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+    );
+    const iosStep = pipeline.slice(
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+      pipeline.indexOf(":android: Android Internal"),
+    );
+    const syncStep = pipeline.slice(
+      pipeline.indexOf(":git: Upstream Sync"),
+      pipeline.indexOf(":mag: Origin PR Review"),
+    );
+    const reviewStep = pipeline.slice(
+      pipeline.indexOf(":mag: Origin PR Review"),
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+    );
+    const windowsStep = pipeline.slice(
+      pipeline.indexOf(":windows: Windows NSIS"),
+      pipeline.indexOf(":linux: Linux x64 AppImage"),
+    );
+    assert.include(dmgStep, "queue: macos-large");
+    assert.include(iosStep, "queue: macos-large");
+    assert.include(syncStep, "queue: macos-large");
+    assert.include(reviewStep, "queue: macos-medium");
+    assert.include(windowsStep, "queue: windows-release");
   });
 
   it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
@@ -204,7 +233,7 @@ describe("T3 Pretty release runner placement", () => {
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
-    assert.include(mobileRelease, "macos-release (m5-dev)");
+    assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Grok 4.6 Origin PR review on macos-release.
+# Grok 4.6 Origin PR review on hosted macos-medium.
 #
 # Hosted linux-small cannot load CURSOR_API_KEY. Load secrets from
 # buildkite-agent or $HOME only — never a hardcoded machine path.

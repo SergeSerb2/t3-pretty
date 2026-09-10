@@ -36,7 +36,7 @@ jobs:
   deploy_relay:
     name: Deploy production relay
     if: github.repository == 'SergeSerb2/t3-pretty'
-    # macos-release can read the file-store fallbacks that hosted linux-small
+    # Hosted macos-medium can load cluster secrets that hosted linux-small
     # cannot. Clerk / PlanetScale / Axiom tokens are not interpolatable on
     # the importer without risking a failed `secrets.*` resolve.
     runs-on: macos-latest
@@ -61,7 +61,7 @@ jobs:
       - name: Load Buildkite cluster secrets
         shell: bash
         env:
-          # These two exist in the cluster and interpolate on macos-release.
+          # These two exist in the cluster and interpolate on hosted Mac.
           # Do not add Clerk/PlanetScale/Axiom here: a failed secrets.*
           # resolve aborts the whole Origin importer.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -49,7 +49,8 @@ Start a Buildkite UI build of Origin `main` with
 `T3CODE_PUBLIC_ANDROID_RELEASE=1`; it builds package
 `com.sergeserbinenko.t3pretty.app` against official T3 Connect and submits the
 exact AAB to Google Play's internal track. The public EAS project identifiers
-live on `macos-release`, and its Google service-account key lives in EAS—not in
+live in the Buildkite cluster secret store (hosted `macos-medium` loads them
+after checkout), and its Google service-account key lives in EAS—not in
 GitHub or Buildkite.
 
 One-time repository setup: enable GitHub Actions for Pages with the `github-pages`

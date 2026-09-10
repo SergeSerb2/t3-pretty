@@ -84,7 +84,7 @@ describe("Origin review comment resolution check", () => {
 });
 
 describe("Origin comment-resolution job wiring", () => {
-  it("runs the resolve check on macos-release after review", () => {
+  it("runs the resolve check on hosted macos-medium after review", () => {
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
       "utf8",
