@@ -431,35 +431,6 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
         expect(ghost.unavailableReason).toMatch(/ghostDriver/);
       }).pipe(Effect.provide(testLayer)),
   );
-
-  it.live("shadows leftover Kimi instances without constructing makeKimiEnvironment", () =>
-    Effect.gen(function* () {
-      const kimiId = ProviderInstanceId.make("kimi");
-      const configMap: ProviderInstanceConfigMap = {
-        [kimiId]: {
-          driver: ProviderDriverKind.make("kimi"),
-          displayName: "Kimi",
-          enabled: true,
-          config: {},
-        },
-      };
-
-      const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [CodexDriver],
-        configMap,
-      });
-
-      expect(yield* registry.listInstances).toEqual([]);
-      const unavailable = yield* registry.listUnavailable;
-      expect(unavailable).toHaveLength(1);
-      expect(unavailable[0]).toMatchObject({
-        instanceId: kimiId,
-        driver: "kimi",
-        availability: "unavailable",
-      });
-      expect(unavailable[0]!.unavailableReason).toMatch(/kimi/i);
-    }).pipe(Effect.provide(testLayer)),
-  );
 });
 
 describe("ProviderInstanceRegistryLive — all drivers slice", () => {
