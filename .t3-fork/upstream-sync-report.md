@@ -1404,3 +1404,10 @@
 - `packages/contracts/src/sourceControl.ts` — The parent's additional `mergedAt: Schema.optional(Schema.NullOr(Schema.String))` declaration.. Reason: It would create a duplicate `mergedAt` key and conflict with T3 Pretty's existing `Schema.Option(Schema.DateTimeUtc)` representation. The merged-at behavior itself remains available through the fork's typed field.
 - `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
 - `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `web-typecheck` failed after merging `v0.0.39-nightly.20260907.1332`; repaired with `gpt-5.6-sol`: The repair removes the duplicate merged function, adapts new parent UI and async APIs to T3 Pretty's banner, provider-instance, settings, and thread-state architecture, and preserves all fork-specific behavior. No upstream changes or tests are omitted.
+  - edited `apps/web/src/components/ChatView.logic.ts`
+  - edited `apps/web/src/components/chat/ComposerUsageLimits.tsx`
+  - edited `apps/web/src/components/chat/SubagentPolicyPicker.tsx`
+  - edited `apps/web/src/components/settings/IntegrationsSettings.tsx`
+  - edited `apps/web/src/state/threads.ts`
+  - edited `apps/web/src/environments/primary/sessionState.ts`

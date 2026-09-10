@@ -25,7 +25,6 @@ import { useMemo } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import { usePrimarySettings } from "~/hooks/useSettings";
-import { getProviderInstanceEntry } from "../../providerInstances";
 import { primaryServerProvidersAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -91,7 +90,7 @@ function SubagentPolicyMenuContent(props: SubagentPolicyPickerProps) {
   const current = useCurrentSubagentPolicy(props);
   const driver =
     props.parentDriver ??
-    getProviderInstanceEntry(serverProviders, props.parentInstanceId)?.driverKind;
+    serverProviders.find((provider) => provider.instanceId === props.parentInstanceId)?.driver;
   const resolved = useMemo(() => {
     if (driver === undefined) {
       return null;

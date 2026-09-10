@@ -38,10 +38,14 @@ export function usageLimitsBannerItem(
     priority: "notice",
     icon: <GaugeIcon />,
     title: "Usage limits",
-    description: summary,
+    description: (
+      <div className="flex flex-col gap-1">
+        <span>{summary}</span>
+        <UsageLimitsBannerBody report={report} environmentId={environmentId} />
+      </div>
+    ),
     dismissLabel: "Dismiss usage limits",
     onDismiss,
-    children: <UsageLimitsBannerBody report={report} environmentId={environmentId} />,
   };
 }
 

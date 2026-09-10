@@ -87,6 +87,7 @@ import {
   persistClientSettingsUpdate,
   useClientSettings,
   useClientSettingsHydrated,
+  usePrimarySettings,
   useUpdatePrimarySettings,
 } from "~/hooks/useSettings";
 
