@@ -122,7 +122,13 @@ rustup target add aarch64-apple-darwin
 rustup default stable
 
 if ! command -v vp >/dev/null; then
-  echo "vp is required on macos-release." >&2
+  # Fresh hosted runners do not have the self-hosted Mac's toolchain.
+  export VP_HOME="${VP_HOME:-${HOME}/.vite-plus}"
+  curl -fsSL https://vite.plus | CI=true bash
+  export PATH="${VP_HOME}/bin:${PATH}"
+fi
+if ! command -v vp >/dev/null; then
+  echo "vp installation failed on the macOS release runner." >&2
   exit 1
 fi
 vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...

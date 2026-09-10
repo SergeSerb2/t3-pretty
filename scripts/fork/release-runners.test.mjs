@@ -50,6 +50,60 @@ function jobBlock(source, jobId) {
 }
 
 describe("T3 Pretty release runner placement", () => {
+  it("installs vp on a fresh Mac runner and reuses an existing installation", () => {
+    const setup = macosRelease.slice(
+      macosRelease.indexOf("if ! command -v vp >/dev/null; then"),
+      macosRelease.indexOf("vp i --filter="),
+    );
+    const temp = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "macos-vp-bootstrap-"));
+    const ready = NodePath.join(temp, "ready");
+    const installed = NodePath.join(temp, "installed");
+    const run = (failDownload = false) =>
+      NodeChildProcess.spawnSync(
+        "/bin/bash",
+        [
+          "-c",
+          `set -euo pipefail
+command() {
+  if [[ "$1" == "-v" && "$2" == "vp" ]]; then
+    [[ -f "$VP_TEST_READY" ]]
+  else
+    builtin command "$@"
+  fi
+}
+curl() {
+  [[ "$VP_TEST_FAIL_DOWNLOAD" == "false" ]] || return 22
+  printf '%s\\n' '/usr/bin/touch "$VP_TEST_READY" "$VP_TEST_INSTALLED"'
+}
+${setup}
+`,
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            VP_TEST_READY: ready,
+            VP_TEST_INSTALLED: installed,
+            VP_TEST_FAIL_DOWNLOAD: String(failDownload),
+          },
+        },
+      );
+    try {
+      const fresh = run();
+      assert.equal(fresh.status, 0, fresh.stderr);
+      assert.isTrue(NodeFS.existsSync(installed));
+      NodeFS.unlinkSync(installed);
+      const existing = run();
+      assert.equal(existing.status, 0, existing.stderr);
+      assert.isFalse(NodeFS.existsSync(installed));
+      NodeFS.unlinkSync(ready);
+      assert.notEqual(run(true).status, 0);
+      assert.isFalse(NodeFS.existsSync(ready));
+    } finally {
+      NodeFS.rmSync(temp, { recursive: true, force: true });
+    }
+  });
+
   it("imports desktop CI on Agent v3 and runs its generated jobs on hosted Linux", () => {
     const preflight = jobBlock(desktopWorkflow, "preflight");
     const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
