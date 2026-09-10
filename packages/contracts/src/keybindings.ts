@@ -117,7 +117,8 @@ export const KeybindingsConfig = Schema.Array(KeybindingRule).check(
 export type KeybindingsConfig = typeof KeybindingsConfig.Type;
 
 export const KeybindingShortcut = Schema.Struct({
-  key: KeybindingValue,
+  // Compiled shortcuts use KeyboardEvent.key, including a literal space.
+  key: Schema.Union([Schema.Literal(" "), KeybindingValue]),
   metaKey: Schema.Boolean,
   ctrlKey: Schema.Boolean,
   shiftKey: Schema.Boolean,

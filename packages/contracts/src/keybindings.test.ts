@@ -22,6 +22,25 @@ const decode = <S extends Schema.Top>(
 const decodeResolvedRule = Schema.decodeUnknownEffect(ResolvedKeybindingRule as never);
 const encodeResolvedKeybindings = Schema.encodeEffect(ResolvedKeybindingsConfig);
 
+it.effect("preserves the space key when dictation shortcuts cross the wire", () =>
+  Effect.gen(function* () {
+    const rule = {
+      command: "composer.dictation" as const,
+      shortcut: {
+        key: " ",
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+        modKey: true,
+      },
+    };
+    const encoded = yield* encodeResolvedKeybindings([rule]);
+    const decoded = yield* decode(ResolvedKeybindingsConfig, encoded);
+    assert.deepStrictEqual(decoded, [rule]);
+  }),
+);
+
 it.effect("parses keybinding rules", () =>
   Effect.gen(function* () {
     const parsed = yield* decode(KeybindingRule, {
