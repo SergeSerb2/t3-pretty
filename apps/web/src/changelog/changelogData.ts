@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260907.1332001859",
+    date: "2026-09-10",
+    items: [
+      {
+        kind: "fixed",
+        title: "Declare the startup shell snapshot query",
+      },
+      {
+        kind: "fixed",
+        title: "Omitted database migrations after fork collisions",
+      },
+      {
+        kind: "fixed",
+        title: "Desktop startup HTTP API groups",
+      },
+      {
+        kind: "fixed",
+        title: "Provide OriginCli so packaged desktop backend can boot",
+      },
+      {
+        kind: "fixed",
+        title: "Remove Kimi provider so Mac nightly can leave splash",
+      },
+      {
+        kind: "fixed",
+        title: "Clear Mac splash hang on local bearer race",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260905.1284001851",
     date: "2026-09-10",
     items: [
