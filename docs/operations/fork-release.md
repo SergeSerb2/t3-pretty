@@ -302,7 +302,7 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | Linux x64 AppImage          | not shipped on the feed               | —                                           | hosted `linux-small` (`build-linux-appimage.sh`)     |
 | macOS arm64 DMG             | m1-dev                                | 8 min (3.5 min install + 4 min package)     | hosted `macos-large` (M4 12 vCPU)                    |
 | Windows x64 NSIS            | serge-pc (`windows-5080-t3code-fork`) | 13 min, plus 3 min uploading the pnpm cache | serge-pc, without the cache upload                   |
-| Publish Origin release      | m1-dev                                | 5 min (3 min just to install Vite+)         | self-hosted `macos-release` (Origin CLI)             |
+| Updater-feed upload (R2/S3) | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` DMG (`origin-forge upload-assets` is S3, not Origin CLI) |
 | Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | hosted `macos-large` (`publish-mobile-release.sh`)    |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | hosted `macos-medium` (`deploy-relay-ci.sh`)          |
 

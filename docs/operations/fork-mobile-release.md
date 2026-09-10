@@ -157,18 +157,17 @@ of reporting a green release that shipped nothing. To activate:
    normal mobile releases are fully non-interactive. Do not use a cloud
    `eas build` for this bootstrap unless you intend to spend an Expo iOS
    build credit.
-5. On the Mac runner: a full `Xcode.app` or `Xcode-beta.app`. This machine
-   is on the macOS developer beta, so `Xcode-beta.app` is the one that
-   runs. The script probes `xcodebuild -version` and skips a leftover
-   `Xcode.app` that cannot run. Keep it on the Xcode 27 beta that App
-   Store Connect currently accepts for TestFlight (today that is beta 5).
-   Command Line Tools cannot compile an IPA; if `xcode-select -p` still
-   points at them, run once:
-   `sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`.
-   The script retries that switch with passwordless sudo during the job.
-   Local EAS on macOS 26 / Xcode 27 also needs the `security` PATH shim in
-   `scripts/fork/security-eas-local-keychain` so Prepare credentials does not
-   reject a successfully imported distribution certificate.
+5. Hosted `macos-large` compiles the IPA with the Xcode that Buildkite's
+   hosted macOS image ships. That is not the leftover self-hosted
+   `Xcode-beta.app` / Xcode 27 beta used on m5-dev. The publisher still
+   probes `Xcode.app` or `Xcode-beta.app` and skips a leftover `Xcode.app`
+   that cannot run, so a self-hosted fallback keeps working. Command Line
+   Tools cannot compile an IPA. The script retries
+   `xcode-select` with passwordless sudo when the selected Xcode is
+   usable. Local EAS on macOS 26 / Xcode 27 also needs the `security`
+   PATH shim in `scripts/fork/security-eas-local-keychain` so Prepare
+   credentials does not reject a successfully imported distribution
+   certificate.
 6. Configure in `.env` (or CI env): `T3CODE_MOBILE_UPDATE_URL`,
    `T3CODE_MOBILE_EAS_PROJECT_ID`, `T3CODE_MOBILE_EXPO_OWNER`,
    optionally `T3CODE_MOBILE_EXPO_SLUG`.
