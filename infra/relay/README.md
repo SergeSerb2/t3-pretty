@@ -116,8 +116,9 @@ the URL manually.
 
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
 the shared Alchemy `prod` stage on every push to Origin `main` through the Buildkite importer
-on hosted `macos-medium`. Public production IDs are literals in that workflow; private tokens load
-from the cluster after checkout. Pull requests do not deploy
+on self-hosted `macos-release`. Public production IDs are literals in that workflow; private tokens load
+from the cluster or the macos-release file store after checkout. Hosted M4 cannot
+resolve `PLANETSCALE_*`. Pull requests do not deploy
 relay stages. Developers can
 deploy personal non-production stages locally with any stage name other than `prod`.
 

@@ -254,7 +254,8 @@ jobs:
           # Read Buildkite pipeline env directly. Mapping `${{ env.NAME }}`
           # here overwrites those values with empty GHA context.
           # Hosted Linux cannot resolve CURSOR_API_KEY. Origin CLI login
-          # happens on hosted macos-large during publish.
+          # stays on self-hosted macos-release. DMG feed upload on
+          # macos-large is R2/S3, not the Origin CLI.
           test -n "${T3CODE_DESKTOP_UPDATE_FEED_URL:-}"
           test -n "${T3CODE_RELEASE_S3_BUCKET:-}"
           case "$T3CODE_DESKTOP_UPDATE_FEED_URL" in

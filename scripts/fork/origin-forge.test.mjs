@@ -769,10 +769,25 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "queue: linux-small");
     const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
     assert.include(dmgStep.slice(0, 900), "queue: macos-large");
+    const mirrorStep = pipeline.slice(
+      pipeline.indexOf(":github: Mirror Origin main and release tags"),
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+    );
+    const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
+    assert.include(mirrorStep, "queue: macos-release");
+    assert.include(mirrorStep, "os: macos");
+    assert.notInclude(mirrorStep, "queue: macos-medium");
+    assert.include(relayStep, "queue: macos-release");
+    assert.include(relayStep, "os: macos");
+    assert.notInclude(relayStep, "queue: macos-medium");
     const linuxStep = pipeline.slice(pipeline.indexOf(":linux: Linux x64 AppImage"));
     assert.include(linuxStep.slice(0, 900), "queue: linux-small");
-    const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
-    assert.include(reviewStep.slice(0, 900), "queue: macos-release");
+    const reviewStep = pipeline.slice(
+      pipeline.indexOf(":mag: Origin PR Review"),
+      pipeline.indexOf(":white_check_mark: Origin PR comments resolved"),
+    );
+    assert.include(reviewStep, "queue: macos-release");
+    assert.notInclude(reviewStep, "os: macos");
     assert.include(pipeline, "github-actions#v0.13.0");
     assert.include(pipeline, 'source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"');
     assert.notInclude(pipeline, 'version: "0.35.1"');

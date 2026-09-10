@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Production relay deploy on hosted macos-medium. Cluster secrets load
-# after checkout via buildkite-agent secret get.
+# Production relay deploy on self-hosted macos-release. Hosted M4 cannot
+# resolve PLANETSCALE_* / Clerk / Axiom cluster secrets or the macos-release
+# file-store fallbacks (BK 1878/1880).
 set -euo pipefail
 
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"

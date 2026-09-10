@@ -234,10 +234,12 @@ ${setup}
   });
 
   it("keeps Origin gates on macos-release and Mac packaging on hosted M4", () => {
-    // Hosted M4 cannot load CURSOR_API_KEY or compile buildkite-gha today.
-    // Origin review/comments/importer/sync stay on self-hosted macos-release.
-    // Packaging that does not need those secrets uses hosted M4 by queue key
-    // only: extra os=macos tags can leave hosted agents unmatched.
+    // Hosted M4 cannot load CURSOR_API_KEY, GITHUB_MIRROR_SSH_KEY, or
+    // PLANETSCALE_*, and cannot compile buildkite-gha today. Origin
+    // review/comments/importer/sync/mirror/relay stay on self-hosted
+    // macos-release. Packaging that does not need those secrets uses hosted
+    // M4 by queue key only: extra os=macos tags can leave hosted agents
+    // unmatched.
     assert.include(pipeline, "queue: macos-release");
     assert.include(pipeline, "queue: macos-medium");
     assert.include(pipeline, "queue: macos-large");
@@ -286,12 +288,16 @@ ${setup}
     assert.notInclude(reviewStep, "os: macos");
     assert.include(commentsStep, "queue: macos-release");
     assert.include(windowsStep, "queue: windows-release");
-    assert.include(mirrorStep, "queue: macos-medium");
+    assert.include(mirrorStep, "queue: macos-release");
+    assert.include(mirrorStep, "os: macos");
+    assert.notInclude(mirrorStep, "queue: macos-medium");
     assert.include(androidStep, "queue: macos-medium");
-    assert.include(relayStep, "queue: macos-medium");
+    assert.include(relayStep, "queue: macos-release");
+    assert.include(relayStep, "os: macos");
+    assert.notInclude(relayStep, "queue: macos-medium");
   });
 
-  it("publishes mobile OTA on macos-release and compiles iOS only when asked", () => {
+  it("publishes mobile OTA on hosted macos-large and compiles iOS only when asked", () => {
     assert.include(pipeline, "publish-mobile-release.sh");
     assert.include(pipeline, "iOS OTA + TestFlight");
     assert.equal(
@@ -310,6 +316,15 @@ ${setup}
       pipeline.indexOf("build-macos-dmg.sh"),
       pipeline.indexOf("publish-mobile-release.sh"),
     );
+    // Queue lives on the iOS step. The M4 banner is an echo in the shell
+    // script, not in pipeline.yml.
+    const iosStep = pipeline.slice(
+      pipeline.indexOf(":iphone: iOS OTA + TestFlight"),
+      pipeline.indexOf(":android: Android Internal"),
+    );
+    assert.include(iosStep, "queue: macos-large");
+    assert.notInclude(iosStep, "os: macos");
+    assert.include(iosStep, "publish-mobile-release.sh");
     assert.include(mobileRelease, "hosted macos-large (M4)");
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
@@ -687,7 +702,9 @@ ${setup}
       6,
     );
     for (const workflow of [desktopWorkflow, relayWorkflow, upstreamSyncWorkflow]) {
-      assert.include(workflow, "github.repository != 'SergeSerb2/t3-pretty'");
+      // Imported Origin jobs still see the GitHub-mirror repository name.
+      // These workflows are fork-only (`==`), not an upstream skip (`!=`).
+      assert.include(workflow, "github.repository == 'SergeSerb2/t3-pretty'");
     }
   });
 });
