@@ -260,6 +260,7 @@ function makeTestLayer(input: {
   readonly dockBadges?: string[];
   readonly dockBounces?: number[];
   readonly dockBounceCancels?: number[];
+  readonly reveals?: Electron.BrowserWindow[];
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -308,7 +309,10 @@ function makeTestLayer(input: {
     focusedMainOrFirst: Ref.get(input.mainWindow),
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
-    reveal: () => Effect.void,
+    reveal: (window) =>
+      Effect.sync(() => {
+        input.reveals?.push(window);
+      }),
     sendAll: (channel) =>
       Effect.sync(() => {
         input.broadcastChannels?.push(channel);
@@ -754,10 +758,12 @@ describe("DesktopWindow", () => {
       const fakeWindow = makeFakeBrowserWindow();
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
       const layer = makeTestLayer({
         window: fakeWindow.window,
         createCount,
         mainWindow,
+        reveals,
       });
 
       yield* Effect.gen(function* () {
@@ -771,6 +777,66 @@ describe("DesktopWindow", () => {
         yield* TestClock.adjust(1);
         yield* Effect.promise(() => Promise.resolve());
         assert.deepEqual(fakeWindow.setBackgroundThrottling.mock.calls, [[true]]);
+        assert.deepEqual(reveals, [fakeWindow.window]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("does not reveal or dismiss splash after the window is destroyed", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        reveals,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        fakeWindow.isDestroyed.mockReturnValue(true);
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.maximize.mock.calls.length, 0);
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        assert.deepEqual(reveals, []);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("interrupts the reveal fallback when the window closes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const reveals: Electron.BrowserWindow[] = [];
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        reveals,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const closed = fakeWindow.windowListeners.get("closed");
+        if (!closed) {
+          return yield* Effect.die("window closed listener was not registered");
+        }
+        fakeWindow.isDestroyed.mockReturnValue(true);
+        closed();
+        yield* TestClock.adjust(DesktopWindow.MAIN_WINDOW_REVEAL_FALLBACK_MS);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.equal(fakeWindow.maximize.mock.calls.length, 0);
+        assert.equal(fakeWindow.setBackgroundThrottling.mock.calls.length, 0);
+        assert.deepEqual(reveals, []);
       }).pipe(Effect.provide(layer));
     }),
   );

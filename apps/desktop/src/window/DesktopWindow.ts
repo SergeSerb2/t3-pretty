@@ -884,12 +884,23 @@ export const make = Effect.gen(function* () {
       // Linux historically missed ready-to-show; macOS Nightly can too.
       (fire) => window.webContents.once("did-finish-load", fire),
     ];
+    let revealFallbackFiber: Fiber.Fiber<void, never> | undefined;
+    const clearRevealFallback = () => {
+      if (revealFallbackFiber === undefined) {
+        return;
+      }
+      const fiber = revealFallbackFiber;
+      revealFallbackFiber = undefined;
+      runFork(Fiber.interrupt(fiber));
+    };
     const fireReveal = bindFirstRevealTrigger(revealSubscribers, () => {
+      clearRevealFallback();
+      if (window.isDestroyed()) {
+        return;
+      }
       // Boot is done; hand the window back to normal hidden-window throttling
       // (see the backgroundThrottling comment on the create options above).
-      if (!window.isDestroyed()) {
-        window.webContents.setBackgroundThrottling(true);
-      }
+      window.webContents.setBackgroundThrottling(true);
       // Reveal the real window, then close the connecting splash (if any) so the
       // two don't overlap and there's no blank gap between them.
       if (persistedSettings.mainWindowMaximized) {
@@ -897,8 +908,15 @@ export const make = Effect.gen(function* () {
       }
       void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
     });
-    runFork(
-      Effect.sleep(MAIN_WINDOW_REVEAL_FALLBACK_MS).pipe(Effect.andThen(Effect.sync(fireReveal))),
+    revealFallbackFiber = runFork(
+      Effect.sleep(MAIN_WINDOW_REVEAL_FALLBACK_MS).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            revealFallbackFiber = undefined;
+            fireReveal();
+          }),
+        ),
+      ),
     );
 
     loadApplication();
@@ -907,6 +925,7 @@ export const make = Effect.gen(function* () {
     }
 
     window.on("closed", () => {
+      clearRevealFallback();
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
       void runPromise(electronWindow.clearMain(Option.some(window)));
