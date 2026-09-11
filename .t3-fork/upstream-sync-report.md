@@ -2512,3 +2512,23 @@
 - `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx after 3 reasoning attempts
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260911.1533`; repaired with `gpt-5.6-sol`: Align both picker call sites with the parent’s updated prop contracts while retaining T3 Pretty’s permission and reference handling. This resolves both error-level typecheck diagnostics.
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260911.1547`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260911.1533`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/web/src/components/chat/OpenInPicker.tsx` — JetBrains icon components remain dynamically imported through the existing lazy/Suspense wrapper, preserving T3 Pretty's reduced initial bundle and render cost without changing icon availability or sizing.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/web/src/components/chat/OpenInPicker.tsx` — Imported the parent's isMacPlatform and isWindowsPlatform utilities alongside cn for use by the updated platform-specific picker behavior elsewhere in the file.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/chat/OpenInPicker.tsx` — The parent's eager named imports of all JetBrains icon components.. Reason: Those imports would duplicate the locally declared lazy icon components and regress T3 Pretty's intentional lazy-loading performance optimization. The same icons remain available through the fork's dynamic import wrapper.
