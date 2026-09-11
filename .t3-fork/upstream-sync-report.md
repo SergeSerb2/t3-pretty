@@ -2322,3 +2322,6 @@
 - `apps/desktop/src/app/DesktopLifecycle.test.ts` — applied a completed cache entry keyed by the current file contents
 - `infra/relay/src/agentActivity/ApnsClient.ts` — applied a completed cache entry keyed by the current file contents
 - `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — applied a completed cache entry keyed by the current file contents
+- `shared-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Update both T3 Pretty thread-shell fixture factories for the parent contract's required `pullRequests` field, preserving all fork-specific test behavior.
+  - edited `packages/client-runtime/src/state/threadLifecycleOutbox.test.ts`
+  - edited `packages/client-runtime/src/state/threadSettled.test.ts`
