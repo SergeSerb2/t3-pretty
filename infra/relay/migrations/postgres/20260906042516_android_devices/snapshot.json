@@ -2,7 +2,7 @@
   "version": "8",
   "dialect": "postgres",
   "id": "1109ed23-036c-4c39-a459-52422a7ffd99",
-  "prevIds": ["2374caff-40bf-423c-9255-55e76dddbc2a"],
+  "prevIds": ["762f170a-995b-4b73-b847-4caf16f0dfe8"],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -1149,6 +1149,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "created_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "idx_relay_delivery_attempts_created_at",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "relay_delivery_attempts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "environment_id",
           "isExpression": false,
           "asc": true,
@@ -1239,6 +1260,27 @@
       "method": "btree",
       "concurrently": false,
       "name": "idx_relay_environment_credentials_hash",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "relay_environment_credentials"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "revoked_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "idx_relay_environment_credentials_revoked_at",
       "entityType": "indexes",
       "schema": "public",
       "table": "relay_environment_credentials"
