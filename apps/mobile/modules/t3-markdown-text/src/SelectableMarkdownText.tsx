@@ -40,6 +40,7 @@ export function SelectableMarkdownText({
   skills = EMPTY_SKILLS,
   textStyle,
   highlightCode,
+  highlightCodeEnabled,
   preserveSoftBreaks = false,
   onLinkPress,
   fileContextMenu,
@@ -91,6 +92,7 @@ export function SelectableMarkdownText({
                   skills={skills}
                   textStyle={textStyle}
                   highlightCode={highlightCode}
+                  highlightCodeEnabled={highlightCodeEnabled}
                   onLinkPress={onLinkPress}
                 />
               ) : (
