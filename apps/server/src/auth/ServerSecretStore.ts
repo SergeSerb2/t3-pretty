@@ -116,7 +116,7 @@ export class SecretStoreEncodeError extends Schema.TaggedError<SecretStoreEncode
   }
 }
 
-export class SecretStoreInvalidNameError extends Schema.TaggedErrorClass<SecretStoreInvalidNameError>()(
+export class SecretStoreInvalidNameError extends Schema.TaggedError<SecretStoreInvalidNameError>()(
   "SecretStoreInvalidNameError",
   {
     resource: Schema.String,
@@ -127,7 +127,7 @@ export class SecretStoreInvalidNameError extends Schema.TaggedErrorClass<SecretS
   }
 }
 
-export class SecretStoreValueTooLargeError extends Schema.TaggedErrorClass<SecretStoreValueTooLargeError>()(
+export class SecretStoreValueTooLargeError extends Schema.TaggedError<SecretStoreValueTooLargeError>()(
   "SecretStoreValueTooLargeError",
   {
     resource: Schema.String,

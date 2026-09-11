@@ -74,7 +74,7 @@ export class UnavailableBootstrapCredentialError extends Schema.TaggedError<Unav
   }
 }
 
-export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedErrorClass<BootstrapCredentialScopeNotGrantedError>()(
+export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedError<BootstrapCredentialScopeNotGrantedError>()(
   "BootstrapCredentialScopeNotGrantedError",
   {},
 ) {
@@ -103,7 +103,7 @@ export class ActivePairingLinksLoadError extends Schema.TaggedError<ActivePairin
   }
 }
 
-export class ActivePairingLinksLimitExceededError extends Schema.TaggedErrorClass<ActivePairingLinksLimitExceededError>()(
+export class ActivePairingLinksLimitExceededError extends Schema.TaggedError<ActivePairingLinksLimitExceededError>()(
   "ActivePairingLinksLimitExceededError",
   {},
 ) {
@@ -112,7 +112,7 @@ export class ActivePairingLinksLimitExceededError extends Schema.TaggedErrorClas
   }
 }
 
-export class PairingCredentialInputValidationError extends Schema.TaggedErrorClass<PairingCredentialInputValidationError>()(
+export class PairingCredentialInputValidationError extends Schema.TaggedError<PairingCredentialInputValidationError>()(
   "PairingCredentialInputValidationError",
   {
     cause: Schema.Defect(),

@@ -65,7 +65,7 @@ export class BootstrapEnvelopeDecodeError extends Schema.TaggedError<BootstrapEn
 
 export const BOOTSTRAP_ENVELOPE_MAX_BYTES = 64 * 1024;
 
-export class BootstrapEnvelopeTooLargeError extends Schema.TaggedErrorClass<BootstrapEnvelopeTooLargeError>()(
+export class BootstrapEnvelopeTooLargeError extends Schema.TaggedError<BootstrapEnvelopeTooLargeError>()(
   "BootstrapEnvelopeTooLargeError",
   {
     fd: Schema.Number,
