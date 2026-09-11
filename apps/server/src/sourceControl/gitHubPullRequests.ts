@@ -14,8 +14,10 @@ export interface NormalizedGitHubPullRequestRecord {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state: "open" | "closed" | "merged";
+  readonly isDraft?: boolean;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
   readonly updatedAt: Option.Option<DateTime.Utc>;
-  readonly mergedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -28,7 +30,9 @@ const GitHubPullRequestSchema = Schema.Struct({
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
-  mergedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
+  isDraft: Schema.optional(Schema.Boolean),
+  closedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   isCrossRepository: Schema.optional(Schema.Boolean),
   // gh < 2.47 exports headRepository as {id, name} only; nameWithOwner was
@@ -58,10 +62,13 @@ function trimOptionalString(value: string | null | undefined): string | null {
 
 function normalizeGitHubPullRequestState(input: {
   state?: string | null | undefined;
-  mergedAt?: Option.Option<DateTime.Utc> | undefined;
+  mergedAt?: string | null | undefined;
 }): "open" | "closed" | "merged" {
   const normalizedState = input.state?.trim().toUpperCase();
-  if (Option.isSome(input.mergedAt ?? Option.none()) || normalizedState === "MERGED") {
+  if (
+    (typeof input.mergedAt === "string" && input.mergedAt.trim().length > 0) ||
+    normalizedState === "MERGED"
+  ) {
     return "merged";
   }
   if (normalizedState === "CLOSED") {
@@ -91,8 +98,10 @@ function normalizeGitHubPullRequestRecord(
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
     state: normalizeGitHubPullRequestState(raw),
+    ...(raw.isDraft === true ? { isDraft: true } : {}),
+    closedAt: raw.closedAt ?? null,
+    mergedAt: raw.mergedAt ?? null,
     updatedAt: raw.updatedAt ?? Option.none(),
-    mergedAt: raw.mergedAt ?? Option.none(),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),

@@ -18,8 +18,10 @@ import * as Schema from "effect/Schema";
 
 import { T3_PROJECT_FILE_NAME, type T3ProjectFile } from "@t3tools/contracts";
 import { T3ProjectFileFromJson } from "@t3tools/shared/t3ProjectFile";
+import { readFilePrefix } from "../boundedFileRead.ts";
 
 const decodeT3ProjectFileJson = Schema.decodeEffect(T3ProjectFileFromJson);
+const T3_PROJECT_FILE_MAX_BYTES = 1024 * 1024;
 
 export class T3ProjectFileLoadError extends Schema.TaggedErrorClass<T3ProjectFileLoadError>()(
   "T3ProjectFileLoadError",
@@ -66,12 +68,12 @@ export const make = Effect.gen(function* () {
   const load: T3ProjectFileLoader["Service"]["load"] = Effect.fn("T3ProjectFileLoader.load")(
     function* (workspaceRoot) {
       const filePath = path.join(workspaceRoot, T3_PROJECT_FILE_NAME);
-      const raw = yield* fileSystem.readFileString(filePath).pipe(
+      const raw = yield* readFilePrefix(fileSystem, filePath, T3_PROJECT_FILE_MAX_BYTES + 1).pipe(
         Effect.map(Option.some),
         Effect.catchTags({
           PlatformError: (error) =>
             error.reason._tag === "NotFound"
-              ? Effect.succeed(Option.none<string>())
+              ? Effect.succeed(Option.none<Uint8Array>())
               : logT3ProjectFileLoadError(
                   new T3ProjectFileLoadError({
                     operation: "read",
@@ -79,13 +81,23 @@ export const make = Effect.gen(function* () {
                     filePath,
                     cause: error,
                   }),
-                ).pipe(Effect.as(Option.none<string>())),
+                ).pipe(Effect.as(Option.none<Uint8Array>())),
         }),
       );
       if (Option.isNone(raw)) {
         return Option.none<T3ProjectFile>();
       }
-      return yield* decodeT3ProjectFileJson(raw.value).pipe(
+      if (raw.value.byteLength > T3_PROJECT_FILE_MAX_BYTES) {
+        return yield* logT3ProjectFileLoadError(
+          new T3ProjectFileLoadError({
+            operation: "read",
+            workspaceRoot,
+            filePath,
+            cause: new Error(`${T3_PROJECT_FILE_NAME} exceeds ${T3_PROJECT_FILE_MAX_BYTES} bytes.`),
+          }),
+        ).pipe(Effect.as(Option.none<T3ProjectFile>()));
+      }
+      return yield* decodeT3ProjectFileJson(new TextDecoder().decode(raw.value)).pipe(
         Effect.map(Option.some),
         Effect.catchTags({
           SchemaError: (error) =>

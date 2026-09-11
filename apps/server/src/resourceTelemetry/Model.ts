@@ -91,6 +91,19 @@ function finiteNonNegative(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
+function finiteNonNegativeInteger(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.round(value)));
+}
+
+function saturatingIntegerAdd(left: number, right: number): number {
+  return Math.min(Number.MAX_SAFE_INTEGER, left + right);
+}
+
+function saturatingFiniteAdd(left: number, right: number): number {
+  return Math.min(Number.MAX_VALUE, left + right);
+}
+
 function categoryGroup(
   category: ResourceTelemetryProcessCategory,
 ): "backend" | "electron" | "monitor" {
@@ -139,16 +152,20 @@ function syntheticNativeSample(
 ): ResourceMonitorProcessSample {
   const cpuTimeMs =
     metric.cumulativeCpuSeconds !== undefined
-      ? Math.max(0, Math.round(metric.cumulativeCpuSeconds * 1_000))
+      ? finiteNonNegativeInteger(metric.cumulativeCpuSeconds * 1_000)
       : previous
-        ? previous.process.cpuTimeMs +
-          Math.max(0, ((sampledAtMs - previous.sampledAtMs) * metric.cpuPercent) / 100)
+        ? saturatingIntegerAdd(
+            previous.process.cpuTimeMs,
+            finiteNonNegativeInteger(
+              ((sampledAtMs - previous.sampledAtMs) * metric.cpuPercent) / 100,
+            ),
+          )
         : 0;
   return {
     pid: metric.pid,
     ppid: 0,
     startTimeMs: metric.creationTimeMs,
-    runTimeMs: Math.max(0, sampledAtMs - metric.creationTimeMs),
+    runTimeMs: finiteNonNegativeInteger(sampledAtMs - metric.creationTimeMs),
     name: metric.name ?? metric.serviceName ?? metric.type,
     command: metric.name ?? metric.serviceName ?? metric.type,
     status: "Running",
@@ -270,16 +287,16 @@ function delta(input: {
   ) {
     return 0;
   }
-  return input.current - input.previous;
+  return finiteNonNegativeInteger(input.current - input.previous);
 }
 
 function incrementCounters(counters: GroupCounters, update: Partial<GroupCounters>): GroupCounters {
   return {
-    cpuTimeMs: counters.cpuTimeMs + (update.cpuTimeMs ?? 0),
-    ioReadBytes: counters.ioReadBytes + (update.ioReadBytes ?? 0),
-    ioWriteBytes: counters.ioWriteBytes + (update.ioWriteBytes ?? 0),
-    processStarts: counters.processStarts + (update.processStarts ?? 0),
-    processExits: counters.processExits + (update.processExits ?? 0),
+    cpuTimeMs: saturatingIntegerAdd(counters.cpuTimeMs, update.cpuTimeMs ?? 0),
+    ioReadBytes: saturatingIntegerAdd(counters.ioReadBytes, update.ioReadBytes ?? 0),
+    ioWriteBytes: saturatingIntegerAdd(counters.ioWriteBytes, update.ioWriteBytes ?? 0),
+    processStarts: saturatingIntegerAdd(counters.processStarts, update.processStarts ?? 0),
+    processExits: saturatingIntegerAdd(counters.processExits, update.processExits ?? 0),
   };
 }
 
@@ -352,18 +369,27 @@ function aggregate(
 ): ResourceTelemetryAggregate {
   return {
     processCount: processes.length,
-    currentCpuPercent: processes.reduce((total, process) => total + process.cpuPercent, 0),
+    currentCpuPercent: processes.reduce(
+      (total, process) => saturatingFiniteAdd(total, process.cpuPercent),
+      0,
+    ),
     cpuTimeMs: counters.cpuTimeMs,
-    currentRssBytes: processes.reduce((total, process) => total + process.residentBytes, 0),
-    peakRssBytes: processes.reduce((total, process) => total + process.peakResidentBytes, 0),
+    currentRssBytes: processes.reduce(
+      (total, process) => saturatingIntegerAdd(total, process.residentBytes),
+      0,
+    ),
+    peakRssBytes: processes.reduce(
+      (total, process) => saturatingIntegerAdd(total, process.peakResidentBytes),
+      0,
+    ),
     ioReadBytes: counters.ioReadBytes,
     ioWriteBytes: counters.ioWriteBytes,
     ioReadBytesPerSecond: processes.reduce(
-      (total, process) => total + process.ioReadBytesPerSecond,
+      (total, process) => saturatingFiniteAdd(total, process.ioReadBytesPerSecond),
       0,
     ),
     ioWriteBytesPerSecond: processes.reduce(
-      (total, process) => total + process.ioWriteBytesPerSecond,
+      (total, process) => saturatingFiniteAdd(total, process.ioWriteBytesPerSecond),
       0,
     ),
     processStarts: counters.processStarts,
@@ -554,7 +580,9 @@ export function mergeProcesses(input: MergeProcessesInput): MergeProcessesResult
           ? finiteNonNegative((ioWriteDelta * 1_000) / elapsedMs)
           : 0,
       ioSemantics: process.ioSemantics,
-      ...(electronMetric ? { idleWakeupsPerSecond: electronMetric.idleWakeupsPerSecond } : {}),
+      ...(electronMetric
+        ? { idleWakeupsPerSecond: finiteNonNegative(electronMetric.idleWakeupsPerSecond) }
+        : {}),
       runTimeMs: process.runTimeMs,
       firstSeenAt,
       lastSeenAt: DateTime.makeUnsafe(sampledAtMs),

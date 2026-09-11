@@ -20,7 +20,6 @@ import { OverlayPortal } from "../../components/OverlayPortal";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import type { ModelOption } from "../../lib/modelOptions";
 import { filterPickerModelList, type ThreadSettingsPickerModel } from "./thread-settings-picker";
 
@@ -92,10 +91,6 @@ export function ThreadSettingsPickerPopover(props: {
   const searchInputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const iconSubtle = useThemeColor("--color-icon-subtle");
-  const checkmarkColor = useThemeColor("--color-icon");
-  const glassTint = useThemeColor("--color-glass-surface");
-  const placeholderColor = useThemeColor("--color-placeholder");
 
   const close = useCallback(() => {
     if (searchInputRef.current?.isFocused()) {
@@ -154,11 +149,11 @@ export function ThreadSettingsPickerPopover(props: {
   const bottom = anchor === null ? 0 : windowHeight - anchor.y + ANCHOR_GAP;
 
   const pickOption = (id: string, value: string | boolean) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectOption(id, value);
   };
   const pickRuntime = (mode: RuntimeMode) => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => undefined);
     props.onSelectRuntime(mode);
   };
   const pickModel = (option: ModelOption, selected: boolean) => {
@@ -198,7 +193,7 @@ export function ThreadSettingsPickerPopover(props: {
         accessibilityRole="button"
         collapsable={false}
         onPress={(event) => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
           event.currentTarget.measureInWindow((x, y, width, height) => {
             setAnchor({ x, y, width, height });
           });
@@ -226,7 +221,7 @@ export function ThreadSettingsPickerPopover(props: {
                 chrome="default"
                 glassEffectStyle="regular"
                 style={{ borderRadius: 16, maxHeight, overflow: "hidden" }}
-                tintColor={glassTint}
+                tintColorClassName="accent-glass-surface"
               >
                 <ScrollView
                   bounces={false}
@@ -253,7 +248,7 @@ export function ThreadSettingsPickerPopover(props: {
                           <SymbolView
                             name="magnifyingglass"
                             size={13}
-                            tintColor={iconSubtle}
+                            tintColorClassName="accent-icon-subtle"
                             type="monochrome"
                           />
                           <TextInput
@@ -264,7 +259,7 @@ export function ThreadSettingsPickerPopover(props: {
                             className="min-w-0 flex-1 text-sm text-foreground"
                             onChangeText={setModelQuery}
                             placeholder="Find a model"
-                            placeholderTextColor={placeholderColor}
+                            placeholderTextColorClassName="accent-placeholder"
                             returnKeyType="search"
                             value={modelQuery}
                           />
@@ -302,7 +297,7 @@ export function ThreadSettingsPickerPopover(props: {
                                 <SymbolView
                                   name="checkmark"
                                   size={13}
-                                  tintColor={checkmarkColor}
+                                  tintColorClassName="accent-icon"
                                   type="monochrome"
                                   weight="semibold"
                                 />
@@ -370,7 +365,7 @@ export function ThreadSettingsPickerPopover(props: {
                         <SymbolView
                           name="chevron.right"
                           size={12}
-                          tintColor={iconSubtle}
+                          tintColorClassName="accent-icon-subtle"
                           type="monochrome"
                         />
                       </Pressable>

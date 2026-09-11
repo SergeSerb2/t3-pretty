@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
+import { settingsEscapeAction } from "../components/settings/settingsEscape";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -51,11 +52,14 @@ function SettingsContentLayout() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
-        event.preventDefault();
-
         const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLElement) {
+        const action = settingsEscapeAction(activeElement);
+        if (action === "ignore") return;
+
+        event.preventDefault();
+        if (action === "blur" && activeElement instanceof HTMLElement) {
           activeElement.blur();
+          return;
         }
 
         navigateBackWithinApp();
@@ -69,7 +73,10 @@ function SettingsContentLayout() {
   }, [navigateBackWithinApp]);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
+    <SidebarInset
+      className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate"
+      data-settings-page-layout
+    >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <WorkspacePageHeader electron={isElectron}>
           <div className="flex w-full items-center gap-3">

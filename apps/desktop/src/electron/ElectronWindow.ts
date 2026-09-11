@@ -58,8 +58,6 @@ export class ElectronWindowCreateError extends Schema.TaggedErrorClass<ElectronW
   }
 }
 
-export const isElectronWindowCreateError = Schema.is(ElectronWindowCreateError);
-
 export class ElectronWindowOperationError extends Schema.TaggedErrorClass<ElectronWindowOperationError>()(
   "ElectronWindowOperationError",
   {
@@ -140,11 +138,12 @@ export const make = Effect.gen(function* () {
       return main;
     }
 
-    const first = Option.fromNullishOr((yield* listWindows)[0] ?? null);
-    if (Option.isNone(first) || (yield* isWindowDestroyed(first.value))) {
-      return Option.none<Electron.BrowserWindow>();
+    for (const window of yield* listWindows) {
+      if (!(yield* isWindowDestroyed(window))) {
+        return Option.some(window);
+      }
     }
-    return first;
+    return Option.none<Electron.BrowserWindow>();
   });
 
   const focusedMainOrFirst = Effect.gen(function* () {
@@ -246,7 +245,12 @@ export const make = Effect.gen(function* () {
             continue;
           }
           yield* Effect.try({
-            try: () => window.webContents.send(channel, ...args),
+            try: () => {
+              if (window.webContents.isDestroyed()) {
+                return;
+              }
+              window.webContents.send(channel, ...args);
+            },
             catch: (cause) =>
               new ElectronWindowOperationError({
                 operation: "send-window-message",
@@ -263,7 +267,9 @@ export const make = Effect.gen(function* () {
       for (const window of yield* listWindows) {
         const exit = yield* Effect.exit(
           Effect.try({
-            try: () => window.destroy(),
+            try: () => {
+              if (!window.isDestroyed()) window.destroy();
+            },
             catch: (cause) =>
               new ElectronWindowOperationError({
                 operation: "destroy-window",

@@ -4,6 +4,7 @@ import type {
   RelayLiveActivityRegistrationRequest,
 } from "@t3tools/contracts/relay";
 import {
+  RELAY_DEVICE_MAX_COUNT,
   RelayAgentActivityAggregateState as RelayAgentActivityAggregateStateSchema,
   RelayDeliveryKind as RelayDeliveryKindSchema,
 } from "@t3tools/contracts/relay";
@@ -13,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
 import { relayLiveActivities, relayMobileDevices } from "../persistence/schema.ts";
@@ -219,6 +220,8 @@ export const make = Effect.gen(function* () {
           ),
         )
         .where(eq(relayMobileDevices.userId, input.userId))
+        .orderBy(desc(relayMobileDevices.updatedAt), desc(relayMobileDevices.deviceId))
+        .limit(RELAY_DEVICE_MAX_COUNT)
         .pipe(
           Effect.flatMap((rows) =>
             Effect.forEach(

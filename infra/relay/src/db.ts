@@ -72,7 +72,7 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
     database,
     ...(branch ? { branch } : {}),
     inheritedRoles: ["pg_read_all_data", "pg_write_all_data"],
-  });
+  }).pipe(RemovalPolicy.retain());
 
   return { branch, database, runtimeRole };
 });

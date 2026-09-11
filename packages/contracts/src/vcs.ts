@@ -1,6 +1,13 @@
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+export const VCS_PATH_MAX_LENGTH = 32 * 1024;
+export const VCS_WORKSPACE_FILES_MAX_COUNT = 100_000;
+export const VCS_REMOTE_MAX_COUNT = 256;
+export const VCS_REMOTE_NAME_MAX_LENGTH = 1_024;
+export const VCS_REMOTE_URL_MAX_LENGTH = 16 * 1_024;
+const VcsPath = TrimmedNonEmptyString.check(Schema.isMaxLength(VCS_PATH_MAX_LENGTH));
+
 export const VcsDriverKind = Schema.Literals(["git", "jj", "unknown"]);
 export type VcsDriverKind = typeof VcsDriverKind.Type;
 
@@ -31,29 +38,32 @@ export type VcsDriverCapabilities = typeof VcsDriverCapabilities.Type;
 
 export const VcsRepositoryIdentity = Schema.Struct({
   kind: VcsDriverKind,
-  rootPath: TrimmedNonEmptyString,
-  metadataPath: Schema.NullOr(TrimmedNonEmptyString),
+  rootPath: VcsPath,
+  metadataPath: Schema.NullOr(VcsPath),
   freshness: VcsFreshness,
 });
 export type VcsRepositoryIdentity = typeof VcsRepositoryIdentity.Type;
 
 export const VcsListWorkspaceFilesResult = Schema.Struct({
-  paths: Schema.Array(TrimmedNonEmptyString),
+  paths: Schema.Array(VcsPath).check(Schema.isMaxLength(VCS_WORKSPACE_FILES_MAX_COUNT)),
   truncated: Schema.Boolean,
   freshness: VcsFreshness,
 });
 export type VcsListWorkspaceFilesResult = typeof VcsListWorkspaceFilesResult.Type;
 
 export const VcsRemote = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  url: TrimmedNonEmptyString,
-  pushUrl: Schema.Option(TrimmedNonEmptyString),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(VCS_REMOTE_NAME_MAX_LENGTH)),
+  url: TrimmedNonEmptyString.check(Schema.isMaxLength(VCS_REMOTE_URL_MAX_LENGTH)),
+  pushUrl: Schema.Option(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(VCS_REMOTE_URL_MAX_LENGTH)),
+  ),
   isPrimary: Schema.Boolean,
 });
 export type VcsRemote = typeof VcsRemote.Type;
 
 export const VcsListRemotesResult = Schema.Struct({
-  remotes: Schema.Array(VcsRemote),
+  remotes: Schema.Array(VcsRemote).check(Schema.isMaxLength(VCS_REMOTE_MAX_COUNT)),
+  remotesTruncated: Schema.optionalKey(Schema.Boolean),
   freshness: VcsFreshness,
 });
 export type VcsListRemotesResult = typeof VcsListRemotesResult.Type;

@@ -16,7 +16,7 @@
  * @module SearchIndex
  */
 import { MessageId, ThreadId } from "@t3tools/contracts";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -166,7 +166,7 @@ const makeSearchIndex = Effect.gen(function* () {
           messageId: message.messageId,
           threadId: message.threadId,
           role: "user",
-          text: stripCreatePullRequestSuffix(message.text),
+          text: stripHiddenInstructionSuffixes(message.text),
           createdAt: message.createdAt,
         });
         return;

@@ -7,6 +7,7 @@ import {
   type DesktopHostTelemetryMessage as DesktopHostTelemetryMessageValue,
   type DesktopHostTelemetrySnapshot,
   DesktopTelemetryControlMessage,
+  type DesktopUpdateStatusReport,
   type ResourceTelemetrySourceStatus,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
@@ -34,6 +35,7 @@ const STALE_GRACE_MS = 30_000;
 const DEFAULT_HOST_POWER_ACTIVE_INTERVAL_MS = 30_000;
 const DEFAULT_HOST_POWER_IDLE_INTERVAL_MS = 120_000;
 const STALE_CHECK_INTERVAL = Duration.seconds(30);
+export const DESKTOP_TELEMETRY_RECORD_MAX_BYTES = 4 * 1024 * 1024;
 
 export class DesktopTelemetryDescriptorUnavailable extends Schema.TaggedErrorClass<DesktopTelemetryDescriptorUnavailable>()(
   "DesktopTelemetryDescriptorUnavailable",
@@ -92,6 +94,18 @@ export class DesktopTelemetryStreamClosed extends Schema.TaggedErrorClass<Deskto
   }
 }
 
+export class DesktopTelemetryRecordTooLarge extends Schema.TaggedErrorClass<DesktopTelemetryRecordTooLarge>()(
+  "DesktopTelemetryRecordTooLarge",
+  {
+    fd: Schema.Number,
+    maxBytes: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return `Desktop telemetry record on fd ${this.fd} exceeded ${this.maxBytes} bytes.`;
+  }
+}
+
 export class DesktopTelemetryStale extends Schema.TaggedErrorClass<DesktopTelemetryStale>()(
   "DesktopTelemetryStale",
   {
@@ -109,7 +123,8 @@ export type DesktopTelemetryReceiverError =
   | DesktopTelemetryProtocolMismatch
   | DesktopTelemetryDecodeFailed
   | DesktopTelemetryStreamFailed
-  | DesktopTelemetryStreamClosed;
+  | DesktopTelemetryStreamClosed
+  | DesktopTelemetryRecordTooLarge;
 
 export class DesktopTelemetryControlFailed extends Schema.TaggedErrorClass<DesktopTelemetryControlFailed>()(
   "DesktopTelemetryControlFailed",
@@ -171,6 +186,29 @@ export class DesktopTelemetryReceiver extends Context.Service<
     readonly setDiagnosticsDemand: (
       enabled: boolean,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    /** Asks the desktop app supervising this server to update itself. The
+        desktop answers with desktopUpdateStatus reports carrying the same
+        requestId. */
+    readonly requestDesktopUpdate: (
+      requestId: string,
+    ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly commitDesktopUpdate: (
+      requestId: string,
+    ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly cancelDesktopUpdate: (
+      requestId: string,
+    ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    /** Latest desktop update state report plus subsequent reports. The
+        desktop replays its latest report when the backend attaches, so this
+        is populated shortly after startup on desktop-managed servers. */
+    readonly desktopUpdates: Effect.Effect<
+      {
+        readonly latest: Option.Option<DesktopUpdateStatusReport>;
+        readonly changes: Stream.Stream<DesktopUpdateStatusReport>;
+      },
+      never,
+      Scope.Scope
+    >;
   }
 >()("t3/resourceTelemetry/DesktopTelemetryReceiver") {}
 
@@ -182,6 +220,31 @@ const isDescriptorUnavailable = Schema.is(DesktopTelemetryDescriptorUnavailable)
 const isProtocolMismatch = Schema.is(DesktopTelemetryProtocolMismatch);
 const isDecodeFailed = Schema.is(DesktopTelemetryDecodeFailed);
 const isStreamFailed = Schema.is(DesktopTelemetryStreamFailed);
+const isRecordTooLarge = Schema.is(DesktopTelemetryRecordTooLarge);
+
+export interface NdjsonLineByteScan {
+  readonly trailingBytes: number;
+  readonly exceeded: boolean;
+}
+
+export function scanNdjsonLineByteLimit(
+  previousTrailingBytes: number,
+  chunk: Uint8Array,
+  maxBytes: number,
+): NdjsonLineByteScan {
+  let trailingBytes = previousTrailingBytes;
+  for (const byte of chunk) {
+    if (byte === 0x0a || byte === 0x0d) {
+      trailingBytes = 0;
+      continue;
+    }
+    trailingBytes += 1;
+    if (trailingBytes > maxBytes) {
+      return { trailingBytes, exceeded: true };
+    }
+  }
+  return { trailingBytes, exceeded: false };
+}
 
 export function isDesktopTelemetryContactStale(
   lastContactAtMs: Option.Option<number>,
@@ -231,7 +294,8 @@ function normalizeReceiverError(error: unknown): DesktopTelemetryReceiverError {
     isDescriptorUnavailable(error) ||
     isProtocolMismatch(error) ||
     isDecodeFailed(error) ||
-    isStreamFailed(error)
+    isStreamFailed(error) ||
+    isRecordTooLarge(error)
   ) {
     return error;
   }
@@ -322,6 +386,8 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   );
   const changes = yield* PubSub.sliding<DesktopHostTelemetrySnapshot>(8);
   const healthChanges = yield* PubSub.sliding<DesktopTelemetryReceiverHealth>(4);
+  const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
+  const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
   const controlMutex = yield* Semaphore.make(1);
   const snapshotMutex = yield* Semaphore.make(1);
   const health = yield* Ref.make<DesktopTelemetryReceiverHealth>({
@@ -457,6 +523,24 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         closeOnDone: true,
         onError: (cause) => new DesktopTelemetryStreamFailed({ fd, cause }),
       }).pipe(
+        Stream.mapAccumEffect(
+          () => 0,
+          (trailingBytes, chunk) => {
+            const scanned = scanNdjsonLineByteLimit(
+              trailingBytes,
+              chunk,
+              DESKTOP_TELEMETRY_RECORD_MAX_BYTES,
+            );
+            return scanned.exceeded
+              ? Effect.fail(
+                  new DesktopTelemetryRecordTooLarge({
+                    fd,
+                    maxBytes: DESKTOP_TELEMETRY_RECORD_MAX_BYTES,
+                  }),
+                )
+              : Effect.succeed([scanned.trailingBytes, [chunk]] as const);
+          },
+        ),
         Stream.pipeThroughChannel(Ndjson.decode({ ignoreEmptyLines: true })),
         Stream.mapEffect(
           (
@@ -492,14 +576,21 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         if (message.type === "desktopTelemetryHello") {
           return recordContact.pipe(
             Effect.andThen(
-              updateHealth(
-                (current): DesktopTelemetryReceiverHealth => ({
-                  ...current,
-                  status: "healthy",
-                  lastError: Option.none(),
-                }),
-              ),
+              updateHealth((current): DesktopTelemetryReceiverHealth => ({
+                ...current,
+                status: "healthy",
+                lastError: Option.none(),
+              })),
             ),
+          );
+        }
+
+        // Not a resource sample: do not touch `latest` or sample health.
+        if (message.type === "desktopUpdateStatus") {
+          return recordContact.pipe(
+            Effect.andThen(Ref.set(latestUpdateReport, Option.some(message))),
+            Effect.andThen(PubSub.publish(updateReportChanges, message)),
+            Effect.asVoid,
           );
         }
 
@@ -514,22 +605,18 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         );
       }),
       Effect.andThen(
-        updateHealth(
-          (current): DesktopTelemetryReceiverHealth => ({
-            ...current,
-            status: "stopped",
-            lastError: Option.some(new DesktopTelemetryStreamClosed({ fd }).message),
-          }),
-        ),
+        updateHealth((current): DesktopTelemetryReceiverHealth => ({
+          ...current,
+          status: "stopped",
+          lastError: Option.some(new DesktopTelemetryStreamClosed({ fd }).message),
+        })),
       ),
       Effect.catch((error) =>
-        updateHealth(
-          (current): DesktopTelemetryReceiverHealth => ({
-            ...current,
-            status: "degraded",
-            lastError: Option.some(error.message),
-          }),
-        ),
+        updateHealth((current): DesktopTelemetryReceiverHealth => ({
+          ...current,
+          status: "degraded",
+          lastError: Option.some(error.message),
+        })),
       ),
       Effect.forkScoped,
     );
@@ -616,6 +703,24 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     health: Ref.get(health),
     subscribeHealth: subscribeBeforeSnapshotWithoutMutex(healthChanges, Ref.get(health)),
     setDiagnosticsDemand,
+    requestDesktopUpdate: (requestId) =>
+      sendControlMessage({
+        version: 1,
+        type: "requestDesktopUpdate",
+        requestId,
+      }),
+    commitDesktopUpdate: (requestId) =>
+      sendControlMessage({ version: 1, type: "commitDesktopUpdate", requestId }),
+    cancelDesktopUpdate: (requestId) =>
+      sendControlMessage({ version: 1, type: "cancelDesktopUpdate", requestId }),
+    desktopUpdates: Effect.gen(function* () {
+      const subscription = yield* PubSub.subscribe(updateReportChanges);
+      const initial = yield* Ref.get(latestUpdateReport);
+      return {
+        latest: initial,
+        changes: Stream.fromSubscription(subscription),
+      };
+    }),
   });
 });
 
@@ -656,6 +761,15 @@ export const layerTest = (
           })),
         ),
       setDiagnosticsDemand: () => Effect.void,
+      requestDesktopUpdate: () => Effect.void,
+      commitDesktopUpdate: () => Effect.void,
+      cancelDesktopUpdate: () => Effect.void,
+      desktopUpdates:
+        overrides.desktopUpdates ??
+        Effect.succeed({
+          latest: Option.none<DesktopUpdateStatusReport>(),
+          changes: Stream.empty,
+        }),
       ...overrides,
     }),
   );

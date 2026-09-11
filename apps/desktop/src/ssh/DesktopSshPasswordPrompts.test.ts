@@ -105,8 +105,11 @@ function makeElectronWindowLayer(window: ReturnType<typeof makeTestWindow>["wind
   );
 }
 
-function makeLayer(window: ReturnType<typeof makeTestWindow>["window"]) {
-  return DesktopSshPasswordPrompts.layer({ passwordPromptTimeoutMs: 1_000 }).pipe(
+function makeLayer(
+  window: ReturnType<typeof makeTestWindow>["window"],
+  options: DesktopSshPasswordPrompts.DesktopSshPasswordPromptsOptions = {},
+) {
+  return DesktopSshPasswordPrompts.layer({ passwordPromptTimeoutMs: 1_000, ...options }).pipe(
     Layer.provide(makeElectronWindowLayer(window)),
     Layer.provide(NodeServices.layer),
     Layer.provideMerge(TestClock.layer()),
@@ -142,6 +145,75 @@ describe("DesktopSshPasswordPrompts", () => {
       yield* prompts.resolve({ requestId: request.requestId, password: "secret" });
       assert.equal(yield* Fiber.join(fiber), "secret");
     }).pipe(Effect.provide(makeLayer(testWindow.window)), Effect.scoped);
+  });
+
+  it.effect("bounds prompt fields before sending them to the renderer", () => {
+    const testWindow = makeTestWindow();
+
+    return Effect.gen(function* () {
+      const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
+      const fiber = yield* prompts
+        .request({
+          destination: "d".repeat(2_000),
+          username: "u".repeat(1_000),
+          prompt: "p".repeat(8_000),
+          attempt: 1,
+        })
+        .pipe(Effect.forkScoped);
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      const sent = testWindow.sentMessages[0];
+      assert.ok(sent);
+      const request = sent.args[0] as {
+        readonly requestId: string;
+        readonly destination: string;
+        readonly username: string;
+        readonly prompt: string;
+      };
+      assert.equal(request.destination.length, 1_024);
+      assert.equal(request.username.length, 512);
+      assert.equal(request.prompt.length, 4_096);
+
+      yield* prompts.resolve({ requestId: request.requestId, password: "secret" });
+      assert.equal(yield* Fiber.join(fiber), "secret");
+    }).pipe(Effect.provide(makeLayer(testWindow.window)), Effect.scoped);
+  });
+
+  it.effect("rejects prompt bursts above the pending capacity", () => {
+    const testWindow = makeTestWindow();
+
+    return Effect.gen(function* () {
+      const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
+      const firstFiber = yield* prompts
+        .request({
+          destination: "first",
+          username: null,
+          prompt: "Password",
+          attempt: 1,
+        })
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+
+      const overflow = yield* prompts
+        .request({
+          destination: "second",
+          username: null,
+          prompt: "Password",
+          attempt: 1,
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(overflow, DesktopSshPasswordPrompts.DesktopSshPromptCapacityError);
+      assert.equal(overflow.limit, 1);
+      assert.equal(testWindow.sentMessages.length, 1);
+
+      const sent = testWindow.sentMessages[0];
+      assert.ok(sent);
+      const request = sent.args[0] as { readonly requestId: string };
+      yield* prompts.resolve({ requestId: request.requestId, password: "secret" });
+      assert.equal(yield* Fiber.join(firstFiber), "secret");
+    }).pipe(Effect.provide(makeLayer(testWindow.window, { maxPendingPrompts: 1 })), Effect.scoped);
   });
 
   it.effect("times out pending renderer prompts with a typed error", () => {

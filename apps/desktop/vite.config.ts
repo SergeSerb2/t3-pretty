@@ -1,3 +1,4 @@
+import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
@@ -20,19 +21,19 @@ export default defineConfig({
     tasks: {
       build: {
         command:
-          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack",
+          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack",
         dependsOn: ["t3#build"],
         cache: false,
       },
       dev: {
         command:
-          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
+          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
         dependsOn: ["t3#build"],
         cache: false,
       },
       "dev:bundle": {
         command:
-          "node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack --watch",
+          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && node scripts/build-playwright-injected.mjs && vp pack --watch",
         cache: false,
       },
       "dev:electron": {
@@ -103,4 +104,10 @@ export default defineConfig({
       entry: ["src/preview-pip-preload.ts"],
     },
   ],
+  test: {
+    // The Windows lane runs workspace suites concurrently; filesystem-heavy
+    // desktop integration tests can exceed Vitest's 5 second default there.
+    testTimeout: 15_000,
+    setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
+  },
 });

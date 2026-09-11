@@ -191,6 +191,7 @@ function findButton(label: string): FakeElement | undefined {
 
 beforeEach(() => {
   dismissContextMenu();
+  vi.stubGlobal("cancelAnimationFrame", () => {});
   vi.stubGlobal("document", new FakeDocument());
   vi.stubGlobal("HTMLElement", FakeElement);
   vi.stubGlobal("window", {
@@ -198,7 +199,7 @@ beforeEach(() => {
     innerHeight: 800,
   });
   vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
-    callback(0);
+    queueMicrotask(() => callback(0));
     return 0;
   });
   vi.stubGlobal(
@@ -220,6 +221,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  dismissContextMenu();
   vi.unstubAllGlobals();
 });
 
@@ -275,6 +277,7 @@ describe("showContextMenuFallback", () => {
       { id: "delete", label: "Delete", destructive: true },
     ]);
 
+    await Promise.resolve();
     const renameButton = findButton("Rename");
     expect(renameButton).toBeTruthy();
     renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -290,6 +293,7 @@ describe("showContextMenuFallback", () => {
     });
 
     const selectionPromise = showContextMenuFallback([{ id: "rename", label: "Rename" }]);
+    await Promise.resolve();
     const renameButton = findButton("Rename");
 
     renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -311,6 +315,7 @@ describe("showContextMenuFallback", () => {
       },
     ]);
 
+    await Promise.resolve();
     const parentButton = findButton("Rename project");
     expect(parentButton).toBeTruthy();
     parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
@@ -337,6 +342,7 @@ describe("showContextMenuFallback", () => {
       },
     ]);
 
+    await Promise.resolve();
     const parentButton = findButton("Copy");
     expect(parentButton).toBeTruthy();
     expect(parentButton?.attributes.get("aria-haspopup")).toBe("menu");
@@ -375,6 +381,7 @@ describe("showContextMenuFallback", () => {
       },
     ]);
 
+    await Promise.resolve();
     const parentButton = findButton("Copy");
     parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     expect(findButton("Path")).toBeTruthy();

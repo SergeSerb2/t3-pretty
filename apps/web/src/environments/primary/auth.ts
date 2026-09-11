@@ -9,7 +9,6 @@ import type {
 } from "@t3tools/contracts";
 import { EnvironmentHttpCommonError } from "@t3tools/contracts";
 import type { EnvironmentHttpCommonError as EnvironmentHttpCommonErrorType } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClientError } from "effect/unstable/http";
@@ -19,6 +18,17 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "../../pairingUrl";
 
+import {
+  beginDesktopAuthDeadline,
+  DESKTOP_BEARER_TOKEN_TIMEOUT_MS,
+  isPrimaryEnvironmentDesktopBearerTimeoutError,
+  __resetDesktopPrimaryAuthForTests,
+} from "./desktopAuth";
+
+export {
+  isPrimaryEnvironmentDesktopBearerTimeoutError,
+  PrimaryEnvironmentDesktopBearerTimeoutError,
+} from "./desktopAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { loadDesktopPrimaryEnvironmentBootstrap } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
@@ -67,7 +77,7 @@ export class PrimaryEnvironmentRequestError extends Schema.TaggedErrorClass<Prim
   }
 }
 
-export const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
+const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
 
 export class PrimaryEnvironmentPairingCredentialRejectedError extends Schema.TaggedErrorClass<PrimaryEnvironmentPairingCredentialRejectedError>()(
   "PrimaryEnvironmentPairingCredentialRejectedError",
@@ -97,8 +107,20 @@ export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedErro
   }
 }
 
-export const isPrimaryEnvironmentAuthSessionTimeoutError = Schema.is(
-  PrimaryEnvironmentAuthSessionTimeoutError,
+export class PrimaryEnvironmentDesktopBootstrapTimeoutError extends Schema.TaggedErrorClass<PrimaryEnvironmentDesktopBootstrapTimeoutError>()(
+  "PrimaryEnvironmentDesktopBootstrapTimeoutError",
+  {
+    timeoutMs: Schema.Number,
+    elapsedMs: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return "Timed out waiting for the local desktop backend to publish its address.";
+  }
+}
+
+export const isPrimaryEnvironmentDesktopBootstrapTimeoutError = Schema.is(
+  PrimaryEnvironmentDesktopBootstrapTimeoutError,
 );
 
 export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedErrorClass<PrimaryEnvironmentPairingCredentialRequiredError>()(
@@ -112,15 +134,10 @@ export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.Tag
   }
 }
 
-export const isPrimaryEnvironmentPairingCredentialRequiredError = Schema.is(
-  PrimaryEnvironmentPairingCredentialRequiredError,
-);
-
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
 export interface ServerPairingLinkRecord {
   readonly id: string;
-  readonly credential: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
   readonly label?: string;
@@ -176,7 +193,7 @@ export function takePairingTokenFromUrl(): string | null {
   return token;
 }
 
-async function getDesktopBootstrapCredential(): Promise<string | null> {
+async function getDesktopBootstrapCredential(startedAt: number): Promise<string | null> {
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
@@ -186,9 +203,19 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
   // The desktop opens its window before the local backend has a start
   // config. Until the primary entry carries an httpBaseUrl the HTTP client
   // would resolve to the window origin (t3code:) and memoize that failure
-  // for the renderer's lifetime, so wait for the entry first.
+  // for the renderer's lifetime, so wait for the entry first — but never
+  // forever. `#boot-shell` cannot dissolve until this promise settles, and
+  // getLocalEnvironmentBootstraps omits the primary while config is missing,
+  // so an unbounded loop is a splash hang.
   let primary = await loadDesktopPrimaryEnvironmentBootstrap();
   while (primary?.httpBaseUrl == null) {
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS) {
+      throw new PrimaryEnvironmentDesktopBootstrapTimeoutError({
+        timeoutMs: DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS,
+        elapsedMs,
+      });
+    }
     await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
     primary = await loadDesktopPrimaryEnvironmentBootstrap();
   }
@@ -197,7 +224,9 @@ async function getDesktopBootstrapCredential(): Promise<string | null> {
     : null;
 }
 
-export async function fetchSessionState(): Promise<AuthSessionState> {
+export async function fetchSessionState(options?: {
+  readonly startedAt?: number;
+}): Promise<AuthSessionState> {
   return retryTransientBootstrap(async () => {
     try {
       return await runPrimaryHttp(
@@ -211,7 +240,7 @@ export async function fetchSessionState(): Promise<AuthSessionState> {
         cause: error,
       });
     }
-  });
+  }, options);
 }
 
 function readHttpApiStatus(error: unknown): number | null {
@@ -289,14 +318,24 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
-// The desktop renderer loads before its local backend listens (cold boot,
-// large-DB migration, restart) and the desktop keeps that backend alive, so
-// there is no point giving up: keep retrying until it answers.
-const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = Number.POSITIVE_INFINITY;
+// One splash deadline (ready latch + token retries). Entry wait, session
+// retry, and bearer IPC share startedAt so they cannot stack to 80s+.
+export const DESKTOP_BOOTSTRAP_RETRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
+export const DESKTOP_BOOTSTRAP_ENTRY_TIMEOUT_MS = DESKTOP_BEARER_TOKEN_TIMEOUT_MS;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
-export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
-  const startedAt = Date.now();
+const DESKTOP_MANAGED_AUTH = {
+  policy: "desktop-managed-local",
+  bootstrapMethods: ["desktop-bootstrap"],
+  sessionMethods: ["browser-session-cookie"],
+  sessionCookieName: "t3_session",
+} as const;
+
+export async function retryTransientBootstrap<T>(
+  operation: () => Promise<T>,
+  options?: { readonly startedAt?: number },
+): Promise<T> {
+  const startedAt = options?.startedAt ?? Date.now();
   const timeoutMs =
     window.desktopBridge === undefined
       ? BOOTSTRAP_RETRY_TIMEOUT_MS
@@ -324,6 +363,20 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
   });
 }
 
+function isDesktopBearerTimeoutError(error: unknown): boolean {
+  if (isPrimaryEnvironmentDesktopBearerTimeoutError(error)) {
+    return true;
+  }
+  if (isPrimaryEnvironmentRequestError(error)) {
+    return isDesktopBearerTimeoutError(error.cause);
+  }
+  return (
+    HttpClientError.isHttpClientError(error) &&
+    error.reason._tag === "TransportError" &&
+    isDesktopBearerTimeoutError(error.reason.cause)
+  );
+}
+
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
     // No response at all (connection refused, desktop bearer IPC failing):
@@ -342,9 +395,63 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function readDesktopAuthUnavailableMessage(error: unknown): string {
+  if (isPrimaryEnvironmentDesktopBearerTimeoutError(error)) {
+    return error.message;
+  }
+  if (isPrimaryEnvironmentRequestError(error)) {
+    return readDesktopAuthUnavailableMessage(error.cause);
+  }
+  if (HttpClientError.isHttpClientError(error) && error.reason._tag === "TransportError") {
+    return readDesktopAuthUnavailableMessage(error.reason.cause);
+  }
+  return error instanceof Error && error.message.length > 0
+    ? error.message
+    : "Local backend did not become ready.";
+}
+
+function desktopAuthUnavailableState(error: unknown): ServerAuthGateState {
+  return {
+    status: "requires-auth",
+    auth: DESKTOP_MANAGED_AUTH,
+    errorMessage: readDesktopAuthUnavailableMessage(error),
+  };
+}
+
 async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
-  const bootstrapCredential = await getDesktopBootstrapCredential();
-  const currentSession = await fetchSessionState();
+  const startedAt = Date.now();
+  if (window.desktopBridge !== undefined) {
+    beginDesktopAuthDeadline(startedAt);
+  }
+
+  let bootstrapCredential: string | null;
+  try {
+    bootstrapCredential = await getDesktopBootstrapCredential(startedAt);
+  } catch (error) {
+    if (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error)) {
+      return desktopAuthUnavailableState(error);
+    }
+    throw error;
+  }
+
+  let currentSession: AuthSessionState;
+  try {
+    currentSession = await fetchSessionState({ startedAt });
+  } catch (error) {
+    // Desktop session retries are bounded so #boot-shell can clear. Web 401 /
+    // 5xx / network failures must keep their own auth policy, not
+    // desktop-managed-local.
+    if (
+      window.desktopBridge !== undefined &&
+      (isPrimaryEnvironmentDesktopBootstrapTimeoutError(error) ||
+        isDesktopBearerTimeoutError(error) ||
+        isTransientBootstrapError(error))
+    ) {
+      return desktopAuthUnavailableState(error);
+    }
+    throw error;
+  }
+
   if (currentSession.authenticated) {
     return { status: "authenticated" };
   }
@@ -379,6 +486,8 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
 
   resolvedAuthenticatedGateState = null;
   await exchangeBootstrapCredential(trimmedCredential);
+  await waitForAuthenticatedSessionAfterBootstrap();
+  resolvedAuthenticatedGateState = { status: "authenticated" };
   bootstrapPromise = null;
   stripPairingTokenFromUrl();
 }
@@ -410,46 +519,6 @@ export async function createServerPairingCredential(input?: {
   }
 }
 
-export async function listServerPairingLinks(): Promise<ReadonlyArray<ServerPairingLinkRecord>> {
-  try {
-    const pairingLinks = await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) => client.auth.pairingLinks({ headers: {} })),
-      ),
-    );
-    return pairingLinks.map((pairingLink) => {
-      const timestamps = {
-        createdAt: DateTime.formatIso(pairingLink.createdAt),
-        expiresAt: DateTime.formatIso(pairingLink.expiresAt),
-      };
-      if (pairingLink.label === undefined) {
-        return {
-          id: pairingLink.id,
-          credential: pairingLink.credential,
-          scopes: pairingLink.scopes,
-          subject: pairingLink.subject,
-          createdAt: timestamps.createdAt,
-          expiresAt: timestamps.expiresAt,
-        };
-      }
-      return {
-        id: pairingLink.id,
-        credential: pairingLink.credential,
-        scopes: pairingLink.scopes,
-        subject: pairingLink.subject,
-        label: pairingLink.label,
-        createdAt: timestamps.createdAt,
-        expiresAt: timestamps.expiresAt,
-      };
-    });
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "list-pairing-links",
-      cause: error,
-    });
-  }
-}
-
 export async function revokeServerPairingLink(id: string): Promise<void> {
   try {
     await runPrimaryHttp(
@@ -461,38 +530,6 @@ export async function revokeServerPairingLink(id: string): Promise<void> {
     throw PrimaryEnvironmentRequestError.fromCause({
       operation: "revoke-pairing-link",
       pairingLinkId: id,
-      cause: error,
-    });
-  }
-}
-
-export async function listServerClientSessions(): Promise<
-  ReadonlyArray<ServerClientSessionRecord>
-> {
-  try {
-    const clientSessions = await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) => client.auth.clients({ headers: {} })),
-      ),
-    );
-    return clientSessions.map((clientSession) => ({
-      sessionId: clientSession.sessionId,
-      subject: clientSession.subject,
-      scopes: clientSession.scopes,
-      method: clientSession.method,
-      client: clientSession.client,
-      issuedAt: DateTime.formatIso(clientSession.issuedAt),
-      expiresAt: DateTime.formatIso(clientSession.expiresAt),
-      lastConnectedAt:
-        clientSession.lastConnectedAt === null
-          ? null
-          : DateTime.formatIso(clientSession.lastConnectedAt),
-      connected: clientSession.connected,
-      current: clientSession.current,
-    }));
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "list-client-sessions",
       cause: error,
     });
   }
@@ -557,17 +594,8 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
     });
 }
 
-// Used by the WSL backend swap: invalidate the cached authenticated state
-// (the new backend signs sessions with a different key) and re-bootstrap
-// against the desktop bootstrap credential so the next WS reconnect doesn't
-// hit 401 and start a reauth loop in the renderer.
-export async function reauthenticatePrimaryEnvironment(): Promise<ServerAuthGateState> {
-  resolvedAuthenticatedGateState = null;
-  bootstrapPromise = null;
-  return resolveInitialServerAuthGateState();
-}
-
 export function __resetServerAuthBootstrapForTests() {
   bootstrapPromise = null;
   resolvedAuthenticatedGateState = null;
+  __resetDesktopPrimaryAuthForTests();
 }

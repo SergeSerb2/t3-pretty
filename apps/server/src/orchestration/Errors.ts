@@ -1,3 +1,4 @@
+import { ThreadId } from "@t3tools/contracts";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Schema from "effect/Schema";
 
@@ -51,6 +52,24 @@ export function isThreadAlreadyExistsInvariant(
     error.detail.includes("already exists and cannot be created twice")
   );
 }
+
+export class OrchestrationThreadSettleBlockedError extends Schema.TaggedErrorClass<OrchestrationThreadSettleBlockedError>()(
+  "OrchestrationThreadSettleBlockedError",
+  {
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "This thread still needs attention. Resolve or interrupt it first, then try again.";
+  }
+}
+
+export const OrchestrationCommandRejection = Schema.Union([
+  OrchestrationCommandInvariantError,
+  OrchestrationThreadSettleBlockedError,
+]);
+export type OrchestrationCommandRejection = typeof OrchestrationCommandRejection.Type;
+export const isOrchestrationCommandRejection = Schema.is(OrchestrationCommandRejection);
 
 export class OrchestrationCommandPreviouslyRejectedError extends Schema.TaggedErrorClass<OrchestrationCommandPreviouslyRejectedError>()(
   "OrchestrationCommandPreviouslyRejectedError",
@@ -108,7 +127,7 @@ export class OrchestrationListenerCallbackError extends Schema.TaggedErrorClass<
 
 export type OrchestrationDispatchError =
   | ProjectionRepositoryError
-  | OrchestrationCommandInvariantError
+  | OrchestrationCommandRejection
   | OrchestrationCommandIdConflictError
   | OrchestrationCommandPreviouslyRejectedError
   | OrchestrationProjectorDecodeError

@@ -5,9 +5,13 @@ import {
   SshConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { buildRemoteOpenUrl, EnvironmentId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveRemoteOpenState } from "./remoteOpen";
+import { openRemoteEditorUrl, resolveRemoteOpenState } from "./remoteOpen";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -145,5 +149,17 @@ describe("buildRemoteOpenUrl", () => {
     expect(buildRemoteOpenUrl({ editor: "zed", host: "sol", absolutePath: "/tmp/x" })).toBe(
       undefined,
     );
+  });
+});
+
+describe("openRemoteEditorUrl", () => {
+  it("reports a browser protocol handoff that throws as not opened", async () => {
+    const assign = vi.fn(() => {
+      throw new Error("blocked protocol");
+    });
+    vi.stubGlobal("window", { location: { assign } });
+
+    await expect(openRemoteEditorUrl("vscode://file/example")).resolves.toBe(false);
+    expect(assign).toHaveBeenCalledExactlyOnceWith("vscode://file/example");
   });
 });

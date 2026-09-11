@@ -24,9 +24,13 @@ import {
   AuthWebSocketTicketResult,
   ServerAuthSessionMethod,
 } from "./auth.ts";
-import { AuthSessionId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  DpopFailureReason,
+  AuthSessionId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import { ServerConfig } from "./server.ts";
 import {
   ClientOrchestrationCommand,
   DispatchResult,
@@ -49,6 +53,22 @@ import {
   RelayEnvironmentMintResponse,
   RelayLinkProofRequest,
 } from "./relay.ts";
+import {
+  DictationCleanupRequest,
+  DictationCleanupResult,
+  DictationStatusResult,
+  DictationTranscriptionRequest,
+  DictationTranscriptionResult,
+  DictationUnavailableError,
+  DictationUpstreamError,
+} from "./dictation.ts";
+import {
+  ReadAloudRequest,
+  ReadAloudResult,
+  ReadAloudUnavailableError,
+  ReadAloudUpstreamError,
+} from "./readAloud.ts";
+import { ServerConfig } from "./server.ts";
 
 const OptionalBearerHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),
@@ -91,7 +111,6 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "orchestration_snapshot_failed",
   "orchestration_thread_snapshot_failed",
   "orchestration_dispatch_failed",
-  "server_config_failed",
   "internal_error",
 ]);
 export type EnvironmentInternalErrorReason = typeof EnvironmentInternalErrorReason.Type;
@@ -119,6 +138,8 @@ export class EnvironmentAuthInvalidError extends Schema.TaggedErrorClass<Environ
   {
     code: Schema.Literal("auth_invalid"),
     reason: EnvironmentAuthInvalidReason,
+    // Older servers do not send a DPoP failure category.
+    dpopFailureReason: Schema.optionalKey(DpopFailureReason),
     traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 401 },
@@ -403,27 +424,13 @@ export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
 });
 export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
 
-export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
+class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
   HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
     success: ExecutionEnvironmentDescriptor,
   }),
 ) {}
 
-export const EnvironmentServerConfigSnapshot = Schema.Struct({
-  config: ServerConfig,
-  digest: TrimmedNonEmptyString,
-});
-export type EnvironmentServerConfigSnapshot = typeof EnvironmentServerConfigSnapshot.Type;
-
-export class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
-  HttpApiEndpoint.get("config", "/api/server/config", {
-    headers: OptionalBearerHeaders,
-    success: EnvironmentServerConfigSnapshot,
-    error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
-  }).middleware(EnvironmentAuthenticatedAuth),
-) {}
-
-export class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
+class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
   .add(
     HttpApiEndpoint.get("session", "/api/auth/session", {
       headers: OptionalBearerHeaders,
@@ -524,6 +531,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   .add(
     HttpApiEndpoint.get("shellSnapshot", "/api/orchestration/shell", {
       headers: OptionalBearerHeaders,
+      payload: { acceptAutomations: Schema.optional(Schema.Literal("true")) },
       success: OrchestrationShellSnapshot,
       error: EnvironmentOrchestrationSnapshotErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
@@ -547,7 +555,7 @@ export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestr
   ) {}
 
 /** Large, compressible pull-request payloads travel over HTTP rather than the RPC socket. */
-export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
+class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullRequests").add(
   HttpApiEndpoint.post("diff", "/api/pull-requests/diff", {
     headers: OptionalBearerHeaders,
     payload: PullRequestDiffInput,
@@ -562,7 +570,7 @@ export class EnvironmentPullRequestsHttpApi extends HttpApiGroup.make("pullReque
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
-export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
+class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
   .add(
     HttpApiEndpoint.post("linkProof", "/api/connect/link-proof", {
       headers: OptionalBearerHeaders,
@@ -623,10 +631,69 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+export class EnvironmentDictationHttpApi extends HttpApiGroup.make("dictation")
+  .add(
+    HttpApiEndpoint.get("status", "/api/dictation/status", {
+      headers: OptionalBearerHeaders,
+      success: DictationStatusResult,
+      error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("transcribe", "/api/dictation/transcribe", {
+      headers: OptionalBearerHeaders,
+      payload: DictationTranscriptionRequest,
+      success: DictationTranscriptionResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("cleanup", "/api/dictation/cleanup", {
+      headers: OptionalBearerHeaders,
+      payload: DictationCleanupRequest,
+      success: DictationCleanupResult,
+      error: [
+        DictationUnavailableError,
+        DictationUpstreamError,
+        EnvironmentScopeRequiredError,
+        EnvironmentInternalError,
+      ],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
+export class EnvironmentReadAloudHttpApi extends HttpApiGroup.make("readAloud").add(
+  HttpApiEndpoint.post("synthesize", "/api/read-aloud/synthesize", {
+    headers: OptionalBearerHeaders,
+    payload: ReadAloudRequest,
+    success: ReadAloudResult,
+    error: [
+      ReadAloudUnavailableError,
+      ReadAloudUpstreamError,
+      EnvironmentScopeRequiredError,
+      EnvironmentInternalError,
+    ],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentServerHttpApi extends HttpApiGroup.make("server").add(
+  HttpApiEndpoint.get("config", "/api/server/config", {
+    headers: OptionalBearerHeaders,
+    success: ServerConfig,
+    error: [EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
-  .add(EnvironmentServerHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
-  .add(EnvironmentConnectHttpApi) {}
+  .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentServerHttpApi)
+  .add(EnvironmentDictationHttpApi)
+  .add(EnvironmentReadAloudHttpApi) {}
