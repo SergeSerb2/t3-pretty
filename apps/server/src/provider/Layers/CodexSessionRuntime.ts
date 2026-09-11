@@ -53,7 +53,10 @@ import {
   T3_CODE_MCP_SERVER_NAME,
 } from "../../mcp/McpProviderSession.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
-import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import {
+  buildCodexDeveloperInstructions,
+  type T3CodeToolAvailability,
+} from "../CodexDeveloperInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -84,6 +87,16 @@ export function hasConfiguredMcpServer(
 ): boolean {
   const needle = serverName === undefined ? "mcp_servers." : `mcp_servers.${serverName}.`;
   return appServerArgs?.some((argument) => argument.includes(needle)) === true;
+}
+
+function configuredMcpToolAvailability(
+  appServerArgs: ReadonlyArray<string> | undefined,
+  mcpCapabilities: ReadonlySet<string> | undefined,
+): T3CodeToolAvailability {
+  if (!hasConfiguredMcpServer(appServerArgs)) return { browser: false, device: false };
+  // Callers predating the capability set attached the browser toolkit only.
+  if (mcpCapabilities === undefined) return { browser: true, device: false };
+  return { browser: mcpCapabilities.has("preview"), device: mcpCapabilities.has("device") };
 }
 
 export const CodexResumeCursorSchema = Schema.Struct({
@@ -198,13 +211,9 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
-  /**
-   * Whether the attached `t3-code` MCP server exposes the preview tools. The
-   * server is attached for every session now (the pull request toolkit is
-   * always on), so its presence in `appServerArgs` no longer implies browser
-   * access; the credential's own capability decides the developer prompt.
-   */
-  readonly browserToolsAvailable?: boolean;
+  /** Capabilities the session's `t3-code` MCP credential grants; drives the prompt blocks. */
+  readonly mcpCapabilities?: ReadonlySet<string>;
+  /** Whether this session can use T3 Pretty's native computer tools; gates their prompt. */
   readonly computerToolsAvailable?: boolean;
 }
 
@@ -611,7 +620,7 @@ function buildCodexCollaborationMode(input: {
   readonly interactionMode?: ProviderInteractionMode;
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
-  readonly browserToolsAvailable?: boolean;
+  readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
   readonly computerToolsAvailable?: boolean;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
@@ -647,7 +656,7 @@ export function buildTurnStartParams(input: {
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
   /** Browser instructions are omitted unless the session explicitly attached preview tools. */
-  readonly browserToolsAvailable?: boolean;
+  readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
   /** Computer instructions are omitted unless the session explicitly attached native tools. */
   readonly computerToolsAvailable?: boolean;
 }): Effect.Effect<
@@ -2519,7 +2528,7 @@ export const makeCodexSessionRuntime = (
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
             browserToolsAvailable:
-              hasConfiguredMcpServer(options.appServerArgs, T3_CODE_MCP_SERVER_NAME) &&
+              configuredMcpToolAvailability(options.appServerArgs, options.mcpCapabilities) &&
               (options.browserToolsAvailable ?? true),
             computerToolsAvailable:
               hasConfiguredMcpServer(options.appServerArgs, T3_CODE_COMPUTER_MCP_SERVER_NAME) &&

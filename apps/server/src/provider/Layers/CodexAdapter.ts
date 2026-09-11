@@ -2253,7 +2253,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(mcpSession && mcpSession.servers.length > 0
             ? {
                 environment: {
-                  ...(options?.environment ?? process.env),
+                  ...McpProviderSession.withAgentDeviceEnvironment(
+                    options?.environment ?? process.env,
+                    mcpSession,
+                  ),
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
                 // One env var serves every server: they all share the session bearer.
@@ -2263,6 +2266,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   "-c",
                   `mcp_servers.${server.name}.bearer_token_env_var="T3_MCP_BEARER_TOKEN"`,
                 ]),
+                mcpCapabilities: mcpSession.capabilities,
               }
             : {}),
           browserToolsAvailable: McpProviderSession.hasBrowserTools(mcpSession),

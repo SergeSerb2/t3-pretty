@@ -52,6 +52,8 @@ interface Props {
   readonly bottomInset: number;
 }
 
+const PREVIEW_MINI_PLAYER_CORNER_RADIUS = 12;
+
 // Invisible grab zones straddling each edge; the cursor is the only affordance.
 const RESIZE_HANDLES: ReadonlyArray<{
   readonly direction: BrowserViewportResizeDirection;
@@ -67,6 +69,10 @@ const RESIZE_HANDLES: ReadonlyArray<{
   { direction: "southeast", className: "-bottom-2 -right-2 size-4 cursor-nwse-resize" },
 ];
 
+/**
+ * Floats the thread's browser surface over chat. Native clipping and the DOM
+ * frame use the same radius so their separately composited edges stay aligned.
+ */
 export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const gestureRef = useRef<PointerGesture | null>(null);
@@ -215,7 +221,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           aria-label="Floating browser preview"
           data-preview-mini-player={tabId}
           className="pointer-events-none absolute select-none"
-          style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }}
+          style={{
+            left: frame.x,
+            top: frame.y,
+            width: frame.width,
+            height: frame.height,
+            borderRadius: PREVIEW_MINI_PLAYER_CORNER_RADIUS,
+          }}
         >
           <div className="group pointer-events-auto absolute right-2 top-2 z-[49] size-3">
             <div
@@ -289,11 +301,11 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             </div>
           </div>
 
-          <div className="absolute inset-0 z-[47] rounded-xl bg-muted shadow-2xl/35" />
+          <div className="absolute inset-0 z-[47] rounded-[inherit] bg-muted shadow-2xl/35" />
           <BrowserSurfaceSlot
             tabId={runtimeTabId}
             visible={Boolean(desktopOverlay?.hasWebContents)}
-            cornerRadius={12}
+            cornerRadius={PREVIEW_MINI_PLAYER_CORNER_RADIUS}
             zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
             fitSourceContent
             layoutVersion={`${frame.x}:${frame.y}`}
@@ -302,8 +314,8 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           <div
             className={
               desktopOverlay?.controller === "agent"
-                ? "pointer-events-none absolute inset-0 z-[49] rounded-xl ring-2 ring-inset ring-primary/70"
-                : "pointer-events-none absolute inset-0 z-[49] rounded-xl ring-1 ring-inset ring-border/80"
+                ? "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-2 ring-inset ring-primary/70"
+                : "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80"
             }
             style={
               desktopOverlay?.controller === "agent"
@@ -312,7 +324,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             }
           />
           {desktopOverlay ? (
-            <div className="pointer-events-none absolute inset-0 z-[49] overflow-hidden rounded-xl">
+            <div className="pointer-events-none absolute inset-0 z-[49] overflow-hidden rounded-[inherit]">
               <AgentBrowserCursor
                 tabId={runtimeTabId}
                 zoomFactor={desktopOverlay.zoomFactor}
@@ -322,7 +334,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             </div>
           ) : null}
           {!desktopOverlay?.hasWebContents ? (
-            <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
+            <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-[inherit] bg-muted text-xs text-muted-foreground">
               Reconnecting preview…
             </div>
           ) : null}
