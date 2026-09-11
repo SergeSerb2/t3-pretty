@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 // timeout fail-opens splash while the child is still coming up.
 export const DESKTOP_BEARER_TOKEN_TIMEOUT_MS = 40_000;
 
-export class PrimaryEnvironmentDesktopBearerTimeoutError extends Schema.TaggedErrorClass<PrimaryEnvironmentDesktopBearerTimeoutError>()(
+export class PrimaryEnvironmentDesktopBearerTimeoutError extends Schema.TaggedError<PrimaryEnvironmentDesktopBearerTimeoutError>()(
   "PrimaryEnvironmentDesktopBearerTimeoutError",
   { timeoutMs: Schema.Number },
 ) {

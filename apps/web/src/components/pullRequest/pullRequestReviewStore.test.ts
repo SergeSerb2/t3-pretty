@@ -1,11 +1,10 @@
 import {
   PULL_REQUEST_REVIEW_MAX_COMMENTS,
   type EnvironmentId,
-  type ProjectId,
+  ProjectId,
   type PullRequestRef,
 } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
-import { ProjectId } from "@t3tools/contracts";
 
 import {
   type PendingReviewComment,
@@ -65,8 +64,15 @@ describe("pull request review drafts", () => {
       repository: "owner/repo",
       number: 7,
     };
-    const publicKey = pullRequestReviewKey({ ...reference, host: "github.com" });
-    const enterpriseKey = pullRequestReviewKey({ ...reference, host: "github.example.com" });
+    const environmentId = "environment-a" as EnvironmentId;
+    const publicKey = pullRequestReviewKey(environmentId, {
+      ...reference,
+      host: "github.com",
+    });
+    const enterpriseKey = pullRequestReviewKey(environmentId, {
+      ...reference,
+      host: "github.example.com",
+    });
     const store = usePullRequestReviewStore.getState();
     store.addComment(publicKey, comment("public"));
     store.setSummary(publicKey, "Public review");

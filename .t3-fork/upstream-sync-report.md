@@ -2325,3 +2325,8 @@
 - `shared-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Update both T3 Pretty thread-shell fixture factories for the parent contract's required `pullRequests` field, preserving all fork-specific test behavior.
   - edited `packages/client-runtime/src/state/threadLifecycleOutbox.test.ts`
   - edited `packages/client-runtime/src/state/threadSettled.test.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Updated the merged call sites and tests for the parent APIs while preserving T3 Pretty's environment scoping, automation metadata, and desktop splash-timeout behavior. The Effect tagged-error migration also restores the timeout constructor and error narrowing throughout primary authentication.
+  - edited `apps/web/src/components/preview/previewMiniPlayerLayout.test.ts`
+  - edited `apps/web/src/components/pullRequest/pullRequestReviewStore.test.ts`
+  - edited `apps/web/src/components/sidebar/SidebarAutomationRow.tsx`
+  - edited `apps/web/src/environments/primary/desktopAuth.ts`

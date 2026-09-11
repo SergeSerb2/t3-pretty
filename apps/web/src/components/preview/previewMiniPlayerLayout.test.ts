@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   clampPreviewMiniPlayerPosition,
-  clampPreviewMiniPlayerSize,
   miniPlayerCursorContent,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
   resizePreviewMiniPlayer,

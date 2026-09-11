@@ -148,11 +148,13 @@ export const SidebarAutomationRow = memo(function SidebarAutomationRow(
           <StatusDot status={visual} />
         )}
         <ProjectFavicon
-          environmentId={automation.environmentId}
-          cwd={props.projectCwd ?? ""}
-          projectName={props.projectTitle ?? ""}
-          faviconPath={props.projectFaviconPath}
-          projectIcon={props.projectIcon}
+          project={{
+            environmentId: automation.environmentId,
+            cwd: props.projectCwd ?? "",
+            projectName: props.projectTitle ?? "",
+            faviconPath: props.projectFaviconPath,
+            projectIcon: props.projectIcon,
+          }}
           className="size-4 shrink-0"
         />
         <span className="min-w-0 flex-1 truncate text-sm">{automation.name}</span>
