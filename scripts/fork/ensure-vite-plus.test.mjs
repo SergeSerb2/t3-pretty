@@ -12,6 +12,10 @@ const mobileRelease = NodeFS.readFileSync(
   NodePath.resolve(here, "publish-mobile-release.sh"),
   "utf8",
 );
+const androidRelease = NodeFS.readFileSync(
+  NodePath.resolve(here, "publish-android-release.sh"),
+  "utf8",
+);
 
 function runEnsure({ home, path, installer, purpose = "to publish mobile OTA" }) {
   return NodeChildProcess.spawnSync(
@@ -117,6 +121,184 @@ chmod +x "${bin}/vp"`,
       assert.notEqual(result.status, 0);
       assert.include(result.stderr, "download failed");
       assert.include(result.stderr, "Vite+ install failed; vp is required to publish mobile OTA.");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+function runHelper(home, path, env, body) {
+  return NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `set -euo pipefail
+source "$1"
+${body}`,
+      "ensure-vite-plus-helper-test",
+      helper,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        PATH: path,
+        HOME: home,
+        VP_HOME: NodePath.join(home, ".vite-plus"),
+        ...env,
+      },
+    },
+  );
+}
+
+function writeFakeNpm(root, { hangWithoutAnswer = true } = {}) {
+  const prefix = NodePath.join(root, "npm-prefix");
+  const bin = NodePath.join(root, "fake-bin");
+  NodeFS.mkdirSync(bin, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "npm"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  prefix)
+    [[ "\${2:-}" == "-g" ]]
+    printf '%s\\n' "${prefix}"
+    ;;
+  install)
+    mkdir -p "${prefix}/bin"
+    printf '%s\\n' '#!/bin/bash' 'echo eas 1.0.0' > "${prefix}/bin/eas"
+    chmod +x "${prefix}/bin/eas"
+    echo "'eas' is not available on your PATH."
+    echo "Create a link in ~/.vite-plus/bin/ to make it available? [Y/n]"
+    if ${hangWithoutAnswer ? "true" : "false"}; then
+      read -r answer
+    else
+      read -r answer || true
+    fi
+    printf '%s\\n' "\${answer:-}" > "${prefix}/npm-stdin"
+    ;;
+  *)
+    echo "unexpected npm $*" >&2
+    exit 1
+    ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  return { prefix, bin };
+}
+
+describe("vite_plus global CLI link", () => {
+  it("is used by iOS and Android publish instead of a raw npm install -g", () => {
+    assert.include(mobileRelease, "vite_plus_install_global_cli eas-cli eas");
+    assert.include(androidRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
+    assert.include(androidRelease, "vite_plus_install_global_cli eas-cli eas");
+    assert.notInclude(mobileRelease, "npm install -g eas-cli");
+    assert.notInclude(androidRelease, "npm install -g eas-cli");
+  });
+
+  it("treats CI, Buildkite, and a non-TTY stdin as auto-link", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-ci-"));
+    try {
+      const ci = runHelper(root, "/usr/bin:/bin", { CI: "true" }, `vite_plus_noninteractive`);
+      assert.equal(ci.status, 0, ci.stderr);
+      const buildkite = runHelper(
+        root,
+        "/usr/bin:/bin",
+        { BUILDKITE: "true" },
+        `vite_plus_noninteractive`,
+      );
+      assert.equal(buildkite.status, 0, buildkite.stderr);
+      const nonTty = NodeChildProcess.spawnSync(
+        "bash",
+        [
+          "-c",
+          `set -euo pipefail
+source "$1"
+vite_plus_noninteractive`,
+          "ensure-vite-plus-nontty-test",
+          helper,
+        ],
+        {
+          encoding: "utf8",
+          input: "",
+          env: {
+            PATH: "/usr/bin:/bin",
+            HOME: root,
+            VP_HOME: NodePath.join(root, ".vite-plus"),
+          },
+        },
+      );
+      assert.equal(nonTty.status, 0, nonTty.stderr);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a VP_HOME/bin link without prompting", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-link-"));
+    try {
+      const srcDir = NodePath.join(root, "src");
+      NodeFS.mkdirSync(srcDir);
+      const src = NodePath.join(srcDir, "eas");
+      NodeFS.writeFileSync(src, "#!/bin/bash\necho eas\n", { mode: 0o755 });
+      const result = runHelper(
+        root,
+        "/usr/bin:/bin",
+        { CI: "true" },
+        `vite_plus_link_bin eas ${JSON.stringify(src)}
+test -x "$(vite_plus_home)/bin/eas"`,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const dest = NodePath.join(root, ".vite-plus", "bin", "eas");
+      assert.isTrue(NodeFS.existsSync(dest));
+      assert.equal(NodeFS.readlinkSync(dest), src);
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("answers the Vite+ bin-link prompt on CI and leaves eas on PATH", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-eas-"));
+    try {
+      const { prefix, bin } = writeFakeNpm(root);
+      const result = runHelper(
+        root,
+        `${bin}:/usr/bin:/bin`,
+        { CI: "true" },
+        `vite_plus_install_global_cli eas-cli eas
+command -v eas
+eas --version`,
+      );
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.include(NodeFS.readFileSync(NodePath.join(prefix, "npm-stdin"), "utf8"), "y");
+      const linked = NodePath.join(root, ".vite-plus", "bin", "eas");
+      assert.isTrue(NodeFS.existsSync(linked));
+      assert.include(result.stdout, "eas 1.0.0");
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses an existing eas and does not run npm install", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-vite-plus-eas-reuse-"));
+    try {
+      const existing = NodePath.join(root, "existing");
+      NodeFS.mkdirSync(existing);
+      NodeFS.writeFileSync(NodePath.join(existing, "eas"), "#!/bin/bash\necho eas existing\n", {
+        mode: 0o755,
+      });
+      const { bin } = writeFakeNpm(root);
+      const result = runHelper(
+        root,
+        `${existing}:${bin}:/usr/bin:/bin`,
+        { CI: "true" },
+        `vite_plus_install_global_cli eas-cli eas
+eas --version`,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.include(result.stdout, "eas existing");
+      assert.isFalse(NodeFS.existsSync(NodePath.join(root, "npm-prefix", "npm-stdin")));
     } finally {
       NodeFS.rmSync(root, { recursive: true, force: true });
     }

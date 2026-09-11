@@ -329,11 +329,17 @@ ${setup}
     assert.include(mobileRelease, "load_secret EXPO_TOKEN");
     assert.include(mobileRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
     assert.include(mobileRelease, 'ensure_vite_plus "to publish mobile OTA"');
+    assert.include(mobileRelease, "vite_plus_install_global_cli eas-cli eas");
     assert.notInclude(mobileRelease, "vp is required on macos-release to publish mobile OTA.");
+    assert.notInclude(mobileRelease, "npm install -g eas-cli");
     const vitePlus = NodeFS.readFileSync(NodePath.resolve(here, "ensure-vite-plus.sh"), "utf8");
     assert.include(vitePlus, "https://vite.plus");
     assert.include(vitePlus, "T3CODE_VITE_PLUS_INSTALLER");
     assert.include(vitePlus, "VP_HOME:-${HOME}/.vite-plus");
+    assert.include(vitePlus, "vite_plus_noninteractive");
+    assert.include(vitePlus, '[[ -n "${CI:-}" || -n "${BUILDKITE:-}" || ! -t 0 ]]');
+    assert.include(vitePlus, "vite_plus_link_bin");
+    assert.include(vitePlus, "printf 'y\\ny\\ny\\ny\\ny\\n' | npm install -g");
     assert.include(mobileRelease, "EXPO_TOKEN is required to publish OTA");
     assert.include(mobileRelease, "eas update");
     assert.include(mobileRelease, "eas build");
@@ -407,7 +413,7 @@ ${setup}
     assert.notInclude(mobileRelease, "secrets.EXPO_TOKEN");
     assert.notInclude(mobileRelease, "secrets.APPLE_API_KEY");
     assert.notInclude(mobileRelease, "GITHUB_WORKSPACE:-${HOME}");
-    assert.include(mobileRelease, "$(npm prefix -g)/bin");
+    assert.include(vitePlus, "$(npm prefix -g)/bin");
     const macosAgent = NodeFS.readFileSync(
       NodePath.resolve(here, "setup-buildkite-macos-agent.sh"),
       "utf8",
@@ -480,6 +486,9 @@ ${setup}
 
     assert.include(androidRelease, "T3CODE_INTERNAL_ANDROID_RELEASE_ENABLED");
     assert.include(androidRelease, "delivery is wired but inactive");
+    assert.include(androidRelease, 'source "$root/scripts/fork/ensure-vite-plus.sh"');
+    assert.include(androidRelease, "vite_plus_install_global_cli eas-cli eas");
+    assert.notInclude(androidRelease, "npm install -g eas-cli");
     assert.include(androidRelease, 'flavor="${T3CODE_ANDROID_RELEASE_FLAVOR:-internal}"');
     assert.include(androidRelease, 'export T3CODE_BUILD_FLAVOR="$flavor"');
     assert.include(androidRelease, 'export T3CODE_RELAY_URL="https://relay.t3.codes"');
