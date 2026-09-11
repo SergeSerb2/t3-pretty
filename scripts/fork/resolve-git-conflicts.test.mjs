@@ -1252,6 +1252,99 @@ ${">".repeat(7)} theirs
     }
   });
 
+  it("skips and quarantines an invalid completed overlay instead of writing it", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-invalid-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      const overlayPath = "Poisoned.ts";
+      const currentSource = "export const value = 1;\n";
+      NodeFS.writeFileSync(NodePath.join(directory, overlayPath), currentSource);
+      git("add", overlayPath);
+      git("commit", "-qm", "clean tree");
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
+      const key = resolutionCacheKey({ path: overlayPath, conflictedSource: currentSource });
+      NodeFS.writeFileSync(
+        NodePath.join(cacheDirectory, `${key}.json`),
+        `${JSON.stringify({
+          path: overlayPath,
+          resolvedSource: "export const value = 1;\nexport const value = 2;\n",
+          forkChangesPreserved: [],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        })}\n`,
+      );
+
+      assert.deepEqual(
+        applyCompletedContentOverlays({ cacheDir: cacheDirectory, root: directory }),
+        [],
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"),
+        currentSource,
+      );
+      assert.isFalse(NodeFS.existsSync(NodePath.join(cacheDirectory, `${key}.json`)));
+      assert.isTrue(NodeFS.existsSync(NodePath.join(cacheDirectory, `${key}.invalid`)));
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not overlay through a symlink that escapes the repo", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-symlink-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const outsideDirectory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-outside-"),
+    );
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      const overlayPath = "linked.ts";
+      const currentSource = "export const value = 1;\n";
+      const resolvedSource = "export const value = 2;\n";
+      const outsidePath = NodePath.join(outsideDirectory, "secret.ts");
+      NodeFS.writeFileSync(outsidePath, currentSource);
+      NodeFS.symlinkSync(outsidePath, NodePath.join(directory, overlayPath));
+      git("add", overlayPath);
+      git("commit", "-qm", "symlink tree");
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
+      writeCachedResolution({
+        key: resolutionCacheKey({ path: overlayPath, conflictedSource: currentSource }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: overlayPath,
+          resolvedSource,
+          forkChangesPreserved: [],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      assert.deepEqual(
+        applyCompletedContentOverlays({ cacheDir: cacheDirectory, root: directory }),
+        [],
+      );
+      assert.equal(NodeFS.readFileSync(outsidePath, "utf8"), currentSource);
+      assert.isTrue(NodeFS.lstatSync(NodePath.join(directory, overlayPath)).isSymbolicLink());
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+      NodeFS.rmSync(outsideDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("overlays completed content-hash entries on a clean merge with no text conflicts", async () => {
     const directory = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-clean-"),
@@ -1271,6 +1364,7 @@ ${">".repeat(7)} theirs
       git("commit", "-qm", "clean tree");
 
       const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
       writeCachedResolution({
         key: resolutionCacheKey({ path: overlayPath, conflictedSource: currentSource }),
         cacheDir: cacheDirectory,

@@ -156,6 +156,46 @@ function isSafeRepoRelativePath(path) {
   return path !== ".git" && !path.startsWith(".git/");
 }
 
+function isPathInsideRoot(root, candidate) {
+  const rootResolved = NodePath.resolve(root);
+  const resolved = NodePath.resolve(candidate);
+  return resolved === rootResolved || resolved.startsWith(`${rootResolved}${NodePath.sep}`);
+}
+
+// Lexical `..` rejection is not enough: a cache path can be a symlink, or a
+// regular file under a parent symlink, that resolves outside the repo.
+function resolveRegularOverlayFile(root, path) {
+  if (!isSafeRepoRelativePath(path)) return undefined;
+  const absolutePath = NodePath.resolve(root, path);
+  if (!isPathInsideRoot(root, absolutePath)) return undefined;
+  try {
+    if (!NodeFS.lstatSync(absolutePath).isFile()) return undefined;
+    const realPath = NodeFS.realpathSync(absolutePath);
+    const realRoot = NodeFS.realpathSync(root);
+    if (!isPathInsideRoot(realRoot, realPath)) return undefined;
+    return { path, absolutePath: realPath };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeRegularFileNoFollow(path, source) {
+  const fd = NodeFS.openSync(path, NodeFS.constants.O_WRONLY | (NodeFS.constants.O_NOFOLLOW ?? 0));
+  try {
+    if (!NodeFS.fstatSync(fd).isFile()) {
+      throw new Error(`${path} is not a regular file`);
+    }
+    NodeFS.ftruncateSync(fd, 0);
+    const bytes = Buffer.from(source, "utf8");
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      offset += NodeFS.writeSync(fd, bytes, offset, bytes.byteLength - offset);
+    }
+  } finally {
+    NodeFS.closeSync(fd);
+  }
+}
+
 function listResolutionCacheKeys(cacheDir) {
   if (!NodeFS.existsSync(cacheDir)) return [];
   if (!NodeFS.lstatSync(cacheDir).isDirectory()) return [];
@@ -199,23 +239,16 @@ export function applyCompletedContentOverlays({
       Object.hasOwn(entry, "partialSource") ||
       Object.hasOwn(entry, "completedBatches") ||
       entry.deleted === true ||
-      !isSafeRepoRelativePath(entry.path) ||
       unmerged.has(entry.path) ||
       isGeneratedLockfile(entry.path)
     ) {
       continue;
     }
-    const absolutePath = NodePath.resolve(root, entry.path);
-    const rootResolved = NodePath.resolve(root);
-    if (
-      absolutePath !== rootResolved &&
-      !absolutePath.startsWith(`${rootResolved}${NodePath.sep}`)
-    ) {
-      continue;
-    }
+    const target = resolveRegularOverlayFile(root, entry.path);
+    if (target === undefined) continue;
     let currentSource;
     try {
-      currentSource = readTextFileBounded(absolutePath, MAX_CONFLICT_FILE_BYTES, entry.path);
+      currentSource = readTextFileBounded(target.absolutePath, MAX_CONFLICT_FILE_BYTES, entry.path);
     } catch {
       continue;
     }
@@ -224,11 +257,28 @@ export function applyCompletedContentOverlays({
       continue;
     }
     if (currentSource === entry.resolvedSource) continue;
-    overlays.push({ path: entry.path, absolutePath, resolvedSource: entry.resolvedSource });
+    try {
+      assertValidResolvedSource({
+        path: entry.path,
+        source: entry.resolvedSource,
+        tolerated: sanitizeMergeArtifacts(entry.mergeArtifacts),
+      });
+    } catch (error) {
+      const quarantined = quarantineCachedResolution({ key, cacheDir });
+      process.stdout.write(
+        `[fork-sync] rejected${quarantined ? " and quarantined" : ""} the invalid content-hash overlay for ${oneLine(entry.path)}: ${oneLine(error instanceof Error ? error.message : String(error))}\n`,
+      );
+      continue;
+    }
+    overlays.push({
+      path: entry.path,
+      absolutePath: target.absolutePath,
+      resolvedSource: entry.resolvedSource,
+    });
   }
   const applied = [];
   for (const overlay of overlays) {
-    NodeFS.writeFileSync(overlay.absolutePath, overlay.resolvedSource);
+    writeRegularFileNoFollow(overlay.absolutePath, overlay.resolvedSource);
     runGit(["add", "--", overlay.path]);
     applied.push(overlay.path);
     process.stdout.write(
