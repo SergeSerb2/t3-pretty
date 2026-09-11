@@ -2456,3 +2456,57 @@
   - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Normalize the optional highlightCodeEnabled prop to a boolean at the component boundary, satisfying NativeMarkdownBlock's required prop without regressing existing highlighting behavior.
   - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260911.1533`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260911.1520`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+- 1 file(s) took the fork-side fallback because no model resolution was available; review their omissions below
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Preserved T3 Pretty's `automatedReview: null` value for linked pull-request and stack presentations, maintaining the fork's automated-review presentation contract.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Preserved T3 Pretty's bounded per-client request queue behavior: rejected routes fail immediately with PreviewAutomationRequestQueueClosedError rather than offering an untracked request to the connection queue.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — T3 Pretty's Claude MCP input normalization into bounded client-renderable arguments.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — T3 Pretty's MCP wire-budget safeguards, including dropping oversized arguments while retaining useful locator and text fields.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — T3 Pretty's bounded MCP/result summarization, stdout fallback, and traversal limits for large content and file collections.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — T3 Pretty's compact per-file diff behavior across ACP, Codex, and Claude payloads, including preserving additions when deletions consume the line budget.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — The test still waits for the thread's session snapshot to reach `running` before synthetically transitioning it to `ready`, preserving T3 Pretty's snapshot-split/thread-start race hardening.
+- `apps/web/src/components/ChatView.logic.ts` — Preserved T3 Pretty's current ChatView import structure, including the existing type-only AtomCommandResult import and existing locations for resolveAssetUrl and videoMimeType.
+- `apps/web/src/components/ChatView.logic.ts` — Left all fork-specific queued-composer reconciliation and surrounding ChatView behavior unchanged.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Per-pull-request pending-state isolation prevents duplicate reviewer mutations and preserves pending state when navigating between targets.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Explicit command-failure handling, readable error toasts, unexpected-exception handling, and success feedback remain intact.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Mounted and active-target checks prevent a completed request from updating stale or unmounted UI state.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — kept the fork side wholesale as a fork-side fallback resolution
+- `packages/client-runtime/src/state/pullRequests.test.ts` — The pull-request environment atom test remains in place and verifies that linked pull-request activity/conversation and diff payloads use LINKED_PULL_REQUEST_IDLE_TTL_MS rather than the generic query TTL.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — The expanded @effect/vitest import retains describe, which is required by the T3 Pretty regression-test grouping.
+- `packages/client-runtime/src/state/pullRequests.ts` — Preserved T3 Pretty's 30-second open pull-request refresh interval, preventing aggressive cache-busted polling from exhausting GitHub API quota while still keeping an open pull request current.
+- `packages/shared/src/usageMerge.test.ts` — Preserved the USAGE_MERGE_MAX_ENVIRONMENTS import used by T3 Pretty's usage-merge environment-limit reliability tests.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Integrated the parent behavior that renders closed multi-PR or stack presentations with `text-adaptive-rose-600-400`, while retaining the standard state class for other presentations.
+- `apps/server/src/mcp/PreviewAutomationBroker.ts` — Integrated the parent onTargetTab callback so accepted preview automation requests report the selected or assigned target tab before dispatch.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — Upstream tests for preserving preview page favicon metadata through result slimming and repeated payload projection across Codex-, Claude-, and state-shaped preview results.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — Upstream coverage for preview open, navigation, status, snapshot, click, and other supported preview action result shapes, including bounded or truncated snapshot payloads.
+- `apps/server/src/orchestration/ActivityPayloadProjection.test.ts` — Upstream negative coverage ensuring no favicon is inferred for unrelated tools, evaluate calls, failed navigation, malformed results, or missing usable page URLs.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Adopted the parent's deterministic `firstSent` Deferred synchronization instead of polling the mock call count.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` — Adopted the parent's single initial turn/session-ready setup, removing the stale duplicate dispatch and session update from the conflict block.
+- `apps/web/src/components/ChatView.logic.ts` — Integrated the parent parseScopedThreadKey import needed for scoped, environment-aware thread handling.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Removed the obsolete `onRequested()` callback invocation, matching the current component API, which no longer accepts that prop.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Removed the explicit `candidatesQuery.refresh()` after a successful mutation, adopting the parent's updated mutation/query synchronization behavior.
+- `apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx` — Retained the parent's success notification exactly once by using the equivalent toast already located inside T3 Pretty's guarded success path.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Added the effect/Data namespace import.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Added the upstream MutationRefused tagged error used by the newer parent tests.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Retained the upstream expect and it imports through T3 Pretty's compatible superset import.
+- `packages/client-runtime/src/state/pullRequests.ts` — Integrated the parent's writableQueryFamily helper, including canonical PullRequestRef construction so property-order differences share cached writable atoms.
+- `packages/client-runtime/src/state/pullRequests.ts` — Integrated retention of the previous successful query value while a refresh is waiting or has failed, with a five-minute writable cache idle TTL.
+- `packages/client-runtime/src/state/pullRequests.ts` — Integrated the parent's updateCached helper, which restarts pending or explicitly refreshed reads before applying confirmed cache updates so stale responses cannot overwrite mutations.
+- `packages/shared/src/usageMerge.test.ts` — Integrated the parent isModelCostUnknown import for upstream unknown-model-cost test coverage.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — every parent change at this file's conflict boundaries (fork-side fallback). Reason: CLIProxyAPI did not produce a completed response for apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx after 3 reasoning attempts
