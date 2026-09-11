@@ -800,6 +800,8 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(importerStep, "os: macos");
     assert.notInclude(importerStep, "queue: macos-medium");
     assert.notInclude(importerStep, "queue: macos-large");
+    assert.include(importerStep, "skip:");
+    assert.include(importerStep, "BK #1952");
     assert.include(pipeline, "runs-on: macos-latest");
     assert.notInclude(pipeline, "runs-on: self-hosted");
     assert.include(pipeline, "build-windows-nsis.ps1");
