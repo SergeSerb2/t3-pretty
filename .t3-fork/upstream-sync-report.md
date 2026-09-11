@@ -2330,3 +2330,5 @@
   - edited `apps/web/src/components/pullRequest/pullRequestReviewStore.test.ts`
   - edited `apps/web/src/components/sidebar/SidebarAutomationRow.tsx`
   - edited `apps/web/src/environments/primary/desktopAuth.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Updated the automation sidebar favicon call to use the parent API’s `workspaceRoot` and `title` fields while preserving the fork’s automation behavior.
+  - edited `apps/web/src/components/sidebar/SidebarAutomationRow.tsx`

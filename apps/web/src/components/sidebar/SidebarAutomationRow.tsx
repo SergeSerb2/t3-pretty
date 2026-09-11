@@ -150,8 +150,8 @@ export const SidebarAutomationRow = memo(function SidebarAutomationRow(
         <ProjectFavicon
           project={{
             environmentId: automation.environmentId,
-            cwd: props.projectCwd ?? "",
-            projectName: props.projectTitle ?? "",
+            workspaceRoot: props.projectCwd ?? "",
+            title: props.projectTitle ?? "",
             faviconPath: props.projectFaviconPath,
             projectIcon: props.projectIcon,
           }}
