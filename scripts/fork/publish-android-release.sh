@@ -6,6 +6,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+# shellcheck source=ensure-vite-plus.sh
+source "$root/scripts/fork/ensure-vite-plus.sh"
 
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:${HOME}/.vite-plus/bin:${HOME}/.local/bin:${PATH}"
 export APP_VARIANT=production
@@ -175,10 +177,10 @@ vp run --filter @t3tools/mobile typecheck
 
 pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
 export PATH="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin:${PATH}"
-if ! command -v eas >/dev/null; then
-  npm install -g eas-cli
+if ! vite_plus_install_global_cli eas-cli eas; then
+  echo "eas-cli is required to publish Android builds." >&2
+  exit 1
 fi
-export PATH="$(npm prefix -g)/bin:${PATH}"
 eas --version
 submit_track="$(node --print "require('./apps/mobile/eas.json').submit?.production?.android?.track ?? ''")"
 if [[ "$submit_track" != "internal" ]]; then

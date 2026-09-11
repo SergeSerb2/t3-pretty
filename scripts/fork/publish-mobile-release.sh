@@ -341,14 +341,10 @@ vp run --filter @t3tools/mobile typecheck
 pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
 export PATH="${HOME}/.vite-plus/package_manager/pnpm/${pnpm_version}/pnpm/bin:${PATH}"
 
-if ! command -v npm >/dev/null; then
-  echo "npm is required on macos-release to install eas-cli." >&2
+if ! vite_plus_install_global_cli eas-cli eas; then
+  echo "eas-cli is required to publish mobile OTA." >&2
   exit 1
 fi
-if ! command -v eas >/dev/null; then
-  npm install -g eas-cli
-fi
-export PATH="$(npm prefix -g)/bin:${PATH}"
 command -v eas
 eas --version
 
