@@ -2332,3 +2332,6 @@
   - edited `apps/web/src/environments/primary/desktopAuth.ts`
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Updated the automation sidebar favicon call to use the parent API’s `workspaceRoot` and `title` fields while preserving the fork’s automation behavior.
   - edited `apps/web/src/components/sidebar/SidebarAutomationRow.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Fix the mobile typecheck by supplying the pending shell’s required enabledSkillIds field from the supported empty fallback rather than reading a nonexistent queue property.
+  - edited `apps/mobile/src/state/pending-thread-creation.ts`
+  - omitted parent change: Forward enabledSkillIds from the queued thread message into the pending shell.. Reason: The mobile QueuedThreadMessage contract has no enabledSkillIds field. The parent shell API is retained with its existing empty-list fallback, without inventing an unsupported queue property.
