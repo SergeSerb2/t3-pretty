@@ -1,10 +1,16 @@
 name: T3 Pretty Desktop Release
 
 # Origin is the fork's forge and updater host. GitHub Releases are not used.
-# Signed Mac/Windows installers are the native macos-large and
+# Signed Mac/Windows installers are the native macos-release and
 # windows-release steps in .buildkite/pipeline.yml. This imported workflow
 # only resolves the fork version, writes What's New notes, and compiles the
-# WSL node-pty smoke binary on hosted Linux.
+# WSL node-pty smoke binary on hosted Linux. Those ubuntu-latest jobs
+# (and the workflow concurrency gates the importer uploads for them)
+# are temporarily skipped: github-actions#v0.13.0 does not inherit
+# origin-workflows soft_fail onto children, and hosted linux-small
+# auto-cancels them (BK #1944/#1948/#1952). Native packaging does not
+# read these outputs. TODO: restore concurrency + job `if` guards
+# once hosted linux-small dispatch works.
 #
 # Do not add `uses:` steps. Buildkite's importer resolves every action from
 # api.github.com at parse time, including jobs that later skip, and a burst
@@ -42,14 +48,22 @@ env:
 # Versions stay monotonic, so desktop releases still queue one at a time.
 # Preflight and the WSL node-pty compile run on hosted ubuntu-latest and do
 # not occupy the packaging Mac. Packaging stays on the native Mac and Windows agents.
-concurrency:
-  group: fork-release
-  cancel-in-progress: false
+# TODO: restore workflow concurrency once hosted linux-small dispatch
+# works. The importer uploads Start/Finish concurrency gates that do
+# not inherit origin-workflows soft_fail; they cancel on linux-small
+# and red the packaging build (BK #1944/#1948/#1952).
+# concurrency:
+#   group: fork-release
+#   cancel-in-progress: false
 
 jobs:
   preflight:
     name: Resolve T3 Pretty release
-    if: github.repository == 'SergeSerb2/t3-pretty'
+    # TODO: restore `if: github.repository == 'SergeSerb2/t3-pretty'`
+    # once hosted linux-small works. The importer uploads this job
+    # without soft_fail; waiting_failed reds the packaging build
+    # (BK #1952). Native packaging does not read these outputs.
+    if: false
     continue-on-error: true
     permissions:
       contents: read
@@ -361,7 +375,10 @@ jobs:
   build_wsl_node_pty:
     name: Build WSL node-pty (linux-x64)
     needs: preflight
-    if: needs.preflight.result == 'success' && needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
+    # TODO: restore the preflight-output guard once hosted linux-small
+    # works. Same importer child hard-fail as preflight (BK #1952).
+    # if: needs.preflight.result == 'success' && needs.preflight.outputs.should_release == 'true' && needs.preflight.outputs.windows_release == 'true'
+    if: false
     permissions:
       contents: read
     runs-on: ubuntu-latest
