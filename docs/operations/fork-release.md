@@ -72,9 +72,13 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    validation (a non-unique or missing `old_text`) is requested once more before the run gives
    up, and every completed file is checkpointed to the `automation/sync-resolution-cache` branch
    even when the run fails, so a rerun resumes where it stopped instead of re-resolving finished
-   files. The branch retains at most 256 valid entries and 64 MiB; older entries are best-effort
-   acceleration, not durable release state. A modify/delete conflict where the fork deleted the
-   file resolves deterministically — the deletion is committed fork intent, so it is kept and the
+   files. After that conflict apply, completed cache entries are also matched by a content hash of
+   the current file (`sha256(path + NUL + source)`). That overlay exists for Effect upgrades and
+   other fork-only modules that auto-merge cleanly, never become unmerged, and would otherwise miss
+   the conflict cache and overflow the 8-file repair pass. The branch retains at most 256 valid
+   entries and 64 MiB; older entries are best-effort acceleration, not durable release state.
+   A modify/delete conflict where the fork deleted the file resolves deterministically — the
+   deletion is committed fork intent, so it is kept and the
    parent's changes to the file are recorded as omissions. A modify/delete where the parent
    deleted the file goes through the model with the parent's deletion evidence, presented as one
    whole-file conflict against an empty deleted side; an empty resolution follows the deletion.
