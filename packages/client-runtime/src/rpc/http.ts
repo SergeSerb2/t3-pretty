@@ -20,6 +20,53 @@ import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
+const REMOTE_ERROR_DETAIL_MAX_LENGTH = 4_096;
+const REMOTE_ERROR_NAME_MAX_LENGTH = 128;
+
+function readRemoteErrorText(
+  value: object,
+  key: PropertyKey,
+  maxLength: number,
+): string | undefined {
+  try {
+    const text = Reflect.get(value, key);
+    return typeof text === "string" ? text.slice(0, maxLength) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function describeRemoteRequestCause(cause: unknown): string {
+  if ((typeof cause === "object" && cause !== null) || typeof cause === "function") {
+    const message = readRemoteErrorText(cause, "message", REMOTE_ERROR_DETAIL_MAX_LENGTH);
+    const name = readRemoteErrorText(cause, "name", REMOTE_ERROR_NAME_MAX_LENGTH);
+    if (message !== undefined) {
+      return (name === undefined ? message : `${name}: ${message}`).slice(
+        0,
+        REMOTE_ERROR_DETAIL_MAX_LENGTH,
+      );
+    }
+    return name ?? typeof cause;
+  }
+  if (typeof cause === "string") {
+    return cause.slice(0, REMOTE_ERROR_DETAIL_MAX_LENGTH);
+  }
+  if (typeof cause === "symbol") {
+    return cause.description?.slice(0, REMOTE_ERROR_DETAIL_MAX_LENGTH) ?? "symbol";
+  }
+  if (cause === null) {
+    return "null";
+  }
+  switch (typeof cause) {
+    case "bigint":
+    case "boolean":
+    case "number":
+    case "undefined":
+      return String(cause);
+  }
+  return "unknown";
+}
+
 export class RemoteEnvironmentAuthFetchError extends Data.TaggedError(
   "RemoteEnvironmentAuthFetchError",
 )<{
@@ -105,44 +152,33 @@ export const makeEnvironmentHttpApiUrlBuilder = (httpBaseUrl: string) =>
     baseUrl: remoteApiBaseUrl(httpBaseUrl),
   });
 
-const failRemoteRequest = (
-  requestUrl: string,
-  cause: unknown,
-): Effect.Effect<never, RemoteEnvironmentRequestError> => {
+const remoteRequestError = (requestUrl: string, cause: unknown): RemoteEnvironmentRequestError => {
   if (cause instanceof RemoteEnvironmentAuthTimeoutError) {
-    return Effect.fail(cause);
+    return cause;
   }
   if (isEnvironmentHttpCommonError(cause)) {
-    return Effect.fail(cause);
+    return cause;
   }
   if (Schema.isSchemaError(cause)) {
-    return Effect.fail(
-      new RemoteEnvironmentAuthInvalidJsonError({
-        message: `Remote environment endpoint returned an invalid response from ${requestUrl}.`,
-        cause,
-      }),
-    );
+    return new RemoteEnvironmentAuthInvalidJsonError({
+      message: `Remote environment endpoint returned an invalid response from ${requestUrl}.`,
+      cause,
+    });
   }
   if (HttpClientError.isHttpClientError(cause) && cause.response !== undefined) {
     const response = cause.response;
     if (response.status < 200 || response.status >= 300) {
-      return Effect.fail(
-        new RemoteEnvironmentAuthUndeclaredStatusError(requestUrl, response.status),
-      );
+      return new RemoteEnvironmentAuthUndeclaredStatusError(requestUrl, response.status);
     }
-    return Effect.fail(
-      new RemoteEnvironmentAuthInvalidJsonError({
-        message: `Remote environment endpoint returned an invalid response from ${requestUrl}.`,
-        cause,
-      }),
-    );
-  }
-  return Effect.fail(
-    new RemoteEnvironmentAuthFetchError({
-      message: `Failed to fetch remote environment endpoint ${requestUrl} (${String(cause)}).`,
+    return new RemoteEnvironmentAuthInvalidJsonError({
+      message: `Remote environment endpoint returned an invalid response from ${requestUrl}.`,
       cause,
-    }),
-  );
+    });
+  }
+  return new RemoteEnvironmentAuthFetchError({
+    message: `Failed to fetch remote environment endpoint ${requestUrl} (${describeRemoteRequestCause(cause)}).`,
+    cause,
+  });
 };
 
 export const executeEnvironmentHttpRequest = <A, E, R>(
@@ -158,5 +194,27 @@ export const executeEnvironmentHttpRequest = <A, E, R>(
         onSome: Effect.succeed,
       }),
     ),
-    Effect.catch((cause) => failRemoteRequest(requestUrl, cause)),
+    Effect.mapError((cause) => remoteRequestError(requestUrl, cause)),
+  );
+
+export const executeEnvironmentHttpRequestWithAdditionalError = <A, E, R, AdditionalError>(
+  requestUrl: string,
+  timeoutMs: number,
+  request: Effect.Effect<A, E, R>,
+  isAdditionalError: (cause: unknown) => cause is AdditionalError,
+): Effect.Effect<A, RemoteEnvironmentRequestError | AdditionalError, R> =>
+  request.pipe(
+    Effect.timeoutOption(Duration.millis(timeoutMs)),
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.fail(new RemoteEnvironmentAuthTimeoutError(requestUrl, timeoutMs)),
+        onSome: Effect.succeed,
+      }),
+    ),
+    Effect.mapError((cause): RemoteEnvironmentRequestError | AdditionalError => {
+      const additionalCause: unknown = cause;
+      return isAdditionalError(additionalCause)
+        ? additionalCause
+        : remoteRequestError(requestUrl, cause);
+    }),
   );

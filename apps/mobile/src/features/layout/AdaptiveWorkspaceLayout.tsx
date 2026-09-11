@@ -35,6 +35,7 @@ import {
   type WorkspacePaneLayout,
 } from "../../lib/layout";
 import { resolveThreadSelectionNavigationAction } from "../../lib/adaptive-navigation";
+import { limitMobileSearchQuery, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH } from "../../lib/searchQuery";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { markThreadOpenStarted } from "../observability/threadPerformance";
 import { mobilePreferencesAtom } from "../../state/preferences";
@@ -46,7 +47,10 @@ import {
   parseActiveThreadPath,
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
+import { useServerConfigs } from "../../state/entities";
+import { AndroidHomeFabLayout } from "../home/AndroidHomeFab";
 import { HomeListOptionsProvider } from "../home/home-list-options";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
@@ -219,6 +223,7 @@ function AdaptiveWorkspaceLayoutContent(
   },
 ) {
   const projectGroupingMode = props.projectGroupingMode;
+  const { materialYouStyleLayoutActive } = useAppearancePreferences();
   const { width, height } = useWindowDimensions();
   const pathname = props.pathname;
   const navigation = useNavigation();
@@ -232,7 +237,12 @@ function AdaptiveWorkspaceLayoutContent(
   const [fileInspectorPreferredWidth, setFileInspectorPreferredWidth] = useState<number | null>(
     null,
   );
-  const [primarySidebarSearchQuery, setPrimarySidebarSearchQuery] = useState("");
+  const [primarySidebarSearchQuery, setPrimarySidebarSearchQueryState] = useState("");
+  const setPrimarySidebarSearchQuery = useCallback((query: string) => {
+    setPrimarySidebarSearchQueryState(
+      limitMobileSearchQuery(query, MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH),
+    );
+  }, []);
   const [focusedAuxiliaryPaneRole, setFocusedAuxiliaryPaneRole] =
     useState<WorkspaceAuxiliaryPaneRole | null>(null);
   const baseLayout = useMemo(() => deriveLayout({ width, height }), [height, width]);
@@ -440,6 +450,24 @@ function AdaptiveWorkspaceLayoutContent(
     navigation.navigate("PullRequests");
   }, [navigation]);
 
+  // One capable environment is enough to offer the entry point; the list screen
+  // picks the environment and explains any that are too old.
+  const serverConfigs = useServerConfigs();
+  const automationsSupported = useMemo(
+    () =>
+      Array.from(serverConfigs.values()).some(
+        (config) => config.environment.capabilities.automations === true,
+      ),
+    [serverConfigs],
+  );
+  const handleOpenAutomations = useCallback(() => {
+    navigation.navigate("Automations");
+  }, [navigation]);
+
+  const handleStartNewTask = useCallback(() => {
+    navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+  }, [navigation]);
+
   // Minted here (root stack navigation) so the sidebar pane stays free of
   // navigation hooks — on iOS it renders inside an independent nav tree.
   const handleOpenEnvironmentSettings = useCallback(() => {
@@ -448,6 +476,21 @@ function AdaptiveWorkspaceLayoutContent(
       params: { screen: "SettingsEnvironments" },
     });
   }, [navigation]);
+
+  const handleNewThreadOnBranch = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      navigation.navigate("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          environmentId: String(thread.environmentId),
+          projectId: String(thread.projectId),
+          branch: thread.branch,
+          worktreePath: thread.worktreePath,
+        },
+      });
+    },
+    [navigation],
+  );
 
   const handleNewThreadInProject = useCallback(
     (project: EnvironmentProject) => {
@@ -548,23 +591,36 @@ function AdaptiveWorkspaceLayoutContent(
               pointerEvents={panes.primarySidebarVisible ? "auto" : "none"}
               style={sidebarAnimatedStyle}
             >
-              <ThreadNavigationSidebar
-                width={layout.listPaneWidth}
-                visible={panes.primarySidebarVisible}
-                onRequestVisibility={revealPrimarySidebar}
-                selectedThreadKey={selectedThreadKey}
-                onOpenSettings={handleOpenSettings}
-                onOpenPullRequests={handleOpenPullRequests}
-                onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
-                onNewThreadInProject={handleNewThreadInProject}
-                onSelectThread={handleSelectThread}
-                onRenameThread={handleRenameThread}
-                onSearchQueryChange={setPrimarySidebarSearchQuery}
-                searchQuery={primarySidebarSearchQuery}
-              />
+              <View className="flex-1" style={{ width: layout.listPaneWidth }}>
+                <AndroidHomeFabLayout onStartNewTask={handleStartNewTask}>
+                  <ThreadNavigationSidebar
+                    width={layout.listPaneWidth}
+                    visible={panes.primarySidebarVisible}
+                    onRequestVisibility={revealPrimarySidebar}
+                    selectedThreadKey={selectedThreadKey}
+                    onOpenSettings={handleOpenSettings}
+                    onOpenPullRequests={handleOpenPullRequests}
+                    onOpenAutomations={automationsSupported ? handleOpenAutomations : null}
+                    onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
+                    onNewThreadInProject={handleNewThreadInProject}
+                    onNewThreadOnBranch={handleNewThreadOnBranch}
+                    onSelectThread={handleSelectThread}
+                    onRenameThread={handleRenameThread}
+                    onSearchQueryChange={setPrimarySidebarSearchQuery}
+                    searchQuery={primarySidebarSearchQuery}
+                  />
+                </AndroidHomeFabLayout>
+              </View>
             </Animated.View>
           ) : null}
-          <View className="flex-1 overflow-hidden bg-screen" collapsable={false}>
+          <View
+            className={
+              materialYouStyleLayoutActive
+                ? "flex-1 overflow-hidden bg-header"
+                : "flex-1 overflow-hidden bg-screen"
+            }
+            collapsable={false}
+          >
             <View
               collapsable={false}
               style={

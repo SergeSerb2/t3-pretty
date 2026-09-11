@@ -1,3 +1,25 @@
+/**
+ * Compares timestamp strings by their represented instant, not their spelling.
+ * Invalid values sort before valid ones so descending user-facing lists leave
+ * corrupt persisted rows at the end instead of promoting them as newest.
+ */
+export function compareTimestamps(left: string, right: string): -1 | 0 | 1 {
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  const leftValid = Number.isFinite(leftMs);
+  const rightValid = Number.isFinite(rightMs);
+
+  if (!leftValid) {
+    if (rightValid) return -1;
+    const lexical = left.localeCompare(right);
+    return lexical < 0 ? -1 : lexical > 0 ? 1 : 0;
+  }
+  if (!rightValid) {
+    return 1;
+  }
+  return leftMs < rightMs ? -1 : leftMs > rightMs ? 1 : 0;
+}
+
 export function relativeTime(input: string): string {
   const timestamp = Date.parse(input);
   if (Number.isNaN(timestamp)) {

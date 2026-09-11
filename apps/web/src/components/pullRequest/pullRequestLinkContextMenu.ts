@@ -8,7 +8,7 @@ import { toastManager } from "../ui/toast";
 export type PullRequestLinkContextMenuAction = "copy-link" | "open-external";
 
 /** Named for the host rather than "externally": the point is where you will land. */
-export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
+const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
   github: "Open on GitHub",
   gitlab: "Open on GitLab",
   bitbucket: "Open on Bitbucket",
@@ -18,8 +18,19 @@ export const OPEN_ON_HOST_LABELS: Partial<Record<string, string>> = {
 export const openOnHostLabel = (provider: string): string =>
   OPEN_ON_HOST_LABELS[provider] ?? "Open on host";
 
+/** Open a host URL from a button while containing a rejected browser/desktop bridge request. */
+export async function openPullRequestLinkOnHost(url: string): Promise<void> {
+  const api = readLocalApi();
+  if (!api) return;
+  try {
+    await api.shell.openExternal(url);
+  } catch {
+    toastManager.add({ type: "error", title: "Could not open the link" });
+  }
+}
+
 /** Copy first: it is the reason to right-click a number rather than click it. */
-export function pullRequestLinkContextMenuItems(
+function pullRequestLinkContextMenuItems(
   openLabel: string,
 ): readonly ContextMenuItem<PullRequestLinkContextMenuAction>[] {
   return [

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Native macos-release arm64 DMG. Imported GHA macos-latest jobs now land on
-# hosted Macs that cannot sign or see the Origin git store.
+# Native hosted macos-large arm64 DMG. Signing imports CSC_LINK into a
+# per-job temp keychain from cluster secrets. Feed upload is R2/S3 via
+# origin-forge upload-assets (not the Origin CLI / CURSOR_API_KEY).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
+# shellcheck source=apple-signing-lock.sh
+source "$root/scripts/fork/apple-signing-lock.sh"
 
 export PATH="/opt/homebrew/bin:${HOME}/.vite-plus/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${PATH}"
 export T3CODE_DESKTOP_UPDATE_FEED_URL="${T3CODE_DESKTOP_UPDATE_FEED_URL:-https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/}"
@@ -90,9 +93,9 @@ fi
 echo "Building macOS arm64 $version"
 
 # Bake What's New notes into this artifact. They are pushed to main only
-# after the artifacts and update feed are live (end of this script), so the
-# build that push triggers sees the version in the feed and skips packaging
-# instead of publishing the same version twice. Changelog-commit retries
+# after the artifacts and update feed are live (end of this script), with
+# [skip ci] so the push starts no build. A manual retry that meets the notes
+# commit at HEAD still reads the feed and skips a shipped version. Changelog-commit retries
 # already persisted notes; do not regenerate them (model/fallback drift would
 # rewrite the shipped file). Hosted Linux preflight cannot load
 # CLI_PROXY_API_KEY or push to Origin, which is why notes froze after
@@ -119,20 +122,33 @@ rustup target add aarch64-apple-darwin
 rustup default stable
 
 if ! command -v vp >/dev/null; then
-  echo "vp is required on macos-release." >&2
+  # Fresh hosted runners do not have the self-hosted Mac's toolchain.
+  export VP_HOME="${VP_HOME:-${HOME}/.vite-plus}"
+  curl -fsSL https://vite.plus | CI=true bash
+  export PATH="${VP_HOME}/bin:${PATH}"
+fi
+if ! command -v vp >/dev/null; then
+  echo "vp installation failed on the macOS release runner." >&2
   exit 1
 fi
 vp i --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
 node scripts/update-release-package-versions.ts "$version"
 
-tmp="${TMPDIR:-/tmp}/t3-macos-release-$$"
-mkdir -p "$tmp"
+tmp=""
 cleanup() {
-  security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
-  security delete-keychain "$tmp/fork-release.keychain-db" >/dev/null 2>&1 || true
-  rm -rf "$tmp"
+  if [[ "$apple_signing_lock_held" == "1" ]]; then
+    security list-keychains -d user -s "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${tmp:-}" ]]; then
+    security delete-keychain "$tmp/fork-release.keychain-db" >/dev/null 2>&1 || true
+    rm -rf "$tmp"
+  fi
+  apple_signing_lock_release
 }
 trap cleanup EXIT
+apple_signing_lock_acquire
+tmp="${TMPDIR:-/tmp}/t3-macos-release-$$"
+mkdir -p "$tmp"
 
 key_path="$tmp/AuthKey_${APPLE_API_KEY_ID}.p8"
 printf '%s' "$APPLE_API_KEY" > "$key_path"
@@ -188,6 +204,8 @@ unzip -p "$zip_path" '*/Contents/Resources/app-update.yml' > "$tmp/app-update.ym
 grep -F 'provider: generic' "$tmp/app-update.yml"
 grep -F "${T3CODE_DESKTOP_UPDATE_FEED_URL%/}/" "$tmp/app-update.yml"
 
+node scripts/fork/smoke-macos-backend.mjs "$app_path"
+
 publish="$root/release-publish"
 rm -rf "$publish"
 mkdir -p "$publish"
@@ -209,11 +227,13 @@ for file in "$publish"/*.{dmg,zip,blockmap,yml}; do
   assets+=(--asset "$file")
 done
 (( ${#assets[@]} > 0 ))
+# R2/S3 updater-feed upload. This does not call the Origin CLI or need
+# CURSOR_API_KEY; hosted M4 can run it with the cluster S3 credentials.
 node scripts/fork/origin-forge.mjs upload-assets "${assets[@]}"
 
-# Push the baked notes only now that the feed lists this version: the build
-# this push triggers reads the feed and skips packaging instead of racing
-# this release.
+# Push the baked notes only now that the feed lists this version. The notes
+# commit carries [skip ci], so the push starts no build that would cancel
+# the iOS/Linux/relay jobs of this release still running.
 if [[ "$notes_pending" == "1" ]]; then
   if ! node scripts/fork/generate-changelog.mjs --publish; then
     echo "warning: release notes ship with $version but could not be pushed to main"

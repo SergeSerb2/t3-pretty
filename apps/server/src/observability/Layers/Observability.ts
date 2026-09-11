@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
+import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as OtlpExporter from "effect/unstable/observability/OtlpExporter";
 import * as OtlpMetrics from "effect/unstable/observability/OtlpMetrics";
 import * as OtlpSerialization from "effect/unstable/observability/OtlpSerialization";
@@ -13,6 +14,7 @@ import * as ServerConfig from "../../config.ts";
 import * as ResourceAttribution from "../../resourceTelemetry/ResourceAttribution.ts";
 import { ServerLoggerLive } from "../../serverLogger.ts";
 import * as BrowserTraceCollector from "../BrowserTraceCollector.ts";
+import { shouldDisableHttpServerTracing } from "../sensitiveHttpTrace.ts";
 
 const otlpSerializationLayer = OtlpSerialization.layerJson;
 
@@ -24,6 +26,9 @@ export const ObservabilityLive = Layer.unwrap(
     const traceReferencesLayer = Layer.mergeAll(
       Layer.succeed(Tracer.MinimumTraceLevel, config.traceMinLevel),
       Layer.succeed(References.TracerTimingEnabled, config.traceTimingEnabled),
+      Layer.succeed(HttpMiddleware.TracerDisabledWhen, (request) =>
+        shouldDisableHttpServerTracing(request.url),
+      ),
       httpHeaderRedactionLayer,
     );
 

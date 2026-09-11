@@ -22,7 +22,8 @@ import { getLocalStorageItem, setLocalStorageItem } from "~/hooks/useLocalStorag
 import { resolveSidebarState, type ResponsiveSidebarState } from "./sidebarState";
 import * as Schema from "effect/Schema";
 
-const SIDEBAR_STATE_STORAGE_KEY = "sidebar_state";
+const SIDEBAR_COOKIE_NAME = "sidebar_state";
+const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
 const SIDEBAR_WIDTH_ICON = "3rem";
@@ -39,12 +40,7 @@ type SidebarContextProps = {
 };
 
 type SidebarResizableOptions = {
-  // Formats a width for the wrapper's `--sidebar-width` custom property.
-  // Consumers can return a viewport-clamped CSS expression so the rendered
-  // width stays legal even when the window resizes without a resize event.
   getCssWidth?: (width: number) => string;
-  // A getter is resolved on every drag frame so the cap tracks the live
-  // window size instead of a render-time snapshot.
   maxWidth?: number | (() => number);
   minWidth?: number;
   onResize?: (width: number) => void;
@@ -60,8 +56,7 @@ type SidebarResizableOptions = {
 };
 
 type SidebarResolvedResizableOptions = {
-  getCssWidth?: (width: number) => string;
-  maxWidth: number | (() => number);
+  maxWidth: number;
   minWidth: number;
   onResize?: (width: number) => void;
   shouldAcceptWidth?: (context: {
@@ -97,15 +92,6 @@ function useSidebarVisibility() {
   return isMobile ? openMobile : open;
 }
 
-function readPersistedOpen(defaultOpen: boolean) {
-  try {
-    return getLocalStorageItem(SIDEBAR_STATE_STORAGE_KEY, Schema.Boolean) ?? defaultOpen;
-  } catch (error) {
-    console.error("Could not read persisted sidebar state.", error);
-    return defaultOpen;
-  }
-}
-
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -124,10 +110,10 @@ function SidebarProvider({
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(() => readPersistedOpen(defaultOpen));
+  const [_open, _setOpen] = React.useState(defaultOpen);
   const open = openProp ?? _open;
   const setOpen = React.useCallback(
-    (value: boolean | ((value: boolean) => boolean)) => {
+    async (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value;
       if (setOpenProp) {
         setOpenProp(openState);
@@ -135,11 +121,13 @@ function SidebarProvider({
         _setOpen(openState);
       }
 
-      try {
-        setLocalStorageItem(SIDEBAR_STATE_STORAGE_KEY, openState, Schema.Boolean);
-      } catch (error) {
-        console.error("Could not persist sidebar state.", error);
-      }
+      // This sets the cookie to keep the sidebar state.
+      await cookieStore.set({
+        expires: Date.now() + SIDEBAR_COOKIE_MAX_AGE * 1000,
+        name: SIDEBAR_COOKIE_NAME,
+        path: "/",
+        value: String(openState),
+      });
     },
     [setOpenProp, open],
   );
@@ -213,11 +201,14 @@ function Sidebar({
     }
 
     const options = typeof resizable === "boolean" ? {} : resizable;
+    const maxWidth =
+      typeof options.maxWidth === "function"
+        ? options.maxWidth()
+        : (options.maxWidth ?? Number.POSITIVE_INFINITY);
     return {
-      maxWidth: options.maxWidth ?? Number.POSITIVE_INFINITY,
+      maxWidth,
       minWidth: options.minWidth ?? SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH,
       storageKey: options.storageKey ?? null,
-      ...(options.getCssWidth ? { getCssWidth: options.getCssWidth } : {}),
       ...(options.onResize ? { onResize: options.onResize } : {}),
       ...(options.shouldAcceptWidth ? { shouldAcceptWidth: options.shouldAcceptWidth } : {}),
     };
@@ -295,7 +286,8 @@ function Sidebar({
         {/* This is what handles the sidebar gap on desktop */}
         <div
           className={cn(
-            "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+            "relative w-(--sidebar-width) bg-transparent",
+            "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
             variant === "floating" || variant === "inset"
@@ -306,7 +298,8 @@ function Sidebar({
         />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            "[[data-panel-animations=true]_&]:transition-[left,right,width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -360,12 +353,7 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
 }
 
 function clampSidebarWidth(width: number, options: SidebarResolvedResizableOptions): number {
-  const maxWidth = typeof options.maxWidth === "function" ? options.maxWidth() : options.maxWidth;
-  return Math.max(options.minWidth, Math.min(width, maxWidth));
-}
-
-function formatSidebarWidth(width: number, options: SidebarResolvedResizableOptions): string {
-  return options.getCssWidth?.(width) ?? `${width}px`;
+  return Math.max(options.minWidth, Math.min(width, options.maxWidth));
 }
 
 function SidebarRail({
@@ -379,13 +367,10 @@ function SidebarRail({
 }: React.ComponentProps<"button">) {
   const { open, toggleSidebar } = useSidebar();
   const sidebarInstance = React.use(SidebarInstanceContext);
+  const railRef = React.useRef<HTMLButtonElement | null>(null);
   const suppressClickRef = React.useRef(false);
   const resizeStateRef = React.useRef<{
     moved: boolean;
-    // Captured before any drag-time writes so a no-op / fully-clamped drag can
-    // put the preference-backed CSS expression back instead of leaving a
-    // transiently clamped value on the wrapper.
-    originalCssWidth: string;
     pointerId: number;
     pendingWidth: number;
     rail: HTMLButtonElement;
@@ -415,24 +400,10 @@ function SidebarRail({
       resizeState.transitionTargets.forEach((element) => {
         element.style.removeProperty("transition-duration");
       });
-      // Commit only when the drag actually changed the width: a plain click or
-      // a fully clamped drag must not overwrite the stored preference with a
-      // transiently clamped visual width.
-      if (resizeState.width !== resizeState.startWidth) {
-        if (resolvedResizable?.storageKey && typeof window !== "undefined") {
-          setLocalStorageItem(resolvedResizable.storageKey, resizeState.width, Schema.Finite);
-        }
-        resolvedResizable?.onResize?.(resizeState.width);
-      } else if (
-        resizeState.wrapper.style.getPropertyValue("--sidebar-width") !==
-        resizeState.originalCssWidth
-      ) {
-        // Drag frames may have rewritten `--sidebar-width` with a clamped
-        // numeric basis (e.g. 460px) even though the preference (e.g. 900px)
-        // never committed. Restore the pre-drag expression so a later wider
-        // viewport can still grow into the stored preference.
-        resizeState.wrapper.style.setProperty("--sidebar-width", resizeState.originalCssWidth);
+      if (resolvedResizable?.storageKey && typeof window !== "undefined") {
+        setLocalStorageItem(resolvedResizable.storageKey, resizeState.width, Schema.Finite);
       }
+      resolvedResizable?.onResize?.(resizeState.width);
       resizeStateRef.current = null;
       if (resizeState.rail.hasPointerCapture(pointerId)) {
         resizeState.rail.releasePointerCapture(pointerId);
@@ -476,7 +447,6 @@ function SidebarRail({
       event.stopPropagation();
       resizeStateRef.current = {
         moved: false,
-        originalCssWidth: wrapper.style.getPropertyValue("--sidebar-width"),
         pointerId: event.pointerId,
         pendingWidth: initialWidth,
         rail: event.currentTarget,
@@ -489,16 +459,7 @@ function SidebarRail({
         width: initialWidth,
         wrapper,
       };
-      // Normalize an out-of-range width before the drag starts. An in-range
-      // width needs no write: the wrapper already renders it, and touching the
-      // custom property would replace a viewport-clamped CSS expression with
-      // a static value.
-      if (initialWidth !== startWidth) {
-        wrapper.style.setProperty(
-          "--sidebar-width",
-          formatSidebarWidth(initialWidth, resolvedResizable),
-        );
-      }
+      wrapper.style.setProperty("--sidebar-width", `${initialWidth}px`);
       event.currentTarget.setPointerCapture(event.pointerId);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
@@ -548,19 +509,7 @@ function SidebarRail({
           return;
         }
 
-        // Unchanged widths must not rewrite `--sidebar-width`: when the
-        // preference is above the live viewport cap, dragging toward the wider
-        // side keeps `nextWidth === startWidth` but `formatSidebarWidth` would
-        // replace the preference-backed expression with one based on the
-        // clamped visual width.
-        if (nextWidth === activeResizeState.width) {
-          return;
-        }
-
-        activeResizeState.wrapper.style.setProperty(
-          "--sidebar-width",
-          formatSidebarWidth(nextWidth, resolvedResizable),
-        );
+        activeResizeState.wrapper.style.setProperty("--sidebar-width", `${nextWidth}px`);
         activeResizeState.width = nextWidth;
       });
     },
@@ -615,6 +564,28 @@ function SidebarRail({
     [onClick, open, resolvedResizable, toggleSidebar],
   );
 
+  React.useLayoutEffect(() => {
+    if (!resolvedResizable?.storageKey || typeof window === "undefined") return;
+    const rail = railRef.current;
+    if (!rail) return;
+    const wrapper = rail.closest<HTMLElement>("[data-slot='sidebar-wrapper']");
+    if (!wrapper) return;
+
+    let storedWidth: number | null;
+    try {
+      storedWidth = getLocalStorageItem(resolvedResizable.storageKey, Schema.Finite);
+    } catch (error) {
+      console.error("Could not restore persisted sidebar width.", error);
+      return;
+    }
+    if (storedWidth === null) return;
+    const clampedWidth = clampSidebarWidth(storedWidth, resolvedResizable);
+    // Hydrate the CSS variable before the browser paints so a restored sidebar
+    // never flashes at the default width first.
+    wrapper.style.setProperty("--sidebar-width", `${clampedWidth}px`);
+    resolvedResizable.onResize?.(clampedWidth);
+  }, [resolvedResizable]);
+
   React.useEffect(() => {
     return () => {
       const resizeState = resizeStateRef.current;
@@ -637,7 +608,8 @@ function SidebarRail({
             aria-label={railLabel}
             className={cn(
               /* disable pointer events only when offcanvas sidebar is collapsed, that's when the rail sits over the native scrollbar on windows and linux. icon mode stays fully clickable. */
-              "-translate-x-1/2 group-data-[side=left]:-right-4 absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=right]:left-0 sm:flex [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-none",
+              "-translate-x-1/2 group-data-[side=left]:-right-4 absolute inset-y-0 z-20 hidden w-4 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=right]:left-0 sm:flex [[data-collapsible=offcanvas][data-state=collapsed]_&]:pointer-events-none",
+              "[[data-panel-animations=true]_&]:transition-all [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
               "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
               "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
               "group-data-[collapsible=offcanvas]:translate-x-0 hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:after:left-full",
@@ -652,6 +624,7 @@ function SidebarRail({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            ref={railRef}
             tabIndex={-1}
             type="button"
             {...props}
@@ -731,7 +704,14 @@ function SidebarContent({
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
-      <ScrollArea hideScrollbars scrollFade className="h-auto min-h-0 flex-1">
+      {/* Rows take focus on click. Scroll padding would make the browser nudge
+          the list whenever a focused row sits under the fade. */}
+      <ScrollArea
+        hideScrollbars
+        scrollFade
+        scrollFadePadding={false}
+        className="h-auto min-h-0 flex-1"
+      >
         <div
           className={cn(
             "flex w-full min-w-0 flex-col gap-2 group-data-[collapsible=icon]:overflow-hidden",
@@ -832,7 +812,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full cursor-pointer items-center gap-[var(--sidebar-control-gap)] overflow-hidden text-left outline-hidden ring-ring transition-[width,height,padding,background-color,color] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-row-hover data-[state=open]:hover:text-sidebar-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]! [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-[var(--sidebar-icon-color)] hover:[&>svg]:text-sidebar-foreground active:[&>svg]:text-sidebar-foreground data-[active=true]:[&>svg]:text-sidebar-foreground",
+  "peer/menu-button flex w-full cursor-pointer items-center gap-[var(--sidebar-control-gap)] overflow-hidden text-left outline-hidden ring-ring transition-[width,height,padding] hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-row-selected data-[active=true]:font-medium data-[active=true]:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-row-hover data-[state=open]:hover:text-sidebar-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-[var(--sidebar-content-inset)]! [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-[var(--sidebar-icon-color)] hover:[&>svg]:text-sidebar-foreground active:[&>svg]:text-sidebar-foreground data-[active=true]:[&>svg]:text-sidebar-foreground",
   {
     defaultVariants: {
       size: "default",
@@ -905,38 +885,6 @@ function SidebarMenuButton({
       />
     </Tooltip>
   );
-}
-
-function SidebarMenuAction({
-  className,
-  showOnHover = false,
-  render,
-  ...props
-}: useRender.ComponentProps<"button"> & {
-  showOnHover?: boolean;
-}) {
-  const defaultProps = {
-    className: cn(
-      "absolute top-1.5 right-1 flex aspect-square w-5 cursor-pointer items-center justify-center rounded-lg p-0 text-sidebar-foreground outline-hidden ring-ring transition-transform hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 peer-hover/menu-button:text-sidebar-foreground [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0",
-      // Increases the hit area of the button on mobile.
-      "after:-inset-2 after:absolute md:after:hidden",
-      "peer-data-[size=sm]/menu-button:top-1",
-      "peer-data-[size=default]/menu-button:top-1.5",
-      "peer-data-[size=lg]/menu-button:top-2.5",
-      "group-data-[collapsible=icon]:hidden",
-      showOnHover &&
-        "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:text-sidebar-foreground md:opacity-0",
-      className,
-    ),
-    "data-sidebar": "menu-action",
-    "data-slot": "sidebar-menu-action",
-  };
-
-  return useRender({
-    defaultTagName: "button",
-    props: mergeProps<"button">(defaultProps, props),
-    render,
-  });
 }
 
 function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"div">) {
@@ -1029,7 +977,7 @@ function SidebarMenuSubButton({
 }) {
   const defaultProps = {
     className: cn(
-      "-translate-x-px flex h-7 min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 text-sidebar-foreground outline-hidden ring-ring transition-[background-color,color] duration-150 ease-out hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-muted-foreground",
+      "-translate-x-px flex h-7 min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 text-sidebar-foreground outline-hidden ring-ring hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 active:bg-sidebar-row-active active:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-muted-foreground",
       "data-[active=true]:bg-sidebar-row-selected data-[active=true]:text-sidebar-foreground",
       size === "sm" && "text-xs",
       size === "md" && "text-sm",
@@ -1049,6 +997,8 @@ function SidebarMenuSubButton({
   });
 }
 
+export type { SidebarResizableOptions };
+
 export {
   Sidebar,
   SidebarContent,
@@ -1061,7 +1011,6 @@ export {
   SidebarInput,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -1076,4 +1025,3 @@ export {
   useSidebar,
   useSidebarVisibility,
 };
-export type { SidebarResizableOptions };

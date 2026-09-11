@@ -11,7 +11,13 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
-  supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
+  supports: {
+    settlement: true,
+    snooze: true,
+    pinning: true,
+    titleRegeneration: true,
+    projectTransfer: false,
+  },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
@@ -37,6 +43,7 @@ describe("buildThreadActionMenuItems", () => {
       "regenerate-title",
       "mark-unread",
       "copy",
+      "project-settings",
       "archive",
       "delete",
     ]);
@@ -51,6 +58,7 @@ describe("buildThreadActionMenuItems", () => {
       "regenerate-title",
       "mark-unread",
       "copy",
+      "project-settings",
       "archive",
       "delete",
     ]);
@@ -60,9 +68,47 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       visibleIds({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+          projectTransfer: false,
+        },
       }),
-    ).toEqual(["rename", "mark-unread", "copy", "archive", "delete"]);
+    ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+  });
+
+  it("groups project settings with utility actions before archive", () => {
+    const items = buildThreadActionMenuItems(baseState);
+    const copyIndex = items.findIndex((item) => item.id === "copy");
+    expect(items[copyIndex + 1]).toMatchObject({
+      id: "project-settings",
+      label: "Project settings",
+      icon: "settings",
+    });
+    expect(items[copyIndex + 2]).toMatchObject({
+      id: "sep-before-danger",
+      separator: true,
+    });
+    expect(items[copyIndex + 3]?.id).toBe("archive");
+  });
+
+  it("offers transfer only when the environment supports it", () => {
+    expect(
+      visibleIds({
+        ...baseState,
+        supports: { ...baseState.supports, projectTransfer: true },
+      }),
+    ).toContain("transfer");
+    expect(visibleIds(baseState)).not.toContain("transfer");
+    expect(
+      buildThreadActionMenuItems({
+        ...baseState,
+        isRunning: true,
+        supports: { ...baseState.supports, projectTransfer: true },
+      }).find((item) => item.id === "transfer"),
+    ).toMatchObject({ disabled: true });
   });
 
   it("includes branch items only for threads with a branch", () => {
@@ -169,7 +215,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       visibleIds({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+          projectTransfer: false,
+        },
       }),
     ).toContain("archive");
   });

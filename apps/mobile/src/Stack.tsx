@@ -10,20 +10,26 @@ import {
   createNativeStackScreen,
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
-import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { useEffect, useRef } from "react";
-import { DynamicColorIOS, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
+import { AutomationsRouteScreen } from "./features/automations/AutomationsRouteScreen";
+import { AutomationDetailScreen } from "./features/automations/AutomationDetailScreen";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
 import { HardwareKeyboardCommandProvider } from "./features/keyboard/HardwareKeyboardCommandProvider";
+import { PullRequestsRouteScreen } from "./features/pull-requests/PullRequestsRouteScreen";
+import { PullRequestDetailScreen } from "./features/pull-requests/PullRequestDetailScreen";
+import { PullRequestCommentSheet } from "./features/pull-requests/PullRequestCommentSheet";
+import { PullRequestReviewersSheet } from "./features/pull-requests/PullRequestReviewersSheet";
+import { PullRequestDiffScreen } from "./features/pull-requests/PullRequestDiffScreen";
 import { ReviewCommentComposerSheet } from "./features/review/ReviewCommentComposerSheet";
 import { ReviewSheet } from "./features/review/ReviewSheet";
 import { ThreadTerminalRouteScreen } from "./features/terminal/ThreadTerminalRouteScreen";
@@ -31,13 +37,8 @@ import { GitBranchesSheet } from "./features/threads/git/GitBranchesSheet";
 import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
-import { PullRequestCommentSheet } from "./features/pull-requests/PullRequestCommentSheet";
-import { PullRequestDetailScreen } from "./features/pull-requests/PullRequestDetailScreen";
-import { PullRequestDiffScreen } from "./features/pull-requests/PullRequestDiffScreen";
-import { PullRequestReviewersSheet } from "./features/pull-requests/PullRequestReviewersSheet";
-import { PullRequestsRouteScreen } from "./features/pull-requests/PullRequestsRouteScreen";
-import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
+import { ThreadRenameSheet } from "./features/threads/ThreadRenameSheet";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
@@ -53,20 +54,20 @@ import {
 import {
   ExistingThreadSettingsRouteProvider,
   ExistingThreadSettingsRouteScreen,
+  NewTaskThreadSettingsRouteScreen,
 } from "./features/threads/ThreadSettingsSheet";
 import { NewTaskFlowProvider } from "./features/threads/new-task-flow-provider";
 import { NewTaskRouteScreen } from "./features/threads/NewTaskRouteScreen";
-import { NewTaskSkillsPickerRouteScreen } from "./features/threads/NewTaskSkillsPickerRouteScreen";
 import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppearanceRouteScreen";
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
-import { SettingsEnvironmentStorageRouteScreen } from "./features/settings/SettingsEnvironmentStorageRouteScreen";
-import { SettingsAppsRouteScreen } from "./features/settings/SettingsAppsRouteScreen";
-import { SettingsAppEditRouteScreen } from "./features/settings/SettingsAppEditRouteScreen";
-import { SettingsAppOAuthClientRouteScreen } from "./features/settings/SettingsAppOAuthClientRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
+import { SettingsAppsRouteScreen } from "./features/settings/SettingsAppsRouteScreen";
+import { SettingsAppEditRouteScreen } from "./features/settings/SettingsAppEditRouteScreen";
+import { SettingsAppOAuthClientRouteScreen } from "./features/settings/SettingsAppOAuthClientRouteScreen";
+import { UsageLimitAccountScreen } from "./features/usage/UsageLimitsPooled";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
@@ -82,41 +83,12 @@ import {
 } from "./features/sharing/incoming-share-presentation";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
-import { FORM_SHEET_PRESENTATION_OPTIONS as UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
-import { ensureThreadOutboxLoaded } from "./state/thread-outbox";
-import { useThreadOutboxHasQueuedMessages } from "./state/use-thread-outbox";
+import { FORM_SHEET_PRESENTATION_OPTIONS } from "./native/sheet-surface";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
+import { useComposerAttachmentUploadWorker } from "./state/composer-attachment-uploads";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
-const UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE = (
-  UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS as NativeStackNavigationOptions
-).contentStyle;
-const UPSTREAM_NATIVE_SHEET_SURFACE_COLOR = StyleSheet.flatten(
-  UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE,
-)?.backgroundColor;
-
-// The parent now centralizes native sheet presentation in sheet-surface. Preserve
-// that implementation while re-applying the World Scenery light/dark palette on
-// iOS, where native headers cannot resolve the CSS variables from global.css.
-const PRETTY_SHEET_SURFACE_COLOR =
-  Platform.OS === "ios"
-    ? DynamicColorIOS({ light: "rgba(244, 246, 244, 0.98)", dark: "rgba(14, 17, 16, 0.98)" })
-    : undefined;
-
-const NATIVE_SHEET_SURFACE_COLOR =
-  PRETTY_SHEET_SURFACE_COLOR ?? UPSTREAM_NATIVE_SHEET_SURFACE_COLOR;
-const NATIVE_SHEET_SURFACE_CONTENT_STYLE =
-  PRETTY_SHEET_SURFACE_COLOR !== undefined
-    ? StyleSheet.flatten([
-        UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE,
-        { backgroundColor: PRETTY_SHEET_SURFACE_COLOR },
-      ])
-    : UPSTREAM_NATIVE_SHEET_SURFACE_CONTENT_STYLE;
-const FORM_SHEET_PRESENTATION_OPTIONS = {
-  ...UPSTREAM_FORM_SHEET_PRESENTATION_OPTIONS,
-  contentStyle: NATIVE_SHEET_SURFACE_CONTENT_STYLE,
-};
 type AppScreenOptions = NativeStackNavigationOptions & {
   readonly unstable_navigationItemStyle?: "editor";
 };
@@ -179,7 +151,6 @@ const SettingsContentStack = createNativeStackNavigator({
   initialRouteName: "Settings",
   screenOptions: {
     ...GLASS_HEADER_OPTIONS,
-    freezeOnBlur: true,
     // Sheets read better with the iOS-default centered title (no editor style).
     unstable_navigationItemStyle: undefined,
   },
@@ -219,27 +190,6 @@ const SettingsContentStack = createNativeStackNavigator({
         title: "Appearance",
       },
     }),
-    SettingsApps: createNativeStackScreen({
-      screen: SettingsAppsRouteScreen,
-      linking: "apps",
-      options: {
-        title: "Apps",
-      },
-    }),
-    SettingsAppEdit: createNativeStackScreen({
-      screen: SettingsAppEditRouteScreen,
-      linking: "apps/edit",
-      options: {
-        title: "App",
-      },
-    }),
-    SettingsAppOAuthClient: createNativeStackScreen({
-      screen: SettingsAppOAuthClientRouteScreen,
-      linking: "apps/oauth-client",
-      options: {
-        title: "OAuth client",
-      },
-    }),
     SettingsProjectGrouping: createNativeStackScreen({
       screen: SettingsProjectGroupingRouteScreen,
       linking: "project-grouping",
@@ -254,18 +204,36 @@ const SettingsContentStack = createNativeStackNavigator({
         title: "Client Storage",
       },
     }),
-    SettingsEnvironmentStorage: createNativeStackScreen({
-      screen: SettingsEnvironmentStorageRouteScreen,
-      linking: "environment-storage",
-      options: {
-        title: "Environment Storage",
-      },
+    SettingsUsageAccount: createNativeStackScreen({
+      screen: UsageLimitAccountScreen,
+      options: { title: "Account" },
     }),
     SettingsUsage: createNativeStackScreen({
       screen: UsageRouteScreen,
       linking: "usage",
       options: {
         title: "Usage",
+      },
+    }),
+    SettingsApps: createNativeStackScreen({
+      screen: SettingsAppsRouteScreen,
+      linking: "apps",
+      options: {
+        title: "Apps",
+      },
+    }),
+    SettingsAppEdit: createNativeStackScreen({
+      screen: SettingsAppEditRouteScreen,
+      linking: "apps/:environmentId/:connectionId?",
+      options: {
+        title: "Edit App",
+      },
+    }),
+    SettingsAppOAuthClient: createNativeStackScreen({
+      screen: SettingsAppOAuthClientRouteScreen,
+      linking: "apps/:environmentId/oauth/:family",
+      options: {
+        title: "OAuth Client",
       },
     }),
   },
@@ -277,7 +245,6 @@ const SettingsContentStack = createNativeStackNavigator({
 const SettingsSheetStack = createNativeStackNavigator({
   initialRouteName: "SettingsContent",
   screenOptions: {
-    freezeOnBlur: true,
     headerShown: false,
   },
   screens: {
@@ -311,7 +278,6 @@ const NewTaskSheetStack = createNativeStackNavigator({
   initialRouteName: "NewTask",
   screenOptions: {
     ...SHEET_GLASS_HEADER_OPTIONS,
-    freezeOnBlur: true,
     // The form-sheet host owns the one opaque adaptive surface. Child screens
     // and the navigation bar stay transparent over it, avoiding visible color
     // slabs as view controllers move horizontally.
@@ -332,11 +298,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
     }),
     NewTaskDraft: createNativeStackScreen({
       screen: NewTaskDraftRouteScreen,
-      linking: {
-        path: "draft",
-        // Pre-picker sheet URL. The model panel is inline on the draft now.
-        alias: ["draft/settings"],
-      },
+      linking: "draft",
       options: {
         headerBackVisible: false,
         title: "",
@@ -356,11 +318,19 @@ const NewTaskSheetStack = createNativeStackNavigator({
         title: "Branch",
       },
     }),
-    NewTaskSkills: createNativeStackScreen({
-      screen: NewTaskSkillsPickerRouteScreen,
-      linking: "draft/skills",
+    ThreadSettings: createNativeStackScreen({
+      screen: NewTaskThreadSettingsRouteScreen,
+      linking: "draft/settings",
       options: {
-        title: "Skills",
+        gestureEnabled: true,
+        headerShown: false,
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const }
+          : {
+              ...FORM_SHEET_PRESENTATION_OPTIONS,
+              sheetAllowedDetents: [1],
+              sheetGrabberVisible: true,
+            }),
       },
     }),
     AddProject: createNativeStackScreen({
@@ -424,26 +394,9 @@ function workspacePathFromState(state: NavigationState): string {
 // connection statuses. Hosting it in a null-rendering leaf keeps those
 // updates from re-rendering RootStackLayout (and with it every screen) on
 // each enqueue, shell change, or reconnect.
-//
-// The leaf is gated: the shell/project subscriptions pin every catalog
-// environment's shell stream, so the inner worker only mounts while the
-// outbox actually holds messages. The gate itself subscribes to the cheap
-// queue-empty flag alone, and still loads the persisted outbox once on
-// launch — messages queued before a restart mount the worker as soon as they
-// hydrate, and a message queued while offline mounts it immediately.
 function ThreadOutboxDrainWorker() {
-  const hasQueuedMessages = useThreadOutboxHasQueuedMessages();
-  useEffect(() => {
-    ensureThreadOutboxLoaded();
-  }, []);
-  if (!hasQueuedMessages) {
-    return null;
-  }
-  return <ThreadOutboxDrainWorkerInner />;
-}
-
-function ThreadOutboxDrainWorkerInner() {
   useThreadOutboxDrain();
+  useComposerAttachmentUploadWorker();
   return null;
 }
 
@@ -455,7 +408,7 @@ function RootStackLayout(props: {
   const { pendingShare } = useIncomingShare();
   const sharePresentationRef = useRef(EMPTY_INCOMING_SHARE_PRESENTATION_STATE);
   useAgentNotificationNavigation();
-  // Presents the Surge Connect onboarding sheet after an in-session sign-in.
+  // Presents the T3 Connect onboarding sheet after an in-session sign-in.
   useConnectOnboardingNavigation();
   // Launcher app shortcuts: routes shortcut taps and tracks opened threads.
   useAppShortcuts(props.state);
@@ -536,7 +489,6 @@ export const RootStack = createNativeStackNavigator({
   initialRouteName: "Home",
   layout: RootStackLayout,
   screenOptions: {
-    freezeOnBlur: true,
     headerShown: false,
   },
   screens: {
@@ -550,9 +502,17 @@ export const RootStack = createNativeStackNavigator({
         ...getCompactBrandHeaderOptions(),
       },
     }),
-    Thread: createNativeStackScreen({
-      screen: ThreadRouteScreen,
-      linking: THREAD_LINKING_PREFIX,
+    Automations: createNativeStackScreen({
+      screen: AutomationsRouteScreen,
+      linking: "automations",
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        title: "Automations",
+      },
+    }),
+    AutomationDetail: createNativeStackScreen({
+      screen: AutomationDetailScreen,
+      linking: "automations/:environmentId/:automationId",
       options: GLASS_HEADER_OPTIONS,
     }),
     PullRequests: createNativeStackScreen({
@@ -560,7 +520,6 @@ export const RootStack = createNativeStackNavigator({
       linking: "pull-requests",
       options: {
         ...GLASS_HEADER_OPTIONS,
-        headerLargeTitle: Platform.OS === "ios",
         title: "Pull Requests",
       },
     }),
@@ -569,30 +528,46 @@ export const RootStack = createNativeStackNavigator({
       linking: "pull-requests/:environmentId/:projectId/:number",
       options: GLASS_HEADER_OPTIONS,
     }),
-    PullRequestDiff: createNativeStackScreen({
-      screen: PullRequestDiffScreen,
-      linking: "pull-requests/:environmentId/:projectId/:number/diff",
-      options: SOLID_HEADER_OPTIONS,
-    }),
     PullRequestComment: createNativeStackScreen({
       screen: PullRequestCommentSheet,
       linking: "pull-requests/:environmentId/:projectId/:number/comment",
       options: {
-        presentation: Platform.OS === "android" ? "fullScreenModal" : "formSheet",
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
         sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.55, 0.92],
         sheetGrabberVisible: Platform.OS !== "android",
-        ...(Platform.OS === "ios" ? SHEET_SOLID_HEADER_OPTIONS : { headerShown: false }),
       },
     }),
     PullRequestReviewers: createNativeStackScreen({
       screen: PullRequestReviewersSheet,
       linking: "pull-requests/:environmentId/:projectId/:number/reviewers",
       options: {
-        presentation: Platform.OS === "android" ? "fullScreenModal" : "formSheet",
-        sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.7, 0.92],
+        ...(Platform.OS === "android"
+          ? { presentation: "fullScreenModal" as const }
+          : FORM_SHEET_PRESENTATION_OPTIONS),
+        sheetAllowedDetents: Platform.OS === "android" ? undefined : [0.55, 0.92],
         sheetGrabberVisible: Platform.OS !== "android",
-        ...(Platform.OS === "ios" ? SHEET_SOLID_HEADER_OPTIONS : { headerShown: false }),
       },
+    }),
+    PullRequestDiff: createNativeStackScreen({
+      screen: PullRequestDiffScreen,
+      linking: "pull-requests/:environmentId/:projectId/:number/diff/:path*",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    ThreadRename: createNativeStackScreen({
+      screen: ThreadRenameSheet,
+      linking: "threads/:environmentId/:threadId/rename",
+      options: {
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.45],
+        sheetGrabberVisible: true,
+      },
+    }),
+    Thread: createNativeStackScreen({
+      screen: ThreadRouteScreen,
+      linking: THREAD_LINKING_PREFIX,
+      options: GLASS_HEADER_OPTIONS,
     }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,
@@ -671,14 +646,6 @@ export const RootStack = createNativeStackNavigator({
         sheetGrabberVisible: true,
       },
     }),
-    ThreadRename: createNativeStackScreen({
-      screen: ThreadRenameSheet,
-      options: {
-        ...FORM_SHEET_PRESENTATION_OPTIONS,
-        sheetAllowedDetents: [0.45, 0.7],
-        sheetGrabberVisible: true,
-      },
-    }),
     GitConfirm: createNativeStackScreen({
       screen: GitConfirmSheet,
       linking: `${THREAD_LINKING_PREFIX}/git-confirm`,
@@ -720,7 +687,7 @@ export const RootStack = createNativeStackNavigator({
         // A root-level Android formSheet does not host the native stack bar;
         // the route renders an embedded AndroidSheetHeader instead.
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
-        title: `Set up ${SURGE_CONNECT_NAME}`,
+        title: "Set up T3 Connect",
         gestureEnabled: true,
         ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.6, 0.95],

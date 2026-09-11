@@ -15,6 +15,7 @@ const UPDATED_AT = "2026-01-01T00:00:00.000Z";
 
 const readModel: OrchestrationReadModel = {
   snapshotSequence: 0,
+  automations: [],
   projects: [],
   threads: [
     {
@@ -27,6 +28,7 @@ const readModel: OrchestrationReadModel = {
       branch: null,
       worktreePath: null,
       enabledSkillIds: [],
+      pullRequests: [],
       latestTurn: null,
       createdAt: UPDATED_AT,
       updatedAt: UPDATED_AT,

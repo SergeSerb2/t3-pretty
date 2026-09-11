@@ -9,15 +9,17 @@ const COPY_FEEDBACK_DURATION_MS = 1200;
 export const CopyTextButton = memo(function CopyTextButton(props: {
   readonly accessibilityLabel: string;
   readonly text: string;
-  readonly tintColor: ColorValue;
+  readonly tintColor?: ColorValue;
+  readonly tintColorClassName?: string;
   readonly copiedTintColor?: ColorValue;
   readonly backgroundColor?: ColorValue;
   readonly borderColor?: ColorValue;
   readonly iconSize?: number;
   readonly buttonSize?: number;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copied = copiedText === props.text;
 
   useEffect(
     () => () => {
@@ -36,12 +38,12 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
       hitSlop={8}
       onPress={() => {
         copyTextWithHaptic(props.text);
-        setCopied(true);
+        setCopiedText(props.text);
         if (resetTimeoutRef.current) {
           clearTimeout(resetTimeoutRef.current);
         }
         resetTimeoutRef.current = setTimeout(() => {
-          setCopied(false);
+          setCopiedText(null);
           resetTimeoutRef.current = null;
         }, COPY_FEEDBACK_DURATION_MS);
       }}
@@ -65,6 +67,9 @@ export const CopyTextButton = memo(function CopyTextButton(props: {
         }
         size={props.iconSize ?? 13}
         tintColor={copied ? (props.copiedTintColor ?? props.tintColor) : props.tintColor}
+        tintColorClassName={
+          copied && props.copiedTintColor !== undefined ? undefined : props.tintColorClassName
+        }
         type="monochrome"
       />
     </Pressable>
