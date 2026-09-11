@@ -40,7 +40,7 @@ export function SelectableMarkdownText({
   skills = EMPTY_SKILLS,
   textStyle,
   highlightCode,
-  highlightCodeEnabled,
+  highlightCodeEnabled = true,
   preserveSoftBreaks = false,
   onLinkPress,
   fileContextMenu,

@@ -2454,3 +2454,5 @@
   - edited `apps/web/src/components/preview/PreviewEmptyState.tsx`
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Thread `highlightCodeEnabled` through `SelectableMarkdownText` into `NativeMarkdownBlock`, preserving the fork's configurable code-highlighting behavior while satisfying the updated component API.
   - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Normalize the optional highlightCodeEnabled prop to a boolean at the component boundary, satisfying NativeMarkdownBlock's required prop without regressing existing highlighting behavior.
+  - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`
