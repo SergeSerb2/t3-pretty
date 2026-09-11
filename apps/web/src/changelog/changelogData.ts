@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.39-nightly.20260907.1332001899",
+    date: "2026-09-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "Abort dictation start after caret or canStart races",
+      },
+      {
+        kind: "new",
+        title: "Share Groq voice input across connected hosts",
+      },
+      {
+        kind: "fixed",
+        title: "Update spinner after a completed check",
+      },
+      {
+        kind: "fixed",
+        title: "World Scenery photo backgrounds",
+      },
+      {
+        kind: "fixed",
+        title: "Guard welcome sign-in behind the Clerk gate",
+      },
+      {
+        kind: "fixed",
+        title: "Declare the startup shell snapshot query",
+      },
+    ],
+  },
+  {
     version: "0.0.39-nightly.20260907.1332001897",
     date: "2026-09-11",
     items: [
