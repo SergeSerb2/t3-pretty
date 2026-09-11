@@ -7,11 +7,16 @@
 # Queues (hybrid: Origin gates + fork cluster secrets stay self-hosted;
 # packaging is temporarily back on self-hosted because hosted M4 /
 # linux-small jobs cancel immediately — BK #1944/#1948):
-#   linux-small     — hosted Linux (imported ubuntu-latest jobs, CLI).
-#                     AppImage used this until hosted dispatch started
-#                     canceling jobs in ~100ms with empty logs and no
-#                     agent assignment (BK #1944/#1948). Do not target it
-#                     for packaging until that is fixed.
+#   linux-small     — hosted Linux (imported ubuntu-latest jobs, CLI,
+#                     AppImage). Hosted dispatch currently auto-cancels
+#                     these jobs in ~100ms with empty logs /
+#                     waiting_failed (BK #1944/#1948). AppImage stays
+#                     here — do not send it to macos-release + os=linux:
+#                     that matches arm64 m1-linux-t3code-fork and any
+#                     review-only Linux agents, and the script requires
+#                     x86_64. linux-appimage and publish-cli soft_fail
+#                     so a hosted cancel cannot red the Mac/iOS/Android
+#                     packaging build.
 #   macos-medium    — hosted MACOS_ARM64_M4_6X28 (pipeline upload). No
 #                     Origin CLI / no CURSOR_API_KEY /
 #                     no GITHUB_MIRROR_SSH_KEY / no PLANETSCALE_* . Hosted
@@ -32,20 +37,20 @@
 #                     and/or the macos-release file-store fallbacks.
 #                     Hosted M4 lacks those today (BK 1876/1878/1880).
 #                     Temporary packaging also runs here: macos-dmg,
-#                     ios-mobile, and android-mobile (os=macos); Linux
-#                     AppImage (os=linux on m1-linux-t3code-fork).
+#                     ios-mobile, and android-mobile (os=macos).
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # TODO: restore hosted queues for packaging (macos-large DMG/iOS,
-# macos-medium Android, linux-small AppImage) once Buildkite/Namespace
-# hosted dispatch works again. Target hosted Mac queues by key only
-# when that lands — extra tags like os=macos can leave hosted M4
-# unmatched. Until then, macos-release packaging steps keep os=macos
-# or os=linux so the mixed pool (Serge Mac + Linux review +
-# m1-linux-t3code-fork) routes correctly. Origin PR review and
-# comments stay queue-wide so the review-only Linux agent can take
-# them. The Buildkite default upload step is macos-medium (pipeline
-# settings, not this file); upload does not need Origin secrets.
+# macos-medium Android) and drop soft_fail on linux-appimage /
+# publish-cli once Buildkite/Namespace hosted dispatch works again.
+# Target hosted Mac queues by key only when that lands — extra tags
+# like os=macos can leave hosted M4 unmatched. Until then,
+# macos-release packaging steps keep os=macos so the mixed pool
+# (Serge Mac + Linux review + m1-linux-t3code-fork) cannot take
+# Apple/Android jobs. Origin PR review and comments stay queue-wide
+# so the review-only Linux agent can take them. The Buildkite
+# default upload step is macos-medium (pipeline settings, not this
+# file); upload does not need Origin secrets.
 #
 # Do not list YAML `secrets:` on these steps. Hosted agents currently
 # 500 while fetching them; self-hosted packaging does not need that
@@ -197,6 +202,10 @@ steps:
     # stamped — remotes fetch t3-<appVersion>.tgz, so reminting 404s.
     # Skipped when DMG skips (PRs, scheduled sync). Do not promote t3.tgz
     # from a failed or non-desktop revision.
+    # Hosted linux-small currently auto-cancels / waiting_failed
+    # (BK #1944/#1948). soft_fail so that cannot red the build while
+    # Mac/iOS/Android package on macos-release.
+    soft_fail: true
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 40
     agents:
@@ -219,17 +228,18 @@ steps:
 
   - label: ":linux: Linux x64 AppImage"
     key: linux-appimage
-    # Temporarily on macos-release + os=linux (m1-linux-t3code-fork).
-    # Hosted linux-small auto-cancels in ~100ms (BK #1944/#1948).
-    # That agent is arm64; build-linux-appimage.sh still requires x86_64,
-    # so this step may run and fail on arch until hosted linux-small
-    # returns or an x64 Linux agent joins the queue.
-    # TODO: restore queue: linux-small once hosted dispatch works.
+    # Stay on hosted linux-small (x86_64). Do not use macos-release +
+    # os=linux: that lands on arm64 m1-linux-t3code-fork and any
+    # review-only Linux agents; build-linux-appimage.sh requires x86_64
+    # and would red the build. Hosted linux-small currently auto-cancels
+    # / waiting_failed (BK #1944/#1948). soft_fail so that cannot red
+    # the build while Mac/iOS/Android package on macos-release.
+    # TODO: drop soft_fail once hosted dispatch works again.
+    soft_fail: true
     if: build.branch == "main" && build.source != "schedule"
     timeout_in_minutes: 90
     agents:
-      queue: macos-release
-      os: linux
+      queue: linux-small
     env:
       T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ
       GIT_TERMINAL_PROMPT: "0"
