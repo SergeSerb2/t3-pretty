@@ -56,17 +56,19 @@ export function PreviewEmptyState({
               <History className="size-4 shrink-0" />
               <h2 className="font-medium">Recently used</h2>
             </div>
-            <DiscoveryList className="bg-card">
-              {recents.map((entry) => (
-                <PreviewRecentUrlCard
-                  key={entry.url}
-                  threadRef={threadRef}
-                  entry={entry}
-                  onOpen={() => onOpenUrl(entry.url)}
-                  onRemove={() => onRemoveRecent(entry.url)}
-                />
-              ))}
-            </DiscoveryList>
+            <div className="contents [&>*]:bg-card">
+              <DiscoveryList>
+                {recents.map((entry) => (
+                  <PreviewRecentUrlCard
+                    key={entry.url}
+                    threadRef={threadRef}
+                    entry={entry}
+                    onOpen={() => onOpenUrl(entry.url)}
+                    onRemove={() => onRemoveRecent(entry.url)}
+                  />
+                ))}
+              </DiscoveryList>
+            </div>
           </div>
         ) : null}
         {servers.length > 0 ? (
@@ -75,16 +77,18 @@ export function PreviewEmptyState({
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">Local servers</h2>
             </div>
-            <DiscoveryList className="bg-card">
-              {servers.map((server) => (
-                <PreviewLocalServerCard
-                  key={`${server.host}:${server.port}`}
-                  threadRef={threadRef}
-                  server={server}
-                  onOpen={() => onOpenUrl(server.requestedUrl)}
-                />
-              ))}
-            </DiscoveryList>
+            <div className="contents [&>*]:bg-card">
+              <DiscoveryList>
+                {servers.map((server) => (
+                  <PreviewLocalServerCard
+                    key={`${server.host}:${server.port}`}
+                    threadRef={threadRef}
+                    server={server}
+                    onOpen={() => onOpenUrl(server.requestedUrl)}
+                  />
+                ))}
+              </DiscoveryList>
+            </div>
             <p className="px-1 text-xs text-muted-foreground">
               Select a live local server to open it in this browser tab.
             </p>
