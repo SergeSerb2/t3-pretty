@@ -214,8 +214,13 @@ without pretending that a newer upstream tag was integrated before its sync pull
   Buildkite only run on Origin-hosted repositories, not inbound GitHub mirrors. After detach,
   Origin is the source of truth and pushes no longer flow to GitHub.
 - Connect Buildkite from the Origin repository **Apps** tab. `.buildkite/pipeline.yml` imports
-  the fork workflows. Use these agent queues: `linux-small` (Buildkite hosted Linux: imported
-  ubuntu-latest jobs, WSL node-pty, and the x64 AppImage),
+  the fork workflows. Imported ubuntu-latest jobs (Resolve / WSL) and their
+  concurrency gates are temporarily skipped: the GitHub Actions plugin
+  uploads those children without `soft_fail`, and hosted `linux-small`
+  auto-cancels them (BK #1944/#1948/#1952). Native Mac/Windows/iOS/Android
+  packaging does not depend on them. Use these agent queues:
+  `linux-small` (Buildkite hosted Linux: x64 AppImage and CLI tarball;
+  imported ubuntu-latest jobs stay skipped until hosted dispatch works),
   `macos-medium` (hosted M4 6 vCPU: pipeline upload, Android
   orchestration),
   `macos-large` (hosted M4 12 vCPU: signed DMG, iOS),
