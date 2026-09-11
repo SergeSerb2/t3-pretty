@@ -117,7 +117,8 @@ steps:
     # (and the ubuntu jobs in fork-release.yml) once hosted
     # linux-small works.
     soft_fail: true
-    skip: "GHA children on linux-small hard-fail (BK #1952); restore when hosted dispatch works"
+    # skip reason max 70 chars (BK rejected the longer #288 wording).
+    skip: "GHA children on linux-small hard-fail (BK #1952)"
     # if: build.source != "schedule"
     # Bound the importer so a hung GHA child cannot leave this step running
     # for hours on linux-small. Native Mac/Windows/Linux steps do not depend

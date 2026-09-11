@@ -198,6 +198,7 @@ ${setup}
     // do not retarget WSL/AppImage onto macos-release + os=linux (arm64).
     assert.include(importer, "skip:");
     assert.include(importer, "BK #1952");
+    assert.isAtMost((importer.match(/skip: "([^"]+)"/u) || [])[1]?.length ?? 99, 70);
     assert.include(importer, "soft_fail: true");
     assert.include(importer, "runs-on: ubuntu-latest");
     assert.include(importer, "queue: linux-small");
