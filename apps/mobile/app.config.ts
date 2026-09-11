@@ -6,22 +6,33 @@ import {
   readReleaseTrainVersion,
   type T3CodeBuildFlavor,
 } from "../../scripts/lib/public-config.ts";
-
-type AppVariant = "development" | "preview" | "production";
+import { resolveMobileAppIdentity, resolveMobileAppVariant } from "./app-identity.ts";
 
 const repoEnv = loadRepoEnv();
 // loadRepoEnv projects the selected flavor to EXPO_PUBLIC_T3CODE_BUILD_FLAVOR,
 // which Metro inlines for shared client branding.
 Object.assign(process.env, repoEnv);
 
-const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const APP_VARIANT = resolveMobileAppVariant(repoEnv.APP_VARIANT);
 const isInternalBuild = repoEnv.T3CODE_BUILD_FLAVOR === "internal";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const internalMicrophonePermission =
+  "Allow T3 Pretty Internal to use your microphone for voice dictation.";
+// EAS build-tools resolves fingerprint policies before expo-updates' native
+// build helper gets a chance to honor this override. Emit the pinned build
+// fingerprint literally so the native binary and the OTA gate use one runtime.
+const pinnedRuntimeVersion = process.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE?.trim();
+const runtimeVersionPolicy =
+  process.env.MOBILE_VERSION_POLICY ??
+  (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
 
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
+// Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
+// The wordmark sits inside the adaptive safe zone; the variant artwork is a full-bleed background.
+const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -37,25 +48,29 @@ const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
-  androidAdaptiveBackgroundColor: "#00639B",
+  androidAdaptiveForeground,
+  androidAdaptiveBackgroundColor: "#347FF8",
+  androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
+  androidSplashIcon: "./assets/android-splash-icon-dev.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#00639B",
 } as const;
 
-// The nightly*/production* PNG keys in BRAND_ASSET_PATHS all resolve to the
-// assets/pretty family (see scripts/lib/brand-assets.ts), so splash and
-// adaptive foregrounds track the same glass/sage art as iosIcon in every
-// channel — the sage plate below is not behind leftover candy art.
+// The nightly*/production* PNG keys in BRAND_ASSET_PATHS resolve to the
+// assets/pretty family (see scripts/lib/brand-assets.ts). Android supplies the
+// matching sage plate as the adaptive background instead of nesting it in the
+// foreground.
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   // The T3 Pretty icon ships as a plain PNG, not an Icon Composer project, so
   // point ios.icon at the PNG or the upstream composer art would win on iOS.
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.prettyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
+  androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#8FCFA8",
@@ -67,6 +82,8 @@ const RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#8FCFA8",
@@ -78,6 +95,8 @@ const INTERNAL_RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.internalAndroidAdaptiveForegroundPng),
   androidAdaptiveBackgroundColor: "#14261B",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
   androidMonochromeIcon: "./assets/t3-pretty-internal-android-icon-mark.png",
   // Android notifications require a neutral white alpha mask; the forest color comes from below.
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -117,48 +136,41 @@ const relyingParty = resolveRelyingParty(
 const VARIANT_CONFIG = {
   development: {
     appName: "T3 Pretty Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.dev",
-    androidPackage: "com.sergeserbinenko.t3pretty.dev",
     relyingParty,
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
     appName: "T3 Pretty Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.sergeserbinenko.t3pretty.preview",
-    androidPackage: "com.sergeserbinenko.t3pretty.preview",
     relyingParty,
     assets: PREVIEW_ASSETS,
   },
   production: {
     appName: isInternalBuild ? "T3 Pretty Internal" : "T3 Pretty",
-    // Both Clerk deployments allow the upstream-compatible production scheme.
-    // Distinct bundle/package IDs keep the applications installable together.
-    scheme: "t3code",
-    iosBundleIdentifier: isInternalBuild
-      ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.public",
-    androidPackage: isInternalBuild
-      ? "com.sergeserbinenko.t3pretty"
-      : "com.sergeserbinenko.t3pretty.public",
     relyingParty,
     assets: isInternalBuild ? INTERNAL_RELEASE_ASSETS : RELEASE_ASSETS,
   },
 } as const;
 
-function resolveAppVariant(value: string | undefined): AppVariant {
-  switch (value) {
-    case "development":
-    case "preview":
-    case "production":
-      return value;
-    default:
-      return "production";
-  }
+export function resolveVoiceDictationPlugins(
+  internalBuild: boolean,
+): NonNullable<ExpoConfig["plugins"]> {
+  return internalBuild
+    ? [
+        [
+          "expo-audio",
+          {
+            microphonePermission: internalMicrophonePermission,
+            enableBackgroundPlayback: false,
+          },
+        ],
+      ]
+    : ["./plugins/withoutPublicExpoAudio.cjs"];
 }
 
-const variant = VARIANT_CONFIG[APP_VARIANT];
+const variant = {
+  ...VARIANT_CONFIG[APP_VARIANT],
+  ...resolveMobileAppIdentity(APP_VARIANT, isInternalBuild ? "internal" : "public"),
+};
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -208,12 +220,14 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
         supportsText: true,
         supportsWebUrlWithMaxCount: 1,
         supportsImageWithMaxCount: 8,
+        supportsMovieWithMaxCount: 8,
+        supportsFileWithMaxCount: 8,
       },
     },
     android: {
       enabled: true,
-      singleShareMimeTypes: ["text/plain", "image/*"],
-      multipleShareMimeTypes: ["image/*"],
+      singleShareMimeTypes: ["*/*"],
+      multipleShareMimeTypes: ["*/*"],
     },
   },
 ];
@@ -246,30 +260,32 @@ const config: ExpoConfig = {
   platforms: ["ios", "android"],
   scheme: variant.scheme,
   version: resolveMobileAppVersion(),
-  runtimeVersion: {
-    // Fingerprint (not appVersion) so an OTA only reaches binaries whose native
-    // project — native deps, config plugins, AND patches/ — matches the update.
-    // With appVersion, every 0.1.0 build shares a runtime version, so a JS update
-    // could land on a binary missing the native changes it needs and crash.
-    policy: process.env.MOBILE_VERSION_POLICY ?? "fingerprint",
-  },
+  runtimeVersion:
+    pinnedRuntimeVersion ||
+    ({
+      // Development manifests resolve on every launch, so avoid fingerprint's
+      // expensive native-project calculation there. Preview and production stay
+      // fingerprinted so OTAs only reach binaries with matching native projects.
+      policy: runtimeVersionPolicy,
+    } satisfies NonNullable<ExpoConfig["runtimeVersion"]>),
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: mobileUpdateUrl
-    ? {
-        enabled: true,
-        url: mobileUpdateUrl,
-        // EAS Build injects its profile channel, but local Xcode Release builds
-        // do not. Embed the variant channel so those binaries send a valid
-        // expo-channel-name header instead of crashing on the update request.
-        requestHeaders: {
-          "expo-channel-name": APP_VARIANT,
-        },
-        checkAutomatically: "ON_LOAD",
-        fallbackToCacheTimeout: 0,
-      }
-    : { enabled: false },
+  updates:
+    mobileUpdateUrl && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0"
+      ? {
+          enabled: true,
+          url: mobileUpdateUrl,
+          // EAS Build injects its profile channel, but local Xcode Release builds
+          // do not. Embed the variant channel so those binaries send a valid
+          // expo-channel-name header instead of crashing on the update request.
+          requestHeaders: {
+            "expo-channel-name": APP_VARIANT,
+          },
+          checkAutomatically: "ON_LOAD",
+          fallbackToCacheTimeout: 0,
+        }
+      : { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -277,21 +293,24 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing via T3CODE_IOS_APPLE_TEAM_ID so non-interactive
+    // Pin code signing via T3CODE_APPLE_TEAM_ID so non-interactive
     // `expo run:ios` does not fall back to a personal team (which cannot sign
-    // app groups, Sign in with Apple, or push notification entitlements).
+    // app groups, Associated Domains, Sign in with Apple, or push entitlements).
     // Unset, Xcode selects whichever team the local account provides.
     ...(appleTeamId ? { appleTeamId } : {}),
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    associatedDomains: isIosPersonalTeamBuild
+      ? []
+      : [`applinks:${variant.relyingParty}`, `webcredentials:${variant.relyingParty}`],
+    entitlements: {
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
+    },
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
         "Allow T3 Pretty to connect to T3 Code servers on your local network or tailnet.",
+      NSPhotoLibraryAddUsageDescription: "Allow T3 Pretty to save images to your photo library.",
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
@@ -313,8 +332,14 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
+      ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
+      : {}),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+      ...(variant.assets.androidAdaptiveBackgroundImage
+        ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+        : {}),
       foregroundImage: variant.assets.androidAdaptiveForeground,
       monochromeImage: variant.assets.androidMonochromeIcon,
     },
@@ -354,6 +379,7 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    ...resolveVoiceDictationPlugins(isInternalBuild),
     ...(shareExtensionEnabled
       ? ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]
       : [sharingPlugin]),
@@ -378,8 +404,20 @@ const config: ExpoConfig = {
           shortcut_icon: {
             foregroundImage: variant.assets.androidAdaptiveForeground,
             backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+            ...(variant.assets.androidAdaptiveBackgroundImage
+              ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+              : {}),
           },
         },
+      },
+    ],
+    [
+      "expo-audio",
+      {
+        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        recordAudioAndroid: false,
+        enableBackgroundPlayback: false,
+        enableBackgroundRecording: false,
       },
     ],
     [
@@ -388,10 +426,16 @@ const config: ExpoConfig = {
         cameraPermission: "Allow T3 Pretty to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
-        recordAudioAndroid: false,
+        recordAudioAndroid: isInternalBuild,
       },
     ],
-    ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    [
+      "expo-image-picker",
+      {
+        photosPermission: false,
+        microphonePermission: isInternalBuild ? internalMicrophonePermission : false,
+      },
+    ],
     [
       "expo-splash-screen",
       {
@@ -404,11 +448,24 @@ const config: ExpoConfig = {
           image: variant.assets.splashIcon,
           backgroundColor: "#0e1110",
         },
+        android: {
+          // Android 12+ masks the splash icon to a circle over the central two thirds of
+          // its 288dp canvas, so the iOS export's corners get cut. A full-canvas image of
+          // the composed adaptive layers puts the wordmark in the same frame the launcher
+          // icon uses.
+          image: variant.assets.androidSplashIcon,
+          imageWidth: 288,
+          dark: { image: variant.assets.androidSplashIcon },
+        },
       },
     ],
     [
       "expo-build-properties",
       {
+        android: {
+          // Keep the supported floor explicit and covered by native notification tests.
+          minSdkVersion: 24,
+        },
         ios: {
           deploymentTarget: "18.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.

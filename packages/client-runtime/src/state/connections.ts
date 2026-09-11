@@ -20,10 +20,12 @@ export interface EnvironmentCatalogState {
   readonly entries: ReadonlyMap<EnvironmentIdType, ConnectionCatalogEntry>;
 }
 
-export const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
+const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
   isReady: false,
   entries: new Map(),
 });
+
+export const ENVIRONMENT_CONNECTION_STATE_IDLE_TTL_MS = 5 * 60_000;
 
 export function createEnvironmentCatalogAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
@@ -64,17 +66,19 @@ export function createEnvironmentCatalogAtoms<R, E>(
   ).pipe(Atom.withLabel("environment-network-status-value"));
 
   const stateAtom = Atom.family((environmentId: EnvironmentIdType) =>
-    runtime.atom(
-      followStreamInEnvironment(
-        environmentId,
-        Stream.unwrap(
-          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
-            Effect.map((supervisor) => SubscriptionRef.changes(supervisor.state)),
+    runtime
+      .atom(
+        followStreamInEnvironment(
+          environmentId,
+          Stream.unwrap(
+            EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+              Effect.map((supervisor) => SubscriptionRef.changes(supervisor.state)),
+            ),
           ),
         ),
-      ),
-      { initialValue: AVAILABLE_CONNECTION_STATE },
-    ),
+        { initialValue: AVAILABLE_CONNECTION_STATE },
+      )
+      .pipe(Atom.setIdleTTL(ENVIRONMENT_CONNECTION_STATE_IDLE_TTL_MS)),
   );
 
   const register = createRuntimeCommand(runtime, {

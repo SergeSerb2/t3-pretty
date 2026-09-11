@@ -1,7 +1,6 @@
 import { type ThreadId } from "@t3tools/contracts";
-import { stripCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
+import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 
-import { stripAttachedFilePathsSuffix } from "../scenery/attachFiles";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -67,21 +66,7 @@ export function filterTerminalContextsWithText<T extends { text: string }>(
   return contexts.filter((context) => hasTerminalContextText(context));
 }
 
-function previewTerminalContextText(text: string): string {
-  const normalized = normalizeTerminalContextText(text);
-  if (normalized.length === 0) {
-    return "";
-  }
-  const lines = normalized.split("\n");
-  const visibleLines = lines.slice(0, 3);
-  if (lines.length > 3) {
-    visibleLines.push("...");
-  }
-  const preview = visibleLines.join("\n");
-  return preview.length > 180 ? `${preview.slice(0, 177)}...` : preview;
-}
-
-export function normalizeTerminalContextSelection(
+function normalizeTerminalContextSelection(
   selection: TerminalContextSelection,
 ): TerminalContextSelection | null {
   const text = normalizeTerminalContextText(selection.text);
@@ -101,10 +86,7 @@ export function normalizeTerminalContextSelection(
   };
 }
 
-export function formatTerminalContextRange(selection: {
-  lineStart: number;
-  lineEnd: number;
-}): string {
+function formatTerminalContextRange(selection: { lineStart: number; lineEnd: number }): string {
   return selection.lineStart === selection.lineEnd
     ? `line ${selection.lineStart}`
     : `lines ${selection.lineStart}-${selection.lineEnd}`;
@@ -129,27 +111,6 @@ export function formatInlineTerminalContextLabel(selection: {
       ? `${selection.lineStart}`
       : `${selection.lineStart}-${selection.lineEnd}`;
   return `@${terminalLabel}:${range}`;
-}
-
-export function buildTerminalContextPreviewTitle(
-  contexts: ReadonlyArray<TerminalContextSelection>,
-): string | null {
-  if (contexts.length === 0) {
-    return null;
-  }
-  const previewParts: string[] = [];
-  for (const context of contexts) {
-    const normalized = normalizeTerminalContextSelection(context);
-    if (!normalized) continue;
-    const preview = previewTerminalContextText(normalized.text);
-    previewParts.push(
-      preview.length > 0
-        ? `${formatTerminalContextLabel(normalized)}\n${preview}`
-        : formatTerminalContextLabel(normalized),
-    );
-  }
-  const previews = previewParts.join("\n\n");
-  return previews.length > 0 ? previews : null;
 }
 
 function buildTerminalContextBodyLines(selection: TerminalContextSelection): string[] {
@@ -252,16 +213,15 @@ export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMe
   // `<element_context>`, then attached file paths, then the auto-PR
   // instruction block last. Strip in reverse so each stage sees its block
   // back at the trailing position.
-  const withoutPullRequestSuffix = stripCreatePullRequestSuffix(prompt);
-  const withoutAttachedFilePaths = stripAttachedFilePathsSuffix(withoutPullRequestSuffix);
-  const extractedElement = extractTrailingElementContexts(withoutAttachedFilePaths);
+  const withoutPullRequestSuffix = stripHiddenInstructionSuffixes(prompt);
+  const extractedElement = extractTrailingElementContexts(withoutPullRequestSuffix);
   const extractedTerminal = extractTrailingTerminalContexts(extractedElement.promptText);
   return {
     visibleText: extractedTerminal.promptText,
     // Copy keeps the attached context blocks and the visible "Attached …"
     // summary, but never the agent-only path list or auto-PR instructions —
     // the clipboard should match what the user believes the message says.
-    copyText: withoutAttachedFilePaths,
+    copyText: withoutPullRequestSuffix,
     contextCount: extractedTerminal.contextCount,
     previewTitle: extractedTerminal.previewTitle,
     contexts: extractedTerminal.contexts,

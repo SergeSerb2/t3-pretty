@@ -2,20 +2,19 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 
-import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
-
 import * as ProcessRunner from "../processRunner.ts";
 
 /**
- * A pinned runtime is an exact fork CLI tarball npm-installed into
+ * A pinned runtime is an exact `t3@<version>` npm-installed into
  * <baseDir>/runtime/versions/<version>. The boot service points its unit or
  * launch agent here, and server self-update installs the target version here before
- * switching over, never `npx t3` (upstream T3 Code) and never an unpinned npx
- * cache whose registry fetch at boot would make startup depend on the network.
+ * switching over, never `npx t3`, whose cache is ephemeral and whose
+ * registry fetch at boot would make startup depend on the network.
  */
 
 const PINNED_RUNTIME_DIR = "runtime";
@@ -43,7 +42,7 @@ export function pinnedRuntimePaths(
   };
 }
 
-export class PinnedRuntimeInstallError extends Schema.TaggedErrorClass<PinnedRuntimeInstallError>()(
+export class PinnedRuntimeInstallError extends Schema.TaggedError<PinnedRuntimeInstallError>()(
   "PinnedRuntimeInstallError",
   {
     step: Schema.String,
@@ -60,7 +59,7 @@ export class PinnedRuntimeInstallError extends Schema.TaggedErrorClass<PinnedRun
   }
 }
 
-export class PinnedRuntimePreflightBlockedError extends Schema.TaggedErrorClass<PinnedRuntimePreflightBlockedError>()(
+export class PinnedRuntimePreflightBlockedError extends Schema.TaggedError<PinnedRuntimePreflightBlockedError>()(
   "PinnedRuntimePreflightBlockedError",
   {
     version: Schema.String,
@@ -73,12 +72,11 @@ export class PinnedRuntimePreflightBlockedError extends Schema.TaggedErrorClass<
 }
 
 /**
- * Installs the fork CLI tarball for `<version>` into the pinned runtime
- * directory unless a complete install is already there, and returns its paths.
- * The sentinel is written only after npm exits 0; checking the entry file
- * alone is not enough. npm extracts files before running native builds
- * (node-pty), so a killed install leaves a plausible-looking but broken tree
- * behind.
+ * Installs `t3@<version>` into the pinned runtime directory unless a complete
+ * install is already there, and returns its paths. The sentinel is written
+ * only after npm exits 0; checking the entry file alone is not enough. npm
+ * extracts files before running native builds (node-pty), so a killed
+ * install leaves a plausible-looking but broken tree behind.
  */
 interface PinnedRuntimeInstallInput {
   readonly baseDir: string;
@@ -155,21 +153,35 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
 
   return yield* Effect.gen(function* () {
     const installStep = "installing the pinned t3 runtime (this can take a few minutes)";
+    const installArgs = [
+      "install",
+      "--prefix",
+      stagingDir,
+      "--no-fund",
+      "--no-audit",
+      `t3@${input.version}`,
+    ];
     yield* runner
       .run({
         command: "npm",
-        args: [
-          "install",
-          "--prefix",
-          stagingDir,
-          "--no-fund",
-          "--no-audit",
-          forkCliTarballUrl(input.version),
-        ],
+        args: installArgs,
         // Native dependencies may compile from source on slower machines.
         timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
       })
       .pipe(
+        Effect.catchTags({
+          ProcessSpawnError: (error) =>
+            error.cause instanceof PlatformError.PlatformError &&
+            error.cause.reason._tag === "NotFound"
+              ? // pnpm-managed Node installations do not include npm. Keep npm
+                // installation semantics for the pinned runtime and native builds.
+                runner.run({
+                  command: "pnpm",
+                  args: ["--package=npm@11", "dlx", "npm", ...installArgs],
+                  timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
+                })
+              : Effect.fail(error),
+        }),
         Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
         Effect.filterOrFail(
           (result) => result.code === 0,

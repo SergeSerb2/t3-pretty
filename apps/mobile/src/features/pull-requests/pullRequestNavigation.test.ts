@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 
 import {
+  normalizePullRequestDiffRoutePath,
+  normalizePullRequestRouteThreadId,
   parseRoutePositiveInt,
   resolveChangeRequestRoute,
   resolveNativePullRequestTarget,
@@ -18,6 +21,19 @@ describe("parseRoutePositiveInt", () => {
     expect(parseRoutePositiveInt("1.5")).toBeNull();
     expect(parseRoutePositiveInt("nope")).toBeNull();
     expect(parseRoutePositiveInt(undefined)).toBeNull();
+    expect(parseRoutePositiveInt("9".repeat(100_000))).toBeNull();
+    expect(parseRoutePositiveInt("1e2")).toBeNull();
+  });
+});
+
+describe("pull request route text", () => {
+  it("rejects empty and oversized file paths and review thread ids", () => {
+    const oversized = "x".repeat(ENTITY_ID_MAX_LENGTH + 1);
+
+    expect(normalizePullRequestDiffRoutePath("src/main.ts")).toBe("src/main.ts");
+    expect(normalizePullRequestDiffRoutePath(oversized)).toBeNull();
+    expect(normalizePullRequestRouteThreadId("thread-1")).toBe("thread-1");
+    expect(normalizePullRequestRouteThreadId(oversized)).toBeNull();
   });
 });
 
@@ -64,6 +80,18 @@ describe("resolveNativePullRequestTarget", () => {
       }),
     ).toBeNull();
   });
+
+  it("does not retain oversized navigation inputs", () => {
+    const oversized = "x".repeat(ENTITY_ID_MAX_LENGTH + 1);
+
+    expect(
+      resolveNativePullRequestTarget({
+        environmentId: oversized,
+        projectId: "project-1",
+        url: "https://github.com/acme/app/pull/1",
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("resolvePullRequestRouteRepository", () => {
@@ -100,6 +128,27 @@ describe("resolvePullRequestRouteRepository", () => {
         environmentId: "env-1",
         projectId: "project-1",
         projects: [{ environmentId: "env-1", id: "project-1", repositoryIdentity: null }],
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects oversized route identities and repository names", () => {
+    const oversized = "x".repeat(ENTITY_ID_MAX_LENGTH + 1);
+
+    expect(
+      resolvePullRequestRouteRepository({
+        repository: oversized,
+        environmentId: "env-1",
+        projectId: "project-1",
+        projects: [],
+      }),
+    ).toBeNull();
+    expect(
+      resolvePullRequestRouteRepository({
+        repository: "acme/app",
+        environmentId: oversized,
+        projectId: "project-1",
+        projects: [],
       }),
     ).toBeNull();
   });

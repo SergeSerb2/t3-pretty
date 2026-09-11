@@ -18,7 +18,7 @@ export function showMarkdownLinkActionSheet(options: {
     return;
   }
 
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
 
   const runAction = (id: MarkdownLinkAction) => {
     if (id === "open") {
