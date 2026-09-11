@@ -27,7 +27,9 @@ import type { UsageRecord } from "./usageTranscripts.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
 // entries would keep serving double-counted records forever.
-export const USAGE_SCAN_CACHE_VERSION = 2 as const;
+// v3: entries carry the parse position and reducer state so a grown file
+// re-parses only its appended bytes instead of starting over.
+export const USAGE_SCAN_CACHE_VERSION = 3 as const;
 
 /** Hard hydration limits for the persisted cache trust boundary. */
 export const USAGE_SCAN_CACHE_MAX_FILES = 100_000;

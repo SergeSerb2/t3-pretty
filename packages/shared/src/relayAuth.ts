@@ -5,7 +5,7 @@ export const CLERK_FRONTEND_API_MAX_LENGTH = 253;
 
 const ClerkPublishableKeyPrefix = Schema.Literals(["pk_test", "pk_live", "unknown"]);
 
-export class ClerkPublishableKeyDecodeError extends Schema.TaggedErrorClass<ClerkPublishableKeyDecodeError>()(
+export class ClerkPublishableKeyDecodeError extends Schema.TaggedError<ClerkPublishableKeyDecodeError>()(
   "ClerkPublishableKeyDecodeError",
   {
     keyPrefix: ClerkPublishableKeyPrefix,
@@ -17,7 +17,7 @@ export class ClerkPublishableKeyDecodeError extends Schema.TaggedErrorClass<Cler
   }
 }
 
-export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedErrorClass<ClerkPublishableKeyFrontendApiError>()(
+export class ClerkPublishableKeyFrontendApiError extends Schema.TaggedError<ClerkPublishableKeyFrontendApiError>()(
   "ClerkPublishableKeyFrontendApiError",
   {
     keyPrefix: ClerkPublishableKeyPrefix,

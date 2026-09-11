@@ -19,7 +19,7 @@ function persistedReplayKey(value: string, maxLength: number) {
   return `sha256:${Encoding.encodeBase64Url(sha256(new TextEncoder().encode(value)))}`;
 }
 
-export class DpopProofReplayPersistenceError extends Schema.TaggedErrorClass<DpopProofReplayPersistenceError>()(
+export class DpopProofReplayPersistenceError extends Schema.TaggedError<DpopProofReplayPersistenceError>()(
   "DpopProofReplayPersistenceError",
   {
     operation: Schema.Literals(["consume", "prune-expired"]),
@@ -41,7 +41,7 @@ export const DpopProofFailureCode = Schema.Union([
 ]);
 export type DpopProofFailureCode = typeof DpopProofFailureCode.Type;
 
-export class DpopProofRejected extends Schema.TaggedErrorClass<DpopProofRejected>()(
+export class DpopProofRejected extends Schema.TaggedError<DpopProofRejected>()(
   "DpopProofRejected",
   {
     code: DpopProofFailureCode,

@@ -99,7 +99,7 @@ const ProjectTransferErrorReason = Schema.Literals([
 
 const PROJECT_TRANSFER_ERROR_DETAIL_MAX_LENGTH = 4_096;
 
-export class ProjectTransferError extends Schema.TaggedErrorClass<ProjectTransferError>()(
+export class ProjectTransferError extends Schema.TaggedError<ProjectTransferError>()(
   "ProjectTransferError",
   {
     reason: ProjectTransferErrorReason,

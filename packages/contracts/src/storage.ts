@@ -156,7 +156,7 @@ export const StorageRemoveOrphanResult = Schema.Struct({
 });
 export type StorageRemoveOrphanResult = typeof StorageRemoveOrphanResult.Type;
 
-export class StorageInventoryError extends Schema.TaggedErrorClass<StorageInventoryError>()(
+export class StorageInventoryError extends Schema.TaggedError<StorageInventoryError>()(
   "StorageInventoryError",
   {
     operation: Schema.String.check(Schema.isMaxLength(STORAGE_ERROR_OPERATION_MAX_LENGTH)),
@@ -182,7 +182,7 @@ export class StorageInventoryError extends Schema.TaggedErrorClass<StorageInvent
   }
 }
 
-export class StoragePathNotManagedError extends Schema.TaggedErrorClass<StoragePathNotManagedError>()(
+export class StoragePathNotManagedError extends Schema.TaggedError<StoragePathNotManagedError>()(
   "StoragePathNotManagedError",
   {
     path: Schema.String.check(Schema.isMaxLength(THREAD_TURN_START_PATH_MAX_LENGTH)),

@@ -349,12 +349,14 @@ function Section({
 
 function CommentComposer({
   environmentId,
+  reference,
   detail,
   actionPending,
   onCommentAction,
   onCommented,
 }: {
   environmentId: EnvironmentId;
+  reference: PullRequestRef;
   detail: PullRequestDetailView;
   actionPending: boolean;
   onCommentAction: (
@@ -402,9 +404,7 @@ function CommentComposer({
       const result = await postComment({
         environmentId,
         input: {
-          projectId: detail.projectId,
-          repository: detail.repository,
-          number: detail.number,
+          ...reference,
           body: trimmed,
         },
       });
@@ -1400,11 +1400,13 @@ export function PullRequestSummaryTab({
         {/* Posting is a core capability and remains usable even if the activity read failed. */}
         {detail.capabilities.comment && detail.viewerPermissions.comment ? (
           <CommentComposer
+            reference={reference}
             key={JSON.stringify([
               environmentId,
-              detail.projectId,
-              detail.repository,
-              detail.number,
+              reference.projectId,
+              reference.host,
+              reference.repository,
+              reference.number,
             ])}
             environmentId={environmentId}
             detail={detail}

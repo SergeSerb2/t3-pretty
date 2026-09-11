@@ -101,6 +101,7 @@ function serverShell(overrides: Partial<EnvironmentThreadShell> = {}): Environme
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
     ...overrides,
+    pullRequests: overrides.pullRequests ?? [],
   };
 }
 

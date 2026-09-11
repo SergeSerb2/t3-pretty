@@ -593,7 +593,12 @@ const FOREGROUND_REVALIDATION_SETTLE_MS = 3_500;
 
 export function createEnvironmentQueryAtomFamily<R, ER, Input, A, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, ER>,
-  options: EnvironmentQueryAtomOptions<Input, A, E, EnvironmentSupervisor | R>,
+  options: EnvironmentQueryAtomOptions<
+    Input,
+    A,
+    E,
+    EnvironmentSupervisor | EnvironmentRegistry | AtomRegistry.AtomRegistry | R
+  >,
 ): (target: {
   readonly environmentId: EnvironmentIdType;
   readonly input: Input;

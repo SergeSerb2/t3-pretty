@@ -177,7 +177,7 @@ export const SkillsOperation = Schema.Literals([
 ]);
 export type SkillsOperation = typeof SkillsOperation.Type;
 
-export class SkillsError extends Schema.TaggedErrorClass<SkillsError>()("SkillsError", {
+export class SkillsError extends Schema.TaggedError<SkillsError>()("SkillsError", {
   operation: SkillsOperation,
   skillId: Schema.optional(SkillId),
   sourceRepo: Schema.optional(SkillSourceRepo),

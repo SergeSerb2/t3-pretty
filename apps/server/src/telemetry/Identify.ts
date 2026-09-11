@@ -27,7 +27,7 @@ const ClaudeJsonSchema = Schema.Struct({
 export const TelemetryIdentitySource = Schema.Literals(["codex", "claude", "anonymous"]);
 export type TelemetryIdentitySource = typeof TelemetryIdentitySource.Type;
 
-class TelemetryIdentityReadError extends Schema.TaggedErrorClass<TelemetryIdentityReadError>()(
+class TelemetryIdentityReadError extends Schema.TaggedError<TelemetryIdentityReadError>()(
   "TelemetryIdentityReadError",
   {
     source: TelemetryIdentitySource,
@@ -40,7 +40,7 @@ class TelemetryIdentityReadError extends Schema.TaggedErrorClass<TelemetryIdenti
   }
 }
 
-class TelemetryIdentityDecodeError extends Schema.TaggedErrorClass<TelemetryIdentityDecodeError>()(
+class TelemetryIdentityDecodeError extends Schema.TaggedError<TelemetryIdentityDecodeError>()(
   "TelemetryIdentityDecodeError",
   {
     source: Schema.Literals(["codex", "claude"]),
@@ -53,7 +53,7 @@ class TelemetryIdentityDecodeError extends Schema.TaggedErrorClass<TelemetryIden
   }
 }
 
-export class TelemetryAnonymousIdGenerationError extends Schema.TaggedErrorClass<TelemetryAnonymousIdGenerationError>()(
+export class TelemetryAnonymousIdGenerationError extends Schema.TaggedError<TelemetryAnonymousIdGenerationError>()(
   "TelemetryAnonymousIdGenerationError",
   {
     source: Schema.Literal("anonymous"),
@@ -66,7 +66,7 @@ export class TelemetryAnonymousIdGenerationError extends Schema.TaggedErrorClass
   }
 }
 
-export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedErrorClass<TelemetryAnonymousIdPersistenceError>()(
+export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedError<TelemetryAnonymousIdPersistenceError>()(
   "TelemetryAnonymousIdPersistenceError",
   {
     source: Schema.Literal("anonymous"),
@@ -79,7 +79,7 @@ export class TelemetryAnonymousIdPersistenceError extends Schema.TaggedErrorClas
   }
 }
 
-export class TelemetryIdentityHashError extends Schema.TaggedErrorClass<TelemetryIdentityHashError>()(
+export class TelemetryIdentityHashError extends Schema.TaggedError<TelemetryIdentityHashError>()(
   "TelemetryIdentityHashError",
   {
     source: TelemetryIdentitySource,

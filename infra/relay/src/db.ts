@@ -52,8 +52,7 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
           // Fork: PS_20 with replicas is the parent's production sizing; this
           // relay serves a single user's devices.
           clusterSize: "PS_5",
-          migrationsDir: schema.out,
-          migrationsTable: "relay_migrations",
+          migrations: { dir: schema.out, table: "relay_migrations" },
           replicas: 0,
         }).pipe(RemovalPolicy.retain())
       : yield* Planetscale.PostgresDatabase.ref("RelayPostgresDatabase", {
@@ -63,8 +62,7 @@ export const PlanetscaleDatabase = Effect.gen(function* () {
     mode === "stage-branch"
       ? yield* Planetscale.PostgresBranch("RelayPostgresBranch", {
           database,
-          migrationsDir: schema.out,
-          migrationsTable: "relay_migrations",
+          migrations: { dir: schema.out, table: "relay_migrations" },
         })
       : undefined;
 

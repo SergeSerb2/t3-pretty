@@ -34,7 +34,7 @@ export const APNS_PAYLOAD_MAX_BYTES = 4 * 1024;
 export const APNS_RESPONSE_MAX_BYTES = 8 * 1024;
 export const APNS_REQUEST_TIMEOUT_MS = 15_000;
 
-class ApnsResponseBodyTooLargeError extends Schema.TaggedErrorClass<ApnsResponseBodyTooLargeError>()(
+class ApnsResponseBodyTooLargeError extends Schema.TaggedError<ApnsResponseBodyTooLargeError>()(
   "ApnsResponseBodyTooLargeError",
   { maxBytes: Schema.Number },
 ) {
@@ -68,7 +68,7 @@ export interface ApnsDeliveryResult {
   readonly apnsId: string | null;
 }
 
-export class ApnsHttpRequestError extends Schema.TaggedErrorClass<ApnsHttpRequestError>()(
+export class ApnsHttpRequestError extends Schema.TaggedError<ApnsHttpRequestError>()(
   "ApnsHttpRequestError",
   {
     requestKind: ApnsRequestKindSchema,

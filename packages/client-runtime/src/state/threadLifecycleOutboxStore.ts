@@ -9,7 +9,7 @@ import {
   THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH,
 } from "./threadLifecycleOutboxModel.ts";
 
-export class ThreadLifecycleOutboxPersistenceError extends Schema.TaggedErrorClass<ThreadLifecycleOutboxPersistenceError>()(
+export class ThreadLifecycleOutboxPersistenceError extends Schema.TaggedError<ThreadLifecycleOutboxPersistenceError>()(
   "ThreadLifecycleOutboxPersistenceError",
   {
     operation: Schema.Literals(["load", "save"]),

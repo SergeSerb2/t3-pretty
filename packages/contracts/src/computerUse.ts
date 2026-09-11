@@ -17,13 +17,10 @@ export const ComputerUseErrorReason = Schema.Literals([
 ]);
 export type ComputerUseErrorReason = typeof ComputerUseErrorReason.Type;
 
-export class ComputerUseError extends Schema.TaggedErrorClass<ComputerUseError>()(
-  "ComputerUseError",
-  {
-    reason: ComputerUseErrorReason,
-    message: Schema.String,
-  },
-) {}
+export class ComputerUseError extends Schema.TaggedError<ComputerUseError>()("ComputerUseError", {
+  reason: ComputerUseErrorReason,
+  message: Schema.String,
+}) {}
 
 const QuartzCoordinate = Schema.Number.annotate({
   description:

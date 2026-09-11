@@ -15,6 +15,7 @@
 - [Apps](./user/apps.md)
 - [Subagents](./user/subagents.md)
 - [World Scenery](./user/world-scenery.md)
+- [SnapShots](./user/snap-shot.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Usage and limits](./user/usage.md)
 - [Storage](./user/storage.md)

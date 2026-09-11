@@ -79,7 +79,6 @@ describe("project thread title", () => {
     expect(input.message.text).toBe(text);
   });
 });
-
 describe("buildProjectThreadStartTurnInput", () => {
   it("carries per-thread skill picks into the create-thread bootstrap", () => {
     const input = buildProjectThreadStartTurnInput({
@@ -110,4 +109,40 @@ describe("buildProjectThreadStartTurnInput", () => {
       "host:Shared:grill-me",
     ]);
   });
+});
+
+describe("new thread on an existing branch", () => {
+  it.each([null, "/worktrees/existing"])(
+    "reuses the selected workspace %s without preparing a new worktree",
+    (worktreePath) => {
+      const input = buildProjectThreadStartTurnInput({
+        projectId: ProjectId.make("project"),
+        projectCwd: "/workspace",
+        threadId: "new-thread",
+        commandId: "command",
+        messageId: "message",
+        createdAt: "2026-09-06T00:00:00Z",
+        text: "Start fresh",
+        uploadedAttachments: [],
+        enabledSkillIds: [],
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        workspaceMode: "local",
+        branch: "feature/existing",
+        worktreePath,
+        startFromOrigin: false,
+        worktreeBranchName: "unused",
+      });
+
+      expect(input.bootstrap.createThread).toMatchObject({
+        projectId: "project",
+        branch: "feature/existing",
+        worktreePath,
+      });
+      expect(input.bootstrap).not.toHaveProperty("prepareWorktree");
+      expect(input.bootstrap).not.toHaveProperty("runSetupScript");
+      expect(input.threadId).toBe("new-thread");
+    },
+  );
 });

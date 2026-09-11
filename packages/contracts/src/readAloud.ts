@@ -11,7 +11,7 @@ export const ReadAloudUnavailableReason = Schema.Literals([
 ]);
 export type ReadAloudUnavailableReason = typeof ReadAloudUnavailableReason.Type;
 
-export class ReadAloudUnavailableError extends Schema.TaggedErrorClass<ReadAloudUnavailableError>()(
+export class ReadAloudUnavailableError extends Schema.TaggedError<ReadAloudUnavailableError>()(
   "ReadAloudUnavailableError",
   { reason: ReadAloudUnavailableReason },
   { httpApiStatus: 503 },
@@ -27,7 +27,7 @@ export class ReadAloudUnavailableError extends Schema.TaggedErrorClass<ReadAloud
   }
 }
 
-export class ReadAloudUpstreamError extends Schema.TaggedErrorClass<ReadAloudUpstreamError>()(
+export class ReadAloudUpstreamError extends Schema.TaggedError<ReadAloudUpstreamError>()(
   "ReadAloudUpstreamError",
   {},
   { httpApiStatus: 502 },

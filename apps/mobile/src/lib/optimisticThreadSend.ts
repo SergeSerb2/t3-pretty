@@ -54,6 +54,7 @@ export function optimisticStartingThreadToShell(
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     enabledSkillIds: thread.enabledSkillIds ?? [],
+    pullRequests: [],
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     latestTurn: null,

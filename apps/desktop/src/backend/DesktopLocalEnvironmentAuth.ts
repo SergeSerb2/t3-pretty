@@ -25,7 +25,7 @@ export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_TIMEOUT = Duration.seconds(8)
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_RETRY_SPACING = Duration.millis(200);
 export const LOCAL_ENVIRONMENT_AUTH_EXCHANGE_TIMEOUT_MS = 2_000;
 
-export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedErrorClass<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
+export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedError<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
   "DesktopLocalEnvironmentAuthBackendNotConfiguredError",
   {},
 ) {
@@ -34,7 +34,7 @@ export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema
   }
 }
 
-export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedErrorClass<DesktopLocalEnvironmentAuthSessionBootstrapError>()(
+export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.TaggedError<DesktopLocalEnvironmentAuthSessionBootstrapError>()(
   "DesktopLocalEnvironmentAuthSessionBootstrapError",
   { cause: Schema.String },
 ) {
@@ -83,6 +83,7 @@ const describeLocalBearerBootstrapCause = (cause: unknown): string => {
   return "Failed to create the local desktop bearer session.";
 };
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const httpClient = yield* HttpClient.HttpClient;

@@ -27,7 +27,7 @@ export const DictationUpstreamFailureReason = Schema.Literals([
 ]);
 export type DictationUpstreamFailureReason = typeof DictationUpstreamFailureReason.Type;
 
-export class DictationUnavailableError extends Schema.TaggedErrorClass<DictationUnavailableError>()(
+export class DictationUnavailableError extends Schema.TaggedError<DictationUnavailableError>()(
   "DictationUnavailableError",
   {
     reason: DictationUnavailableReason,
@@ -45,7 +45,7 @@ export class DictationUnavailableError extends Schema.TaggedErrorClass<Dictation
   }
 }
 
-export class DictationUpstreamError extends Schema.TaggedErrorClass<DictationUpstreamError>()(
+export class DictationUpstreamError extends Schema.TaggedError<DictationUpstreamError>()(
   "DictationUpstreamError",
   {
     reason: DictationUpstreamFailureReason,

@@ -18,7 +18,8 @@ export interface PreviewMiniPlayerSize {
 export interface PreviewMiniPlayerState {
   readonly tabId: string;
   readonly position: PreviewMiniPlayerPosition | null;
-  readonly size: PreviewMiniPlayerSize | null;
+  /** Height always follows the previewed viewport's aspect ratio. */
+  readonly width: number | null;
 }
 
 interface PreviewMiniPlayerStoreState {
@@ -33,7 +34,7 @@ interface PreviewMiniPlayerStoreState {
   readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
   readonly undismiss: (ref: ScopedThreadRef, tabId: string) => void;
   readonly move: (ref: ScopedThreadRef, tabId: string, position: PreviewMiniPlayerPosition) => void;
-  readonly resize: (ref: ScopedThreadRef, tabId: string, size: PreviewMiniPlayerSize) => void;
+  readonly resize: (ref: ScopedThreadRef, tabId: string, width: number) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -72,7 +73,7 @@ function openedPlayer(
       [threadKey]: {
         tabId,
         position: current?.position ?? null,
-        size: current?.size ?? null,
+        width: current?.width ?? null,
       },
     },
   };
@@ -149,17 +150,15 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()(
             },
           };
         }),
-      resize: (ref, tabId, size) =>
+      resize: (ref, tabId, width) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           const current = state.byThreadKey[threadKey];
-          if (!current || current.tabId !== tabId) return state;
-          if (current.size?.width === size.width && current.size.height === size.height)
-            return state;
+          if (!current || current.tabId !== tabId || current.width === width) return state;
           return {
             byThreadKey: {
               ...state.byThreadKey,
-              [threadKey]: { ...current, size },
+              [threadKey]: { ...current, width },
             },
           };
         }),

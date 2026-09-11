@@ -60,7 +60,7 @@ const tokenResponse = (request: HttpClientRequest.HttpClientRequest) =>
     ),
   );
 
-class BackendReadyLatchError extends Schema.TaggedErrorClass<BackendReadyLatchError>()(
+class BackendReadyLatchError extends Schema.TaggedError<BackendReadyLatchError>()(
   "BackendReadyLatchError",
   { message: Schema.String },
 ) {}
@@ -184,7 +184,9 @@ describe("DesktopLocalEnvironmentAuth", () => {
         Layer.provide(
           Layer.mergeAll(
             makePoolLayer({
-              waitForReady: new BackendReadyLatchError({ message: "ready latch failed" }),
+              waitForReady: Effect.fail(
+                new BackendReadyLatchError({ message: "ready latch failed" }),
+              ),
             }),
             httpClientLayer,
           ),

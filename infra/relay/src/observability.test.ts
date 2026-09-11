@@ -32,14 +32,11 @@ const otlpAttributeValue = (value: {
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
-class OversizedTraceError extends Schema.TaggedErrorClass<OversizedTraceError>()(
-  "OversizedTraceError",
-  {
-    detail: Schema.String,
-    values: Schema.Array(Schema.String),
-    cause: Schema.Defect(),
-  },
-) {}
+class OversizedTraceError extends Schema.TaggedError<OversizedTraceError>()("OversizedTraceError", {
+  detail: Schema.String,
+  values: Schema.Array(Schema.String),
+  cause: Schema.Defect(),
+}) {}
 
 it("bounds schema error attributes without inspecting the defect cause", () => {
   const attributes = schemaErrorAttributes(

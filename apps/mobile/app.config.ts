@@ -30,8 +30,8 @@ const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
-// Universal exports already contain their own rounded-square silhouette. Using one as an adaptive
-// foreground makes Android draw an icon shape inside the launcher's mask.
+// Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
+// The wordmark sits inside the adaptive safe zone; the variant artwork is a full-bleed background.
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
 if (
@@ -49,7 +49,9 @@ const DEVELOPMENT_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#00639B",
+  androidAdaptiveBackgroundColor: "#347FF8",
+  androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
+  androidSplashIcon: "./assets/android-splash-icon-dev.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#00639B",
@@ -67,6 +69,8 @@ const PREVIEW_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#8FCFA8",
@@ -78,6 +82,8 @@ const RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#DFEFE3",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#8FCFA8",
@@ -89,6 +95,8 @@ const INTERNAL_RELEASE_ASSETS = {
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.internalAndroidAdaptiveForegroundPng),
   androidAdaptiveBackgroundColor: "#14261B",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.internalIosIconPng),
   androidMonochromeIcon: "./assets/t3-pretty-internal-android-icon-mark.png",
   // Android notifications require a neutral white alpha mask; the forest color comes from below.
   androidNotificationIcon: "./assets/android-notification-icon.png",
@@ -263,20 +271,21 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  updates: mobileUpdateUrl
-    ? {
-        enabled: true,
-        url: mobileUpdateUrl,
-        // EAS Build injects its profile channel, but local Xcode Release builds
-        // do not. Embed the variant channel so those binaries send a valid
-        // expo-channel-name header instead of crashing on the update request.
-        requestHeaders: {
-          "expo-channel-name": APP_VARIANT,
-        },
-        checkAutomatically: "ON_LOAD",
-        fallbackToCacheTimeout: 0,
-      }
-    : { enabled: false },
+  updates:
+    mobileUpdateUrl && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0"
+      ? {
+          enabled: true,
+          url: mobileUpdateUrl,
+          // EAS Build injects its profile channel, but local Xcode Release builds
+          // do not. Embed the variant channel so those binaries send a valid
+          // expo-channel-name header instead of crashing on the update request.
+          requestHeaders: {
+            "expo-channel-name": APP_VARIANT,
+          },
+          checkAutomatically: "ON_LOAD",
+          fallbackToCacheTimeout: 0,
+        }
+      : { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
@@ -292,6 +301,9 @@ const config: ExpoConfig = {
     associatedDomains: isIosPersonalTeamBuild
       ? []
       : [`applinks:${variant.relyingParty}`, `webcredentials:${variant.relyingParty}`],
+    entitlements: {
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
+    },
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
@@ -320,8 +332,14 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
+      ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
+      : {}),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+      ...(variant.assets.androidAdaptiveBackgroundImage
+        ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+        : {}),
       foregroundImage: variant.assets.androidAdaptiveForeground,
       monochromeImage: variant.assets.androidMonochromeIcon,
     },
@@ -386,6 +404,9 @@ const config: ExpoConfig = {
           shortcut_icon: {
             foregroundImage: variant.assets.androidAdaptiveForeground,
             backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
+            ...(variant.assets.androidAdaptiveBackgroundImage
+              ? { backgroundImage: variant.assets.androidAdaptiveBackgroundImage }
+              : {}),
           },
         },
       },
@@ -427,11 +448,24 @@ const config: ExpoConfig = {
           image: variant.assets.splashIcon,
           backgroundColor: "#0e1110",
         },
+        android: {
+          // Android 12+ masks the splash icon to a circle over the central two thirds of
+          // its 288dp canvas, so the iOS export's corners get cut. A full-canvas image of
+          // the composed adaptive layers puts the wordmark in the same frame the launcher
+          // icon uses.
+          image: variant.assets.androidSplashIcon,
+          imageWidth: 288,
+          dark: { image: variant.assets.androidSplashIcon },
+        },
       },
     ],
     [
       "expo-build-properties",
       {
+        android: {
+          // Keep the supported floor explicit and covered by native notification tests.
+          minSdkVersion: 24,
+        },
         ios: {
           deploymentTarget: "18.0",
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.

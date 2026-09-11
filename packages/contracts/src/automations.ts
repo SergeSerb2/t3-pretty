@@ -422,15 +422,12 @@ export const AutomationsOperation = Schema.Literals([
 export type AutomationsOperation = typeof AutomationsOperation.Type;
 
 /** `message` is shown verbatim to agents (MCP) and users (RPC): keep it a plain sentence. */
-export class AutomationsError extends Schema.TaggedErrorClass<AutomationsError>()(
-  "AutomationsError",
-  {
-    operation: AutomationsOperation,
-    automationId: Schema.optional(AutomationId),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
+export class AutomationsError extends Schema.TaggedError<AutomationsError>()("AutomationsError", {
+  operation: AutomationsOperation,
+  automationId: Schema.optional(AutomationId),
+  message: TrimmedNonEmptyString,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
 
 // ---------------------------------------------------------------------------
 // RPC (rpc.ts: automations.listRuns / automations.getRun)

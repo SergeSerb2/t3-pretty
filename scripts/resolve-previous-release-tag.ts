@@ -14,7 +14,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const ReleaseChannel = Schema.Literals(["stable", "nightly"]);
 type ReleaseChannel = typeof ReleaseChannel.Type;
 
-export class InvalidReleaseTagError extends Schema.TaggedErrorClass<InvalidReleaseTagError>()(
+export class InvalidReleaseTagError extends Schema.TaggedError<InvalidReleaseTagError>()(
   "InvalidReleaseTagError",
   {
     channel: ReleaseChannel,
@@ -34,7 +34,7 @@ const releaseTagListProcessContext = {
   cwd: Schema.String,
 };
 
-export class ReleaseTagListProcessError extends Schema.TaggedErrorClass<ReleaseTagListProcessError>()(
+export class ReleaseTagListProcessError extends Schema.TaggedError<ReleaseTagListProcessError>()(
   "ReleaseTagListProcessError",
   {
     ...releaseTagListProcessContext,
@@ -47,7 +47,7 @@ export class ReleaseTagListProcessError extends Schema.TaggedErrorClass<ReleaseT
   }
 }
 
-export class ReleaseTagListProcessExitError extends Schema.TaggedErrorClass<ReleaseTagListProcessExitError>()(
+export class ReleaseTagListProcessExitError extends Schema.TaggedError<ReleaseTagListProcessExitError>()(
   "ReleaseTagListProcessExitError",
   {
     ...releaseTagListProcessContext,
@@ -61,7 +61,7 @@ export class ReleaseTagListProcessExitError extends Schema.TaggedErrorClass<Rele
   }
 }
 
-export class ReleaseTagListOutputTooLargeError extends Schema.TaggedErrorClass<ReleaseTagListOutputTooLargeError>()(
+export class ReleaseTagListOutputTooLargeError extends Schema.TaggedError<ReleaseTagListOutputTooLargeError>()(
   "ReleaseTagListOutputTooLargeError",
   {
     ...releaseTagListProcessContext,
@@ -74,7 +74,7 @@ export class ReleaseTagListOutputTooLargeError extends Schema.TaggedErrorClass<R
   }
 }
 
-export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedErrorClass<PreviousReleaseTagGitHubOutputConfigError>()(
+export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputConfigError>()(
   "PreviousReleaseTagGitHubOutputConfigError",
   {
     cause: Schema.Defect(),
@@ -85,7 +85,7 @@ export class PreviousReleaseTagGitHubOutputConfigError extends Schema.TaggedErro
   }
 }
 
-export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedErrorClass<PreviousReleaseTagGitHubOutputAppendError>()(
+export class PreviousReleaseTagGitHubOutputAppendError extends Schema.TaggedError<PreviousReleaseTagGitHubOutputAppendError>()(
   "PreviousReleaseTagGitHubOutputAppendError",
   {
     outputPath: Schema.String,

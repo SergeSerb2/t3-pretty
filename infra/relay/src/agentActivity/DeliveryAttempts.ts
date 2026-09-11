@@ -12,7 +12,7 @@ import { RELAY_DETAIL_MAX_LENGTH } from "@t3tools/contracts/relay";
 import * as RelayDb from "../db.ts";
 import { relayDeliveryAttempts } from "../persistence/schema.ts";
 
-export class DeliveryAttemptRecordPersistenceError extends Schema.TaggedErrorClass<DeliveryAttemptRecordPersistenceError>()(
+export class DeliveryAttemptRecordPersistenceError extends Schema.TaggedError<DeliveryAttemptRecordPersistenceError>()(
   "DeliveryAttemptRecordPersistenceError",
   {
     operation: Schema.Literals(["record", "claim-source-job", "complete-source-job", "prune"]),

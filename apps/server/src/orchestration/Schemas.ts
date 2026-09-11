@@ -20,6 +20,9 @@ import {
   ThreadSceneryAssignedPayload as ContractsThreadSceneryAssignedPayloadSchema,
   ThreadSkillsSetPayload as ContractsThreadSkillsSetPayloadSchema,
   ThreadSubagentPolicySetPayload as ContractsThreadSubagentPolicySetPayloadSchema,
+  ThreadPullRequestLinkedPayload as ContractsThreadPullRequestLinkedPayloadSchema,
+  ThreadPullRequestUnlinkedPayload as ContractsThreadPullRequestUnlinkedPayloadSchema,
+  ThreadPullRequestSyncedPayload as ContractsThreadPullRequestSyncedPayloadSchema,
   ThreadMessageSentPayload as ContractsThreadMessageSentPayloadSchema,
   ThreadNativeResumeRequestedPayload as ContractsThreadNativeResumeRequestedPayloadSchema,
   ThreadProposedPlanUpsertedPayload as ContractsThreadProposedPlanUpsertedPayloadSchema,
@@ -57,6 +60,9 @@ export const ThreadPinReorderedPayload = ContractsThreadPinReorderedPayloadSchem
 export const ThreadSceneryAssignedPayload = ContractsThreadSceneryAssignedPayloadSchema;
 export const ThreadSkillsSetPayload = ContractsThreadSkillsSetPayloadSchema;
 export const ThreadSubagentPolicySetPayload = ContractsThreadSubagentPolicySetPayloadSchema;
+export const ThreadPullRequestLinkedPayload = ContractsThreadPullRequestLinkedPayloadSchema;
+export const ThreadPullRequestUnlinkedPayload = ContractsThreadPullRequestUnlinkedPayloadSchema;
+export const ThreadPullRequestSyncedPayload = ContractsThreadPullRequestSyncedPayloadSchema;
 
 export const MessageSentPayloadSchema = ContractsThreadMessageSentPayloadSchema;
 export const ThreadNativeResumeRequestedPayload = ContractsThreadNativeResumeRequestedPayloadSchema;
