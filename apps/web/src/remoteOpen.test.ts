@@ -5,9 +5,13 @@ import {
   SshConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { buildRemoteOpenUrl, EnvironmentId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveRemoteOpenState } from "./remoteOpen";
+import { openRemoteEditorUrl, resolveRemoteOpenState } from "./remoteOpen";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -141,9 +145,31 @@ describe("buildRemoteOpenUrl", () => {
     ).toBe("vscode://vscode-remote/ssh-remote+sol/C%3A/Users/theo");
   });
 
+  it("builds Zed's ssh deep link", () => {
+    expect(
+      buildRemoteOpenUrl({
+        editor: "zed",
+        host: "sol.tail1234.ts.net",
+        absolutePath: "/home/theo/code/my repo",
+      }),
+    ).toBe("zed://ssh/sol.tail1234.ts.net/home/theo/code/my%20repo");
+  });
+
   it("returns undefined for editors without remote support", () => {
-    expect(buildRemoteOpenUrl({ editor: "zed", host: "sol", absolutePath: "/tmp/x" })).toBe(
+    expect(buildRemoteOpenUrl({ editor: "idea", host: "sol", absolutePath: "/tmp/x" })).toBe(
       undefined,
     );
+  });
+});
+
+describe("openRemoteEditorUrl", () => {
+  it("reports a browser protocol handoff that throws as not opened", async () => {
+    const assign = vi.fn(() => {
+      throw new Error("blocked protocol");
+    });
+    vi.stubGlobal("window", { location: { assign } });
+
+    await expect(openRemoteEditorUrl("vscode://file/example")).resolves.toBe(false);
+    expect(assign).toHaveBeenCalledExactlyOnceWith("vscode://file/example");
   });
 });

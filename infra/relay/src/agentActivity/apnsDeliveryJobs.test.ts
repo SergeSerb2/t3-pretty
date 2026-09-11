@@ -2,8 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import {
+  APNS_DELIVERY_JOB_MAX_BYTES,
+  SignedApnsDeliveryJob,
   makeApnsDeliveryJobPayload,
   signApnsDeliveryJob,
   verifySignedApnsDeliveryJob,
@@ -37,6 +40,7 @@ const notification = {
   threadId: "thread",
   deepLink: "/threads/env/thread",
 };
+const isSignedApnsDeliveryJob = Schema.is(SignedApnsDeliveryJob);
 
 describe("apnsDeliveryJobs", () => {
   it("rejects tampered signed queue jobs", () => {
@@ -173,6 +177,78 @@ describe("apnsDeliveryJobs", () => {
         nowMs: 0,
       }),
     ).toEqual(liveActivityPayload);
+  });
+
+  it("rejects signed jobs whose persisted identifiers exceed relay column bounds", () => {
+    const payload = makeApnsDeliveryJobPayload({
+      kind: "push_notification",
+      userId: "user-1",
+      deviceId: "device-1",
+      token: "token-1",
+      aggregate: null,
+      notification,
+      createdAt: "2026-05-25T00:00:00.000Z",
+      expiresAt: "2026-05-25T00:05:00.000Z",
+      jobId: "job-1",
+    });
+    const signed = signApnsDeliveryJob({ secret, payload });
+
+    expect(
+      isSignedApnsDeliveryJob({
+        ...signed,
+        payload: { ...signed.payload, jobId: "j".repeat(65) },
+      }),
+    ).toBe(false);
+    expect(
+      isSignedApnsDeliveryJob({
+        ...signed,
+        payload: {
+          ...signed.payload,
+          target: { ...signed.payload.target, deviceId: "d".repeat(192) },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isSignedApnsDeliveryJob({
+        ...signed,
+        payload: {
+          ...signed.payload,
+          notification: { ...notification, environmentId: "e".repeat(192) },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects signed queue bodies above the aggregate byte budget", () => {
+    const row = aggregate.activities[0]!;
+    const oversizedAggregate: RelayAgentActivityAggregateState = {
+      ...aggregate,
+      activities: Array.from({ length: 4 }, (_, index) => ({
+        ...row,
+        threadId: ThreadId.make(`thread-${index}`),
+        projectTitle: "p".repeat(8_192),
+        threadTitle: "t".repeat(8_192),
+        modelTitle: "m".repeat(8_192),
+        status: "s".repeat(8_192),
+        deepLink: `/${"d".repeat(8_190)}`,
+      })),
+    };
+    const signed = signApnsDeliveryJob({
+      secret,
+      payload: makeApnsDeliveryJobPayload({
+        kind: "live_activity_update",
+        userId: "user-1",
+        deviceId: "device-1",
+        token: "token-1",
+        aggregate: oversizedAggregate,
+        createdAt: "2026-05-25T00:00:00.000Z",
+        expiresAt: "2026-05-25T00:05:00.000Z",
+        jobId: "job-large",
+      }),
+    });
+
+    expect(JSON.stringify(signed).length).toBeGreaterThan(APNS_DELIVERY_JOB_MAX_BYTES);
+    expect(isSignedApnsDeliveryJob(signed)).toBe(false);
   });
 
   it("rejects jobs with invalid or overlong time windows", () => {

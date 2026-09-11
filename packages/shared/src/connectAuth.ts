@@ -6,6 +6,8 @@ const CONNECT_AUTH_CHALLENGE_PARAM = "challenge";
 const CONNECT_AUTH_PORT_PARAM = "port";
 const CONNECT_AUTH_CODE_SEPARATOR = ".";
 const CONNECT_LOOPBACK_CALLBACK_PATH = "/callback";
+export const CONNECT_AUTH_VALUE_MAX_LENGTH = 8_192;
+export const CONNECT_AUTH_CODE_MAX_LENGTH = 16_384;
 
 const CONNECT_AUTHORIZE_PATH = "/connect";
 const CONNECT_CALLBACK_PATH = "/connect/callback";
@@ -77,7 +79,12 @@ export function readConnectAuthorizeRequest(url: URL): ConnectAuthorizeRequest |
   const params = readHashParams(url);
   const state = params.get(CONNECT_AUTH_STATE_PARAM)?.trim() ?? "";
   const challenge = params.get(CONNECT_AUTH_CHALLENGE_PARAM)?.trim() ?? "";
-  if (!state || !challenge) {
+  if (
+    !state ||
+    !challenge ||
+    state.length > CONNECT_AUTH_VALUE_MAX_LENGTH ||
+    challenge.length > CONNECT_AUTH_VALUE_MAX_LENGTH
+  ) {
     return null;
   }
   const port = params.get(CONNECT_AUTH_PORT_PARAM);
@@ -170,6 +177,9 @@ export function checkConnectAuthCode(
 }
 
 export function parseConnectAuthCode(blob: string): ConnectAuthCode | null {
+  if (blob.length > CONNECT_AUTH_CODE_MAX_LENGTH) {
+    return null;
+  }
   const trimmed = blob.trim();
   const separatorIndex = trimmed.lastIndexOf(CONNECT_AUTH_CODE_SEPARATOR);
   if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {

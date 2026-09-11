@@ -9,6 +9,32 @@ import { relayEnvironmentCredentials } from "../persistence/schema.ts";
 import * as EnvironmentCredentials from "./EnvironmentCredentials.ts";
 
 describe("EnvironmentCredentials", () => {
+  it.effect("prunes only credentials revoked before the retention cutoff", () => {
+    const whereConditions: Array<unknown> = [];
+    const fakeDb = {
+      delete: (table: unknown) => {
+        expect(table).toBe(relayEnvironmentCredentials);
+        return {
+          where: (condition: unknown) => {
+            whereConditions.push(condition);
+            return Effect.void;
+          },
+        };
+      },
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      yield* EnvironmentCredentials.pruneRevokedBefore({
+        revokedBefore: "2026-04-25T12:00:00.000Z",
+      });
+
+      expect(whereConditions).toHaveLength(1);
+      const query = new PgDialect().sqlToQuery(whereConditions[0] as never);
+      expect(query.sql).toContain('"relay_environment_credentials"."revoked_at" < $1');
+      expect(query.params).toEqual(["2026-04-25T12:00:00.000Z"]);
+    }).pipe(Effect.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)));
+  });
+
   it.effect("reports the credential creation persistence stage and preserves its cause", () => {
     const cause = new Error("database unavailable");
     const fakeDb = {

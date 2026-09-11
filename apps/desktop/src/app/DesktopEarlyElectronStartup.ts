@@ -27,9 +27,14 @@ interface EarlyDesktopSettingsInput {
 type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
 
 export interface EarlyLinuxElectronOptions {
+  readonly isDevelopment: boolean;
   readonly linuxWmClass: string;
+  readonly linuxDesktopEntryName: string;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
+
+export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
+  isDevelopment ? "com.t3tools.T3Code.Development.desktop" : "com.t3tools.T3Code.desktop";
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -86,14 +91,21 @@ export function resolveEarlyLinuxElectronOptions(
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
   const isInternalBuild = (input.buildFlavor ?? T3CODE_BUILD_FLAVOR) === "internal";
+  const isDevelopment = isDevelopmentEnvironment(input.env);
   return {
+    isDevelopment,
     linuxWmClass: isInternalBuild
-      ? isDevelopmentEnvironment(input.env)
+      ? isDevelopment
         ? "t3code-dev"
         : "t3code"
-      : isDevelopmentEnvironment(input.env)
+      : isDevelopment
         ? "t3pretty-dev"
         : "t3pretty",
+    linuxDesktopEntryName: isInternalBuild
+      ? resolveLinuxDesktopEntryName(isDevelopment)
+      : isDevelopment
+        ? "com.t3tools.T3Pretty.Development.desktop"
+        : "com.t3tools.T3Pretty.desktop",
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

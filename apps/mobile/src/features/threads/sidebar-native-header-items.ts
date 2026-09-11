@@ -19,6 +19,8 @@ export function createSidebarHeaderItems(input: {
   readonly filterIcon: string;
   readonly filterMenu: HomeListFilterMenu;
   readonly onOpenPullRequests: () => void;
+  /** Null while no connected environment advertises the automations capability. */
+  readonly onOpenAutomations: (() => void) | null;
   readonly onOpenSettings: () => void;
 }): NativeStackHeaderItem[] {
   return [
@@ -36,6 +38,17 @@ export function createSidebarHeaderItems(input: {
       icon: sfSymbolIcon("arrow.triangle.pull"),
       onPress: input.onOpenPullRequests,
     }),
+    ...(input.onOpenAutomations === null
+      ? []
+      : [
+          withNativeGlassHeaderItem({
+            type: "button" as const,
+            label: "",
+            accessibilityLabel: "Open automations",
+            icon: sfSymbolIcon("bolt"),
+            onPress: input.onOpenAutomations,
+          }),
+        ]),
     withNativeGlassHeaderItem({
       type: "button",
       label: "",

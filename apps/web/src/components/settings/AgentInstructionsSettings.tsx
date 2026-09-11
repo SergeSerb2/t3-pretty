@@ -356,6 +356,7 @@ function InstructionFileEditor({
   const savedContentsRef = useRef<string | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const loaded = readQuery.data !== null;
   const loadedContents = readQuery.data?.contents ?? "";
@@ -371,30 +372,45 @@ function InstructionFileEditor({
     }
   }, [loaded, loadedContents]);
 
-  const performSave = useCallback(async () => {
-    const current = contentsRef.current;
-    if (current === null || current === savedContentsRef.current) return;
-    setSaveState("saving");
-    setSaveError(null);
-    const result = await writeFile({
-      environmentId,
-      input: {
-        fileId: file.id,
-        ...(projectCwd === undefined ? {} : { projectCwd }),
-        contents: current,
-      },
-    });
-    if (result._tag === "Success") {
-      savedContentsRef.current = current;
-      // Contents may have changed again while the write was in flight.
-      setSaveState(contentsRef.current === current ? "saved" : "dirty");
-      onSaved();
-      readQuery.refresh();
-    } else if (!isAtomCommandInterrupted(result)) {
-      setSaveState("error");
-      const failure = squashAtomCommandFailure(result);
-      setSaveError(failure instanceof Error ? failure.message : "Could not save the file.");
-    }
+  const performSave = useCallback(() => {
+    const saveLatest = async () => {
+      const current = contentsRef.current;
+      if (current === null || current === savedContentsRef.current) return;
+      setSaveState("saving");
+      setSaveError(null);
+      try {
+        const result = await writeFile({
+          environmentId,
+          input: {
+            fileId: file.id,
+            ...(projectCwd === undefined ? {} : { projectCwd }),
+            contents: current,
+          },
+        });
+        if (result._tag === "Success") {
+          savedContentsRef.current = current;
+          // Contents may have changed again while the write was in flight.
+          setSaveState(contentsRef.current === current ? "saved" : "dirty");
+          onSaved();
+          readQuery.refresh();
+        } else if (!isAtomCommandInterrupted(result)) {
+          setSaveState("error");
+          const failure = squashAtomCommandFailure(result);
+          setSaveError(failure instanceof Error ? failure.message : "Could not save the file.");
+        }
+      } catch (failure) {
+        setSaveState("error");
+        setSaveError(failure instanceof Error ? failure.message : "Could not save the file.");
+      }
+    };
+
+    // Writes target the same file and must commit in invocation order. Read
+    // contents only when a queued save begins so repeated blur/debounce events
+    // coalesce onto the latest edit instead of letting an older request land
+    // after a newer one.
+    const queued = saveQueueRef.current.then(saveLatest, saveLatest);
+    saveQueueRef.current = queued;
+    return queued;
   }, [environmentId, file.id, onSaved, projectCwd, readQuery, writeFile]);
   // `readQuery` is a fresh object every render, so the callback identity churns;
   // route timer/unmount callers through a ref to keep them stable.

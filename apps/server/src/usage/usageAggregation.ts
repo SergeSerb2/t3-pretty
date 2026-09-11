@@ -12,7 +12,14 @@
  *
  * @module usageAggregation
  */
-import type { UsageBucket, UsageDay, UsageResolution, UsageTokenTotals } from "@t3tools/contracts";
+import {
+  USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER,
+  type UsageBucket,
+  type UsageDay,
+  type UsageProviderKind,
+  type UsageResolution,
+  type UsageTokenTotals,
+} from "@t3tools/contracts";
 
 import { addTotals, EMPTY_TOTALS, type UsageRecord } from "./usageTranscripts.ts";
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
@@ -23,7 +30,7 @@ import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
  * `en-CA` yields ISO-ordered parts, which is why it is used here rather than
  * assembling the day from `Date` getters (those are host-local only).
  */
-export function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
+function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
   let format: Intl.DateTimeFormat;
   try {
     format = new Intl.DateTimeFormat("en-CA", {
@@ -44,7 +51,18 @@ export function makeDayFormatter(timeZone: string): (timestampMs: number) => str
   return (timestampMs) => format.format(new Date(timestampMs));
 }
 
+export function isValidUsageTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const HOUR_MS = 60 * 60 * 1000;
+const MAX_DEDUPE_KEYS_PER_PROVIDER = 50_000;
+const MAX_SESSION_MEMBERSHIPS_PER_PROVIDER = 50_000;
 
 interface MutableBucket {
   totals: UsageTokenTotals;
@@ -61,9 +79,14 @@ export interface AggregateOptions {
   readonly sinceDay: string;
   readonly untilDay: string;
   readonly rates: RateTable;
+  readonly priceOverrides?: RateTable;
   readonly resolution?: UsageResolution;
   readonly sinceTimeMs?: number;
   readonly untilTimeMs?: number;
+  /** Test overrides; production uses the matching wire/resource ceilings. */
+  readonly maxBucketsPerProvider?: number;
+  readonly maxDedupeKeysPerProvider?: number;
+  readonly maxSessionMembershipsPerProvider?: number;
 }
 
 export interface AggregateResult {
@@ -72,6 +95,15 @@ export interface AggregateResult {
   readonly duplicatesDropped: number;
   /** Records whose day fell outside the requested window. */
   readonly outOfWindow: number;
+  /** Records omitted because retaining another identity or bucket exceeded a ceiling. */
+  readonly capacityDropped: number;
+  /** Distinct-session memberships omitted while token/cost totals stayed complete. */
+  readonly sessionMembershipsOmitted: number;
+}
+
+export interface UsageAggregateCapacity {
+  readonly droppedRecords: number;
+  readonly omittedSessionMemberships: number;
 }
 
 /**
@@ -84,14 +116,37 @@ export interface AggregateResult {
 export class UsageAggregator {
   readonly #buckets = new Map<string, MutableBucket>();
   readonly #seen = new Set<string>();
+  readonly #bucketCounts = new Map<UsageProviderKind, number>();
+  readonly #dedupeKeyCounts = new Map<UsageProviderKind, number>();
+  readonly #sessionMembershipCounts = new Map<UsageProviderKind, number>();
+  readonly #capacityDropped = new Map<UsageProviderKind, number>();
+  readonly #sessionMembershipsOmitted = new Map<UsageProviderKind, number>();
   readonly #toDay: (timestampMs: number) => string;
   readonly #hourlyWindow: { readonly sinceTimeMs: number; readonly untilTimeMs: number } | null;
   readonly #options: AggregateOptions;
+  readonly #maxBucketsPerProvider: number;
+  readonly #maxDedupeKeysPerProvider: number;
+  readonly #maxSessionMembershipsPerProvider: number;
   #duplicatesDropped = 0;
   #outOfWindow = 0;
 
   constructor(options: AggregateOptions) {
     this.#options = options;
+    this.#maxBucketsPerProvider =
+      options.maxBucketsPerProvider ?? USAGE_SUMMARY_MAX_BUCKETS_PER_PROVIDER;
+    this.#maxDedupeKeysPerProvider =
+      options.maxDedupeKeysPerProvider ?? MAX_DEDUPE_KEYS_PER_PROVIDER;
+    this.#maxSessionMembershipsPerProvider =
+      options.maxSessionMembershipsPerProvider ?? MAX_SESSION_MEMBERSHIPS_PER_PROVIDER;
+    for (const limit of [
+      this.#maxBucketsPerProvider,
+      this.#maxDedupeKeysPerProvider,
+      this.#maxSessionMembershipsPerProvider,
+    ]) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new Error("Usage aggregation limits must be positive safe integers");
+      }
+    }
     this.#toDay = makeDayFormatter(options.timeZone);
     if (options.resolution === "hour") {
       if (options.sinceTimeMs === undefined || options.untilTimeMs === undefined) {
@@ -112,14 +167,6 @@ export class UsageAggregator {
    * that landed rather than everything the mtime prefilter happened to admit.
    */
   add(record: UsageRecord): boolean {
-    if (record.dedupeKey !== null) {
-      if (this.#seen.has(record.dedupeKey)) {
-        this.#duplicatesDropped += 1;
-        return false;
-      }
-      this.#seen.add(record.dedupeKey);
-    }
-
     if (
       this.#hourlyWindow !== null &&
       (record.timestampMs < this.#hourlyWindow.sinceTimeMs ||
@@ -138,6 +185,23 @@ export class UsageAggregator {
       return false;
     }
 
+    // Out-of-window records must not consume the dedupe budget or suppress an
+    // in-window copy of the same provider record encountered later.
+    if (record.dedupeKey !== null) {
+      const dedupeIdentity = `${record.provider}\u0000${record.dedupeKey}`;
+      if (this.#seen.has(dedupeIdentity)) {
+        this.#duplicatesDropped += 1;
+        return false;
+      }
+      const dedupeKeyCount = this.#dedupeKeyCounts.get(record.provider) ?? 0;
+      if (dedupeKeyCount >= this.#maxDedupeKeysPerProvider) {
+        this.#recordCapacityDrop(record.provider);
+        return false;
+      }
+      this.#seen.add(dedupeIdentity);
+      this.#dedupeKeyCounts.set(record.provider, dedupeKeyCount + 1);
+    }
+
     const hourStart =
       this.#hourlyWindow === null
         ? ""
@@ -148,6 +212,11 @@ export class UsageAggregator {
     const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${record.model}`;
     let bucket = this.#buckets.get(key);
     if (bucket === undefined) {
+      const bucketCount = this.#bucketCounts.get(record.provider) ?? 0;
+      if (bucketCount >= this.#maxBucketsPerProvider) {
+        this.#recordCapacityDrop(record.provider);
+        return false;
+      }
       bucket = {
         totals: EMPTY_TOTALS,
         costUsd: 0,
@@ -158,6 +227,7 @@ export class UsageAggregator {
         sessions: new Set<string>(),
       };
       this.#buckets.set(key, bucket);
+      this.#bucketCounts.set(record.provider, bucketCount + 1);
     }
 
     const priced = priceUsage(
@@ -165,16 +235,44 @@ export class UsageAggregator {
       record.model,
       record.totals,
       record.reportedCostUsd,
+      this.#options.priceOverrides,
     );
 
     bucket.totals = addTotals(bucket.totals, record.totals);
     bucket.costUsd += priced.costUsd;
-    bucket.cacheSavingsUsd += cacheSavingsUsd(this.#options.rates, record.model, record.totals);
+    bucket.cacheSavingsUsd += cacheSavingsUsd(
+      this.#options.rates,
+      record.model,
+      record.totals,
+      this.#options.priceOverrides,
+    );
     bucket.records += 1;
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
-    if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
+    if (record.sessionId.length > 0 && !bucket.sessions.has(record.sessionId)) {
+      const membershipCount = this.#sessionMembershipCounts.get(record.provider) ?? 0;
+      if (membershipCount >= this.#maxSessionMembershipsPerProvider) {
+        this.#sessionMembershipsOmitted.set(
+          record.provider,
+          (this.#sessionMembershipsOmitted.get(record.provider) ?? 0) + 1,
+        );
+      } else {
+        bucket.sessions.add(record.sessionId);
+        this.#sessionMembershipCounts.set(record.provider, membershipCount + 1);
+      }
+    }
     return true;
+  }
+
+  capacityForProvider(provider: UsageProviderKind): UsageAggregateCapacity {
+    return {
+      droppedRecords: this.#capacityDropped.get(provider) ?? 0,
+      omittedSessionMemberships: this.#sessionMembershipsOmitted.get(provider) ?? 0,
+    };
+  }
+
+  #recordCapacityDrop(provider: UsageProviderKind): void {
+    this.#capacityDropped.set(provider, (this.#capacityDropped.get(provider) ?? 0) + 1);
   }
 
   finish(): AggregateResult {
@@ -208,6 +306,11 @@ export class UsageAggregator {
       buckets,
       duplicatesDropped: this.#duplicatesDropped,
       outOfWindow: this.#outOfWindow,
+      capacityDropped: [...this.#capacityDropped.values()].reduce((sum, count) => sum + count, 0),
+      sessionMembershipsOmitted: [...this.#sessionMembershipsOmitted.values()].reduce(
+        (sum, count) => sum + count,
+        0,
+      ),
     };
   }
 }

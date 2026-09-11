@@ -152,11 +152,11 @@ html[data-scenery-motion] main[data-slot="sidebar-inset"] [role="alert"] {
 }
 
 /* Approval, agent-question and Plan Ready panels rise out of the editor as
-   one block (the `rounded-t-[19px]` wrapper is unique to these five hosts,
+   one block (the top-drawer data attribute identifies this host,
    pinned by the contract test). Animating the wrapper — not the inner
    `[data-approval-detail]` pre — keeps the header line, question card and
    badge on the same beat instead of only the detail rising. */
-html[data-scenery-motion] [data-chat-composer-form] [class*="rounded-t-[19px]"] {
+html[data-scenery-motion] [data-chat-composer-form] [data-chat-composer-top-drawer] {
   transition:
     opacity 220ms var(--sc-ease-out),
     translate 220ms var(--sc-ease-out);
@@ -491,9 +491,9 @@ html[data-scenery-motion]
 }
 
 /* What's New (fork-owned dialog): the one recurring "you got new stuff"
-   moment. Sparkle tile pops, changelog items rise on a 35ms stagger keyed
+   moment. Sparkle mark pops, changelog items rise on a 35ms stagger keyed
    by the --sc-i index the dialog sets inline (capped at 5 so below-the-fold
-   rows never wait). Never blocks — "Got it" is clickable from frame 0. */
+   rows never wait). Never blocks — "Continue" is clickable from frame 0. */
 html[data-scenery-motion] [data-slot="dialog-popup"][aria-label="What's new"] svg.lucide-sparkles {
   transition:
     scale 280ms var(--sc-ease-out) 40ms,

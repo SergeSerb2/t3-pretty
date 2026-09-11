@@ -5,7 +5,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
@@ -21,6 +20,7 @@ import * as ConnectionDriver from "./driver.ts";
 import {
   type ConnectionAttemptError,
   type ConnectionTarget,
+  DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
   ConnectionTransientError,
   type NetworkStatus,
   type PreparedConnection,
@@ -28,6 +28,7 @@ import {
 } from "./model.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
+import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 // The long tail matters more than the early rungs: the desktop mesh keeps
@@ -46,6 +47,10 @@ const MOBILE_CONNECTION_PROBE_TIMEOUT = "3 seconds";
 // when the old transport is in real doubt.
 const REPLACEMENT_HEAD_START = "500 millis";
 const BACKOFF_RESET_AFTER_MS = 30_000;
+// Control signals are lossless: dropping a disconnect while connected can
+// leave a lease alive indefinitely. A bounded queue keeps bursts from growing
+// without limit while applying backpressure until the supervisor catches up.
+const SUPERVISOR_SIGNAL_BUFFER_CAPACITY = 64;
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -105,6 +110,9 @@ type MonitorOutcome =
 type MonitorEvent =
   | { readonly _tag: "Signal"; readonly signal: SupervisorSignal }
   | { readonly _tag: "Closed"; readonly error: ConnectionTransientError }
+  | { readonly _tag: "AuthorizationRefreshDue" }
+  | { readonly _tag: "AuthorizationExpired" }
+  | { readonly _tag: "AuthorizationRetryDue" }
   | { readonly _tag: "ProbeSettled"; readonly exit: Exit.Exit<void, ConnectionAttemptError> }
   | { readonly _tag: "ReplacementDue" }
   | {
@@ -270,6 +278,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   | ConnectionWakeups.ConnectionWakeups
 > {
   const target = entry.target;
+  const setupTimeoutDetail = `${target.label} did not respond during connection setup.${
+    target._tag === "RelayConnectionTarget" ? ` ${NETWORK_BLOCKING_HINT}` : ""
+  }`;
   yield* annotateTarget(target);
 
   const connectivity = yield* Connectivity.Connectivity;
@@ -280,7 +291,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     network: yield* connectivity.status,
   };
   const intent = yield* Ref.make(initialIntent);
-  const signals = yield* Queue.unbounded<SupervisorSignal>();
+  const signals = yield* Queue.bounded<SupervisorSignal>(SUPERVISOR_SIGNAL_BUFFER_CAPACITY);
   const resetRetryState = yield* Ref.make(false);
   // Set when a foreground wake finds a dead transport (probe failed or timed
   // out) and no replacement lease could be established: the user is actively
@@ -368,12 +379,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }),
       });
       const lease = yield* effect.pipe(
-        Effect.mapError(
-          (error): TracedAttemptFailure => ({
-            error,
-            attemptSpan: Option.some(attemptSpan),
-          }),
-        ),
+        Effect.mapError((error): TracedAttemptFailure => ({
+          error,
+          attemptSpan: Option.some(attemptSpan),
+        })),
       );
       return { attemptSpan: Option.some(attemptSpan), lease };
     }).pipe(Effect.withSpan("relay.connection.attempt", { root: true }));
@@ -412,12 +421,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         attemptSpan: Option.none<Tracer.Span>(),
         lease,
       })),
-      Effect.mapError(
-        (error): TracedAttemptFailure => ({
-          error,
-          attemptSpan: Option.none(),
-        }),
-      ),
+      Effect.mapError((error): TracedAttemptFailure => ({
+        error,
+        attemptSpan: Option.none(),
+      })),
     );
   });
 
@@ -499,6 +506,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     attemptScope: Scope.Scope,
     replacementGeneration: number,
   ): Effect.fn.Return<MonitorOutcome, TracedAttemptFailure> {
+    const authorization = active.lease.prepared.httpAuthorization;
+    let authorizationRefreshStarted = false;
+    let authorizationFailureCount = 0;
     // Mutable holder (rather than closed-over lets) so the loop below sees the
     // fibers started by the helper effects.
     const inflight: {
@@ -508,8 +518,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         readonly fiber: Fiber.Fiber<ActiveLease, TracedAttemptFailure>;
         readonly scope: Scope.Closeable;
       } | null;
+      replacementReason: "wake" | "authorization" | null;
+      authorizationRetryTimer: Fiber.Fiber<void> | null;
       leaseLost: boolean;
-    } = { probe: null, replacementTimer: null, replacement: null, leaseLost: false };
+    } = {
+      probe: null,
+      replacementTimer: null,
+      replacement: null,
+      replacementReason: null,
+      authorizationRetryTimer: null,
+      leaseLost: false,
+    };
 
     const withActiveSpan = (error: ConnectionAttemptError): TracedAttemptFailure => ({
       error,
@@ -529,10 +548,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       );
     });
 
-    const startReplacement = Effect.fnUntraced(function* () {
+    const startReplacement = Effect.fnUntraced(function* (reason: "wake" | "authorization") {
       const scope = yield* Scope.fork(attemptScope);
       const fiber = yield* establishTracedConnection(
-        1,
+        reason === "authorization" ? authorizationFailureCount + 1 : 1,
         replacementGeneration,
         null,
         Option.none(),
@@ -543,16 +562,15 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           duration: CONNECTION_ESTABLISHMENT_TIMEOUT,
           orElse: timedOutReplacement,
         }),
-        Effect.map(
-          (established): ActiveLease => ({
-            lease: established.lease,
-            scope,
-            attemptSpan: established.attemptSpan,
-          }),
-        ),
+        Effect.map((established): ActiveLease => ({
+          lease: established.lease,
+          scope,
+          attemptSpan: established.attemptSpan,
+        })),
         Effect.forkChild,
       );
       inflight.replacement = { fiber, scope };
+      inflight.replacementReason = reason;
     });
 
     const stopProbe = Effect.suspend(() => {
@@ -570,11 +588,18 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const stopReplacement = Effect.suspend(() => {
       const current = inflight.replacement;
       inflight.replacement = null;
+      inflight.replacementReason = null;
       return current === null
         ? Effect.void
         : Fiber.interrupt(current.fiber).pipe(
             Effect.andThen(Scope.close(current.scope, Exit.void)),
           );
+    });
+
+    const stopAuthorizationRetryTimer = Effect.suspend(() => {
+      const current = inflight.authorizationRetryTimer;
+      inflight.authorizationRetryTimer = null;
+      return current === null ? Effect.void : Fiber.interrupt(current);
     });
 
     // The old transport is known dead but a replacement is still on its way:
@@ -594,6 +619,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const stopAll = stopProbe.pipe(
       Effect.andThen(stopReplacementTimer),
       Effect.andThen(stopReplacement),
+      Effect.andThen(stopAuthorizationRetryTimer),
     );
 
     const release = stopAll.pipe(Effect.as<MonitorOutcome>({ _tag: "Release" }));
@@ -607,6 +633,30 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       const probeFiber = inflight.probe;
       const replacementTimer = inflight.replacementTimer;
       const replacementFiber = inflight.replacement?.fiber ?? null;
+      const authorizationRetryTimer = inflight.authorizationRetryTimer;
+      const authorizationRefresh =
+        !authorizationRefreshStarted && authorization?._tag === "Dpop"
+          ? Clock.currentTimeMillis.pipe(
+              Effect.flatMap((now) =>
+                Effect.sleep(
+                  Math.max(
+                    0,
+                    authorization.expiresAtEpochMs - now - DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS,
+                  ),
+                ),
+              ),
+              Effect.as<MonitorEvent>({ _tag: "AuthorizationRefreshDue" }),
+            )
+          : Effect.never;
+      const authorizationExpiry =
+        authorizationRefreshStarted && authorization?._tag === "Dpop"
+          ? Clock.currentTimeMillis.pipe(
+              Effect.flatMap((now) =>
+                Effect.sleep(Math.max(0, authorization.expiresAtEpochMs - now)),
+              ),
+              Effect.as<MonitorEvent>({ _tag: "AuthorizationExpired" }),
+            )
+          : Effect.never;
       const event: MonitorEvent = yield* Effect.raceAllFirst([
         Queue.take(signals).pipe(
           Effect.map((signal): MonitorEvent => ({ _tag: "Signal", signal })),
@@ -614,9 +664,18 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         inflight.leaseLost
           ? Effect.never
           : active.lease.session.closed.pipe(
-              Effect.catch(
-                (error): Effect.Effect<MonitorEvent> => Effect.succeed({ _tag: "Closed", error }),
+              Effect.catch((error: ConnectionAttemptError): Effect.Effect<MonitorEvent> =>
+                error._tag === "ConnectionTransientError"
+                  ? Effect.succeed({ _tag: "Closed", error })
+                  : Effect.die(new Error(`Unexpected ConnectionBlockedError in session.closed`)),
               ),
+            ),
+        authorizationRefresh,
+        authorizationExpiry,
+        authorizationRetryTimer === null
+          ? Effect.never
+          : Fiber.await(authorizationRetryTimer).pipe(
+              Effect.as<MonitorEvent>({ _tag: "AuthorizationRetryDue" }),
             ),
         probeFiber === null
           ? Effect.never
@@ -645,6 +704,23 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         return yield* release;
       }
       switch (event._tag) {
+        case "AuthorizationRefreshDue":
+          authorizationRefreshStarted = true;
+          yield* Effect.logDebug(
+            "Preparing a replacement environment connection before its DPoP token expires.",
+          );
+          if (inflight.replacement === null) {
+            yield* startReplacement("authorization");
+          }
+          break;
+        case "AuthorizationExpired":
+          return yield* release;
+        case "AuthorizationRetryDue":
+          inflight.authorizationRetryTimer = null;
+          if (inflight.replacement === null) {
+            yield* startReplacement("authorization");
+          }
+          break;
         case "Closed": {
           if (inflight.replacement !== null) {
             yield* stopProbe;
@@ -659,6 +735,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           yield* stopReplacementTimer;
           if (Exit.isSuccess(event.exit)) {
             yield* stopReplacement;
+            if (authorizationRefreshStarted) {
+              yield* startReplacement("authorization");
+            }
             break;
           }
           if (inflight.replacement !== null) {
@@ -670,15 +749,18 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         case "ReplacementDue": {
           inflight.replacementTimer = null;
           if (inflight.probe !== null && inflight.replacement === null) {
-            yield* startReplacement();
+            yield* startReplacement("wake");
           }
           break;
         }
         case "ReplacementSettled": {
           const settled = inflight.replacement;
+          const replacementReason = inflight.replacementReason;
           inflight.replacement = null;
+          inflight.replacementReason = null;
           if (Exit.isSuccess(event.exit)) {
             yield* stopProbe;
+            yield* stopAuthorizationRetryTimer;
             return { _tag: "Replace", next: event.exit.value };
           }
           if (settled !== null) {
@@ -686,6 +768,30 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           }
           if (inflight.probe !== null) {
             // The old lease has not been ruled out yet; let the probe decide.
+            break;
+          }
+          if (
+            replacementReason === "authorization" &&
+            authorization?._tag === "Dpop" &&
+            !inflight.leaseLost
+          ) {
+            const failure = Cause.findErrorOption(event.exit.cause);
+            if (Option.isNone(failure) || failure.value.error._tag === "ConnectionBlockedError") {
+              return yield* Effect.failCause(event.exit.cause);
+            }
+            const retryDelay = retryDelayMs(authorizationFailureCount);
+            authorizationFailureCount += 1;
+            yield* Effect.logWarning(
+              "Could not prepare a replacement environment connection; keeping the active connection.",
+            ).pipe(
+              Effect.annotateLogs({
+                "authorization.refresh.retry_delay_ms": retryDelay,
+                ...safeErrorLogAttributes(failure.value.error),
+              }),
+            );
+            inflight.authorizationRetryTimer = yield* Effect.sleep(retryDelay).pipe(
+              Effect.forkChild,
+            );
             break;
           }
           return yield* giveUp(event.exit.cause);
@@ -752,20 +858,16 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           Scope.provide(leaseScope),
         ),
       ).pipe(
-        Effect.map(
-          (exit): EstablishmentEvent => ({
-            _tag: "Completed",
-            exit,
-          }),
-        ),
+        Effect.map((exit): EstablishmentEvent => ({
+          _tag: "Completed",
+          exit,
+        })),
       ),
       waitForEstablishmentInterrupt().pipe(
-        Effect.map(
-          (resetRetry): EstablishmentEvent => ({
-            _tag: "Interrupted",
-            resetRetry,
-          }),
-        ),
+        Effect.map((resetRetry): EstablishmentEvent => ({
+          _tag: "Interrupted",
+          resetRetry,
+        })),
       ),
       Effect.sleep(CONNECTION_ESTABLISHMENT_TIMEOUT).pipe(
         Effect.as<EstablishmentEvent>({ _tag: "TimedOut" }),
@@ -790,7 +892,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         failure: {
           error: new ConnectionTransientError({
             reason: "timeout",
-            detail: `${target.label} did not respond during connection setup.`,
+            detail: setupTimeoutDetail,
           }),
           attemptSpan: Option.none(),
         },
@@ -1080,14 +1182,3 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     retryNow,
   });
 });
-
-export const layer = (
-  entry: ConnectionCatalogEntry,
-  options?: EnvironmentSupervisorOptions,
-): Layer.Layer<
-  EnvironmentSupervisor,
-  never,
-  | Connectivity.Connectivity
-  | ConnectionDriver.ConnectionDriver
-  | ConnectionWakeups.ConnectionWakeups
-> => Layer.effect(EnvironmentSupervisor, make(entry, options));

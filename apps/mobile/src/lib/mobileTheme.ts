@@ -7,12 +7,12 @@ import {
   type ThemeAppearance,
   type ThemeColors,
 } from "@t3tools/shared/themePalettes";
-import { type ThemePreviewColors } from "@t3tools/shared/themePreview";
-import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme";
+import { STANDARD_THEME_PREVIEW_COLORS, type ThemePreviewColors } from "@t3tools/shared/themePreview";
+import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme.ts";
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = SHARED_MOBILE_THEME_IDS;
-export type MobileThemeId = SharedMobileThemeId;
+export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
+export type MobileThemeId = SharedMobileThemeId | "material-you";
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -20,7 +20,19 @@ export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeI
 /** Upstream T3 Chat palette. Settings → Appearance calls this Boring. */
 export const BORING_MOBILE_THEME_ID = "t3-chat" satisfies MobileThemeId;
 
-type MobileThemeVariable = `--color-${string}`;
+export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
+  readonly id: MobileThemeId;
+  readonly label: string;
+}> = [
+  { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Pretty" },
+  { id: "material-you", label: "Material You" },
+  ...BUILT_IN_THEMES.map((theme) => ({
+    id: theme.id as MobileThemeId,
+    label: theme.id === BORING_MOBILE_THEME_ID ? "Boring" : theme.label,
+  })),
+];
+
+export type MobileThemeVariable = `--color-${string}`;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
 
 export function isBoringMobileTheme(themeId: MobileThemeId): boolean {
@@ -28,7 +40,7 @@ export function isBoringMobileTheme(themeId: MobileThemeId): boolean {
 }
 
 export function normalizeMobileThemeId(value: unknown): MobileThemeId {
-  return value === BORING_MOBILE_THEME_ID ? BORING_MOBILE_THEME_ID : DEFAULT_MOBILE_THEME_ID;
+  return MOBILE_THEME_IDS.find((themeId) => themeId === value) ?? DEFAULT_MOBILE_THEME_ID;
 }
 
 export function normalizeMobileThemeMode(value: unknown): MobileThemeMode {
@@ -211,6 +223,16 @@ export function createMobileThemeVariables(
     "--color-card": c.surfaceRaised,
     "--color-card-alt": c.surface,
     "--color-card-translucent": withAlpha(c.surfaceRaised, 0.8),
+    "--color-thread-canvas": c.surface,
+    "--color-thread-selected": c.surfaceRaised,
+    "--color-thread-selected-foreground": c.text,
+    "--color-thread-selected-foreground-muted": c.textMuted,
+    "--color-composer-panel": themeColorWithAlpha(c.surface, appearance === "dark" ? 0.92 : 0.88),
+    "--color-composer-surface": themeColorWithAlpha(
+      c.surfaceRaised,
+      appearance === "dark" ? 0.9 : 0.94,
+    ),
+    "--color-composer-border": themeColorWithAlpha(c.border, appearance === "dark" ? 0.46 : 0.54),
     "--color-foreground": c.text,
     "--color-foreground-secondary": c.textMuted,
     "--color-foreground-muted": c.mutedForeground,
@@ -233,6 +255,9 @@ export function createMobileThemeVariables(
     "--color-switch-active-thumb": c.accentForeground,
     "--color-switch-inactive-track": c.secondary,
     "--color-switch-inactive-thumb": c.mutedForeground,
+    "--color-warning": c.warningSurface,
+    "--color-warning-border": withAlpha(c.warning, 0.32),
+    "--color-warning-foreground": c.warningForeground,
     "--color-danger": c.errorSurface,
     "--color-danger-border": withAlpha(c.error, 0.32),
     "--color-danger-foreground": c.errorForeground,
@@ -278,18 +303,22 @@ export function createMobileThemeVariables(
   };
 }
 
+export const MOBILE_THEME_VARIABLE_NAMES = Object.keys(
+  createMobileThemeVariables(BUILT_IN_THEMES[0].colors, "light"),
+) as ReadonlyArray<MobileThemeVariable>;
+
 export function getMobileThemeVariables(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
   overrides: Partial<MobileThemeVariables> | null = null,
 ): MobileThemeVariables {
-  const baseVariables = (() => {
-    if (themeId === DEFAULT_MOBILE_THEME_ID) return DEFAULT_MOBILE_THEME_VARIABLES[appearance];
-    const theme =
-      BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
-    const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
-    return createMobileThemeVariables(colors, appearance);
-  })();
+  if (themeId === DEFAULT_MOBILE_THEME_ID) {
+    const baseVariables = DEFAULT_MOBILE_THEME_VARIABLES[appearance];
+    return overrides ? ({ ...baseVariables, ...overrides } as MobileThemeVariables) : baseVariables;
+  }
+  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
+  const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
+  const baseVariables = createMobileThemeVariables(colors, appearance);
 
   // The complete base record guarantees that optional overrides cannot leave a token undefined.
   return overrides ? ({ ...baseVariables, ...overrides } as MobileThemeVariables) : baseVariables;
@@ -307,6 +336,7 @@ export function getMobileThemePreviewColors(
       messageAction: colors["--color-primary"],
     };
   }
+  if (themeId === "material-you") return STANDARD_THEME_PREVIEW_COLORS[appearance];
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
   const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
   return {

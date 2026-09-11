@@ -5,6 +5,8 @@ export const SERVICE_LAUNCHER_PROTOCOL = 2 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
 export const SERVICE_LAUNCHER_FILE = "service-launcher.mjs";
 export const SERVICE_STATE_FILE = "service-state.json";
+export const SERVICE_STATE_MAX_BYTES = 64 * 1024;
+export const SERVICE_RUNTIME_SENTINEL_MAX_BYTES = 1024;
 /** Written by the launcher just before an explicit stop kills its child, so
     the child can tell "the service is going away" from "the launcher is about
     to start my replacement" while a pending update is recorded. */
@@ -71,7 +73,7 @@ export const isExactServiceVersion = (version: string): boolean =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
+function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
   if (!isRecord(value)) return undefined;
   const { id, fromVersion, targetVersion, status } = value;
   if (
@@ -181,6 +183,20 @@ export function serviceStateHasPendingUpdate(value: string): boolean {
     return isRecord(parsed) && isRecord(parsed.update) && parsed.update.status === "pending";
   } catch {
     return false;
+  }
+}
+
+/** Reads the active version across launcher protocol revisions for downgrade protection. */
+export function serviceStateActiveVersion(value: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) &&
+      typeof parsed.activeVersion === "string" &&
+      isExactServiceVersion(parsed.activeVersion)
+      ? parsed.activeVersion
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
