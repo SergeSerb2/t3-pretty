@@ -34,7 +34,7 @@ import type {
   ProviderListCursor,
 } from "./PullRequestProvider.ts";
 
-export class OriginPullRequestReadError extends Schema.TaggedErrorClass<OriginPullRequestReadError>()(
+export class OriginPullRequestReadError extends Schema.TaggedError<OriginPullRequestReadError>()(
   "OriginPullRequestReadError",
   {
     command: Schema.Literal("origin"),
@@ -52,7 +52,7 @@ export class OriginPullRequestReadError extends Schema.TaggedErrorClass<OriginPu
   }
 }
 
-export class OriginViewerUnavailableError extends Schema.TaggedErrorClass<OriginViewerUnavailableError>()(
+export class OriginViewerUnavailableError extends Schema.TaggedError<OriginViewerUnavailableError>()(
   "OriginViewerUnavailableError",
   {
     command: Schema.Literal("origin"),
