@@ -1104,7 +1104,9 @@ ${">".repeat(7)} theirs
   });
 
   it("overlays completed cache entries keyed by current file contents", () => {
-    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-"));
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-"),
+    );
     const git = (...args) =>
       NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
     try {
@@ -1294,11 +1296,11 @@ ${">".repeat(7)} theirs
       });
 
       assert.include(output, "no text conflicts");
-      assert.include(
-        output,
-        `overlaid the completed content-hash resolution for ${overlayPath}`,
+      assert.include(output, `overlaid the completed content-hash resolution for ${overlayPath}`);
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"),
+        resolvedSource,
       );
-      assert.equal(NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"), resolvedSource);
       const report = NodeFS.readFileSync(
         NodePath.join(directory, ".t3-fork/upstream-sync-report.md"),
         "utf8",

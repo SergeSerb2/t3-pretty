@@ -161,10 +161,7 @@ function listResolutionCacheKeys(cacheDir) {
   if (!NodeFS.lstatSync(cacheDir).isDirectory()) return [];
   const keys = [];
   for (const directoryEntry of NodeFS.readdirSync(cacheDir, { withFileTypes: true })) {
-    if (
-      directoryEntry.isFile() &&
-      /^[0-9a-f]{64}\.json$/u.test(directoryEntry.name)
-    ) {
+    if (directoryEntry.isFile() && /^[0-9a-f]{64}\.json$/u.test(directoryEntry.name)) {
       keys.push(directoryEntry.name.slice(0, 64));
     }
   }
@@ -210,7 +207,10 @@ export function applyCompletedContentOverlays({
     }
     const absolutePath = NodePath.resolve(root, entry.path);
     const rootResolved = NodePath.resolve(root);
-    if (absolutePath !== rootResolved && !absolutePath.startsWith(`${rootResolved}${NodePath.sep}`)) {
+    if (
+      absolutePath !== rootResolved &&
+      !absolutePath.startsWith(`${rootResolved}${NodePath.sep}`)
+    ) {
       continue;
     }
     let currentSource;
