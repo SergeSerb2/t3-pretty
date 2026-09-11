@@ -317,4 +317,87 @@ describe("browser composer dictation", () => {
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(dictation.phase).toBe("idle");
   });
+
+  it("aborts prepare when the caret moves without changing text", async () => {
+    const permission = deferred<{ getTracks: () => { stop: typeof stopTrack }[] }>();
+    getUserMedia.mockReturnValueOnce(permission.promise);
+    let starting: Promise<void> | void;
+    await act(async () => {
+      starting = dictation.toggle();
+    });
+    expect(dictation.phase).toBe("preparing");
+    cursor = 0;
+    await act(async () => {
+      permission.resolve({ getTracks: () => [{ stop: stopTrack }] });
+      await starting;
+    });
+    expect(stopTrack).toHaveBeenCalled();
+    expect(Recorder.instances).toHaveLength(0);
+    expect(dictation.phase).toBe("idle");
+    expect(reportError).toHaveBeenCalledWith(
+      "The composer changed before recording started. Please try again.",
+    );
+  });
+
+  it("does not open the microphone if starting is blocked after status", async () => {
+    const status = deferred<{ available: true; reason: null }>();
+    mocks.runPromise.mockReset();
+    mocks.runPromise.mockReturnValueOnce(status.promise);
+    let starting: Promise<void> | void;
+    await act(async () => {
+      starting = dictation.toggle();
+    });
+    expect(dictation.phase).toBe("preparing");
+    input = { ...input, canStart: false };
+    await act(() => root.render(<Probe />));
+    await act(async () => {
+      status.resolve({ available: true, reason: null });
+      await starting;
+    });
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(dictation.phase).toBe("idle");
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it("releases a granted microphone if starting is blocked after prepare", async () => {
+    const permission = deferred<{ getTracks: () => { stop: typeof stopTrack }[] }>();
+    getUserMedia.mockReturnValueOnce(permission.promise);
+    let starting: Promise<void> | void;
+    await act(async () => {
+      starting = dictation.toggle();
+    });
+    expect(dictation.phase).toBe("preparing");
+    input = { ...input, canStart: false };
+    await act(() => root.render(<Probe />));
+    await act(async () => {
+      permission.resolve({ getTracks: () => [{ stop: stopTrack }] });
+      await starting;
+    });
+    expect(stopTrack).toHaveBeenCalled();
+    expect(Recorder.instances).toHaveLength(0);
+    expect(dictation.phase).toBe("idle");
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it("cancels prepare when toggled again before recording starts", async () => {
+    const permission = deferred<{ getTracks: () => { stop: typeof stopTrack }[] }>();
+    getUserMedia.mockReturnValueOnce(permission.promise);
+    let starting: Promise<void> | void;
+    await act(async () => {
+      starting = dictation.toggle();
+    });
+    expect(dictation.phase).toBe("preparing");
+    await act(() => {
+      dictation.toggle();
+    });
+    expect(dictation.phase).toBe("idle");
+    await act(async () => {
+      permission.resolve({ getTracks: () => [{ stop: stopTrack }] });
+      await starting;
+    });
+    expect(stopTrack).toHaveBeenCalled();
+    expect(Recorder.instances).toHaveLength(0);
+    expect(dictation.phase).toBe("idle");
+    expect(reportError).not.toHaveBeenCalled();
+  });
 });
