@@ -1,3 +1,4 @@
+import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -14,7 +15,8 @@ vi.mock("@clerk/react", () => ({
   useUser: vi.fn(() => ({ user: null })),
 }));
 
-vi.mock("~/cloud/publicConfig", () => ({
+vi.mock("~/cloud/publicConfig", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/cloud/publicConfig")>()),
   hasCloudPublicConfig: vi.fn(() => true),
 }));
 
@@ -41,7 +43,7 @@ describe("resolveSurgeConnectAccountPresentation", () => {
     ).toEqual({
       action: "loading",
       actionLabel: "Checking…",
-      description: "Checking your Surge Code sign-in status.",
+      description: `Checking your ${SURGE_CODE_ACCOUNT_NAME} sign-in status.`,
     });
   });
 
@@ -54,8 +56,8 @@ describe("resolveSurgeConnectAccountPresentation", () => {
       }),
     ).toEqual({
       action: "sign-in",
-      actionLabel: "Sign in to Surge Code",
-      description: "Sign in to discover and connect environments on your Surge Connect mesh.",
+      actionLabel: `Sign in to ${SURGE_CODE_ACCOUNT_NAME}`,
+      description: `Sign in to discover and connect environments on your ${SURGE_CONNECT_NAME} mesh.`,
     });
   });
 

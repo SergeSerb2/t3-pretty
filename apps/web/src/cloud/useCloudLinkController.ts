@@ -9,8 +9,11 @@ import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/con
 import { useState } from "react";
 
 import { toastManager } from "../components/ui/toast";
+import { useCopyTraceId } from "../hooks/useCopyTraceId";
+import { useRelayEnvironmentDiscovery } from "../state/environments";
 import { relayEnvironmentDiscovery } from "../state/relay";
 import { useAtomCommand } from "../state/use-atom-command";
+import { isRelayEnvironmentMissing } from "./connectMesh";
 import { isCloudLinkOnConfiguredRelayForAccount } from "./linkEnvironment";
 import {
   linkPrimaryEnvironment as linkPrimaryEnvironmentAtom,
@@ -36,6 +39,7 @@ export interface CloudLinkDesiredState {
  */
 export function useCloudLinkController() {
   const { getToken, isSignedIn, userId } = useAuth();
+  const copyTraceId = useCopyTraceId();
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -50,6 +54,7 @@ export function useCloudLinkController() {
     { reportFailure: false },
   );
   const primaryCloudLinkState = usePrimaryCloudLinkState();
+  const relayDiscovery = useRelayEnvironmentDiscovery();
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const reportUpdateFailure = (cause: unknown) => {
@@ -70,7 +75,7 @@ export function useCloudLinkController() {
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,
@@ -91,8 +96,16 @@ export function useCloudLinkController() {
   const storedManagedTunnelActive =
     storedLinkState?.managedTunnelActive ?? storedLinkState?.linked ?? false;
   const storedPublishAgentActivity = storedLinkState?.publishAgentActivity ?? false;
-  const managedTunnelActive = linked && storedManagedTunnelActive;
-  const publishAgentActivity = linked && storedPublishAgentActivity;
+  // A relay-side deregistration can leave the environment's local link files
+  // intact. Once the current account list is authoritative, do not present
+  // that stale local state as reachable; the next explicit enable/connect
+  // action will re-link it below.
+  const relayMembershipMissing =
+    linked &&
+    isRelayEnvironmentMissing(relayDiscovery, primaryCloudLinkState.target?.environmentId ?? null);
+  const activeLink = linked && !relayMembershipMissing;
+  const managedTunnelActive = activeLink && storedManagedTunnelActive;
+  const publishAgentActivity = activeLink && storedPublishAgentActivity;
 
   const reconcileCloudState = async (desired: CloudLinkDesiredState): Promise<boolean> => {
     setOperationError(null);
@@ -148,7 +161,11 @@ export function useCloudLinkController() {
           return false;
         }
       }
-      if (!linked || storedManagedTunnelActive !== desired.managedTunnel) {
+      if (
+        !linked ||
+        relayMembershipMissing ||
+        storedManagedTunnelActive !== desired.managedTunnel
+      ) {
         const linkResult = await linkPrimaryEnvironment({
           target,
           clerkToken,
@@ -191,6 +208,7 @@ export function useCloudLinkController() {
     storedManagedTunnelActive,
     storedPublishAgentActivity,
     linked,
+    relayMembershipMissing,
     managedTunnelActive,
     publishAgentActivity,
     operationError,

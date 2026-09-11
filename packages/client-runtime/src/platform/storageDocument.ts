@@ -5,21 +5,29 @@ import {
   ConnectionCredential,
   ConnectionProfile,
 } from "../connection/catalog.ts";
-import { type ConnectionTarget, PersistedConnectionTarget } from "../connection/model.ts";
+import {
+  ConnectionId,
+  type ConnectionTarget,
+  PersistedConnectionTarget,
+} from "../connection/model.ts";
 import * as TokenStore from "../authorization/tokenStore.ts";
 
+export const CONNECTION_CATALOG_MAX_RECORDS_PER_KIND = 1_024;
+const ConnectionCatalogRecordArray = <S extends Schema.Top>(schema: S) =>
+  Schema.Array(schema).check(Schema.isMaxLength(CONNECTION_CATALOG_MAX_RECORDS_PER_KIND));
+
 export const StoredConnectionCredential = Schema.Struct({
-  connectionId: Schema.String,
+  connectionId: ConnectionId,
   credential: ConnectionCredential,
 });
 export type StoredConnectionCredential = typeof StoredConnectionCredential.Type;
 
 export const ConnectionCatalogDocument = Schema.Struct({
   schemaVersion: Schema.Literal(1),
-  targets: Schema.Array(PersistedConnectionTarget),
-  profiles: Schema.Array(ConnectionProfile),
-  credentials: Schema.Array(StoredConnectionCredential),
-  remoteDpopTokens: Schema.Array(TokenStore.RemoteDpopAccessToken),
+  targets: ConnectionCatalogRecordArray(PersistedConnectionTarget),
+  profiles: ConnectionCatalogRecordArray(ConnectionProfile),
+  credentials: ConnectionCatalogRecordArray(StoredConnectionCredential),
+  remoteDpopTokens: ConnectionCatalogRecordArray(TokenStore.RemoteDpopAccessToken),
 });
 export type ConnectionCatalogDocument = typeof ConnectionCatalogDocument.Type;
 
@@ -138,4 +146,25 @@ export function removeConnectionFromCatalog(
   target: ConnectionTarget,
 ): ConnectionCatalogDocument {
   return removeConnectionMetadata(document, target, true);
+}
+
+export function putRemoteDpopTokenInCatalog(
+  document: ConnectionCatalogDocument,
+  token: TokenStore.RemoteDpopAccessToken,
+): ConnectionCatalogDocument {
+  const registered = document.targets.some(
+    (target) =>
+      target._tag === "RelayConnectionTarget" && target.environmentId === token.environmentId,
+  );
+  if (!registered) {
+    return document;
+  }
+  return {
+    ...document,
+    remoteDpopTokens: replaceCatalogValue(
+      document.remoteDpopTokens,
+      (value) => value.environmentId,
+      token,
+    ),
+  };
 }

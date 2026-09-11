@@ -41,7 +41,6 @@ import uiSidebarSource from "../components/ui/sidebar.tsx?raw";
 import toastSource from "../components/ui/toast.tsx?raw";
 import whatsNewSource from "../components/WhatsNewDialog.tsx?raw";
 import chatIndexRouteSource from "../routes/_chat.index.tsx?raw";
-import composerAttachSource from "./ComposerAttachControl.tsx?raw";
 import motionDriverSource from "./SceneryMotion.tsx?raw";
 
 const motionStylesSource = NodeFS.readFileSync(new URL("./motion.css", import.meta.url), "utf8");
@@ -90,6 +89,15 @@ describe("working-row thinking indicator contract", () => {
     expect(messagesTimelineSource).not.toContain("status-pulse-wave");
   });
 
+  it("the shimmer overlay's utilities still exist, so it never paints as an unmasked bold copy", () => {
+    expect(messagesTimelineSource).toContain('className="live-activity-focus ');
+    expect(indexStylesSource).toContain("@utility live-activity-focus {");
+    expect(indexStylesSource).toContain("@utility live-activity-focus-counter {");
+    expect(indexStylesSource).toContain("@utility live-activity-focus-aligned {");
+    expect(indexStylesSource).toContain("@keyframes live-activity-focus {");
+    expect(indexStylesSource).toContain("@keyframes live-activity-focus-counter {");
+  });
+
   it("does not overlay thinking orbs on the working row, scroll pill, or hero", () => {
     expect(motionDriverSource).not.toContain("ThinkingOrb");
     expect(motionDriverSource).not.toContain("scenery-orb-slot");
@@ -105,12 +113,6 @@ describe("working-row thinking indicator contract", () => {
 
   it("filters body mutations before scheduling a full motion sync", () => {
     expect(motionDriverSource).toContain("mutationsRequireSceneryMotionSync(mutations)");
-  });
-});
-
-describe("composer attach mutation contract", () => {
-  it("filters body mutations before scheduling a composer attach sync", () => {
-    expect(composerAttachSource).toContain("mutationsRequireComposerAttachSync(mutations)");
   });
 });
 
@@ -150,19 +152,18 @@ describe("composer contract", () => {
     expect(primaryActionsSource).toContain('aria-label="Stop generation"');
   });
 
-  it("approval / question / plan panels still mount under the rounded-t-[19px] wrapper", () => {
+  it("approval / question / plan panels retain their animated top drawer", () => {
     expect(chatComposerSource).toContain('data-chat-composer-form="true"');
-    expect(chatComposerSource).toContain(
-      'className="rounded-t-[19px] border-b border-border/65 bg-muted/20"',
+    expect(chatComposerSource).toContain('data-chat-composer-top-drawer="true"');
+    expect(motionStylesSource).toContain(
+      "[data-chat-composer-form] [data-chat-composer-top-drawer]",
     );
-    expect(chatComposerSource).toContain("flex flex-wrap items-center justify-end gap-2 px-3 pb-3");
     expect(primaryActionsSource).toContain('data-chat-composer-implement-actions="true"');
   });
 
   it("draft attachments still own a direct-child Remove button inside the editor chrome", () => {
     expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
     expect(chatComposerSource).toContain("aria-label={`Remove ${image.name}`}");
-    expect(composerAttachSource).toContain("aria-label={`Remove ${props.file.name}`}");
   });
 
   it("the agent-question option check still swaps in as a lucide CheckIcon inside the collapsible", () => {
@@ -185,7 +186,7 @@ describe("timeline and lightbox contract", () => {
 
   it("the minimap preview and lightbox still carry their hooks", () => {
     expect(messagesTimelineSource).toContain("data-minimap-preview");
-    expect(expandedImageSource).toContain('aria-label="Expanded image preview"');
+    expect(expandedImageSource).toContain("aria-label={`Expanded ${mediaLabel} preview`}");
     expect(expandedImageSource).toContain('<div className="relative isolate z-10');
   });
 });
@@ -229,7 +230,9 @@ describe("dialog contract", () => {
   it("What's New, the theme editor and the quit hint still carry their hooks", () => {
     expect(whatsNewSource).toContain('aria-label="What\'s new"');
     expect(whatsNewSource).toContain("<SparklesIcon");
-    expect(whatsNewSource).toContain('"--sc-i": Math.min(index, 5)');
+    expect(whatsNewSource).toContain(
+      '"--sc-i": changelogStaggerIndex(groups, groupIndex, itemIndex)',
+    );
     expect(themeEditorSource).toContain('"dialog-glass fixed z-[110]');
     expect(themeEditorSource).toContain("data-theme-editor-panel");
     expect(themeEditorSource).toContain('role="dialog"');
@@ -308,5 +311,16 @@ describe("hero and sidebar contract", () => {
 describe("changed-files card contract", () => {
   it("the card still exposes data-changed-files-state", () => {
     expect(changedFilesSource).toContain("data-changed-files-state");
+  });
+
+  it("the expanded header stays sticky on the card's glass instead of an opaque slab", () => {
+    expect(changedFilesSource).toContain(
+      "bg-secondary p-2 dark:border-transparent dark:bg-input/32",
+    );
+    expect(changedFilesSource).toContain(
+      '"sticky top-2 z-10 mb-2 bg-secondary dark:bg-neutral-900"',
+    );
+    expect(changedFilesSource).not.toContain("var(--contrast-foreground)_2.5%");
+    expect(changedFilesSource).not.toContain("backdrop-blur-md");
   });
 });

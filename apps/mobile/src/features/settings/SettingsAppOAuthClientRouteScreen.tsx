@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { CopyTextButton } from "../../components/CopyTextButton";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -36,7 +35,6 @@ export function SettingsAppOAuthClientRouteScreen({
 }: StaticScreenProps<SettingsAppOAuthClientParams>) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
   const environmentId = route.params.environmentId as EnvironmentId;
   const family = findAppOAuthClientFamily(route.params.family);
   const serverConfig = useEnvironmentServerConfig(environmentId);
@@ -117,7 +115,7 @@ export function SettingsAppOAuthClientRouteScreen({
               <CopyTextButton
                 accessibilityLabel="Copy redirect URI"
                 text={redirectUri}
-                tintColor={iconColor}
+                tintColorClassName="accent-icon"
               />
             )}
           </View>

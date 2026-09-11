@@ -1,5 +1,5 @@
 /**
- * ACP client terminal host. Kimi 0.37+ routes Bash/Glob/Grep through
+ * ACP client terminal host. Drivers that opt in route Bash/Glob/Grep through
  * `terminal/*` once the client advertises `clientCapabilities.terminal`.
  * T3 runs those commands in the session cwd and keeps output until release.
  */
@@ -9,6 +9,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as Crypto from "effect/Crypto";
+import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -58,7 +59,7 @@ const emptyOutput: TerminalOutputBuffer = {
   truncated: false,
 };
 
-/** Kimi currently sends the full shell line in `command` and omits `args`. */
+/** Some ACP agents send the full shell line in `command` and omit `args`. */
 export function resolveAcpTerminalSpawn(input: {
   readonly command: string;
   readonly args?: ReadonlyArray<string>;
@@ -153,11 +154,15 @@ export function resolveAcpTerminalCwd(
   return isPathInsideRoot(root, resolved, platform) ? resolved : undefined;
 }
 
+class AcpTerminalRealpathError extends Data.TaggedError("AcpTerminalRealpathError")<{
+  readonly cause: unknown;
+}> {}
+
 function realpathOrUndefined(target: string): Effect.Effect<string | undefined> {
   return Effect.tryPromise({
     try: () => NodeFSP.realpath(target),
-    catch: () => new Error("realpath failed"),
-  }).pipe(Effect.catch(() => Effect.succeed<string | undefined>(undefined)));
+    catch: (cause) => new AcpTerminalRealpathError({ cause }),
+  }).pipe(Effect.orElseSucceed(() => undefined));
 }
 
 export const confineAcpTerminalCwd = (

@@ -11,11 +11,19 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { compareIsoDateTimes } from "../lib/threadSort";
 
 export type ProviderUpdateCandidate = ServerProvider & {
   readonly versionAdvisory: NonNullable<ServerProvider["versionAdvisory"]> & {
     readonly status: "behind_latest";
     readonly latestVersion: string;
+  };
+};
+
+export type ProviderSettingsUpdateCandidate = ServerProvider & {
+  readonly versionAdvisory: NonNullable<ServerProvider["versionAdvisory"]> & {
+    readonly canUpdate: true;
+    readonly updateCommand: string;
   };
 };
 
@@ -77,7 +85,7 @@ function chooseRepresentativeProvider(
   if (current.instanceId === defaultInstanceId) {
     return current;
   }
-  return candidate.checkedAt.localeCompare(current.checkedAt) >= 0 ? candidate : current;
+  return compareIsoDateTimes(candidate.checkedAt, current.checkedAt) >= 0 ? candidate : current;
 }
 
 function dedupeProvidersByDriver<T extends ServerProvider>(providers: ReadonlyArray<T>): T[] {
@@ -98,7 +106,7 @@ function dedupeProvidersByInstanceId<T extends ServerProvider>(providers: Readon
 
   for (const provider of providers) {
     const current = latestProviderByInstanceId.get(provider.instanceId);
-    if (!current || provider.checkedAt.localeCompare(current.checkedAt) >= 0) {
+    if (!current || compareIsoDateTimes(provider.checkedAt, current.checkedAt) >= 0) {
       latestProviderByInstanceId.set(provider.instanceId, provider);
     }
   }
@@ -147,6 +155,17 @@ export function collectProviderUpdateCandidates(
   providers: ReadonlyArray<ServerProvider>,
 ): ProviderUpdateCandidate[] {
   return dedupeProvidersByDriver(providers.filter(isProviderUpdateCandidate));
+}
+
+export function isProviderSettingsUpdateCandidate(
+  provider: ServerProvider,
+): provider is ProviderSettingsUpdateCandidate {
+  return (
+    provider.enabled &&
+    provider.versionAdvisory?.status === "behind_latest" &&
+    provider.versionAdvisory.canUpdate === true &&
+    provider.versionAdvisory.updateCommand !== null
+  );
 }
 
 export function hasOneClickUpdateProviderCandidate(
@@ -202,11 +221,7 @@ export function providerUpdateNotificationKey(
   return parts.length > 0 ? parts.join("|") : null;
 }
 
-export function providerUpdateCandidateKey(provider: ProviderUpdateCandidate): string {
-  return providerUpdateNotificationKey([provider])!;
-}
-
-export function formatProviderList(providers: ReadonlyArray<Pick<ServerProvider, "driver">>) {
+function formatProviderList(providers: ReadonlyArray<Pick<ServerProvider, "driver">>) {
   const names = providers.map(
     (provider) => PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver,
   );
@@ -235,7 +250,7 @@ export function shouldShowPrimaryProviderUpdateToast(view: ProviderUpdateToastVi
   return view.phase !== "running";
 }
 
-export function getProviderUpdateRunningToastView(providerCount: number): ProviderUpdateToastView {
+function getProviderUpdateRunningToastView(providerCount: number): ProviderUpdateToastView {
   return {
     phase: "running",
     type: "loading",
@@ -312,41 +327,6 @@ export function getProviderUpdateProgressToastView(input: {
   return getProviderUpdateRunningToastView(input.providerCount);
 }
 
-export function getSingleProviderUpdateProgressToastView(
-  provider: ServerProvider,
-): ProviderUpdateToastView {
-  const view = getProviderUpdateProgressToastView({
-    providers: [provider],
-    providerCount: 1,
-  });
-  const providerName = PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver;
-
-  switch (view.phase) {
-    case "running":
-      return {
-        ...view,
-        title: `Updating ${providerName}`,
-      };
-    case "failed":
-      return {
-        ...view,
-        title: getProviderFailedUpdateTitle(provider),
-      };
-    case "unchanged":
-      return {
-        ...view,
-        title: `${providerName} still needs an update`,
-      };
-    case "succeeded":
-      return {
-        ...view,
-        title: getProviderUpdatedTitle(provider),
-      };
-    default:
-      return view;
-  }
-}
-
 export function collectUpdatedProviderSnapshots(input: {
   readonly results: ReadonlyArray<
     AtomCommandResult<{ readonly providers: ReadonlyArray<ServerProvider> }, unknown>
@@ -396,7 +376,7 @@ function isRecentTerminalProvider(
     return true;
   }
   const finishedAt = getUpdateFinishedAt(provider);
-  return finishedAt !== null && finishedAt >= visibleAfterIso;
+  return finishedAt !== null && compareIsoDateTimes(finishedAt, visibleAfterIso) >= 0;
 }
 
 function latestFinishedAtForProviders(providers: ReadonlyArray<ServerProvider>): string | null {
@@ -405,7 +385,7 @@ function latestFinishedAtForProviders(providers: ReadonlyArray<ServerProvider>):
     if (finishedAt === null) {
       return latest;
     }
-    return latest === null || finishedAt > latest ? finishedAt : latest;
+    return latest === null || compareIsoDateTimes(finishedAt, latest) > 0 ? finishedAt : latest;
   }, null);
 }
 
@@ -531,7 +511,7 @@ export function getProviderUpdateSidebarPillView(
               : succeededProviders;
         const leftFinishedAt = latestFinishedAtForProviders(leftProviders) ?? "";
         const rightFinishedAt = latestFinishedAtForProviders(rightProviders) ?? "";
-        return rightFinishedAt.localeCompare(leftFinishedAt);
+        return compareIsoDateTimes(rightFinishedAt, leftFinishedAt);
       })
       .find((candidate) => !options?.dismissedKeys?.has(candidate.key)) ?? null
   );
@@ -633,42 +613,6 @@ export function collectProviderUpdateOutcomeSnapshots(
     }
   }
   return [...worstByDriver.values()];
-}
-
-/**
- * The first secondary (non-primary) backend whose update resolved without
- * succeeding. The primary's own failed/unchanged state is already surfaced
- * inline in settings, so only secondaries (which have no inline row) need an
- * explicit callout.
- */
-export function firstUnsuccessfulSecondaryProviderOutcome(
-  results: ReadonlyArray<PromiseSettledResult<LocalProviderUpdateOutcome>>,
-): { readonly provider: ServerProvider; readonly status: "failed" | "unchanged" } | null {
-  for (const result of results) {
-    if (result.status !== "fulfilled") {
-      continue;
-    }
-    const outcome = result.value;
-    if (outcome.isPrimary || outcome.provider === null) {
-      continue;
-    }
-    const status = outcome.provider.updateState?.status;
-    if (status === "failed" || status === "unchanged") {
-      return { provider: outcome.provider, status };
-    }
-  }
-  return null;
-}
-
-const WSL_INSTANCE_ID_PREFIX = "wsl:";
-
-/** The distro name from a WSL backend instance id ("wsl:ubuntu" -> "ubuntu"), or null for the default. */
-export function parseWslDistroFromInstanceId(instanceId: string | undefined): string | null {
-  if (!instanceId || !instanceId.startsWith(WSL_INSTANCE_ID_PREFIX)) {
-    return null;
-  }
-  const distro = instanceId.slice(WSL_INSTANCE_ID_PREFIX.length).trim();
-  return distro.length === 0 || distro === "default" ? null : distro;
 }
 
 /**

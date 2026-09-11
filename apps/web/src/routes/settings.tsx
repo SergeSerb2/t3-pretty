@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
+import { settingsEscapeAction } from "../components/settings/settingsEscape";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -51,11 +52,14 @@ function SettingsContentLayout() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
-        event.preventDefault();
-
         const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLElement) {
+        const action = settingsEscapeAction(activeElement);
+        if (action === "ignore") return;
+
+        event.preventDefault();
+        if (action === "blur" && activeElement instanceof HTMLElement) {
           activeElement.blur();
+          return;
         }
 
         navigateBackWithinApp();

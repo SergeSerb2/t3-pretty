@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import indexHtml from "../index.html?raw";
+import wordmarkSource from "./components/T3Wordmark.tsx?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   getDefaultThemeColors,
@@ -514,5 +515,26 @@ describe("index.html boot script", () => {
 
     const dark = runBootScript({ storageThrows: true, prefersDark: true });
     expect(dark.isDark).toBe(true);
+  });
+
+  it("animates the boot shell and keeps a reduced-motion fallback", () => {
+    expect(indexHtml).toContain("@keyframes boot-mark-in");
+    expect(indexHtml).toContain("@keyframes boot-orbit");
+    expect(indexHtml).toContain("@keyframes boot-ring");
+    expect(indexHtml).toContain("@keyframes boot-glow");
+    expect(indexHtml).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(indexHtml).toContain("animation: boot-mark-in 520ms");
+    expect(indexHtml).toContain("opacity 320ms cubic-bezier(0.32, 0.72, 0, 1)");
+  });
+
+  it("paints the same T3 lockup as the in-app wordmark so the splash cannot drift", () => {
+    const wordmarkPath = wordmarkSource.match(/d="([^"]+)"/)?.[1];
+    expect(wordmarkPath).toBeTruthy();
+    const tPath = indexHtml.match(/id="boot-shell-t"[\s\S]*?d="([^"]+)"/)?.[1];
+    const threePath = indexHtml.match(/id="boot-shell-three"[\s\S]*?d="([^"]+)"/)?.[1];
+    expect(tPath).toBeTruthy();
+    expect(threePath).toBeTruthy();
+    expect(wordmarkPath).toContain(tPath!);
+    expect(wordmarkPath).toContain(threePath!);
   });
 });

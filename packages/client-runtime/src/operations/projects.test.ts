@@ -115,6 +115,13 @@ describe("add project shared logic", () => {
     expect(getCloneDirectoryName("git@github.com:")).toBe("");
     expect(getCloneDirectoryName("ssh://git@github.com:22")).toBe("");
     expect(getCloneDirectoryName("https://")).toBe("");
+    expect(getCloneDirectoryName("https://github.com/owner/..")).toBe("");
+    expect(getCloneDirectoryName("https://github.com/owner/.")).toBe("");
+    expect(getCloneDirectoryName("..")).toBe("");
+  });
+
+  it("strips the conventional Git suffix without depending on case", () => {
+    expect(getCloneDirectoryName("https://github.com/owner/repo.GIT")).toBe("repo");
   });
 
   it("proposes the clone destination inside the selected directory", () => {

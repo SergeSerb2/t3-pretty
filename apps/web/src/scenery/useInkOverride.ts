@@ -131,7 +131,6 @@ export function useInkOverride(inputs: Omit<InkDecisionInput, "baseAppearance"> 
     // No cleanup here: a decision change goes straight A→B without bouncing
     // through the base appearance. The unmount effect below restores.
     // decisionKey stands in for the `inputs` object identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decisionKey, state.base, state.epoch]);
 
   useEffect(() => () => restoreRef.current(), []);

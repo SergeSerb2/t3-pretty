@@ -7,6 +7,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 
@@ -45,14 +46,17 @@ function IndeterminateLoadingStrip() {
 
   useEffect(() => {
     travelProgress.value = 0;
-    travelProgress.value = withRepeat(
-      withTiming(1, {
-        duration: 1100,
-        easing: Easing.inOut(Easing.quad),
-        reduceMotion: ReduceMotion.System,
-      }),
-      -1,
-      false,
+    travelProgress.value = withSequence(
+      withRepeat(
+        withTiming(1, {
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          reduceMotion: ReduceMotion.System,
+        }),
+        3,
+        false,
+      ),
+      withTiming(0.5, { duration: 120, reduceMotion: ReduceMotion.System }),
     );
 
     return () => {
