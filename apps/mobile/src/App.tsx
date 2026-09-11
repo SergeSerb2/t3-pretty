@@ -20,6 +20,7 @@ const SCENERY_NAV_LIGHT = {
 };
 
 import { RegistryContext } from "@effect/atom-react";
+import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { AppMenuHost } from "./components/AppMenuHost";
 import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
@@ -130,6 +131,7 @@ function AppContent() {
               <ConfirmDialogHost />
               <WhatsNewHost />
               <AppMenuHost />
+              <ThreadArrangementHost />
             </BlurTargetView>
             {/* Anchored-menu overlays render here — in-window, so the
                 keyboard stays up while a dropdown is open. */}

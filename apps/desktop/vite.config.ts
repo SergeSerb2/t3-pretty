@@ -47,11 +47,18 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       minify: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
-      entry: ["src/main.ts"],
+      entry: [
+        "src/main.ts",
+        "src/electron/WindowsForegroundFocusWorker.ts",
+        "src/snapShot/GlobalShiftShortcutWorker.ts",
+        "src/snapShot/RegionSnapShotWorker.ts",
+        "src/snapShot/SnapShotAccessibilityWorker.ts",
+      ],
       clean: true,
       deps: {
         // Inline the pure-JS runtime so main boot reads one file instead of
@@ -72,6 +79,7 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       minify: true,
       outExtensions: () => ({ js: ".cjs" }),
@@ -87,6 +95,7 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       minify: true,
       outExtensions: () => ({ js: ".cjs" }),
@@ -98,6 +107,7 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       minify: true,
       outExtensions: () => ({ js: ".cjs" }),

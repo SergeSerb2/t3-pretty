@@ -1446,3 +1446,879 @@
 - `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts` — applied a completed cache entry keyed by the current file contents
 - `apps/mobile/src/state/use-thread-selection.logic.test.ts` — applied a completed cache entry keyed by the current file contents
 - `packages/contracts/src/projectTransfer.ts` — applied a completed cache entry keyed by the current file contents
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260910.1507`
+- Previously integrated parent nightly: `v0.0.39-nightly.20260907.1332`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/server/src/provider/OpenCodeServerOwner.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/desktop/package.json` — Preserved T3 Pretty's dependency cleanup that keeps playwright-core out of production dependencies and scoped to devDependencies.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Preserved the T3 Pretty product identity in both the top-left lockup and the drag-to-Applications instruction.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Preserved T3 Pretty's cream and World Scenery sage visual theme by applying #F4F1EA and #DFEFE3 to the upstream composition.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Preserved the fork's established dark and secondary text treatment for the mark, instructions, and arrow.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — T3 Pretty product identity is preserved in the top-left lockup by pairing the retained T3 mark with a prominent PRETTY label.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — The DMG installation instruction continues to name T3 Pretty rather than reverting to T3 Code.
+- `apps/desktop/scripts/electron-launcher.mjs` — T3 Pretty desktop display names remain "T3 Pretty (Dev)" and "T3 Pretty (Alpha)" instead of reverting to T3 Code branding.
+- `apps/desktop/scripts/electron-launcher.mjs` — Development and production macOS launcher bundles continue to use the T3 Pretty icon asset.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Preserved compiled-flavor isolation: internal builds retain the t3code/t3code-dev WM classes, while public T3 Pretty builds retain t3pretty/t3pretty-dev.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Applied T3 Pretty branding to the new upstream Linux desktop-entry metadata for public builds while retaining the T3 Code desktop-entry identity for internal builds.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Preserved the fork's build-flavor-aware startup behavior and existing early Linux password-store resolution.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — T3 Pretty's public development AppUserModelID remains com.sergeserb.t3pretty.dev.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — T3 Pretty's public development Linux WM class remains t3pretty-dev.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — Public development and packaged Linux desktop-entry identities use T3 Pretty's com.sergeserb.T3Pretty namespace.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — Internal builds retain their established T3 Code-compatible identity and state separation.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — Public T3 Pretty Linux builds retain the branded `t3pretty.desktop` and `t3pretty-dev.desktop` desktop-entry identities.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — Public T3 Pretty Linux builds retain the `t3pretty` and `t3pretty-dev` WM classes.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — The fork's split-build behavior remains intact: internal builds continue using T3 Code identities while public builds use T3 Pretty identities.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts` — The test environment continues to use the fork-branded display name `T3 Pretty (Alpha)`.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.ts` — The 10-second Linux URL-handler registration timeout added by T3 Pretty's cross-surface reliability hardening remains in place.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Retained the T3 Pretty test that treats an explicitly present but empty Linux password-store switch as absent without appending a replacement switch.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Retained the T3 Pretty safeguard proving getSwitchValue is never called when the password-store switch is absent.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Applied T3 Pretty desktop branding and identity to the new Linux desktop-entry coverage via t3pretty.desktop, com.t3tools.T3Pretty.desktop, and Name=T3 Pretty expectations.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Preserved the compatible t3code URL-scheme handler in the generated desktop entry.
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts` — The desktop local-bearer startup race fix remains intact, including the 30-second backend-ready timeout, bounded exchange retry window and spacing, and per-request exchange timeout.
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts` — Transient local bootstrap failures remain retryable for fetch failures, timeouts, and HTTP 502/503/504 responses.
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts` — Bootstrap failures continue to be converted into stable string causes so Electron IPC rejections remain serializable and do not leave the splash screen hanging.
+- `apps/desktop/src/electron/ElectronDialog.ts` — Preserved desktop dialog hardening that filters out destroyed BrowserWindow owners and safely treats exceptions from isDestroyed() as an unavailable owner, allowing folder and file dialogs to fall back to the application-level overload.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Preserved the defensive isLiveWindow check, including protection against destroyed BrowserWindow/webContents instances and Electron lifecycle access throwing.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Preserved T3 Pretty's Effect.suspend wrapper so popup validation occurs when the effect executes.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Preserved the live-window safeguard that avoids opening an Electron menu against a destroyed BrowserWindow.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Preserved the empty-template no-op and existing fatal operation-error reporting behavior.
+- `apps/desktop/src/main.ts` — Preserved T3 Pretty's DesktopUpdates.liveLayer, maintaining the fork's desktop updater and release lifecycle behavior.
+- `apps/desktop/src/preview/Manager.test.ts` — Retained all T3 Pretty tests for bounding preview automation accessibility trees by node count and aggregate byte budget.
+- `apps/desktop/src/preview/Manager.test.ts` — Retained fail-soft coverage for malformed preview accessibility protocol responses.
+- `apps/desktop/src/preview/Manager.ts` — Preserved the exported boundAccessibilityTree helper used to constrain preview automation accessibility snapshots.
+- `apps/desktop/src/preview/Manager.ts` — Preserved node-count, per-node byte, and total-tree byte limits, including safe handling of invalid or unserializable nodes.
+- `apps/desktop/src/preview/Manager.ts` — Preserved t3TruncatedNodeCount metadata so callers can detect omitted accessibility nodes.
+- `apps/desktop/src/preview/PlaywrightInjectedRuntime.ts` — Preserved T3 Pretty's Phase 3 preview efficiency optimization: Playwright's roughly 10 MB installed package is processed at build time rather than resolved, read, parsed, and evaluated during desktop runtime.
+- `apps/desktop/src/preview/PlaywrightInjectedRuntime.ts` — Preserved the generated Playwright source import and the existing Chromium injected-script options and installation behavior.
+- `apps/desktop/src/settings/DesktopAppSettings.ts` — Kept DEFAULT_TAILSCALE_SERVE_PORT exported as part of T3 Pretty's desktop settings API.
+- `apps/desktop/src/settings/DesktopAppSettings.ts` — Kept the 1 MiB DESKTOP_SETTINGS_FILE_MAX_BYTES safeguard added by T3 Pretty's cross-surface reliability hardening.
+- `apps/desktop/src/settings/DesktopSavedEnvironments.ts` — Retained the Effect Semaphore dependency added by T3 Pretty's desktop saved-environment reliability hardening.
+- `apps/desktop/src/ssh/DesktopSshPasswordPrompts.ts` — Retained DesktopSshPromptCapacityError, including its destination and limit fields and user-facing capacity message, so the fork's maximum-pending-prompt safeguard remains represented in the service error model.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Preserved `WINDOW_ACTIVE_STATE_CHANNEL` coverage for T3 Pretty's renderer window-activity state behavior.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Preserved `WINDOW_INTERACTING_CHANNEL` coverage for T3 Pretty's window-interaction behavior.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Preserved the functional `webContents.once` mock that records and composes event listeners, which supports T3 Pretty desktop lifecycle and splash/load race testing rather than replacing it with a non-functional spy.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — T3 Pretty tests retain recording of renderer broadcast channels through ElectronWindow.sendAll.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — T3 Pretty tests retain collection of revealed BrowserWindow instances.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — T3 Pretty's dock badge, dock bounce, and dock bounce cancellation test instrumentation remains active through makeElectronAppLayer.
+- `apps/desktop/src/window/DesktopWindow.ts` — Preserved T3 Pretty's WINDOW_ACTIVE_STATE_CHANNEL import and the desktop active-state behavior it supports.
+- `apps/desktop/src/window/DesktopWindow.ts` — T3 Pretty's renderer-hosted in-app glass edit context menu remains authoritative; the merge does not restore the native Electron popup menu.
+- `apps/desktop/src/window/DesktopWindow.ts` — The fork's shouldOfferEditContextMenu filtering is retained so irrelevant context menus are not displayed.
+- `apps/desktop/src/window/DesktopWindow.ts` — The fork's structured menu-item builder, request/waiter protocol, command resolver, and instant-motion positioning are preserved.
+- `apps/desktop/src/window/DesktopWindow.ts` — Safe external-link validation and all fork menu actions remain routed through the existing T3 Pretty IPC presentation.
+- `apps/mobile/app.config.ts` — T3 Pretty preview and production Android adaptive icons continue to use the fork's dedicated `android-icon-mark.png` foreground rather than the parent's shared wordmark artwork.
+- `apps/mobile/app.config.ts` — T3 Pretty preview and production Android adaptive icons retain the fork's pastel sage `#DFEFE3` plate instead of the parent's nightly navy or production black presentation.
+- `apps/mobile/app.config.ts` — Preview and production Android splash screens remain tied to the T3 Pretty nightly and production brand assets rather than parent-generated T3 Code splash artwork.
+- `apps/mobile/app.config.ts` — T3 Pretty mobile versions continue to follow the fork release train, including the environment override and numeric iOS-compatible normalization, rather than reverting to the parent's hard-coded app version.
+- `apps/mobile/app.config.ts` — The pinned native runtime version remains authoritative when configured; otherwise the existing environment-sensitive runtime policy remains in place.
+- `apps/mobile/app.config.ts` — OTA updates remain isolated to the fork-owned T3CODE_MOBILE_UPDATE_URL, are disabled when that URL is absent, and retain the variant-specific Expo channel header needed by local release builds.
+- `apps/mobile/app.config.ts` — T3 Pretty's configurable Apple team selection is preserved instead of restoring the parent organization's hard-coded signing team.
+- `apps/mobile/app.config.ts` — Personal-team iOS builds continue using their effective alternate bundle identifier and omit unsupported Associated Domains.
+- `apps/mobile/app.config.ts` — The upstream keychain entitlement is adapted to iosBundleIdentifier so it follows T3 Pretty's public, internal, and personal-team identity rather than assuming the normal variant identifier.
+- `apps/mobile/global.css` — T3 Pretty's dark World Scenery card, alternate-card, and translucent-card colors remain unchanged.
+- `apps/mobile/global.css` — The new thread selection and composer surfaces use T3 Pretty's green-tinted foreground, surface, and border palette instead of reverting those areas to the parent's neutral gray styling.
+- `apps/mobile/src/App.tsx` — T3 Pretty's WhatsNewHost remains mounted so fork-specific release and onboarding presentation is retained.
+- `apps/mobile/src/App.tsx` — T3 Pretty's AppMenuHost remains mounted so the fork's custom mobile app-menu behavior is retained.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's native liquid-glass menu presentation through GlassView and NATIVE_LIQUID_GLASS_SUPPORTED.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's menu haptic feedback integration through expo-haptics.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's Uniwind-based theming for anchored menus.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's anchored-menu theming continues to derive dark mode from React Native's active color scheme rather than the removed appearance-preference implementation.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's extracted `overlayMenu` architecture and shared AnchoredMenu surface remain authoritative instead of reverting to the older duplicated Android-only menu body.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's native iOS liquid-glass rendering, cross-platform menu frame styling, and iOS translucent fallback are preserved.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — T3 Pretty's menu animation selection, modal accessibility handling, accessibility escape behavior, and labeled dismiss surface are preserved.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Existing menu placement, submenu navigation, item styling, destructive/disabled states, keyboard tap handling, and icon presentation remain intact through the retained `menuBody`.
+- `apps/mobile/src/components/GlassSurface.tsx` — Preserved the NATIVE_LIQUID_GLASS_SUPPORTED capability guard introduced to prevent unsafe Liquid Glass startup probing on unsupported or problematic runtimes.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved T3 Pretty's Live Activity content fingerprint tracking for applied and pending updates.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved the generation counter and timeout handle used to prevent stale or hung local Live Activity updates.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Device registration remains protected by T3 Pretty's `withAgentAwarenessDeadline("register-device", ...)` safeguard, preventing registration work from hanging indefinitely.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved the hardened concurrent loading of the device identifier and registration preferences, including operation-specific error wrapping.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved T3 Pretty registration preference merging and transmission, including the live-activity preference used by native notification configuration.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved generation-aware relay registration so stale work cannot commit after the active registration generation changes.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved fork bundle/package identity lookup from the Expo configuration and variant-aware iOS APS environment selection.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Preserved T3 Pretty's dedicated active Live Activity foreground reconciliation path, including its existing deduplication/throttling behavior and error context.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The T3 Pretty World Scenery backdrop remains rendered behind the full-page home empty state.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Existing empty-state content, loading indicator, safe-area padding, and Liquid Glass top clearance remain unchanged.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The v2 home list continues to render T3 Pretty's World Scenery backdrop.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The settled-shelf “Show more” control retains T3 Pretty's scenery-aware glass chrome, spacing, and rounded styling.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The v2 Android list continues to use the fork's androidListBottomPad calculation, preserving clearance for T3 Pretty's floating mobile chrome and FAB behavior.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — The existing v2 iOS clearance, including iosBottomToolbarClearance, remains intact.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — World Scenery remains rendered on the mobile home screen through SceneryBackdrop, now inside the upstream rounded content container.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — T3 Pretty's iosListBottomPad and androidListBottomPad calculations remain authoritative, preserving fork-specific safe-area, toolbar, floating-action-button, and scenery-credit clearance behavior.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Existing LegendList scrolling, inset, recycling, keyboard, and sticky-header safeguards remain intact.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Delete parity with desktop/web remains intact: an active provider session is stopped and the terminal is closed with history deletion before the thread delete dispatch.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Settle actions still mark the thread as departing before the server round trip, while the existing failure path can clear that state and restore the row.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — User-initiated unsettle continues to send reason "user", preserving suppression of automatic settling until subsequent real activity.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — T3 Pretty's web-parity snooze animation remains optimistic: the thread row begins departing before the server round trip.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Failed snooze operations continue to restore the departing row, including the existing explicit failure cleanup and alert handling.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved T3 Pretty's custom mobile appearance, theme, and World Scenery architecture rather than restoring the parent's removed SVG gradient-preview dependencies.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Kept the fork's existing ScopedTheme-based presentation and theme identifiers unchanged.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved T3 Pretty's current appearance selector architecture based on ModeCard/ModePreview and scoped light/dark theme variables.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Preserved the fork's visual-design decision to remove the legacy SVG PreviewOrb and dual-appearance ThemeCard UI.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Avoided restoring dependencies and legacy theme types that the fork removed alongside the old card implementation.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — T3 Pretty World Scenery personalization remains connected through photoSetId and setPhotoSetId.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Selecting a scenery photo set continues to restore the default Pretty mobile theme for both appearances.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — The fork-only Boring personalization remains detected from themeId and continues to restore the original T3 Chat presentation.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — T3 Pretty's mobile Personalization section remains the authoritative theme-selection experience, including World Scenery photo sets and the Boring theme that restores T3 Chat colors and disables photos.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — The separate Color scheme controls remain intact without reintroducing the legacy theme-card grid.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's Agent Awareness Live Activity is still armed before immediate local work by the composed block immediately preceding this resolution; the obsolete duplicate arm call is removed.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — T3 Pretty's new-task flow remains the source of model, workspace, pending-task metadata, attachments, and fork-selected skill configuration when building the queued message.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Existing Pretty-specific Antigravity availability handling, usage-limit behavior, attachment safeguards, draft cleanup, and immediate thread navigation remain unchanged around the new transport.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved T3 Pretty mobile thread-renaming behavior by retaining props.onRenameThread as a callback dependency.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved T3 Pretty's wrapper behavior that does not add a second bottom safe-area inset; the LegendList content container remains the sole owner of platform-specific bottom spacing, avoiding a reduced viewport and excess bottom gap.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Preserved the surrounding T3 Pretty mobile sidebar, connection-aware branding, Android font-scaling behavior, pull-request and automation actions, and custom header presentation unchanged.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Retained T3 Pretty's `useThreadListActions` integration used by fork-specific thread actions and navigation behavior.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Retained T3 Pretty's `useServerConfigs` integration for server-aware mobile thread behavior.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Preserved T3 Pretty's removal of the `useNewTaskFlow` dependency from this settings sheet instead of restoring the older staged new-task-flow integration.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — Inspector-aware lazy loading remains enabled by passing loadInitialState to both selected-thread git hooks, avoiding unnecessary initial work while a hidden inspector is mounted.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — The action and pull-to-refresh pending refs remain in place to prevent overlapping mobile git operations.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — The mounted lifecycle ref and cleanup remain in place so asynchronous work can avoid updating an unmounted sheet.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Preserved T3 Pretty's mobile thread rename menu behavior by retaining handleRename in the callback dependency list.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Preserved T3 Pretty's mobile thread rename callback and the existing rename/checkpoint/stop-session parity behavior that depends on it.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Preserved T3 Pretty's thread rename action in the slim thread menu, maintaining mobile thread-management parity with desktop.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — T3 Pretty’s enabled-skill submission behavior remains a requirement of the replacement new-task flow rather than being preserved as an unreferenced duplicate hook.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — T3 Pretty’s outgoing attachment-preview and attachment-upload behavior remains owned by the replacement composer/new-task flow introduced in the surrounding mobile thread files.
+- `apps/mobile/src/lib/mobileTheme.ts` — Preserved BORING_MOBILE_THEME_ID as the upstream T3 Chat palette used by T3 Pretty's Boring appearance.
+- `apps/mobile/src/lib/mobileTheme.ts` — Preserved T3 Pretty product identity by labeling the default mobile appearance “T3 Pretty” rather than “T3 Code.”
+- `apps/mobile/src/lib/mobileTheme.ts` — Preserved the fork-specific “Boring” presentation label for the t3-chat palette.
+- `apps/mobile/src/lib/mobileTheme.ts` — Kept the fork's default fallback and its per-appearance theme preference machinery intact.
+- `apps/mobile/src/lib/mobileTheme.ts` — The default T3 Pretty mobile theme preview continues to derive its canvas and accent colors from DEFAULT_MOBILE_THEME_VARIABLES, preserving the fork’s World Scenery/default-theme presentation.
+- `apps/mobile/src/lib/mobileTheme.ts` — The default preview’s message action color remains aligned with T3 Pretty’s primary accent token.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — The regression test ensuring selected per-thread skill IDs are carried into the create-thread bootstrap remains intact.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — The upstream test input is adapted to T3 Pretty's skill-aware start-turn API with `enabledSkillIds: []`, without changing the behavior under test.
+- `apps/mobile/src/persistence/mobile-preferences.ts` — Preserved the mobile World Scenery assignment model, including denormalized location names, assignment timestamps, and optional PhotoSetId provenance for older-record compatibility.
+- `apps/mobile/src/persistence/mobile-preferences.ts` — Preserved World Scenery preferences for enablement, blur, translucency, selected photo set, and per-thread photo assignments.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — T3 Pretty's Codex/automated-review status presentation, including its typed presentation model, resolver, labels, and state.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — The required `automatedReview` field on every `ThreadPrPresentation`; persisted parent links explicitly report no review signal rather than weakening or removing the fork contract.
+- `apps/mobile/src/state/use-thread-detail.ts` — Preserved the T3 Pretty immediate-start flow's safeguard against subscribing before a newly queued thread exists on the server; the upstream selection-owned detail state now provides that behavior and prevents a transient 404 from being interpreted as deletion.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — Retained `useAllThreadShells` instead of reverting to the parent/base `useThreadShells`, preserving T3 Pretty's cross-surface handling of all environment thread shells.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — The outbox drain continues using useAllThreadShells so replies entered inside automation-run threads still drain even when those threads are hidden from normal thread lists.
+- `apps/server/src/auth/PairingGrantStore.ts` — The ActivePairingLinksLimitExceededError safeguard and its supported-limit diagnostic remain available to protect T3 Pretty's active pairing-link limit behavior.
+- `apps/server/src/auth/PairingGrantStore.ts` — The PairingCredentialInputValidationError type, defect cause, and metadata-validation diagnostic remain part of T3 Pretty's pairing credential reliability handling.
+- `apps/server/src/auth/SessionStore.ts` — Preserved ActiveSessionsLimitExceededError, including its stable tag and user-facing message, so active-session limit failures remain represented in SessionCredentialInternalError.
+- `apps/server/src/bin.ts` — Preserved the fork-owned Surge Connect name through SURGE_CONNECT_NAME in the unavailable-command description.
+- `apps/server/src/bin.ts` — Preserved the fork behavior that supplies an explanatory unavailable `connect` command when managed connection public configuration is absent.
+- `apps/server/src/config.ts` — T3 Pretty's projectIconsDir configuration and stateDir/project-icons storage location, supporting project icons selected from disk.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Preserved preview automation broker registration and the NodeServices-backed test environment used by T3 Pretty's preview toolkit tests.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Preserved T3 Pretty's MCP screen-information contract by forcing the mocked snapshot accessibility tree to retain the object shape `{ nodes: [] }` rather than regressing to an empty object or an unknown shared-fixture value.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Preserved the existing authenticated preview request routing and status/action mock behavior.
+- `apps/server/src/mcp/McpHttpServer.ts` — Capability-scoped MCP authentication remains enforced through mcpAuthMiddlewareLive(capability).
+- `apps/server/src/mcp/McpHttpServer.ts` — Computer-use tools remain available only through the dedicated /mcp/computer-use transport with the computer-use capability.
+- `apps/server/src/mcp/McpHttpServer.ts` — Automations tools remain available only through the dedicated /mcp/automations transport with the automations capability.
+- `apps/server/src/mcp/McpHttpServer.ts` — Preview tools retain the existing /mcp endpoint and preview capability gate.
+- `apps/server/src/mcp/McpInvocationContext.test.ts` — Preserved the automations-specific capability gate regression test, including the requirement that a missing automations grant produces an AutomationsError with operation set to "capability".
+- `apps/server/src/mcp/McpInvocationContext.ts` — The "automations" and "computer-use" MCP capabilities remain available for T3 Pretty features.
+- `apps/server/src/mcp/McpInvocationContext.ts` — The exported hasMcpCapability predicate remains available for shared capability authorization and route gating.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Non-preview capabilities, including T3 Pretty's fork-specific capabilities, retain the generic McpCapabilityUnavailableError path.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved T3 Pretty's callback-based capability authorization API so fork routes can continue surfacing feature-specific errors.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the dedicated ComputerUseError response and message for unavailable computer control.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the dedicated AutomationsError response and message for unavailable automation management.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the fork's requirePreviewCapability, requireComputerUseCapability, and requireAutomationsCapability helper APIs.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved centralized capability checks through hasMcpCapability and the existing invocation scope metadata.
+- `apps/server/src/mcp/McpProviderSession.ts` — T3 Pretty's `McpCapability` set remains the authoritative mechanism used by browser and computer-tool gating helpers.
+- `apps/server/src/mcp/McpProviderSession.ts` — Computer-use and automations MCP servers remain attached only to sessions carrying their corresponding capabilities.
+- `apps/server/src/mcp/McpProviderSession.ts` — The ordered provider-specific server list is preserved, including attachable external apps routed through `/mcp/apps/&lt;id&gt;` and the rule that adapters consume `servers` rather than constructing URLs from `endpoint`.
+- `apps/server/src/mcp/McpProviderSession.ts` — The fork's browser and computer capability helper functions are retained unchanged.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Preserved T3 Pretty's capability-set model, which scopes native MCP tools such as preview to sessions that explicitly declare support.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Provider sessions retain only explicitly requested capabilities, including scoped computer-use access.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Omitted capabilities continue to default to no built-in tools and no MCP servers.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Preview, computer-use, and automations retain their capability-specific server attachment behavior.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Oversized bearer tokens are rejected before hashing.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Issuing a replacement credential for a thread atomically revokes the previous credential.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Capability-based MCP credential scoping remains authoritative for native tools, rather than being reduced to a browser-only boolean.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Omitting capabilities continues to issue credentials with no tools, preserving the security behavior from T3 Pretty's recent MCP hardening.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Pull-request and other native toolkits are not silently granted to sessions that lack the corresponding explicit capability.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Credentials default to no MCP tools when request.capabilities is absent, preserving the fork's least-privilege behavior.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Native MCP tools are scoped only to sessions that explicitly request the corresponding capabilities.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Provider session configuration exposes the resolved capability set and capability-filtered built-in MCP servers, preserving T3 Pretty's remote MCP architecture.
+- `apps/server/src/orchestration/Errors.ts` — Preserved `isOrchestrationCommandInvariantError` and `isThreadAlreadyExistsInvariant`, including the precise `thread.create` duplicate-existence detection used to recover by starting a new thread when a draft ID already exists.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts` — Preserved T3 Pretty's `enabledSkillIds` field so the bootstrap test continues to cover per-thread skills registry state.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Kept ToolProgress.layer provision in the orchestration engine test layer, preserving T3 Pretty's tool-progress orchestration support.
+- `apps/server/src/orchestration/Schemas.ts` — World Scenery synchronization remains supported through ThreadSceneryAssignedPayload.
+- `apps/server/src/orchestration/Schemas.ts` — Skills registry and per-thread skill selection remain supported through ThreadSkillsSetPayload.
+- `apps/server/src/orchestration/Schemas.ts` — Global and per-thread subagent policy behavior remains supported through ThreadSubagentPolicySetPayload.
+- `apps/server/src/orchestration/commandInvariants.test.ts` — Retained `enabledSkillIds: []` on both orchestration thread fixtures, preserving T3 Pretty's skills registry and per-thread skill enablement model.
+- `apps/server/src/orchestration/decider.pinned.test.ts` — Preserved `enabledSkillIds` in the test thread fixture, maintaining T3 Pretty's skills registry and per-turn skill materialization coverage.
+- `apps/server/src/orchestration/decider.settled.test.ts` — Preserved T3 Pretty's per-thread skills support by retaining the enabledSkillIds fixture field.
+- `apps/server/src/orchestration/decider.snoozed.test.ts` — The snoozed-thread test fixture retains T3 Pretty's per-thread enabledSkillIds state used by the skills registry and per-turn workspace materialization.
+- `apps/server/src/orchestration/decider.titleRegeneration.test.ts` — Preserved the `enabledSkillIds` thread fixture field required by T3 Pretty's skills registry and per-turn workspace materialization behavior.
+- `apps/server/src/persistence/Migrations.ts` — The shipped `EnsureProjectionThreadBranchPullRequest` migration remains at manifest ID 50, avoiding a database-history collision and preserving T3 Pretty's pull-request branch safeguards.
+- `apps/server/src/persistence/Migrations.ts` — All existing remapped migrations at IDs 51–60 remain registered, including World Scenery, canvas, activity compaction, skills, subagent policy, search indexing, and automations schema support.
+- `apps/server/src/provider/Layers/ClaudeProvider.ts` — Preserved T3 Pretty's Claude provider `supportsNativeResume: true` capability advertisement.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved remote MCP support for every server in the session by configuring the bearer-token environment variable under each server's dynamic name rather than only `t3-code`.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved the generalized `McpProviderSession.hasBrowserTools(mcpSession)` capability detection and the adjacent native computer-tools capability handling.
+- `apps/server/src/provider/Layers/CodexProvider.ts` — Preserved T3 Pretty's Codex `supportsNativeResume: true` capability advertisement.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Retained `computerToolsAvailable`, which allows T3 Pretty to scope native computer tools and their instructions to capable Codex sessions.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved the capability-based `browserToolsAvailable` option used by T3 Pretty's preview/browser-tool integration.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved separate browser and computer native-tool availability handling.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved T3 Pretty's named MCP-server scoping, so unrelated MCP servers cannot enable browser or computer tool instructions.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved per-session browserToolsAvailable and computerToolsAvailable capability gates, including explicit disabling of native-tool prompts.
+- `apps/server/src/provider/Layers/ProviderSessionReaper.test.ts` — Preserved T3 Pretty's `enabledSkillIds` thread field so skill-enabled session and automation test fixtures remain compatible with the fork read model.
+- `apps/server/src/provider/providerSnapshot.ts` — Provider command failures continue to produce useful details for timeouts, stderr, stdout, and nonzero exit codes through detailFromResult.
+- `apps/server/src/provider/providerSnapshot.ts` — Provider authentication-state extraction remains iterative, cycle-safe, and bounded by AUTH_BOOLEAN_SEARCH_MAX_NODES, protecting provider integrations from cyclic or excessively deep CLI response payloads while retaining support for known authentication field names and nested containers.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Hostless, project-bound pull-request references continue using the selected project's current checkout even when the reference recorded an older repository, preserving T3 Pretty's remote-change compatibility from f9704151a.
+- `apps/server/src/pullRequest/PullRequestService.ts` — The client-supplied stale repository is not forwarded to the provider for hostless references; the resolved current project repository remains authoritative.
+- `apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts` — Preserved DesktopTelemetryRecordTooLarge, including its file-descriptor and maximum-byte metadata and its diagnostic message, maintaining the fork's desktop telemetry record-size safeguard.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Preserved the fork-specific GitHubCodexReviewDecodeError class, including its invalid-Codex-review diagnostic and getCodexReview operation context.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Kept GitHubCodexReviewDecodeError available for the existing GitHubCliError union and Codex review handling.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — Home-directory expansion for clone destination paths, including `~`, Unix-style `~/`, and Windows-style `~\` inputs.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — Reliable detection of whether an existing destination directory contains entries, with the directory handle always closed.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved T3 Pretty's hard hydration limits for file count, record count, path length, session IDs, dedupe keys, token fields, and reported costs at the persisted-cache trust boundary.
+- `apps/server/src/usage/usageScanCache.ts` — Preserved the exported USAGE_SCAN_CACHE_VERSION API used by fork-side consumers or tests.
+- `apps/web/src/components/BranchToolbar.tsx` — Preserved T3 Pretty's `useIsMobile` integration used for mobile-specific BranchToolbar behavior and parity.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — T3 Pretty’s prStatusIndicator remains the source of PR status presentation, so fork-added automated-review status metadata continues to flow into the displayed badge status.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — The existing source-control-provider-aware status calculation and open-PR link handling are retained.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — The surrounding T3 Pretty branch toolbar styling, navigation, branch picker behavior, and compact composer presentation remain unchanged.
+- `apps/web/src/components/ChatView.logic.ts` — Preserved T3 Pretty's broader structural input type for `threadHasStarted`, allowing compatible thread-like values without requiring the full `Thread` type and retaining the fork's typecheck compatibility.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved the existing T3 Pretty provider-selection and readiness UX, including its Source Control settings route and setup-required presentation.
+- `apps/web/src/components/GitActionsControl.tsx` — Re-applied T3 Pretty's typographic right-arrow presentation in the provider setup hint around the corrected parent implementation.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved T3 Pretty's cross-surface reliability behavior that reports repository-link launch failures through an error toast instead of silently swallowing them.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved the existing publish completion wizard, provider branding/icon, repository details, and success/result presentation while avoiding a malformed duplicate nested under the pending state.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Preserved T3 Pretty's existing server-update action implementation, including its update-stage handling, command interruption handling, per-environment update guard, and desktop-managed update behavior.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Preserved T3 Pretty's removal of the unsupported `variant` prop from the single-server update action; the component continues to enforce its existing outline presentation.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Preserved local lookup of `continueThreadsAfterServerUpdate` from environment settings rather than allowing callers to supply that runtime setting.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved T3 Pretty’s automated-review presentation integration through resolveAutomatedReviewPresentation and its review-state icon vocabulary.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved the RuntimeSubagent type dependency used by the fork’s shared agent and automation status visuals.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Preserved the fork-specific status and review icons: CheckIcon, CircleDashedIcon, EyeIcon, HistoryIcon, and MessageSquareWarningIcon.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Preserved T3 Pretty's internal-build composer padding tiers, including the larger right padding needed for internal-only composer controls when the context-window meter occupies space.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Preserved T3 Pretty's ChangeRequestSettleSource integration used by the header's change-request and pull-request workflow.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty's CSS-only hover and focus-within banner expansion, including the grid-row and opacity/transform transitions.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The focusable collapsed-stack cap, which keeps stacked notices keyboard-accessible even when the front notice has no control and relinquishes pointer events while expanded.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The `data-composer-banner-stack-expanded-items` hook used by Pretty styling, behavior, or compatibility tests.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — T3 Pretty's compact composer layout, avoiding an additional permanent `min-h-3` row above the attached front banner.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Preserved T3 Pretty's dialog and close-button refs used for initial focus, focus trapping, keyboard accessibility, and safe focus restoration without regressing composer behavior.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — The dialog retains the shared SURGE_CONNECT_NAME branding constant used for T3 Pretty's Surge Connect presentation.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — The onboarding title continues to use SURGE_CONNECT_NAME, preserving T3 Pretty's Surge Connect branding rather than reverting to the parent’s hard-coded T3 Connect name.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — The existing T3 Pretty onboarding description and surrounding publish/device behavior remain unchanged.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — T3 Pretty's local mini-player cursor presentation remains wired through miniPlayerCursorContent.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The existing browser-surface store integration used by the Pretty preview and overlay behavior remains intact.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The mini-player continues to operate on a complete captured frame, preserving width and height awareness needed for correctly scaled overlay movement.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved T3 Pretty's mini-player agent cursor sizing based on the browser surface's live local content scale.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved mini-player positioning and bottom-inset handling by passing the stored position and fork-relevant inset into the composed frame resolver.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Mini-player movement remains clamped to the measured container with the configured bottom inset.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Pointer movement is ignored after the mini-player container disconnects, preserving the fork’s cross-surface reliability safeguard.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Gesture calculations continue from an atomic frame snapshot, avoiding dimension drift during active movement or resizing.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — T3 Pretty’s floating preview mini-player remains movable and resizable through its existing store.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The resize calculation continues to use the fork’s resolved preview source size, including the desktop overlay zoom factor used to preserve mini-player scale.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The mini-player remains constrained to the current container and respects the configured bottom inset.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the T3 Pretty agent-controlled preview treatment, including the emphasized primary ring and glow.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the mini-player AgentBrowserCursor overlay with runtime tab, zoom, controller, and cursor-content state.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the existing native picture-in-picture toggle path, including the fork's dismissal behavior implemented by toggleNativePictureInPicture.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the floating preview close action and reconnecting-preview behavior.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Preserved PreviewAutomationRequestTimeoutError, including its operation/environment/thread/tab context, timeout duration, timeout response tag, and detailed diagnostic message.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Preserved T3 Pretty's PreviewAutomationRequestTimeoutError as a recognized and serializable preview automation host error.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.test.ts` — Preserved the mini-player size clamping helper used by T3 Pretty preview layout behavior and its tests.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.test.ts` — Preserved the fork-specific local mini-player cursor helper introduced by T3 Pretty's preview fixes.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Preserved T3 Pretty's mini-player-local cursor content mapping: zero panel offsets and scroll offsets, with the laid-out mini-player scale reused and invalid scales safely falling back to 1.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved T3 Pretty's responsive pull-request metadata layout, including adaptive label slots and overflow counts that prevent metadata from overlapping the diff stat in narrow lists.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved the existing T3 Pretty pull-request row styling and presentation code unchanged.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the synchronous submittingRef guard that prevents duplicate comment, close, or reopen submissions before React state updates.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved mounted-component checks, try/catch/finally cleanup, robust error reporting, and draft clearing only after a successful submission.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty's reliable close/reopen-with-comment behavior within the same guarded submission path.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty’s JSON-serialized CommentComposer key, which safely distinguishes identity components and forces the composer to reset when pull-request context changes.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the surrounding T3 Pretty behavior that keeps pull-request comment posting available even when activity loading fails.
+- `apps/web/src/components/pullRequest/pullRequestReviewStore.ts` — Kept T3 Pretty's environment-scoped review draft key and usePendingReviewComments(environmentId, reference) signature so drafts stay isolated across environments.
+- `apps/web/src/components/pullRequest/pullRequestReviewStore.ts` — Kept the fork's PULL_REQUEST_REVIEW_MAX_COMMENTS cap and addComment boolean return.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Preserved Surge Connect managed-account search routing to the Connections settings page, including use of the fork-specific SURGE_CODE_ACCOUNT_NAME identity.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Preserved search-routing tests for disk-use and active-worktree controls on the fork’s Storage settings page.
+- `apps/web/src/components/settings/settingsSearch.ts` — Preserved searchable World Scenery controls for Photo blur, Photo presence, Thread motion, and Scenery text color.
+- `apps/web/src/components/settings/settingsSearch.ts` — Preserved the `sceneryOnly` gating on all four fork-specific scenery settings.
+- `apps/web/src/components/ui/button.tsx` — Preserved T3 Pretty's expanded transitions for background, border, color, opacity, box shadow, and scale, including the 150ms ease-out micro-interaction timing.
+- `apps/web/src/components/ui/button.tsx` — Preserved T3 Pretty's rule that disabled buttons do not receive the active press-scale effect.
+- `apps/web/src/composerDraftStore.ts` — Preserved the ThreadSubagentPolicy import required by T3 Pretty's global and per-thread subagent draft behavior.
+- `apps/web/src/composerDraftStore.ts` — Per-thread skill selection remains exposed through setEnabledSkillIds, including its documented clearing semantics.
+- `apps/web/src/composerDraftStore.ts` — Per-thread subagent policy remains exposed through setSubagentPolicy.
+- `apps/web/src/environments/primary/auth.ts` — Preserved PrimaryEnvironmentDesktopBootstrapTimeoutError, including its timeout and elapsed-time fields and desktop-backend-specific message.
+- `apps/web/src/environments/primary/auth.ts` — Preserved isPrimaryEnvironmentDesktopBootstrapTimeoutError so callers and tests can identify the bounded desktop bootstrap failure instead of allowing a splash-screen hang.
+- `apps/web/src/index.css` — Preserved T3 Pretty's titlebar-controls drag-hole sizing, including its two-control default, three-control variant, control spacing, and right-side workspace-controls offset.
+- `apps/web/src/index.css` — T3 Pretty’s optimistic settle/snooze sidebar-row departure and arrival animations, including pointer-event suppression and timing required by the arrival marker lifecycle.
+- `apps/web/src/index.css` — T3 Pretty’s reduced-motion variants for sidebar-row departure and arrival.
+- `apps/web/src/index.css` — T3 Pretty’s one-shot hosted pairing success animations for the headline and Open app button, while leaving the failed state unanimated.
+- `apps/web/src/index.css` — T3 Pretty’s reduced-motion treatment for the hosted pairing animation.
+- `apps/web/src/lib/openPullRequestLink.ts` — Origin pull-request web links under cursor.com/codebase/{owner}/{repo}/pull/{number} continue to map to the origin.cursor.com git identity so T3 Pretty can open them in-app against the checked-out project.
+- `apps/web/src/lib/openPullRequestLink.ts` — Stored Origin pull requests continue to match clicked Origin links without requiring project state, and Origin repository-root URLs continue to be derived with query and fragment removal.
+- `apps/web/src/previewMiniPlayerStore.ts` — Persistent per-thread, per-tab mini-player dismissal remains intact, including explicit undismissal and no-op updates when dismissal state is unchanged.
+- `apps/web/src/previewMiniPlayerStore.ts` — Closing a mini-player continues to hide it without recording a dismissal, preserving the distinction between temporary close and user dismissal.
+- `apps/web/src/previewMiniPlayerStore.ts` — Removing a thread continues to clear both its active mini-player state and its persisted dismissed-tab state.
+- `apps/web/src/previewMiniPlayerStore.ts` — Opening or auto-presenting another tab continues to reuse the current mini-player position and scale, now represented by the parent's width field.
+- `apps/web/src/previewMiniPlayerStore.ts` — Existing tab guards and equality checks continue to prevent stale or redundant move and resize updates.
+- `apps/web/src/routeTree.gen.ts` — Preserved T3 Pretty's fork-added Skills settings page at `/settings/skills` and its existing route import and registration.
+- `apps/web/src/routeTree.gen.ts` — The fork-only `/settings/skills` route remains represented in all three generated route lookup interfaces, preserving T3 Pretty's skills settings page and typed navigation.
+- `apps/web/src/routeTree.gen.ts` — Preserved the T3 Pretty `/settings/skills` route in the generated `fullPaths`, `to`, and `id` unions, maintaining the fork's Skills settings page and picker support.
+- `apps/web/src/routeTree.gen.ts` — Preserved T3 Pretty's `/settings/skills` route registration and its `SettingsSkillsRouteImport` typing.
+- `apps/web/src/routeTree.gen.ts` — Preserved the T3 Pretty `/settings/skills` route registration and its generated type entry, protecting the fork's skills settings page and composer skills integration.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Preserved T3 Pretty's extracted ThreadRouteView implementation and its new-thread rendering behavior, including the screen-flash fix.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Kept the fork route view responsible for rendering, navigation, draft promotion, thread synchronization, and sidebar presentation rather than restoring the parent's older inline implementation.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Preserved T3 Pretty's state-managed pull-request stats refresh via `statsQuery.refresh()` rather than reverting to the parent's explicit-target refresh call.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Preserved the fork's existing list, stats-scope, and detail refresh cascade surrounding this conflict.
+- `apps/web/src/state/query.ts` — Kept `readAtomQueryResult` snapshot values for query data, formatted errors, and pending state, preserving the fork's interrupted-query compatibility and runtime normalization.
+- `apps/web/src/state/query.ts` — Kept null atoms from being reported as pending via the `atom !== null` guard.
+- `apps/web/src/uiStateStore.test.ts` — Preserved T3 Pretty's per-environment-mode auto-create pull request default in the UiState test fixture.
+- `apps/web/src/uiStateStore.test.ts` — Preserved test coverage for T3 Pretty's persisted autoCreatePullRequestByEnvMode preference and its default value.
+- `apps/web/src/uiStateStore.ts` — T3 Pretty's per-environment auto-create-pull-request persisted preference remains part of PersistedUiState.
+- `apps/web/src/uiStateStore.ts` — The UiComposerState slice and its AutoCreatePullRequestEnvMode-based typing are retained.
+- `apps/web/src/uiStateStore.ts` — The composer continues to initialize auto-create-pull-request behavior from DEFAULT_AUTO_CREATE_PULL_REQUEST.
+- `apps/web/src/uiStateStore.ts` — Preserved T3 Pretty's autoCreatePullRequestByEnvMode state, including sanitization through sanitizeAutoCreatePullRequest for local and worktree modes.
+- `apps/web/src/uiStateStore.ts` — Preserved persistence of the fork's per-environment automatic pull-request preference.
+- `docs/README.md` — Preserved the T3 Pretty user-documentation links for Skills, Apps, Subagents, and World Scenery.
+- `docs/internals/glossary.md` — The expanded, reference-rich maintainer glossary and its detailed project, thread, orchestration, provider, checkpointing, appearance, and skills structure remain intact.
+- `docs/internals/glossary.md` — Fork-specific documentation for project transfer and T3 Connect, storage inventory, queue/steer delivery, generated activity headlines, ranked thread search, automations, subagent policy, Apps/MCP integration, usage-limit sources, environment themes, and the shared skill library is preserved.
+- `docs/internals/glossary.md` — The current built-in provider description remains aligned with T3 Pretty's provider set, including Grok and excluding the removed Kimi provider.
+- `docs/internals/overview.md` — Preserved the one-projector-per-server shell subscription architecture, including 50 ms aggregate coalescing and shared batch fan-out.
+- `docs/internals/overview.md` — Preserved the `thread-touched` delta optimization and the full `thread-upserted` fallback for shell-row reshaping events.
+- `docs/internals/overview.md` — Preserved replay/live consistency and backward compatibility for clients that do not advertise `acceptThreadTouched`, including ignoring touched deltas for unknown threads.
+- `docs/user/keybindings.md` — Command-palette search across settings, thread titles, projects, branches, user messages, and final agent responses on connected environments.
+- `docs/user/keybindings.md` — Exact settings navigation and contextual message-result presentation, including project, branch, and machine context.
+- `docs/user/keybindings.md` — T3 Pretty's message-search threshold, whole-word matching, relevance ranking, and final-query-word prefix matching behavior.
+- `docs/user/source-control.md` — Kept the provider-tools documentation, including T3 Pretty's first-class Origin CLI integration.
+- `docs/user/source-control.md` — Preserved T3 Pretty's pull-request lifecycle rule that merging a linked review does not automatically settle its thread; explicit settlement remains required.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Retained RELAY_DEVICE_MAX_COUNT for T3 Pretty's relay device-count limiting behavior.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Retained the Effect Ref dependency used by T3 Pretty's publisher reliability and state-coordination logic.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Running Live Activity rows continue to display the current awareness `detail`/plan step instead of a frozen generic “Working” label.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Activity rows continue to carry fork-added `progress` and `startedAt` data when present.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Existing cross-surface phase wording remains intact, including “Connecting” for starting work and Done/Failed/Approval/Input/Waiting labels.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — The fork's terminal-row and Live Activity freshness behavior remains active through the aggregate result selected by the parent implementation.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Preserved `aggregateShapeChanged`, including urgent APNs treatment for first delivery, active-count changes, activity row membership changes, phase transitions, `startedAt` changes, and painted thread-title changes.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Preserved the distinction between shape-changing updates that need immediate card movement and content-only status/progress ticks that remain budget-friendly.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Preserved T3 Pretty's `urgent` flag for Live Activity updates whenever the aggregate shape changes, maintaining prompt APNs delivery for meaningful activity transitions.
+- `infra/relay/src/agentActivity/agentActivityPayloads.ts` — Preserved T3 Pretty's APNs Live Activity alert sanitizer, including bounded title and body text for reliable Live Activity delivery and presentation.
+- `infra/relay/src/auth/DpopProofs.ts` — Preserved maximum persisted lengths for DPoP thumbprints and JTIs.
+- `infra/relay/src/auth/DpopProofs.ts` — Preserved deterministic SHA-256/Base64URL fallback keys for oversized replay identifiers, preventing persistence failures while retaining replay detection.
+- `infra/relay/src/db.ts` — Kept the T3 Pretty relay database at the fork-specific PS_5 cluster size, appropriate for a single user's devices.
+- `infra/relay/src/db.ts` — Kept replicas disabled with `replicas: 0`, preserving the fork's reduced database footprint and release-cost safeguard.
+- `infra/relay/src/environments/EnvironmentLinks.ts` — The environment-link user-list failure remains specifically described as a delivery-user listing failure.
+- `infra/relay/src/environments/EnvironmentLinks.ts` — The fork's removal of EnvironmentPublicKeyListPersistenceError is preserved, matching the current public-key-constrained listDeliveryUsersForEnvironment flow rather than restoring an obsolete separate public-key-list path.
+- `infra/relay/src/worker.ts` — Kept the fork worker wiring around Cloudflare bindings and HTTP serve.
+- `packages/client-runtime/package.json` — Preserved the `./state/project-transfer` package export used by T3 Pretty's T3 Connect project/thread transfer behavior.
+- `packages/client-runtime/src/connection/model.ts` — Connection error detail and trace ID schemas retain T3 Pretty's explicit maximum lengths.
+- `packages/client-runtime/src/connection/model.ts` — Connection error construction continues truncating oversized detail and trace ID values before schema validation, protecting cross-surface reliability.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — The linked pull-request idle TTL test remains intact, including its describe suite and LINKED_PULL_REQUEST_IDLE_TTL_MS import, protecting early release of idle conversation and diff payloads.
+- `packages/contracts/src/environment.ts` — World Scenery synchronization capability (`threadScenery`) and its older-server fallback contract.
+- `packages/contracts/src/environment.ts` — Provider-context handoff capability (`providerHandoff`).
+- `packages/contracts/src/environment.ts` — Managed-worktree storage inventory and progressive inventory streaming capabilities.
+- `packages/contracts/src/environment.ts` — Cross-environment project checkout and thread-history transfer capability (`projectTransfer`).
+- `packages/contracts/src/environment.ts` — Compatibility with the existing legacy `threadPullRequestLinking` mechanism alongside the new upstream pull-request APIs.
+- `packages/contracts/src/ipc.ts` — Preserved the optional quit-shortcut hint bridge contract, including compatibility with older desktop shells that do not emit quit hints.
+- `packages/contracts/src/orchestration.ts` — Preserved T3 Pretty’s provider runtime-mode contract imports and helper re-exports.
+- `packages/contracts/src/orchestration.ts` — Preserved T3 Pretty’s automation shell, editable-field, patch, trigger, run, and run-query contract imports.
+- `packages/contracts/src/orchestration.ts` — Preserved T3 Pretty’s enabled-skill and thread subagent-policy contract imports.
+- `packages/contracts/src/orchestration.ts` — World Scenery photo and assignment schemas, including photo metadata, attribution fields, assignment timestamps, and all fork-defined maximum-length validation limits.
+- `packages/contracts/src/previewAutomation.ts` — Canvas capability errors remain supported because the parent's McpCapabilityUnavailableError accepts any trimmed non-empty capability, including "canvas".
+- `packages/contracts/src/previewAutomation.ts` — Preview-specific compatibility remains available through PreviewAutomationUnavailableError and its existing wire tag for preview automation clients.
+- `packages/contracts/src/relay.test.ts` — Preserved all T3 Pretty relay hardening constants, schemas, and synchronous decoder helpers used by the existing security, identifier-length, timestamp, token-lifetime, device-registration, and persistence tests.
+- `packages/contracts/src/relay.test.ts` — Preserved T3 Pretty's iOS-version limit coverage and its existing Relay API security test infrastructure.
+- `packages/contracts/src/relay.ts` — All existing T3 Pretty relay contract size limits, canonical timestamp validation, constrained identifiers, JWT limits, and related schema hardening remain intact.
+- `packages/contracts/src/relay.ts` — Device registration and stored device records continue to constrain iOS major versions to the fork's guarded 18–999 range.
+- `packages/contracts/src/relay.ts` — Registration and stored records continue to validate app versions with the bounded RelayAppVersion/AuthIdentifier schema rather than an unrestricted trimmed string.
+- `packages/contracts/src/relay.ts` — Existing fork-specific APNs routing fields, push-to-start support, preferences, and cross-platform registration filter remain unchanged.
+- `packages/contracts/src/settings.ts` — Retained T3 Pretty skill-library settings via SkillId and SkillsSettings.
+- `packages/contracts/src/settings.ts` — Retained T3 Pretty subagent policy settings and child-policy contracts.
+- `packages/contracts/src/settings.ts` — Retained T3 Pretty external-app/T3 Connect settings contract.
+- `packages/contracts/src/settings.ts` — Retained T3 Pretty automation settings contract.
+- `packages/effect-acp/src/errors.ts` — AcpWireLineTooLargeError remains available with its maximum/observed byte diagnostics and existing user-facing limit message.
+- `packages/effect-acp/src/errors.ts` — AcpOutputStreamEndedError remains available with its existing ACP output-stream termination message.
+- `packages/effect-acp/src/protocol.ts` — The existing hardened ACP notification path remains unchanged: notifications are encoded without request IDs, protocol activity is logged, transport activity is checked before sending, and queue termination is handled.
+- `packages/effect-codex-app-server/src/errors.ts` — The CodexAppServerWireLineTooLargeError hardening remains, including maximum/observed byte diagnostics and its line-limit message.
+- `packages/effect-codex-app-server/src/errors.ts` — The CodexAppServerOutputStreamEndedError remains available to distinguish output-stream termination from other transport failures.
+- `packages/shared/src/git.test.ts` — Preserved T3 Pretty's parseRepositoryNameWithOwnerFromGitRemoteUrl import and its repository identity test coverage, including fork handling for Origin checkouts and non-GitHub remotes.
+- `packages/shared/src/git.ts` — Repository identity remains provider-aware for GitHub, GitLab, Bitbucket, and Origin checkouts rather than being narrowed back to GitHub-only matching.
+- `packages/shared/src/git.ts` — GitLab nested group paths remain supported, while GitHub, Bitbucket, and Origin identities retain the required two-segment repository shape.
+- `packages/shared/src/git.ts` — The GitHub-specific compatibility API remains available and delegates to the generalized T3 Pretty repository parser.
+- `packages/shared/src/sourceControl.test.ts` — Preserved the T3 Pretty `countGrokReviewSummaries` import supporting fork-specific Grok Origin review-summary behavior and tests.
+- `packages/shared/src/sourceControl.ts` — The AutomatedReviewSignal contract import remains available.
+- `packages/shared/src/sourceControl.ts` — The fork-specific AutomatedReviewPresentation interface is retained.
+- `packages/shared/src/sourceControl.ts` — The complete automated-review presentation resolver is retained, including undefined/null handling and reviewing, passed, feedback, and stale status copy.
+- `patches/@legendapp__list@3.3.5.patch` — The iOS initial end-position behavior remains intact, including start-inset-aware clamping, underflow resting at the negative native inset, and explicit inset-aware scroll-to-end targeting.
+- `patches/@legendapp__list@3.3.5.patch` — The hidden initial end-settle watchdog and ready-to-render reveal hold remain intact so iOS threads open at the true bottom without visibly chasing estimated measurements.
+- `patches/@legendapp__list@3.3.5.patch` — The fork's adjusted safe-area compensation, static composer inset adjustment, anchored blank-space correction, and composer-height adjustment remain present in the keyboard patch.
+- `patches/@legendapp__list@3.3.5.patch` — MVCP safeguards remain intact, including known-size gating for anchored-end maintenance and inset-aware native clamp prediction.
+- `patches/@legendapp__list@3.3.5.patch` — The resolved patch keeps the fork's coherent resetInitialRenderState boundary rather than inserting a syntactically displaced helper fragment.
+- `patches/@legendapp__list@3.3.5.patch` — Inset-aware iOS scrolling remains intact, including negative start offsets needed for transparent-header content insets and true-bottom thread positioning.
+- `patches/@legendapp__list@3.3.5.patch` — Pretty's anchored-end safety check remains in place so end maintenance waits until relevant item sizes are known.
+- `patches/@legendapp__list@3.3.5.patch` — Maintain-at-end behavior remains content-inset-aware for both underflow and overflow, including direct inset-adjusted scrolling instead of regressing to unconditional scrollToEnd.
+- `patches/@legendapp__list@3.3.5.patch` — T3 Pretty's iOS bottom-aligned thread behavior continues to treat viewport underflow as a provisional top rest rather than a completed end landing.
+- `patches/@legendapp__list@3.3.5.patch` — Initial thread loading can re-pin any remaining native gap to the true bottom after footer, padding, or measured row sizes settle; the correction is not restricted to gaps within half a viewport.
+- `patches/@legendapp__list@3.3.5.patch` — The correction remains disabled during programmatic end maintenance and the surrounding watchdog still yields immediately when the user drags.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved the anchored-end-space bound that prevents an unknown tail from retaining more space than the current viewport can support.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved provisional anchored-end-space shrink notifications and scroll recalculation before the anchor becomes fully ready.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved T3 Pretty's native contentInsetStartAdjustment flow, including delaying mount-time content offsets until UIKit applies automatic leading insets.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved native-platform contentInsetEndAdjustment handling rather than restoring the previous web-only restriction.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved T3 Pretty's LegendList iOS true-bottom behavior, including continuous native MVCP anchoring through ScrollAdjust.
+- `patches/@legendapp__list@3.3.5.patch` — The fork's conditional initial-render reset, which avoids unnecessarily clearing an already-ready layout and restarting adaptive rendering.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved T3 Pretty's iOS thread-bottom behavior by allowing maintain-scroll-at-end work to continue during content-size animation rather than clearing the pending request and returning early.
+- `patches/@legendapp__list@3.3.5.patch` — When viewport metrics are unavailable and no programmatic end scroll is active, reveal stability still advances so a wedged list cannot leave messages permanently hidden behind the initial opacity gate.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved ctx.state.didUserDrag = true, which distinguishes actual user interaction for T3 Pretty's iOS thread-load and initial-scroll behavior.
+- `patches/@legendapp__list@3.3.5.patch` — The patch was regenerated with a real git diff against pristine @legendapp/list@3.3.5 so hunk headers match the patched files.
+- `scripts/build-desktop-artifact.test.ts` — Preserved T3 Pretty's desktop artifact-size and packaging exclusions for source maps, Effect source files, TypeScript declarations, dependency documentation, Playwright Core, and unused Effect Scalar/Swagger modules.
+- `scripts/build-desktop-artifact.test.ts` — Preserved exclusion of T3 Pretty's separately packaged desktop DMG resources from app.asar.
+- `scripts/build-desktop-artifact.test.ts` — The Windows NSIS configuration remains required to set `runAfterFinish: false`, preventing release installers from automatically launching the application while retaining differential packages.
+- `scripts/build-desktop-artifact.test.ts` — The test continues to enforce that Windows server native binaries and helper executables are unpacked from the asar, protecting Windows terminal/server runtime behavior.
+- `scripts/build-desktop-artifact.ts` — T3 Pretty's packaged-desktop exclusions for unused source maps, TypeScript sources and declarations, package documentation, stray Playwright files, unused Effect OpenAPI UI modules, and installer-only DMG artwork remain intact.
+- `scripts/build-desktop-artifact.ts` — The existing T3 Pretty packaging optimization that avoids unnecessary app.asar payload, signing, and notarization work is preserved.
+- `scripts/build-desktop-artifact.ts` — Preserved resolveCargoTargetDir and its support for relative or absolute CARGO_TARGET_DIR values used by T3 Pretty hosted desktop release builds.
+- `scripts/build-desktop-artifact.ts` — Extended the same CARGO_TARGET_DIR-aware artifact lookup to the new Linux capture helpers so Cargo output remains discoverable under the fork's cached runner layout.
+- `scripts/build-desktop-artifact.ts` — Kept the T3 Pretty product name in macOS privacy descriptions.
+- `scripts/build-desktop-artifact.ts` — Kept microphone/dictation disclosure restricted to internal desktop builds.
+- `scripts/build-desktop-artifact.ts` — Preserved the fork-specific explanation that dictation audio is transcribed through the user's connected Groq host.
+- `scripts/resolve-previous-release-tag.ts` — The ReleaseTagListOutputTooLargeError remains available with stdout/stderr identification, process context, byte-limit metadata, and its safety-limit diagnostic message.
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/desktop/package.json` — Integrated the parent desktop runtime dependency on ffi-rs 1.3.2.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Integrated the parent's new 640×432 full-canvas DMG background layout, matching the updated SVG viewBox.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Integrated the parent's veil and silk gradient architecture and all three layered wave paths.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Integrated the parent's official T3 mark geometry, curved directional arrow, centered typography, and revised installation copy.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — Integrated the parent's updated wording: “into Applications” and “Once copied, open it from Applications.”
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — Integrated the complete new 640-wide nightly DMG artwork based on the web NightlySkyArt composition, including its embedded sky image.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — Integrated the new glow, veil, silk, horizon, and curved scenery treatments.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — Retained the upstream official T3 vector mark as part of the adapted T3 Pretty lockup.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — Integrated the upstream NIGHTLY label, centered installation headline layout, redesigned drag arrow, and revised Applications completion message.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — Adopted the upstream wording and punctuation change from “to Applications” to “into Applications.”
+- `apps/desktop/scripts/electron-launcher.mjs` — APP_DISPLAY_NAME and APP_BUNDLE_ID now follow upstream's refactor to module-private constants rather than exported launcher API.
+- `apps/desktop/scripts/electron-launcher.mjs` — The launcher version is updated from 15 to upstream version 19.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Integrated the upstream isDevelopment field into EarlyLinuxElectronOptions and computes the development state once for consistent reuse.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Integrated upstream Linux desktop-entry-name startup metadata, using the parent resolver unchanged for internal T3 Code builds and equivalent T3 Pretty-branded entries for public builds.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Retained upstream password-store switch resolution alongside the newly composed startup metadata.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — Integrated coverage for the new linuxDesktopEntryName environment property in development mode.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — Integrated the packaged Linux stable desktop-entry/portal identity test, adapted to T3 Pretty's public branding.
+- `apps/desktop/src/app/DesktopEnvironment.test.ts` — Applied the parent's T3 Code development desktop-entry identity to the fork's internal build flavor and added coverage for it.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — The new `resolveLinuxDesktopEntryName(isDevelopment)` parent resolver is used instead of duplicating the old hard-coded desktop-entry selection.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — Any nonstandard desktop-entry name produced by the upstream resolver is preserved; only standard T3 Code filenames are rebranded for public T3 Pretty builds.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — Internal development and production builds retain the parent's `t3code-dev`/`t3code` Linux desktop identities.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts` — Added `linuxDesktopEntryName: "com.t3tools.T3Code.desktop"` to cover the parent’s new Linux desktop entry naming API while retaining the compatible T3 Code desktop identity.
+- `apps/desktop/src/app/DesktopLinuxUrlHandler.ts` — Removed the local URL_HANDLER_DESKTOP_ENTRY_NAME export in accordance with upstream's refactor; desktop-entry naming is supplied through environment.linuxDesktopEntryName.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Added coverage that both missing and stale Linux desktop entries are prepared synchronously before startup yields.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Added verification that the generated Linux desktop entry points to the current AppImage and registers the t3code MIME scheme handler.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Added coverage that failure to create or write the early Linux desktop entry does not make startup unavailable.
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts` — Migrated DesktopLocalEnvironmentAuthBackendNotConfiguredError from Schema.TaggedErrorClass to the parent's current Schema.TaggedError API.
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts` — Added the parent's @public documentation marking make as part of the canonical Effect module API.
+- `apps/desktop/src/electron/ElectronDialog.ts` — Added upstream's @public documentation declaring service construction part of the canonical Effect module API.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Integrated the upstream @public documentation marking make as part of the canonical Effect module API.
+- `apps/desktop/src/electron/ElectronMenu.ts` — Integrated the optional Electron PopupOptions frame value when input.frame is present, enabling frame-targeted template popups.
+- `apps/desktop/src/main.ts` — Integrated the parent desktopSnapShotLayer into desktopApplicationLayer so the upstream snapshot service is available to the desktop application.
+- `apps/desktop/src/preview/Manager.test.ts` — Added parent coverage for permitted native editing chords and rejected host shortcuts across macOS, Linux, and Windows.
+- `apps/desktop/src/preview/Manager.test.ts` — Added parent coverage for macOS Paste and Match Style when Option changes the reported key symbol.
+- `apps/desktop/src/preview/Manager.test.ts` — Added the ClipboardItem constructor spy required by the parent clipboard tests.
+- `apps/desktop/src/preview/Manager.test.ts` — Extended the mocked native image with toPNG() and a PNG buffer result.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent’s explicit Electron.WebContents | null typing for webContents.fromId().
+- `apps/desktop/src/preview/Manager.ts` — Made buildPreviewPictureInPictureDataUrl module-private by removing its export, matching the parent refactor while retaining its implementation unchanged.
+- `apps/desktop/src/settings/DesktopSavedEnvironments.ts` — Integrated upstream's removal of the Ref dependency after its corresponding state-management usage was removed or refactored.
+- `apps/desktop/src/ssh/DesktopSshPasswordPrompts.ts` — Migrated DesktopSshPromptInvalidRequestIdError from Schema.TaggedErrorClass to the parent's Schema.TaggedError API.
+- `apps/desktop/src/ssh/DesktopSshPasswordPrompts.ts` — Applied the same parent error-schema API to the fork-only DesktopSshPromptCapacityError for consistency and compatibility with the surrounding upstream refactor.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Added the parent's `SNAP_SHOT_EVENT_CHANNEL` import so the new desktop snapshot-event test behavior can compile and run.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Satisfied the parent's typed `webContents.once` mock intent through the existing T3 Pretty implementation, whose explicit event-name/listener signature is compatible while also retaining listener behavior.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Added the parent ElectronWindow.prepareReveal mock with the upstream false result.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Added the parent's optional onReveal callback and composed it with T3 Pretty's reveal recorder.
+- `apps/desktop/src/window/DesktopWindow.test.ts` — Integrated the parent's per-test ElectronMenu.popupTemplate callback while retaining the existing menu defaults.
+- `apps/desktop/src/window/DesktopWindow.ts` — Integrated the parent SNAP_SHOT_EVENT_CHANNEL import required for dispatching snapshot capture lifecycle events to the renderer.
+- `apps/desktop/src/window/DesktopWindow.ts` — The context-menu handler is installed through the parent's deduplicated WeakSet-based installContextMenu abstraction.
+- `apps/desktop/src/window/DesktopWindow.ts` — Newly attached browser webviews receive context-menu handling.
+- `apps/desktop/src/window/DesktopWindow.ts` — The originating WebContents is focused and now receives spelling, image, cut, copy, paste, and select-all commands instead of incorrectly applying them to the host renderer.
+- `apps/desktop/src/window/DesktopWindow.ts` — The owner window and originating contents are checked for destruction before dispatching or executing context-menu work.
+- `apps/desktop/src/window/DesktopWindow.ts` — The parent's copy-link, copy-image, spelling-suggestion, and edit-command capabilities are represented through the fork's existing glass-menu item and command model.
+- `apps/mobile/app.config.ts` — Kept upstream Android adaptive backgroundImage / splash-icon wiring.
+- `apps/mobile/app.config.ts` — Gave INTERNAL_RELEASE_ASSETS the same optional androidAdaptiveBackgroundImage and androidSplashIcon keys as the other variants so the branding union typechecks.
+- `apps/mobile/global.css` — Added the parent's dark-mode thread canvas, selected-thread foreground, and muted selected-thread foreground theme tokens.
+- `apps/mobile/global.css` — Added the parent's dark-mode composer panel, composer surface, and composer border theme tokens.
+- `apps/mobile/global.css` — Preserved the parent's intended surface relationships: thread canvas and composer panel derive from the alternate card tone, while selected threads and the composer surface derive from the primary card tone.
+- `apps/mobile/src/App.tsx` — Mounted the parent ThreadArrangementHost alongside the existing T3 Pretty overlay hosts, integrating upstream thread-arrangement behavior without displacing fork functionality.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Restored the expo-blur BlurView import used by the iOS menu backdrop in the merged overlay.
+- `apps/mobile/src/components/GlassSurface.tsx` — Integrated React RefObject typing for the upstream blurTarget property.
+- `apps/mobile/src/components/GlassSurface.tsx` — Integrated the upstream GlassBackdrop component used by the frosted fallback path.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Integrated the parent Android device replay timestamp state used to track replay timing.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Device registration now uses the parent's `canRegisterPushNotifications()` capability check instead of requiring remote Live Activity support, allowing registration on platforms that support push notifications independently.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Added the upstream stale-generation check before native push-token and Android notification side effects.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Integrated the parent first-party Android agent-notification configuration using the relay identity and live-activity preference.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Integrated Android relay registration metadata: package identifier, Android label fallback, platform discriminator, and API level.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Integrated the explicit iOS platform discriminator while retaining iOS version and APS environment metadata.
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts` — Added upstream foreground device re-registration through the existing coalescing registration queue before Live Activity reconciliation.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Added the parent Material You layout wrapper with the header-colored outer background.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Applied the parent's rounded top corners and overflow clipping when the Material You-style layout is active.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Applied the parent's Material You header background and rounded top container to both v2 and legacy home-list layouts.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated the parent's separated v2 FlatList return path and its iOS automatic content-inset behavior.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Integrated the parent's legacy LegendList path, including equality checks, draw distance, estimated item sizing, and the documented decision not to enable sticky headers.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Applied the parent's reduced iOS bottom padding and fixed Android FAB clearance to the legacy LegendList path.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Adopted the parent Material You home layout, including the bg-header outer surface and rounded top content surface when materialYouStyleLayoutActive is enabled.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Accepted the parent's consolidated single return path and removed the obsolete duplicated legacy home layout.
+- `apps/mobile/src/features/home/HomeScreen.tsx` — Retained the parent's conditional native Liquid Glass scroll-inset behavior and Material You/non-Material layout switching.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — All archive, unarchive, delete, settle, and unsettle mutation dispatches now run through withThreadDismissal.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — The parent success predicate is retained so dismissal completion is tied to a successful command result.
+- `apps/mobile/src/features/home/useThreadListActions.ts` — Snooze mutations now use the shared withThreadDismissal helper and its success predicate, matching the already-integrated unsnooze flow and centralizing dismissal lifecycle handling.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Added the parent's Platform import for platform-specific appearance handling.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Added the parent's ScopedVariables import for the updated Uniwind scoped-variable behavior.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Added Material You layout preference state and setter required by the new Android settings switch.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Retained the parent per-appearance theme setter for independent appearance configuration.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Retained the parent systemColorsAvailable capability value for downstream system-color behavior.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Adopted the parent first-party thread outbox instead of directly invoking createProjectThread, allowing locally persisted task creation and retry across reconnects.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Integrated the parent's queue-specific failure message and shared finally-based submitting-state cleanup.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Kept the parent flow in which the already-built pending-task message owns creation metadata and attachments before draft clearing or navigation.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the parent mobile action for starting a new thread from an existing branch by adding props.onNewThreadOnBranch as a callback dependency.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the Material You sidebar surface offset below the measured sticky header.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Integrated the Material You screen background, rounded top corners, and clipped overflow styling.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Retained the existing non-Material layout when Material You styling is inactive.
+- `apps/mobile/src/features/threads/ThreadRouteScreen.tsx` — Added the parent nightly's `useAppearancePreferences` integration so the thread route can consume current appearance settings.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — Integrated `useAppearancePreferences`, enabling the upstream Material You-aware selected-row behavior already used by `ModelRow`.
+- `apps/mobile/src/features/threads/git/GitOverviewSheet.tsx` — Restored Alert and tryOpenExternalUrl imports for the pull-request row handler in the merged overlay.
+- `apps/mobile/src/features/threads/thread-list-items.tsx` — Integrated the parent fix that tracks onNewThreadOnBranch and thread in the menu-action callback dependencies, preventing stale branch-thread creation behavior.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent mobile `onNewThreadOnBranch` callback into the row's destructured props without displacing thread renaming.
+- `apps/mobile/src/features/threads/thread-list-v2-items.tsx` — Integrated the parent behavior that exposes applicable arrangement actions on slim rows regardless of pin state while excluding direct move-up and move-down actions.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Integrated the parent deletion of use-project-actions.ts after project-thread creation moved into the first-party new-task flow.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — Avoided resurrecting the superseded hook, allowing the parent behavior that opens the thread screen immediately after task submission to remain authoritative.
+- `apps/mobile/src/features/threads/use-project-actions.ts` — followed the parent nightly's deletion of this file
+- `apps/mobile/src/lib/mobileTheme.ts` — Imported STANDARD_THEME_PREVIEW_COLORS for the material-you preview fallback in the merged overlay.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Added coverage that new threads on an existing branch reuse either the project workspace or a selected existing worktree.
+- `apps/mobile/src/lib/projectThreadStartTurn.test.ts` — Added assertions that existing-branch starts do not prepare a new worktree or run the setup script and retain the requested thread ID.
+- `apps/mobile/src/persistence/mobile-preferences.ts` — Migrated MobilePreferencesLoadError from Schema.TaggedErrorClass to the parent's Schema.TaggedError API, matching the existing MobilePreferencesSaveError implementation.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Parent support for `EnvironmentThreadShell` in thread pull-request source resolution.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Parent execution-environment capability checks for persisted thread pull-request snapshots and linking.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Parent `ThreadPullRequestLink` typing and persisted linked/stacked pull-request presentation support.
+- `apps/mobile/src/state/use-thread-detail.ts` — Adopted the parent refactor exposing selectedThreadDetailState directly from useThreadSelection().
+- `apps/mobile/src/state/use-thread-detail.ts` — Replaced the fork-local shell/optimistic-start subscription gating in this hook with the parent's first-party queued-creation subscription ownership.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — Added `restoredNewTaskDraftKey` for upstream new-task draft restoration behavior.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — Added upstream pending-thread-creation outcome state APIs: clearing, observing, and recording creation outcomes.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — Read pendingThreadCreationOutcomesAtom through useAtomValue, enabling the parent’s pending thread-creation outcome handling.
+- `apps/server/src/auth/PairingGrantStore.ts` — PairingLinkRevokeError now uses Schema.TaggedError instead of Schema.TaggedErrorClass, matching the parent API refactor without changing its fields or message.
+- `apps/server/src/auth/SessionStore.ts` — Integrated the parent migration of SessionRevocationError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `apps/server/src/auth/SessionStore.ts` — Adapted the fork-only ActiveSessionsLimitExceededError to Schema.TaggedError for consistency with the parent’s updated error-schema API.
+- `apps/server/src/bin.ts` — Replaced `Command.withHidden` with the parent's `Command.unlisted` API for keeping the unavailable `connect` command out of command listings.
+- `apps/server/src/config.ts` — Parent browserArtifactsDir configuration, including its documentation and stateDir/browser-artifacts derived path for collaborative-browser screenshots.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Added the parent ServerConfig.layerTest dependency with an isolated t3-mcp-http-server-test- temporary prefix.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Integrated the parent layer refactor that supplies PreviewAutomationBroker.layer directly alongside the shared NodeServices layer.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Adopted the parent's shared `snapshotResult` fixture for the snapshot response, while applying the fork-specific accessibility-tree field override.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Integrated the parent's `evaluate` response returning `["Connect", "Continue"]`, enabling the downstream test of wrapping array results in object-shaped MCP `structuredContent`.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Retained the parent's nested routing for press and status operations.
+- `apps/server/src/mcp/McpHttpServer.ts` — Added PullRequestsToolkitRegistrationLive using the upstream PullRequestsToolkit and PullRequestsToolkitHandlersLive.
+- `apps/server/src/mcp/McpHttpServer.ts` — Registered the parent pull-request toolkit on the shared /mcp MCP server alongside the preview toolkit.
+- `apps/server/src/mcp/McpInvocationContext.test.ts` — Integrated the parent test verifying that an unavailable generic MCP capability such as "pull-requests" produces McpCapabilityUnavailableError with the relevant capability and thread context.
+- `apps/server/src/mcp/McpInvocationContext.test.ts` — Integrated the parent test verifying that requireMcpCapability returns the original invocation scope when the requested capability is granted.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Added the parent "pull-requests" MCP capability alongside the fork capabilities.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated PreviewAutomationUnavailableError so missing preview capability can retain the broker-specific routing behavior.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated McpCapabilityError and the missingCapability helper structure, mapping preview failures to the preview-specific error and other capabilities to the generic capability error.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated the parent's missingCapability factory, including invocation metadata on capability errors.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated the parent's conditional typed error API for one-argument requireMcpCapability calls.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated PreviewAutomationUnavailableError for preview authorization failures so the broker can route them distinctly.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Integrated the parent's mcp.requireCapability tracing span.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Allowed parent-style direct capability checks while retaining compatibility with T3 Pretty's custom error callbacks.
+- `apps/server/src/mcp/McpProviderSession.ts` — The parent `preview` session field and its credential semantics are retained alongside the fork's richer capability model.
+- `apps/server/src/mcp/McpProviderSession.ts` — The parent first-party pull-request toolkit is made available by always attaching the built-in `t3-code` MCP server, while preview-tool access remains capability-gated.
+- `apps/server/src/mcp/McpProviderSession.ts` — The server-order documentation is updated to reflect the always-attached parent first-party server before other capability-specific servers and app proxies.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Integrated the parent test's intent to issue a preview-capable MCP session and verify that the resolved session retains preview access.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Added test coverage that the parent pull-requests capability is retained in resolved MCP session scope.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Preserved the parent's preview gating intent by verifying preview is present only in the request that explicitly includes it.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — The upstream pull-requests capability remains supported through the generalized request.capabilities set and is included in built-in MCP servers when explicitly granted.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Upstream preview access remains supported as an explicit preview capability rather than through the older request.preview boolean.
+- `apps/server/src/orchestration/Errors.ts` — Migrated `OrchestrationThreadSettleBlockedError` from `Schema.TaggedErrorClass` to the parent implementation's `Schema.TaggedError` API.
+- `apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts` — Integrated the parent's `pullRequests` field into the persisted thread projection fixture, keeping the test compatible with upstream pull-request state.
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts` — Changed OrchestrationProjectionPipelineLive composition from Layer.provide to Layer.provideMerge, retaining the parent layer's provided services in the composed test layer.
+- `apps/server/src/orchestration/Schemas.ts` — Added contract imports and server-internal aliases for thread pull-request linked, unlinked, and synced payloads.
+- `apps/server/src/orchestration/commandInvariants.test.ts` — Added `pullRequests: []` to both orchestration thread fixtures, incorporating the parent read-model support for thread-associated pull requests.
+- `apps/server/src/orchestration/decider.pinned.test.ts` — Added the parent `pullRequests` collection to the test thread fixture so pinned-thread decider tests use the updated orchestration read model.
+- `apps/server/src/orchestration/decider.settled.test.ts` — Integrated the parent thread model's pullRequests field into the settled-decider test fixture.
+- `apps/server/src/orchestration/decider.snoozed.test.ts` — The test fixture now initializes the parent OrchestrationThread pullRequests collection, keeping the snoozed decider tests compatible with the newest parent read-model contract.
+- `apps/server/src/orchestration/decider.titleRegeneration.test.ts` — Integrated the parent's `pullRequests` thread fixture field so the title-regeneration decider test conforms to the updated orchestration read model.
+- `apps/server/src/persistence/Migrations.ts` — The parent `050_ProjectionThreadPullRequests.ts` migration is statically imported and included in the migration manifest.
+- `apps/server/src/persistence/Migrations.ts` — The parent pull-request schema migration is assigned the next available T3 Pretty manifest ID, 61, ensuring it executes for fork databases rather than being hidden behind the already-applied ID 50.
+- `apps/server/src/provider/Layers/ClaudeProvider.ts` — Integrated the parent nightly's Claude provider `reportsContextWindow: true` capability advertisement.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Integrated the parent's browser-tool availability intent through the existing generalized `McpProviderSession.hasBrowserTools(mcpSession)` assignment.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved the parent's bearer-token configuration behavior for the `t3-code` MCP server while extending it compatibly to all session servers.
+- `apps/server/src/provider/Layers/CodexProvider.ts` — Integrated the parent Codex `reportsContextWindow: true` presentation capability.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Integrated the parent documentation clarifying that the always-attached `t3-code` MCP server and pull-request toolkit do not themselves imply browser access; the credential capability controls the developer prompt.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Integrated the parent change requiring an actually configured MCP server in addition to the session capability flag before advertising tools.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Applied the parent's default-enabled capability-gate pattern to both of T3 Pretty's native-tool categories.
+- `apps/server/src/provider/Layers/ProviderSessionReaper.test.ts` — Added the parent nightly's `pullRequests` thread field to the ProviderSessionReaper test fixture.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Host-qualified references can route through compatible workspaces on the requested host rather than being limited to the selected project's own repository.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Azure DevOps routing compares canonical repository identities across SSH, legacy clone, and browser host forms and requires a matching Azure checkout.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Non-Azure providers prefer an exact repository checkout and can fall back to another checkout on the host while targeting the requested repository explicitly.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Unsupported or unavailable routing still returns the upstream provider-unsupported result.
+- `apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts` — Adopted the upstream migration of DesktopTelemetryStale from Schema.TaggedErrorClass to Schema.TaggedError.
+- `apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts` — Applied the same Schema.TaggedError API migration to the fork-only DesktopTelemetryRecordTooLarge class for consistency and compatibility with the surrounding upstream error definitions.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Migrated GitHubRepositoryDecodeError from Schema.TaggedErrorClass to the parent's Schema.TaggedError implementation.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Adapted the fork-only GitHubCodexReviewDecodeError to Schema.TaggedError as well, keeping it consistent with the parent API refactor.
+- `apps/server/src/sourceControl/SourceControlRepositoryService.ts` — Added the upstream `@public` documentation annotation declaring service construction part of the canonical Effect module API.
+- `apps/server/src/usage/usageScanCache.ts` — Adopted cache version 3 so entries use the parent's incremental append-scan semantics and incompatible version-2 cache documents are invalidated.
+- `apps/server/src/usage/usageScanCache.ts` — Integrated the parent documentation explaining that cached parse position and reducer state allow grown files to parse only appended bytes.
+- `apps/web/src/components/BranchToolbar.tsx` — Integrated the parent migration from `useThread` to `useThreadShell` while retaining the existing project and project-thread-shell selectors.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — Integrated capability-gated support for threads with multiple pull requests.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — Integrated linked pull-request status resolution across legacy linkedPullRequest, pullRequests, and branchPullRequest thread data.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — Integrated current linked-PR selection, stack badge resolution, and fallback to the branch pull request when no current linked PR supersedes it.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — Integrated ThreadPullRequestBadgeControl with access to the pull-request stack panel and direct opening of the resolved pull request.
+- `apps/web/src/components/BranchToolbarBranchSelector.tsx` — Integrated provider selection from linked PR status with branch-status provider fallback.
+- `apps/web/src/components/ChatView.logic.ts` — Integrated the parent session-scoped checkout repository-status cache keyed by environment and working directory.
+- `apps/web/src/components/ChatView.logic.ts` — Integrated the parent `rememberCheckoutIsRepo` and `recallCheckoutIsRepo` APIs, preventing the branch strip from briefly remounting for known non-Git projects.
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent fix that restores a coherent repository-path input instead of embedding a duplicate provider-card fragment in its attributes.
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated Enter-key submission for the publish repository path via submitPublishRepository().
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent publish failure alert, including alert semantics, destructive styling, and suppression while the publish action is still pending.
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent's corrected control-flow layout that closes the pending status conditional before rendering publish errors and keeps the completion result as a separate wizard step.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated the parent useRef and useState imports required by ServerUpdatesAction's pending-state implementation.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Adopted the parent's combined React type/value import style while retaining ComponentProps as a type-only import.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated the parent refactor that derives server-update properties from `ServerUpdateTarget` and excludes the locally resolved `continueThreadsAfterServerUpdate` field.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated reuse of `UpdateButtonProps` for the supported shared button properties instead of maintaining a duplicated explicit prop declaration.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s pull-request chain, current-link, visibility, and badge APIs from @t3tools/shared/threadPullRequests.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s GitPullRequestArrowIcon and LayersIcon UI vocabulary.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Integrated the parent’s MouseEvent type and InlineButton/buttonVariants dependencies for interactive pull-request indicators.
+- `apps/web/src/components/ThreadStatusIndicators.tsx` — Retained the shared cn utility required by both implementations.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated `reserveContextWindowMeter` into the resting composer padding condition so space is reserved even when the active context-window meter is not currently rendered.
+- `apps/web/src/components/chat/ChatHeader.tsx` — Integrated the parent EnvironmentProject type import used by the activeProject prop.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The parent change's intent of retaining a persistent `h-3` interaction target for a collapsed stack is preserved through T3 Pretty's adjacent focusable stack-cap implementation, which also supports keyboard focus.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent state that tracks which image source has its snapshot accessibility details displayed.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — Removed the CheckIcon import in line with the parent implementation.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — Integrated the parent refactor from generic DialogPopup/DialogHeader/DialogTitle/DialogDescription elements to the dedicated WizardPopup and WizardHeader components.
+- `apps/web/src/components/cloud/ConnectOnboardingDialog.tsx` — Integrated the WizardHeader title and description prop-based API required by the shared WizardSteps, WizardPanel, and WizardFooter structure.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Added BrowserViewportResizeDirection support for the parent's edge and corner resize handles.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Adopted the parent's unified PointerGesture model using PreviewMiniPlayerFrame and an explicit drag-or-resize direction.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Accepted the parent's frame-based resize refactor and removal of obsolete direct size-clamping/default-size imports.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated fitted source-content sizing with viewport fallback and desktop zoom-factor support.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent's width-based mini-player model and resolved frame calculation against the measured container.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the refactored ResizeObserver behavior that updates container measurements without invoking the obsolete size/default-layout mutation path.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The parent’s unified PointerGesture model replaces separate legacy drag and resize refs and handlers.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Gesture startup now records the resolved frame and resize direction directly.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — A single HTMLElement pointer-move handler supports both movement and resize paths.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The container ResizeObserver is initialized once rather than being recreated for unrelated prop changes.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent’s resizePreviewMiniPlayer helper and directional gesture model.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Applied resize results atomically from the gesture’s starting frame, pointer delta, source dimensions, container bounds, and bottom inset.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Retained the parent’s resulting width and position updates through the existing mini-player store.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent mini-player control layout with an explicit Open in right panel action and tooltip.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent's active secondary styling and state-specific accessible labels for the picture-in-picture button.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent's frame-based BrowserSurfaceSlot layout version within the resized mini-player structure.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent's simplified section layout, keeping controls and preview content directly within the positioned mini-player section.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Migrated PreviewAutomationOverlayTimeoutError from Schema.TaggedErrorClass to the parent's Schema.TaggedError API.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Applied the same upstream error-schema API to the adjacent fork-added PreviewAutomationRequestTimeoutError for consistency with the parent implementation.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Added PreviewAutomationRecordingTransferError to the preview automation host-error union.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Added PreviewAutomationRecordingDesktopUpdateRequiredError to the preview automation host-error union.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Added PreviewAutomationRecordingTooLargeError to the preview automation host-error union.
+- `apps/web/src/components/preview/previewAutomationErrors.ts` — Added PreviewAutomationRecordingDeadlineExpiredError to the preview automation host-error union.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Integrated the parent's available-area calculation, including edge gaps and the nonnegative bottom inset.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Integrated the parent's aspect-ratio-preserving mini-player fitting logic, including minimum dimensions, source-size limits, tight-container constraints, and rounded output dimensions.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Integrated the parent's default-width calculation based on the 320-by-320 default box and source aspect ratio, supporting the downstream frame and resize logic.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Integrated the parent's current-user/reviewer UI dependency through UserCheckIcon.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Integrated the parent's PullRequestStackPopover dependency for pull-request stack presentation.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Restored statsKey and statsRef support for the list's shared visibility observer and its deferred optional line-count reads.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Adopted the parent's PullRequestRowTarget callback contract, retaining only the identity fields selection consumers require.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Adopted the parent comment-command payload refactor by spreading the canonical pull-request reference instead of reconstructing it from detail fields.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Passed the new `reference` prop to `CommentComposer`.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Derived the composer identity from the normalized pull-request reference, including `projectId`, `host`, `repository`, and pull-request number, preventing collisions across hosts.
+- `apps/web/src/components/pullRequest/pullRequestReviewStore.ts` — Included optional reference.host (lowercased) and lowercased repository in the review key so the same repo path and number on different hosts stay separate.
+- `apps/web/src/components/pullRequest/pullRequestReviewStore.ts` — Typed the reference argument as PullRequestRef so the optional host field is part of the key input.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Integrated parent test coverage requiring all five conditional window-capture search results—accessibility data, shortcut, sound, flash, and animations—to target the stable snap-shot-enabled toggle row.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the parent `diff-color-scheme` settings-search destination, including its Diff colors title and color/diff/colorblind search terms.
+- `apps/web/src/components/ui/button.tsx` — Integrated the upstream fix that prevents buttons with aria-haspopup, such as popup/menu triggers, from receiving the active scale transform.
+- `apps/web/src/composerDraftStore.ts` — Integrated the parent SnapShotSource import used by the adjacent snapshot-source schema validator.
+- `apps/web/src/composerDraftStore.ts` — Updated ComposerDraftStore.addImage to return boolean, allowing callers to observe whether an image was accepted.
+- `apps/web/src/environments/primary/auth.ts` — Migrated PrimaryEnvironmentPairingCredentialRequiredError from Schema.TaggedErrorClass to Schema.TaggedError as introduced by the parent nightly.
+- `apps/web/src/environments/primary/auth.ts` — Applied the same compatible Schema.TaggedError API migration to T3 Pretty's adjacent desktop bootstrap timeout class.
+- `apps/web/src/index.css` — Integrated the Electron 44 fix that resets inherited app-region behavior on direct drag-region children while allowing explicit drag/no-drag rules to retain precedence through the base cascade layer.
+- `apps/web/src/index.css` — Added the parent’s `snap-shot-contents-enter` keyframes for a one-shot opacity fade when switching expanded capture preview content between screenshot and extracted text.
+- `apps/web/src/lib/openPullRequestLink.ts` — Change-request parsing for all non-Origin providers now delegates to the parent's centralized @t3tools/shared/changeRequestUrl implementation, incorporating its provider support, validation, fixes, and future-compatible refactor.
+- `apps/web/src/lib/openPullRequestLink.ts` — GitHub browser fallback URL construction and GitHub reference-autolink conversion are exported directly from the parent shared implementation.
+- `apps/web/src/lib/openPullRequestLink.ts` — Non-Origin linked-pull-request matching and repository-root derivation delegate to the parent shared helpers.
+- `apps/web/src/previewMiniPlayerStore.ts` — Adopted the parent mini-player state model that stores a single width instead of a width-and-height size object.
+- `apps/web/src/previewMiniPlayerStore.ts` — Adopted the parent resize API and implementation using a numeric width, including its combined stale-tab and unchanged-width guard.
+- `apps/web/src/previewMiniPlayerStore.ts` — Adapted T3 Pretty's open helper to carry forward current.width when switching tabs.
+- `apps/web/src/routeTree.gen.ts` — Integrated the parent Snap Shot settings page at `/settings/snap-shot`, including its generated import and Settings child-route registration.
+- `apps/web/src/routeTree.gen.ts` — The parent `/settings/snap-shot` route is added alongside `/settings/skills` in FileRoutesByFullPath, FileRoutesByTo, and FileRoutesById.
+- `apps/web/src/routeTree.gen.ts` — Integrated the parent `/settings/snap-shot` route into the generated `fullPaths`, `to`, and `id` unions, matching its existing route-map declarations.
+- `apps/web/src/routeTree.gen.ts` — Integrated the parent `/settings/snap-shot` route registration and its `SettingsSnapShotRouteImport` typing.
+- `apps/web/src/routeTree.gen.ts` — Integrated the parent `SettingsSnapShotRoute` into both the generated `SettingsRouteChildren` interface and the corresponding child-route object.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Integrated the parent behavior that clears pending sidebar file drops after bootstrap determines that the target thread is missing, including when no alternate thread exists for redirect.
+- `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` — Reused the parent's route-state criteria—server shell/detail/status and draft existence—to ensure cleanup only occurs for a definitively missing thread.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Added the parent's `refreshFromHost` flow, including capturing the requested stats scope before asynchronous work.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Invalidates every environment queried by the page in parallel before rereading list and stats data.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Tracks invalidation from its start through completion so the refresh control remains disabled during the full host-cache invalidation phase.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Retains the parent's follow-up detail refresh through the shared `detailRefreshToken` update.
+- `apps/web/src/state/query.ts` — Added `isSuccess`, using the upstream `result._tag === "Success"` behavior required by `EnvironmentQueryView`.
+- `apps/web/src/uiStateStore.test.ts` — Added the parent UiState fixture default for pullRequestMergeMethod using the upstream default value "merge".
+- `apps/web/src/uiStateStore.test.ts` — Integrated parent test coverage requiring pullRequestMergeMethod to persist with the default value "merge".
+- `apps/web/src/uiStateStore.ts` — Added persistence support for the parent pullRequestMergeMethod preference.
+- `apps/web/src/uiStateStore.ts` — Added the typed UiPullRequestState slice using PullRequestMergeMethod and composed it into UiState.
+- `apps/web/src/uiStateStore.ts` — Initialized the pull-request merge method to the parent's "merge" default.
+- `apps/web/src/uiStateStore.ts` — Integrated the parent's pullRequestMergeMethod restoration with validation and fallback to the initial merge method.
+- `apps/web/src/uiStateStore.ts` — Integrated persistence of pullRequestMergeMethod in local storage.
+- `docs/README.md` — Added the parent SnapShots user-documentation link at ./user/snap-shot.md.
+- `docs/internals/glossary.md` — Added the parent's first-party pull-request glossary section defining pull request links, pull request synchronization, and current pull request selection semantics.
+- `docs/internals/glossary.md` — Added Pull requests to the expanded glossary's table of contents and placed the new section adjacent to thread timeline concepts.
+- `docs/internals/overview.md` — Integrated environment-capability negotiation for multi-link, legacy single-link, and no-linking client behavior across independently upgraded web, desktop, mobile, and server environments.
+- `docs/internals/overview.md` — Integrated legacy pull-request linking compatibility requirements, including continued legacy capability advertisement, metadata commands, derived repository-scoped `linkedPullRequest`, wire fields, projection data, and replay support.
+- `docs/internals/overview.md` — Integrated compatibility for snapshots without `pullRequests`, cross-host/cross-repository multi-link constraints, and clearing cached multi-link data after an environment downgrade.
+- `docs/user/keybindings.md` — Documented `thread.stop`, which interrupts the running turn in the focused thread, has no default shortcut, and can be assigned in Settings → Keybindings.
+- `docs/user/source-control.md` — Added documentation for linking multiple pull requests to a thread, including cross-repository reviews on the same host.
+- `docs/user/source-control.md` — Added command-palette, panel, conversation-link, Git-action, agent-tool, branch-badge, and review-to-thread linking workflows.
+- `docs/user/source-control.md` — Added thread backlink, stack-count badge, mobile linked-review overview, and web/desktop unlinking behavior.
+- `docs/user/source-control.md` — Added linked-review grouping, stack-layer unlink persistence, refresh behavior, and the rule that open or unsynced links keep a thread active.
+- `docs/user/source-control.md` — Added cross-repository and Azure DevOps project requirements.
+- `docs/user/source-control.md` — Added GitHub stack navigation, Merge stack behavior, merge-queue and branch-rule handling, and post-merge rebasing.
+- `docs/user/source-control.md` — Added Rebase stack behavior, failure handling, history/check implications, and conflict caveats.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Adopted the parent's extracted makeAggregateState implementation from agentActivityAggregate.ts.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Re-exported makeAggregateState and TERMINAL_AGENT_ACTIVITY_DISPLAY_TTL_MS through AgentActivityPublisher as introduced upstream.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Removed the obsolete RelayAgentActivityAggregateState and effect/Option imports after adopting the extracted aggregate module.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Adopted the parent's refactor that moves aggregate construction and terminal display TTL ownership into `agentActivityAggregate.ts`.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — The parent aggregate builder remains authoritative for expiration filtering, terminal-state retention, row selection and limits, timestamps, sanitization, titles/subtitles, and null/end-card behavior.
+- `infra/relay/src/agentActivity/AgentActivityPublisher.ts` — Kept the parent module's exported `TERMINAL_AGENT_ACTIVITY_DISPLAY_TTL_MS` rather than retaining a duplicate local definition.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Accepted the parent's removal of the local alert-policy and alert-copy implementations in favor of its first-party notification helpers.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Avoided shadowing the parent's updated `newlyTerminalRows` implementation, which is used immediately below with the new third argument for unthrottled completion detection.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Allowed the parent notification path based on `shouldAlertForActivity` and `notificationForActivity` to remain authoritative rather than retaining duplicate fork-local notification logic.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Suppress Live Activity alerts when processing replayed aggregate publications, preventing old completions from notifying users again.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — Pass `includeUnobserved: true` when evaluating newly terminal activities so compatible unobserved terminal transitions can alert.
+- `infra/relay/src/agentActivity/agentActivityPayloads.ts` — Integrated the parent's notificationForActivity helper, which sanitizes the aggregate row, constructs notification title/body and routing metadata, and sanitizes the final APNs notification payload.
+- `infra/relay/src/auth/DpopProofs.ts` — Migrated DpopProofReplayPersistenceError from Schema.TaggedErrorClass to the parent's Schema.TaggedError API, consistent with the existing DpopProofRejected declaration.
+- `infra/relay/src/db.ts` — Adopted the parent PlanetScale API change from separate `migrationsDir` and `migrationsTable` fields to the structured `migrations: { dir, table }` option.
+- `infra/relay/src/worker.ts` — Restored the upstream Option, Redacted, and Stream imports required by the merged FCM delivery queue consumer.
+- `packages/client-runtime/package.json` — Added the parent `./state/provider-instance-display` package export, including its type and default entry points.
+- `packages/client-runtime/src/connection/model.ts` — Migrated ConnectionTransientError from Schema.TaggedErrorClass to the parent's Schema.TaggedError API, consistent with ConnectionBlockedError.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Integrated the PullRequestStack contract type required by upstream pull-request stack tests.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Integrated createPullRequestStackAtomFamily alongside the existing environment atom and fork TTL imports.
+- `packages/contracts/src/environment.ts` — Clarified that `threadPullRequestLinking` represents legacy `linkedPullRequest` metadata updates and is independent of the newer thread pull-request capability.
+- `packages/contracts/src/environment.ts` — Added `threadPullRequests` capability detection for native link/unlink commands, thread pull-request collections, and same-host cross-project routing.
+- `packages/contracts/src/environment.ts` — Added `pullRequestStackActions` capability detection.
+- `packages/contracts/src/ipc.ts` — Integrated the optional `onSnapShotEvent` desktop bridge subscription for receiving `DesktopSnapShotEvent` notifications.
+- `packages/contracts/src/orchestration.ts` — Integrated the parent’s pull-request actor, checks state, mergeability, review decision, and state contract imports.
+- `packages/contracts/src/orchestration.ts` — Documentation clarifying that ThreadLinkedPullRequest is the legacy single-PR compatibility shape derived for clients predating the pullRequests collection.
+- `packages/contracts/src/previewAutomation.ts` — Replaced the fork-only McpCapabilityUnavailableError alias with the parent's first-party tagged-error implementation and dedicated McpCapabilityUnavailableError wire tag.
+- `packages/contracts/src/previewAutomation.ts` — Integrated the generic capability schema so current and future MCP capabilities share one native parent implementation.
+- `packages/contracts/src/previewAutomation.ts` — Integrated the McpCapabilityErrorFields spread refactor for both preview-specific and generic MCP capability errors.
+- `packages/contracts/src/previewAutomation.ts` — Restored PreviewAutomationUnavailableError to the parent's preview-specific schema while generalized and canvas call sites use McpCapabilityUnavailableError.
+- `packages/contracts/src/relay.test.ts` — Added parent coverage enforcing Android API level 24 as the minimum while allowing newer Android API levels without an upper bound.
+- `packages/contracts/src/relay.test.ts` — Added parent coverage accepting Android push registrations and legacy iOS 18 registrations.
+- `packages/contracts/src/relay.test.ts` — Added parent coverage requiring platform-specific version fields and rejecting Apple Live Activity routing tokens on Android devices.
+- `packages/contracts/src/relay.ts` — Relay agent-awareness platforms now support both iOS and Android.
+- `packages/contracts/src/relay.ts` — iOS major version is optional in registration requests, allowing Android registrations while the existing platform filter still requires it for iOS.
+- `packages/contracts/src/relay.ts` — Android registration requests support an optional API level constrained to API 24 or newer, with the existing platform filter requiring it for Android.
+- `packages/contracts/src/relay.ts` — Stored client device records support nullable iOS major versions and optional nullable Android API-level metadata.
+- `packages/contracts/src/settings.ts` — Added the parent PullRequestMergeMethod import for upstream pull-request settings behavior.
+- `packages/effect-acp/src/errors.ts` — Migrated AcpInputStreamEndedError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `packages/effect-acp/src/errors.ts` — Migrated AcpRequestError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `packages/effect-acp/src/errors.ts` — Applied the same upstream tagged-error API migration to the adjacent fork-only AcpWireLineTooLargeError and AcpOutputStreamEndedError for consistency and compatibility.
+- `packages/effect-acp/src/protocol.ts` — Integrated the parent's clarified documentation that encoding a Request without `isNotification` emits an ID and can cause strict agents such as Grok CLI to reject `session/cancel`.
+- `packages/effect-codex-app-server/src/errors.ts` — Migrated CodexAppServerIdentifierGenerationError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `packages/effect-codex-app-server/src/errors.ts` — Migrated CodexAppServerRequestError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `packages/effect-codex-app-server/src/errors.ts` — Applied the same parent error-constructor API migration to the adjacent T3 Pretty-only wire-line and output-stream errors for consistency and compatibility.
+- `packages/shared/src/git.test.ts` — Integrated the parent parseOriginUrlFromGitConfig import required by the new git-config origin URL parsing tests.
+- `packages/shared/src/git.ts` — Added parsing of remote URLs directly from raw `.git/config` text without spawning Git.
+- `packages/shared/src/git.ts` — Integrated handling for quoted values, backslash escapes, inline comments, continued lines, standard and dotted remote section forms, and optional section comments.
+- `packages/shared/src/git.ts` — Integrated upstream's preference for `remote.origin.url` with fallback to the first configured remote for clones created with a custom origin name.
+- `packages/shared/src/git.ts` — The generalized URL parser preserves upstream's broadened acceptance of GitHub SSH URLs without an explicit `git@` username.
+- `packages/shared/src/sourceControl.test.ts` — Integrated the parent `sourceControlRepositorySelector` import required by the new upstream source-control repository-selection tests.
+- `packages/shared/src/sourceControl.ts` — Added the parent RepositoryIdentity contract type import alongside the existing source-control provider types.
+- `patches/@legendapp__list@3.3.5.patch` — Initial rendering now starts the inset-end settle watchdog for native end targets and keeps the opacity gate closed until the landing is stable.
+- `patches/@legendapp__list@3.3.5.patch` — Leading native content inset adjustments are included in align-at-end padding, scroll clamping, maintain-at-end behavior, MVCP clamp calculations, and end targeting.
+- `patches/@legendapp__list@3.3.5.patch` — Content-size animation epochs and eligibility are tracked so Reanimated size components can animate, without pausing maintainScrollAtEnd.
+- `patches/@legendapp__list@3.3.5.patch` — Fallback end-scroll retries preserve animation intent and avoid redispatching while an animated end scroll is still active.
+- `patches/@legendapp__list@3.3.5.patch` — MVCP adjustments timestamp their changes so size-component animation logic does not animate already-compensated row repositioning.
+- `patches/@legendapp__list@3.3.5.patch` — Settlement is now measured from state.lastNativeScroll rather than optimistic state.scroll, so a non-animated scroll request is not considered landed before UIKit reports it.
+- `patches/@legendapp__list@3.3.5.patch` — The end target itself must remain stable across frames before the initial reveal advances.
+- `patches/@legendapp__list@3.3.5.patch` — Missing native offsets and in-flight programmatic scrolling no longer falsely accumulate stable reveal frames; the existing bounded watchdog remains responsible for preventing indefinite hiding.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated sizeComponentInternal support for the containers layer and align-items-at-end spacer, including signal-driven sizing and removal of conflicting explicit width or height.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated composition of internal and consumer momentum-begin and scroll-end-drag handlers on native platforms.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated the iOS maintainVisibleContentPosition safeguard that keeps native anchoring active and avoids stale-anchor jumps involving the sentinel offset.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated getIsAtEnd at its correct source location and in the imperative state snapshot, instead of a displaced fragment.
+- `patches/@legendapp__list@3.3.5.patch` — Extracted, filtered, and propagated sizeComponentInternal through LegendListInner and list state.
+- `patches/@legendapp__list@3.3.5.patch` — Added contentInsetStartAdjustment to the relevant dependency list so inset changes trigger the required recalculation.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated complete upstream scroll lifecycle tracking: momentum is cleared on momentum end, set on momentum begin, user dragging is set on drag begin, and cleared on drag end.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated upstream keyboard composer animationDuration and adjustedStartInsetCompensation without dropping Pretty's heightAdjustment / static inset / blank-space compensation.
+- `patches/@legendapp__list@3.3.5.patch` — Integrated ReanimatedSizeView and size-component layout-transition gating from the nightly patch.
+- `patches/@legendapp__list@3.3.5.patch` — The upstream two-phase reveal stability flow and adaptive-render transition are retained around the Pretty-specific inset behavior.
+- `scripts/build-desktop-artifact.test.ts` — Added the parent GNOME extension directory and its contents to the expected app.asar exclusions, preventing separately handled GNOME extension files from being packed into the archive.
+- `scripts/build-desktop-artifact.test.ts` — Retained the parent's `differentialPackage: true` NSIS packaging expectation.
+- `scripts/build-desktop-artifact.test.ts` — Retained the parent coverage immediately following the conflict for excluding Claude SDK platform packages, `.bin` shims, source maps, source trees, declarations, and documentation from the Windows server archive.
+- `scripts/build-desktop-artifact.ts` — Excluded apps/desktop/gnome-extension and all of its contents from the Electron app.asar file set, matching the parent nightly's packaging update.
+- `scripts/build-desktop-artifact.ts` — Integrated stageLinuxCaptureHelper for both KDE and Hyprland capture backends.
+- `scripts/build-desktop-artifact.ts` — Integrated T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS support, including validation that a cached helper binary exists.
+- `scripts/build-desktop-artifact.ts` — Integrated staging of Linux capture executables with executable permissions and inclusion of Hyprland protocol files carrying required distribution notices.
+- `scripts/build-desktop-artifact.ts` — Added the parent's NSScreenCaptureUsageDescription for the active-window capture shortcut to all macOS build flavors.
+- `scripts/resolve-previous-release-tag.ts` — Migrated PreviousReleaseTagGitHubOutputConfigError from Schema.TaggedErrorClass to Schema.TaggedError.
+- `scripts/resolve-previous-release-tag.ts` — Applied the same current Schema.TaggedError API to the fork-only ReleaseTagListOutputTooLargeError so the preserved safeguard remains compatible with the parent refactor.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/OpenCodeServerOwner.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/server/src/textGeneration/OpenCodeTextGeneration.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/desktop/package.json` — Retaining playwright-core 1.60.0 in dependencies.. Reason: T3 Pretty intentionally removed it from production dependencies; it remains present at the same version in devDependencies, avoiding a duplicate production declaration without losing development tooling.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — The parent's silver/gray background, gradient, highlight, and foreground color palette.. Reason: Those colors would replace T3 Pretty's authoritative cream and World Scenery sage theme; the upstream geometry and gradient behavior are retained with fork colors.
+- `apps/desktop/resources/dmg/dmg-background-latest.svg` — The literal “T3 Code” product name and standalone parent-mark presentation.. Reason: T3 Pretty branding is authoritative, so the official upstream T3 glyph is retained but paired with the PRETTY lockup and T3 Pretty installation text.
+- `apps/desktop/resources/dmg/dmg-background-nightly.svg` — The literal T3 Code product name in the redesigned drag instruction.. Reason: T3 Pretty branding is authoritative for the fork; only the product name was changed, while the upstream wording, typography, placement, and behavior were retained.
+- `apps/desktop/src/app/DesktopEarlyElectronStartup.ts` — Use com.t3tools.T3Code desktop-entry names for every build flavor.. Reason: Applying the parent identity to public builds would regress T3 Pretty branding and compiled-flavor isolation. The parent names remain in use for internal builds; only the public flavor is mapped to the corresponding T3 Pretty desktop entries.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Parent-specific Linux desktop identity expectations t3code.desktop and com.t3tools.T3Code.desktop.. Reason: Those identifiers would regress the fork's T3 Pretty desktop identity, so the equivalent T3 Pretty identifiers are asserted instead.
+- `apps/desktop/src/app/DesktopPreReadyPlatform.test.ts` — Parent-visible desktop-entry name Name=T3 Code (Alpha).. Reason: The parent product name is replaced with the authoritative T3 Pretty branding while preserving the upstream name-field coverage.
+- `apps/desktop/src/main.ts` — Use DesktopUpdates.layer in desktopApplicationLayer.. Reason: T3 Pretty intentionally uses DesktopUpdates.liveLayer for its fork-specific updater and release infrastructure. Using the parent's generic layer would regress that authoritative behavior and cannot be combined with the live layer without duplicating the updater service.
+- `apps/desktop/src/preview/PlaywrightInjectedRuntime.ts` — The parent keeps the Node-based runtime extraction implementation and migrates its seven extraction/encoding error classes from Schema.TaggedErrorClass to Schema.TaggedError.. Reason: T3 Pretty intentionally removed that entire runtime extraction path in favor of a build-generated source module. Restoring it solely to apply the error-class API migration would reintroduce Node filesystem/module/path/VM work and runtime evaluation of the large Playwright bundle, regressing the fork's authoritative desktop preview efficiency change. Since those error classes no longer exist in the active architecture, there is no compatible live usage to migrate.
+- `apps/desktop/src/settings/DesktopAppSettings.ts` — Make DEFAULT_TAILSCALE_SERVE_PORT module-private.. Reason: This conflicts with T3 Pretty's authoritative exported desktop settings API; export visibility and module-private visibility cannot coexist.
+- `apps/desktop/src/window/DesktopWindow.ts` — Render context menus with electronMenu.popupTemplate, including its native frame option and unconditional native editing-role template.. Reason: This would directly regress T3 Pretty's authoritative in-app glass context-menu design. Equivalent actions are retained through the fork menu, with the originating WebContents focused and targeted directly.
+- `apps/desktop/src/window/DesktopWindow.ts` — Recursively install the context-menu handler on BrowserWindow children created by did-create-window.. Reason: A child page is not guaranteed to host T3 Pretty's renderer-side glass-menu IPC listener. Installing the fork handler there would prevent the context-menu event and could leave the child with no visible menu; falling back to the parent's native menu would regress the fork's deliberate no-native-menu presentation.
+- `apps/mobile/app.config.ts` — Use the parent's shared `androidAdaptiveForeground` artwork for preview and production builds.. Reason: That artwork would replace the fork-specific T3 Pretty Android mark and regress mobile branding.
+- `apps/mobile/app.config.ts` — Use the parent's `#111533` preview adaptive-icon background and `#000000` production background.. Reason: Those colors conflict with T3 Pretty's deliberate pastel sage Android icon plate.
+- `apps/mobile/app.config.ts` — Enable `./assets/android-icon-background-nightly.png` as the preview adaptive-icon background image.. Reason: The parent's full-bleed nightly artwork would supersede T3 Pretty's sage adaptive background and alter the fork's visual identity.
+- `apps/mobile/app.config.ts` — Use `./assets/android-splash-icon-nightly.png` and `./assets/android-splash-icon-prod.png` for Android splash screens.. Reason: Those parent-generated variant assets are replaced with the corresponding fork-owned T3 Pretty brand PNGs while retaining the new Android-specific splash configuration.
+- `apps/mobile/app.config.ts` — Hard-code the mobile app version as 1.1.1.. Reason: T3 Pretty intentionally derives the mobile version from its own release train and supports a fork-specific environment override; replacing that mechanism would regress fork release and changelog identity.
+- `apps/mobile/app.config.ts` — Use the parent EAS update URL https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454 and enable it by default when no fork endpoint is configured.. Reason: The fork explicitly maintains a separate OTA trust boundary. Using the parent endpoint could deliver parent JavaScript to T3 Pretty binaries that share a compatible runtime fingerprint, so updates must remain disabled without a fork-owned URL.
+- `apps/mobile/app.config.ts` — Hard-code the parent T3 Tools Apple team ARK85ZXQ4Z.. Reason: T3 Pretty must sign with its own configured team and support local account selection; pinning the parent team's identifier would break fork release signing and local provisioning.
+- `apps/mobile/app.config.ts` — Enable Associated Domains unconditionally, including for personal-team builds.. Reason: Personal Apple teams cannot provision the required entitlement. T3 Pretty's reduced-capability personal build deliberately disables Associated Domains while full-team builds retain the upstream behavior.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Remove the local isDarkMode calculation entirely.. Reason: T3 Pretty's custom token-styled anchored menu retains this fork-specific theme signal for its visual presentation; removing it would risk regressing Pretty menu theming.
+- `apps/mobile/src/components/GlassSurface.tsx` — Direct import and use path for expo-glass-effect's isGlassEffectAPIAvailable startup probe.. Reason: T3 Pretty deliberately replaced that direct probe with NATIVE_LIQUID_GLASS_SUPPORTED to guard Liquid Glass capability detection during startup; restoring the parent probe would regress the fork's mobile startup safeguard.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — The parent side retains memo/useId and react-native-svg gradient-preview imports.. Reason: T3 Pretty removed the corresponding parent gradient-preview implementation as part of its authoritative custom theme and World Scenery UI. Restoring these imports would leave obsolete dependencies and would not restore compatible behavior at this conflict boundary.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Restore the legacy SVG PreviewOrb and ThemeCard implementation at this location.. Reason: T3 Pretty intentionally removed this UI in favor of its current mode-centric, scoped-theme preview design. Restoring it would regress the fork's authoritative appearance UI and require obsolete imports/types.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Use Android Material You system palettes for colors in the legacy PreviewOrb.. Reason: The improvement is coupled exclusively to PreviewOrb, which no longer exists in T3 Pretty's appearance UI. The surviving ModePreview already renders through AppearancePreferencesProvider's appearance-specific scoped variables, so reintroducing the obsolete orb solely for this behavior would not be coherent.
+- `apps/mobile/src/features/settings/appearance/sections/ThemeAppearanceSection.tsx` — Restore the legacy Themes grid and filter its Material You option according to systemColorsAvailable.. Reason: T3 Pretty intentionally replaced that grid with its fork-specific Photo Themes/Boring personalization design. There is no Material You theme card in the retained interface to filter, so reintroducing the grid solely to apply this parent change would regress the fork's authoritative mobile appearance UX.
+- `apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx` — Add `paddingBottom: insets.bottom` to the sidebar wrapper in both Material You and standard layouts.. Reason: T3 Pretty already applies bottom-safe-area spacing in the LegendList content container, including Android-specific navigation clearance. Applying the inset again at the wrapper would double-count it, shrink the scroll viewport, and regress the fork's mobile layout.
+- `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx` — The parent's retained `useNewTaskFlow` import.. Reason: OURS intentionally removed this legacy hook dependency as part of T3 Pretty's settings-sheet flow, and no corresponding usage remains at this conflict boundary.
+- `apps/mobile/src/lib/mobileTheme.ts` — Display the default mobile theme option with the parent label “T3 Code.”. Reason: Replaced only the parent branding with the authoritative T3 Pretty identity.
+- `apps/mobile/src/lib/mobileTheme.ts` — Display the t3-chat built-in palette using its upstream label.. Reason: T3 Pretty intentionally presents that palette as “Boring,” as documented by the fork code.
+- `apps/mobile/src/lib/mobileTheme.ts` — Use STANDARD_THEME_PREVIEW_COLORS for DEFAULT_MOBILE_THEME_ID.. Reason: That parent-side behavior would replace T3 Pretty’s fork-specific default preview palette and regress its World Scenery/default mobile theming. Only this conflicting part of the combined upstream condition is omitted.
+- `apps/mobile/src/state/use-thread-outbox-drain.ts` — Use the filtered useThreadShells hook for outbox draining.. Reason: That would regress T3 Pretty automation behavior because automation-run threads may be hidden from normal lists while still containing queued replies that must drain. The smallest compatible adaptation retains useAllThreadShells while adding the new parent creation-outcome state.
+- `apps/server/src/mcp/McpHttpServer.test.ts` — Using `snapshotResult` completely verbatim, including its `accessibilityTree` field.. Reason: The fork specifically hardened MCP screen information to expose an object schema with a `nodes` array. Overriding only this field preserves that T3 Pretty contract while retaining every other field from the parent's shared fixture.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Automatically grant pull-requests to every issued MCP credential, including requests that do not ask for built-in tools.. Reason: This conflicts with T3 Pretty's authoritative least-privilege behavior: omitted capabilities must default to no built-in tools, and native tools must be scoped only to capable provider sessions. The pull-requests capability is integrated when explicitly requested instead.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Add the required `preview` boolean credential-request API for browser-driving authorization.. Reason: T3 Pretty already uses the more general `McpCapability` set for per-tool authorization. Reintroducing a parallel browser-only flag would create conflicting authorization sources and weaken the fork's capability-based session model.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Treat the pull-request toolkit as always granted for every issued credential.. Reason: This directly conflicts with T3 Pretty's intentional default-to-no-tools policy and its requirement that native tools be available only to capable sessions.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Automatically grant the pull-requests capability to every issued MCP credential.. Reason: This conflicts with T3 Pretty's authoritative security behavior that credentials default to no tools and native tools are available only to explicitly capable sessions.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Derive preview capability from request.preview and return preview as a boolean in the issued configuration.. Reason: T3 Pretty has replaced that narrower API with explicit capability sets and capability-filtered built-in server configuration; restoring the boolean path would regress the fork's generalized session-scoping architecture.
+- `apps/server/src/persistence/Migrations.ts` — Register `ProjectionThreadPullRequests` at manifest ID 50 exactly as in the parent.. Reason: T3 Pretty has already shipped a different migration at ID 50. Reusing that ID would collide with persisted migration history and could cause either the fork migration or the parent migration to be skipped. The complete parent migration is integrated at ID 61 instead.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Use any configured MCP server as evidence that browser tools are available.. Reason: T3 Pretty supports distinct browser and computer MCP servers; generic matching would allow an unrelated or computer-only MCP server to incorrectly enable browser-tool instructions. The parent prerequisite was therefore adapted to the fork's named-server architecture.
+- `apps/server/src/provider/providerSnapshot.ts` — Upstream removal of detailFromResult and extractAuthBoolean.. Reason: The helpers remain part of T3 Pretty’s provider reliability behavior, and the fork has specifically hardened authentication parsing against cycles and unbounded traversal. Removing them would discard authoritative fork functionality; no first-party replacement is present in this conflict.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Reject a hostless reference when its recorded repository differs from the selected project's current repository.. Reason: That rejection would regress T3 Pretty's deliberate support for pull requests recorded before a project's remote changed. Hostless references remain safe because the stale client repository is ignored and the current selected checkout is used instead.
+- `apps/server/src/usage/usageScanCache.ts` — Make USAGE_SCAN_CACHE_VERSION module-private by removing its export.. Reason: T3 Pretty exposes this constant for fork-side compatibility and test observability; retaining the export does not alter the parent's version-3 cache behavior.
+- `apps/web/src/components/GitActionsControl.tsx` — Silently suppress errors from openLink when opening the published repository.. Reason: This would regress T3 Pretty's established reliability behavior; the fork surfaces a descriptive error toast while retaining the parent's result-step structure.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Allowing `ServerUpdateAction` callers to pass the `variant` member inherited from `UpdateButtonProps`.. Reason: T3 Pretty intentionally removed this prop, and the component always renders the single-server action with `variant="outline"`; accepting an ignored variant would weaken that fork-specific visual/API contract.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The parent's literal unconditional `min-h-3` class on the expanded-items container.. Reason: T3 Pretty already supplies the same collapsed-stack interaction area with its absolute focusable `h-3` cap. Applying `min-h-3` to the fork's zero-row grid would instead reserve an additional blank layout row and regress the fork's composer presentation.
+- `apps/web/src/components/chat/ComposerBannerStack.tsx` — The parent's ref/state-based pointer-enter, pointer-leave, blur, and Escape handlers shown in the conflict hunk.. Reason: T3 Pretty intentionally replaced that stateful expansion architecture with group-hover/group-focus-within CSS behavior and a focusable cap; the associated `noticesRef`, `peekRef`, `pendingFocusRef`, and `stackExpanded` state are no longer present. Retaining these handlers would be incoherent and fail typechecking.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.test.ts` — Remove the clampPreviewMiniPlayerSize import from this test file.. Reason: T3 Pretty retains mini-player size clamping behavior and associated test coverage; removing the helper import would conflict with the fork's authoritative preview behavior.
+- `apps/web/src/routes/_chat.pull-requests.tsx` — Filter explicit stats refresh targets to `actedEnvironmentId` when an environment-specific action triggers the refresh.. Reason: T3 Pretty's authoritative implementation uses the state-managed, no-argument `statsQuery.refresh()` path instead of the parent's explicit target-list refresh API. Reintroducing that API would overwrite the fork's current stats-query architecture; the fork continues to refresh all currently targeted visible stats, which is behaviorally correct but may perform extra work.
+- `docs/user/source-control.md` — The optional **Auto-settle merged threads** behavior that settles a thread once every linked review is terminal.. Reason: This directly conflicts with T3 Pretty's authoritative lifecycle behavior, documented immediately above and supported by fork history, that a merged pull request remains active until the user explicitly settles its thread. Only the conflicting auto-settlement sentence was omitted.
+- `infra/relay/src/agentActivity/ApnsDeliveries.ts` — The blanket deletion of the entire conflicted block, including T3 Pretty's `aggregateShapeChanged` addition.. Reason: That function is a fork-only reliability safeguard used to select urgent APNs priority for material Live Activity shape transitions. The parent hunk replaces the alert helpers, but the supplied conflict does not establish a parent replacement for this shape/priority classifier, so deleting it would risk regressing recent T3 Pretty Live Activity behavior.
+- `infra/relay/src/db.ts` — Increase the shared relay database cluster size to PS_20.. Reason: This would regress T3 Pretty's deliberate PS_5 downsizing for a single-user relay deployment.
+- `infra/relay/src/db.ts` — Provision two PlanetScale replicas for the shared relay database.. Reason: This would regress T3 Pretty's deliberate replica-free configuration and increase unnecessary infrastructure cost.
+- `infra/relay/src/environments/EnvironmentLinks.ts` — Retain the generic operation-based EnvironmentLinkUserListPersistenceError message.. Reason: The error schema has no operation field, and the fork intentionally gives this narrowed delivery-user operation an accurate, type-coherent message.
+- `infra/relay/src/environments/EnvironmentLinks.ts` — Migrate EnvironmentPublicKeyListPersistenceError from Schema.TaggedErrorClass to Schema.TaggedError.. Reason: The fork removed this obsolete error type together with the separate public-key-list persistence path. Reintroducing it solely to apply the parent refactor would restore dead API surface without contributing to the current key-constrained delivery-user query.
+- `packages/contracts/src/relay.ts` — Use only a minimum bound for iOS major versions in registration requests and stored device records.. Reason: T3 Pretty already hardens this externally supplied metadata with RELAY_IOS_MAJOR_VERSION_MAX; removing that upper bound would regress fork safeguards. Upstream's Android-compatible optional/nullability changes were retained.
+- `packages/contracts/src/relay.ts` — Validate appVersion as an unrestricted TrimmedNonEmptyString.. Reason: T3 Pretty intentionally validates app versions as bounded AuthIdentifier values through RelayAppVersion; adopting the less restrictive parent schema would regress fork contract hardening.
+- `patches/@legendapp__list@3.3.5.patch` — Limit corrective re-pinning to native gaps no larger than half the viewport.. Reason: That limit would regress T3 Pretty's iOS bottom-on-open fix: bottom-aligned underflow and late footer or measurement changes can leave a larger initial gap that must still be corrected before the user takes over.
+- `patches/@legendapp__list@3.3.5.patch` — The parent patch's early return from doMaintainScrollAtEnd while contentSizeAnimationActiveEpoch is set, including clearing pendingMaintainScrollAtEnd.. Reason: OURS intentionally excludes this guard to keep iOS message threads pinned to the true bottom during content-size animation. Reintroducing it can discard the required end-maintenance request and regress the fork's recent bottom-pinning fixes.
+- `patches/@legendapp__list@3.3.5.patch` — Make unavailable viewport metrics contribute no reveal-stability progress until the maximum hold-frame cap releases the gate.. Reason: T3 Pretty explicitly advances reveal stability for idle lists with unavailable metrics so a wedged initial measurement cannot keep messages blank. Upstream's stricter wait is retained when viewport metrics are valid but the native scroll offset has not yet arrived.
+- `scripts/build-desktop-artifact.test.ts` — Parent expectation that `win.nsis` contains only `differentialPackage: true`.. Reason: That expectation would reject T3 Pretty's release safeguard `runAfterFinish: false` and regress fork-specific desktop release behavior.
+- `scripts/build-desktop-artifact.test.ts` — Parent removal of the `WINDOWS_SERVER_ASAR_UNPACK_GLOB` assertion and its native-binary packaging explanation.. Reason: T3 Pretty still relies on this test safeguard to ensure native libraries and helper executables remain loadable outside the Windows server asar; removing it would weaken fork-specific Windows runtime protection.
+- `.github/workflows/ci.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/deploy-relay.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+- `.github/workflows/release.yml` — parent workflow changes were omitted. Reason: T3 Pretty keeps its trusted sync, signing, release, and security boundary fork-owned
+
+## Completed content-hash overlays
+
+- `apps/mobile/src/state/pending-thread-creation.ts` — applied a completed cache entry keyed by the current file contents
+- `packages/contracts/src/preview.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/desktop/src/updates/DesktopUpdates.ts` — applied a completed cache entry keyed by the current file contents
+- `infra/relay/src/agentActivity/AgentActivityPublisher.test.ts` — applied a completed cache entry keyed by the current file contents
+- `packages/contracts/src/project.ts` — applied a completed cache entry keyed by the current file contents
+- `infra/relay/src/environments/EnvironmentCredentials.ts` — applied a completed cache entry keyed by the current file contents
+- `infra/relay/src/deploymentConfig.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/mobile/src/features/threads/QuestionAttachments.tsx` — applied a completed cache entry keyed by the current file contents
+- `infra/relay/src/agentActivity/FcmDeliveries.test.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/desktop/src/backend/DesktopLocalEnvironmentAuth.test.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/desktop/src/preview/Manager.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/desktop/src/app/DesktopLifecycle.test.ts` — applied a completed cache entry keyed by the current file contents
+- `infra/relay/src/agentActivity/ApnsClient.ts` — applied a completed cache entry keyed by the current file contents
+- `apps/desktop/src/app/DesktopPreReadyPlatform.ts` — applied a completed cache entry keyed by the current file contents

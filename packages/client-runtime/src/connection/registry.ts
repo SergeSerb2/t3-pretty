@@ -40,7 +40,7 @@ import * as ConnectionWakeups from "./wakeups.ts";
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
 const ENVIRONMENT_REGISTRY_CONCURRENCY = 8;
 
-export class EnvironmentNotRegisteredError extends Schema.TaggedErrorClass<EnvironmentNotRegisteredError>()(
+export class EnvironmentNotRegisteredError extends Schema.TaggedError<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
   {
     environmentId: EnvironmentId,
@@ -51,7 +51,7 @@ export class EnvironmentNotRegisteredError extends Schema.TaggedErrorClass<Envir
   }
 }
 
-export class PlatformEnvironmentRemovalError extends Schema.TaggedErrorClass<PlatformEnvironmentRemovalError>()(
+export class PlatformEnvironmentRemovalError extends Schema.TaggedError<PlatformEnvironmentRemovalError>()(
   "PlatformEnvironmentRemovalError",
   {
     environmentId: EnvironmentId,

@@ -39,7 +39,7 @@ const connectUnavailableCommand = Command.make("connect", {
   Command.withDescription(
     `${SURGE_CONNECT_NAME} is unavailable in builds without public configuration.`,
   ),
-  Command.withHidden,
+  Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(
       new CliError.ShowHelp({

@@ -31,7 +31,7 @@ export const readHashParams = (url: URL): URLSearchParams => {
   return new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
 };
 
-export class RemoteBackendUrlMissingError extends Schema.TaggedErrorClass<RemoteBackendUrlMissingError>()(
+export class RemoteBackendUrlMissingError extends Schema.TaggedError<RemoteBackendUrlMissingError>()(
   "RemoteBackendUrlMissingError",
   {},
 ) {
@@ -40,7 +40,7 @@ export class RemoteBackendUrlMissingError extends Schema.TaggedErrorClass<Remote
   }
 }
 
-export class RemotePairingUrlInvalidError extends Schema.TaggedErrorClass<RemotePairingUrlInvalidError>()(
+export class RemotePairingUrlInvalidError extends Schema.TaggedError<RemotePairingUrlInvalidError>()(
   "RemotePairingUrlInvalidError",
   {
     cause: Schema.optional(Schema.Defect()),
@@ -52,7 +52,7 @@ export class RemotePairingUrlInvalidError extends Schema.TaggedErrorClass<Remote
   }
 }
 
-export class RemoteBackendUrlInvalidError extends Schema.TaggedErrorClass<RemoteBackendUrlInvalidError>()(
+export class RemoteBackendUrlInvalidError extends Schema.TaggedError<RemoteBackendUrlInvalidError>()(
   "RemoteBackendUrlInvalidError",
   {
     source: Schema.Literals(["direct-host", "hosted-pairing-host"]),
@@ -65,7 +65,7 @@ export class RemoteBackendUrlInvalidError extends Schema.TaggedErrorClass<Remote
   }
 }
 
-export class RemotePairingTokenMissingError extends Schema.TaggedErrorClass<RemotePairingTokenMissingError>()(
+export class RemotePairingTokenMissingError extends Schema.TaggedError<RemotePairingTokenMissingError>()(
   "RemotePairingTokenMissingError",
   { host: Schema.String },
 ) {
@@ -74,7 +74,7 @@ export class RemotePairingTokenMissingError extends Schema.TaggedErrorClass<Remo
   }
 }
 
-export class RemotePairingCodeMissingError extends Schema.TaggedErrorClass<RemotePairingCodeMissingError>()(
+export class RemotePairingCodeMissingError extends Schema.TaggedError<RemotePairingCodeMissingError>()(
   "RemotePairingCodeMissingError",
   { host: Schema.String },
 ) {

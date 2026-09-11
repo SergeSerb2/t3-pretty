@@ -39,7 +39,7 @@ import {
 } from "./ResourceTelemetryHistory.ts";
 import { subscribeBeforeSnapshot } from "../utils/subscribeBeforeSnapshot.ts";
 
-export class ResourceTelemetryRefreshFailed extends Schema.TaggedErrorClass<ResourceTelemetryRefreshFailed>()(
+export class ResourceTelemetryRefreshFailed extends Schema.TaggedError<ResourceTelemetryRefreshFailed>()(
   "ResourceTelemetryRefreshFailed",
   {
     operation: Schema.String,
@@ -166,6 +166,7 @@ function buildHealth(input: {
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(function* () {
   const nativeClient = yield* NativeTelemetryClient.NativeTelemetryClient;
   const desktopReceiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;

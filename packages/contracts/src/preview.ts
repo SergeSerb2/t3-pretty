@@ -355,7 +355,7 @@ export const DiscoveredLocalServerList = Schema.Struct({
 });
 export type DiscoveredLocalServerList = typeof DiscoveredLocalServerList.Type;
 
-export class PreviewSessionLookupError extends Schema.TaggedErrorClass<PreviewSessionLookupError>()(
+export class PreviewSessionLookupError extends Schema.TaggedError<PreviewSessionLookupError>()(
   "PreviewSessionLookupError",
   {
     threadId: PreviewThreadId,
@@ -367,7 +367,7 @@ export class PreviewSessionLookupError extends Schema.TaggedErrorClass<PreviewSe
   }
 }
 
-export class PreviewInvalidUrlError extends Schema.TaggedErrorClass<PreviewInvalidUrlError>()(
+export class PreviewInvalidUrlError extends Schema.TaggedError<PreviewInvalidUrlError>()(
   "PreviewInvalidUrlError",
   {
     inputLength: Schema.Number,
@@ -382,7 +382,7 @@ export class PreviewInvalidUrlError extends Schema.TaggedErrorClass<PreviewInval
   }
 }
 
-export class PreviewSessionLimitError extends Schema.TaggedErrorClass<PreviewSessionLimitError>()(
+export class PreviewSessionLimitError extends Schema.TaggedError<PreviewSessionLimitError>()(
   "PreviewSessionLimitError",
   {
     scope: Schema.Literals(["thread", "server"]),

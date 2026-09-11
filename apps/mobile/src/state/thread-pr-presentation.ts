@@ -1,15 +1,26 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  ExecutionEnvironmentCapabilities,
+  ThreadPullRequestLink,
+  VcsStatusResult,
+} from "@t3tools/contracts";
 import {
   resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
   type AutomatedReviewPresentation,
 } from "@t3tools/shared/sourceControl";
 
+import {
+  resolveThreadCurrentPullRequestLink,
+  resolveThreadPullRequestBadge,
+} from "@t3tools/shared/threadPullRequests";
+
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 
 export interface ThreadPrPresentation {
   readonly number: number;
-  readonly state: ThreadPr["state"];
+  readonly state: ThreadPr["state"] | null;
+  readonly kind: "pull-request" | "stack";
   readonly isDraft: boolean;
   /** Provider-side last activity, bounding when a terminal state landed. */
   readonly updatedAt: string | null;
@@ -45,6 +56,7 @@ export function presentThreadPr(
       : null;
   const automatedReviewLabel = automatedReview !== null ? `, ${automatedReview.label}` : "";
   return {
+    kind: "pull-request",
     number: pr.number,
     state: pr.state,
     isDraft,
@@ -55,4 +67,55 @@ export function presentThreadPr(
     textClassName: isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[pr.state],
     automatedReview: automatedReviewWithState,
   };
+}
+
+/** Persisted links render immediately, including links awaiting their first host sync. */
+export function presentThreadLinkedPullRequests(
+  links: ReadonlyArray<ThreadPullRequestLink>,
+): ThreadPrPresentation | null {
+  const link = resolveThreadCurrentPullRequestLink(links);
+  const badge = resolveThreadPullRequestBadge(links);
+  if (link === null || badge === null) return null;
+  const snapshot = link.snapshot;
+  const state = badge.kind === "stack" ? badge.state : (snapshot?.state ?? null);
+  const isDraft = snapshot?.isDraft === true && state === "open";
+  const label =
+    badge.kind === "stack"
+      ? String(badge.layers)
+      : `${link.number}${badge.others > 0 ? ` +${badge.others}` : ""}`;
+  return {
+    kind: badge.kind,
+    number: link.number,
+    state,
+    isDraft,
+    updatedAt: snapshot?.updatedAt ?? null,
+    url: link.url,
+    label,
+    accessibilityLabel:
+      badge.kind === "stack"
+        ? `${badge.layers} pull requests in stack, ${state ?? "status pending"}`
+        : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}${badge.others > 0 ? `, ${badge.others} more linked` : ""}`,
+    textClassName: state === null || isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[state],
+    automatedReview: null,
+  };
+}
+
+/** Only the array capability replaces legacy references with persisted snapshots. */
+export function resolveThreadPrSource(
+  thread: Pick<EnvironmentThreadShell, "pullRequests" | "linkedPullRequest" | "branchPullRequest">,
+  capabilities:
+    | Pick<ExecutionEnvironmentCapabilities, "threadPullRequests" | "threadPullRequestLinking">
+    | undefined,
+) {
+  const supportsSnapshots = capabilities?.threadPullRequests === true;
+  const linkedPresentation = supportsSnapshots
+    ? presentThreadLinkedPullRequests(thread.pullRequests)
+    : null;
+  const pullRequestRef =
+    linkedPresentation !== null
+      ? null
+      : ((supportsSnapshots
+          ? thread.branchPullRequest
+          : (thread.linkedPullRequest ?? thread.branchPullRequest)) ?? null);
+  return { linkedPresentation, pullRequestRef };
 }

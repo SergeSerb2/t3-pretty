@@ -353,7 +353,7 @@ export const AuthAccessStreamPairingLinkRemovedEvent = Schema.Struct({
 export type AuthAccessStreamPairingLinkRemovedEvent =
   typeof AuthAccessStreamPairingLinkRemovedEvent.Type;
 
-export class AuthAccessStreamError extends Schema.TaggedErrorClass<AuthAccessStreamError>()(
+export class AuthAccessStreamError extends Schema.TaggedError<AuthAccessStreamError>()(
   "AuthAccessStreamError",
   {
     message: AuthErrorMessage,
@@ -365,7 +365,7 @@ export class AuthAccessStreamError extends Schema.TaggedErrorClass<AuthAccessStr
   }
 }
 
-export class EnvironmentAuthorizationError extends Schema.TaggedErrorClass<EnvironmentAuthorizationError>()(
+export class EnvironmentAuthorizationError extends Schema.TaggedError<EnvironmentAuthorizationError>()(
   "EnvironmentAuthorizationError",
   {
     message: AuthErrorMessage,

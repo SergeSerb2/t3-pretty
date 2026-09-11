@@ -8,6 +8,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 
 - [Project and workspace](#project-and-workspace)
 - [Thread timeline](#thread-timeline)
+- [Pull requests](#pull-requests)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
 - [Checkpointing](#checkpointing)
@@ -79,6 +80,14 @@ A short model-generated status line for the running turn, published as a `turn.h
 #### Search index
 
 The plain-table inverted index behind `orchestration.searchThreads`: `search_index_docs` / `search_index_terms` / `search_index_postings` (migration 049), maintained by the `projection.search-index` projector in [ProjectionPipeline.ts][11] and read with BM25 ranking in `apps/server/src/search/ThreadSearch.ts`. It indexes user messages (visible text only, auto-PR instruction block stripped) and canonical assistant messages (turn-final `assistant_message_id` rows), and drops those entries when a thread is archived, deleted, or reverted, or when its project is deleted. Plain tables because the production SQLite driver (`node:sqlite`) ships without FTS5; query semantics are AND of content tokens (stopwords and truncated common terms rank without filtering) with prefix matching on the final query token.
+
+### Pull requests
+
+| Term                 | Meaning                                                                                                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request link    | A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.                        |
+| Pull request sync    | The reactor that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.               |
+| Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update. |
 
 ### Orchestration
 

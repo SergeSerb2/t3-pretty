@@ -26,6 +26,7 @@ import { flattenMenuActions } from "./anchored-menu.logic";
 import { type AppSymbolName, SymbolView } from "./AppSymbol";
 import { AppText as Text } from "./AppText";
 import { OverlayPortal } from "./OverlayPortal";
+import { GlassBackdrop } from "./GlassBackdrop";
 
 const MENU_WIDTH = 268;
 const MENU_RADIUS = 16;
@@ -385,14 +386,18 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
           </View>
         ) : (
           <>
-            <BlurView
-              blurMethod={Platform.OS === "android" ? "dimezisBlurView" : undefined}
-              blurTarget={Platform.OS === "android" ? appBlurTargetRef : undefined}
-              intensity={Platform.OS === "ios" ? 50 : 40}
-              tint={isDarkMode ? "dark" : "light"}
-              className="absolute inset-0"
-            />
-            <View className="absolute inset-0 bg-card-translucent" />
+            {Platform.OS === "android" ? (
+              <GlassBackdrop blurTarget={appBlurTargetRef} />
+            ) : (
+              <>
+                <BlurView
+                  intensity={50}
+                  tint={isDarkMode ? "dark" : "light"}
+                  className="absolute inset-0"
+                />
+                <View className="absolute inset-0 bg-card-translucent" />
+              </>
+            )}
             {menuBody}
           </>
         )}

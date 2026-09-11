@@ -2,6 +2,10 @@ import {
   EnvironmentId,
   type PreviewAutomationHost,
   PreviewAutomationOperation,
+  PreviewAutomationRecordingTransferError,
+  PreviewAutomationRecordingDesktopUpdateRequiredError,
+  PreviewAutomationRecordingTooLargeError,
+  PreviewAutomationRecordingDeadlineExpiredError,
   type PreviewAutomationRequest,
   type PreviewAutomationResponse,
   PreviewTabId,
@@ -18,7 +22,7 @@ export interface PreviewAutomationOperationContext {
   readonly tabId: Exclude<PreviewAutomationRequest["tabId"], undefined> | null;
 }
 
-export class PreviewAutomationRequestTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationRequestTimeoutError>()(
+export class PreviewAutomationRequestTimeoutError extends Schema.TaggedError<PreviewAutomationRequestTimeoutError>()(
   "PreviewAutomationRequestTimeoutError",
   {
     requestId: TrimmedNonEmptyString,
@@ -38,7 +42,7 @@ export class PreviewAutomationRequestTimeoutError extends Schema.TaggedErrorClas
   }
 }
 
-export class PreviewAutomationOverlayTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationOverlayTimeoutError>()(
+export class PreviewAutomationOverlayTimeoutError extends Schema.TaggedError<PreviewAutomationOverlayTimeoutError>()(
   "PreviewAutomationOverlayTimeoutError",
   {
     requestId: TrimmedNonEmptyString,
@@ -56,7 +60,7 @@ export class PreviewAutomationOverlayTimeoutError extends Schema.TaggedErrorClas
   }
 }
 
-export class PreviewAutomationNavigationTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationNavigationTimeoutError>()(
+export class PreviewAutomationNavigationTimeoutError extends Schema.TaggedError<PreviewAutomationNavigationTimeoutError>()(
   "PreviewAutomationNavigationTimeoutError",
   {
     requestId: TrimmedNonEmptyString,
@@ -76,7 +80,7 @@ export class PreviewAutomationNavigationTimeoutError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationViewportTimeoutError extends Schema.TaggedErrorClass<PreviewAutomationViewportTimeoutError>()(
+export class PreviewAutomationViewportTimeoutError extends Schema.TaggedError<PreviewAutomationViewportTimeoutError>()(
   "PreviewAutomationViewportTimeoutError",
   {
     requestId: TrimmedNonEmptyString,
@@ -95,7 +99,7 @@ export class PreviewAutomationViewportTimeoutError extends Schema.TaggedErrorCla
   }
 }
 
-export class PreviewAutomationTargetUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationTargetUnavailableError>()(
+export class PreviewAutomationTargetUnavailableError extends Schema.TaggedError<PreviewAutomationTargetUnavailableError>()(
   "PreviewAutomationTargetUnavailableError",
   {
     requestId: TrimmedNonEmptyString,
@@ -115,7 +119,7 @@ export class PreviewAutomationTargetUnavailableError extends Schema.TaggedErrorC
   }
 }
 
-export class PreviewAutomationRecordingNotActiveError extends Schema.TaggedErrorClass<PreviewAutomationRecordingNotActiveError>()(
+export class PreviewAutomationRecordingNotActiveError extends Schema.TaggedError<PreviewAutomationRecordingNotActiveError>()(
   "PreviewAutomationRecordingNotActiveError",
   {
     requestId: TrimmedNonEmptyString,
@@ -133,7 +137,7 @@ export class PreviewAutomationRecordingNotActiveError extends Schema.TaggedError
   }
 }
 
-export class PreviewAutomationTargetNotEditableHostError extends Schema.TaggedErrorClass<PreviewAutomationTargetNotEditableHostError>()(
+export class PreviewAutomationTargetNotEditableHostError extends Schema.TaggedError<PreviewAutomationTargetNotEditableHostError>()(
   "PreviewAutomationTargetNotEditableHostError",
   {
     requestId: TrimmedNonEmptyString,
@@ -188,7 +192,7 @@ const targetNotEditableDiagnostics = (
   };
 };
 
-export class PreviewAutomationOperationError extends Schema.TaggedErrorClass<PreviewAutomationOperationError>()(
+export class PreviewAutomationOperationError extends Schema.TaggedError<PreviewAutomationOperationError>()(
   "PreviewAutomationOperationError",
   {
     requestId: TrimmedNonEmptyString,
@@ -227,6 +231,10 @@ export class PreviewAutomationOperationError extends Schema.TaggedErrorClass<Pre
 
 export const PreviewAutomationHostError = Schema.Union([
   PreviewAutomationRequestTimeoutError,
+  PreviewAutomationRecordingTransferError,
+  PreviewAutomationRecordingDesktopUpdateRequiredError,
+  PreviewAutomationRecordingTooLargeError,
+  PreviewAutomationRecordingDeadlineExpiredError,
   PreviewAutomationOverlayTimeoutError,
   PreviewAutomationNavigationTimeoutError,
   PreviewAutomationViewportTimeoutError,
@@ -249,7 +257,7 @@ export function serializePreviewAutomationHostError(
     ),
   );
   return {
-    _tag: error.responseTag,
+    _tag: "responseTag" in error ? error.responseTag : error._tag,
     message: error.message,
     ...(Object.keys(detail).length === 0 ? {} : { detail }),
   };

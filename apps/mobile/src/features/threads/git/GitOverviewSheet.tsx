@@ -4,6 +4,10 @@ import {
   getGitActionDisabledReason,
   requiresDefaultBranchConfirmation,
 } from "@t3tools/client-runtime/state/vcs";
+import {
+  resolveThreadPullRequestChains,
+  threadPullRequestKeyOf,
+} from "@t3tools/shared/threadPullRequests";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { resolveAutomatedReviewPresentation } from "@t3tools/shared/sourceControl";
 import {
@@ -14,7 +18,7 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../../components/AppSymbol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 
 import { Screen, ScreenStack, ScreenStackHeaderConfig } from "react-native-screens";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +28,7 @@ import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
 import { AppText as Text } from "../../../components/AppText";
 import { nativeHeaderScrollEdgeEffects } from "../../../native/StackHeader";
 import { useOpenNativePullRequest } from "../../pull-requests/useOpenNativePullRequest";
+import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import { useEnvironmentQuery } from "../../../state/query";
 import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
@@ -53,8 +58,17 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   const loadInitialState = !isInspector || inspectorVisible;
   const environmentId = EnvironmentId.make(props.route.params.environmentId);
   const threadId = ThreadId.make(props.route.params.threadId);
-  const { selectedThread } = useThreadSelection();
+  const { selectedThread, selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
+  const supportsLinkedPrSnapshots =
+    selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.threadPullRequests === true;
+  const linkedPrChains = useMemo(
+    () =>
+      resolveThreadPullRequestChains(
+        supportsLinkedPrSnapshots ? (selectedThread?.pullRequests ?? []) : [],
+      ),
+    [selectedThread?.pullRequests, supportsLinkedPrSnapshots],
+  );
   const gitState = useSelectedThreadGitState({ loadInitialState });
   const gitActions = useSelectedThreadGitActions({ loadInitialState });
   const actionPendingRef = useRef(false);
@@ -67,7 +81,6 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
       mountedRef.current = false;
     };
   }, []);
-
   const theme = useUniwindTheme();
   const foregroundColor = theme["--color-foreground"];
   const sheetColor = theme["--color-sheet"];
@@ -305,6 +318,50 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
           }
         />
       </View>
+
+      {linkedPrChains.length > 0 ? (
+        <View className="gap-2">
+          <Text className="px-1 text-xs font-t3-bold text-foreground-muted">
+            Linked pull requests
+          </Text>
+          {linkedPrChains.map((chain) => (
+            <View
+              key={threadPullRequestKeyOf(chain.layers[0]!)}
+              className="overflow-hidden rounded-2xl border border-border bg-card px-3 py-1"
+            >
+              {chain.layers.length > 1 ? (
+                <View className="flex-row items-center gap-2 px-1 pt-2 pb-1">
+                  <SymbolView
+                    name="square.3.layers.3d"
+                    size={14}
+                    tintColorClassName="accent-foreground-muted"
+                  />
+                  <Text className="text-xs text-foreground-muted">
+                    {chain.kind === "native" ? "Stack" : "Branch stack"} · {chain.layers.length} PRs
+                    · bottom to top
+                  </Text>
+                </View>
+              ) : null}
+              {chain.layers.map((link, index) => (
+                <View key={threadPullRequestKeyOf(link)}>
+                  {index > 0 ? <View className="ml-12 h-px bg-border" /> : null}
+                  <SheetListRow
+                    icon="arrow.triangle.pull"
+                    title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
+                    subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}`}
+                    onPress={() => {
+                      void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
+                        if (!opened)
+                          Alert.alert("Unable to open PR", "The pull request could not be opened.");
+                      });
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {currentWorktreePath ? <MetaCard label="Worktree" value={currentWorktreePath} /> : null}
     </ScrollView>

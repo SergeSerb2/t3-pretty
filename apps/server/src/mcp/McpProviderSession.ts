@@ -18,7 +18,7 @@ export function builtInMcpServers(
   capabilities: ReadonlySet<McpCapability>,
 ): ReadonlyArray<McpProviderSessionServer> {
   return [
-    ...(capabilities.has("preview") ? [{ name: T3_CODE_MCP_SERVER_NAME, url: endpoint }] : []),
+    { name: T3_CODE_MCP_SERVER_NAME, url: endpoint },
     ...(capabilities.has("computer-use")
       ? [{ name: T3_CODE_COMPUTER_MCP_SERVER_NAME, url: `${endpoint}/computer-use` }]
       : []),
@@ -37,11 +37,13 @@ export interface McpProviderSessionConfig {
   readonly endpoint: string;
   readonly authorizationHeader: string;
   readonly capabilities: ReadonlySet<McpCapability>;
+  /** Whether the credential grants the preview (browser) toolkit; the pull request toolkit always is. */
+  readonly preview: boolean;
   /**
-   * Every server to attach, in order: capability-specific built-in servers,
-   * then each attachable app behind the `/mcp/apps/<id>` proxy. Adapters map
-   * this list into their own config dialect and never consult `endpoint`
-   * directly.
+   * Every server to attach, in order: the built-in `t3-code` server, other
+   * capability-specific built-in servers, then each attachable app behind the
+   * `/mcp/apps/<id>` proxy. Adapters map this list into their own config dialect
+   * and never consult `endpoint` directly.
    */
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
 }

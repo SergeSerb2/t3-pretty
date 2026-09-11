@@ -136,7 +136,7 @@ const DesktopSettingsWriteOperation = Schema.Literals([
 ]);
 type DesktopSettingsWriteOperation = typeof DesktopSettingsWriteOperation.Type;
 
-export class DesktopSettingsWriteError extends Schema.TaggedErrorClass<DesktopSettingsWriteError>()(
+export class DesktopSettingsWriteError extends Schema.TaggedError<DesktopSettingsWriteError>()(
   "DesktopSettingsWriteError",
   {
     operation: DesktopSettingsWriteOperation,
@@ -454,6 +454,7 @@ const writeSettings = Effect.fn("desktop.settings.writeSettings")(function* (inp
   }).pipe(Effect.ensuring(input.fileSystem.remove(tempPath, { force: true }).pipe(Effect.ignore)));
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;

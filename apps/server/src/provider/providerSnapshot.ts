@@ -56,7 +56,7 @@ export interface CommandResult {
   readonly code: number;
 }
 
-export class ProviderCommandNotFoundError extends Schema.TaggedErrorClass<ProviderCommandNotFoundError>()(
+export class ProviderCommandNotFoundError extends Schema.TaggedError<ProviderCommandNotFoundError>()(
   "ProviderCommandNotFoundError",
   {
     binaryPath: Schema.String,
@@ -85,6 +85,7 @@ export interface ServerProviderPresentation {
   readonly displayName: string;
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
+  readonly reportsContextWindow?: boolean;
   readonly requiresNewThreadForModelChange?: boolean;
   readonly supportsNativeResume?: boolean;
 }
@@ -375,6 +376,9 @@ export function buildServerProvider(input: {
       : {}),
     ...(typeof input.presentation.showInteractionModeToggle === "boolean"
       ? { showInteractionModeToggle: input.presentation.showInteractionModeToggle }
+      : {}),
+    ...(typeof input.presentation.reportsContextWindow === "boolean"
+      ? { reportsContextWindow: input.presentation.reportsContextWindow }
       : {}),
     ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
       ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }

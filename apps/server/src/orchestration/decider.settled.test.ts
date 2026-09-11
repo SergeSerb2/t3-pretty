@@ -62,6 +62,7 @@ function makeReadModel(
         ...(branchEventId ? { branchEventId } : {}),
         worktreePath: null,
         enabledSkillIds: [],
+        pullRequests: [],
         latestTurn: null,
         createdAt: NOW,
         updatedAt: NOW,

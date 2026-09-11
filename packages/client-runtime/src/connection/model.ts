@@ -110,7 +110,7 @@ const boundedConnectionErrorFields = (props: {
     : { traceId: props.traceId.slice(0, CONNECTION_ERROR_TRACE_ID_MAX_LENGTH) }),
 });
 
-export class ConnectionTransientError extends Schema.TaggedErrorClass<ConnectionTransientError>()(
+export class ConnectionTransientError extends Schema.TaggedError<ConnectionTransientError>()(
   "ConnectionTransientError",
   {
     reason: ConnectionTransientReason,
@@ -132,7 +132,7 @@ export class ConnectionTransientError extends Schema.TaggedErrorClass<Connection
   }
 }
 
-export class ConnectionBlockedError extends Schema.TaggedErrorClass<ConnectionBlockedError>()(
+export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlockedError>()(
   "ConnectionBlockedError",
   {
     reason: ConnectionBlockedReason,

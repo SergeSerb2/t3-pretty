@@ -706,6 +706,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       ),
     supportsAck: true,
     supportsTransferables: false,
+    codecFor: parserFactory.codecFor,
   });
 
   const serverProtocol = RpcServer.Protocol.of({
@@ -721,9 +722,14 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     initialMessage: Effect.succeedNone,
     supportsAck: true,
     supportsTransferables: false,
+    codecFor: parserFactory.codecFor,
     supportsSpanPropagation: true,
+    supportsNotifications: true,
   });
 
+  // JSON-RPC notifications carry no `id`. Encoding a Request without `isNotification`
+  // emits an `id`, which real agents (Grok CLI) parse as a malformed request and silently drop.
+  // That made `session/cancel` a no-op against Grok while the lenient mock agent accepted it.
   const sendNotification = Effect.fn("sendNotification")(function* (
     method: string,
     payload: unknown,

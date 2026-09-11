@@ -184,7 +184,9 @@ describe("DesktopLocalEnvironmentAuth", () => {
         Layer.provide(
           Layer.mergeAll(
             makePoolLayer({
-              waitForReady: new BackendReadyLatchError({ message: "ready latch failed" }),
+              waitForReady: Effect.fail(
+                new BackendReadyLatchError({ message: "ready latch failed" }),
+              ),
             }),
             httpClientLayer,
           ),

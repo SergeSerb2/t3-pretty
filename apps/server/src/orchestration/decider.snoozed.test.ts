@@ -43,6 +43,7 @@ function makeReadModel(input: {
         branch: null,
         worktreePath: null,
         enabledSkillIds: [],
+        pullRequests: [],
         latestTurn: null,
         createdAt: NOW,
         updatedAt: NOW,

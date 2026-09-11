@@ -9,7 +9,6 @@
 import {
   PULL_REQUEST_REVIEW_MAX_COMMENTS,
   type EnvironmentId,
-  type ProjectId,
   type PullRequestRef,
   type PullRequestReviewCommentDraft,
 } from "@t3tools/contracts";
@@ -30,7 +29,7 @@ export function nextPendingReviewCommentId(): string {
   return `pending-review-comment-${pendingCommentSequence}`;
 }
 
-/** One pull request's transient state, scoped to the exact environment and checkout tuple. */
+/** One pull request's transient state, scoped to the exact environment, host, and checkout tuple. */
 export function pullRequestReviewKey(
   environmentId: EnvironmentId,
   reference: PullRequestRef,
@@ -38,7 +37,8 @@ export function pullRequestReviewKey(
   return JSON.stringify([
     environmentId,
     reference.projectId,
-    reference.repository,
+    reference.host?.toLowerCase() ?? null,
+    reference.repository.toLowerCase(),
     reference.number,
   ]);
 }
@@ -103,11 +103,7 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
 /** The comments a pull request's draft holds, stable across renders while it is empty. */
 export function usePendingReviewComments(
   environmentId: EnvironmentId,
-  reference: {
-    readonly projectId: ProjectId;
-    readonly repository: string;
-    readonly number: number;
-  },
+  reference: PullRequestRef,
 ): ReadonlyArray<PendingReviewComment> {
   return usePullRequestReviewStore(
     (store) => store.drafts[pullRequestReviewKey(environmentId, reference)] ?? EMPTY,

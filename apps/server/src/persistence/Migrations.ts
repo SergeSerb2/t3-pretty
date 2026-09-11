@@ -72,6 +72,7 @@ import Migration0057 from "./Migrations/047_DeleteSupersededToolUpdatedActivitie
 import Migration0058 from "./Migrations/048_ProjectionThreadsSubagentPolicy.ts";
 import Migration0059 from "./Migrations/049_SearchIndex.ts";
 import Migration0060 from "./Migrations/050_Automations.ts";
+import Migration0061 from "./Migrations/050_ProjectionThreadPullRequests.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -83,7 +84,7 @@ import Migration0060 from "./Migrations/050_Automations.ts";
  * Uses Migrator.fromRecord which parses the key format and
  * returns migrations sorted by ID.
  */
-export const migrationEntries = [
+const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
   [3, "CheckpointDiffBlobs", Migration0003],
@@ -134,7 +135,8 @@ export const migrationEntries = [
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
   [50, "EnsureProjectionThreadBranchPullRequest", Migration0050],
-  // Keep shipped fork slots stable; these upstream migrations collided with 41-50.
+  // Keep shipped T3 Pretty slots stable; source migrations whose numeric prefixes
+  // collide with occupied slots are assigned the next available manifest IDs.
   [51, "OrchestrationEventRecordedAt", Migration0051],
   [52, "ProjectionThreadBranchHeads", Migration0052],
   [53, "ProjectionThreadsScenery", Migration0053],
@@ -145,11 +147,12 @@ export const migrationEntries = [
   [58, "ProjectionThreadsSubagentPolicy", Migration0058],
   [59, "SearchIndex", Migration0059],
   [60, "Automations", Migration0060],
+  [61, "ProjectionThreadPullRequests", Migration0061],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
-export const makeMigrationLoader = (throughId?: number) =>
+const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
       migrationEntries
