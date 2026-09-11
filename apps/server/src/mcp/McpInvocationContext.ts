@@ -10,11 +10,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability =
-  | "automations"
-  | "computer-use"
-  | "preview"
-  | "pull-requests";
+export type McpCapability = "automations" | "computer-use" | "device" | "preview" | "pull-requests";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -78,8 +74,7 @@ export function requireMcpCapability<E>(
   }).pipe(Effect.withSpan("mcp.requireCapability"));
 }
 
-export const requirePreviewCapability = () =>
-  requireMcpCapability("preview");
+export const requirePreviewCapability = () => requireMcpCapability("preview");
 
 export const requireComputerUseCapability = () =>
   requireMcpCapability(

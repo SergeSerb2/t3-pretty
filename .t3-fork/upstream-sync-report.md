@@ -2335,3 +2335,124 @@
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260910.1507`; repaired with `gpt-5.6-sol`: Fix the mobile typecheck by supplying the pending shell’s required enabledSkillIds field from the supported empty fallback rather than reading a nonexistent queue property.
   - edited `apps/mobile/src/state/pending-thread-creation.ts`
   - omitted parent change: Forward enabledSkillIds from the queued thread message into the pending shell.. Reason: The mobile QueuedThreadMessage contract has no enabledSkillIds field. The parent shell API is retained with its existing empty-list fallback, without inventing an unsupported queue property.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260911.1520`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260910.1507`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — T3 Pretty's mobile markdown behavior remains owned by the shared SelectableMarkdownText.tsx and renamed native renderer modules rather than being stranded in an iOS-only file that would shadow the shared implementation.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Removing the platform-specific override preserves the intended iOS/Android renderer parity; fork-specific link long-press actions, code-highlighting controls, context menus, image rendering, soft-break handling, and layout safeguards belong at that shared replacement boundary.
+- `apps/mobile/src/features/files/thread-file-navigator-pane.tsx` — Mobile file-search queries remain normalized and capped through limitMobileSearchQuery and MOBILE_TEXT_SEARCH_QUERY_MAX_LENGTH, preserving the fork's cross-surface reliability safeguard.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — The settings-sheet open callback continues to depend on and invoke the fork's focus-restoration schedule and opening-frame cleanup safeguards.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — Each fired focus-restoration timer clears its tracked handle, preserving reliable cleanup across dismissal, unmounting, Strict Mode, and Fast Refresh.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — Dismissing the sheet still cancels any pending opening animation frame so stale callbacks cannot make a dismissed sheet visible.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Preserved the required `automatedReview` field on linked pull-request presentations, explicitly setting it to `null` where persisted link snapshots do not provide an automated-review signal.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Preserved T3 Pretty's automated-review/Codex review status presentation type compatibility.
+- `apps/server/src/mcp/McpHttpServer.ts` — Capability-aware MCP authentication through mcpAuthMiddlewareLive(capability).
+- `apps/server/src/mcp/McpHttpServer.ts` — The preview/default MCP surface remains scoped to the preview capability at /mcp.
+- `apps/server/src/mcp/McpHttpServer.ts` — Native computer-use tools remain isolated behind the computer-use capability at /mcp/computer-use.
+- `apps/server/src/mcp/McpHttpServer.ts` — Fork-only automations remain available through their dedicated automations capability and /mcp/automations endpoint.
+- `apps/server/src/mcp/McpHttpServer.ts` — The final server layer continues to merge preview, computer-use, and automations MCP servers rather than regressing to a single unscoped transport.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the fork-only "automations" MCP capability used to authorize automation management.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the fork-only "computer-use" MCP capability and its existing computer-control authorization behavior.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Preserved the existing preview and pull-request capability identifiers.
+- `apps/server/src/mcp/McpProviderSession.ts` — The typed capability-based gating for T3 Pretty's preview and native computer-use toolkits remains intact.
+- `apps/server/src/mcp/McpProviderSession.ts` — The ordered provider server list remains authoritative, including capability-specific built-in servers and remotely attached apps through `/mcp/apps/&lt;id&gt;`.
+- `apps/server/src/mcp/McpProviderSession.ts` — The legacy preview grant and browser-tool helper remain available for fork integrations.
+- `apps/server/src/mcp/McpProviderSession.ts` — T3 Pretty's computer-use and automations MCP server architecture is retained alongside the new, separately scoped upstream device capability.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Provider sessions store and resolve only the explicitly requested native-tool capabilities.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Omitting capabilities continues to grant no built-in tools and produces no MCP server entries.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Computer-use remains scoped to capable sessions and retains its dedicated MCP endpoint.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Preview, computer-use, and automations continue to attach separate capability-specific MCP servers.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Pull-request access remains explicitly requested rather than being silently granted to every provider session.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Preserved T3 Pretty's optional `capabilities` field so credentials issued without an explicit capability set continue to default to no tools.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Preserved capability-scoped native tool access rather than reverting to the legacy coarse `preview` flag.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — MCP credentials default to no tool capabilities when the caller does not explicitly request any.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Native tools, including pull-request tooling, remain restricted to sessions that explicitly declare the corresponding capability.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Issued provider configuration retains T3 Pretty's capability-filtered built-in MCP server list via McpProviderSession.builtInMcpServers(endpoint, capabilities).
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved generalized remote MCP launch arguments for every session server, including each server's dynamic name, URL, and shared bearer-token environment variable.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Preserved T3 Pretty's existing browser- and computer-tool availability handling outside the conflict.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved the `computerToolsAvailable` session option used to scope T3 Pretty native computer controls and prevent native-computer prompt instructions from appearing in incapable sessions.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved capability-gated preview/browser prompting through the parent's more general credential capability representation.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Browser developer instructions remain gated on the session explicitly attaching preview tools, with absent availability defaulting to false.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Native computer developer instructions remain independently gated on the session explicitly attaching native computer tools.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — The fork-specific computerToolsAvailable parameter continues to flow into Codex developer-instruction construction.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved T3 Pretty's per-session `browserToolsAvailable` override so browser instructions remain disabled when the session explicitly lacks browser support.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Preserved T3 Pretty's separate native computer-tool availability field, including scoping to `T3_CODE_COMPUTER_MCP_SERVER_NAME` and honoring `computerToolsAvailable`.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Preserved T3 Pretty's requested Grok reasoning-effort propagation into `makeGrokAcpRuntime`, including model-selection-derived startup effort.
+- `apps/web/src/components/RightPanelTabs.tsx` — Active right-panel tabs continue to expose `aria-current="true"` on their activation button for T3 Pretty accessibility behavior.
+- `apps/web/src/components/preview/PreviewEmptyState.tsx` — Preserved the bg-card surface for both preview discovery lists, maintaining T3 Pretty's frosted right-sidebar appearance under World Scenery.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Agent-controlled previews retain the emphasized primary ring and glow that distinguish active agent browser control.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The floating preview continues to render AgentBrowserCursor with the runtime tab, zoom factor, controller state, and cursor content.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The cursor remains clipped within the mini-player overlay.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Preserved T3 Pretty’s AgentComputerControlSetting and its enableComputerUse switch.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Preserved the macOS Screen Recording and Accessibility permission guidance, new-session applicability status, default reset action, and accessible control label.
+- `apps/web/src/components/settings/settingsSearch.ts` — Preserved the T3 Pretty “Agent computer control” settings-search entry, including its integrations route and `computer-control` target.
+- `apps/web/src/index.css` — Preserved the T3 Pretty `--topbar-scroll-fade-height` naming and its shared topbar scroll-fade contract, including the existing responsive height override.
+- `packages/contracts/src/index.ts` — Preserved the T3 Pretty dictation contract export used by host-routed voice input.
+- `packages/contracts/src/index.ts` — Preserved the T3 Pretty read-aloud contract export used for spoken final responses.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Accepted the parent deletion of SelectableMarkdownText.ios.tsx after its behavior moved into SelectableMarkdownText.tsx.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Accepted the parent refactor to suffix-free shared native renderer modules, including NativeMarkdownBlock.tsx and NativeMarkdownSelectableText.tsx.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — Prevented Metro's iOS platform resolution from selecting a stale wrapper instead of the new first-party shared renderer.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.ios.tsx` — followed the parent nightly's deletion of this file
+- `apps/mobile/src/features/files/thread-file-navigator-pane.tsx` — Added useAdaptiveWorkspaceLayout and obtained toggleAuxiliaryPane for the upstream native header's Close files action.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — The open callback now tracks `phase`, allowing a reopen during the restoring phase to preserve the correct later focus-restoration intent.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — Focus restoration now transitions the presentation phase to `closed` after observing restored editor focus or exhausted retries.
+- `apps/mobile/src/features/threads/use-thread-settings-sheet-presentation.ts` — Dismissal no longer sets `closed` before determining whether focus restoration is required, keeping the composer card expanded through the restoration handoff.
+- `apps/mobile/src/state/thread-pr-presentation.ts` — Integrated upstream behavior that renders multi-linked pull-request count badges (`linkedCount !== null`) using the muted text class, while retaining existing muted styling for pending and draft states.
+- `apps/server/src/mcp/McpHttpServer.ts` — Registered the upstream DeviceStandardToolkit with DeviceStandardToolkitHandlersLive.
+- `apps/server/src/mcp/McpHttpServer.ts` — Registered the upstream device_screenshot image tool with DeviceScreenshotToolkitHandlersLive.
+- `apps/server/src/mcp/McpHttpServer.ts` — Exported the merged DeviceToolkitRegistrationLive layer.
+- `apps/server/src/mcp/McpHttpServer.ts` — Added the complete upstream device toolkit to the default /mcp toolkit set alongside preview and pull-request tools, adapted to T3 Pretty's preview-capability transport.
+- `apps/server/src/mcp/McpInvocationContext.ts` — Added the parent nightly's new "device" MCP capability without replacing or weakening T3 Pretty's existing capabilities.
+- `apps/server/src/mcp/McpProviderSession.ts` — Added the parent `device` capability to the provider-session capability model.
+- `apps/server/src/mcp/McpProviderSession.ts` — Added optional `agentDeviceEnvironment` session configuration for securely exposing the parent `agent-device` CLI to provider subprocesses.
+- `apps/server/src/mcp/McpProviderSession.ts` — Integrated `withAgentDeviceEnvironment`, including passthrough when unset, device-variable overlay, configurable path separators, support for `PATH`/`Path`, and shim-directory prepending without exposing a token to the agent.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Added the parent test coverage for the new device capability and verifies that device access resolves independently when requested.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Retained the parent's set-based capability request API for preview and device access.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Retained the parent's `ReadonlySet&lt;McpInvocationContext.McpCapability&gt;` capability model in place of the legacy boolean `preview` permission.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Issued MCP configuration exposes the effective scoped capabilities through config.capabilities.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Explicitly requested upstream capabilities, including pull-requests, continue to flow into the invocation scope and provider configuration.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Integrated propagation of `mcpSession.capabilities` through `mcpCapabilities`.
+- `apps/server/src/provider/Layers/CodexAdapter.ts` — Retained the parent's bearer-token configuration intent, adapted from the static `t3-code` server name to T3 Pretty's multi-server MCP architecture.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Replaced the browser-specific `browserToolsAvailable` option with the parent's `mcpCapabilities` set, allowing prompt blocks to be driven by all capabilities granted to the session's `t3-code` MCP credential.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — browserToolsAvailable now accepts T3CodeToolAvailability in addition to boolean values in both collaboration-mode and turn-start inputs.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — Integrated the parent's `configuredMcpToolAvailability` helper and `mcpCapabilities` metadata for capability-aware browser-tool detection instead of relying only on the presence of a configured MCP server.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Integrated the parent environment handling that overlays an MCP session's agent-device environment onto an explicit provider environment, or onto `process.env` when no explicit environment is supplied.
+- `apps/server/src/provider/Layers/GrokAdapter.ts` — Preserved the parent's conditional behavior that omits the runtime environment option when neither an explicit environment nor an MCP agent-device environment is present.
+- `apps/web/src/components/RightPanelTabs.tsx` — Device tabs can be renamed by double-clicking their title when `onRenameDevice` is available.
+- `apps/web/src/components/RightPanelTabs.tsx` — The inline rename field focuses and selects its current value, commits on blur or Enter, restores the original title on Escape, and prevents rename keystrokes from propagating to the tab.
+- `apps/web/src/components/preview/PreviewEmptyState.tsx` — Adopted the parent's shared DiscoveryList component for both recently used URLs and discovered local servers, preserving the upstream UI refactor and list behavior.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preview overlay layers now inherit the mini-player section's configured corner radius rather than hard-coding rounded-xl, keeping them aligned with PREVIEW_MINI_PLAYER_CORNER_RADIUS.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Integrated the parent Devices settings section with primary-environment fallback and multi-environment selection, including offline status.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Integrated device hub setup, onboarding completion, pending/busy safeguards, and automatic agent-access disabling when the hub is turned off.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Integrated iOS and Android platform diagnostics, refresh behavior, agent device-access setup, host failure reporting, and device-host configuration.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the upstream “Device hosts” settings-search entry with SSH, remote host, simulator, emulator, and mobile-device search terms.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the upstream “Agent device access” entry targeting the integrations device section.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the upstream “Device hub” entry targeting the integrations device section.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the upstream “Simulator support” entry with Xcode, Android Studio, SDK, AVD, and runtime search terms.
+- `apps/web/src/index.css` — Integrated the parent's one-pixel extension of the leading fade mask for both `-webkit-mask-size` and `mask-size`, preventing a seam between the fade and opaque mask regions.
+- `packages/contracts/src/index.ts` — Added the parent nightly's device contract export.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/files/thread-file-navigator-pane.tsx` — The parent hunk's direct, unbounded useState setter for search queries.. Reason: Using it would bypass T3 Pretty's mobile query-length safeguard; the same search-state behavior is retained through the fork's bounded wrapper.
+- `apps/server/src/mcp/McpSessionRegistry.test.ts` — Automatically grant the pull-requests capability to every issued MCP session, including empty-capability and device-only requests.. Reason: This conflicts with T3 Pretty's authoritative security behavior that defaults credentials to no tools and scopes native tools to explicitly capable sessions. The device capability is integrated without the implicit pull-request grant.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Require every `McpCredentialRequest` caller to provide a `capabilities` property.. Reason: This conflicts with T3 Pretty's intentional credential behavior where omitted capabilities are valid and default to no tools; making the field mandatory would regress that fork API contract.
+- `apps/server/src/mcp/McpSessionRegistry.ts` — Automatically add the pull-requests capability to every issued MCP credential.. Reason: This conflicts with T3 Pretty's deliberate security behavior from its recent MCP fixes: credentials must default to no tools, and native tools must only be available to capable sessions. Pull-request support remains available when explicitly requested.
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — The upstream API comment/contract that browser tools default to available for legacy callers.. Reason: T3 Pretty intentionally scopes browser instructions to sessions that explicitly attach preview tools; defaulting availability to true would regress that capability boundary. The existing call path therefore continues to use `input.browserToolsAvailable ?? false`.
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Remove the unsupported DiscoveryList props while preserving T3 Pretty's bg-card styling through non-rendering wrappers. Both repeated list call sites retain the parent's shared DiscoveryList component.
+  - edited `apps/web/src/components/preview/PreviewEmptyState.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Thread `highlightCodeEnabled` through `SelectableMarkdownText` into `NativeMarkdownBlock`, preserving the fork's configurable code-highlighting behavior while satisfying the updated component API.
+  - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260911.1520`; repaired with `gpt-5.6-sol`: Normalize the optional highlightCodeEnabled prop to a boolean at the component boundary, satisfying NativeMarkdownBlock's required prop without regressing existing highlighting behavior.
+  - edited `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx`

@@ -13,9 +13,11 @@ export const T3_CODE_MCP_SERVER_NAME = "t3-code";
 export const T3_CODE_COMPUTER_MCP_SERVER_NAME = "t3-code-computer";
 export const T3_CODE_AUTOMATIONS_MCP_SERVER_NAME = "t3-code-automations";
 
+export type McpProviderSessionCapability = McpCapability | "device";
+
 export function builtInMcpServers(
   endpoint: string,
-  capabilities: ReadonlySet<McpCapability>,
+  capabilities: ReadonlySet<McpProviderSessionCapability>,
 ): ReadonlyArray<McpProviderSessionServer> {
   return [
     { name: T3_CODE_MCP_SERVER_NAME, url: endpoint },
@@ -36,7 +38,8 @@ export interface McpProviderSessionConfig {
   /** Base endpoint for built-in tool servers and app proxies. */
   readonly endpoint: string;
   readonly authorizationHeader: string;
-  readonly capabilities: ReadonlySet<McpCapability>;
+  /** Capabilities the credential grants, including MCP toolkits and parent device access. */
+  readonly capabilities: ReadonlySet<McpProviderSessionCapability>;
   /** Whether the credential grants the preview (browser) toolkit; the pull request toolkit always is. */
   readonly preview: boolean;
   /**
@@ -46,6 +49,12 @@ export interface McpProviderSessionConfig {
    * and never consult `endpoint` directly.
    */
   readonly servers: ReadonlyArray<McpProviderSessionServer>;
+  /**
+   * Set when the session may drive devices. Adapters spread this into the
+   * provider subprocess environment so the `agent-device` CLI is on PATH and
+   * already pointed at the server's daemon; the agent never handles a token.
+   */
+  readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
 }
 
 /** Whether the built-in `t3-code` toolkit includes preview tools. */
@@ -56,6 +65,23 @@ export function hasBrowserTools(config: McpProviderSessionConfig | undefined): b
 /** Whether the built-in `t3-code-computer` toolkit is attached. */
 export function hasComputerTools(config: McpProviderSessionConfig | undefined): boolean {
   return config?.capabilities.has("computer-use") === true;
+}
+
+/** Provider env with the device variables applied over `base`, or `base` untouched. */
+export function withAgentDeviceEnvironment(
+  base: NodeJS.ProcessEnv,
+  config: Pick<McpProviderSessionConfig, "agentDeviceEnvironment"> | undefined,
+): NodeJS.ProcessEnv {
+  const extra = config?.agentDeviceEnvironment;
+  if (!extra) return base;
+  const separator = extra.PATH_SEPARATOR ?? ":";
+  const basePath = base.PATH ?? base.Path;
+  const { PATH: shimDir, PATH_SEPARATOR: _separator, ...rest } = extra;
+  return {
+    ...base,
+    ...rest,
+    ...(shimDir ? { PATH: basePath ? `${shimDir}${separator}${basePath}` : shimDir } : {}),
+  };
 }
 
 const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();
