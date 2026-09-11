@@ -94,7 +94,7 @@ export class WorkspaceBinaryFileError extends Schema.TaggedError<WorkspaceBinary
   }
 }
 
-export class WorkspaceFileTooLargeError extends Schema.TaggedErrorClass<WorkspaceFileTooLargeError>()(
+export class WorkspaceFileTooLargeError extends Schema.TaggedError<WorkspaceFileTooLargeError>()(
   "WorkspaceFileTooLargeError",
   {
     workspaceRoot: Schema.String,

@@ -156,7 +156,7 @@ export class NativeTelemetryUnavailable extends Schema.TaggedError<NativeTelemet
   }
 }
 
-export class NativeTelemetryLimitExceeded extends Schema.TaggedErrorClass<NativeTelemetryLimitExceeded>()(
+export class NativeTelemetryLimitExceeded extends Schema.TaggedError<NativeTelemetryLimitExceeded>()(
   "NativeTelemetryLimitExceeded",
   {
     operation: Schema.Literals(["readHistory", "setExternalProcesses"]),

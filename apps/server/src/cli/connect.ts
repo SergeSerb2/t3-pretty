@@ -319,7 +319,7 @@ type RelayUnlinkResult =
 
 type CloudDisconnectOperation = "live-server-unlink" | "relay-environment-unlink";
 
-class CloudRelayUnlinkError extends Schema.TaggedErrorClass<CloudRelayUnlinkError>()(
+class CloudRelayUnlinkError extends Schema.TaggedError<CloudRelayUnlinkError>()(
   "CloudRelayUnlinkError",
   {
     reason: Schema.Literals(["request-failed", "response-too-large"]),

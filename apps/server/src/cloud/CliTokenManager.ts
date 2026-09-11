@@ -225,7 +225,7 @@ export const CloudCliTokenManagerError = Schema.Union([
 ]);
 export type CloudCliTokenManagerError = typeof CloudCliTokenManagerError.Type;
 
-class CloudCliTokenExchangeFailure extends Schema.TaggedErrorClass<CloudCliTokenExchangeFailure>()(
+class CloudCliTokenExchangeFailure extends Schema.TaggedError<CloudCliTokenExchangeFailure>()(
   "CloudCliTokenExchangeFailure",
   {
     reason: Schema.Literals([
