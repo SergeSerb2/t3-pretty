@@ -185,6 +185,31 @@ ${setup}
     assert.equal((desktopWorkflow.match(/needs: preflight/g) || []).length, 1);
   });
 
+  it("skips imported ubuntu-latest GHA children while hosted linux-small is broken", () => {
+    const preflight = jobBlock(desktopWorkflow, "preflight");
+    const wsl = jobBlock(desktopWorkflow, "build_wsl_node_pty");
+    const importer = pipeline.slice(
+      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
+      pipeline.indexOf(":git: Upstream Sync"),
+    );
+    // github-actions#v0.13.0 uploads children without inheriting
+    // origin-workflows soft_fail. Hosted linux-small auto-cancels them
+    // (BK #1944/#1948/#1952). Keep the ubuntu-latest mapping for restore;
+    // do not retarget WSL/AppImage onto macos-release + os=linux (arm64).
+    assert.include(importer, "skip:");
+    assert.include(importer, "BK #1952");
+    assert.isAtMost((importer.match(/skip: "([^"]+)"/u) || [])[1]?.length ?? 99, 70);
+    assert.include(importer, "soft_fail: true");
+    assert.include(importer, "runs-on: ubuntu-latest");
+    assert.include(importer, "queue: linux-small");
+    assert.include(preflight, "if: false");
+    assert.include(wsl, "if: false");
+    assert.match(desktopWorkflow, /# concurrency:\n# group: fork-release/u);
+    assert.include(preflight, "runs-on: ubuntu-latest");
+    assert.include(wsl, "runs-on: ubuntu-latest");
+    assert.notInclude(pipeline, "depends_on: origin-workflows");
+  });
+
   it("does not rebuild desktop for mobile-only or docs-only commits", () => {
     // Buildkite rejects on.push.paths, so the skip lives in the preflight job.
     assert.include(desktopWorkflow, "Skip desktop-irrelevant pushes");

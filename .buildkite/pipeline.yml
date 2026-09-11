@@ -7,16 +7,21 @@
 # Queues (hybrid: Origin gates + fork cluster secrets stay self-hosted;
 # packaging is temporarily back on self-hosted because hosted M4 /
 # linux-small jobs cancel immediately — BK #1944/#1948):
-#   linux-small     — hosted Linux (imported ubuntu-latest jobs, CLI,
-#                     AppImage). Hosted dispatch currently auto-cancels
-#                     these jobs in ~100ms with empty logs /
-#                     waiting_failed (BK #1944/#1948). AppImage stays
-#                     here — do not send it to macos-release + os=linux:
-#                     that matches arm64 m1-linux-t3code-fork and any
-#                     review-only Linux agents, and the script requires
-#                     x86_64. linux-appimage and publish-cli soft_fail
-#                     so a hosted cancel cannot red the Mac/iOS/Android
-#                     packaging build.
+#   linux-small     — hosted Linux (CLI, AppImage). Hosted dispatch
+#                     currently auto-cancels these jobs in ~100ms with
+#                     empty logs / waiting_failed (BK #1944/#1948/#1952).
+#                     AppImage stays here — do not send it to
+#                     macos-release + os=linux: that matches arm64
+#                     m1-linux-t3code-fork and any review-only Linux
+#                     agents, and the script requires x86_64.
+#                     linux-appimage and publish-cli soft_fail so a
+#                     hosted cancel cannot red the Mac/iOS/Android
+#                     packaging build. Imported ubuntu-latest GHA
+#                     children (Resolve, WSL, concurrency gates) are
+#                     skipped for the same reason: the github-actions
+#                     plugin uploads them without inheriting
+#                     origin-workflows soft_fail, so they still red
+#                     the build.
 #   macos-medium    — hosted MACOS_ARM64_M4_6X28 (pipeline upload). No
 #                     Origin CLI / no CURSOR_API_KEY /
 #                     no GITHUB_MIRROR_SSH_KEY / no PLANETSCALE_* . Hosted
@@ -41,8 +46,10 @@
 #   windows-release — serge-pc native NSIS (cannot run on Mac)
 #
 # TODO: restore hosted queues for packaging (macos-large DMG/iOS,
-# macos-medium Android) and drop soft_fail on linux-appimage /
-# publish-cli once Buildkite/Namespace hosted dispatch works again.
+# macos-medium Android), drop soft_fail on linux-appimage /
+# publish-cli, and restore the origin-workflows GHA import
+# (fork-release.yml ubuntu-latest jobs + concurrency) once
+# Buildkite/Namespace hosted dispatch works again.
 # Target hosted Mac queues by key only when that lands — extra tags
 # like os=macos can leave hosted M4 unmatched. Until then,
 # macos-release packaging steps keep os=macos so the mixed pool
@@ -98,15 +105,21 @@ steps:
       bash scripts/fork/mirror-github.sh
   - label: ":github: T3 Pretty Origin workflows"
     key: origin-workflows
-    # Imported GHA jobs (desktop preflight) still die in ~2s on the importer.
-    # Native DMG/NSIS/AppImage/iOS/relay are the release. Do not red the whole
-    # build when only the importer fails.
-    # Scheduled builds exist only to run upstream sync. That job is native
-    # macos-release below: imported macos GHA steps write $GITHUB_OUTPUT
-    # and die under set -u when the importer omits the file. Hosted M4
-    # currently fails to compile buildkite-gha (Go 1.26 vs 1.27 skew).
+    # github-actions#v0.13.0 uploads child steps that do not inherit
+    # this step's soft_fail. Hosted linux-small auto-cancels those
+    # children (gha-concurrency-start/finish, Resolve, WSL) in ~100ms
+    # with waiting_failed / canceled (BK #1944/#1948/#1952). Native
+    # macos-dmg / windows-nsis / ios / android do not depend on them.
+    # The plugin has no child soft_fail option; continue-on-error does
+    # not tolerate infrastructure cancel. Skip the importer until
+    # hosted linux-small dispatch works.
+    # TODO: drop skip and restore `if: build.source != "schedule"`
+    # (and the ubuntu jobs in fork-release.yml) once hosted
+    # linux-small works.
     soft_fail: true
-    if: build.source != "schedule"
+    # skip reason max 70 chars (BK rejected the longer #288 wording).
+    skip: "GHA children on linux-small hard-fail (BK #1952)"
+    # if: build.source != "schedule"
     # Bound the importer so a hung GHA child cannot leave this step running
     # for hours on linux-small. Native Mac/Windows/Linux steps do not depend
     # on it.
@@ -125,6 +138,9 @@ steps:
           source-ref: "c7ff9d131237da5a5eac55f855ff29da8f4dc5dc"
           workflows:
             - .github/workflows/fork-release.yml
+          # Mapping kept for the restore. Jobs in fork-release.yml are
+          # skipped until hosted linux-small dispatch works; do not
+          # retarget them to macos-release + os=linux (arm64).
           runners:
             - runs-on: ubuntu-latest
               queue: linux-small
