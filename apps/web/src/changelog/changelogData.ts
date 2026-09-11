@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260911.1533001955",
+    date: "2026-09-11",
+    items: [
+      {
+        kind: "fixed",
+        title: "Finish TaggedErrorClass rename so Windows NSIS sidecar loads",
+      },
+      {
+        kind: "fixed",
+        title: "Prod deploy from re-adding android_api_level",
+      },
+      {
+        kind: "fixed",
+        title: "Abort dictation start after caret or canStart races",
+      },
+      {
+        kind: "new",
+        title: "Share Groq voice input across connected hosts",
+      },
+      {
+        kind: "fixed",
+        title: "Update spinner after a completed check",
+      },
+      {
+        kind: "fixed",
+        title: "World Scenery photo backgrounds",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260911.1533001952",
     date: "2026-09-11",
     items: [
