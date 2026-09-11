@@ -138,12 +138,104 @@ async function readStdinBounded(maxBytes) {
   return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
 }
 
+// Same key for conflicted inputs and for post-merge content-hash overlays:
+// sha256(path + "\0" + source). Overlay passes the current working-tree file.
 export function resolutionCacheKey({ path, conflictedSource }) {
   return NodeCrypto.createHash("sha256")
     .update(path)
     .update("\0")
     .update(conflictedSource)
     .digest("hex");
+}
+
+function isSafeRepoRelativePath(path) {
+  if (typeof path !== "string" || path.length === 0 || path.includes("\0")) return false;
+  if (NodePath.isAbsolute(path) || path.includes("\\")) return false;
+  const parts = path.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) return false;
+  return path !== ".git" && !path.startsWith(".git/");
+}
+
+function listResolutionCacheKeys(cacheDir) {
+  if (!NodeFS.existsSync(cacheDir)) return [];
+  if (!NodeFS.lstatSync(cacheDir).isDirectory()) return [];
+  const keys = [];
+  for (const directoryEntry of NodeFS.readdirSync(cacheDir, { withFileTypes: true })) {
+    if (
+      directoryEntry.isFile() &&
+      /^[0-9a-f]{64}\.json$/u.test(directoryEntry.name)
+    ) {
+      keys.push(directoryEntry.name.slice(0, 64));
+    }
+  }
+  return keys;
+}
+
+// Conflict cache only applies to unmerged paths. Completed entries are also
+// keyed by sha256(path + "\0" + source) of whatever text produced them, so a
+// cleanly merged file can still have a reviewed overlay: Effect upgrades and
+// other fork-only modules auto-merge, then fail shared typecheck. The 8-file
+// repair pass cannot see most of packages/contracts. After conflict apply,
+// replay completed resolvedSource blobs whose key matches current file bytes.
+export function applyCompletedContentOverlays({
+  cacheDir = RESOLUTION_CACHE_DIR,
+  root = process.cwd(),
+} = {}) {
+  const gitEnv = { ...process.env };
+  delete gitEnv.CLI_PROXY_API_KEY;
+  const runGit = (args) =>
+    NodeChildProcess.execFileSync("git", args, {
+      encoding: "utf8",
+      cwd: root,
+      maxBuffer: 4 * 1024 * 1024,
+      env: gitEnv,
+    });
+  const unmerged = new Set(
+    runGit(["diff", "--name-only", "--diff-filter=U", "-z"]).split("\0").filter(Boolean),
+  );
+  const overlays = [];
+  for (const key of listResolutionCacheKeys(cacheDir)) {
+    const entry = readCachedResolution({ key, cacheDir });
+    if (
+      entry === undefined ||
+      typeof entry.resolvedSource !== "string" ||
+      Object.hasOwn(entry, "partialSource") ||
+      Object.hasOwn(entry, "completedBatches") ||
+      entry.deleted === true ||
+      !isSafeRepoRelativePath(entry.path) ||
+      unmerged.has(entry.path) ||
+      isGeneratedLockfile(entry.path)
+    ) {
+      continue;
+    }
+    const absolutePath = NodePath.resolve(root, entry.path);
+    const rootResolved = NodePath.resolve(root);
+    if (absolutePath !== rootResolved && !absolutePath.startsWith(`${rootResolved}${NodePath.sep}`)) {
+      continue;
+    }
+    let currentSource;
+    try {
+      currentSource = readTextFileBounded(absolutePath, MAX_CONFLICT_FILE_BYTES, entry.path);
+    } catch {
+      continue;
+    }
+    if (LEFTOVER_MARKER_PATTERN.test(currentSource)) continue;
+    if (resolutionCacheKey({ path: entry.path, conflictedSource: currentSource }) !== key) {
+      continue;
+    }
+    if (currentSource === entry.resolvedSource) continue;
+    overlays.push({ path: entry.path, absolutePath, resolvedSource: entry.resolvedSource });
+  }
+  const applied = [];
+  for (const overlay of overlays) {
+    NodeFS.writeFileSync(overlay.absolutePath, overlay.resolvedSource);
+    runGit(["add", "--", overlay.path]);
+    applied.push(overlay.path);
+    process.stdout.write(
+      `[fork-sync] overlaid the completed content-hash resolution for ${oneLine(overlay.path)}\n`,
+    );
+  }
+  return applied;
 }
 
 export function readCachedResolution({ key, cacheDir = RESOLUTION_CACHE_DIR, expectedPath }) {
@@ -2417,6 +2509,8 @@ async function main() {
     throw new Error(`Unresolved paths remain:\n${remaining.map(oneLine).join("\n")}`);
   }
 
+  const contentOverlays = applyCompletedContentOverlays();
+
   const upstreamTag = process.env.UPSTREAM_TAG?.trim() ?? "unknown";
   const previousUpstreamTag = process.env.PREVIOUS_UPSTREAM_TAG?.trim() ?? "";
   const report = formatSyncReport({
@@ -2429,13 +2523,26 @@ async function main() {
   });
   const reusedResolution = process.env.REUSED_SYNC_RESOLUTION === "true";
   const existingReport = readReusedSyncReport({ reusedResolution });
+  const overlaySection =
+    contentOverlays.length > 0
+      ? [
+          "",
+          "## Completed content-hash overlays",
+          "",
+          ...contentOverlays.map(
+            (path) =>
+              `- \`${path}\` — applied a completed cache entry keyed by the current file contents`,
+          ),
+          "",
+        ].join("\n")
+      : "";
   const finalReport =
     existingReport && resolutions.length > 0
       ? `${existingReport}\n\n---\n\n${report.replace(
           "# T3 Pretty upstream integration report",
           "# Additional reconciliation with newer T3 Pretty main",
-        )}`
-      : existingReport || report;
+        )}${overlaySection}`
+      : `${existingReport || report}${overlaySection}`;
   if (Buffer.byteLength(finalReport, "utf8") > MAX_SYNC_REPORT_BYTES) {
     throw new Error(`Integration report exceeds the ${MAX_SYNC_REPORT_BYTES}-byte safety limit`);
   }

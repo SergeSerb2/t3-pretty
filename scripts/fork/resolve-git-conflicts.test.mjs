@@ -8,6 +8,7 @@ import * as NodeURL from "node:url";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  applyCompletedContentOverlays,
   applyResolutionEdits,
   assertValidResolutionProgressSource,
   assertValidResolvedSource,
@@ -1101,6 +1102,339 @@ ${">".repeat(7)} theirs
       NodeFS.rmSync(temporaryDirectory, { recursive: true, force: true });
     }
   });
+
+  it("overlays completed cache entries keyed by current file contents", () => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      const overlayPath = "packages/contracts/src/Http.ts";
+      const stalePath = "packages/contracts/src/Stale.ts";
+      const partialPath = "packages/contracts/src/Partial.ts";
+      NodeFS.mkdirSync(NodePath.join(directory, "packages/contracts/src"), { recursive: true });
+      const currentSource = "export class Failure extends Schema.TaggedErrorClass<Failure>() {}\n";
+      const resolvedSource = "export class Failure extends Schema.TaggedError<Failure>() {}\n";
+      NodeFS.writeFileSync(NodePath.join(directory, overlayPath), currentSource);
+      NodeFS.writeFileSync(NodePath.join(directory, stalePath), "export const stale = true;\n");
+      NodeFS.writeFileSync(NodePath.join(directory, partialPath), "export const partial = true;\n");
+      git("add", ".");
+      git("commit", "-qm", "clean merge");
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
+      writeCachedResolution({
+        key: resolutionCacheKey({ path: overlayPath, conflictedSource: currentSource }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: overlayPath,
+          resolvedSource,
+          forkChangesPreserved: ["Effect 4 TaggedError"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+      writeCachedResolution({
+        key: resolutionCacheKey({
+          path: stalePath,
+          conflictedSource: "export const stale = false;\n",
+        }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: stalePath,
+          resolvedSource: "export const stale = false;\n",
+          forkChangesPreserved: [],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+      writePartialResolutionCheckpoint({
+        key: resolutionCacheKey({
+          path: partialPath,
+          conflictedSource: "export const partial = true;\n",
+        }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: partialPath,
+          partialSource: [
+            "export const partial =",
+            `${"<".repeat(7)} ours`,
+            "  true;",
+            `${"=".repeat(7)}`,
+            "  false;",
+            `${">".repeat(7)} theirs`,
+            "",
+          ].join("\n"),
+          completedBatches: 1,
+          forkChangesPreserved: [],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      const applied = applyCompletedContentOverlays({
+        cacheDir: cacheDirectory,
+        root: directory,
+      });
+      assert.deepEqual(applied, [overlayPath]);
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"),
+        resolvedSource,
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, stalePath), "utf8"),
+        "export const stale = true;\n",
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, partialPath), "utf8"),
+        "export const partial = true;\n",
+      );
+      assert.include(git("diff", "--cached", "--", overlayPath), "TaggedError<Failure>");
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not overlay an unmerged path even when current bytes match a completed entry", () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-unmerged-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      const conflictPath = "still-unmerged.ts";
+      const source = (value) => `export const value = "${value}";\n`;
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("base"));
+      git("add", conflictPath);
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("theirs"));
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("ours"));
+      git("commit", "-aqm", "fork changes");
+      assert.throws(() => git("merge", "theirs"));
+      git("checkout", "--conflict=diff3", "--", conflictPath);
+      const conflictedSource = NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8");
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
+      writeCachedResolution({
+        key: resolutionCacheKey({ path: conflictPath, conflictedSource }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: conflictPath,
+          resolvedSource: source("should-not-apply-while-unmerged"),
+          forkChangesPreserved: [],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      assert.deepEqual(
+        applyCompletedContentOverlays({ cacheDir: cacheDirectory, root: directory }),
+        [],
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8"),
+        conflictedSource,
+      );
+      assert.include(git("diff", "--name-only", "--diff-filter=U"), conflictPath);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("overlays completed content-hash entries on a clean merge with no text conflicts", async () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-clean-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const overlayPath = "packages/contracts/src/environmentHttp.ts";
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      NodeFS.mkdirSync(NodePath.join(directory, "packages/contracts/src"), { recursive: true });
+      const currentSource = "export class Boom extends Schema.TaggedErrorClass<Boom>() {}\n";
+      const resolvedSource = "export class Boom extends Schema.TaggedError<Boom>() {}\n";
+      NodeFS.writeFileSync(NodePath.join(directory, overlayPath), currentSource);
+      git("add", overlayPath);
+      git("commit", "-qm", "clean tree");
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      writeCachedResolution({
+        key: resolutionCacheKey({ path: overlayPath, conflictedSource: currentSource }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: overlayPath,
+          resolvedSource,
+          forkChangesPreserved: ["Effect 4 TaggedError"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      const output = NodeChildProcess.execFileSync(process.execPath, [resolverPath], {
+        cwd: directory,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          SYNC_RESOLUTION_CACHE_DIR: cacheDirectory,
+          UPSTREAM_TAG: "v0.0.0-nightly.overlay-clean",
+          PREVIOUS_UPSTREAM_TAG: "",
+          REUSED_SYNC_RESOLUTION: "false",
+        },
+      });
+
+      assert.include(output, "no text conflicts");
+      assert.include(
+        output,
+        `overlaid the completed content-hash resolution for ${overlayPath}`,
+      );
+      assert.equal(NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"), resolvedSource);
+      const report = NodeFS.readFileSync(
+        NodePath.join(directory, ".t3-fork/upstream-sync-report.md"),
+        "utf8",
+      );
+      assert.include(report, "## Completed content-hash overlays");
+      assert.include(report, overlayPath);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves conflicted files to the conflict cache and still overlays clean siblings", async () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-sync-content-overlay-conflict-"),
+    );
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" });
+    const conflictPath = "conflicted.ts";
+    const overlayPath = "clean.ts";
+    let server;
+    try {
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "sync@test");
+      git("config", "user.name", "sync test");
+      const source = (value) => `export const value = "${value}";\n`;
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("base"));
+      NodeFS.writeFileSync(NodePath.join(directory, overlayPath), source("clean"));
+      git("add", ".");
+      git("commit", "-qm", "base");
+      git("checkout", "-qb", "theirs");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("theirs"));
+      git("commit", "-aqm", "parent changes");
+      git("checkout", "-q", "main");
+      NodeFS.writeFileSync(NodePath.join(directory, conflictPath), source("ours"));
+      git("commit", "-aqm", "fork changes");
+      assert.throws(() => git("merge", "theirs"));
+
+      const cacheDirectory = NodePath.join(directory, "cache");
+      NodeFS.mkdirSync(cacheDirectory);
+      git("checkout", "--conflict=diff3", "--", conflictPath);
+      const conflictedSource = NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8");
+      const conflict = prepareConflictPrompt({
+        path: conflictPath,
+        conflictedSource,
+        forkHistory: "",
+        maxConflicts: 1,
+      }).conflicts[0];
+      const conflictText = conflictedSource.slice(conflict.start, conflict.end);
+      writeCachedResolution({
+        key: resolutionCacheKey({ path: overlayPath, conflictedSource: source("clean") }),
+        cacheDir: cacheDirectory,
+        entry: {
+          path: overlayPath,
+          resolvedSource: source("overlaid"),
+          forkChangesPreserved: ["content-hash overlay"],
+          upstreamChangesIntegrated: [],
+          upstreamChangesOmitted: [],
+        },
+      });
+
+      server = NodeHttp.createServer((request, response) => {
+        request.resume();
+        request.on("end", () => {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              status: "completed",
+              output_text: JSON.stringify({
+                safe: true,
+                edits: [
+                  {
+                    old_text: conflictText,
+                    new_text: source("composed"),
+                    summary: "composed the conflict",
+                  },
+                ],
+                fork_changes_preserved: ["kept the fork value"],
+                upstream_changes_integrated: ["integrated the parent value"],
+                upstream_changes_omitted: [],
+                summary: "resolved the conflicted file",
+              }),
+            }),
+          );
+        });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      assert.isObject(address);
+
+      const child = NodeChildProcess.spawn(process.execPath, [resolverPath], {
+        cwd: directory,
+        env: {
+          ...process.env,
+          CLI_PROXY_API_KEY: "test-key",
+          CLI_PROXY_API_URL: `http://127.0.0.1:${address.port}`,
+          PREVIOUS_UPSTREAM_TAG: "",
+          REUSED_SYNC_RESOLUTION: "false",
+          SYNC_RESOLUTION_CACHE_DIR: cacheDirectory,
+          UPSTREAM_TAG: "v0.0.0-nightly.overlay-test",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      const exitCode = await new Promise((resolve) => child.on("close", resolve));
+
+      assert.equal(exitCode, 0, stderr);
+      assert.include(stdout, "overlaid the completed content-hash resolution for clean.ts");
+      assert.notInclude(stdout, "overlaid the completed content-hash resolution for conflicted.ts");
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, conflictPath), "utf8"),
+        source("composed"),
+      );
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(directory, overlayPath), "utf8"),
+        source("overlaid"),
+      );
+      const report = NodeFS.readFileSync(
+        NodePath.join(directory, ".t3-fork/upstream-sync-report.md"),
+        "utf8",
+      );
+      assert.include(report, "## Completed content-hash overlays");
+      assert.include(report, "`clean.ts`");
+    } finally {
+      if (server) await new Promise((resolve) => server.close(resolve));
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  }, 10_000);
 
   it("quarantines invalid completed TS/TSX checkpoints before they can replay", () => {
     const temporaryDirectory = NodeFS.mkdtempSync(
@@ -2464,6 +2798,19 @@ ${">".repeat(7)} theirs
     const resolver = NodeFS.readFileSync(resolverPath, "utf8");
     assert.include(resolver, "reused the checkpointed resolution");
     assert.include(resolver, "SYNC_RESOLUTION_CACHE_DIR");
+    const resolverMain = resolver.slice(
+      resolver.indexOf("async function main()"),
+      resolver.indexOf("const invokedPath"),
+    );
+    assert.isBelow(
+      resolverMain.indexOf("throw new Error(`Unresolved paths remain"),
+      resolverMain.indexOf("applyCompletedContentOverlays()"),
+    );
+    assert.include(script, "other fork-only files that auto-merge but break typecheck");
+    assert.isBelow(
+      script.indexOf("run_conflict_resolver"),
+      script.indexOf("auto-merge but break typecheck"),
+    );
   });
 
   it("installs parser dependencies before resolving and gates the complete web tree", () => {

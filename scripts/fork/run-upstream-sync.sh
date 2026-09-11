@@ -598,6 +598,10 @@ resolve_current_merge() {
   fi
   load_resolution_cache
   run_conflict_resolver
+  # Conflict cache only matches unmerged paths. The resolver then overlays
+  # completed entries keyed by current file contents so Effect upgrades and
+  # other fork-only files that auto-merge but break typecheck still reuse
+  # reviewed blobs. This is not the 8-file post-merge repair pass.
 
   # The resolver side-picks a conflicted generated lockfile instead of
   # AI-splicing it. Reconcile that copy with the merged package
