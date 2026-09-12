@@ -251,6 +251,7 @@ describe("host context compatibility", () => {
             branch: null,
             worktreePath: null,
             startFromOrigin: false,
+            enabledSkillIds: [],
             worktreeBranchName: "unused",
           }).message;
     expect(message).not.toHaveProperty("context");

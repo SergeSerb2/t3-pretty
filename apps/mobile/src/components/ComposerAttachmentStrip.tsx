@@ -211,7 +211,7 @@ function ComposerImageAttachment(
         disabled={props.preparing || (!props.onPressPreview && !props.onPressImage)}
         onPress={() =>
           props.onPressImage
-            ? props.onPressImage(previewUri)
+            ? props.onPressImage(previewUri ?? attachment.dataUrl ?? attachment.previewUri)
             : props.onPressPreview?.(
                 // File-backed images open through the retain-lease + container
                 // rebase path; legacy drafts still carry their inline bytes.

@@ -2925,3 +2925,6 @@
 - `apps/web/src/lib/terminalContext.ts` — Parent removal of the old `ensureInlineTerminalContextPlaceholders` export name.. Reason: The fork may still have callers using that public helper. A thin alias preserves compatibility while delegating all behavior to the parent-named migration implementation.
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260912.1599`; repaired with `gpt-5.6-sol`: Preserved T3 Pretty’s hidden-suffix and element/terminal display behavior while adapting it to the parent’s removal of the old element-context exports.
   - edited `apps/web/src/lib/terminalContext.ts`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260912.1599`; repaired with `gpt-5.6-sol`: Handle nullable materialized image preview URIs without regressing T3 Pretty's image callback, and update the start-turn test fixture for the required enabledSkillIds API field.
+  - edited `apps/mobile/src/components/ComposerAttachmentStrip.tsx`
+  - edited `apps/mobile/src/lib/composerContext.test.ts`
