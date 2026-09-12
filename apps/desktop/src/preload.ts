@@ -183,6 +183,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   resolveEditContextMenu: (requestId, itemId) =>
     ipcRenderer.invoke(IpcChannels.RESOLVE_EDIT_CONTEXT_MENU_CHANNEL, { requestId, itemId }),
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
+  checkSystemPermission: (pane: string) =>
+    ipcRenderer.invoke(IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL, pane),
   openSystemSettings: (pane: string) =>
     ipcRenderer.invoke(IpcChannels.OPEN_SYSTEM_SETTINGS_CHANNEL, pane),
   probeRemoteEditors: () => ipcRenderer.invoke(IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL, undefined),

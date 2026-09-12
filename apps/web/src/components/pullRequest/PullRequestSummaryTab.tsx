@@ -429,7 +429,7 @@ function CommentComposer({
   };
 
   return (
-    <div className="mt-3 space-y-2">
+    <div className="space-y-2">
       <Textarea
         // Locked while posting: the body is cleared on success, which would otherwise throw
         // away a new draft typed while the request was still in flight.
@@ -1049,14 +1049,6 @@ export function PullRequestSummaryTab({
               ) : null}
             </div>
           )}
-          <PullRequestReactionBar
-            className="mt-2"
-            reactions={detail.reactions ?? []}
-            canReact={detail.capabilities.reactions === true}
-            environmentId={environmentId}
-            reference={reference}
-            onRefresh={onRefresh}
-          />
         </div>
       </Section>
 
@@ -1083,12 +1075,12 @@ export function PullRequestSummaryTab({
                     disabled={!check.url}
                     onClick={() => check.url && openCheck(check.url)}
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
-                      check.url ? undefined : "cursor-default",
+                      "flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-2 text-left text-xs leading-5 [&>svg]:mt-0.5",
+                      check.url ? "cursor-pointer" : "cursor-default",
                     )}
                   >
                     <PullRequestCheckStatusIcon status={check.status} />
-                    <span className="min-w-0 flex-1 truncate">{check.name}</span>
+                    <span className="min-w-0 flex-1 wrap-anywhere">{check.name}</span>
                     <span className="shrink-0 text-muted-foreground">
                       {pullRequestCheckStatusLabel(check)}
                     </span>
@@ -1395,7 +1387,9 @@ export function PullRequestSummaryTab({
             )}
           </>
         )}
-        {/* Posting is a core capability and remains usable even if the activity read failed. */}
+      </Section>
+      <div className="px-4 pb-4">
+        {/* Posting stays available when the conversation is folded or its activity read failed. */}
         {detail.capabilities.comment && detail.viewerPermissions.comment ? (
           <CommentComposer
             reference={reference}
@@ -1413,7 +1407,7 @@ export function PullRequestSummaryTab({
             onCommented={onRefresh}
           />
         ) : null}
-      </Section>
+      </div>
     </div>
   );
 }

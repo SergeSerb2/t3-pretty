@@ -2657,3 +2657,92 @@
   - edited `apps/web/src/components/settings/settingsSearch.ts`
   - edited `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts`
   - edited `apps/web/src/previewMiniPlayerStore.test.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260912.1576`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260911.1564`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved T3 Pretty's pointer activity phase tracking used to verify automation type and press visibility.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved the geometry-bearing Runtime.evaluate mock result for preview expressions using document.documentElement or getBoundingClientRect.
+- `apps/desktop/src/preview/Manager.test.ts` — Preserved forwarding of debugger-dispatched keyDown/rawKeyDown events through the preview human-input signal, including the fork's key/code fallback behavior.
+- `apps/desktop/src/preview/Manager.ts` — Preserved T3 Pretty’s removal of the obsolete DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER dependency from the preview manager rather than restoring the base-era import.
+- `apps/desktop/src/preview/Manager.ts` — T3 Pretty continues to emit the preview automation pointer at the focused element before performing a press.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Mobile new-task drafts continue exposing their fork-added enabled skill IDs through selectedSkillIds.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Runtime modes continue passing through T3 Pretty's provider-driver-aware normalization, including remapping historical Yolo values to Full access for known providers.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — An explicit runtime mode stored in the composer draft remains authoritative over all defaults.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Provider-driver-specific runtime-mode normalization through resolveRuntimeModeForProviderDriver, including T3 Pretty's Yolo/full-access compatibility behavior and prevention of provider-specific modes leaking across providers.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Queued tasks fall back to the composer-resolved runtimeMode when the draft has no explicit mode, preserving the mode displayed to the user and fork-specific model-switch/default rules.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — The autoCreatePullRequestByEnvMode callback dependency remains present so queued tasks capture T3 Pretty's per-environment, per-workspace-mode auto-PR choice correctly.
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — Preserved coverage that the initial Grok snapshot advertises the fork-supported `resume` slash command.
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — Preserved coverage that initial and custom Grok models do not synthesize reasoning-effort controls before ACP advertises effort menus.
+- `apps/server/src/provider/providerSnapshot.ts` — Preserved T3 Pretty's `supportsNativeResume` provider presentation capability used to advertise native session resume support.
+- `apps/server/src/provider/providerSnapshot.ts` — Preserved T3 Pretty's length bounding for provider display names and badge labels, maintaining provider snapshot size and reliability safeguards.
+- `apps/server/src/vcs/GitVcsDriver.test.ts` — Preserved the T3 Pretty VCS remote-list bounding coverage by retaining the VCS_REMOTE_MAX_COUNT import.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved T3 Pretty's UX wording that users may either create a branch or check out an existing branch when leaving detached HEAD.
+- `apps/web/src/components/chat/ChatComposer.tsx` — T3 Pretty's Yolo runtime mode remains selectable when the parent shared configuration does not provide a native equivalent.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The fork's Yolo presentation is retained with its existing label, description, and Sparkles-equivalent icon, and it remains ordered immediately before Full access.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Existing provider-specific Yolo send/remapping behavior remains reachable without restoring the obsolete local copies of all standard runtime modes.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the optional frameOverlay React node used by T3 Pretty's mini-player presentation.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Preserved T3 Pretty's `grid-cols-[auto_minmax(0,1fr)_auto]` PR-row layout, which reserves the trailing auto-sized column and protects narrow-list metadata/diff-stat presentation.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The Description remains a T3 Pretty Section with its visible heading and collapsible section behavior.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The Description section restores its prior open state through restoredView.sectionOpen.description and persists changes through rememberSection.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the existing single-button DOM structure so the adjacent T3 Pretty finding-fix control remains outside the check link and continues offering the fork's fix destinations for failing checks.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the existing check status icon, status label, URL-opening behavior, and disabled state for checks without URLs.
+- `docs/user/permission-modes.md` — Permission modes remain isolated per thread, so changing one thread does not alter other threads.
+- `docs/user/permission-modes.md` — Threads created from another thread continue to inherit the source thread's permission mode.
+- `docs/user/permission-modes.md` — A permission mode selected in a draft remains authoritative for that new thread.
+- `packages/contracts/src/model.ts` — Preserved T3 Pretty's Cursor default model identifier as "default", consistent with the fork's Cursor Auto mode handling and its aliases from "auto" and "auto-smart" to "default".
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated session-aware Runtime.evaluate behavior for resolving a focused iframe without changing return-by-value automation evaluations.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated focused-frame discovery and attachment mocks through DOM.describeNode, Target.getTargets, and Target.attachToTarget.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated parent keyboard interruption behavior that injects a pointer signal during frame key dispatch.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated Electron sendInputEvent handling, including native keyDown signaling and queued/delayed keyUp delivery through animation-frame event counts.
+- `apps/desktop/src/preview/Manager.test.ts` — Integrated the parent's non-keyUp CDP dispatch failure behavior while retaining the fork's synthetic key-input signal.
+- `apps/desktop/src/preview/Manager.ts` — Added the parent’s node:crypto namespace import for its new preview-manager cryptographic implementation.
+- `apps/desktop/src/preview/Manager.ts` — Use makePreviewAutomationNativeKeySequence for the primary press path, incorporating the parent's native keyboard input behavior while retaining the existing descendant-renderer CDP fallback.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Fresh tasks now inherit projectSettings.settings.defaultRuntimeMode when the draft has no explicit runtime mode.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Pending-task edits now fall back to the queued task's runtimeMode, or DEFAULT_RUNTIME_MODE when the queued task has none.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — The upstream runtime defaults are composed with the fork's existing provider-aware normalization rather than introducing a duplicate runtimeMode declaration.
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — Integrated the parent assertion that Grok model changes do not require a new thread.
+- `apps/server/src/provider/Layers/GrokProvider.test.ts` — Integrated the parent assertion that Grok does not support conversation rollback.
+- `apps/server/src/provider/providerSnapshot.ts` — Integrated the parent `supportsConversationRollback` provider presentation capability.
+- `apps/server/src/provider/providerSnapshot.ts` — Added the optional supportsConversationRollback capability to server provider snapshots when the presentation explicitly supplies a boolean value.
+- `apps/server/src/vcs/GitVcsDriver.test.ts` — Integrated the parent CheckpointRef import required by the new Git checkpoint capture and restore tests.
+- `apps/web/src/components/GitActionsControl.tsx` — Retained the parent's user-facing “branch” terminology instead of the base version's internal “refName” wording.
+- `apps/web/src/components/GitActionsControl.tsx` — Retained the grammatically correct two-word verb “check out” from the parent wording.
+- `apps/web/src/components/chat/ChatComposer.tsx` — ChatComposer now relies on the parent's shared runtime-mode configuration and option list instead of maintaining a duplicated local table.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Future parent changes to standard runtime-mode labels, descriptions, icons, and ordering flow through the shared configuration.
+- `apps/web/src/components/chat/ChatComposer.tsx` — If the parent shared configuration supplies a first-party Yolo implementation, it is left untouched and takes precedence over the fork fallback.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent's optional recording prop and retained its default value of false.
+- `apps/web/src/components/pullRequest/PullRequestRow.tsx` — Added upstream's `cursor-pointer` styling so the clickable pull-request row has an explicit pointer cursor.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Applied the upstream check-row layout using top alignment, increased vertical padding, line-height, and status-icon offset for multiline check names.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Applied upstream `wrap-anywhere` behavior so long check names remain visible instead of being truncated.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Applied upstream's explicit pointer cursor for checks with URLs while retaining the default cursor for non-link checks.
+- `docs/user/permission-modes.md` — Documents the new default-permission setting under Settings → General → New threads → Permissions.
+- `docs/user/permission-modes.md` — Documents project-level overrides of the environment default.
+- `docs/user/permission-modes.md` — Clarifies that ordinary new threads use the configured default rather than the mode of the thread currently being viewed.
+- `docs/user/permission-modes.md` — Preserves the initial Full access default and confirms existing threads and draft-selected modes are unaffected.
+- `packages/contracts/src/model.ts` — Updated the Claude provider default from "claude-sonnet-5" to the parent's new "claude-fable-5-1" default.
+- `packages/contracts/src/model.ts` — Retained the parent-side documentation that "grok-build" is a product slug representing the session's current model rather than an ACP model ID.
+
+## Parent changes intentionally omitted
+
+- `apps/desktop/src/preview/Manager.ts` — The parent hunk retained the base-era DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER import.. Reason: T3 Pretty had already removed this import and its associated dependency; restoring an unchanged legacy import would regress the fork’s current preview-manager structure and may create an unused import. No new parent behavior is omitted.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Use defaultRuntimeMode directly as the fallback for a queued task with no draft-scoped runtime mode, and add it to the callback dependency list.. Reason: That direct fallback would bypass T3 Pretty's authoritative composer-resolved runtimeMode and provider-driver normalization, risking regressions in Yolo/full-access remapping and cross-provider mode handling. The associated dependency would be unused after preserving the fork behavior.
+- `apps/web/src/components/GitActionsControl.tsx` — Use “create and check out a branch” rather than “create or check out a branch.”. Reason: The parent conjunction would imply that creating a new branch is required, omitting the valid option of checking out an existing branch and regressing T3 Pretty's more accurate UX guidance.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Reduce the static Description section's bottom padding from pb-4 to pb-1.. Reason: The parent spacing change targets the raw &lt;section&gt; wrapper that T3 Pretty replaced with its authoritative collapsible Section component. Reintroducing that wrapper would regress persisted open-state and fork section UX, and applying the raw-wrapper padding to the custom Section without its layout API would be unsafe.
+- `packages/contracts/src/model.ts` — Set the Cursor provider default model identifier to "auto".. Reason: T3 Pretty intentionally uses "default" as Cursor's canonical Auto model identifier and maps upstream-style "auto" and "auto-smart" slugs to it; changing the stored default back to "auto" would regress the fork's Cursor Auto mode integration.
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260912.1576`; repaired with `gpt-5.6-sol`: Restore the missing atom-command failure helper import and add compatibility coverage for the parent’s `yolo` RuntimeMode. The picker continues to expose only T3 Pretty’s `full-access` mode.
+  - edited `apps/web/src/components/ChatView.logic.ts`
+  - edited `apps/web/src/components/chat/runtimeModeConfig.ts`
+  - omitted parent change: Expose the parent's legacy `yolo` runtime mode as a selectable runtimeModeOptions entry.. Reason: T3 Pretty authoritatively remaps historical `yolo` values to `full-access` and must not reintroduce the old mode in the picker; the value remains configured for rendering persisted data.
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260912.1576`; repaired with `gpt-5.6-sol`: Restore the missing `DEFAULT_RUNTIME_MODE` import while retaining the fork’s provider-aware runtime-mode normalization and the parent’s project-level default behavior.
+  - edited `apps/mobile/src/features/threads/new-task-flow-provider.tsx`
