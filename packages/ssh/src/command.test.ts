@@ -1,3 +1,4 @@
+import { forkCliTarballUrl } from "@t3tools/shared/connectBranding";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Duration from "effect/Duration";
@@ -12,6 +13,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   baseSshArgs,
+  collectProcessOutput,
   getLastNonEmptyOutputLine,
   parseSshResolveOutput,
   resolveRemoteT3CliPackageSpec,
@@ -65,6 +67,17 @@ const makeNeverFinishingProcess = () => {
 };
 
 describe("ssh command", () => {
+  it.effect("keeps draining while retaining only the configured output tail", () =>
+    Effect.gen(function* () {
+      const output = yield* collectProcessOutput(
+        Stream.make(encoder.encode("abcdef"), encoder.encode("ghij")),
+        6,
+      );
+
+      assert.equal(output, "[earlier output truncated]\nefghij");
+    }),
+  );
+
   it.effect("parses resolved ssh config output into a target", () =>
     Effect.sync(() => {
       assert.deepEqual(
@@ -106,21 +119,21 @@ describe("ssh command", () => {
           appVersion: "0.0.17",
           updateChannel: "latest",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17.tgz",
+        forkCliTarballUrl("0.0.17"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.17-nightly.20260415.44",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.17-nightly.20260415.44.tgz",
+        forkCliTarballUrl("0.0.17-nightly.20260415.44"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
           appVersion: "0.0.33-nightly.20260809.1042000012",
           updateChannel: "nightly",
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3-0.0.33-nightly.20260809.1042000012.tgz",
+        forkCliTarballUrl("0.0.33-nightly.20260809.1042000012"),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -128,7 +141,7 @@ describe("ssh command", () => {
           updateChannel: "nightly",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
       assert.equal(
         resolveRemoteT3CliPackageSpec({
@@ -136,7 +149,7 @@ describe("ssh command", () => {
           updateChannel: "latest",
           isDevelopment: true,
         }),
-        "https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/t3.tgz",
+        forkCliTarballUrl(),
       );
     }),
   );
@@ -207,6 +220,37 @@ describe("ssh command", () => {
         assert.instanceOf(result.failure, SshCommandError);
         assert.equal(result.failure.message, '{"credential":"[redacted]"}');
         assert.equal(result.failure.stdout, '{"credential":"[redacted]"}\n');
+      }
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("redacts credentials from stderr in non-zero command failures", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeFailedProcess({ stdout: "", stderr: '{"bearerToken":"remote-secret"}\n' }),
+      ),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runSshCommand(
+          {
+            alias: "devbox",
+            hostname: "devbox.example.com",
+            username: "julius",
+            port: 2222,
+          },
+          { remoteCommandArgs: ["sh", "-s"] },
+        ),
+      );
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshCommandError);
+        assert.equal(result.failure.message, '{"bearerToken":"[redacted]"}');
+        assert.equal(result.failure.stderr, '{"bearerToken":"[redacted]"}\n');
       }
     }).pipe(Effect.provide(processLayer));
   });

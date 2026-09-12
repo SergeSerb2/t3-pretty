@@ -1,64 +1,192 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "./previewMiniPlayerStore";
+import {
+  browserMiniPlayerSource,
+  normalizePersistedMiniPlayerState,
+  type PreviewMiniPlayerSource,
+  selectThreadPreviewMiniPlayer,
+  selectThreadPreviewMiniPlayerTabId,
+  usePreviewMiniPlayerStore,
+} from "./previewMiniPlayerStore";
 
 const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
+const tabA = browserMiniPlayerSource("tab-a");
+const tabB = browserMiniPlayerSource("tab-b");
+const pixel: PreviewMiniPlayerSource = {
+  kind: "device",
+  hostId: "nucbox",
+  deviceId: "emulator-5580",
+  platform: "android",
+  name: "Pixel",
+};
 
 beforeEach(() => {
-  usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {}, dismissedTabIdsByThreadKey: {} });
 });
 
 describe("previewMiniPlayerStore", () => {
   it("keeps floating previews scoped to their thread", () => {
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
-    usePreviewMiniPlayerStore.getState().open(refB, "tab-b");
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    usePreviewMiniPlayerStore.getState().open(refB, tabB);
 
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toMatchObject({ tabId: "tab-a" });
+    ).toMatchObject({ source: tabA });
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refB),
-    ).toMatchObject({ tabId: "tab-b" });
+    ).toMatchObject({ source: tabB });
   });
 
   it("preserves position when switching the floating tab within one thread", () => {
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
-    usePreviewMiniPlayerStore.getState().move(refA, "tab-a", { x: 24, y: 48 });
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    usePreviewMiniPlayerStore.getState().move(refA, "browser:tab-a", { x: 24, y: 48 });
+    usePreviewMiniPlayerStore.getState().open(refA, tabB);
 
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toEqual({
-      tabId: "tab-b",
+      source: tabB,
       position: { x: 24, y: 48 },
-      size: null,
+      width: null,
     });
   });
 
   it("ignores stale drag updates after the floating tab changes", () => {
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
-    usePreviewMiniPlayerStore.getState().move(refA, "tab-a", { x: 100, y: 100 });
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    usePreviewMiniPlayerStore.getState().open(refA, tabB);
+    usePreviewMiniPlayerStore.getState().move(refA, "browser:tab-a", { x: 100, y: 100 });
 
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toEqual({
-      tabId: "tab-b",
+      source: tabB,
       position: null,
-      size: null,
+      width: null,
     });
   });
 
-  it("preserves a thread-bound size while switching tabs", () => {
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
-    usePreviewMiniPlayerStore.getState().resize(refA, "tab-a", { width: 480, height: 320 });
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+  it("preserves a thread-bound width while switching tabs", () => {
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    usePreviewMiniPlayerStore.getState().resize(refA, "browser:tab-a", 480);
+    usePreviewMiniPlayerStore.getState().open(refA, tabB);
 
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toMatchObject({ tabId: "tab-b", size: { width: 480, height: 320 } });
+    ).toMatchObject({ source: tabB, width: 480 });
+  });
+
+  it("floats one source per thread, so a device replaces the browser tab", () => {
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    usePreviewMiniPlayerStore.getState().open(refA, pixel);
+    const floating = selectThreadPreviewMiniPlayer(
+      usePreviewMiniPlayerStore.getState().byThreadKey,
+      refA,
+    );
+
+    expect(floating).toMatchObject({ source: pixel });
+    expect(
+      selectThreadPreviewMiniPlayerTabId(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+    // The same device under a new label is still the same floating source.
+    usePreviewMiniPlayerStore.getState().open(refA, { ...pixel, name: "Renamed" });
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBe(floating);
+  });
+
+  it("keeps dismissed tabs independently and does not undismiss on open", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, tabA);
+    store.dismiss(refA, "tab-a");
+    store.open(refA, tabB);
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
+
+    usePreviewMiniPlayerStore.getState().dismiss(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
+    });
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+
+    usePreviewMiniPlayerStore.getState().open(refA, tabB);
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
+    });
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toMatchObject({ source: tabB });
+
+    usePreviewMiniPlayerStore.getState().undismiss(refA, "tab-b");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
+  });
+
+  it("does not auto-present a dismissed tab", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, tabA);
+    store.dismiss(refA, "tab-a");
+    store.openIfNotDismissed(refA, "tab-a");
+
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toMatchObject({ source: tabA });
+  });
+
+  it("keeps only string tab ids from persisted dismissal state", () => {
+    expect(
+      normalizePersistedMiniPlayerState({
+        dismissedTabIdsByThreadKey: { "env-1:thread-A": ["tab-a", 1, null] },
+      }),
+    ).toEqual({
+      dismissedTabIdsByThreadKey: { "env-1:thread-A": ["tab-a"] },
+    });
+  });
+
+  it("undismisses a tab without opening its floating player", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, tabA);
+    store.dismiss(refA, "tab-a");
+    store.undismiss(refA, "tab-a");
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({});
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+  });
+
+  it("hides the player from close() without recording a dismissal", () => {
+    const store = usePreviewMiniPlayerStore.getState();
+    store.open(refA, tabA);
+    store.close(refA);
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({});
+    expect(
+      selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
+    ).toBeNull();
+
+    store.open(refA, tabA);
+    store.dismiss(refA, "tab-a");
+    store.open(refA, tabB);
+    store.close(refA);
+
+    expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
+      [scopedThreadKey(refA)]: ["tab-a"],
+    });
   });
 });

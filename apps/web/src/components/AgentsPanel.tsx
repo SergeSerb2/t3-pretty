@@ -46,37 +46,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { subscribeSecondTick } from "~/lib/secondTicker";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
-
-/**
- * In-flight states all present as Working (one steady state, per the
- * monitoring-pill design: detail belongs in the activity sub-line, and a
- * stalled/waiting/queued subagent is still the fleet doing its job, not a
- * user problem). Only settled states differentiate.
- */
-const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
-  pending: { dotClass: "bg-info", label: "Working" },
-  running: { dotClass: "bg-info", label: "Working" },
-  waiting: { dotClass: "bg-info", label: "Working" },
-  // Idle reads as settled (muted, not sky): a resting Codex child looks done
-  // unless resumed — live-test: sky idle dots read as stuck in-progress.
-  idle: { dotClass: "bg-muted-foreground/50", label: "Idle · resumable" },
-  completed: { dotClass: "bg-success", label: "Completed" },
-  failed: { dotClass: "bg-destructive", label: "Failed" },
-  cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
-  interrupted: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
-};
-
-function StatusDot({ status }: { status: RuntimeSubagent["status"] }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("size-1.5 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass)}
-    />
-  );
-}
+import { STATUS_VISUALS, StatusDot } from "~/components/ThreadStatusIndicators";
 
 function formatElapsedSeconds(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
@@ -102,7 +76,8 @@ function elapsedBetween(startedAt: string, endIso: string | null): string {
 
 /**
  * Elapsed time for the current activation. Live agents self-tick via DOM
- * writes (zero React commits per tick); settled agents freeze at completedAt.
+ * writes from one shared timer (zero React commits per tick); settled agents
+ * freeze at completedAt.
  */
 function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
   const textRef = useRef<HTMLSpanElement>(null);
@@ -118,9 +93,7 @@ function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
         textRef.current.textContent = elapsedBetween(startedAt, null);
       }
     };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
+    return subscribeSecondTick(update);
   }, [live, startedAt]);
 
   if (!startedAt) {
@@ -391,6 +364,8 @@ function AgentRow({
 }) {
   const [open, setOpen] = useState(false);
   const visuals = STATUS_VISUALS[agent.status];
+  const statusLabel =
+    agent.kind === "subagent_batch" && agent.status === "idle" ? "Idle" : visuals.label;
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
   const role =
@@ -446,12 +421,12 @@ function AgentRow({
             agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
           )}
         >
-          {activity ?? visuals.label}
+          {activity ?? statusLabel}
         </span>
         <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
           {metadata.join(" · ")}
         </span>
-        <span className="sr-only">{visuals.label}</span>
+        <span className="sr-only">{statusLabel}</span>
       </button>
       {open ? (
         <AgentDetail agent={agent} entries={log ? subagentLogEntries(log, agent.id) : []} />

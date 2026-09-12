@@ -9,6 +9,7 @@ import * as Predicate from "effect/Predicate";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { readFilePrefix } from "../boundedFileRead.ts";
 import * as ServerConfig from "../config.ts";
 
 const secretStoreErrorContext = {
@@ -16,7 +17,7 @@ const secretStoreErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class SecretStoreSecureError extends Schema.TaggedErrorClass<SecretStoreSecureError>()(
+export class SecretStoreSecureError extends Schema.TaggedError<SecretStoreSecureError>()(
   "SecretStoreSecureError",
   {
     ...secretStoreErrorContext,
@@ -27,7 +28,7 @@ export class SecretStoreSecureError extends Schema.TaggedErrorClass<SecretStoreS
   }
 }
 
-export class SecretStoreReadError extends Schema.TaggedErrorClass<SecretStoreReadError>()(
+export class SecretStoreReadError extends Schema.TaggedError<SecretStoreReadError>()(
   "SecretStoreReadError",
   {
     ...secretStoreErrorContext,
@@ -38,7 +39,7 @@ export class SecretStoreReadError extends Schema.TaggedErrorClass<SecretStoreRea
   }
 }
 
-export class SecretStoreTemporaryPathError extends Schema.TaggedErrorClass<SecretStoreTemporaryPathError>()(
+export class SecretStoreTemporaryPathError extends Schema.TaggedError<SecretStoreTemporaryPathError>()(
   "SecretStoreTemporaryPathError",
   {
     ...secretStoreErrorContext,
@@ -49,7 +50,7 @@ export class SecretStoreTemporaryPathError extends Schema.TaggedErrorClass<Secre
   }
 }
 
-export class SecretStorePersistError extends Schema.TaggedErrorClass<SecretStorePersistError>()(
+export class SecretStorePersistError extends Schema.TaggedError<SecretStorePersistError>()(
   "SecretStorePersistError",
   {
     ...secretStoreErrorContext,
@@ -60,7 +61,7 @@ export class SecretStorePersistError extends Schema.TaggedErrorClass<SecretStore
   }
 }
 
-export class SecretStoreRandomGenerationError extends Schema.TaggedErrorClass<SecretStoreRandomGenerationError>()(
+export class SecretStoreRandomGenerationError extends Schema.TaggedError<SecretStoreRandomGenerationError>()(
   "SecretStoreRandomGenerationError",
   {
     ...secretStoreErrorContext,
@@ -71,7 +72,7 @@ export class SecretStoreRandomGenerationError extends Schema.TaggedErrorClass<Se
   }
 }
 
-export class SecretStoreConcurrentReadError extends Schema.TaggedErrorClass<SecretStoreConcurrentReadError>()(
+export class SecretStoreConcurrentReadError extends Schema.TaggedError<SecretStoreConcurrentReadError>()(
   "SecretStoreConcurrentReadError",
   {
     resource: Schema.String,
@@ -82,7 +83,7 @@ export class SecretStoreConcurrentReadError extends Schema.TaggedErrorClass<Secr
   }
 }
 
-export class SecretStoreRemoveError extends Schema.TaggedErrorClass<SecretStoreRemoveError>()(
+export class SecretStoreRemoveError extends Schema.TaggedError<SecretStoreRemoveError>()(
   "SecretStoreRemoveError",
   {
     ...secretStoreErrorContext,
@@ -93,7 +94,7 @@ export class SecretStoreRemoveError extends Schema.TaggedErrorClass<SecretStoreR
   }
 }
 
-export class SecretStoreDecodeError extends Schema.TaggedErrorClass<SecretStoreDecodeError>()(
+export class SecretStoreDecodeError extends Schema.TaggedError<SecretStoreDecodeError>()(
   "SecretStoreDecodeError",
   {
     ...secretStoreErrorContext,
@@ -104,7 +105,7 @@ export class SecretStoreDecodeError extends Schema.TaggedErrorClass<SecretStoreD
   }
 }
 
-export class SecretStoreEncodeError extends Schema.TaggedErrorClass<SecretStoreEncodeError>()(
+export class SecretStoreEncodeError extends Schema.TaggedError<SecretStoreEncodeError>()(
   "SecretStoreEncodeError",
   {
     ...secretStoreErrorContext,
@@ -112,6 +113,30 @@ export class SecretStoreEncodeError extends Schema.TaggedErrorClass<SecretStoreE
 ) {
   override get message(): string {
     return `Failed to encode ${this.resource}.`;
+  }
+}
+
+export class SecretStoreInvalidNameError extends Schema.TaggedError<SecretStoreInvalidNameError>()(
+  "SecretStoreInvalidNameError",
+  {
+    resource: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Invalid ${this.resource}.`;
+  }
+}
+
+export class SecretStoreValueTooLargeError extends Schema.TaggedError<SecretStoreValueTooLargeError>()(
+  "SecretStoreValueTooLargeError",
+  {
+    resource: Schema.String,
+    observedBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    maximumBytes: Schema.Int.check(Schema.isGreaterThan(0)),
+  },
+) {
+  override get message(): string {
+    return `${this.resource} exceeds the ${this.maximumBytes}-byte secret-store limit.`;
   }
 }
 
@@ -125,12 +150,17 @@ export const SecretStoreError = Schema.Union([
   SecretStoreRemoveError,
   SecretStoreDecodeError,
   SecretStoreEncodeError,
+  SecretStoreInvalidNameError,
+  SecretStoreValueTooLargeError,
 ]);
 export type SecretStoreError = typeof SecretStoreError.Type;
 export const isSecretStoreError = Schema.is(SecretStoreError);
 
 const isPlatformError = (value: unknown): value is PlatformError.PlatformError =>
   Predicate.isTagged(value, "PlatformError");
+
+const SECRET_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+export const SECRET_VALUE_MAX_BYTES = 1024 * 1024;
 
 export const isSecretAlreadyExistsError = (error: SecretStoreError): boolean =>
   "cause" in error && isPlatformError(error.cause) && error.cause.reason._tag === "AlreadyExists";
@@ -149,6 +179,7 @@ export class ServerSecretStore extends Context.Service<
   }
 >()("t3/auth/ServerSecretStore") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -166,83 +197,153 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
+  const resolveSecretPath = (name: string): Effect.Effect<string, SecretStoreInvalidNameError> =>
+    SECRET_NAME_PATTERN.test(name)
+      ? Effect.succeed(path.join(serverConfig.secretsDir, `${name}.bin`))
+      : Effect.fail(
+          new SecretStoreInvalidNameError({
+            resource: "secret name",
+          }),
+        );
+
+  const validateSecretValue = (
+    name: string,
+    value: Uint8Array,
+  ): Effect.Effect<void, SecretStoreValueTooLargeError> =>
+    value.byteLength > SECRET_VALUE_MAX_BYTES
+      ? Effect.fail(
+          new SecretStoreValueTooLargeError({
+            resource: `secret ${name}`,
+            observedBytes: value.byteLength,
+            maximumBytes: SECRET_VALUE_MAX_BYTES,
+          }),
+        )
+      : Effect.void;
+
+  const validateRandomByteCount = (
+    name: string,
+    bytes: number,
+  ): Effect.Effect<void, SecretStoreValueTooLargeError | SecretStoreRandomGenerationError> => {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      return Effect.fail(
+        new SecretStoreRandomGenerationError({
+          resource: `secret ${name}`,
+          cause: new RangeError("Secret random byte count must be a non-negative safe integer."),
+        }),
+      );
+    }
+    return bytes > SECRET_VALUE_MAX_BYTES
+      ? Effect.fail(
+          new SecretStoreValueTooLargeError({
+            resource: `secret ${name}`,
+            observedBytes: bytes,
+            maximumBytes: SECRET_VALUE_MAX_BYTES,
+          }),
+        )
+      : Effect.void;
+  };
 
   const get: ServerSecretStore["Service"]["get"] = (name) =>
-    fileSystem.readFile(resolveSecretPath(name)).pipe(
-      Effect.map((bytes) => Option.some(Uint8Array.from(bytes))),
-      Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
-          ? Effect.succeed(Option.none())
-          : Effect.fail(
-              new SecretStoreReadError({
-                resource: `secret ${name}`,
-                cause,
-              }),
-            ),
-      ),
-      Effect.withSpan("ServerSecretStore.get"),
-    );
-
-  const set: ServerSecretStore["Service"]["set"] = (name, value) => {
-    const secretPath = resolveSecretPath(name);
-    return crypto.randomUUIDv4.pipe(
-      Effect.mapError(
-        (cause) =>
-          new SecretStoreTemporaryPathError({
-            resource: `secret ${name}`,
-            cause,
-          }),
-      ),
-      Effect.flatMap((uuid) => {
-        const tempPath = `${secretPath}.${uuid}.tmp`;
-        return Effect.gen(function* () {
-          yield* fileSystem.writeFile(tempPath, value);
-          yield* fileSystem.chmod(tempPath, 0o600);
-          yield* fileSystem.rename(tempPath, secretPath);
-          yield* fileSystem.chmod(secretPath, 0o600);
-        }).pipe(
-          Effect.catch((cause) =>
-            fileSystem.remove(tempPath).pipe(
-              Effect.ignore,
-              Effect.flatMap(() =>
-                Effect.fail(
-                  new SecretStorePersistError({
+    resolveSecretPath(name).pipe(
+      Effect.flatMap((secretPath) =>
+        readFilePrefix(fileSystem, secretPath, SECRET_VALUE_MAX_BYTES + 1).pipe(
+          Effect.flatMap((bytes) =>
+            bytes.byteLength > SECRET_VALUE_MAX_BYTES
+              ? Effect.fail(
+                  new SecretStoreValueTooLargeError({
+                    resource: `secret ${name}`,
+                    observedBytes: bytes.byteLength,
+                    maximumBytes: SECRET_VALUE_MAX_BYTES,
+                  }),
+                )
+              : Effect.succeed(Option.some(Uint8Array.from(bytes))),
+          ),
+          Effect.catchTag("PlatformError", (cause) =>
+            cause.reason._tag === "NotFound"
+              ? Effect.succeed(Option.none())
+              : Effect.fail(
+                  new SecretStoreReadError({
                     resource: `secret ${name}`,
                     cause,
                   }),
                 ),
+          ),
+        ),
+      ),
+      Effect.withSpan("ServerSecretStore.get"),
+    );
+
+  const set: ServerSecretStore["Service"]["set"] = (name, value) =>
+    resolveSecretPath(name).pipe(
+      Effect.flatMap((secretPath) =>
+        validateSecretValue(name, value).pipe(
+          Effect.andThen(
+            crypto.randomUUIDv4.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new SecretStoreTemporaryPathError({
+                    resource: `secret ${name}`,
+                    cause,
+                  }),
+              ),
+              Effect.flatMap((uuid) => {
+                const tempPath = `${secretPath}.${uuid}.tmp`;
+                return Effect.gen(function* () {
+                  yield* fileSystem.writeFile(tempPath, value);
+                  yield* fileSystem.chmod(tempPath, 0o600);
+                  yield* fileSystem.rename(tempPath, secretPath);
+                  yield* fileSystem.chmod(secretPath, 0o600);
+                }).pipe(
+                  Effect.catch((cause) =>
+                    fileSystem.remove(tempPath).pipe(
+                      Effect.ignore,
+                      Effect.flatMap(() =>
+                        Effect.fail(
+                          new SecretStorePersistError({
+                            resource: `secret ${name}`,
+                            cause,
+                          }),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+      Effect.withSpan("ServerSecretStore.set"),
+    );
+
+  const create: ServerSecretStore["Service"]["create"] = (name, value) =>
+    resolveSecretPath(name).pipe(
+      Effect.flatMap((secretPath) =>
+        validateSecretValue(name, value).pipe(
+          Effect.andThen(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const file = yield* fileSystem.open(secretPath, {
+                  flag: "wx",
+                  mode: 0o600,
+                });
+                yield* file.writeAll(value);
+                yield* file.sync;
+                yield* fileSystem.chmod(secretPath, 0o600);
+              }),
+            ).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new SecretStorePersistError({
+                    resource: `secret ${name}`,
+                    cause,
+                  }),
               ),
             ),
           ),
-        );
-      }),
-      Effect.withSpan("ServerSecretStore.set"),
-    );
-  };
-
-  const create: ServerSecretStore["Service"]["create"] = (name, value) => {
-    const secretPath = resolveSecretPath(name);
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const file = yield* fileSystem.open(secretPath, {
-          flag: "wx",
-          mode: 0o600,
-        });
-        yield* file.writeAll(value);
-        yield* file.sync;
-        yield* fileSystem.chmod(secretPath, 0o600);
-      }),
-    ).pipe(
-      Effect.mapError(
-        (cause) =>
-          new SecretStorePersistError({
-            resource: `secret ${name}`,
-            cause,
-          }),
+        ),
       ),
     );
-  };
 
   const getOrCreateRandom: ServerSecretStore["Service"]["getOrCreateRandom"] = (name, bytes) =>
     get(name).pipe(
@@ -250,13 +351,15 @@ export const make = Effect.gen(function* () {
         Option.match({
           onSome: Effect.succeed,
           onNone: () =>
-            crypto.randomBytes(bytes).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new SecretStoreRandomGenerationError({
-                    resource: `secret ${name}`,
-                    cause,
-                  }),
+            validateRandomByteCount(name, bytes).pipe(
+              Effect.andThen(crypto.randomBytes(bytes)),
+              Effect.mapError((cause) =>
+                isSecretStoreError(cause)
+                  ? cause
+                  : new SecretStoreRandomGenerationError({
+                      resource: `secret ${name}`,
+                      cause,
+                    }),
               ),
               Effect.flatMap((generated) =>
                 create(name, generated).pipe(
@@ -287,16 +390,20 @@ export const make = Effect.gen(function* () {
     );
 
   const remove: ServerSecretStore["Service"]["remove"] = (name) =>
-    fileSystem.remove(resolveSecretPath(name)).pipe(
-      Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
-          ? Effect.void
-          : Effect.fail(
-              new SecretStoreRemoveError({
-                resource: `secret ${name}`,
-                cause,
-              }),
-            ),
+    resolveSecretPath(name).pipe(
+      Effect.flatMap((secretPath) =>
+        fileSystem.remove(secretPath).pipe(
+          Effect.catch((cause) =>
+            cause.reason._tag === "NotFound"
+              ? Effect.void
+              : Effect.fail(
+                  new SecretStoreRemoveError({
+                    resource: `secret ${name}`,
+                    cause,
+                  }),
+                ),
+          ),
+        ),
       ),
       Effect.withSpan("ServerSecretStore.remove"),
     );

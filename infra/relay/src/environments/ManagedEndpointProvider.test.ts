@@ -305,8 +305,13 @@ function expectedManagedTunnelName(environmentId: string, userId = "user_ABC"): 
 
 describe("ManagedEndpointProvider", () => {
   it.effect("does not require the deployment RuntimeContext when building the Worker layer", () => {
+    let tunnelListRequest: unknown;
+    let dnsListRequest: unknown;
     const tunnelClient = {
-      list: () => Effect.succeed({ result: [] }),
+      list: (request: unknown) => {
+        tunnelListRequest = request;
+        return Effect.succeed({ result: [] });
+      },
       create: (request: { readonly name: string }) =>
         Effect.succeed({ id: "tunnel-id", name: request.name }),
       putConfiguration: () => Effect.void,
@@ -314,7 +319,10 @@ describe("ManagedEndpointProvider", () => {
       delete: () => Effect.void,
     } as unknown as Cloudflare.Tunnel.ReadWriteTunnelClient;
     const dnsClient = {
-      listDnsRecords: () => Effect.succeed({ result: [] }),
+      listDnsRecords: (request: unknown) => {
+        dnsListRequest = request;
+        return Effect.succeed({ result: [] });
+      },
       createDnsRecord: () => Effect.succeed({ id: "dns-record-id" }),
       updateDnsRecord: () => Effect.void,
       deleteDnsRecord: () => Effect.void,
@@ -342,7 +350,24 @@ describe("ManagedEndpointProvider", () => {
       });
 
       expect(result.runtime.connectorToken).toBe("connector-token");
+      expect(tunnelListRequest).toEqual({
+        name: expectedManagedTunnelName("env_ABC"),
+        isDeleted: false,
+        perPage: ManagedEndpointProvider.MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT,
+      });
+      expect(dnsListRequest).toEqual({
+        name: { exact: expectedManagedHostname("env_ABC") },
+        perPage: ManagedEndpointProvider.MANAGED_ENDPOINT_PROVIDER_RESULT_MAX_COUNT,
+      });
     }).pipe(Effect.provide(layer));
+  });
+
+  it("bounds cyclic provider error-cause inspection", () => {
+    const cyclic: { cause?: unknown } = {};
+    cyclic.cause = cyclic;
+
+    expect(ManagedEndpointProvider.isNotFoundCause(cyclic)).toBe(false);
+    expect(ManagedEndpointProvider.isNotFoundCause({ cause: { status: 404 } })).toBe(true);
   });
 
   it.effect("provisions a Cloudflare tunnel endpoint and connector token", () => {

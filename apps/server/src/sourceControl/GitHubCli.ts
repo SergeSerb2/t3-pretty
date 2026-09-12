@@ -1,7 +1,9 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -18,6 +20,7 @@ import { createGitHubApiQuota, gitHubApiHostFromArgs } from "./gitHubApiQuota.ts
 import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
+  type NormalizedGitHubPullRequestRecord,
 } from "./gitHubPullRequests.ts";
 import {
   decodeGitHubCodexReviewPageJson,
@@ -37,7 +40,7 @@ const gitHubCliFailureFields = {
   cause: Schema.Defect(),
 } as const;
 
-export class GitHubCliUnavailableError extends Schema.TaggedErrorClass<GitHubCliUnavailableError>()(
+export class GitHubCliUnavailableError extends Schema.TaggedError<GitHubCliUnavailableError>()(
   "GitHubCliUnavailableError",
   gitHubCliFailureFields,
 ) {
@@ -50,7 +53,7 @@ export class GitHubCliUnavailableError extends Schema.TaggedErrorClass<GitHubCli
   }
 }
 
-export class GitHubCliAuthenticationError extends Schema.TaggedErrorClass<GitHubCliAuthenticationError>()(
+export class GitHubCliAuthenticationError extends Schema.TaggedError<GitHubCliAuthenticationError>()(
   "GitHubCliAuthenticationError",
   gitHubCliFailureFields,
 ) {
@@ -63,7 +66,7 @@ export class GitHubCliAuthenticationError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
-export class GitHubCliRateLimitError extends Schema.TaggedErrorClass<GitHubCliRateLimitError>()(
+export class GitHubCliRateLimitError extends Schema.TaggedError<GitHubCliRateLimitError>()(
   "GitHubCliRateLimitError",
   gitHubCliFailureFields,
 ) {
@@ -76,7 +79,7 @@ export class GitHubCliRateLimitError extends Schema.TaggedErrorClass<GitHubCliRa
   }
 }
 
-export class GitHubPullRequestNotFoundError extends Schema.TaggedErrorClass<GitHubPullRequestNotFoundError>()(
+export class GitHubPullRequestNotFoundError extends Schema.TaggedError<GitHubPullRequestNotFoundError>()(
   "GitHubPullRequestNotFoundError",
   gitHubCliFailureFields,
 ) {
@@ -89,7 +92,7 @@ export class GitHubPullRequestNotFoundError extends Schema.TaggedErrorClass<GitH
   }
 }
 
-export class GitHubCliCommandError extends Schema.TaggedErrorClass<GitHubCliCommandError>()(
+export class GitHubCliCommandError extends Schema.TaggedError<GitHubCliCommandError>()(
   "GitHubCliCommandError",
   gitHubCliFailureFields,
 ) {
@@ -108,7 +111,7 @@ const gitHubCliDecodeFields = {
   cause: Schema.Defect(),
 } as const;
 
-export class GitHubPullRequestListDecodeError extends Schema.TaggedErrorClass<GitHubPullRequestListDecodeError>()(
+export class GitHubPullRequestListDecodeError extends Schema.TaggedError<GitHubPullRequestListDecodeError>()(
   "GitHubPullRequestListDecodeError",
   gitHubCliDecodeFields,
 ) {
@@ -121,7 +124,7 @@ export class GitHubPullRequestListDecodeError extends Schema.TaggedErrorClass<Gi
   }
 }
 
-export class GitHubChangeRequestListDecodeError extends Schema.TaggedErrorClass<GitHubChangeRequestListDecodeError>()(
+export class GitHubChangeRequestListDecodeError extends Schema.TaggedError<GitHubChangeRequestListDecodeError>()(
   "GitHubChangeRequestListDecodeError",
   gitHubCliDecodeFields,
 ) {
@@ -134,7 +137,7 @@ export class GitHubChangeRequestListDecodeError extends Schema.TaggedErrorClass<
   }
 }
 
-export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHubPullRequestDecodeError>()(
+export class GitHubPullRequestDecodeError extends Schema.TaggedError<GitHubPullRequestDecodeError>()(
   "GitHubPullRequestDecodeError",
   gitHubCliDecodeFields,
 ) {
@@ -147,7 +150,7 @@ export class GitHubPullRequestDecodeError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
-export class GitHubCodexReviewDecodeError extends Schema.TaggedErrorClass<GitHubCodexReviewDecodeError>()(
+export class GitHubCodexReviewDecodeError extends Schema.TaggedError<GitHubCodexReviewDecodeError>()(
   "GitHubCodexReviewDecodeError",
   gitHubCliDecodeFields,
 ) {
@@ -160,7 +163,7 @@ export class GitHubCodexReviewDecodeError extends Schema.TaggedErrorClass<GitHub
   }
 }
 
-export class GitHubRepositoryDecodeError extends Schema.TaggedErrorClass<GitHubRepositoryDecodeError>()(
+export class GitHubRepositoryDecodeError extends Schema.TaggedError<GitHubRepositoryDecodeError>()(
   "GitHubRepositoryDecodeError",
   gitHubCliDecodeFields,
 ) {
@@ -228,9 +231,23 @@ export interface GitHubPullRequestSummary {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state?: "open" | "closed" | "merged";
+  readonly isDraft?: boolean;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
+  readonly updatedAt?: string;
+  readonly mergedAt?: string;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
+}
+
+function pullRequestSummary(input: NormalizedGitHubPullRequestRecord): GitHubPullRequestSummary {
+  const { updatedAt, mergedAt, ...summary } = input;
+  return {
+    ...summary,
+    ...(Option.isSome(mergedAt) ? { mergedAt: DateTime.formatIso(mergedAt.value) } : {}),
+    ...(Option.isSome(updatedAt) ? { updatedAt: DateTime.formatIso(updatedAt.value) } : {}),
+  };
 }
 
 export interface GitHubRepositoryCloneUrls {
@@ -356,6 +373,7 @@ function deriveRepositoryCloneUrlsFromCreateOutput(
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
   const quota = createGitHubApiQuota();
@@ -410,7 +428,7 @@ export const make = Effect.gen(function* () {
           "--limit",
           String(input.limit ?? 1),
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -429,11 +447,7 @@ export const make = Effect.gen(function* () {
                     );
                   }
 
-                  return Effect.succeed(
-                    decoded.success.map(
-                      ({ updatedAt: _updatedAt, mergedAt: _mergedAt, ...summary }) => summary,
-                    ),
-                  );
+                  return Effect.succeed(decoded.success.map(pullRequestSummary));
                 }),
               ),
         ),
@@ -446,7 +460,7 @@ export const make = Effect.gen(function* () {
           "view",
           input.reference,
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -463,11 +477,7 @@ export const make = Effect.gen(function* () {
                 );
               }
 
-              return Effect.succeed(
-                (({ updatedAt: _updatedAt, mergedAt: _mergedAt, ...summary }) => summary)(
-                  decoded.success,
-                ),
-              );
+              return Effect.succeed(pullRequestSummary(decoded.success));
             }),
           ),
         ),

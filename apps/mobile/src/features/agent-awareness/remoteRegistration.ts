@@ -1,7 +1,13 @@
 import { type LiveActivity } from "expo-widgets";
+import {
+  configureAndroidAgentNotifications,
+  clearAndroidAgentNotifications,
+} from "./androidNotifications";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AppState, Platform } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -39,6 +45,8 @@ import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./reg
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MAX_MS = 5 * 60_000;
+const AGENT_AWARENESS_OPERATION_TIMEOUT_MS = 30_000;
+const LOCAL_LIVE_ACTIVITY_UPDATE_TIMEOUT_MS = 10_000;
 // After this many consecutive failures the retry loop suspends until the next
 // foreground/registration event re-arms it.
 const REMOTE_ACTIVITY_REGISTRATION_MAX_ATTEMPTS = 5;
@@ -57,9 +65,13 @@ const AgentAwarenessOperation = Schema.Literals([
   "list-active-live-activities",
   "load-live-activity-prime-preferences",
   "prime-live-activity",
+  "register-device",
+  "unregister-device",
+  "register-live-activity",
+  "refresh-live-activity-registration",
 ]);
 
-export class AgentAwarenessOperationError extends Schema.TaggedErrorClass<AgentAwarenessOperationError>()(
+export class AgentAwarenessOperationError extends Schema.TaggedError<AgentAwarenessOperationError>()(
   "AgentAwarenessOperationError",
   {
     operation: AgentAwarenessOperation,
@@ -71,8 +83,29 @@ export class AgentAwarenessOperationError extends Schema.TaggedErrorClass<AgentA
   }
 }
 
+function withAgentAwarenessDeadline<A, E, R>(
+  operation: typeof AgentAwarenessOperation.Type,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | AgentAwarenessOperationError, R> {
+  return effect.pipe(
+    Effect.timeoutOption(Duration.millis(AGENT_AWARENESS_OPERATION_TIMEOUT_MS)),
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.fail(
+            new AgentAwarenessOperationError({
+              operation,
+              cause: new Error("Agent awareness operation timed out."),
+            }),
+          ),
+        onSome: Effect.succeed,
+      }),
+    ),
+  );
+}
+
 const environmentConnections = new Map<EnvironmentId, SavedRemoteConnection>();
-const activityPushTokenListeners = new WeakSet<LiveActivity<AgentActivityProps>>();
+let activityPushTokenSubscription: { remove: () => void } | null = null;
 // Activity tokens the relay recently accepted, by acceptance time. The refresh
 // runs on sign-in, every app foreground, and every environment-connection
 // update, which arrive in bursts and spammed identical registrations. But the
@@ -83,8 +116,13 @@ const activityPushTokenListeners = new WeakSet<LiveActivity<AgentActivityProps>>
 // foreground after real time away still triggers a replay. Cleared on
 // sign-out/identity change alongside the device registration state.
 const ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS = 60_000;
+const MAX_RECENTLY_REGISTERED_ACTIVITY_TOKENS = 32;
 const registeredActivityPushTokens = new Map<string, number>();
 let lastAppliedLiveActivityFingerprint: string | null = null;
+let pendingLocalLiveActivityFingerprint: string | null = null;
+let localLiveActivityUpdateGeneration = 0;
+let localLiveActivityUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+let androidDeviceReplayedAt: number | null = null;
 let pushTokenSubscription: { remove: () => void } | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
 
@@ -126,6 +164,32 @@ export function subscribeAgentAwarenessRegistrationStatus(listener: () => void):
 // over-report. Lazily initialized from native on first read.
 let hasArmedLiveActivityState: boolean | null = null;
 const armedLiveActivityListeners = new Set<() => void>();
+
+function clearActivityPushTokenSubscription(): void {
+  activityPushTokenSubscription?.remove();
+  activityPushTokenSubscription = null;
+}
+
+function clearLocalLiveActivityUpdateTimeout(): void {
+  if (localLiveActivityUpdateTimeout !== null) {
+    clearTimeout(localLiveActivityUpdateTimeout);
+    localLiveActivityUpdateTimeout = null;
+  }
+}
+
+function clearPendingLocalLiveActivityUpdate(): void {
+  localLiveActivityUpdateGeneration++;
+  pendingLocalLiveActivityFingerprint = null;
+  clearLocalLiveActivityUpdateTimeout();
+}
+
+function isLocalLiveActivityContentCurrent(fingerprint: string): boolean {
+  return (
+    fingerprint === pendingLocalLiveActivityFingerprint ||
+    (pendingLocalLiveActivityFingerprint === null &&
+      fingerprint === lastAppliedLiveActivityFingerprint)
+  );
+}
 
 function readNativeHasArmedLiveActivity(): boolean {
   try {
@@ -191,16 +255,6 @@ export function mergeAgentAwarenessRegistrationPreferences(
   return { ...stored, ...override };
 }
 
-export function normalizeAgentAwarenessRelayBaseUrl(
-  value: string | null | undefined,
-): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed.replace(/\/+$/g, "");
-}
-
 function readRelayConfig(): { readonly url: string } | null {
   const relayUrl = resolveCloudPublicConfig().relay.url;
   if (!relayUrl) {
@@ -212,7 +266,15 @@ function readRelayConfig(): { readonly url: string } | null {
 }
 
 function canRegisterRemoteLiveActivities(): boolean {
-  return Platform.OS === "ios";
+  // Personal Team builds omit the widget extension entirely because they
+  // cannot sign its App Group/push capabilities. Treat that as unsupported at
+  // the outer gate so sign-in and foreground events do not repeatedly probe a
+  // native Live Activity target that is not present in this binary.
+  return Platform.OS === "ios" && supportsAgentAwarenessPush();
+}
+
+function canRegisterPushNotifications(): boolean {
+  return Platform.OS === "ios" || Platform.OS === "android";
 }
 
 export function shouldRegisterAgentAwarenessDeviceForProvider(
@@ -230,6 +292,12 @@ export function setAgentAwarenessRelayTokenProvider(
     provider !== null &&
     !shouldRegisterAgentAwarenessDeviceForProvider(relayTokenProviderIdentity, identity);
   if (!isExistingIdentity) {
+    // Native configure compares the persisted account on cold start. An
+    // unset JS identity is a remount, not evidence of a different account.
+    if (relayTokenProviderIdentity && identity !== relayTokenProviderIdentity) {
+      clearAndroidAgentNotifications();
+    }
+    androidDeviceReplayedAt = null;
     deviceRegistrationGeneration++;
     activeDeviceRegistration = null;
     pendingDeviceRegistration = null;
@@ -238,10 +306,12 @@ export function setAgentAwarenessRelayTokenProvider(
   relayTokenProvider = provider;
   relayTokenProviderIdentity = provider ? (identity ?? null) : null;
   if (!provider) {
+    clearAndroidAgentNotifications();
     pushTokenSubscription?.remove();
     pushTokenSubscription = null;
     appStateSubscription?.remove();
     appStateSubscription = null;
+    clearActivityPushTokenSubscription();
     if (activeLiveActivityRegistrationRetry) {
       clearTimeout(activeLiveActivityRegistrationRetry);
       activeLiveActivityRegistrationRetry = null;
@@ -283,10 +353,15 @@ export function setAgentAwarenessRelayTokenProvider(
 export function releaseAgentAwarenessRelayTokenProvider(): void {
   relayTokenProvider = null;
   relayTokenProviderIdentity = null;
+  deviceRegistrationGeneration++;
+  activeDeviceRegistration = null;
+  pendingDeviceRegistration = null;
+  androidDeviceReplayedAt = null;
   pushTokenSubscription?.remove();
   pushTokenSubscription = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
+  clearActivityPushTokenSubscription();
   if (activeLiveActivityRegistrationRetry) {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
@@ -304,11 +379,8 @@ function iosMajorVersion(): number {
 
 function nativePushTokenRegistration(observedPushToken?: string) {
   return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities() || !supportsAgentAwarenessPush()) {
+    if (!canRegisterPushNotifications() || !supportsAgentAwarenessPush()) {
       return { notificationsEnabled: false, pushToken: null };
-    }
-    if (observedPushToken) {
-      return { notificationsEnabled: true, pushToken: observedPushToken };
     }
     const permissions = yield* Effect.tryPromise({
       try: () => Notifications.getPermissionsAsync(),
@@ -321,6 +393,9 @@ function nativePushTokenRegistration(observedPushToken?: string) {
     if (!permissions.granted) {
       return { notificationsEnabled: false, pushToken: null };
     }
+    if (observedPushToken) {
+      return { notificationsEnabled: true, pushToken: observedPushToken };
+    }
     const token = yield* Effect.tryPromise({
       try: () => Notifications.getDevicePushTokenAsync(),
       catch: (cause) =>
@@ -331,13 +406,13 @@ function nativePushTokenRegistration(observedPushToken?: string) {
     }).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => {
-          logRegistrationError("native APNs token lookup failed", error);
+          logRegistrationError("native push token lookup failed", error);
         }),
       ),
       Effect.orElseSucceed(() => null),
     );
     const pushToken =
-      token?.type === "ios" && typeof token.data === "string" && token.data.trim().length > 0
+      token?.type === Platform.OS && typeof token.data === "string" && token.data.trim().length > 0
         ? token.data.trim()
         : null;
     return { notificationsEnabled: pushToken !== null, pushToken };
@@ -369,7 +444,9 @@ function registrationSignature(body: RelayDeviceRegistrationRequest): string {
     body.apsEnvironment ?? "",
     body.appVersion ?? "",
     body.label,
+    body.platform,
     body.iosMajorVersion,
+    body.androidApiLevel,
     body.preferences.notificationsEnabled,
     body.preferences.liveActivitiesEnabled,
     body.preferences.notifyOnApproval,
@@ -434,7 +511,19 @@ function registerDeviceWithRelay(
     // The relay URL participates so pointing the app at a different relay
     // invalidates the record and re-registers there.
     const signature = `${relayConfig.url}|${registrationSignature(payload)}`;
-    if (persisted && persisted.identity === identity && persisted.signature === signature) {
+    // Android registration also silently replays the current card. Collapse
+    // foreground bursts, but repair missed pushes on cold start or a return
+    // after time away, just like re-registering an iOS activity token.
+    const needsAndroidReplay =
+      body.platform === "android" &&
+      (androidDeviceReplayedAt === null ||
+        Date.now() - androidDeviceReplayedAt >= ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS);
+    if (
+      persisted &&
+      persisted.identity === identity &&
+      persisted.signature === signature &&
+      !needsAndroidReplay
+    ) {
       setRegistrationStatus("registered");
       logRegistrationDebug("relay device registration skipped; already registered for account", {
         expectedGeneration,
@@ -460,6 +549,7 @@ function registerDeviceWithRelay(
       });
       return;
     }
+    if (body.platform === "android") androidDeviceReplayedAt = Date.now();
     setRegistrationStatus("registered");
     yield* Effect.promise(() =>
       saveAgentAwarenessRegistrationRecord({
@@ -553,7 +643,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
       return;
     }
     const nowIso = new Date(Date.now()).toISOString();
-    const activity = AgentActivity.start({
+    const props: AgentActivityProps = {
       title: "T3 Pretty",
       subtitle: "Agent work in progress",
       activeCount: 1,
@@ -572,7 +662,15 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
           deepLink: "/",
         },
       ],
-    });
+    };
+    const activity = AgentActivity.start(props);
+    // A newly started card replaces any native instance that owned the prior
+    // pending-token listener. Keep exactly one explicitly owned subscription;
+    // getInstances() creates fresh JS wrappers, so object identity cannot
+    // safely deduplicate listeners across foreground reconciliations.
+    clearActivityPushTokenSubscription();
+    clearPendingLocalLiveActivityUpdate();
+    lastAppliedLiveActivityFingerprint = liveActivityContentFingerprint(props);
     logRegistrationDebug("live activity card armed for local work", {
       threadTitle: input.threadTitle,
     });
@@ -599,7 +697,7 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
     // round-trip entirely. (Tracked presence can lag a lock-screen dismissal,
     // which just means the card is not re-armed until the next registration
     // refresh re-syncs it.)
-    if (fingerprint === lastAppliedLiveActivityFingerprint && hasArmedLiveActivity()) {
+    if (isLocalLiveActivityContentCurrent(fingerprint) && hasArmedLiveActivity()) {
       return;
     }
     let instances = AgentActivity.getInstances();
@@ -612,12 +710,14 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
       }
       instances = instances.slice(0, 1);
     }
-    if (fingerprint === lastAppliedLiveActivityFingerprint && instances.length > 0) {
+    if (isLocalLiveActivityContentCurrent(fingerprint) && instances.length > 0) {
       return;
     }
-    lastAppliedLiveActivityFingerprint = fingerprint;
     if (instances.length === 0) {
       const activity = AgentActivity.start(props);
+      clearActivityPushTokenSubscription();
+      clearPendingLocalLiveActivityUpdate();
+      lastAppliedLiveActivityFingerprint = fingerprint;
       setHasArmedLiveActivity(true);
       logRegistrationDebug("live activity card started from local work", {
         activeCount: props.activeCount,
@@ -632,9 +732,45 @@ export function applyLocalLiveActivityProps(props: AgentActivityProps): void {
     if (!activity) {
       return;
     }
-    void activity.update(props).catch((error: unknown) => {
-      logRegistrationError("live activity local update failed", error);
-    });
+    clearLocalLiveActivityUpdateTimeout();
+    const updateGeneration = ++localLiveActivityUpdateGeneration;
+    pendingLocalLiveActivityFingerprint = fingerprint;
+    localLiveActivityUpdateTimeout = setTimeout(() => {
+      if (updateGeneration === localLiveActivityUpdateGeneration) {
+        pendingLocalLiveActivityFingerprint = null;
+        localLiveActivityUpdateTimeout = null;
+        logRegistrationError(
+          "live activity local update timed out",
+          new Error("Live Activity update timed out."),
+        );
+      }
+    }, LOCAL_LIVE_ACTIVITY_UPDATE_TIMEOUT_MS);
+    let update: Promise<void>;
+    try {
+      update = activity.update(props);
+    } catch (error) {
+      if (updateGeneration === localLiveActivityUpdateGeneration) {
+        pendingLocalLiveActivityFingerprint = null;
+        clearLocalLiveActivityUpdateTimeout();
+      }
+      throw error;
+    }
+    void update.then(
+      () => {
+        if (updateGeneration === localLiveActivityUpdateGeneration) {
+          lastAppliedLiveActivityFingerprint = fingerprint;
+          pendingLocalLiveActivityFingerprint = null;
+          clearLocalLiveActivityUpdateTimeout();
+        }
+      },
+      (error: unknown) => {
+        if (updateGeneration === localLiveActivityUpdateGeneration) {
+          pendingLocalLiveActivityFingerprint = null;
+          clearLocalLiveActivityUpdateTimeout();
+          logRegistrationError("live activity local update failed", error);
+        }
+      },
+    );
   } catch (error) {
     logRegistrationError("live activity local sync failed", error);
   }
@@ -801,56 +937,80 @@ function registerDevice(
   input: RegisterDeviceInput = {},
   expectedGeneration = deviceRegistrationGeneration,
 ): Effect.Effect<void, unknown, ManagedRelay.ManagedRelayClient> {
-  return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities()) {
-      logRegistrationDebug("device registration skipped; platform does not support it");
-      return;
-    }
+  return withAgentAwarenessDeadline(
+    "register-device",
+    Effect.gen(function* () {
+      if (!canRegisterPushNotifications()) {
+        logRegistrationDebug("device registration skipped; platform does not support it");
+        return;
+      }
 
-    logRegistrationDebug("device registration loading local state", { expectedGeneration });
-    const [deviceId, storedPreferences] = yield* Effect.all([
-      Effect.tryPromise({
-        try: () => loadOrCreateAgentAwarenessDeviceId(),
-        catch: (cause) =>
-          new AgentAwarenessOperationError({
-            operation: "load-device-registration-identifier",
-            cause,
-          }),
-      }),
-      Effect.tryPromise({
-        try: () => loadPreferences(),
-        catch: (cause) =>
-          new AgentAwarenessOperationError({
-            operation: "load-device-registration-preferences",
-            cause,
-          }),
-      }),
-    ]);
-    const preferences = mergeAgentAwarenessRegistrationPreferences(
-      storedPreferences,
-      input.preferencesOverride,
-    );
-    const pushTokenRegistration = yield* nativePushTokenRegistration(input?.observedPushToken);
-    logRegistrationDebug("device registration local state ready", {
-      expectedGeneration,
-      notificationsEnabled: pushTokenRegistration.notificationsEnabled,
-    });
-    const bundleId = Constants.expoConfig?.ios?.bundleIdentifier?.trim();
-    yield* registerDeviceWithRelay(
-      makeRelayDeviceRegistrationRequest({
-        deviceId,
-        label: Constants.deviceName?.trim() || "iOS device",
-        iosMajorVersion: iosMajorVersion(),
-        appVersion: Constants.expoConfig?.version,
-        ...(bundleId ? { bundleId } : {}),
-        apsEnvironment: resolveApsEnvironment(Constants.expoConfig?.extra?.appVariant),
-        ...(pushTokenRegistration.pushToken ? { pushToken: pushTokenRegistration.pushToken } : {}),
+      logRegistrationDebug("device registration loading local state", { expectedGeneration });
+      const [deviceId, storedPreferences] = yield* Effect.all([
+        Effect.tryPromise({
+          try: () => loadOrCreateAgentAwarenessDeviceId(),
+          catch: (cause) =>
+            new AgentAwarenessOperationError({
+              operation: "load-device-registration-identifier",
+              cause,
+            }),
+        }),
+        Effect.tryPromise({
+          try: () => loadPreferences(),
+          catch: (cause) =>
+            new AgentAwarenessOperationError({
+              operation: "load-device-registration-preferences",
+              cause,
+            }),
+        }),
+      ]);
+      const preferences = mergeAgentAwarenessRegistrationPreferences(
+        storedPreferences,
+        input.preferencesOverride,
+      );
+      if (expectedGeneration !== deviceRegistrationGeneration) {
+        return;
+      }
+      if (relayTokenProvider && relayTokenProviderIdentity) {
+        configureAndroidAgentNotifications(
+          deviceId,
+          relayTokenProviderIdentity,
+          preferences.liveActivitiesEnabled !== false,
+        );
+      }
+      const pushTokenRegistration = yield* nativePushTokenRegistration(input?.observedPushToken);
+      logRegistrationDebug("device registration local state ready", {
+        expectedGeneration,
         notificationsEnabled: pushTokenRegistration.notificationsEnabled,
-        preferences,
-      }),
-      expectedGeneration,
-    );
-  });
+      });
+      const bundleId =
+        Platform.OS === "android"
+          ? Constants.expoConfig?.android?.package?.trim()
+          : Constants.expoConfig?.ios?.bundleIdentifier?.trim();
+      yield* registerDeviceWithRelay(
+        makeRelayDeviceRegistrationRequest({
+          deviceId,
+          label:
+            Constants.deviceName?.trim() ||
+            (Platform.OS === "android" ? "Android device" : "iOS device"),
+          ...(Platform.OS === "android"
+            ? { platform: "android" as const, androidApiLevel: Number(Platform.Version) }
+            : { platform: "ios" as const, iosMajorVersion: iosMajorVersion() }),
+          appVersion: Constants.expoConfig?.version,
+          ...(bundleId ? { bundleId } : {}),
+          ...(Platform.OS === "ios"
+            ? { apsEnvironment: resolveApsEnvironment(Constants.expoConfig?.extra?.appVariant) }
+            : {}),
+          ...(pushTokenRegistration.pushToken
+            ? { pushToken: pushTokenRegistration.pushToken }
+            : {}),
+          notificationsEnabled: pushTokenRegistration.notificationsEnabled,
+          preferences,
+        }),
+        expectedGeneration,
+      );
+    }),
+  );
 }
 
 function registerDeviceForCurrentUser(): Effect.Effect<
@@ -862,15 +1022,19 @@ function registerDeviceForCurrentUser(): Effect.Effect<
 }
 
 function ensurePushTokenListener(): void {
-  if (pushTokenSubscription || !canRegisterRemoteLiveActivities()) {
+  if (pushTokenSubscription || !canRegisterPushNotifications()) {
     return;
   }
 
   pushTokenSubscription = Notifications.addPushTokenListener((token) => {
-    if (token.type === "ios" && typeof token.data === "string" && token.data.trim().length > 0) {
+    if (
+      token.type === Platform.OS &&
+      typeof token.data === "string" &&
+      token.data.trim().length > 0
+    ) {
       enqueueDeviceRegistration(
         { observedPushToken: token.data.trim() },
-        "native APNs token rotation registration failed",
+        "native push token rotation registration failed",
       );
     }
   });
@@ -883,7 +1047,7 @@ function ensurePushTokenListener(): void {
 // foreground/sign-in bursts collapse to one registration, but returning after
 // real time away still replays.)
 function ensureAppStateListener(): void {
-  if (appStateSubscription || !canRegisterRemoteLiveActivities()) {
+  if (appStateSubscription || !canRegisterPushNotifications()) {
     return;
   }
 
@@ -891,6 +1055,7 @@ function ensureAppStateListener(): void {
     if (state !== "active") {
       return;
     }
+    enqueueDeviceRegistration({}, "device registration after app foreground failed");
     runActiveLiveActivityRegistrationRefresh(
       "active live activity reconciliation after app foreground failed",
     );
@@ -902,6 +1067,8 @@ function endLocalLiveActivities(context: string): void {
     return;
   }
   try {
+    clearActivityPushTokenSubscription();
+    clearPendingLocalLiveActivityUpdate();
     for (const activity of AgentActivity.getInstances()) {
       activity.end("immediate").catch((error: unknown) => {
         logRegistrationError(context, error);
@@ -914,7 +1081,7 @@ function endLocalLiveActivities(context: string): void {
 }
 
 export function registerAgentAwarenessConnection(connection: SavedRemoteConnection): void {
-  if (!canRegisterRemoteLiveActivities()) {
+  if (!canRegisterPushNotifications()) {
     return;
   }
 
@@ -941,6 +1108,7 @@ export function unregisterAllAgentAwarenessConnections(): void {
   pushTokenSubscription = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
+  clearActivityPushTokenSubscription();
   if (activeLiveActivityRegistrationRetry) {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
@@ -987,6 +1155,7 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
   pushTokenSubscription = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
+  clearActivityPushTokenSubscription();
   if (activeLiveActivityRegistrationRetry) {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
@@ -998,9 +1167,11 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
   activeDeviceRegistration = null;
   pendingDeviceRegistration = null;
   registrationStatus = "unknown";
+  androidDeviceReplayedAt = null;
   registrationStatusListeners.clear();
   registeredActivityPushTokens.clear();
   lastAppliedLiveActivityFingerprint = null;
+  clearPendingLocalLiveActivityUpdate();
   hasArmedLiveActivityState = null;
   armedLiveActivityListeners.clear();
 }
@@ -1008,20 +1179,23 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
 export function unregisterAgentAwarenessDeviceForCurrentUser(
   tokenProvider: () => Promise<string | null>,
 ): Effect.Effect<void, never, ManagedRelay.ManagedRelayClient> {
-  return Effect.gen(function* () {
-    const deviceId = yield* Effect.tryPromise({
-      try: () => loadAgentAwarenessDeviceId(),
-      catch: (cause) =>
-        new AgentAwarenessOperationError({
-          operation: "load-device-unregistration-identifier",
-          cause,
-        }),
-    });
-    if (!deviceId) {
-      return;
-    }
-    yield* unregisterDeviceWithRelay({ deviceId, tokenProvider });
-  }).pipe(
+  return withAgentAwarenessDeadline(
+    "unregister-device",
+    Effect.gen(function* () {
+      const deviceId = yield* Effect.tryPromise({
+        try: () => loadAgentAwarenessDeviceId(),
+        catch: (cause) =>
+          new AgentAwarenessOperationError({
+            operation: "load-device-unregistration-identifier",
+            cause,
+          }),
+      });
+      if (!deviceId) {
+        return;
+      }
+      yield* unregisterDeviceWithRelay({ deviceId, tokenProvider });
+    }),
+  ).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
         logRegistrationError("device unregistration failed", error);
@@ -1033,68 +1207,73 @@ export function unregisterAgentAwarenessDeviceForCurrentUser(
 export function registerLiveActivityPushToken(input: {
   readonly activity: LiveActivity<AgentActivityProps>;
 }): Effect.Effect<boolean, unknown, ManagedRelay.ManagedRelayClient> {
-  return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities()) {
-      return false;
-    }
+  return withAgentAwarenessDeadline(
+    "register-live-activity",
+    Effect.gen(function* () {
+      if (!canRegisterRemoteLiveActivities()) {
+        return false;
+      }
 
-    const activityPushToken = yield* Effect.tryPromise({
-      try: () => input.activity.getPushToken(),
-      catch: (cause) =>
-        new AgentAwarenessOperationError({
-          operation: "read-live-activity-push-token",
-          cause,
-        }),
-    });
-    if (!activityPushToken) {
-      if (activityPushTokenListeners.has(input.activity)) {
+      const activityPushToken = yield* Effect.tryPromise({
+        try: () => input.activity.getPushToken(),
+        catch: (cause) =>
+          new AgentAwarenessOperationError({
+            operation: "read-live-activity-push-token",
+            cause,
+          }),
+      });
+      if (!activityPushToken) {
+        if (activityPushTokenSubscription) {
+          logRegistrationDebug(
+            "live activity push token not available yet; token listener already registered",
+            {
+              connectionCount: environmentConnections.size,
+            },
+          );
+          return false;
+        }
+
         logRegistrationDebug(
-          "live activity push token not available yet; token listener already registered",
+          "live activity push token not available yet; listening for token event",
           {
             connectionCount: environmentConnections.size,
           },
         );
+        activityPushTokenSubscription = input.activity.addPushTokenListener((event) => {
+          if (event.pushToken) {
+            logRegistrationDebug("live activity push token event received", {
+              tokenSuffix: event.pushToken.slice(-8),
+            });
+            runRegistrationInBackground(
+              registerLiveActivityPushTokenValue({
+                activityPushToken: event.pushToken,
+              }),
+              "live activity token listener registration failed",
+            );
+          }
+        });
         return false;
       }
 
-      logRegistrationDebug(
-        "live activity push token not available yet; listening for token event",
-        {
-          connectionCount: environmentConnections.size,
-        },
-      );
-      activityPushTokenListeners.add(input.activity);
-      input.activity.addPushTokenListener((event) => {
-        if (event.pushToken) {
-          logRegistrationDebug("live activity push token event received", {
-            tokenSuffix: event.pushToken.slice(-8),
-          });
-          runRegistrationInBackground(
-            registerLiveActivityPushTokenValue({
-              activityPushToken: event.pushToken,
-            }),
-            "live activity token listener registration failed",
-          );
-        }
+      return yield* registerLiveActivityPushTokenValue({
+        activityPushToken,
       });
-      return false;
-    }
-
-    return yield* registerLiveActivityPushTokenValue({
-      activityPushToken,
-    });
-  });
+    }),
+  );
 }
 
 function registerLiveActivityPushTokenValue(input: {
   readonly activityPushToken: string;
 }): Effect.Effect<boolean, unknown, ManagedRelay.ManagedRelayClient> {
   return Effect.gen(function* () {
+    const now = Date.now();
+    for (const [token, acceptedAt] of registeredActivityPushTokens) {
+      if (now - acceptedAt >= ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS) {
+        registeredActivityPushTokens.delete(token);
+      }
+    }
     const acceptedAt = registeredActivityPushTokens.get(input.activityPushToken);
-    if (
-      acceptedAt !== undefined &&
-      Date.now() - acceptedAt < ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS
-    ) {
+    if (acceptedAt !== undefined) {
       return true;
     }
     const deviceId = yield* Effect.tryPromise({
@@ -1111,6 +1290,11 @@ function registerLiveActivityPushTokenValue(input: {
     });
     if (registered) {
       registeredActivityPushTokens.set(input.activityPushToken, Date.now());
+      while (registeredActivityPushTokens.size > MAX_RECENTLY_REGISTERED_ACTIVITY_TOKENS) {
+        const oldestToken = registeredActivityPushTokens.keys().next().value;
+        if (oldestToken === undefined) break;
+        registeredActivityPushTokens.delete(oldestToken);
+      }
       logRegistrationDebug("live activity push token registered", {
         tokenSuffix: input.activityPushToken.slice(-8),
       });
@@ -1158,128 +1342,146 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
   never,
   ManagedRelay.ManagedRelayClient
 > {
-  return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
-      return;
-    }
-
-    const activityLookup = yield* Effect.try({
-      try: () => AgentActivity.getInstances(),
-      catch: (cause) =>
-        new AgentAwarenessOperationError({
-          operation: "list-active-live-activities",
-          cause,
-        }),
-    }).pipe(
-      Effect.map((instances) => ({ instances, failed: false })),
-      Effect.catch((error) =>
-        Effect.sync(() => {
-          logRegistrationError("active live activity lookup failed", error);
-          return {
-            instances: [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
-            failed: true,
-          };
-        }),
-      ),
-    );
-    let activities = activityLookup.instances;
-
-    // The relay tracks exactly one card per device; if concurrent arming ever
-    // produced extras, end them so only one keeps receiving updates.
-    if (activities.length > 1) {
-      for (const extra of activities.slice(1)) {
-        extra.end("immediate").catch((error: unknown) => {
-          logRegistrationError("duplicate live activity cleanup failed", error);
-        });
+  return withAgentAwarenessDeadline(
+    "refresh-live-activity-registration",
+    Effect.gen(function* () {
+      if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+        return;
       }
-      activities = activities.slice(0, 1);
-    }
 
-    // Activities are only ever created here, in the foreground, where the
-    // update token can be observed and registered immediately — the relay
-    // never remote-starts one (background push-to-start wakes proved too
-    // unreliable to hand the token over). Arming is conditional: the relay is
-    // asked what the card would show first, so an idle open never creates an
-    // empty lock-screen card, and an armed card is born with the real
-    // aggregate instead of a placeholder.
-    if (activities.length === 0) {
-      const preferences = yield* Effect.tryPromise({
-        try: () => loadPreferences(),
+      const activityLookup = yield* Effect.try({
+        try: () => AgentActivity.getInstances(),
         catch: (cause) =>
           new AgentAwarenessOperationError({
-            operation: "load-live-activity-prime-preferences",
+            operation: "list-active-live-activities",
             cause,
           }),
-      }).pipe(Effect.orElseSucceed(() => null));
-      // The toggle defaults to on: an unset preference (fresh install) must
-      // prime, so only an explicit false blocks it.
-      if (preferences?.liveActivitiesEnabled !== false) {
-        const snapshot = yield* readAgentActivitySnapshot();
-        // The snapshot request yields; an arm-on-send may have created the
-        // card in the meantime. Re-check so two cards are never started.
-        const armedMeanwhile = yield* Effect.try({
-          try: () => AgentActivity.getInstances(),
-          catch: () => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
-        }).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>));
-        if (armedMeanwhile.length > 0) {
-          activities = [...armedMeanwhile];
-        } else if (snapshot?.aggregate && snapshot.aggregate.activeCount > 0) {
-          const aggregate = snapshot.aggregate;
-          const primed = yield* Effect.try({
-            try: () =>
-              AgentActivity.start({
-                title: aggregate.title,
-                subtitle: aggregate.subtitle,
-                activeCount: aggregate.activeCount,
-                updatedAt: aggregate.updatedAt,
-                activities: aggregate.activities,
-              }),
-            catch: (cause) =>
-              new AgentAwarenessOperationError({
-                operation: "prime-live-activity",
-                cause,
-              }),
+      }).pipe(
+        Effect.map((instances) => ({ instances, failed: false })),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            logRegistrationError("active live activity lookup failed", error);
+            return {
+              instances: [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
+              failed: true,
+            };
+          }),
+        ),
+      );
+      let activities = activityLookup.instances;
+
+      // The relay tracks exactly one card per device; if concurrent arming ever
+      // produced extras, end them so only one keeps receiving updates.
+      if (activities.length > 1) {
+        for (const extra of activities.slice(1)) {
+          extra.end("immediate").catch((error: unknown) => {
+            logRegistrationError("duplicate live activity cleanup failed", error);
+          });
+        }
+        activities = activities.slice(0, 1);
+      }
+
+      // Activities are only ever created here, in the foreground, where the
+      // update token can be observed and registered immediately — the relay
+      // never remote-starts one (background push-to-start wakes proved too
+      // unreliable to hand the token over). Arming is conditional: the relay is
+      // asked what the card would show first, so an idle open never creates an
+      // empty lock-screen card, and an armed card is born with the real
+      // aggregate instead of a placeholder.
+      if (activities.length === 0) {
+        const preferences = yield* Effect.tryPromise({
+          try: () => loadPreferences(),
+          catch: (cause) =>
+            new AgentAwarenessOperationError({
+              operation: "load-live-activity-prime-preferences",
+              cause,
+            }),
+        }).pipe(Effect.orElseSucceed(() => null));
+        // The toggle defaults to on: an unset preference (fresh install) must
+        // prime, so only an explicit false blocks it.
+        if (preferences?.liveActivitiesEnabled !== false) {
+          const snapshot = yield* readAgentActivitySnapshot();
+          // The snapshot request yields; an arm-on-send may have created the
+          // card in the meantime. Re-check so two cards are never started.
+          const armedMeanwhile = yield* Effect.try({
+            try: () => AgentActivity.getInstances(),
+            catch: () => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,
           }).pipe(
-            Effect.catch((error) =>
-              Effect.sync(() => {
-                logRegistrationError("live activity priming failed", error);
-                return null;
-              }),
-            ),
+            Effect.orElseSucceed(() => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>),
           );
-          if (primed) {
-            logRegistrationDebug("live activity card primed", {
-              activeCount: aggregate.activeCount,
-            });
-            activities = [primed];
+          if (armedMeanwhile.length > 0) {
+            activities = [...armedMeanwhile];
+          } else if (snapshot?.aggregate && snapshot.aggregate.activeCount > 0) {
+            const aggregate = snapshot.aggregate;
+            const primed = yield* Effect.try({
+              try: () => {
+                clearActivityPushTokenSubscription();
+                clearPendingLocalLiveActivityUpdate();
+                return AgentActivity.start({
+                  title: aggregate.title,
+                  subtitle: aggregate.subtitle,
+                  activeCount: aggregate.activeCount,
+                  updatedAt: aggregate.updatedAt,
+                  activities: aggregate.activities,
+                });
+              },
+              catch: (cause) =>
+                new AgentAwarenessOperationError({
+                  operation: "prime-live-activity",
+                  cause,
+                }),
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  logRegistrationError("live activity priming failed", error);
+                  return null;
+                }),
+              ),
+            );
+            if (primed) {
+              logRegistrationDebug("live activity card primed", {
+                activeCount: aggregate.activeCount,
+              });
+              activities = [primed];
+            }
           }
         }
       }
-    }
 
-    // Publish the armed state after all start/end reconciliation so gated
-    // subscribers (LocalLiveActivitySync) mount or release their shell streams.
-    // A failed native lookup says nothing, so it leaves the state alone.
-    if (!activityLookup.failed) {
-      setHasArmedLiveActivity(activities.length > 0);
-    }
+      // Publish the armed state after all start/end reconciliation so gated
+      // subscribers (LocalLiveActivitySync) mount or release their shell streams.
+      // A failed native lookup says nothing, so it leaves the state alone.
+      if (!activityLookup.failed) {
+        setHasArmedLiveActivity(activities.length > 0);
+        if (activities.length === 0) {
+          clearActivityPushTokenSubscription();
+        }
+      }
 
-    const registrationResults = yield* Effect.forEach(activities, (activity) =>
-      registerLiveActivityPushToken({ activity }).pipe(
-        Effect.map((registered) => !registered),
-        Effect.catch((error) =>
-          Effect.sync(() => {
-            logRegistrationError("active live activity token registration failed", error);
-            return true;
-          }),
+      const registrationResults = yield* Effect.forEach(activities, (activity) =>
+        registerLiveActivityPushToken({ activity }).pipe(
+          Effect.map((registered) => !registered),
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              logRegistrationError("active live activity token registration failed", error);
+              return true;
+            }),
+          ),
         ),
-      ),
-    );
+      );
 
-    if (registrationResults.some(Boolean)) {
-      scheduleActiveLiveActivityRegistrationRetry();
-    } else {
-      liveActivityRegistrationRetryAttempt = 0;
-    }
-  });
+      if (registrationResults.some(Boolean)) {
+        scheduleActiveLiveActivityRegistrationRetry();
+      } else {
+        liveActivityRegistrationRetryAttempt = 0;
+      }
+    }),
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.sync(() => {
+        logRegistrationError("active live activity reconciliation failed", error);
+        scheduleActiveLiveActivityRegistrationRetry();
+      }),
+    ),
+  );
 }

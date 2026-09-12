@@ -125,79 +125,63 @@ describe("linuxSecretStorage", () => {
     ).toBe("gnome-libsecret");
   });
 
-  it("uses GNOME Keyring remediation for libsecret and unknown backends", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "niri" },
-      }),
-    ).toContain("GNOME Keyring");
+  it("returns GNOME Keyring message for gnome-libsecret preference", () => {
+    const message = resolveLinuxSecretStorageUnavailableMessage({
+      configuredPreference: "gnome-libsecret",
+      selectedBackend: null,
+      env: {},
+    });
+    expect(message).toContain("GNOME Keyring");
+    expect(message).not.toContain("KWallet");
   });
 
-  it("prefers explicit libsecret selection over KDE desktop heuristics", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "gnome-libsecret",
-        selectedBackend: "unknown",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("GNOME Keyring");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("GNOME Keyring");
-  });
-
-  it("prefers explicit KWallet preference over selected gnome-libsecret backend", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "kwallet6",
-        selectedBackend: "gnome_libsecret",
-        env: { XDG_CURRENT_DESKTOP: "niri" },
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "kwallet",
-        selectedBackend: "gnome-libsecret",
+  it("returns KWallet message for KWallet preferences", () => {
+    for (const preference of ["kwallet", "kwallet5", "kwallet6"] as const) {
+      const message = resolveLinuxSecretStorageUnavailableMessage({
+        configuredPreference: preference,
+        selectedBackend: null,
         env: {},
-      }),
-    ).toContain("KWallet");
+      });
+      expect(message).toContain("KWallet");
+      expect(message).not.toContain("GNOME Keyring");
+    }
   });
 
-  it("uses KWallet remediation wording for KDE-looking sessions", () => {
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "kwallet6",
-        env: {},
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { XDG_CURRENT_DESKTOP: "KDE" },
-      }),
-    ).toContain("KWallet");
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { DESKTOP_SESSION: "plasmawayland" },
-      }),
-    ).toContain("KWallet");
-    // A desktop name outranks a bare KDE marker when choosing the wording.
-    expect(
-      resolveLinuxSecretStorageUnavailableMessage({
-        configuredPreference: "auto",
-        selectedBackend: "unknown",
-        env: { GDMSESSION: "gnome", KDE_FULL_SESSION: "true" },
-      }),
-    ).toContain("GNOME Keyring");
+  it("infers message from selectedBackend when preference is auto", () => {
+    const gnomeMessage = resolveLinuxSecretStorageUnavailableMessage({
+      configuredPreference: "auto",
+      selectedBackend: "gnome-libsecret",
+      env: {},
+    });
+    expect(gnomeMessage).toContain("GNOME Keyring");
+    expect(gnomeMessage).not.toContain("KWallet");
+
+    const kwalletMessage = resolveLinuxSecretStorageUnavailableMessage({
+      configuredPreference: "auto",
+      selectedBackend: "kwallet5",
+      env: {},
+    });
+    expect(kwalletMessage).toContain("KWallet");
+    expect(kwalletMessage).not.toContain("GNOME Keyring");
+  });
+
+  it("infers KWallet message from KDE session hints when preference is auto and no backend", () => {
+    const message = resolveLinuxSecretStorageUnavailableMessage({
+      configuredPreference: "auto",
+      selectedBackend: null,
+      env: { XDG_CURRENT_DESKTOP: "KDE", KDE_SESSION_VERSION: "6" },
+    });
+    expect(message).toContain("KWallet");
+    expect(message).not.toContain("GNOME Keyring");
+  });
+
+  it("defaults to GNOME Keyring message when preference is auto and no clear indicators", () => {
+    const message = resolveLinuxSecretStorageUnavailableMessage({
+      configuredPreference: "auto",
+      selectedBackend: null,
+      env: {},
+    });
+    expect(message).toContain("GNOME Keyring");
+    expect(message).not.toContain("KWallet");
   });
 });
