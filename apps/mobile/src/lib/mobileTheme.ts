@@ -7,7 +7,10 @@ import {
   type ThemeAppearance,
   type ThemeColors,
 } from "@t3tools/shared/themePalettes";
-import { STANDARD_THEME_PREVIEW_COLORS, type ThemePreviewColors } from "@t3tools/shared/themePreview";
+import {
+  STANDARD_THEME_PREVIEW_COLORS,
+  type ThemePreviewColors,
+} from "@t3tools/shared/themePreview";
 import { DEFAULT_MOBILE_THEME_VARIABLES } from "./mobileDefaultTheme.ts";
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
@@ -144,6 +147,24 @@ function rgbChannels(color: string): readonly [number, number, number] | null {
   return match
     ? [Number.parseInt(match[1], 16), Number.parseInt(match[2], 16), Number.parseInt(match[3], 16)]
     : null;
+}
+
+/**
+ * An opaque form of a theme colour, composited over the surface behind it. Native chip drawing
+ * parses only opaque hex — an `rgba()` string falls back to a default that is nothing like the
+ * colour asked for — so a translucent role like `--color-border` has to be flattened first.
+ */
+export function flattenThemeColor(color: string, surface: string): string {
+  const match = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?\s*\)$/i.exec(
+    color.trim(),
+  );
+  if (!match) return color;
+  const alpha = match[4] === undefined ? 1 : Number(match[4]);
+  const behind = rgbChannels(surface) ?? [0, 0, 0];
+  const channels = [match[1], match[2], match[3]].map((channel, index) =>
+    Math.max(0, Math.min(255, Math.round(Number(channel) * alpha + behind[index]! * (1 - alpha)))),
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function relativeLuminance(channels: readonly [number, number, number]): number {

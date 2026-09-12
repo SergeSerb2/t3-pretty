@@ -457,6 +457,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "open-source-licenses",
+    title: "Open source licenses",
+    to: "/settings/general",
+  },
+  {
     id: "legacy-plan-mode",
     title: "Plan mode (legacy)",
     to: "/settings/general",

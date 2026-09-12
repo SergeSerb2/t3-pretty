@@ -13,12 +13,15 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
   label = "Copy message",
+  extraFlavors,
   size = "xs",
   variant = "outline",
   className,
 }: {
   text: string;
   label?: string;
+  /** Additional clipboard types written beside `text/plain` when the platform allows it. */
+  extraFlavors?: Readonly<Record<string, string>>;
   size?: "xs" | "icon-xs";
   variant?: "outline" | "ghost";
   className?: string;
@@ -28,6 +31,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
     onCopy: () => showAnchoredCopySuccessToast(ref),
     onError: (error: Error) => showAnchoredCopyErrorToast(ref, error),
     timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
+    ...(extraFlavors ? { extraFlavors } : {}),
   });
 
   return (

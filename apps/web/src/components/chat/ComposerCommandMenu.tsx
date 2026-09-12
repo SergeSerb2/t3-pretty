@@ -6,6 +6,7 @@ import {
 import {
   type ProjectEntry,
   type ProviderDriverKind,
+  type PullRequestContextMetadata,
   type RuntimeMode,
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
@@ -28,6 +29,7 @@ import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ComposerBanner } from "./ComposerBanner";
+import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
 
 export type ComposerCommandItem =
   | {
@@ -76,6 +78,13 @@ export type ComposerCommandItem =
       name: string;
       color: string;
       iconDomain: string | null;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "pull-request";
+      pullRequest: PullRequestContextMetadata;
       label: string;
       description: string;
     };
@@ -223,7 +232,9 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             ) : (
               <p className="text-secondary-label text-xs">
                 {props.isLoading
-                  ? "Searching workspace files..."
+                  ? props.triggerKind === "pull-request"
+                    ? "Finding pull request..."
+                    : "Searching workspace files..."
                   : (props.emptyStateText ??
                     (props.triggerKind === "path"
                       ? "No matching files or folders."
@@ -249,6 +260,8 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
     props.item.type === "skill" ? resolveProviderSkillSourceKind(props.item.skill) : null;
   const isSlashSkill =
     props.triggerKind === "slash-command" && props.item.type === "skill" ? props.item.skill : null;
+  const pullRequestPresentation =
+    props.item.type === "pull-request" ? resolvePullRequestState(props.item.pullRequest) : null;
 
   return (
     <CommandItem
@@ -292,6 +305,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           color={props.item.color}
           iconDomain={props.item.iconDomain}
           size={16}
+        />
+      ) : null}
+      {pullRequestPresentation ? (
+        <pullRequestPresentation.Icon
+          role="img"
+          aria-label={pullRequestPresentation.label}
+          className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
         />
       ) : null}
       <span className="flex min-w-0 flex-1 items-baseline gap-3">
