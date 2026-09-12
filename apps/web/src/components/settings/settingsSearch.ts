@@ -64,6 +64,7 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly wslAvailableOnly?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
+  readonly primaryOnly?: boolean;
   // Its row only renders when the primary server exposes automations.
   readonly requiresAutomations?: boolean;
 }
@@ -880,8 +881,13 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/instructions": null,
+  "/settings/agents": null,
+  "/settings/skills": null,
+  "/settings/apps": null,
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
+  "/settings/storage": null,
   "/settings/connections": "connections",
   "/settings/archived": "project-defaults",
 };

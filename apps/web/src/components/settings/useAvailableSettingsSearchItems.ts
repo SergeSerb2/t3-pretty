@@ -4,7 +4,7 @@ import { AuthAccessWriteScope } from "@t3tools/contracts";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
-import { useEnvironments } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { usePrimarySessionState } from "~/environments/primary";
 import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
@@ -15,7 +15,11 @@ import {
 } from "./settingsSearch";
 
 export function useAvailableSettingsSearchItems() {
-  const { environments, primaryServerConfig } = useEnvironments();
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const primaryServerConfig =
+    environments.find((environment) => environment.environmentId === primaryEnvironmentId)
+      ?.serverConfig ?? null;
   const primarySessionState = usePrimarySessionState();
   const desktopWsl = useEnvironmentQuery(isElectron ? desktopWslStateAtom : null);
   const canManageLocalBackend =

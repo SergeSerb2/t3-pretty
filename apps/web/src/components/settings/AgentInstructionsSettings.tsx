@@ -64,7 +64,7 @@ import { ClaudeAI } from "../Icons";
 import { getDriverOption } from "./providerDriverMeta";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { useSettingsProjectGroups } from "./ProjectSettingsPanel";
+import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import "./agentInstructions.css";
 
 const STARTER_TEMPLATE = `# Instructions

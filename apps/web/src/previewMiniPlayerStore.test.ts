@@ -99,9 +99,9 @@ describe("previewMiniPlayerStore", () => {
 
   it("keeps dismissed tabs independently and does not undismiss on open", () => {
     const store = usePreviewMiniPlayerStore.getState();
-    store.open(refA, "tab-a");
+    store.open(refA, tabA);
     store.dismiss(refA, "tab-a");
-    store.open(refA, "tab-b");
+    store.open(refA, tabB);
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
       [scopedThreadKey(refA)]: ["tab-a"],
@@ -116,14 +116,14 @@ describe("previewMiniPlayerStore", () => {
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toBeNull();
 
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-b");
+    usePreviewMiniPlayerStore.getState().open(refA, tabB);
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({
       [scopedThreadKey(refA)]: ["tab-a", "tab-b"],
     });
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toMatchObject({ tabId: "tab-b" });
+    ).toMatchObject({ source: tabB });
 
     usePreviewMiniPlayerStore.getState().undismiss(refA, "tab-b");
 
@@ -134,7 +134,7 @@ describe("previewMiniPlayerStore", () => {
 
   it("does not auto-present a dismissed tab", () => {
     const store = usePreviewMiniPlayerStore.getState();
-    store.open(refA, "tab-a");
+    store.open(refA, tabA);
     store.dismiss(refA, "tab-a");
     store.openIfNotDismissed(refA, "tab-a");
 
@@ -142,10 +142,10 @@ describe("previewMiniPlayerStore", () => {
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toBeNull();
 
-    usePreviewMiniPlayerStore.getState().open(refA, "tab-a");
+    usePreviewMiniPlayerStore.getState().open(refA, tabA);
     expect(
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
-    ).toMatchObject({ tabId: "tab-a" });
+    ).toMatchObject({ source: tabA });
   });
 
   it("keeps only string tab ids from persisted dismissal state", () => {
@@ -160,7 +160,7 @@ describe("previewMiniPlayerStore", () => {
 
   it("undismisses a tab without opening its floating player", () => {
     const store = usePreviewMiniPlayerStore.getState();
-    store.open(refA, "tab-a");
+    store.open(refA, tabA);
     store.dismiss(refA, "tab-a");
     store.undismiss(refA, "tab-a");
 
@@ -172,7 +172,7 @@ describe("previewMiniPlayerStore", () => {
 
   it("hides the player from close() without recording a dismissal", () => {
     const store = usePreviewMiniPlayerStore.getState();
-    store.open(refA, "tab-a");
+    store.open(refA, tabA);
     store.close(refA);
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({});
@@ -180,9 +180,9 @@ describe("previewMiniPlayerStore", () => {
       selectThreadPreviewMiniPlayer(usePreviewMiniPlayerStore.getState().byThreadKey, refA),
     ).toBeNull();
 
-    store.open(refA, "tab-a");
+    store.open(refA, tabA);
     store.dismiss(refA, "tab-a");
-    store.open(refA, "tab-b");
+    store.open(refA, tabB);
     store.close(refA);
 
     expect(usePreviewMiniPlayerStore.getState().dismissedTabIdsByThreadKey).toEqual({

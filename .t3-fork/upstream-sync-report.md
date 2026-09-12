@@ -2650,3 +2650,10 @@
 - `apps/web/src/components/settings/SourceControlSettings.tsx` — Upstream’s Title Case rendering of “Version Control” and “Source Control Providers”.. Reason: T3 Pretty intentionally uses sentence-case settings copy; adopting the upstream capitalization would regress fork-specific presentation without affecting the new environment-labeling behavior.
 - `shared-typecheck` failed after merging `v0.0.41-nightly.20260911.1564`; repaired with `gpt-5.6-sol`: Updated the parent benchmark fixture to satisfy T3 Pretty's extended OrchestrationThread contract while preserving all existing benchmark behavior.
   - edited `packages/client-runtime/src/remotePerformance.bench.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260911.1564`; repaired with `gpt-5.6-sol`: The repair composes T3 Pretty's browser cursor/controller overlay with the parent's shared browser/device mini-player shell, then updates settings hooks, scope metadata, fixtures, and mini-player tests for the merged APIs. No upstream changes are omitted.
+  - edited `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx`
+  - edited `apps/web/src/components/settings/AgentInstructionsSettings.tsx`
+  - edited `apps/web/src/components/settings/settingsSearch.test.ts`
+  - edited `apps/web/src/components/settings/settingsSearch.ts`
+  - edited `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts`
+  - edited `apps/web/src/previewMiniPlayerStore.test.ts`

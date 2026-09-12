@@ -227,24 +227,48 @@ function BrowserMiniPlayer({
           </TooltipPopup>
         </Tooltip>
       }
-    >
-      {(frame) => (
+      frameOverlay={
         <>
-          <BrowserSurfaceSlot
-            tabId={runtimeTabId}
-            visible={Boolean(desktopOverlay?.hasWebContents)}
-            cornerRadius={PREVIEW_MINI_PLAYER_CORNER_RADIUS}
-            zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
-            fitSourceContent
-            layoutVersion={`${frame.x}:${frame.y}`}
-            className="absolute inset-0"
+          <div
+            className={
+              desktopOverlay?.controller === "agent"
+                ? "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-2 ring-inset ring-primary/70"
+                : "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80"
+            }
+            style={
+              desktopOverlay?.controller === "agent"
+                ? { boxShadow: "0 0 14px 2px var(--color-ring)" }
+                : undefined
+            }
           />
+          {desktopOverlay ? (
+            <div className="pointer-events-none absolute inset-0 z-[49] overflow-hidden rounded-[inherit]">
+              <AgentBrowserCursor
+                tabId={runtimeTabId}
+                zoomFactor={desktopOverlay.zoomFactor}
+                controller={desktopOverlay.controller}
+                content={cursorContent}
+              />
+            </div>
+          ) : null}
           {!desktopOverlay?.hasWebContents ? (
             <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-[inherit] bg-muted text-xs text-muted-foreground">
               Reconnecting preview…
             </div>
           ) : null}
         </>
+      }
+    >
+      {(frame) => (
+        <BrowserSurfaceSlot
+          tabId={runtimeTabId}
+          visible={Boolean(desktopOverlay?.hasWebContents)}
+          cornerRadius={PREVIEW_MINI_PLAYER_CORNER_RADIUS}
+          zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
+          fitSourceContent
+          layoutVersion={`${frame.x}:${frame.y}`}
+          className="absolute inset-0"
+        />
       )}
     </MiniPlayerShell>
   );
@@ -324,6 +348,7 @@ function MiniPlayerShell({
   label,
   onOpenInPanel,
   pillActions,
+  frameOverlay,
   cornerRadius = frameCornerRadius,
   children,
 }: {
@@ -334,6 +359,7 @@ function MiniPlayerShell({
   readonly label: string;
   readonly onOpenInPanel: () => void;
   readonly pillActions?: ReactNode;
+  readonly frameOverlay?: ReactNode;
   /** The clip radius for a given frame; the pill stays inside the curve. */
   readonly cornerRadius?: (frame: PreviewMiniPlayerSize) => number;
   readonly children: (frame: PreviewMiniPlayerFrame) => ReactNode;
@@ -508,33 +534,9 @@ function MiniPlayerShell({
 
           <div className="absolute inset-0 z-[47] rounded-[inherit] bg-muted shadow-2xl/35" />
           {children(frame)}
-          <div
-            className={
-              desktopOverlay?.controller === "agent"
-                ? "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-2 ring-inset ring-primary/70"
-                : "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80"
-            }
-            style={
-              desktopOverlay?.controller === "agent"
-                ? { boxShadow: "0 0 14px 2px var(--color-ring)" }
-                : undefined
-            }
-          />
-          {desktopOverlay ? (
-            <div className="pointer-events-none absolute inset-0 z-[49] overflow-hidden rounded-[inherit]">
-              <AgentBrowserCursor
-                tabId={runtimeTabId}
-                zoomFactor={desktopOverlay.zoomFactor}
-                controller={desktopOverlay.controller}
-                content={cursorContent}
-              />
-            </div>
-          ) : null}
-          {!desktopOverlay?.hasWebContents ? (
-            <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-[inherit] bg-muted text-xs text-muted-foreground">
-              Reconnecting preview…
-            </div>
-          ) : null}
+          {frameOverlay ?? (
+            <div className="pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80" />
+          )}
           {RESIZE_HANDLES.map(({ direction, className }) => (
             <div
               key={direction}
