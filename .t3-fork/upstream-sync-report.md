@@ -2744,3 +2744,5 @@
   - edited `apps/web/src/components/ChatView.logic.ts`
   - edited `apps/web/src/components/chat/runtimeModeConfig.ts`
   - omitted parent change: Expose the parent's legacy `yolo` runtime mode as a selectable runtimeModeOptions entry.. Reason: T3 Pretty authoritatively remaps historical `yolo` values to `full-access` and must not reintroduce the old mode in the picker; the value remains configured for rendering persisted data.
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260912.1576`; repaired with `gpt-5.6-sol`: Restore the missing `DEFAULT_RUNTIME_MODE` import while retaining the fork’s provider-aware runtime-mode normalization and the parent’s project-level default behavior.
+  - edited `apps/mobile/src/features/threads/new-task-flow-provider.tsx`

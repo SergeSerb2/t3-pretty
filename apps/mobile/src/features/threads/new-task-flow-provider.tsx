@@ -15,6 +15,7 @@ import { normalizeSkillId } from "@t3tools/shared/skillTool";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
   MessageId,
   effectiveRuntimeModeForProviderDriver,
