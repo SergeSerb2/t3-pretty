@@ -61,6 +61,15 @@ Five built-in drivers are registered in
 [`builtInDrivers.ts`](../../apps/server/src/provider/builtInDrivers.ts): Codex, Claude, Cursor, Grok,
 and Antigravity. See [provider constraints](./providers.md).
 
+## Settings ownership
+
+Client preferences stay in the current client; environment defaults and project overrides stay
+on their owning server. The web and desktop settings target is URL state, resolved against current
+connections and project membership. An unavailable target must not fall back to another environment.
+**All environments** is an explicit bulk edit of connected, loaded servers, not a durable global
+default or a promise to synchronize offline or future environments. Project-group targets similarly
+select known environment-local checkouts; the group itself does not store inherited defaults.
+
 ## Durable intent and side effects
 
 The event log is the source of truth for orchestration state. The
