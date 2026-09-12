@@ -25,6 +25,14 @@ export const runtimeModeConfig: Record<
     description: "Allow commands and edits without prompts.",
     icon: LockOpenIcon,
   },
+  // Keep persisted legacy values renderable; the picker exposes "full-access" instead.
+  yolo: {
+    label: "Full access",
+    description: "Allow commands and edits without prompts.",
+    icon: LockOpenIcon,
+  },
 };
 
-export const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
+export const runtimeModeOptions: RuntimeMode[] = (
+  Object.keys(runtimeModeConfig) as RuntimeMode[]
+).filter((mode) => mode !== "yolo");
