@@ -299,6 +299,17 @@ export function flushPendingFaviconsForThread(
   return Object.keys(remaining).length === 0;
 }
 
+export function removeThreadFaviconState(threadRef: ScopedThreadRef): void {
+  const threadKey = scopedThreadKey(threadRef);
+  const state = useBrowserFaviconStore.getState();
+  if (!(threadKey in state.pendingByThreadKey) && !(threadKey in state.projectRefByThreadKey)) {
+    return;
+  }
+  const { [threadKey]: _pending, ...pendingByThreadKey } = state.pendingByThreadKey;
+  const { [threadKey]: _project, ...projectRefByThreadKey } = state.projectRefByThreadKey;
+  useBrowserFaviconStore.setState({ pendingByThreadKey, projectRefByThreadKey });
+}
+
 export function useFaviconForThreadUrl(threadRef: ScopedThreadRef, url: string): string | null {
   const projectRef = useFaviconProjectRefForThread(threadRef);
   const preparedConnection = usePreparedConnection(threadRef.environmentId);

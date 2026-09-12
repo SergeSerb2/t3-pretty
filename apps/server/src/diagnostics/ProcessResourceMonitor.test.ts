@@ -85,6 +85,7 @@ describe("ProcessResourceMonitor", () => {
             sampleCount: 2,
           },
         ],
+        topProcessesTruncated: true,
         health: {
           native: {
             status: "degraded",
@@ -134,6 +135,7 @@ describe("ProcessResourceMonitor", () => {
       );
 
       expect(result.totalCpuSecondsApprox).toBe(1.5);
+      expect(result.topProcessesTruncated).toBe(true);
       expect(result.topProcesses).toEqual([
         {
           processKey: `${process.pid}:100`,

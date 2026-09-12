@@ -9,6 +9,8 @@ import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
 
 const GRAPHQL_RESERVE_RATIO = 0.1;
 const RATE_LIMIT_SELECTION = "rateLimit { cost limit remaining resetAt }";
+export const GRAPHQL_BUDGET_HOST_CAPACITY = 256;
+const SOURCE_CONTROL_HOST_MAX_LENGTH = 253;
 
 interface GraphQlBudgetSnapshot {
   readonly cost: number;
@@ -30,7 +32,7 @@ export class GitHubGraphQlBudget extends Context.Service<
 >()("t3/sourceControl/githubGraphQlBudget") {}
 
 function hostKey(host: string): string {
-  return host.trim().toLowerCase();
+  return host.trim().toLowerCase().slice(0, SOURCE_CONTROL_HOST_MAX_LENGTH);
 }
 
 function snapshotFrom(raw: string): GraphQlBudgetSnapshot | null {
@@ -77,6 +79,7 @@ function withRateLimit(document: string): string {
   return `${document.slice(0, end)}\n  ${RATE_LIMIT_SELECTION}\n${document.slice(end)}`;
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const snapshots = yield* Ref.make<ReadonlyMap<string, GraphQlBudgetSnapshot>>(new Map());
 
@@ -98,6 +101,7 @@ export const make = Effect.gen(function* () {
           return [snapshot.resetAtMs, current] as const;
         }
         const next = new Map(current);
+        next.delete(key);
         next.set(key, { ...snapshot, remaining });
         return [null, next] as const;
       });
@@ -117,20 +121,34 @@ export const make = Effect.gen(function* () {
   )(function* (host, raw) {
     const snapshot = snapshotFrom(raw);
     if (snapshot === null) return;
+    const now = yield* Clock.currentTimeMillis;
     yield* Ref.update(snapshots, (current) => {
       const key = hostKey(host);
-      const previous = current.get(key);
+      const next = new Map(current);
+      for (const [heldKey, held] of next) {
+        if (held.resetAtMs <= now) next.delete(heldKey);
+      }
+      const previous = next.get(key);
       // Concurrent reads can finish out of order. Quota only falls within one reset window, and
       // an answer from an older window must not replace the current one.
-      if (
-        previous !== undefined &&
-        (snapshot.resetAtMs < previous.resetAtMs ||
-          (snapshot.resetAtMs === previous.resetAtMs && snapshot.remaining >= previous.remaining))
-      ) {
-        return current;
+      if (previous !== undefined && snapshot.resetAtMs < previous.resetAtMs) {
+        return next;
       }
-      const next = new Map(current);
-      next.set(key, snapshot);
+      next.delete(key);
+      if (next.size >= GRAPHQL_BUDGET_HOST_CAPACITY) {
+        const oldest = next.keys().next().value;
+        if (oldest !== undefined) next.delete(oldest);
+      }
+      // Keep the conservative balance, but learn the observed cost even when our reservation
+      // was larger. Otherwise one expensive read makes every later cheap read spend its cost.
+      next.set(
+        key,
+        previous !== undefined &&
+          snapshot.resetAtMs === previous.resetAtMs &&
+          snapshot.remaining >= previous.remaining
+          ? { ...previous, cost: snapshot.cost }
+          : snapshot,
+      );
       return next;
     });
   });

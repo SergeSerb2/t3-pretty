@@ -8,7 +8,7 @@ import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstance
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
-export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok" | "kimi";
+export type TextGenerationProvider = "codex" | "claudeAgent" | "cursor" | "grok";
 
 export interface CommitMessageGenerationInput {
   cwd: string;
@@ -101,19 +101,6 @@ export interface ProjectIconGenerationResult {
   path: string;
 }
 
-export interface TextGenerationService {
-  generateCommitMessage(
-    input: CommitMessageGenerationInput,
-  ): Promise<CommitMessageGenerationResult>;
-  generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
-  generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
-  generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
-  generateActivityHeadline(
-    input: ActivityHeadlineGenerationInput,
-  ): Promise<ActivityHeadlineGenerationResult>;
-  generateProjectIcon(input: ProjectIconGenerationInput): Promise<ProjectIconGenerationResult>;
-}
-
 /**
  * TextGeneration - Service tag for commit and change request text generation.
  */
@@ -168,8 +155,28 @@ export const unsupportedProjectIconGeneration = (providerLabel: string) =>
     });
   });
 
-/** @deprecated Use `TextGeneration["Service"]`. */
-export type TextGenerationShape = TextGeneration["Service"];
+/**
+ * Text generation for providers that only run conversational agents (Grok
+ * Bot). Every operation fails with a clear message so the UI can steer the
+ * user to another provider for commit messages and titles.
+ */
+export const makeUnsupportedTextGeneration = (providerLabel: string): TextGeneration["Service"] => {
+  const unsupported = (operation: TextGenerationOp) =>
+    Effect.fail(
+      new TextGenerationError({
+        operation,
+        detail: `${providerLabel} does not generate text outside of a thread.`,
+      }),
+    );
+  return {
+    generateCommitMessage: () => unsupported("generateCommitMessage"),
+    generatePrContent: () => unsupported("generatePrContent"),
+    generateBranchName: () => unsupported("generateBranchName"),
+    generateThreadTitle: () => unsupported("generateThreadTitle"),
+    generateActivityHeadline: () => unsupported("generateActivityHeadline"),
+    generateProjectIcon: () => unsupported("generateProjectIcon"),
+  };
+};
 
 type TextGenerationOp =
   | "generateCommitMessage"
@@ -227,6 +234,7 @@ export const makeTextGenerationFromRegistry = (
       ),
   });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   return makeTextGenerationFromRegistry(registry);

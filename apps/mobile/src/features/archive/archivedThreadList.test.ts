@@ -32,6 +32,7 @@ function makeThread(
     branch: null,
     enabledSkillIds: [],
     worktreePath: null,
+    pullRequests: [],
     latestTurn: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     updatedAt: "2026-06-01T00:00:00.000Z",
@@ -58,6 +59,7 @@ function makeSnapshot(
       snapshotSequence: 1,
       projects,
       threads,
+      automations: [],
       updatedAt: "2026-06-04T00:00:00.000Z",
     },
   };

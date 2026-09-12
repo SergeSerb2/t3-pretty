@@ -50,6 +50,7 @@ interface DiscordWebhookPayload {
 const DISCORD_RELEASE_TARGETS = ["prerelease", "latest"] as const;
 const DiscordRoleIdSchema = Schema.String.check(Schema.isPattern(/^\d+$/));
 const DiscordWebhookUrl = Config.url("DISCORD_WEBHOOK_URL");
+const DISCORD_WEBHOOK_TIMEOUT = "60 seconds";
 
 const discordReleaseErrorContext = {
   target: Schema.Literals(["prerelease", "latest"]),
@@ -65,7 +66,7 @@ const discordReleaseErrorContext = {
   hasRoleMentionSyntax: Schema.Boolean,
 };
 
-export class DiscordReleaseWebhookRequestError extends Schema.TaggedErrorClass<DiscordReleaseWebhookRequestError>()(
+export class DiscordReleaseWebhookRequestError extends Schema.TaggedError<DiscordReleaseWebhookRequestError>()(
   "DiscordReleaseWebhookRequestError",
   {
     ...discordReleaseErrorContext,
@@ -77,7 +78,7 @@ export class DiscordReleaseWebhookRequestError extends Schema.TaggedErrorClass<D
   }
 }
 
-export class DiscordReleaseWebhookResponseError extends Schema.TaggedErrorClass<DiscordReleaseWebhookResponseError>()(
+export class DiscordReleaseWebhookResponseError extends Schema.TaggedError<DiscordReleaseWebhookResponseError>()(
   "DiscordReleaseWebhookResponseError",
   {
     ...discordReleaseErrorContext,
@@ -122,6 +123,26 @@ function summarizePayload(payload: DiscordWebhookPayload) {
     allowedRoleMentionCount: payload.allowed_mentions.roles.length,
     hasRoleMentionSyntax: payload.content.includes("<@&"),
   } as const;
+}
+
+export function redactDiscordWebhookCause(cause: unknown): Error {
+  const labels: string[] = [];
+  if (typeof cause === "object" && cause !== null && "_tag" in cause) {
+    labels.push(String(cause._tag));
+  }
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "reason" in cause &&
+    typeof cause.reason === "object" &&
+    cause.reason !== null &&
+    "_tag" in cause.reason
+  ) {
+    labels.push(String(cause.reason._tag));
+  }
+  return new Error(
+    labels.length > 0 ? `Discord webhook failed (${labels.join("/")}).` : "Discord webhook failed.",
+  );
 }
 
 export const buildDiscordReleaseAnnouncement = (
@@ -190,11 +211,12 @@ export const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
   const response = yield* HttpClientRequest.post(webhookUrl).pipe(
     HttpClientRequest.bodyJson(payload),
     Effect.flatMap(httpClient.execute),
+    Effect.timeout(DISCORD_WEBHOOK_TIMEOUT),
     Effect.mapError(
       (cause) =>
         new DiscordReleaseWebhookRequestError({
           ...errorContext,
-          cause,
+          cause: redactDiscordWebhookCause(cause),
         }),
     ),
   );
@@ -212,7 +234,7 @@ export const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
         new DiscordReleaseWebhookResponseError({
           ...errorContext,
           status: response.status,
-          cause,
+          cause: redactDiscordWebhookCause(cause),
         }),
     ),
   );

@@ -39,6 +39,26 @@ describe("collectUint8StreamText", () => {
     }),
   );
 
+  it.effect("can stop an HTTP-style stream as soon as its retained prefix is full", () =>
+    Effect.gen(function* () {
+      const result = yield* collectUint8StreamText({
+        stream: Stream.concat(
+          Stream.make(encoder.encode("abcdef")),
+          Stream.fail("the bounded collector must not pull this stream"),
+        ),
+        maxBytes: 5,
+        drainAfterTruncation: false,
+      });
+
+      assert.deepStrictEqual(result, {
+        text: "abcde",
+        bytes: 5,
+        truncated: true,
+        invalidUtf8: false,
+      });
+    }),
+  );
+
   it.effect("reports invalid UTF-8 separately from a literal replacement character", () =>
     Effect.gen(function* () {
       const invalid = yield* collectUint8StreamText({

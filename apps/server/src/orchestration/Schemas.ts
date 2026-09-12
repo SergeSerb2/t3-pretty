@@ -3,6 +3,7 @@ import {
   ProjectMetaUpdatedPayload as ContractsProjectMetaUpdatedPayloadSchema,
   ProjectDeletedPayload as ContractsProjectDeletedPayloadSchema,
   ThreadCreatedPayload as ContractsThreadCreatedPayloadSchema,
+  ThreadTransferredPayload as ContractsThreadTransferredPayloadSchema,
   ThreadArchivedPayload as ContractsThreadArchivedPayloadSchema,
   ThreadSettledPayload as ContractsThreadSettledPayloadSchema,
   ThreadMetaUpdatedPayload as ContractsThreadMetaUpdatedPayloadSchema,
@@ -19,7 +20,11 @@ import {
   ThreadSceneryAssignedPayload as ContractsThreadSceneryAssignedPayloadSchema,
   ThreadSkillsSetPayload as ContractsThreadSkillsSetPayloadSchema,
   ThreadSubagentPolicySetPayload as ContractsThreadSubagentPolicySetPayloadSchema,
+  ThreadPullRequestLinkedPayload as ContractsThreadPullRequestLinkedPayloadSchema,
+  ThreadPullRequestUnlinkedPayload as ContractsThreadPullRequestUnlinkedPayloadSchema,
+  ThreadPullRequestSyncedPayload as ContractsThreadPullRequestSyncedPayloadSchema,
   ThreadMessageSentPayload as ContractsThreadMessageSentPayloadSchema,
+  ThreadNativeResumeRequestedPayload as ContractsThreadNativeResumeRequestedPayloadSchema,
   ThreadProposedPlanUpsertedPayload as ContractsThreadProposedPlanUpsertedPayloadSchema,
   ThreadSessionSetPayload as ContractsThreadSessionSetPayloadSchema,
   ThreadTurnDiffCompletedPayload as ContractsThreadTurnDiffCompletedPayloadSchema,
@@ -38,6 +43,7 @@ export const ProjectMetaUpdatedPayload = ContractsProjectMetaUpdatedPayloadSchem
 export const ProjectDeletedPayload = ContractsProjectDeletedPayloadSchema;
 
 export const ThreadCreatedPayload = ContractsThreadCreatedPayloadSchema;
+export const ThreadTransferredPayload = ContractsThreadTransferredPayloadSchema;
 export const ThreadArchivedPayload = ContractsThreadArchivedPayloadSchema;
 export const ThreadSettledPayload = ContractsThreadSettledPayloadSchema;
 export const ThreadMetaUpdatedPayload = ContractsThreadMetaUpdatedPayloadSchema;
@@ -54,8 +60,12 @@ export const ThreadPinReorderedPayload = ContractsThreadPinReorderedPayloadSchem
 export const ThreadSceneryAssignedPayload = ContractsThreadSceneryAssignedPayloadSchema;
 export const ThreadSkillsSetPayload = ContractsThreadSkillsSetPayloadSchema;
 export const ThreadSubagentPolicySetPayload = ContractsThreadSubagentPolicySetPayloadSchema;
+export const ThreadPullRequestLinkedPayload = ContractsThreadPullRequestLinkedPayloadSchema;
+export const ThreadPullRequestUnlinkedPayload = ContractsThreadPullRequestUnlinkedPayloadSchema;
+export const ThreadPullRequestSyncedPayload = ContractsThreadPullRequestSyncedPayloadSchema;
 
 export const MessageSentPayloadSchema = ContractsThreadMessageSentPayloadSchema;
+export const ThreadNativeResumeRequestedPayload = ContractsThreadNativeResumeRequestedPayloadSchema;
 export const ThreadProposedPlanUpsertedPayload = ContractsThreadProposedPlanUpsertedPayloadSchema;
 export const ThreadSessionSetPayload = ContractsThreadSessionSetPayloadSchema;
 export const ThreadTurnDiffCompletedPayload = ContractsThreadTurnDiffCompletedPayloadSchema;

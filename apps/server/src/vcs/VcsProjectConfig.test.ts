@@ -14,22 +14,6 @@ const TestLayer = VcsProjectConfig.layer.pipe(
 );
 
 describe("VcsProjectConfig", () => {
-  it("keeps operation context and the original cause on config errors", () => {
-    const cause = new Error("permission denied");
-    const error = new VcsProjectConfig.VcsProjectConfigError({
-      operation: "read",
-      cwd: "/repo/packages/app",
-      configPath: "/repo/.t3code/vcs.json",
-      cause,
-    });
-
-    assert.equal(error.operation, "read");
-    assert.equal(error.cwd, "/repo/packages/app");
-    assert.equal(error.configPath, "/repo/.t3code/vcs.json");
-    assert.strictEqual(error.cause, cause);
-    assert.equal(error.message, "Failed to read VCS project config at /repo/.t3code/vcs.json.");
-  });
-
   it.layer(TestLayer)("uses an explicit requested VCS kind before config", (it) => {
     it.effect("returns the requested kind", () =>
       Effect.gen(function* () {
@@ -213,6 +197,29 @@ describe("VcsProjectConfig", () => {
         yield* fileSystem.writeFileString(
           path.join(configDir, "vcs.json"),
           `{"vcs":{"kind":"svn"}}`,
+        );
+
+        const config = yield* VcsProjectConfig.VcsProjectConfig;
+        const kind = yield* config.resolveKind({ cwd: root });
+
+        assert.equal(kind, "auto");
+      }),
+    );
+  });
+
+  it.layer(TestLayer)("bounds project config reads", (it) => {
+    it.effect("falls back to auto for an oversized valid config", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-vcs-config-test-",
+        });
+        const configDir = path.join(root, ".t3code");
+        yield* fileSystem.makeDirectory(configDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          path.join(configDir, "vcs.json"),
+          `{"vcs":{"kind":"jj"}}${" ".repeat(64 * 1024)}`,
         );
 
         const config = yield* VcsProjectConfig.VcsProjectConfig;

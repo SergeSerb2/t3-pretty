@@ -77,11 +77,6 @@ const fakeCursorAdapter: CursorAdapter.CursorAdapterShape = {
   streamEvents: Stream.empty,
 };
 
-// ProviderAdapterRegistryLive is now a facade over ProviderInstanceRegistry —
-// it walks `listInstances` once at boot and surfaces the default-instance
-// adapter keyed by its driver kind. To test the facade we supply three fake
-// instances whose `instanceId === defaultInstanceIdForDriver(driverKind)` so
-// they pass the default-instance filter.
 const makeFakeInstance = (
   driverKindString: "codex" | "claudeAgent" | "cursor",
   adapter: ProviderInstance["adapter"],
@@ -97,13 +92,17 @@ const makeFakeInstance = (
     displayName: undefined,
     enabled: true,
     snapshot: {
-      maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
-        provider: driverKind,
-        packageName: null,
-      }),
+      resolveMaintenance: () =>
+        Effect.succeed(
+          makeManualOnlyProviderMaintenanceCapabilities({
+            provider: driverKind,
+            packageName: null,
+          }),
+        ),
       getSnapshot: Effect.succeed({} as unknown as ServerProvider),
       refresh: Effect.succeed({} as unknown as ServerProvider),
       streamChanges: Stream.empty,
+      applyUsageLimits: () => Effect.void,
     },
     adapter,
     textGeneration: {} as unknown as TextGeneration.TextGeneration["Service"],
@@ -163,8 +162,5 @@ it.layer(layer)("ProviderAdapterRegistryLive", (it) => {
         claudeInstanceId,
         defaultInstanceIdForDriver(CURSOR_DRIVER),
       ]);
-
-      const providers = yield* registry.listProviders();
-      assert.deepStrictEqual(providers, [CODEX_DRIVER, CLAUDE_AGENT_DRIVER, CURSOR_DRIVER]);
     }));
 });

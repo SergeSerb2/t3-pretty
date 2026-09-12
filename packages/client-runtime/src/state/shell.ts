@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -17,6 +18,7 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribeDynamic } from "../rpc/client.ts";
@@ -25,6 +27,7 @@ import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { compareIsoDateTimes } from "./threadSort.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
 
@@ -52,6 +55,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
   const snapshotLoader = yield* ShellSnapshotLoader;
+  const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
   const cachedSnapshot = yield* cache.loadShell(environmentId).pipe(
     Effect.catch((error) =>
@@ -89,7 +93,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     );
   });
 
-  yield* Stream.fromQueue(persistence).pipe(
+  const persistenceFiber = yield* Stream.fromQueue(persistence).pipe(
     Stream.debounce("8 seconds"),
     Stream.filter(() => typeof document === "undefined" || document.visibilityState === "visible"),
     Stream.runForEach(persist),
@@ -134,51 +138,64 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ),
     );
 
-  const applyItem = Effect.fn("EnvironmentShellState.applyItem")(function* (
-    item: OrchestrationShellStreamItem,
+  // Apply each received batch with one state write. The RPC client's bounded
+  // buffer can split a server chunk, so a bulk action can still need several
+  // writes, but each write includes every event in that batch.
+  const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
+    items: ReadonlyArray<OrchestrationShellStreamItem>,
   ) {
-    if (item.kind === "synchronized") {
-      yield* Ref.set(awaitingCompletion, false);
-      yield* SubscriptionRef.update(state, (current) =>
-        Option.isSome(current.snapshot)
-          ? { ...current, status: "live" as const, error: Option.none() }
-          : current,
-      );
-      return;
+    const initial = yield* SubscriptionRef.get(state);
+    let waiting = yield* Ref.get(awaitingCompletion);
+    let next = initial;
+    let receivedSnapshot = false;
+    for (const item of items) {
+      if (item.kind === "synchronized") {
+        waiting = false;
+        if (Option.isSome(next.snapshot)) {
+          next = { ...next, status: "live", error: Option.none() };
+        }
+        continue;
+      }
+      const nextSnapshot =
+        item.kind === "snapshot"
+          ? item.snapshot
+          : Option.match(next.snapshot, {
+              onNone: () => null,
+              onSome: (snapshot) =>
+                item.sequence > snapshot.snapshotSequence
+                  ? applyShellStreamEvent(snapshot, item)
+                  : snapshot,
+            });
+      if (nextSnapshot === null) continue;
+      receivedSnapshot ||= item.kind === "snapshot";
+      next = {
+        snapshot: Option.some(nextSnapshot),
+        status: waiting ? "synchronizing" : "live",
+        error: Option.none(),
+      };
     }
-
-    const current = yield* SubscriptionRef.get(state);
-    const nextSnapshot =
-      item.kind === "snapshot"
-        ? item.snapshot
-        : Option.match(current.snapshot, {
-            onNone: () => null,
-            onSome: (snapshot) =>
-              item.sequence > snapshot.snapshotSequence
-                ? applyShellStreamEvent(snapshot, item)
-                : snapshot,
-          });
-    if (nextSnapshot === null) {
-      return;
-    }
-
-    const waiting = yield* Ref.get(awaitingCompletion);
-    yield* SubscriptionRef.set(state, {
-      snapshot: Option.some(nextSnapshot),
-      status: waiting ? "synchronizing" : "live",
-      error: Option.none(),
-    });
-    if (item.kind === "snapshot") {
+    yield* Ref.set(awaitingCompletion, waiting);
+    if (next === initial) return;
+    yield* SubscriptionRef.set(state, next);
+    if (receivedSnapshot) {
       const session = yield* Ref.get(activeSubscriptionSession);
       if (session !== null) {
         yield* Ref.set(lastAuthoritativeSession, session);
       }
     }
-    yield* Queue.offer(persistence, nextSnapshot);
+    if (next.snapshot !== initial.snapshot && Option.isSome(next.snapshot)) {
+      yield* Queue.offer(persistence, next.snapshot.value);
+    }
+  });
+
+  const foregroundResubscriptions = Option.match(wakeups, {
+    onNone: () => Stream.never,
+    onSome: (service) =>
+      service.changes.pipe(Stream.filter(ConnectionWakeups.shouldResubscribeAfterWakeup)),
   });
 
   yield* setSynchronizing;
-  yield* Effect.forkScoped(
+  const subscriptionFiber = yield* Effect.forkScoped(
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
@@ -219,7 +236,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           );
           const httpSnapshot = yield* snapshotLoader.load(prepared);
           if (Option.isSome(httpSnapshot)) {
-            yield* applyItem({ kind: "snapshot", snapshot: httpSnapshot.value });
+            yield* applyItems([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
             canResume = true;
             current = yield* SubscriptionRef.get(state);
           }
@@ -230,6 +247,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         if (!canResume || Option.isNone(current.snapshot)) {
           return {
             acceptThreadTouched: true as const,
+            acceptAutomations: true as const,
             ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
           };
         }
@@ -245,16 +263,18 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         return {
           afterSequence: current.snapshot.value.snapshotSequence,
           acceptThreadTouched: true as const,
+          acceptAutomations: true as const,
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
       }),
       {
         onExpectedFailure: (cause) => setStreamError(Cause.squash(cause)),
         retryExpectedFailureAfter: "250 millis",
+        resubscribe: foregroundResubscriptions,
       },
-    ).pipe(Stream.runForEach(applyItem)),
+    ).pipe(Stream.runForEachArray(applyItems)),
   );
-  yield* SubscriptionRef.changes(supervisor.state).pipe(
+  const connectionStateFiber = yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
@@ -268,10 +288,25 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     Effect.forkScoped,
   );
 
+  // Debounced writes are intentionally skipped while a browser document is
+  // hidden. Stop every producer and the existing writer before reading the
+  // final value, so a stale in-flight save cannot land after this flush.
+  yield* Effect.addFinalizer(() =>
+    Effect.all([persistenceFiber, subscriptionFiber, connectionStateFiber].map(Fiber.interrupt), {
+      concurrency: 3,
+      discard: true,
+    }).pipe(
+      Effect.andThen(SubscriptionRef.get(state)),
+      Effect.flatMap((current) =>
+        Option.match(current.snapshot, { onNone: () => Effect.void, onSome: persist }),
+      ),
+    ),
+  );
+
   return state;
 });
 
-export function shellStateChanges(environmentId: EnvironmentId) {
+function shellStateChanges(environmentId: EnvironmentId) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(makeEnvironmentShellState().pipe(Effect.map(SubscriptionRef.changes))),
@@ -355,7 +390,10 @@ export function createEnvironmentShellSummaryAtom(input: {
       }
       hasSnapshot = true;
       const updatedAt = state.snapshot.value.updatedAt;
-      if (latestSnapshotUpdatedAt === null || updatedAt > latestSnapshotUpdatedAt) {
+      if (
+        latestSnapshotUpdatedAt === null ||
+        compareIsoDateTimes(updatedAt, latestSnapshotUpdatedAt) > 0
+      ) {
         latestSnapshotUpdatedAt = updatedAt;
       }
     }

@@ -10,7 +10,8 @@ gates run on pull requests and pushes to `main`:
 - **Check**: `vp check` (format and lint; this repo sets `typeCheck: false` in its lint options),
   then `vpr typecheck` for the workspace type check. The same job
   builds the desktop pipeline (`vp run build:desktop`) and verifies the preload bundle exists and
-  still exports its expected symbols.
+  uses only imports that Electron's sandbox can load. The verifier parses imports, then executes the
+  trusted artifact with controlled bridge stubs to confirm that its required APIs are callable.
 - **Test**: `vp run test` across the workspace.
 - **Mobile Native Static Analysis**: `vp run lint:mobile` on macOS, wrapping
   `scripts/mobile-native-static-check.ts`. A cheap Linux **Mobile Native Changes** job gates it:
@@ -23,23 +24,38 @@ gates run on pull requests and pushes to `main`:
 - **Release Smoke**: exercises release-only workflow steps through `scripts/release-smoke.ts`, so
   release breakage surfaces on PRs rather than at tag time.
 
+[`.github/workflows/windows-tests.yml`](../../.github/workflows/windows-tests.yml) is a manual
+Windows lane (`workflow_dispatch` only) on a Blacksmith Windows 2025 runner. The suite does not
+pass on Windows yet, so it is not a required check; it exists so the work to get there can be
+iterated against a real Windows box without one on hand. Dispatch it with `gh workflow run
+windows-tests.yml --ref <branch>`, optionally with `-f package=<dir>` to run one workspace package
+and `-f files="<paths>"` to run specific test files inside it. Once it is green, fold it into
+`ci.yml`.
+
 `.github/workflows/release.yml` builds macOS (`arm64` and `x64`), Linux (`x64`), and Windows (`x64`)
 desktop artifacts from a single `v*.*.*` tag and publishes one GitHub release. It auto-enables
 signing only when platform credentials are present. macOS passkey builds additionally require
 `APPLE_TEAM_ID` and the `MACOS_PROVISIONING_PROFILE` secret; Windows uses Azure Trusted Signing.
 Without the core signing credentials, it still releases unsigned artifacts.
 
+Preflight shares pnpm's lockfile verification results with the desktop build jobs through a small
+artifact. This avoids repeating dependency checks, especially on Windows, without transferring the
+large registry metadata cache. pnpm checks the current lockfile and policy before it reuses a result.
+If the artifact is unavailable, installation runs the checks again.
+
 T3 Pretty desktop and mobile releases are documented in
 [fork-release.md](../operations/fork-release.md) and
 [fork-mobile-release.md](../operations/fork-mobile-release.md). Imported
 preflight and WSL `node-pty` run on hosted Linux. Native `linux-small`
-builds the x64 AppImage onto the same updater feed. On the shared
-`macos-release` queue, packaging steps select `os: macos` so they only run
-on m5-dev (`REVIEW_ONLY=0`, two workers): signing the DMG, publishing iOS
-OTA, submitting TestFlight IPAs, deploying the relay, and upstream sync.
-Origin PR Review stays queue-wide (one reviewer per PR branch via a
-Buildkite concurrency group) so the review-only Linux agent
-`m1-linux-t3code-fork` — the previous packaging Mac, now a Linux server —
-can take it. Windows NSIS is native `windows-release`.
+builds the x64 AppImage onto the same updater feed. Mac-capable jobs run
+on a hybrid of hosted M4 and self-hosted `macos-release`. Hosted
+`macos-medium` runs pipeline upload and Android orchestration. Hosted
+`macos-large` signs the DMG and compiles iOS OTA/TestFlight. Signing
+imports `CSC_LINK` / `APPLE_API_KEY` from cluster secrets into a per-job
+temp keychain. Origin PR review, comments, the GHA importer, upstream
+sync, the GitHub mirror, and relay stay on self-hosted `macos-release`
+because hosted M4 cannot load `CURSOR_API_KEY`, `GITHUB_MIRROR_SSH_KEY`,
+or `PLANETSCALE_*`, has no `origin` CLI, and currently fails to compile
+buildkite-gha. Windows NSIS stays on `windows-release`.
 
 See [Release Checklist](../operations/release.md) for the full release/signing setup checklist.

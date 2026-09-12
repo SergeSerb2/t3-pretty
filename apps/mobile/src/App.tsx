@@ -20,6 +20,7 @@ const SCENERY_NAV_LIGHT = {
 };
 
 import { RegistryContext } from "@effect/atom-react";
+import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { AppMenuHost } from "./components/AppMenuHost";
 import { WhatsNewHost } from "./features/whats-new/WhatsNewHost";
@@ -37,7 +38,6 @@ import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
 import { isBoringMobileTheme } from "./lib/mobileTheme";
-import { useThemeColor } from "./lib/useThemeColor";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 
 import "../global.css";
@@ -90,8 +90,7 @@ export default function App() {
 
 function AppContent() {
   const { themeAppearance, themeId } = useAppearancePreferences();
-  const statusBarBg = useThemeColor("--color-status-bar");
-  const baseNavigationTheme = useMobileNavigationTheme(themeAppearance);
+  const baseNavigationTheme = useMobileNavigationTheme();
   const sceneryNavigationTheme = themeAppearance === "dark" ? SCENERY_NAV_DARK : SCENERY_NAV_LIGHT;
   const navigationTheme = useMemo(() => {
     if (isBoringMobileTheme(themeId)) {
@@ -116,7 +115,6 @@ function AppContent() {
           <SafeAreaProvider>
             <StatusBar
               barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"}
-              backgroundColor={statusBarBg}
               translucent
             />
             {/* The navigation theme drives the NATIVE header appearance: native-stack
@@ -133,6 +131,7 @@ function AppContent() {
               <ConfirmDialogHost />
               <WhatsNewHost />
               <AppMenuHost />
+              <ThreadArrangementHost />
             </BlurTargetView>
             {/* Anchored-menu overlays render here — in-window, so the
                 keyboard stays up while a dropdown is open. */}

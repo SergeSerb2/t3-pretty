@@ -7,20 +7,14 @@ import {
   managedEndpointHostname,
   isManagedEndpointHostname,
   managedEndpointTunnelName,
+  RelayInvalidDnsNameError,
   relayOwnsManagedEndpointZone,
   RelayPublicDomainLabelTooLongError,
   relayPublicDomainForStage,
   relayResourceNameForStage,
-  relayStageSlug,
 } from "./deploymentConfig.ts";
 
 const isRelayPublicDomainLabelTooLongError = Schema.is(RelayPublicDomainLabelTooLongError);
-
-describe("relayStageSlug", () => {
-  it("matches Alchemy physical-name sanitization for default developer stages", () => {
-    expect(relayStageSlug("dev_julius")).toBe("dev-julius");
-  });
-});
 
 describe("relayPublicDomainForStage", () => {
   it("uses the canonical relay hostname for production", () => {
@@ -53,6 +47,15 @@ describe("relayPublicDomainForStage", () => {
     });
     expect(error.message).toBe(
       `Relay stage '${stage}' produces custom domain label 'relay-dev-${"x".repeat(60)}' (70 characters), exceeding the DNS label limit of 63.`,
+    );
+  });
+
+  it("rejects an invalid imported zone instead of emitting a malformed public origin", () => {
+    expect(() => relayPublicDomainForStage("prod", "https://example.com/path")).toThrow(
+      RelayInvalidDnsNameError,
+    );
+    expect(() => relayPublicDomainForStage("prod", "example..com")).toThrow(
+      RelayInvalidDnsNameError,
     );
   });
 });
@@ -115,9 +118,17 @@ describe("managed endpoint names", () => {
     });
   });
 
+  it("rejects invalid base domains and allocated hostnames before constructing URLs", () => {
+    expect(() => managedEndpointHostname("prod", "https://example.com", "a".repeat(64))).toThrow(
+      RelayInvalidDnsNameError,
+    );
+    expect(() => managedEndpointForHostname("example.com/path")).toThrow(RelayInvalidDnsNameError);
+  });
+
   it("rejects hostnames outside the relay zone", () => {
     expect(isManagedEndpointHostname("internal.example.net", "example.com")).toBe(false);
     expect(isManagedEndpointHostname("example.com.attacker.test", "example.com")).toBe(false);
     expect(isManagedEndpointHostname("dev-julius.example.com.", "example.com")).toBe(false);
+    expect(isManagedEndpointHostname("dev-julius.example.com", "example..com")).toBe(false);
   });
 });

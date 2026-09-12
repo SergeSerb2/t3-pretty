@@ -10,6 +10,8 @@ import type {
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cache from "effect/Cache";
+import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -34,6 +36,7 @@ import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   collectStreamAsString,
   isCommandMissingCause,
   providerModelsFromSettings,
@@ -214,130 +217,6 @@ function isCursorThinkingConfigOption(option: EffectAcpSchema.SessionConfigOptio
   return id === "thinking" || name.includes("thinking");
 }
 
-function isCursorOptimizeForConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
-  const id = option.id
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "");
-  const name = option.name.trim().toLowerCase();
-  return (
-    id === "optimizefor" ||
-    name === "optimize for" ||
-    name.includes("optimize for") ||
-    name === "optimization"
-  );
-}
-
-const CURSOR_AUTO_OPTIMIZE_FOR_CHOICES = [
-  { value: "cost", label: "Cost" },
-  { value: "balanced", label: "Balance", isDefault: true },
-  { value: "intelligence", label: "Intelligence" },
-] as const;
-
-type CursorOptimizeForValue = (typeof CURSOR_AUTO_OPTIMIZE_FOR_CHOICES)[number]["value"];
-
-function normalizeCursorOptimizeForValue(
-  value: string | null | undefined,
-): CursorOptimizeForValue | undefined {
-  const normalized = value?.trim().toLowerCase();
-  switch (normalized) {
-    case "cost":
-      return "cost";
-    case "balance":
-    case "balanced":
-      return "balanced";
-    case "intelligence":
-    case "intel":
-      return "intelligence";
-    default:
-      return undefined;
-  }
-}
-
-export function isCursorAutoModel(
-  slug: string | null | undefined,
-  name?: string | null | undefined,
-): boolean {
-  const trimmedSlug = slug?.trim() ?? "";
-  const baseSlug = trimmedSlug.includes("[")
-    ? trimmedSlug.slice(0, trimmedSlug.indexOf("["))
-    : trimmedSlug;
-  const normalizedSlug = (baseSlug || "default").trim().toLowerCase();
-  const normalizedName = name?.trim().toLowerCase() ?? "";
-  return (
-    normalizedSlug === "default" ||
-    normalizedSlug === "auto" ||
-    normalizedSlug === "auto-smart" ||
-    normalizedName === "auto"
-  );
-}
-
-function cursorOptimizeForChoiceLabel(value: CursorOptimizeForValue): string {
-  return CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.find((choice) => choice.value === value)?.label ?? value;
-}
-
-function buildCursorOptimizeForDescriptor(
-  configOption: EffectAcpSchema.SessionConfigOption | undefined,
-): ReturnType<typeof buildSelectOptionDescriptor> | undefined {
-  if (configOption?.type === "select") {
-    const options = flattenSessionConfigSelectOptions(configOption).flatMap((entry) => {
-      const normalizedValue = normalizeCursorOptimizeForValue(entry.value);
-      if (!normalizedValue) {
-        return [];
-      }
-      const isDefault =
-        normalizeCursorOptimizeForValue(configOption.currentValue) === normalizedValue ||
-        (normalizeCursorOptimizeForValue(configOption.currentValue) === undefined &&
-          normalizedValue === "balanced");
-      return [
-        {
-          value: normalizedValue,
-          label: entry.name.trim() || cursorOptimizeForChoiceLabel(normalizedValue),
-          ...(isDefault ? { isDefault: true as const } : {}),
-        },
-      ];
-    });
-    if (options.length > 0) {
-      return buildSelectOptionDescriptor({
-        id: "optimizeFor",
-        label: configOption.name?.trim() || "Optimize For",
-        description:
-          configOption.description?.trim() ||
-          "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-        options,
-      });
-    }
-  }
-
-  return buildSelectOptionDescriptor({
-    id: "optimizeFor",
-    label: "Optimize For",
-    description: "Cursor Router mode for Auto: Cost, Balance, or Intelligence.",
-    options: CURSOR_AUTO_OPTIMIZE_FOR_CHOICES.map((choice) => ({ ...choice })),
-  });
-}
-
-export function enrichCursorAutoModelCapabilities(
-  capabilities: ModelCapabilities,
-  slug: string,
-  name?: string | null,
-): ModelCapabilities {
-  if (!isCursorAutoModel(slug, name)) {
-    return capabilities;
-  }
-  const optionDescriptors = capabilities.optionDescriptors ?? [];
-  if (optionDescriptors.some((descriptor) => descriptor.id === "optimizeFor")) {
-    return capabilities;
-  }
-  const optimizeFor = buildCursorOptimizeForDescriptor(undefined);
-  if (!optimizeFor) {
-    return capabilities;
-  }
-  return createModelCapabilities({
-    optionDescriptors: [...optionDescriptors, optimizeFor],
-  });
-}
-
 function isBooleanLikeConfigOption(option: EffectAcpSchema.SessionConfigOption): boolean {
   if (option.type === "boolean") {
     return true;
@@ -426,20 +305,9 @@ export function buildCursorCapabilitiesFromConfigOptions(
   const thinkingOption = configOptions.find(
     (option) => option.category === "model_config" && isCursorThinkingConfigOption(option),
   );
-  const optimizeForOption = configOptions.find(
-    (option) =>
-      (option.category === "model_config" ||
-        option.category === "model_option" ||
-        option.category === undefined) &&
-      isCursorOptimizeForConfigOption(option),
-  );
   const fastCurrentValue = getBooleanCurrentValue(fastOption);
   const thinkingCurrentValue = getBooleanCurrentValue(thinkingOption);
-  const optimizeForDescriptor = optimizeForOption
-    ? buildCursorOptimizeForDescriptor(optimizeForOption)
-    : undefined;
   const optionDescriptors = [
-    ...(optimizeForDescriptor ? [optimizeForDescriptor] : []),
     ...(reasoningEffortLevels.length > 0
       ? [
           buildSelectOptionDescriptor({
@@ -528,11 +396,7 @@ function buildCursorDiscoveredModelsFromAvailableModelsResponse(
         {
           slug,
           name,
-          capabilities: enrichCursorAutoModelCapabilities(
-            buildCursorCapabilitiesFromConfigOptions(model.configOptions),
-            slug,
-            name,
-          ),
+          capabilities: buildCursorCapabilitiesFromConfigOptions(model.configOptions),
         },
       ];
     }),
@@ -612,13 +476,7 @@ function findCursorBooleanConfigValue(
 export function resolveCursorAcpBaseModelId(model: string | null | undefined): string {
   const trimmed = model?.trim();
   const base = trimmed && trimmed.length > 0 ? trimmed : "default";
-  const withoutTraits = base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
-  const normalized = withoutTraits.trim().toLowerCase();
-  // Cursor ACP exposes Auto as `default`; `auto` / `auto-smart` are product/SDK ids.
-  if (normalized === "auto" || normalized === "auto-smart") {
-    return "default";
-  }
-  return withoutTraits;
+  return base.includes("[") ? base.slice(0, base.indexOf("[")) : base;
 }
 
 export function resolveCursorAcpConfigUpdates(
@@ -692,21 +550,6 @@ export function resolveCursorAcpConfigUpdates(
     }
   }
 
-  const optimizeForOption = configOptions.find((option) => isCursorOptimizeForConfigOption(option));
-  const requestedOptimizeFor = normalizeCursorOptimizeForValue(
-    getProviderOptionStringSelectionValue(selections, "optimizeFor"),
-  );
-  if (optimizeForOption && requestedOptimizeFor) {
-    const value = findCursorSelectOptionValue(optimizeForOption, (option) => {
-      const normalizedValue = normalizeCursorOptimizeForValue(option.value);
-      const normalizedName = normalizeCursorOptimizeForValue(option.name);
-      return normalizedValue === requestedOptimizeFor || normalizedName === requestedOptimizeFor;
-    });
-    if (value) {
-      updates.push({ configId: optimizeForOption.id, value });
-    }
-  }
-
   return updates;
 }
 
@@ -731,7 +574,24 @@ export const discoverCursorModelsViaAcp = (
   environment?: NodeJS.ProcessEnv,
 ) => discoverCursorModelsViaListAvailableModels(cursorSettings, environment);
 
-export function getCursorFallbackModels(
+// Each driver instance owns its cache; version and account changes invalidate it.
+export const makeCursorModelDiscovery = Effect.fn("makeCursorModelDiscovery")(function* (
+  cursorSettings: CursorSettings,
+  environment?: NodeJS.ProcessEnv,
+) {
+  const cache = yield* Cache.makeWith(
+    (_key: string) => discoverCursorModelsViaAcp(cursorSettings, environment),
+    {
+      capacity: 1,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) && exit.value.length > 0 ? Duration.minutes(30) : Duration.zero,
+    },
+  );
+  return (about: Pick<CursorAboutResult, "version" | "auth">) =>
+    Cache.get(cache, JSON.stringify([about.version, about.auth]));
+});
+
+function getCursorFallbackModels(
   cursorSettings: Pick<CursorSettings, "customModels">,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings([], cursorSettings.customModels, EMPTY_CAPABILITIES);
@@ -799,6 +659,7 @@ export function buildCursorProviderSnapshot(input: {
       input.cursorSettings.customModels,
       EMPTY_CAPABILITIES,
     ),
+    slashCommands: [COMPACT_SLASH_COMMAND],
     probe: {
       installed: true,
       version: input.parsed.version,
@@ -1147,6 +1008,7 @@ const runCursorAboutCommand = (cursorSettings: CursorSettings, environment?: Nod
 export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(function* (
   cursorSettings: CursorSettings,
   environment?: NodeJS.ProcessEnv,
+  discoverModels?: (about: CursorAboutResult) => ReturnType<typeof discoverCursorModelsViaAcp>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -1244,9 +1106,10 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   let discoveryWarning: string | undefined;
   if (parsed.auth.status !== "unauthenticated") {
     const discoveryExit = yield* Effect.exit(
-      discoverCursorModelsViaAcp(cursorSettings, environment).pipe(
-        Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
-      ),
+      (discoverModels
+        ? discoverModels(parsed)
+        : discoverCursorModelsViaAcp(cursorSettings, environment)
+      ).pipe(Effect.timeoutOption(CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS)),
     );
     if (Exit.isFailure(discoveryExit)) {
       yield* Effect.logWarning("Cursor ACP model discovery failed", {
