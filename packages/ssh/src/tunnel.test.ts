@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
-import { forkCliTarballUrl, T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -14,20 +14,17 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { SshPasswordPrompt } from "./auth.ts";
+import { SshCommandError } from "./errors.ts";
 import {
   buildRemoteLaunchScript,
   buildRemotePairingScript,
   buildRemoteStopScript,
   buildRemoteT3RunnerScript,
-  buildRemoteWindowsLaunchScript,
-  buildRemoteWindowsPairingScript,
-  buildRemoteWindowsStopScript,
   describeReadinessCause,
   issueRemotePairingToken,
   launchOrReuseRemoteServer,
   REMOTE_PICK_PORT_SCRIPT,
   SshEnvironmentManager,
-  stopRemoteServer,
   waitForHttpReady,
 } from "./tunnel.ts";
 
@@ -107,15 +104,13 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 describe("ssh tunnel scripts", () => {
   it("builds the remote t3 runner with npx and npm fallbacks", () => {
     const script = buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
-    const packageSpec = forkCliTarballUrl();
 
     assert.include(script, "T3_NODE_SCRIPT_PATH=''");
     assert.include(script, 'exec t3 "$@"');
-    assert.include(script, `exec npx --yes '${packageSpec}' "$@"`);
-    assert.include(script, `exec npm exec --yes '${packageSpec}' -- "$@"`);
-    assert.include(script, `could not install '${packageSpec}'`);
-    assert.include(script, `require_installed_t3_cli npx --yes --package '${packageSpec}'`);
-    assert.include(script, `require_installed_t3_cli npm exec --yes --package '${packageSpec}'`);
+    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
+    assert.include(script, "could not install 't3@latest'");
+    assert.include(script, "require_installed_t3_cli npx --yes --package 't3@latest'");
+    assert.include(script, "require_installed_t3_cli npm exec --yes --package 't3@latest'");
     assert.include(script, "npm produced no t3 executable");
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
@@ -135,57 +130,6 @@ describe("ssh tunnel scripts", () => {
     assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
   });
 
-  it("builds syntactically valid Windows launch, pairing, and stop scripts", () => {
-    const runner = {
-      packageSpec: 't3@nightly"; Write-Output owned',
-      nodeEngineRange: TEST_NODE_ENGINE_RANGE,
-    };
-    const launchScript = buildRemoteWindowsLaunchScript(runner);
-    const pairingScript = buildRemoteWindowsPairingScript(runner);
-    const stopScript = buildRemoteWindowsStopScript();
-
-    assert.include(launchScript, 'const T3_PACKAGE_SPEC = "t3@nightly\\\"; Write-Output owned";');
-    assert.include(launchScript, "taskkill.exe");
-    assert.include(launchScript, "npx-cli.js");
-    assert.include(launchScript, "function satisfiesSemverRange");
-    assert.include(pairingScript, '"auth",');
-    assert.include(pairingScript, '"pairing",');
-    assert.include(stopScript, "taskkill.exe");
-    assert.notInclude(launchScript, "@@T3_");
-    assert.notInclude(pairingScript, "@@T3_");
-    assert.doesNotThrow(() => new Function(launchScript));
-    assert.doesNotThrow(() => new Function(pairingScript));
-    assert.doesNotThrow(() => new Function(stopScript));
-  });
-
-  it("keeps remote SSH state separate for the selected build", () => {
-    const target = {
-      alias: "devbox",
-      hostname: "devbox.example.com",
-      username: "julius",
-      port: 2222,
-    } as const;
-    const baseDirName = T3CODE_BUILD_FLAVOR === "internal" ? ".t3" : ".t3-pretty";
-    const otherBaseDirName = T3CODE_BUILD_FLAVOR === "internal" ? ".t3-pretty" : ".t3";
-
-    for (const script of [
-      buildRemoteLaunchScript(),
-      buildRemotePairingScript(target),
-      buildRemoteStopScript(target),
-    ]) {
-      assert.include(script, `$HOME/${baseDirName}/ssh-launch/`);
-      assert.notInclude(script, `$HOME/${otherBaseDirName}/ssh-launch/`);
-    }
-    for (const script of [
-      buildRemoteWindowsLaunchScript(),
-      buildRemoteWindowsPairingScript(),
-      buildRemoteWindowsStopScript(),
-    ]) {
-      assert.include(script, `os.homedir(), "${baseDirName}"`);
-      assert.notInclude(script, `os.homedir(), "${otherBaseDirName}"`);
-    }
-  });
-
   it("does not hard-code a remote node engine range", () => {
     const script = buildRemoteT3RunnerScript();
 
@@ -198,8 +142,6 @@ describe("ssh tunnel scripts", () => {
       packageSpec: "t3@nightly; touch /tmp/t3-owned",
     });
 
-    assert.include(script, "exec npx --yes 't3@nightly; touch /tmp/t3-owned' \"$@\"");
-    assert.include(script, "exec npm exec --yes 't3@nightly; touch /tmp/t3-owned' -- \"$@\"");
     assert.include(
       script,
       "require_installed_t3_cli npx --yes --package 't3@nightly; touch /tmp/t3-owned'",
@@ -217,28 +159,6 @@ describe("ssh tunnel scripts", () => {
       "T3_NODE_SCRIPT_PATH='/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs'",
     );
     assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
-  });
-
-  it("propagates fork public cloud configuration to POSIX and Windows runners", () => {
-    const publicEnvironment = {
-      T3CODE_RELAY_URL: "https://relay.fork.example.test",
-      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_fork_'quoted",
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_fork",
-    };
-    const posixScript = buildRemoteT3RunnerScript({ publicEnvironment });
-    const windowsLaunchScript = buildRemoteWindowsLaunchScript({ publicEnvironment });
-    const windowsPairingScript = buildRemoteWindowsPairingScript({ publicEnvironment });
-
-    assert.include(posixScript, "export T3CODE_RELAY_URL='https://relay.fork.example.test'");
-    assert.include(posixScript, "export T3CODE_CLERK_PUBLISHABLE_KEY='pk_fork_'\\''quoted'");
-    assert.include(posixScript, "export T3CODE_CLERK_CLI_OAUTH_CLIENT_ID='oauth_fork'");
-    assert.include(windowsLaunchScript, '"T3CODE_RELAY_URL":"https://relay.fork.example.test"');
-    assert.include(windowsLaunchScript, "...T3_PUBLIC_ENVIRONMENT");
-    assert.include(windowsPairingScript, "...T3_PUBLIC_ENVIRONMENT");
-    assert.notInclude(posixScript, "@@T3_");
-    assert.notInclude(windowsLaunchScript, "@@T3_");
-    assert.doesNotThrow(() => new Function(windowsLaunchScript));
-    assert.doesNotThrow(() => new Function(windowsPairingScript));
   });
 
   it("uses the remote t3 runner for launch and pairing scripts", () => {
@@ -336,52 +256,6 @@ describe("ssh tunnel scripts", () => {
       const result = yield* launchOrReuseRemoteServer(target);
       assert.equal(result.remotePort, 3774);
       assert.deepEqual(spawnedCommands[0]?.slice(-5, -1), ["sh", "-l", "-s", "--"]);
-    }).pipe(Effect.provide(processLayer));
-  });
-
-  it.effect("uses native Node lifecycle scripts when the remote host is Windows", () => {
-    const spawnedCommands: Array<ReadonlyArray<string>> = [];
-    const spawner = ChildProcessSpawner.make((command) =>
-      Effect.sync(() => {
-        const args = commandArgs(command);
-        spawnedCommands.push(args);
-        if (args.includes("cmd.exe")) {
-          return makeSuccessfulProcess("win32\n");
-        }
-        if (args.includes("node") && args.includes("-")) {
-          if (spawnedCommands.filter((entry) => entry.includes("node")).length === 1) {
-            return makeSuccessfulProcess('{"remotePort":3773,"serverKind":"managed"}\n');
-          }
-          if (spawnedCommands.filter((entry) => entry.includes("node")).length === 2) {
-            return makeSuccessfulProcess('{"credential":"WINDOWS-PAIRING"}\n');
-          }
-          return makeSuccessfulProcess('{"stopped":true}\n');
-        }
-        return makeSuccessfulProcess("\n");
-      }),
-    );
-    const processLayer = Layer.mergeAll(
-      NodeServices.layer,
-      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    );
-    const target = {
-      alias: "winbox",
-      hostname: "winbox.example.com",
-      username: "developer",
-      port: 22,
-    } as const;
-
-    return Effect.gen(function* () {
-      const launched = yield* launchOrReuseRemoteServer(target);
-      const paired = yield* issueRemotePairingToken(target);
-      yield* stopRemoteServer(target);
-
-      assert.equal(launched.remotePort, 3773);
-      assert.equal(launched.remoteServerKind, "managed");
-      assert.equal(paired.credential, "WINDOWS-PAIRING");
-      assert.equal(spawnedCommands.filter((args) => args.includes("cmd.exe")).length, 3);
-      assert.equal(spawnedCommands.filter((args) => args.includes("node")).length, 3);
-      assert.isFalse(spawnedCommands.some((args) => args.includes("sh")));
     }).pipe(Effect.provide(processLayer));
   });
 
@@ -512,63 +386,205 @@ describe("ssh tunnel scripts", () => {
     }).pipe(Effect.provide(processLayer));
   });
 
-  it.effect("closes the tunnel scope and starts fresh after disconnect", () => {
-    const spawnedCommands: Array<ReadonlyArray<string>> = [];
-    let tunnelKillCount = 0;
-    let stopCommandCount = 0;
-    const spawner = ChildProcessSpawner.make((command) =>
-      Effect.sync(() => {
-        const args = commandArgs(command);
-        spawnedCommands.push(args);
-        if (args.includes("-N")) {
-          return makeRunningProcess(() => {
-            tunnelKillCount += 1;
+  it.effect.each(["successful stop", "failed stop"] as const)(
+    "closes the tunnel scope and starts fresh after a %s",
+    (mode) => {
+      const spawnedCommands: Array<ReadonlyArray<string>> = [];
+      let tunnelKillCount = 0;
+      let stopCommandCount = 0;
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.sync(() => {
+          const args = commandArgs(command);
+          spawnedCommands.push(args);
+          if (args.includes("-N")) {
+            return makeRunningProcess(() => {
+              tunnelKillCount += 1;
+            });
+          }
+          if (args.includes("sh") && args.includes("--")) {
+            return makeSuccessfulProcess('{"remotePort":3773}\n');
+          }
+          if (args.includes("sh")) {
+            stopCommandCount += 1;
+            if (mode === "failed stop" && stopCommandCount === 1) {
+              return {
+                ...makeSuccessfulProcess(""),
+                exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+                stderr: Stream.make(
+                  new TextEncoder().encode("Remote T3 server did not stop within 2 seconds.\n"),
+                ),
+              };
+            }
+            return makeSuccessfulProcess('{"stopped":true}\n');
+          }
+          return makeSuccessfulProcess("\n");
+        }),
+      );
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, testHttpClient),
+        Layer.succeed(NetService.NetService, testNetService),
+        SshPasswordPrompt.disabledLayer,
+        SshEnvironmentManager.layer(),
+      );
+      const target = {
+        alias: "devbox",
+        hostname: "devbox.example.com",
+        username: "julius",
+        port: 2222,
+      } as const;
+
+      return Effect.gen(function* () {
+        const manager = yield* SshEnvironmentManager;
+
+        const first = yield* manager.ensureEnvironment(target);
+        assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
+        const firstTunnelArgs = spawnedCommands.find((args) => args.includes("-N"));
+        assert.isDefined(firstTunnelArgs);
+        assert.include(firstTunnelArgs, "ControlMaster=no");
+        assert.include(firstTunnelArgs, "ControlPath=none");
+        assert.include(firstTunnelArgs, "ControlPersist=no");
+
+        const disconnected = yield* Effect.result(manager.disconnectEnvironment(target));
+        if (mode === "failed stop") {
+          assert.isTrue(Result.isFailure(disconnected));
+          if (Result.isFailure(disconnected)) {
+            assert.instanceOf(disconnected.failure, SshCommandError);
+            assert.equal(
+              disconnected.failure.message,
+              "Remote T3 server did not stop within 2 seconds.",
+            );
+          }
+        } else {
+          assert.isTrue(Result.isSuccess(disconnected));
+        }
+        assert.equal(tunnelKillCount, 1);
+        assert.equal(stopCommandCount, 1);
+
+        if (mode === "failed stop") {
+          yield* manager.disconnectEnvironment(target);
+          assert.equal(tunnelKillCount, 1);
+          assert.equal(stopCommandCount, 2);
+        }
+
+        yield* manager.ensureEnvironment(target);
+
+        assert.equal(spawnedCommands.filter((args) => args.includes("-N")).length, 2);
+        assert.equal(tunnelKillCount, 1);
+      }).pipe(
+        Effect.provide(layer),
+        Effect.scoped,
+        Effect.andThen(
+          Effect.sync(() => {
+            assert.equal(tunnelKillCount, 2);
+            assert.equal(stopCommandCount, mode === "failed stop" ? 3 : 2);
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect.each(["local tunnel", "remote server"] as const)(
+    "waits for %s shutdown before reconnecting the same target",
+    (stalledStep) =>
+      Effect.gen(function* () {
+        const shutdownStarted = yield* Deferred.make<void>();
+        const finishShutdown = yield* Deferred.make<void>();
+        const reconnectsStarted = yield* Deferred.make<void>();
+        const pauseShutdown = Deferred.succeed(shutdownStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(finishShutdown)),
+        );
+        let resolutions = 0;
+        let launches = 0;
+        let tunnels = 0;
+        let stops = 0;
+        let remoteRunning = false;
+        const target = { alias: "devbox", hostname: "devbox", username: null, port: null };
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            const args = commandArgs(command);
+            const isTarget = args.includes(target.alias);
+            if (args.includes("-G")) {
+              if (isTarget && ++resolutions === 4) {
+                yield* Deferred.succeed(reconnectsStarted, undefined);
+              }
+              return makeSuccessfulProcess("");
+            }
+            if (args.includes("-N")) {
+              const tunnel = makeRunningProcess(() => undefined);
+              if (isTarget && ++tunnels === 1 && stalledStep === "local tunnel") {
+                return {
+                  ...tunnel,
+                  kill: (options?: ChildProcess.KillOptions) =>
+                    pauseShutdown.pipe(Effect.andThen(tunnel.kill(options))),
+                };
+              }
+              return tunnel;
+            }
+            if (args.includes("--")) {
+              if (isTarget) {
+                launches += 1;
+                remoteRunning = true;
+              }
+              return makeSuccessfulProcess('{"remotePort":3773}\n');
+            }
+            const stop = makeSuccessfulProcess('{"stopped":true}\n');
+            if (!isTarget) return stop;
+            const pause = ++stops === 1 && stalledStep === "remote server";
+            return {
+              ...stop,
+              exitCode: (pause ? pauseShutdown : Effect.void).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    remoteRunning = false;
+                    return ChildProcessSpawner.ExitCode(0);
+                  }),
+                ),
+              ),
+            };
+          }),
+        );
+        const layer = Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(HttpClient.HttpClient, testHttpClient),
+          Layer.succeed(NetService.NetService, testNetService),
+          SshPasswordPrompt.disabledLayer,
+          SshEnvironmentManager.layer(),
+        );
+        yield* Effect.gen(function* () {
+          const manager = yield* SshEnvironmentManager;
+          yield* manager.ensureEnvironment(target);
+          const disconnect = yield* Effect.forkChild(manager.disconnectEnvironment(target));
+          yield* Deferred.await(shutdownStarted);
+          const firstReconnect = yield* Effect.forkChild(manager.ensureEnvironment(target));
+          const secondReconnect = yield* Effect.forkChild(manager.ensureEnvironment(target));
+          yield* Deferred.await(reconnectsStarted);
+
+          yield* manager.ensureEnvironment({
+            alias: "other",
+            hostname: "other",
+            username: null,
+            port: null,
           });
-        }
-        if (args.includes("sh") && args.includes("--")) {
-          return makeSuccessfulProcess('{"remotePort":3773}\n');
-        }
-        if (args.includes("sh")) {
-          stopCommandCount += 1;
-          return makeSuccessfulProcess('{"stopped":true}\n');
-        }
-        return makeSuccessfulProcess("\n");
+          yield* TestClock.adjust(Duration.zero);
+          const launchesBeforeShutdown = launches;
+          yield* Deferred.succeed(finishShutdown, undefined);
+          yield* Fiber.join(disconnect);
+          const first = yield* Fiber.join(firstReconnect);
+          const second = yield* Fiber.join(secondReconnect);
+
+          assert.equal(launchesBeforeShutdown, 1);
+          assert.equal(launches, 2);
+          assert.equal(tunnels, 2);
+          assert.isTrue(remoteRunning);
+          assert.equal(first.httpBaseUrl, second.httpBaseUrl);
+        }).pipe(
+          Effect.ensuring(Deferred.succeed(finishShutdown, undefined)),
+          Effect.provide(layer),
+          Effect.scoped,
+        );
       }),
-    );
-    const layer = Layer.mergeAll(
-      NodeServices.layer,
-      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-      Layer.succeed(HttpClient.HttpClient, testHttpClient),
-      Layer.succeed(NetService.NetService, testNetService),
-      SshPasswordPrompt.disabledLayer,
-      SshEnvironmentManager.layer(),
-    );
-    const target = {
-      alias: "devbox",
-      hostname: "devbox.example.com",
-      username: "julius",
-      port: 2222,
-    } as const;
-
-    return Effect.gen(function* () {
-      const manager = yield* SshEnvironmentManager;
-
-      const first = yield* manager.ensureEnvironment(target);
-      assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
-      const firstTunnelArgs = spawnedCommands.find((args) => args.includes("-N"));
-      assert.isDefined(firstTunnelArgs);
-      assert.include(firstTunnelArgs, "ControlMaster=no");
-      assert.include(firstTunnelArgs, "ControlPath=none");
-      assert.include(firstTunnelArgs, "ControlPersist=no");
-
-      yield* manager.disconnectEnvironment(target);
-      assert.equal(tunnelKillCount, 1);
-      assert.equal(stopCommandCount, 1);
-
-      yield* manager.ensureEnvironment(target);
-
-      assert.equal(spawnedCommands.filter((args) => args.includes("-N")).length, 2);
-      assert.equal(tunnelKillCount, 1);
-    }).pipe(Effect.provide(layer), Effect.scoped);
-  });
+  );
 });

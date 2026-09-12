@@ -1,37 +1,43 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  ExecutionEnvironmentCapabilities,
+  ThreadPullRequestLink,
+  VcsStatusResult,
+} from "@t3tools/contracts";
 import {
   resolveAutomatedReviewPresentation,
   resolveChangeRequestPresentation,
+  type AutomatedReviewPresentation,
 } from "@t3tools/shared/sourceControl";
+
+import {
+  resolveThreadCurrentPullRequestLink,
+  resolveThreadPullRequestBadge,
+} from "@t3tools/shared/threadPullRequests";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 
 export interface ThreadPrPresentation {
   readonly number: number;
-  readonly state: ThreadPr["state"];
+  readonly state: ThreadPr["state"] | null;
+  readonly kind: "pull-request" | "stack";
+  readonly others: number;
+  readonly isDraft: boolean;
   /** Provider-side last activity, bounding when a terminal state landed. */
   readonly updatedAt: string | null;
   readonly url: string;
-  /** Compact pull request number label, e.g. "3774". */
+  /** Compact pull request number or linked count, e.g. "3774" or "+2". */
   readonly label: string;
   /** Full, provider-aware label for assistive technologies. */
   readonly accessibilityLabel: string;
   readonly textClassName: string;
-  readonly automatedReview: ThreadAutomatedReviewPresentation | null;
-}
-
-export interface ThreadAutomatedReviewPresentation {
-  readonly state: NonNullable<NonNullable<ThreadPr["automatedReview"]>>["state"] | "no_signal";
-  readonly label: string;
-  readonly shortLabel: string;
-  readonly description: string;
-  readonly textClassName: string;
+  readonly automatedReview: (AutomatedReviewPresentation & { state: string }) | null;
 }
 
 const PR_STATE_TEXT_CLASS: Record<ThreadPr["state"], string> = {
-  open: "text-emerald-600 dark:text-emerald-400",
-  merged: "text-violet-600 dark:text-violet-400",
-  closed: "text-zinc-500 dark:text-zinc-400",
+  open: "text-adaptive-emerald-600-400",
+  merged: "text-adaptive-violet-600-400",
+  closed: "text-foreground-muted",
 };
 
 export function presentThreadPr(
@@ -39,29 +45,97 @@ export function presentThreadPr(
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): ThreadPrPresentation {
   const presentation = resolveChangeRequestPresentation(provider);
-  const automatedReviewPresentation = resolveAutomatedReviewPresentation(pr.automatedReview);
-  const automatedReview = automatedReviewPresentation
-    ? {
-        state: pr.automatedReview?.state ?? ("no_signal" as const),
-        ...automatedReviewPresentation,
-        textClassName:
-          pr.automatedReview?.state === "reviewing"
-            ? "text-blue-600 dark:text-blue-300"
-            : pr.automatedReview?.state === "passed"
-              ? "text-emerald-600 dark:text-emerald-300"
-              : pr.automatedReview?.state === "feedback"
-                ? "text-amber-700 dark:text-amber-300"
-                : "text-foreground-muted",
-      }
-    : null;
+  const isDraft = pr.state === "open" && pr.isDraft === true;
+  const automatedReviewSignal = "automatedReview" in pr ? pr.automatedReview : undefined;
+  const automatedReview = resolveAutomatedReviewPresentation(automatedReviewSignal);
+  const automatedReviewWithState =
+    automatedReview !== null && automatedReviewSignal !== undefined
+      ? {
+          ...automatedReview,
+          state: automatedReviewSignal === null ? "no_signal" : automatedReviewSignal.state,
+        }
+      : null;
+  const automatedReviewLabel = automatedReview !== null ? `, ${automatedReview.label}` : "";
   return {
+    kind: "pull-request",
+    others: 0,
     number: pr.number,
     state: pr.state,
+    isDraft,
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     label: String(pr.number),
-    accessibilityLabel: `#${pr.number} ${presentation.longName} ${pr.state}${automatedReview ? `, ${automatedReview.label}` : ""}`,
-    textClassName: PR_STATE_TEXT_CLASS[pr.state],
-    automatedReview,
+    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}${automatedReviewLabel}`,
+    textClassName: isDraft ? "text-foreground-muted" : PR_STATE_TEXT_CLASS[pr.state],
+    automatedReview: automatedReviewWithState,
   };
+}
+
+/** Persisted links render immediately, including links awaiting their first host sync. */
+export function presentThreadLinkedPullRequests(
+  links: ReadonlyArray<ThreadPullRequestLink>,
+): ThreadPrPresentation | null {
+  const link = resolveThreadCurrentPullRequestLink(links);
+  const badge = resolveThreadPullRequestBadge(links);
+  if (link === null || badge === null) return null;
+  const snapshot = link.snapshot;
+  const linkedCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others + 1 : null;
+  const isMultiple = badge.kind === "stack" || linkedCount !== null;
+  const state = isMultiple
+    ? badge.state === "draft"
+      ? "open"
+      : badge.state
+    : (snapshot?.state ?? null);
+  const isDraft = isMultiple
+    ? badge.state === "draft"
+    : snapshot?.isDraft === true && state === "open";
+  const label =
+    badge.kind === "stack"
+      ? String(badge.layers)
+      : linkedCount !== null
+        ? `+${linkedCount}`
+        : String(link.number);
+  return {
+    kind: badge.kind,
+    others: badge.kind === "pull-request" ? badge.others : 0,
+    number: link.number,
+    state,
+    isDraft,
+    updatedAt: snapshot?.updatedAt ?? null,
+    url: link.url,
+    label,
+    accessibilityLabel:
+      badge.kind === "stack"
+        ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}`
+        : linkedCount !== null
+          ? `${linkedCount} linked pull requests, overall ${badge.state}`
+          : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}`,
+    textClassName:
+      state === null || isDraft
+        ? "text-foreground-muted"
+        : isMultiple && state === "closed"
+          ? "text-adaptive-rose-600-400"
+          : PR_STATE_TEXT_CLASS[state],
+    automatedReview: null,
+  };
+}
+
+/** Only the array capability replaces legacy references with persisted snapshots. */
+export function resolveThreadPrSource(
+  thread: Pick<EnvironmentThreadShell, "pullRequests" | "linkedPullRequest" | "branchPullRequest">,
+  capabilities:
+    | Pick<ExecutionEnvironmentCapabilities, "threadPullRequests" | "threadPullRequestLinking">
+    | undefined,
+) {
+  const supportsSnapshots = capabilities?.threadPullRequests === true;
+  const linkedPresentation = supportsSnapshots
+    ? presentThreadLinkedPullRequests(thread.pullRequests)
+    : null;
+  const pullRequestRef =
+    linkedPresentation !== null
+      ? null
+      : ((supportsSnapshots
+          ? thread.branchPullRequest
+          : (thread.linkedPullRequest ?? thread.branchPullRequest)) ?? null);
+  return { linkedPresentation, pullRequestRef };
 }

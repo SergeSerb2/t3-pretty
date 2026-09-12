@@ -10,6 +10,8 @@ import { showMarkdownLinkActionSheet } from "../lib/showMarkdownLinkActions";
 type MobileSelectableMarkdownTextProps = Omit<SelectableMarkdownTextProps, "highlightCode">;
 
 export type {
+  MarkdownFileContextMenu,
+  MarkdownFileContextMenuAction,
   MarkdownImageRenderer,
   MarkdownImageRequest,
   NativeMarkdownTextStyle,

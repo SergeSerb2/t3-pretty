@@ -1,16 +1,21 @@
-import { WorkerPoolContext } from "@pierre/diffs/react";
+import { WorkerPoolContext, useWorkerPool } from "@pierre/diffs/react";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
 import * as Schema from "effect/Schema";
-import { useLayoutEffect, useState, type ReactNode } from "react";
-import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
-import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import {
-  createDiffWorkerPoolIdleTerminator,
-  syncDiffWorkerPoolTheme,
-} from "./DiffWorkerPoolProvider.logic";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { usePaintedAppearance } from "../hooks/usePaintedAppearance";
+import { syncDiffWorkerPoolTheme } from "./DiffWorkerPoolProvider.logic";
+import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
+import { PREFERRED_HIGHLIGHTER } from "../lib/syntaxHighlighting";
 
-export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()("DiffWorkerError", {
+export class DiffWorkerError extends Schema.TaggedError<DiffWorkerError>()("DiffWorkerError", {
   operation: Schema.Literals(["create-worker", "get-render-options", "set-render-options"]),
   themeName: Schema.Literals(["pierre-light", "pierre-dark"]),
   cause: Schema.Defect(),
@@ -20,60 +25,130 @@ export class DiffWorkerError extends Schema.TaggedErrorClass<DiffWorkerError>()(
   }
 }
 
-// One pool per page. Workers (814 KB script + oniguruma wasm each) spawn on the first
-// render task and are released after DIFF_WORKER_POOL_IDLE_MS without a mounted diff
-// surface; the manager itself is kept so instances that captured it keep working.
-let diffWorkerPool: WorkerPoolManager | undefined;
+const DIFF_WORKER_IDLE_TTL_MS = 30_000;
+let sharedWorkerPool:
+  | {
+      readonly pool: WorkerPoolManager;
+      consumers: number;
+      idleTimer: ReturnType<typeof setTimeout> | undefined;
+    }
+  | undefined;
 
-function getDiffWorkerPool(themeName: DiffThemeName): WorkerPoolManager {
-  if (diffWorkerPool) {
-    return diffWorkerPool;
-  }
-  const cores =
-    typeof navigator === "undefined" ? 4 : Math.max(1, navigator.hardwareConcurrency || 4);
-  const pool = new WorkerPoolManager(
-    {
-      workerFactory: () => {
-        try {
-          return new DiffsWorker();
-        } catch (cause) {
-          throw new DiffWorkerError({ operation: "create-worker", themeName, cause });
-        }
+/** Create workers after a viewer commits, then reuse them across short panel closures. */
+function acquireDiffWorkerPool(themeName: DiffThemeName, poolSize: number) {
+  const entry = (sharedWorkerPool ??= {
+    pool: new WorkerPoolManager(
+      {
+        workerFactory: () => {
+          try {
+            return new DiffsWorker();
+          } catch (cause) {
+            throw new DiffWorkerError({ operation: "create-worker", themeName, cause });
+          }
+        },
+        poolSize,
+        totalASTLRUCacheSize: 120,
       },
-      poolSize: Math.max(2, Math.min(3, Math.floor(cores / 2))),
-      // Entry-capped only; @pierre/diffs exposes no byte cap for its AST LRUs.
-      totalASTLRUCacheSize: 120,
-    },
-    {
-      theme: themeName,
-      tokenizeMaxLineLength: 1_000,
-      useTokenTransformer: true,
-    },
+      {
+        theme: themeName,
+        preferredHighlighter: PREFERRED_HIGHLIGHTER,
+        tokenizeMaxLineLength: 1_000,
+        useTokenTransformer: true,
+      },
+    ),
+    consumers: 0,
+    idleTimer: undefined,
+  });
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer = undefined;
+  entry.consumers += 1;
+  return entry;
+}
+
+function DiffWorkerThemeSync({ themeName }: { themeName: DiffThemeName }) {
+  const workerPool = useWorkerPool();
+
+  useEffect(() => {
+    if (!workerPool) {
+      return;
+    }
+
+    void syncDiffWorkerPoolTheme(workerPool, themeName).catch((cause) => {
+      console.error(new DiffWorkerError({ operation: "set-render-options", themeName, cause }));
+    });
+  }, [themeName, workerPool]);
+
+  return null;
+}
+
+// Plain-text views do not queue a highlight task that could retry a blank first render.
+function DiffWorkerReady({ children }: { children?: ReactNode }) {
+  const workerPool = useWorkerPool();
+  const [readyPool, setReadyPool] = useState<WorkerPoolManager>();
+  const ready = workerPool
+    ? readyPool === workerPool || workerPool.isInitialized() || !workerPool.isWorkingPool()
+    : typeof window === "undefined";
+
+  useEffect(() => {
+    if (ready || !workerPool) return;
+
+    let mounted = true;
+    const finish = () => {
+      if (mounted) setReadyPool(workerPool);
+    };
+    // Failed pools use Pierre's existing main-thread highlighter.
+    void workerPool.initialize().then(finish, finish);
+    return () => {
+      mounted = false;
+    };
+  }, [ready, workerPool]);
+
+  return ready ? (
+    children
+  ) : (
+    <div
+      role="status"
+      className="flex min-h-0 flex-1 items-center justify-center p-4 text-xs text-muted-foreground"
+    >
+      Loading code...
+    </div>
   );
-  // The constructor eagerly boots the pool; cancel that so workers only spawn once
-  // a diff actually renders (the manager re-initializes itself on demand).
-  pool.terminate();
-  pool.subscribeToStatChanges(createDiffWorkerPoolIdleTerminator(pool));
-  diffWorkerPool = pool;
-  return pool;
 }
 
 export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
   const resolvedTheme = usePaintedAppearance();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
-  const [pool] = useState(() => getDiffWorkerPool(diffThemeName));
+  const workerPoolSize = useMemo(() => {
+    const cores =
+      typeof navigator === "undefined" ? 4 : Math.max(1, navigator.hardwareConcurrency || 4);
+    return Math.max(2, Math.min(3, Math.floor(cores / 2)));
+  }, []);
+  const workerPool = useSyncExternalStore(
+    useCallback(
+      (onStoreChange) => {
+        if (typeof window === "undefined") return () => {};
+        const entry = acquireDiffWorkerPool(diffThemeName, workerPoolSize);
+        onStoreChange();
+        return () => {
+          entry.consumers -= 1;
+          if (entry.consumers !== 0) return;
+          entry.idleTimer = setTimeout(() => {
+            entry.idleTimer = undefined;
+            entry.pool.terminate();
+            if (sharedWorkerPool === entry) sharedWorkerPool = undefined;
+          }, DIFF_WORKER_IDLE_TTL_MS);
+        };
+      },
+      [diffThemeName, workerPoolSize],
+    ),
+    () => sharedWorkerPool?.pool,
+    () => undefined,
+  );
 
-  useLayoutEffect(() => {
-    void syncDiffWorkerPoolTheme(pool, diffThemeName).catch((cause) => {
-      console.error(
-        new DiffWorkerError({
-          operation: "set-render-options",
-          themeName: diffThemeName,
-          cause,
-        }),
-      );
-    });
-  }, [diffThemeName, pool]);
-
-  return <WorkerPoolContext.Provider value={pool}>{children}</WorkerPoolContext.Provider>;
+  return (
+    <WorkerPoolContext value={workerPool}>
+      <DiffWorkerThemeSync themeName={diffThemeName} />
+      <DiffWorkerReady>{children}</DiffWorkerReady>
+    </WorkerPoolContext>
+  );
 }

@@ -12,6 +12,7 @@ import {
   recordFaviconForProject,
   recordFaviconForThread,
   registerFaviconProjectForThread,
+  removeThreadFaviconState,
   resetBrowserFaviconsForTests,
   resolveBrowserFaviconStorage,
   useBrowserFaviconStore,
@@ -217,6 +218,24 @@ describe("browser favicon store", () => {
         null,
       ),
     ).toBe(PNG);
+  });
+
+  it("clears deleted thread routing and pending captures without deleting project favicons", () => {
+    registerFaviconProjectForThread(threadRef, projectRef);
+    recordFaviconForThread(
+      threadRef,
+      favicon("http://localhost:3000/", 1),
+      projectRef,
+      "localhost",
+    );
+    recordFaviconForThread(threadRef, favicon("http://localhost:3001/", 2), null, undefined);
+
+    removeThreadFaviconState(threadRef);
+
+    const state = useBrowserFaviconStore.getState();
+    expect(state.projectRefByThreadKey).toEqual({});
+    expect(state.pendingByThreadKey).toEqual({});
+    expect(Object.keys(state.byKey)).toHaveLength(1);
   });
 
   it("bounds pending memory by origin and thread", () => {
