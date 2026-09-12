@@ -1,6 +1,8 @@
-import { type ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
+import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 
+import { toKindScopedComposerContextId } from "./composerContextReferences";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
@@ -17,36 +19,24 @@ export interface TerminalContextDraft extends TerminalContextSelection {
   createdAt: string;
 }
 
-export interface ExtractedTerminalContexts {
-  promptText: string;
-  contextCount: number;
-  previewTitle: string | null;
-  contexts: ParsedTerminalContextEntry[];
-}
-
-export interface DisplayedUserMessageState {
-  visibleText: string;
-  copyText: string;
-  contextCount: number;
-  previewTitle: string | null;
-  contexts: ParsedTerminalContextEntry[];
-  /**
-   * Element-context entries extracted from the trailing `<element_context>`
-   * block (if any). Stripped from `visibleText` so the raw block doesn't
-   * leak into the user's bubble.
-   */
-  elementContexts: ParsedElementContextEntry[];
-}
-
-export interface ParsedTerminalContextEntry {
-  header: string;
-  body: string;
-}
-
+/** Legacy ordinal placeholder from drafts saved before context references. Migration only. */
 export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
 
-const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
-  /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+export interface TerminalContextReferenceSource {
+  id: string;
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+/** The canonical inline link that stands for this context in the prompt. */
+export function formatTerminalContextReference(context: TerminalContextReferenceSource): string {
+  return formatComposerContextReference({
+    kind: "terminal",
+    contextId: toKindScopedComposerContextId("terminal", context.id),
+    label: formatTerminalContextLabel(context),
+  });
+}
 
 export function normalizeTerminalContextText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
@@ -280,61 +270,24 @@ export function countInlineTerminalContextPlaceholders(prompt: string): number {
   return count;
 }
 
+/** Binds legacy U+FFFC placeholders to contexts in array order; leftover placeholders vanish. */
+export function migrateLegacyTerminalContextPlaceholders(
+  prompt: string,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
+): string {
+  if (!prompt.includes(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)) return prompt;
+  let index = 0;
+  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, () => {
+    const context = contexts[index];
+    index += 1;
+    return context ? formatTerminalContextReference(context) : "";
+  });
+}
+
+/** Compatibility alias for callers using the pre-migration helper name. */
 export function ensureInlineTerminalContextPlaceholders(
   prompt: string,
-  terminalContextCount: number,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
 ): string {
-  const missingCount = terminalContextCount - countInlineTerminalContextPlaceholders(prompt);
-  if (missingCount <= 0) {
-    return prompt;
-  }
-  return `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER.repeat(missingCount)}${prompt}`;
-}
-
-function isInlineTerminalContextBoundaryWhitespace(char: string | undefined): boolean {
-  return char === undefined || char === " " || char === "\n" || char === "\t" || char === "\r";
-}
-
-export function insertInlineTerminalContextPlaceholder(
-  prompt: string,
-  cursorInput: number,
-): { prompt: string; cursor: number; contextIndex: number } {
-  const cursor = Math.max(0, Math.min(prompt.length, Math.floor(cursorInput)));
-  const needsLeadingSpace = !isInlineTerminalContextBoundaryWhitespace(prompt[cursor - 1]);
-  const replacement = `${needsLeadingSpace ? " " : ""}${INLINE_TERMINAL_CONTEXT_PLACEHOLDER} `;
-  const rangeEnd = prompt[cursor] === " " ? cursor + 1 : cursor;
-  return {
-    prompt: `${prompt.slice(0, cursor)}${replacement}${prompt.slice(rangeEnd)}`,
-    cursor: cursor + replacement.length,
-    contextIndex: countInlineTerminalContextPlaceholders(prompt.slice(0, cursor)),
-  };
-}
-
-export function stripInlineTerminalContextPlaceholders(prompt: string): string {
-  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, "");
-}
-
-export function removeInlineTerminalContextPlaceholder(
-  prompt: string,
-  contextIndex: number,
-): { prompt: string; cursor: number } {
-  if (contextIndex < 0) {
-    return { prompt, cursor: prompt.length };
-  }
-
-  let placeholderIndex = 0;
-  for (let index = 0; index < prompt.length; index += 1) {
-    if (prompt[index] !== INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
-      continue;
-    }
-    if (placeholderIndex === contextIndex) {
-      return {
-        prompt: prompt.slice(0, index) + prompt.slice(index + 1),
-        cursor: index,
-      };
-    }
-    placeholderIndex += 1;
-  }
-
-  return { prompt, cursor: prompt.length };
+  return migrateLegacyTerminalContextPlaceholders(prompt, contexts);
 }

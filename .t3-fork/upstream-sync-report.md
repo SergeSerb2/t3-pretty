@@ -2746,3 +2746,180 @@
   - omitted parent change: Expose the parent's legacy `yolo` runtime mode as a selectable runtimeModeOptions entry.. Reason: T3 Pretty authoritatively remaps historical `yolo` values to `full-access` and must not reintroduce the old mode in the picker; the value remains configured for rendering persisted data.
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260912.1576`; repaired with `gpt-5.6-sol`: Restore the missing `DEFAULT_RUNTIME_MODE` import while retaining the fork’s provider-aware runtime-mode normalization and the parent’s project-level default behavior.
   - edited `apps/mobile/src/features/threads/new-task-flow-provider.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260912.1599`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260912.1576`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `.gitignore` — Kept `!.env.internal.example` unignored so T3 Pretty's split public/internal release configuration example remains tracked.
+- `apps/mobile/global.css` — T3 Pretty’s World Scenery light-theme markdown palette, including green-tinted blockquotes, code surfaces, borders, and link treatment.
+- `apps/mobile/global.css` — Readable dark-green inline-code and fenced-code styling inside the fork’s light sage user messages.
+- `apps/mobile/global.css` — The pastel-sage user bubble, dark-green foreground hierarchy, and World Scenery skill accent used to match T3 Pretty’s web message surface instead of reverting to parent neutral colors or the old iOS-blue bubble.
+- `apps/mobile/global.css` — T3 Pretty's World Scenery dark markdown colors, including green-tinted blockquotes, fork link color, text hierarchy, borders, and horizontal rules.
+- `apps/mobile/global.css` — T3 Pretty's World Scenery green user-message surface, foreground contrast, muted text, and green skill accent.
+- `apps/mobile/global.css` — The fork's cross-surface intent that user messages match the World Scenery web message treatment.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx` — T3 Pretty's resolved onLinkPress callback remains authoritative for link activation instead of being bypassed through props.onLinkPress.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx` — T3 Pretty's onLinkLongPress behavior remains available for linked markdown runs.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx` — The existing external Linking.openURL fallback remains intact when no custom link-press handler is provided.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx` — Preserved forwarding of `highlightCodeEnabled` to `NativeMarkdownBlock`, so T3 Pretty's mobile markdown renderer can disable code highlighting without removing the configured highlighter.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Preserved all T3 Pretty composer attachment behavior; the import remains type-only and introduces no runtime or mobile UX change.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Attachment preparation state remains derived from both the strip-wide busy state and each attachment's preparing state.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Preparing state continues to be passed into attachment thumbnails so T3 Pretty's send/preparation progress UI remains visible.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Image attachments retain the fork's onPressImage handling.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The remove control remains hidden while an attachment is preparing, preventing unsafe removal during processing.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — The configurable overlay/gutter remove-button placement and spacing remain intact.
+- `apps/mobile/src/components/CopyTextButton.tsx` — The optional tintColorClassName API remains available for T3 Pretty theme and presentation customization.
+- `apps/mobile/src/components/CopyTextButton.tsx` — Copied feedback remains keyed to the exact text copied, preventing a stale success state when the button's text changes.
+- `apps/mobile/src/components/CopyTextButton.tsx` — An explicit copiedTintColor continues to suppress the normal tint class so copied-state presentation is not overridden.
+- `apps/mobile/src/features/review/reviewCommentSelection.test.ts` — Preserved the T3 Pretty mobile reliability test proving that an older review sheet cannot clear a newer active review comment target.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Pending-task editing strips hidden agent-facing instruction suffixes from queued text, so the editor displays only user-authored text and re-queueing can safely reapply the auto-PR suffix.
+- `apps/mobile/src/lib/composerImages.test.ts` — Preserved coverage that native image picking requests multiple selection, full quality, and base64 conversion for provider-incompatible formats.
+- `apps/mobile/src/lib/composerImages.test.ts` — Preserved actionable error handling for native picker failures.
+- `apps/mobile/src/lib/composerImages.test.ts` — Preserved T3 Pretty's progressive image-send UX by testing that local previews are reported before base64 encoding completes and that the final file-backed preview is produced.
+- `apps/mobile/src/lib/composerImages.test.ts` — Preserved bounded attachment-payload behavior by testing reuse of existing inline data, rehydration from preview files, and graceful null results when preview bytes have disappeared.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Preserved T3 Pretty's replacement of the shared collectComposerInlineTokens path with the existing collectNativeComposerInlineTokens implementation used by the native iOS composer.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Preserved T3 Pretty's native composer token architecture, which uses the existing collectNativeComposerInlineTokens import instead of restoring the obsolete shared collectComposerInlineTokens dependency.
+- `apps/mobile/src/state/thread-outbox-model.ts` — T3 Pretty's queued-message text validation continues enforcing PROVIDER_SEND_TURN_MAX_INPUT_CHARS.
+- `apps/mobile/src/state/thread-outbox-model.ts` — T3 Pretty's queued-message attachment validation continues enforcing PROVIDER_SEND_TURN_MAX_ATTACHMENTS.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Preserved T3 Pretty's native paste conversion flow using `result.images`, matching the current `convertPastedImagesToAttachments` return value and avoiding the stale undefined `images` variable.
+- `apps/server/src/persistence/Migrations.ts` — Stable migration IDs 50–61, preventing already-shipped T3 Pretty databases from interpreting different migrations under previously occupied IDs.
+- `apps/server/src/persistence/Migrations.ts` — The projection-thread branch/pull-request repair migration and branch-head persistence.
+- `apps/server/src/persistence/Migrations.ts` — World Scenery and thread-canvas schema support.
+- `apps/server/src/persistence/Migrations.ts` — Activity-compaction cleanup, enabled-skills, subagent-policy, BM25 search-index, and automations schema support.
+- `apps/server/src/persistence/Migrations.ts` — The existing parent ProjectionThreadPullRequests migration as previously integrated into T3 Pretty at manifest ID 61.
+- `apps/server/src/pullRequest/PullRequestService.test.ts` — T3 Pretty's automation behavior remains untouched: this PullRequestService test now mocks only the project data it consumes rather than constructing or redefining the automation-bearing global shell snapshot.
+- `apps/web/src/components/chat/ChatComposer.tsx` — The composer editor remains disabled while T3 Pretty dictation is active, protecting the fork's host-routed live voice-input flow from concurrent editor changes.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved the RuntimeMode import and runtime-mode composer command item support.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Preserved T3 Pretty's app mention command item, including slug, name, color, and icon-domain metadata.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The dedicated Skills empty state remains grouped under a visible Skills heading with fork-specific loading and no-results copy.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — T3 Pretty's slash-command, runtime-mode, provider-command, and app icon presentation remains intact, including app-specific icon metadata.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — The fork's wider gap and baseline-aligned label/description layout remains intact.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Preserved T3 Pretty's existing close-button focus ref and associated expanded-media accessibility behavior.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Retained the fork's React named-import organization without altering expanded-image navigation, media handling, or presentation.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — The existing T3 Pretty expanded-media source handling, presentation, actions, and video behavior surrounding the dialog shell remain unchanged.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Zoomable-image keyboard panning and wrapped previous/next image navigation remain intact.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Context-menu-aware keyboard suppression remains intact, so Escape and media navigation do not interfere with an open context menu.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — T3 Pretty's existing close-button focus and opener focus-restoration behavior remains around the parent Dialog implementation.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — T3 Pretty's surrounding opener-focus restoration remains intact, protecting composer focus when the expanded preview closes.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Existing T3 Pretty preview behavior remains unchanged: keyboard navigation, Escape handling, zoom and pan support, media actions, accessibility-data views, failure handling, and reduced-motion styling.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Backdrop dismissal remains connected to the existing Dialog onOpenChange/onClose flow without reintroducing a tabbable full-screen close button.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Preserved the optional `label` prop and its `"Copy message"` default, including its use in the button's accessible label and tooltip.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Preserved imports for T3 Pretty’s pull-request finding detection, fixability checks, and thread reply anchoring tests.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Preserved T3 Pretty's `compareIsoDateTimes` import used for deterministic pull-request review-thread ordering.
+- `apps/web/src/components/settings/settingsSearch.ts` — The T3 Pretty settings-search entry for the What's new section remains available under General settings.
+- `apps/web/src/composer-logic.ts` — Preserved T3 Pretty's built-in `skills`, `new-thread`, `settings`, `commands`, and `auto-pr` composer slash commands.
+- `apps/web/src/composer-logic.ts` — Preserved the distinction documenting that built-in commands execute in the client while provider and custom commands are sent to the CLI as text.
+- `apps/web/src/hooks/useCopyToClipboard.ts` — Preserved the request-version and mounted-state guard so stale copy completions cannot update state or invoke callbacks after a newer request or component unmount.
+- `apps/web/src/hooks/useCopyToClipboard.ts` — Preserved existing timeout cleanup and cross-surface clipboard reliability behavior.
+- `apps/web/src/lib/terminalContext.test.ts` — Preserved T3 Pretty's auto-PR behavior coverage: stripping the hidden create-pull-request instruction suffix leaves the user prompt and its terminal context intact.
+- `apps/web/src/lib/terminalContext.test.ts` — Preserved compatibility between the fork's auto-PR prompt augmentation and terminal attachments by verifying the canonical reference remains discoverable after suffix stripping.
+- `apps/web/src/lib/terminalContext.ts` — Preserved stripping of hidden instruction suffixes from terminal-context text.
+- `apps/web/src/lib/terminalContext.ts` — Preserved extraction and typing of trailing element contexts used by T3 Pretty’s composer/context behavior.
+- `apps/web/src/lib/terminalContext.ts` — Terminal context labels, prompt materialization, structured `&lt;terminal_context&gt;` block generation, parsing, previews, and placeholder counting remain available for T3 Pretty's existing terminal workflow.
+- `apps/web/src/lib/terminalContext.ts` — Displayed user messages continue stripping hidden attachment-path and auto-PR instruction suffixes before extracting element and terminal contexts.
+- `apps/web/src/lib/terminalContext.ts` — Clipboard text continues retaining user-visible attachment/context summaries while excluding agent-only path lists and auto-PR instructions.
+- `apps/web/src/lib/terminalContext.ts` — The existing `ensureInlineTerminalContextPlaceholders` export remains available as a compatibility alias so fork consumers are not silently broken.
+- `apps/web/vite.config.ts` — Preserved T3 Pretty's cold-start optimization that keeps chat routes eager while automatically splitting Settings, Usage, pull-request, pairing, and other non-eager routes.
+- `apps/web/vite.config.ts` — Preserved use of the fork's existing EAGER_ROUTE_IDS policy rather than regressing to indiscriminate automatic route splitting.
+- `docs/internals/glossary.md` — Preserved the complete T3 Pretty Orchestration glossary, including shell streaming, ephemeral tool progress, runtime receipts, automations, automation runs, run threads, and trigger coalescing.
+- `docs/internals/glossary.md` — Preserved fork-specific provider documentation covering delivery modes, subagent policy, Apps/MCP integration, usage limits and external quota sources, model manifests, and the built-in provider set.
+- `docs/internals/glossary.md` — Preserved T3 Pretty checkpointing, environment/default theme, and unified multi-provider skill-library terminology and references.
+- `docs/internals/glossary.md` — Preserved all existing fork documentation links, practical shortcuts, and reference definitions without renaming or weakening fork behavior.
+- `packages/shared/package.json` — Preserved the @t3tools/shared ./appMentions export and its type/import entry points.
+- `packages/shared/package.json` — Preserved the @t3tools/shared ./activityProjection export and its type/import entry points.
+- `packages/shared/package.json` — Preserved the `./skillFrontmatter` package export used by T3 Pretty's skills functionality.
+- `packages/shared/package.json` — Preserved the `./skillTool` package export used by T3 Pretty's skills tooling.
+
+## Parent changes integrated at conflict boundaries
+
+- `.gitignore` — Added `.pnpm-store/` to prevent pnpm's local content-addressable store from being committed, including the upstream explanatory comment.
+- `apps/mobile/global.css` — The parent’s transition from an iMessage-style blue bubble to a raised card matching the web message surface is retained, adapted to T3 Pretty’s pastel-sage web surface.
+- `apps/mobile/global.css` — The parent’s readability correction for code inside a light user bubble—dark text on tinted light surfaces rather than white text—is retained through T3 Pretty’s corresponding dark-green code and fence tokens.
+- `apps/mobile/global.css` — Upstream's reduced-emphasis user inline-code treatment, adapted from a 6% white overlay to the equivalent World Scenery-tinted 6% overlay.
+- `apps/mobile/global.css` — Upstream's lighter raised fenced-code treatment, adapted from a 9% white overlay to the equivalent World Scenery-tinted 9% overlay.
+- `apps/mobile/global.css` — Upstream's change to use normal markdown body coloring for user inline-code and fenced-code text rather than brighter strong/white text.
+- `apps/mobile/global.css` — Upstream's semantic redesign of the user bubble as a raised card matching the web message surface, expressed through the existing T3 Pretty World Scenery card palette.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx` — Applied the parent's transparent background override for chip runs so native chip presentation is not obscured by text-run background styling.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx` — Adopted the parent's reusable onPress handler, allowing the same activation behavior to be shared with the Android chip accessibility action.
+- `apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx` — Integrated the parent hunk's corrected JSX indentation and visual nesting of the markdown container beneath `MarkdownFileContextMenuContext.Provider`.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — Integrated the parent refactor from a top-level `import type` declaration to an inline `type` import specifier for `MediaActionsSource`.
+- `apps/mobile/src/components/ComposerAttachmentStrip.tsx` — ComposerAttachmentThumbnail now receives onPressDocument, enabling the parent document-opening behavior, including non-PDF document handling, without replacing the fork's preparation-aware rendering.
+- `apps/mobile/src/components/CopyTextButton.tsx` — Added the optional asynchronous onCopy callback.
+- `apps/mobile/src/components/CopyTextButton.tsx` — Integrated tryCopyTextWithHaptic success detection, exception handling, and the visible failure alert instead of presenting failed clipboard writes as successful.
+- `apps/mobile/src/components/CopyTextButton.tsx` — Applied the upstream accent-foreground icon fallback when neither an explicit tint color nor a T3 Pretty tint class is supplied.
+- `apps/mobile/src/features/review/reviewCommentSelection.test.ts` — Integrated the parent regression test ensuring closing-tag text inside a context-chip label remains part of a real review comment body during segmented parsing.
+- `apps/mobile/src/features/review/reviewCommentSelection.test.ts` — Integrated the parent regression test ensuring closing-tag text inside a context-chip label does not prematurely terminate inline comment parsing.
+- `apps/mobile/src/features/review/reviewCommentSelection.test.ts` — Integrated the parent regression test ensuring legacy review-comment markup embedded in a context-chip label is treated as opaque text.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Pending-task editing now hydrates the queued message context into a fresh composer draft via setComposerDraftContext.
+- `apps/mobile/src/lib/composerImages.test.ts` — Integrated upstream coverage ensuring image and video media remain visible in the composer strip even when represented by inline chips.
+- `apps/mobile/src/lib/composerImages.test.ts` — Integrated upstream coverage that plain files are removed only when an inline chip already represents them and remain otherwise.
+- `apps/mobile/src/lib/composerImages.test.ts` — Integrated upstream inline-URI behavior for image data URLs and asset preview fallbacks.
+- `apps/mobile/src/lib/composerImages.test.ts` — Integrated upstream retain-lease boundary coverage for file-backed images and undefined behavior for missing or non-image attachments.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Added the parent composerContextEditorTokens import so the upstream context-token behavior remains available to the iOS composer.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Added the parent composerContextEditorTokens import required by the upstream composer-context editor integration.
+- `apps/mobile/src/state/thread-outbox-model.ts` — Added the optional OrchestrationMessageContext field to the persisted queued-thread-message schema, matching the already-present QueuedThreadMessage interface field.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Integrated upstream's `appendReference: true` behavior so native pasted images also add their attachment references to the composer draft.
+- `apps/server/src/persistence/Migrations.ts` — Added the parent ProjectionThreadMessageContext migration and scheduled it at manifest ID 62, immediately after the already-integrated ProjectionThreadPullRequests migration.
+- `apps/server/src/persistence/Migrations.ts` — Retained the parent ProjectionThreadPullRequests migration while adapting its manifest ID to T3 Pretty's occupied migration history.
+- `apps/server/src/pullRequest/PullRequestService.test.ts` — Integrated the parent ProjectionSnapshotQuery API refactor from getShellSnapshot to getProjectShells and getProjectShellById.
+- `apps/server/src/pullRequest/PullRequestService.test.ts` — Preserved optional project-ID filtering for bulk project lookup and optional-result semantics for lookup by ID.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Added the parent draft attachment preview dialog, including uploaded-asset metadata, accessible title, floating-layer behavior, and close/remove handling.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Migrated ComposerPromptEditor from terminal-specific context props to the parent's generalized composer context records and context-actions provider.
+- `apps/web/src/components/chat/ChatComposer.tsx` — Integrated parent clipboard context export/import support through buildContextClipboardFragment and importContextFragment.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated PullRequestContextMetadata into the contracts import.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Integrated upstream's pull-request composer command item and its metadata payload.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pull-request searches now show the upstream-specific “Finding pull request...” loading message.
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx` — Pull-request menu items now render the upstream state-specific icon, tone styling, accessible image role, and state label.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent's removal of the obsolete direct react-dom createPortal dependency.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Kept the compatible return-focus handling while consolidating the independently duplicated close-button ref onto the fork's existing ref.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Adopted the parent's first-party controlled Dialog implementation, replacing the custom createPortal shell and manual Tab focus trap with native dialog focus management.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent's onOpenChange close path while preserving the component's existing onClose lifecycle.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent's keyboard-handler refactor: pan and image navigation run on normal keydown events, while Escape is handled independently in capture phase.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Removed the obsolete dialog DOM ref after the first-party Dialog replacement.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Adopted the parent media-specific DialogPopup implementation with composer floating-layer props, standardized media viewport/backdrop layering, no-drag handling, and mobile bottom-stick behavior disabled.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent's dialog focus API through initialFocus and finalFocus.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Added the parent's screen-reader DialogTitle for the expanded media preview.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent's standardized media-navigation controls and popup structure, including the matching trailing next-media control and DialogPopup closure already present after the conflict.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Integrated the optional `extraFlavors` clipboard payload prop, allowing additional clipboard MIME types to be written alongside `text/plain`.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Retained the parent's inline API documentation for `extraFlavors`.
+- `apps/web/src/components/chat/MessageCopyButton.tsx` — Enabled the existing forwarding of `extraFlavors` into `useCopyToClipboard` by adding it to the component's destructured props and type.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts` — Integrated the parent `stripPullRequestHandoffReferences` helper import for upstream handoff-reference behavior tests.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Integrated the parent `reviewCommentContextId` import for composer context records.
+- `apps/web/src/components/pullRequest/pullRequestDetail.logic.ts` — Integrated the parent `removeInlineContextReference` import for composer context-reference cleanup.
+- `apps/web/src/components/settings/settingsSearch.ts` — Added the parent settings-search entry for Open source licenses under General settings.
+- `apps/web/src/composer-logic.ts` — Added the parent `pull-request` composer trigger kind alongside the existing path, slash-command, and skill triggers.
+- `apps/web/src/hooks/useCopyToClipboard.ts` — Forwarded extraFlavorsRef.current to writeTextToClipboard, enabling upstream custom ClipboardItem flavors and their plain-text/HTML fallback behavior.
+- `apps/web/src/lib/terminalContext.test.ts` — Adopted the parent's canonical `t3-context://v1/terminal/...` reference-link format and exact formatting expectation.
+- `apps/web/src/lib/terminalContext.test.ts` — Integrated the parent's replacement of obsolete terminal-context block construction, extraction, display-state, and placeholder-count tests with the canonical composer-context reference model.
+- `apps/web/src/lib/terminalContext.ts` — Integrated the shared canonical composer-context reference formatter for terminal references.
+- `apps/web/src/lib/terminalContext.ts` — Integrated kind-scoped composer-context IDs for terminal references.
+- `apps/web/src/lib/terminalContext.ts` — Adopted upstream’s dedicated type-only ThreadId import syntax.
+- `apps/web/src/lib/terminalContext.ts` — Added the parent `migrateLegacyTerminalContextPlaceholders` API and its documented migration semantics.
+- `apps/web/src/lib/terminalContext.ts` — Legacy U+FFFC placeholders are converted in array order to canonical composer-context references via `formatTerminalContextReference`, and unmatched placeholders are removed.
+- `apps/web/src/lib/terminalContext.ts` — The migration returns unchanged prompts immediately when no legacy placeholder is present.
+- `apps/web/vite.config.ts` — Added the parent thirdPartyLicensesPlugin to the web Vite plugin chain.
+- `apps/web/vite.config.ts` — Configured license collection for the web bundle using the shared third-party license configuration and the web, server, and desktop package manifests.
+- `apps/web/vite.config.ts` — Retained the parent's automatic route code-splitting behavior, composed with T3 Pretty's eager-chat-route exclusions.
+- `docs/internals/glossary.md` — Integrated the parent Composer context glossary definitions for context records, context references, attachment bindings, and attachment inventories.
+- `docs/internals/glossary.md` — Integrated the parent lifecycle link to composer-context-references.md.
+- `docs/internals/glossary.md` — Added Composer context to the table of contents and adapted the parent heading to the glossary's existing Concepts hierarchy.
+- `packages/shared/package.json` — Added the upstream ./delimitedPreview shared export with its type/import entry points.
+- `packages/shared/package.json` — Added the upstream ./composerPullRequestMatches shared export with its type/import entry points.
+- `packages/shared/package.json` — Added the parent `./thirdPartyLicenses` export with its TypeScript types and import entry points.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/global.css` — The parent’s exact neutral markdown colors and low-opacity black user-code/fence backgrounds.. Reason: Those presentation values would overwrite T3 Pretty’s intentional World Scenery green markdown theme; the parent’s dark-text-on-light-surface readability behavior is preserved with fork-themed equivalents.
+- `apps/mobile/global.css` — The parent’s exact white user-bubble surface, neutral gray foregrounds, and blue skill accent.. Reason: Those presentation tokens conflict with T3 Pretty’s authoritative pastel-sage World Scenery message surface and green accent identity. The parent’s raised-card and web-surface design intent is still integrated.
+- `apps/mobile/global.css` — Upstream's generic grayscale markdown, blue-link, and white-overlay token values.. Reason: Those exact values would replace T3 Pretty's authoritative World Scenery dark theme. The new upstream user-code contrast behavior was instead translated into the fork palette.
+- `apps/mobile/global.css` — Upstream's neutral #171717 user-card surface, grayscale foregrounds, and blue skill accent.. Reason: Those exact colors would regress T3 Pretty's World Scenery green message surface and accent identity; the compatible raised-card/message-surface behavior is preserved using the fork's established colors.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Retaining the legacy @t3tools/shared/composerInlineTokens import from the parent side.. Reason: T3 Pretty intentionally replaced that collector with collectNativeComposerInlineTokens; restoring the old import would duplicate or leave an unused legacy token path rather than add parent behavior.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — THEIRS retained the collectComposerInlineTokens import from the shared package.. Reason: T3 Pretty intentionally replaced that direct shared collector usage with collectNativeComposerInlineTokens; restoring the old import would be redundant or unused and would regress the fork's native token architecture without adding upstream behavior.
+- `apps/web/src/lib/terminalContext.ts` — Parent deletion of the legacy terminal-context formatting, block-building, parsing, display-state, and counting helpers.. Reason: Those helpers still carry T3 Pretty's active terminal-context and displayed-message behavior, including fork-specific hidden attachment-path and auto-PR suffix handling. Removing them at this boundary would regress fork behavior; retaining them does not prevent use of the parent's new canonical migration API.
+- `apps/web/src/lib/terminalContext.ts` — Parent removal of the old `ensureInlineTerminalContextPlaceholders` export name.. Reason: The fork may still have callers using that public helper. A thin alias preserves compatibility while delegating all behavior to the parent-named migration implementation.

@@ -68,6 +68,7 @@ import {
   retargetNewTaskDraft,
   scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftText,
+  setComposerDraftContext,
   setStickyComposerModelSelection,
   updateComposerDraftSettings,
   useComposerDraft,
@@ -669,7 +670,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       if (!selectedProjectDraftKey) {
         return 0;
       }
-      return appendComposerDraftAttachments(selectedProjectDraftKey, nextAttachments);
+      return appendComposerDraftAttachments(selectedProjectDraftKey, nextAttachments, {
+        appendReference: true,
+      });
     },
     [selectedProjectDraftKey],
   );
@@ -1012,6 +1015,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       // Queued text may carry the agent-facing auto-PR block; the editor shows
       // only what the user typed, and re-queueing re-applies the suffix.
       setComposerDraftText(draftKey, stripHiddenInstructionSuffixes(message.text));
+      setComposerDraftContext(draftKey, message.context);
       replaceComposerDraftAttachments(draftKey, message.attachments);
       updateComposerDraftSettings(draftKey, {
         modelSelection: message.modelSelection,
@@ -1096,6 +1100,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           model: draftModelSelection.model,
         }),
         attachments: draft.attachments,
+        context: draft.context,
         modelSelection: draftModelSelection,
         runtimeMode: resolveRuntimeModeForProviderDriver(
           selectedModelOption?.providerDriver,

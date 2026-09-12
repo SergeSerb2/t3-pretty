@@ -118,7 +118,7 @@
       --color-md-user-fence-text: #14301f;
       --color-md-hr: rgba(22, 38, 26, 0.1);
 
-      /* Desktop World Scenery message surface (pastel sage, not iOS blue). */
+      /* World Scenery raised card on the thread canvas, matching T3 Pretty's pastel sage web message surface. */
       --color-user-bubble: #dfefe3;
       --color-user-bubble-foreground: #14301f;
       --color-user-bubble-foreground-muted: rgba(20, 48, 31, 0.78);
@@ -230,13 +230,13 @@
       --color-md-blockquote-bg: rgba(152, 210, 172, 0.06);
       --color-md-code-bg: rgba(234, 247, 238, 0.08);
       --color-md-code-text: #e8ece8;
-      --color-md-user-code-bg: rgba(243, 246, 243, 0.18);
-      --color-md-user-code-text: #f3f6f3;
-      --color-md-user-fence-bg: rgba(0, 0, 0, 0.28);
-      --color-md-user-fence-text: #f3f6f3;
+      --color-md-user-code-bg: rgba(234, 247, 238, 0.06);
+      --color-md-user-code-text: #e8ece8;
+      --color-md-user-fence-bg: rgba(234, 247, 238, 0.09);
+      --color-md-user-fence-text: #e8ece8;
       --color-md-hr: rgba(234, 247, 238, 0.12);
 
-      /* Desktop World Scenery message surface. */
+      /* User bubble: a raised World Scenery card on the thread canvas, matching web's message surface. */
       --color-user-bubble: #2a4a36;
       --color-user-bubble-foreground: #f3f6f3;
       --color-user-bubble-foreground-muted: rgba(243, 246, 243, 0.78);
