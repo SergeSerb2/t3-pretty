@@ -2532,3 +2532,128 @@
 ## Parent changes intentionally omitted
 
 - `apps/web/src/components/chat/OpenInPicker.tsx` — The parent's eager named imports of all JetBrains icon components.. Reason: Those imports would duplicate the locally declared lazy icon components and regress T3 Pretty's intentional lazy-loading performance optimization. The same icons remain available through the fork's dynamic import wrapper.
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260911.1564`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260911.1551`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownBlock.tsx` — Streaming code remains plain text while highlightCodeEnabled is false.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownBlock.tsx` — Growing streaming code prefixes are not sent to the syntax highlighter or used as changing cache inputs; stable placeholder inputs are used until the message settles.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — T3 Pretty's mobile auto-create-pull-request prompt handling remains available through its suffix application, detection, and resolution utilities.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — T3 Pretty's hidden-instruction suffix stripping remains intact.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — The fork's runtime-default refactor remains intact by not restoring the removed DEFAULT_RUNTIME_MODE import.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved selectedSkillIds derivation for T3 Pretty’s mobile new-task skill picker and management flow.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Preserved the later provider-aware runtimeMode resolution, including full-access defaults and legacy Yolo remapping, instead of reintroducing the older generic declaration.
+- `apps/server/src/serverSettings.ts` — Preserved T3 Pretty's bounded settings-file read and maximum-size safeguard.
+- `apps/server/src/serverSettings.ts` — Preserved explicit UTF-8 decoding of the bounded byte buffer before applying the settings codecs.
+- `apps/server/src/serverSettings.ts` — Extended the fork safeguard so an oversized settings file is treated as untrusted and cannot be silently overwritten by legacy project-settings folding.
+- `apps/server/src/serverSettings.ts` — T3 Pretty's SERVER_SETTINGS_FILE_MAX_BYTES safeguard remains enforced against the sparse encoded settings before any write occurs.
+- `apps/server/src/serverSettings.ts` — Oversized or encoding-failed settings continue to surface as ServerSettingsError with the write-file operation and the configured settings path.
+- `apps/web/src/components/preview/PreviewView.test.tsx` — The floating preview test continues to require explicit undismissal before reopening a previously dismissed thread-scoped mini-player.
+- `apps/web/src/components/preview/PreviewView.tsx` — PiP toggling dismisses the active mini-player rather than merely closing it, preserving Pretty's dismissal state.
+- `apps/web/src/components/preview/PreviewView.tsx` — Explicitly reopening the preview clears the dismissal for that thread and tab before opening the mini-player.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — T3 Pretty's memoized mini-player calculations through the retained useMemo import.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — T3 Pretty's AgentBrowserCursor integration for showing agent browser activity in the mini-player.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — T3 Pretty's miniPlayerCursorContent layout helper, preserving the fork's local mini-player cursor behavior.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved T3 Pretty's floating browser preview, native picture-in-picture controls, source sizing, browser-surface scaling, and reconnecting presentation surrounding the conflict.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Preserved the current source-aware MiniPlayerShell architecture, which receives the fork's mini-player state and remains responsible for shared frame and dismissal behavior instead of retaining an unused legacy tab-specific callback.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Agent-controlled previews retain the emphasized primary ring and glow, while non-agent previews retain the standard border ring.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The mini-player continues to render AgentBrowserCursor with the runtime tab, zoom factor, controller identity, and fork-specific cursor content.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — The reconnecting overlay remains visible while desktop web contents are unavailable.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Preserved T3 Pretty's mini-player cursor mapping: the overlay remains local to the mini webview with zero panel offsets and uses the laid-out content scale, falling back safely to scale 1.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — T3 Pretty's agent computer-control setting remains available, including the macOS permission guidance, new-session status message, default reset action, and enableComputerUse switch behavior.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Preserved T3 Pretty's dedicated Computer control settings section and AgentComputerControlSetting, retaining the fork's restored native computer controls.
+- `apps/web/src/components/settings/ProviderSettingsPanel.tsx` — Preserved T3 Pretty's `compareIsoDateTimes` import used by its provider-settings timestamp ordering behavior.
+- `apps/web/src/components/settings/SettingsPanels.tsx` — Preserved the fork-added lazy and Suspense React imports used by T3 Pretty settings-panel presentation and loading behavior.
+- `apps/web/src/components/settings/SettingsPanels.tsx` — Preserved T3 Pretty's explicit `auto-settle-merged-threads` ID and “Auto-settle merged threads” title, retaining the fork's searchable settings identity and presentation.
+- `apps/web/src/components/settings/SettingsPanels.tsx` — Preserved the fork's auto-settle-on-merge setting behavior and surrounding server-scoped UI.
+- `apps/web/src/components/settings/SourceControlSettings.tsx` — T3 Pretty’s sentence-case “Version control” and “Source control providers” settings headings are retained in both loading and populated states.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Preserved the T3 Pretty Surge Connect branding constant import used by fork-specific settings-search tests.
+- `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts` — T3 Pretty's Automations settings search item remains available only when the primary server advertises the automations capability.
+- `apps/web/src/components/ui/switch.tsx` — T3 Pretty's 150ms switch-track transition and macOS-style cubic-bezier easing.
+- `apps/web/src/components/ui/switch.tsx` — T3 Pretty's custom cubic-bezier thumb translation, preserving its polished switch motion and interaction feel.
+- `apps/web/src/previewMiniPlayerStore.test.ts` — Preserved the `normalizePersistedMiniPlayerState` import used by T3 Pretty's mini-player persistence and dismissal compatibility tests.
+- `apps/web/src/previewMiniPlayerStore.ts` — Per-thread tracking of browser tabs whose mini-player the user explicitly dismissed.
+- `apps/web/src/previewMiniPlayerStore.ts` — Automation-safe browser-tab presentation through openIfNotDismissed, preventing automation from reviving a dismissed tab.
+- `apps/web/src/previewMiniPlayerStore.ts` — Explicit dismiss and undismiss APIs, with direct opening documented not to clear Pretty's persisted dismissal state.
+- `apps/web/src/previewMiniPlayerStore.ts` — Persistent per-thread browser-tab dismissal state remains stored under the existing compatible t3code storage key.
+- `apps/web/src/previewMiniPlayerStore.ts` — Automation still cannot reopen a browser tab that the user explicitly dismissed, while explicit reopen paths remain able to undismiss it first.
+- `apps/web/src/previewMiniPlayerStore.ts` — Closing without dismissal, explicit dismiss/undismiss behavior, retained position and width, and cleanup of both active and dismissed thread state are preserved.
+- `apps/web/src/previewMiniPlayerStore.ts` — Dismissing a browser tab only closes that matching browser source and does not disturb an active device stream.
+- `apps/web/src/routes/settings.tsx` — Preserved the T3 Pretty-specific settingsEscapeAction import used by settings navigation and escape behavior.
+- `packages/client-runtime/src/state/shellSnapshotHttp.ts` — Preserved T3 Pretty's explicit `payload: {}` for the startup shell snapshot request, maintaining compatibility with the declared shell snapshot query contract.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownBlock.tsx` — Uses the parent's extracted ./useHighlightedCode hook rather than retaining a duplicate local cache and asynchronous loading implementation.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownBlock.tsx` — Integrates the parent's memoized HighlightedCodeLine renderer, preserving its per-line token rendering and reduced rerender behavior.
+- `apps/mobile/modules/t3-markdown-text/src/NativeMarkdownBlock.tsx` — Retains the parent's shared HighlightedCode type and MarkdownHighlightedToken-based rendering architecture.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Integrated DEFAULT_SERVER_SETTINGS for the parent's server-settings default behavior.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Integrated resolveProjectSettings for the parent's project-settings resolution path.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Integrated projectSettings.settings.newWorktreesStartFromOrigin so per-project overrides and resolved server settings control the default.
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — Retained runtime-mode initialization through T3 Pretty’s later effectiveRuntimeModeForProviderDriver call, which covers the parent initialization intent while adding fork-required provider normalization.
+- `apps/server/src/serverSettings.ts` — Integrated upstream's validation of both the main server-settings decode and the persisted optional-provider-settings decode.
+- `apps/server/src/serverSettings.ts` — Integrated upstream's settingsFileTrusted=false behavior for decode failures, preventing malformed user configuration from being rewritten during legacy folding.
+- `apps/server/src/serverSettings.ts` — Preserved successfully decoded persisted provider settings and used defaults unless both required decoders succeed.
+- `apps/server/src/serverSettings.ts` — Adapted failure logging to report the actual failing decoder's cause, including the persisted-provider decoder when the main decoder succeeds.
+- `apps/server/src/serverSettings.ts` — Integrated the parent's removal of the obsolete local writeSettingsAtomically declaration, avoiding the duplicate declaration and using the canonical upstream implementation already present in the merged file.
+- `apps/server/src/serverSettings.ts` — The parent write path remains authoritative; the fork-specific size check is composed as a pre-write validation rather than retaining a competing writer implementation.
+- `apps/web/src/components/preview/PreviewView.test.tsx` — Updated the mini-player opening expectation to use the parent's typed browser target object with `kind: "browser"` and the active tab ID.
+- `apps/web/src/components/preview/PreviewView.tsx` — Use `miniPlayerTabId` to identify whether the active mini-player belongs to the current browser tab.
+- `apps/web/src/components/preview/PreviewView.tsx` — Open the mini-player with upstream's `browserMiniPlayerSource(tabId)` source representation.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Upstream's ReactNode typing and useCallback-based refactor dependencies.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Upstream's DeviceStreamView and DeviceScreenSize support for rendering device streams in the mini-player.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Upstream's NO_PREVIEW_MINI_PLAYER_OBSTACLES and PREVIEW_MINI_PLAYER_CORNER_RADIUS layout defaults.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Integrated the parent refactor that removes duplicated browser-local frame resolution and close handling now owned by the shared MiniPlayerShell.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Avoided retaining stale references to the former tab-based mini-player shape and local layout variables that are no longer present in BrowserMiniPlayer.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Replaced the component's direct BrowserSurfaceSlot rendering with the parent's children(frame) render path, allowing the parent-provided preview implementation to own surface rendering.
+- `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx` — Retained the parent's standard ring presentation as the fallback when the preview is not agent-controlled.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Added device mini-player source sizing that respects reported screen orientation and uses platform-specific placeholder aspect ratios before stream dimensions are available.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Added Android-specific mini-player corner-radius calculation while retaining the standard radius for iOS and other platforms.
+- `apps/web/src/components/preview/previewMiniPlayerLayout.ts` — Added composer obstacle geometry, no-obstacle defaults, horizontal overlap detection, and floor calculation required by the parent's obstacle-aware mini-player fitting and positioning logic.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Removed the legacy AgentBrowserAccessSetting helper in accordance with upstream; it was unchanged from the merge base and therefore was not a fork-specific customization.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Added upstream documentation explaining that device support follows the selected environment and uses a representative environment for aggregate selections.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Integrated ProjectDefaultsSettings for server-authoritative integration defaults scoped by the header selection.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Preserved the upstream explanatory distinction between server-authoritative agent access and device-local preview defaults.
+- `apps/web/src/components/settings/ProviderSettingsPanel.tsx` — Integrated the parent `useUpdateClientSettings` hook import alongside the existing environment-settings hooks.
+- `apps/web/src/components/settings/SettingsPanels.tsx` — Integrated upstream's removal of the no-longer-needed @effect/atom-react useAtomValue import.
+- `apps/web/src/components/settings/SettingsPanels.tsx` — Added `settingKeys={["sidebarAutoSettleOnMerge"]}` to the `SettingsRow`, allowing upstream scoped-settings handling to associate the row with the correct setting.
+- `apps/web/src/components/settings/SourceControlSettings.tsx` — When multiple connected environments are selected, the representative environment label is appended to the primary discovery section title.
+- `apps/web/src/components/settings/SourceControlSettings.tsx` — The provider section receives the representative-environment suffix when it is the only discovered section, while avoiding a duplicate suffix when the version-control section is also present.
+- `apps/web/src/components/settings/SourceControlSettings.tsx` — The loading skeleton mirrors the aggregate-environment labeling used by the populated discovery view.
+- `apps/web/src/components/settings/settingsSearch.test.ts` — Integrated the parent EnvironmentId import required by the newest settings-search test behavior.
+- `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts` — Thread auto-settlement search availability now uses the parent's getThreadAutoSettlementSearchAvailability helper and supports any eligible environment rather than checking only the primary server.
+- `apps/web/src/components/ui/switch.tsx` — The mixed switch state now uses the muted input-colored track supplied by the parent.
+- `apps/web/src/components/ui/switch.tsx` — The mixed switch thumb is centered and rendered at reduced opacity, including when the primitive also exposes checked-state selectors.
+- `apps/web/src/previewMiniPlayerStore.test.ts` — Integrated `browserMiniPlayerSource` for constructing browser-backed preview sources.
+- `apps/web/src/previewMiniPlayerStore.test.ts` — Integrated the `PreviewMiniPlayerSource` type for generalized browser and device mini-player tests.
+- `apps/web/src/previewMiniPlayerStore.test.ts` — Integrated `selectThreadPreviewMiniPlayerTabId` for validating browser-tab selection behavior when other preview source types are active.
+- `apps/web/src/previewMiniPlayerStore.ts` — Generalized open to accept PreviewMiniPlayerSource, supporting both browser tabs and device streams.
+- `apps/web/src/previewMiniPlayerStore.ts` — Changed move and resize guards from browser tab IDs to generalized source keys so stale gestures cannot mutate a newly selected source.
+- `apps/web/src/previewMiniPlayerStore.ts` — Adopted PreviewMiniPlayerSource throughout the store so the mini-player can mirror both browser tabs and device streams.
+- `apps/web/src/previewMiniPlayerStore.ts` — Added upstream source-key generation and the browserMiniPlayerSource helper.
+- `apps/web/src/previewMiniPlayerStore.ts` — Updated open, move, and resize guards to compare stable source keys, preventing stale interactions from mutating a replacement browser or device source.
+- `apps/web/src/previewMiniPlayerStore.ts` — Preserved mini-player position and width when switching between generalized sources.
+- `apps/web/src/routes/settings.tsx` — Accepted upstream's relocation of the Button import to the main import group, removing the obsolete duplicate import at the conflict site.
+- `packages/client-runtime/src/state/shellSnapshotHttp.ts` — Integrated the parent client API refactor that moves `shellSnapshot` from `client.orchestration.shellSnapshot` to `client.shellSnapshot`.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/features/threads/new-task-flow-provider.tsx` — THEIRS retained the pre-existing DEFAULT_RUNTIME_MODE import.. Reason: T3 Pretty deliberately removed this import as part of its runtime/default-mode flow; restoring it would leave an obsolete or unused dependency. The new upstream server- and project-settings additions are integrated independently, so no parent runtime behavior introduced by this nightly is omitted.
+- `apps/web/src/components/preview/PreviewView.tsx` — Close the active mini-player with `close(threadRef)` when toggling Picture in Picture off.. Reason: Pretty intentionally records a tab-specific dismissal so the mini-player stays hidden until an explicit reopen; using upstream's plain close would regress that fork behavior.
+- `apps/web/src/components/settings/SourceControlSettings.tsx` — Upstream’s Title Case rendering of “Version Control” and “Source Control Providers”.. Reason: T3 Pretty intentionally uses sentence-case settings copy; adopting the upstream capitalization would regress fork-specific presentation without affecting the new environment-labeling behavior.
+- `shared-typecheck` failed after merging `v0.0.41-nightly.20260911.1564`; repaired with `gpt-5.6-sol`: Updated the parent benchmark fixture to satisfy T3 Pretty's extended OrchestrationThread contract while preserving all existing benchmark behavior.
+  - edited `packages/client-runtime/src/remotePerformance.bench.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260911.1564`; repaired with `gpt-5.6-sol`: The repair composes T3 Pretty's browser cursor/controller overlay with the parent's shared browser/device mini-player shell, then updates settings hooks, scope metadata, fixtures, and mini-player tests for the merged APIs. No upstream changes are omitted.
+  - edited `apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx`
+  - edited `apps/web/src/components/settings/AgentInstructionsSettings.tsx`
+  - edited `apps/web/src/components/settings/settingsSearch.test.ts`
+  - edited `apps/web/src/components/settings/settingsSearch.ts`
+  - edited `apps/web/src/components/settings/useAvailableSettingsSearchItems.ts`
+  - edited `apps/web/src/previewMiniPlayerStore.test.ts`

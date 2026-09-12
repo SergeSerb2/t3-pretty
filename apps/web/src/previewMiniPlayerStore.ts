@@ -1,5 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { DevicePlatform, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -15,10 +15,21 @@ export interface PreviewMiniPlayerSize {
   readonly height: number;
 }
 
+/** What the floating player mirrors: a browser tab or a device stream. */
+export type PreviewMiniPlayerSource =
+  | { readonly kind: "browser"; readonly tabId: string }
+  | {
+      readonly kind: "device";
+      readonly hostId: string;
+      readonly deviceId: string;
+      readonly platform: DevicePlatform;
+      readonly name: string;
+    };
+
 export interface PreviewMiniPlayerState {
-  readonly tabId: string;
+  readonly source: PreviewMiniPlayerSource;
   readonly position: PreviewMiniPlayerPosition | null;
-  /** Height always follows the previewed viewport's aspect ratio. */
+  /** Height always follows the mirrored source's aspect ratio. */
   readonly width: number | null;
 }
 
@@ -27,16 +38,32 @@ interface PreviewMiniPlayerStoreState {
   /** Tabs whose floating player the user explicitly closed; automation must not reopen them. */
   readonly dismissedTabIdsByThreadKey: Record<string, readonly string[]>;
   /** Show the player. Does not clear dismissal; explicit reopen paths call undismiss first. */
-  readonly open: (ref: ScopedThreadRef, tabId: string) => void;
-  /** Automation auto-present: never revive a tab the user closed. */
+  readonly open: (ref: ScopedThreadRef, source: PreviewMiniPlayerSource) => void;
+  /** Automation auto-present: never revive a browser tab the user closed. */
   readonly openIfNotDismissed: (ref: ScopedThreadRef, tabId: string) => void;
   readonly close: (ref: ScopedThreadRef) => void;
   readonly dismiss: (ref: ScopedThreadRef, tabId: string) => void;
   readonly undismiss: (ref: ScopedThreadRef, tabId: string) => void;
-  readonly move: (ref: ScopedThreadRef, tabId: string, position: PreviewMiniPlayerPosition) => void;
-  readonly resize: (ref: ScopedThreadRef, tabId: string, width: number) => void;
+  /** `sourceKey` guards against a drag that outlives the source it started on. */
+  readonly move: (
+    ref: ScopedThreadRef,
+    sourceKey: string,
+    position: PreviewMiniPlayerPosition,
+  ) => void;
+  readonly resize: (ref: ScopedThreadRef, sourceKey: string, width: number) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
 }
+
+export function previewMiniPlayerSourceKey(source: PreviewMiniPlayerSource): string {
+  return source.kind === "browser"
+    ? `browser:${source.tabId}`
+    : `device:${encodeURIComponent(source.hostId)}:${encodeURIComponent(source.deviceId)}`;
+}
+
+export const browserMiniPlayerSource = (tabId: string): PreviewMiniPlayerSource => ({
+  kind: "browser",
+  tabId,
+});
 
 function withoutDismissedTab(
   dismissedTabIdsByThreadKey: Record<string, readonly string[]>,
@@ -58,20 +85,29 @@ const PREVIEW_MINI_PLAYER_STORAGE_KEY = "t3code:preview-mini-player:v1";
 function openedPlayer(
   state: Pick<PreviewMiniPlayerStoreState, "byThreadKey" | "dismissedTabIdsByThreadKey">,
   ref: ScopedThreadRef,
-  tabId: string,
+  source: PreviewMiniPlayerSource,
   honorDismissal: boolean,
 ): Pick<PreviewMiniPlayerStoreState, "byThreadKey"> | typeof state {
   const threadKey = scopedThreadKey(ref);
-  if (honorDismissal && state.dismissedTabIdsByThreadKey[threadKey]?.includes(tabId)) {
+  if (
+    honorDismissal &&
+    source.kind === "browser" &&
+    state.dismissedTabIdsByThreadKey[threadKey]?.includes(source.tabId)
+  ) {
     return state;
   }
   const current = state.byThreadKey[threadKey];
-  if (current?.tabId === tabId) return state;
+  if (
+    current &&
+    previewMiniPlayerSourceKey(current.source) === previewMiniPlayerSourceKey(source)
+  ) {
+    return state;
+  }
   return {
     byThreadKey: {
       ...state.byThreadKey,
       [threadKey]: {
-        tabId,
+        source,
         position: current?.position ?? null,
         width: current?.width ?? null,
       },
@@ -102,18 +138,20 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()(
     (set) => ({
       byThreadKey: {},
       dismissedTabIdsByThreadKey: {},
-      open: (ref, tabId) => set((state) => openedPlayer(state, ref, tabId, false)),
-      openIfNotDismissed: (ref, tabId) => set((state) => openedPlayer(state, ref, tabId, true)),
+      open: (ref, source) => set((state) => openedPlayer(state, ref, source, false)),
+      openIfNotDismissed: (ref, tabId) =>
+        set((state) => openedPlayer(state, ref, browserMiniPlayerSource(tabId), true)),
       dismiss: (ref, tabId) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           const current = state.byThreadKey[threadKey];
+          const currentIsTab = current?.source.kind === "browser" && current.source.tabId === tabId;
           const dismissed = state.dismissedTabIdsByThreadKey[threadKey] ?? [];
           const alreadyDismissed = dismissed.includes(tabId);
-          if (alreadyDismissed && current?.tabId !== tabId) return state;
+          if (alreadyDismissed && !currentIsTab) return state;
           const { [threadKey]: _closed, ...restByThreadKey } = state.byThreadKey;
           return {
-            byThreadKey: current?.tabId === tabId ? restByThreadKey : state.byThreadKey,
+            byThreadKey: currentIsTab ? restByThreadKey : state.byThreadKey,
             dismissedTabIdsByThreadKey: alreadyDismissed
               ? state.dismissedTabIdsByThreadKey
               : { ...state.dismissedTabIdsByThreadKey, [threadKey]: [...dismissed, tabId] },
@@ -137,11 +175,11 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()(
           const { [threadKey]: _closed, ...byThreadKey } = state.byThreadKey;
           return { byThreadKey };
         }),
-      move: (ref, tabId, position) =>
+      move: (ref, sourceKey, position) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           const current = state.byThreadKey[threadKey];
-          if (!current || current.tabId !== tabId) return state;
+          if (!current || previewMiniPlayerSourceKey(current.source) !== sourceKey) return state;
           if (current.position?.x === position.x && current.position.y === position.y) return state;
           return {
             byThreadKey: {
@@ -150,11 +188,17 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()(
             },
           };
         }),
-      resize: (ref, tabId, width) =>
+      resize: (ref, sourceKey, width) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           const current = state.byThreadKey[threadKey];
-          if (!current || current.tabId !== tabId || current.width === width) return state;
+          if (
+            !current ||
+            previewMiniPlayerSourceKey(current.source) !== sourceKey ||
+            current.width === width
+          ) {
+            return state;
+          }
           return {
             byThreadKey: {
               ...state.byThreadKey,
@@ -197,4 +241,13 @@ export function selectThreadPreviewMiniPlayer(
 ): PreviewMiniPlayerState | null {
   if (!ref) return null;
   return byThreadKey[scopedThreadKey(ref)] ?? null;
+}
+
+/** The floating browser tab, or null when nothing floats or a device does. */
+export function selectThreadPreviewMiniPlayerTabId(
+  byThreadKey: Record<string, PreviewMiniPlayerState>,
+  ref: ScopedThreadRef | null | undefined,
+): string | null {
+  const source = selectThreadPreviewMiniPlayer(byThreadKey, ref)?.source;
+  return source?.kind === "browser" ? source.tabId : null;
 }
