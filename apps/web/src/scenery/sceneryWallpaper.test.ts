@@ -17,6 +17,7 @@ describe("preloadWallpaper", () => {
       src = "";
       decode = vi.fn(() => Promise.resolve());
       addEventListener = vi.fn();
+      removeEventListener = vi.fn();
       constructor() {
         constructed += 1;
       }
@@ -42,6 +43,7 @@ describe("preloadWallpaper", () => {
       src = "";
       decode = vi.fn(() => Promise.reject(new Error("decode failed")));
       addEventListener = vi.fn();
+      removeEventListener = vi.fn();
     }
     vi.stubGlobal("Image", FakeImage);
 

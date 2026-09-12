@@ -1,21 +1,32 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  AUTH_ACCESS_CLIENT_SESSION_MAX_COUNT,
+  AUTH_CLIENT_USER_AGENT_MAX_LENGTH,
+  AUTH_CREDENTIAL_MAX_LENGTH,
+  AUTH_SUBJECT_MAX_LENGTH,
+  AuthSessionId,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
-const makeServerConfigLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
-) =>
+const makeServerConfigLayer = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Layer.effect(
     ServerConfig.ServerConfig,
     Effect.gen(function* () {
@@ -27,14 +38,29 @@ const makeServerConfigLayer = (
     }),
   ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-auth-session-test-" })));
 
+const makeServerEnvironmentLayer = (environmentId: EnvironmentId) =>
+  Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+    getEnvironmentId: Effect.succeed(environmentId),
+  });
+
 const makeSessionStoreLayer = (
-  overrides?: Partial<Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken">>,
+  overrides?: Partial<ServerConfig.ServerConfig["Service"]>,
+  environmentId = EnvironmentId.make("test-environment"),
 ) =>
   SessionStore.layer.pipe(
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(ServerSecretStore.layer),
+    Layer.provide(makeServerEnvironmentLayer(environmentId)),
     Layer.provide(makeServerConfigLayer(overrides)),
   );
+
+const relaySessionInput = {
+  subject: "managed-relay-bootstrap",
+  method: "dpop-access-token",
+  proofKeyThumbprint: "relay-proof-key",
+  ttl: Duration.hours(1),
+  client: { label: "Relay desktop", deviceType: "desktop" },
+} as const;
 
 const repositoryFailure = new PersistenceSqlError({
   operation: "AuthSessionRepository.getById:query",
@@ -43,6 +69,7 @@ const repositoryFailure = new PersistenceSqlError({
 
 const failingSessionLookupRepositoryLayer = Layer.succeed(AuthSessions.AuthSessionRepository, {
   create: () => Effect.void,
+  createReplacingActive: () => Effect.succeed([]),
   getById: () => Effect.fail(repositoryFailure),
   listActive: () => Effect.succeed([]),
   revoke: () => Effect.fail(repositoryFailure),
@@ -58,10 +85,74 @@ const failingSessionLookupCredentialLayer = Layer.effect(
   Layer.provide(failingSessionLookupRepositoryLayer),
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(SqlitePersistenceMemory),
+  Layer.provide(makeServerEnvironmentLayer(EnvironmentId.make("test-environment"))),
+  Layer.provide(makeServerConfigLayer()),
+);
+
+const activeSessionOverflowRepositoryLayer = Layer.succeed(AuthSessions.AuthSessionRepository, {
+  create: () => Effect.void,
+  createReplacingActive: () => Effect.succeed([]),
+  getById: () => Effect.succeed(Option.none()),
+  listActive: () =>
+    Effect.succeed(
+      Array.from({ length: AUTH_ACCESS_CLIENT_SESSION_MAX_COUNT + 1 }, (_, index) => ({
+        sessionId: AuthSessionId.make(`session-${index}`),
+        subject: "browser",
+        scopes: ["orchestration:read"] as const,
+        method: "browser-session-cookie" as const,
+        client: {
+          label: null,
+          ipAddress: null,
+          userAgent: null,
+          deviceType: "unknown" as const,
+          os: null,
+          browser: null,
+        },
+        issuedAt: DateTime.makeUnsafe(index),
+        expiresAt: DateTime.makeUnsafe(index + 60_000),
+        lastConnectedAt: null,
+        revokedAt: null,
+      })),
+    ),
+  revoke: () => Effect.succeed(false),
+  revokeAllExcept: () => Effect.succeed([]),
+  setLastConnectedAt: () => Effect.void,
+  setClientConnection: () => Effect.void,
+});
+
+const activeSessionOverflowCredentialLayer = Layer.effect(
+  SessionStore.SessionStore,
+  SessionStore.make,
+).pipe(
+  Layer.provide(activeSessionOverflowRepositoryLayer),
+  Layer.provide(ServerEnvironment.identityLayer),
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(SqlitePersistenceMemory),
   Layer.provide(makeServerConfigLayer()),
 );
 
 it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+  it.effect("keys remote cookies by environment identity instead of state directory", () =>
+    Effect.gen(function* () {
+      const cookieName = (stateDir: string, environmentId: EnvironmentId) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          return sessions.cookieName;
+        }).pipe(
+          Effect.provide(
+            makeSessionStoreLayer({ mode: "web", host: "192.168.1.50", stateDir }, environmentId),
+          ),
+        );
+
+      const original = yield* cookieName("/srv/t3-one", EnvironmentId.make("environment-one"));
+      const moved = yield* cookieName("/srv/t3-moved", EnvironmentId.make("environment-one"));
+      const other = yield* cookieName("/srv/t3-one", EnvironmentId.make("environment-two"));
+
+      expect(moved).toBe(original);
+      expect(other).not.toBe(original);
+    }),
+  );
+
   it.effect("issues and verifies signed browser session tokens", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
@@ -86,6 +177,22 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(verified.expiresAt?.toString()).toBe(issued.expiresAt.toString());
     }).pipe(Effect.provide(makeSessionStoreLayer())),
   );
+  it.effect("buffers session changes acquired before their stream starts", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const changes = yield* sessions.subscribeChanges;
+        const issued = yield* sessions.issue();
+
+        const change = yield* Stream.runHead(changes);
+
+        expect(Option.getOrUndefined(change)).toMatchObject({
+          type: "clientUpserted",
+          clientSession: { sessionId: issued.sessionId },
+        });
+      }),
+    ).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
   it.effect("rejects malformed session tokens", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
@@ -94,6 +201,56 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(error._tag).toBe("MalformedSessionTokenError");
       expect(error.message).toContain("Malformed session token");
     }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+  it.effect("rejects oversized and trailing-segment session credentials before decoding", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const issued = yield* sessions.issue();
+      const websocket = yield* sessions.issueWebSocketToken(issued.sessionId);
+
+      const oversizedSession = yield* Effect.flip(
+        sessions.verify("x".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
+      );
+      const oversizedWebSocket = yield* Effect.flip(
+        sessions.verifyWebSocketToken("x".repeat(AUTH_CREDENTIAL_MAX_LENGTH + 1)),
+      );
+      const trailingSession = yield* Effect.flip(sessions.verify(`${issued.token}.trailing`));
+      const trailingWebSocket = yield* Effect.flip(
+        sessions.verifyWebSocketToken(`${websocket.token}.trailing`),
+      );
+
+      expect(oversizedSession._tag).toBe("MalformedSessionTokenError");
+      expect(oversizedWebSocket._tag).toBe("MalformedWebSocketTokenError");
+      expect(trailingSession._tag).toBe("MalformedSessionTokenError");
+      expect(trailingWebSocket._tag).toBe("MalformedWebSocketTokenError");
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+  it.effect("rejects oversized session claims and client metadata before persistence", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const subjectError = yield* Effect.flip(
+        sessions.issue({ subject: "x".repeat(AUTH_SUBJECT_MAX_LENGTH + 1) }),
+      );
+      const metadataError = yield* Effect.flip(
+        sessions.issue({
+          client: {
+            deviceType: "unknown",
+            userAgent: "x".repeat(AUTH_CLIENT_USER_AGENT_MAX_LENGTH + 1),
+          },
+        }),
+      );
+
+      expect(subjectError._tag).toBe("SessionCredentialIssueError");
+      expect(metadataError._tag).toBe("SessionCredentialIssueError");
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+  it.effect("fails explicitly instead of returning a truncated active-session list", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const error = yield* Effect.flip(sessions.listActive());
+
+      expect(error._tag).toBe("ActiveSessionsLimitExceededError");
+    }).pipe(Effect.provide(activeSessionOverflowCredentialLayer)),
   );
   it.effect("preserves repository failures while verifying session and websocket credentials", () =>
     Effect.gen(function* () {
@@ -150,6 +307,78 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         "relay:read",
       ]);
     }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect("atomically replaces active sessions with the same subject and method", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const browser = yield* sessions.issue({
+        subject: "desktop-bootstrap",
+        method: "browser-session-cookie",
+      });
+      const [firstBearer, secondBearer] = yield* Effect.all(
+        [
+          sessions.issue({
+            subject: "desktop-bootstrap",
+            method: "bearer-access-token",
+            replaceActiveForSubjectAndMethod: true,
+          }),
+          sessions.issue({
+            subject: "desktop-bootstrap",
+            method: "bearer-access-token",
+            replaceActiveForSubjectAndMethod: true,
+          }),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      const active = yield* sessions.listActive();
+      const bearerVerification = yield* Effect.all([
+        sessions.verify(firstBearer.token).pipe(Effect.option),
+        sessions.verify(secondBearer.token).pipe(Effect.option),
+      ]);
+
+      expect(active).toHaveLength(2);
+      expect(active.find((entry) => entry.sessionId === browser.sessionId)).toBeDefined();
+      expect(
+        active.filter(
+          (entry) =>
+            entry.subject === "desktop-bootstrap" && entry.method === "bearer-access-token",
+        ),
+      ).toHaveLength(1);
+      expect(bearerVerification.filter(Option.isSome)).toHaveLength(1);
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
+  it.effect("keeps the previous desktop session valid when replacement fails", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const sql = yield* SqlClient.SqlClient;
+      const previous = yield* sessions.issue({
+        subject: "desktop-bootstrap",
+        method: "bearer-access-token",
+      });
+      yield* sql`
+        CREATE TRIGGER reject_auth_session_insert BEFORE INSERT ON auth_sessions
+        BEGIN
+          SELECT RAISE(ABORT, 'simulated insert failure');
+        END
+      `;
+
+      const error = yield* sessions
+        .issue({
+          subject: "desktop-bootstrap",
+          method: "bearer-access-token",
+          replaceActiveForSubjectAndMethod: true,
+        })
+        .pipe(Effect.flip);
+
+      expect(error._tag).toBe("SessionCredentialIssueError");
+      expect((yield* sessions.verify(previous.token)).sessionId).toBe(previous.sessionId);
+      expect((yield* sessions.listActive()).map((session) => session.sessionId)).toEqual([
+        previous.sessionId,
+      ]);
+    }).pipe(Effect.provide(Layer.mergeAll(makeSessionStoreLayer(), SqlitePersistenceMemory))),
   );
 
   it.effect("rejects websocket tokens once the parent session has expired", () =>
@@ -317,6 +546,124 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(afterReconnect[0]?.lastConnectedAt?.toString()).not.toBe(firstConnectedAt?.toString());
     }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
   );
+
+  it.effect("keeps connected relay sessions visible through expiry and HTTP renewal", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const original = yield* sessions.issue(relaySessionInput);
+      const websocket = yield* sessions.issueWebSocketToken(original.sessionId, {
+        ttl: Duration.hours(2),
+      });
+      yield* sessions.verifyWebSocketToken(websocket.token);
+      yield* sessions.markConnected(original.sessionId);
+      const beforeExpiry = yield* sessions.listActive();
+      expect(beforeExpiry).toHaveLength(1);
+      expect(beforeExpiry[0]?.connected).toBe(true);
+
+      yield* TestClock.adjust(Duration.minutes(61));
+
+      expect(yield* sessions.listActive()).toEqual(beforeExpiry);
+      expect(yield* Effect.flip(sessions.verify(original.token))).toMatchObject({
+        _tag: "SessionTokenExpiredError",
+      });
+      expect(yield* Effect.flip(sessions.verifyWebSocketToken(websocket.token))).toMatchObject({
+        _tag: "WebSocketSessionExpiredError",
+      });
+
+      const renewed = yield* sessions.issue(relaySessionInput);
+      const afterRenewal = yield* sessions.listActive();
+      expect(renewed.sessionId).not.toBe(original.sessionId);
+      expect(afterRenewal).toHaveLength(2);
+      expect(afterRenewal).toEqual(
+        expect.arrayContaining([
+          beforeExpiry[0],
+          expect.objectContaining({
+            sessionId: renewed.sessionId,
+            connected: false,
+            lastConnectedAt: null,
+          }),
+        ]),
+      );
+    }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect.each([1, 2])(
+    "removes an expired session from listings and updates after its last of %s sockets closes",
+    (socketCount) =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const issued = yield* sessions.issue(relaySessionInput);
+        const changes = yield* Queue.unbounded<SessionStore.SessionCredentialChange>();
+        yield* sessions.streamChanges.pipe(
+          Stream.runForEach((change) => Queue.offer(changes, change)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        for (let index = 0; index < socketCount; index += 1) {
+          yield* sessions.markConnected(issued.sessionId);
+          expect(yield* Queue.take(changes)).toMatchObject({
+            type: "clientUpserted",
+            clientSession: { sessionId: issued.sessionId, connected: true },
+          });
+        }
+
+        yield* TestClock.adjust(Duration.minutes(61));
+
+        for (let remaining = socketCount - 1; remaining >= 0; remaining -= 1) {
+          yield* sessions.markDisconnected(issued.sessionId);
+          const change = yield* Queue.take(changes);
+          const listed = yield* sessions.listActive();
+          if (remaining > 0) {
+            expect(change).toMatchObject({
+              type: "clientUpserted",
+              clientSession: { sessionId: issued.sessionId, connected: true },
+            });
+            expect(listed).toHaveLength(1);
+            expect(listed[0]?.connected).toBe(true);
+          } else {
+            expect(change).toEqual({ type: "clientRemoved", sessionId: issued.sessionId });
+            expect(listed).toEqual([]);
+          }
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer())),
+      ),
+  );
+
+  it.effect.each(["revoke", "revokeAllExcept"] as const)(
+    "removes expired connected sessions with %s",
+    (operation) =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const administrative = yield* sessions.issue({ subject: "desktop-bootstrap" });
+        const client = yield* sessions.issue(relaySessionInput);
+        yield* sessions.markConnected(client.sessionId);
+        yield* TestClock.adjust(Duration.minutes(61));
+        const changes = yield* Queue.unbounded<SessionStore.SessionCredentialChange>();
+        yield* sessions.streamChanges.pipe(
+          Stream.runForEach((change) => Queue.offer(changes, change)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+
+        if (operation === "revoke") {
+          expect(yield* sessions.revoke(client.sessionId)).toBe(true);
+        } else {
+          expect(yield* sessions.revokeAllExcept(administrative.sessionId)).toBe(1);
+        }
+
+        expect(yield* Queue.take(changes)).toEqual({
+          type: "clientRemoved",
+          sessionId: client.sessionId,
+        });
+        const listed = yield* sessions.listActive();
+        expect(listed).toHaveLength(1);
+        expect(listed[0]?.sessionId).toBe(administrative.sessionId);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer())),
+      ),
+  );
+
   it.effect("records client connection metadata without clearing prior values", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;

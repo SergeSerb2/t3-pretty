@@ -9,7 +9,7 @@ import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/e
 import { type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { resolveStorage } from "./lib/storage";
+import { resolveLocalStorage } from "./lib/storage";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
   DEFAULT_THREAD_TERMINAL_ID,
@@ -28,10 +28,57 @@ interface ThreadTerminalUiState {
 
 // Keep the old storage key so existing drawer layout preferences migrate.
 const TERMINAL_UI_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
+const MAX_PERSISTED_TERMINAL_THREAD_STATES = 256;
 
 interface PersistedTerminalUiStateStoreState {
   terminalUiStateByThreadKey?: Record<string, ThreadTerminalUiState>;
   terminalStateByThreadKey?: Record<string, ThreadTerminalUiState>;
+}
+
+function sanitizePersistedThreadTerminalUiState(value: unknown): ThreadTerminalUiState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const terminalIds = Array.isArray(candidate.terminalIds)
+    ? candidate.terminalIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const terminalGroups = Array.isArray(candidate.terminalGroups)
+    ? candidate.terminalGroups.flatMap<ThreadTerminalGroup>((group) => {
+        if (!group || typeof group !== "object" || Array.isArray(group)) return [];
+        const fields = group as Record<string, unknown>;
+        if (typeof fields.id !== "string" || !Array.isArray(fields.terminalIds)) return [];
+        return [
+          {
+            id: fields.id,
+            terminalIds: fields.terminalIds.filter((id): id is string => typeof id === "string"),
+            ...(fields.splitDirection === "vertical"
+              ? { splitDirection: "vertical" as const }
+              : {}),
+          },
+        ];
+      })
+    : [];
+  const normalized = normalizeThreadTerminalUiState({
+    terminalOpen: candidate.terminalOpen === true,
+    terminalHeight:
+      typeof candidate.terminalHeight === "number"
+        ? candidate.terminalHeight
+        : DEFAULT_THREAD_TERMINAL_HEIGHT,
+    terminalIds,
+    activeTerminalId:
+      typeof candidate.activeTerminalId === "string" ? candidate.activeTerminalId : "",
+    terminalGroups,
+    activeTerminalGroupId:
+      typeof candidate.activeTerminalGroupId === "string" ? candidate.activeTerminalGroupId : "",
+  });
+  return isDefaultThreadTerminalUiState(normalized) ? null : normalized;
+}
+
+function boundPersistedTerminalUiStates(
+  states: Record<string, ThreadTerminalUiState>,
+): Record<string, ThreadTerminalUiState> {
+  const entries = Object.entries(states);
+  if (entries.length <= MAX_PERSISTED_TERMINAL_THREAD_STATES) return states;
+  return Object.fromEntries(entries.slice(-MAX_PERSISTED_TERMINAL_THREAD_STATES));
 }
 
 export function migratePersistedTerminalUiStateStoreState(
@@ -42,12 +89,23 @@ export function migratePersistedTerminalUiStateStoreState(
     return { terminalUiStateByThreadKey: {} };
   }
 
-  const candidate = persistedState as PersistedTerminalUiStateStoreState;
+  const candidate = persistedState as Record<string, unknown>;
   const persistedUiStateByThreadKey =
-    candidate.terminalUiStateByThreadKey ?? candidate.terminalStateByThreadKey ?? {};
-  const terminalUiStateByThreadKey = Object.fromEntries(
-    Object.entries(persistedUiStateByThreadKey).filter(([threadKey]) =>
-      parseScopedThreadKey(threadKey),
+    candidate.terminalUiStateByThreadKey ?? candidate.terminalStateByThreadKey;
+  if (
+    !persistedUiStateByThreadKey ||
+    typeof persistedUiStateByThreadKey !== "object" ||
+    Array.isArray(persistedUiStateByThreadKey)
+  ) {
+    return { terminalUiStateByThreadKey: {} };
+  }
+  const terminalUiStateByThreadKey = boundPersistedTerminalUiStates(
+    Object.fromEntries(
+      Object.entries(persistedUiStateByThreadKey).flatMap(([threadKey, value]) => {
+        if (!parseScopedThreadKey(threadKey)) return [];
+        const sanitized = sanitizePersistedThreadTerminalUiState(value);
+        return sanitized ? [[threadKey, sanitized] as const] : [];
+      }),
     ),
   );
 
@@ -55,7 +113,7 @@ export function migratePersistedTerminalUiStateStoreState(
 }
 
 function createTerminalUiStateStorage() {
-  return resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined);
+  return resolveLocalStorage();
 }
 
 function normalizeTerminalIds(terminalIds: string[]): string[] {
@@ -513,10 +571,8 @@ function updateTerminalUiStateByThreadKey(
     return rest;
   }
 
-  return {
-    ...terminalUiStateByThreadKey,
-    [threadKey]: next,
-  };
+  const { [threadKey]: _previous, ...remaining } = terminalUiStateByThreadKey;
+  return { ...remaining, [threadKey]: next };
 }
 
 function updateSuppressedTerminalId(
@@ -774,7 +830,9 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       storage: createJSONStorage(createTerminalUiStateStorage),
       migrate: migratePersistedTerminalUiStateStoreState,
       partialize: (state) => ({
-        terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
+        terminalUiStateByThreadKey: boundPersistedTerminalUiStates(
+          state.terminalUiStateByThreadKey,
+        ),
       }),
     },
   ),

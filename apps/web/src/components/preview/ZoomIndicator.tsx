@@ -21,6 +21,16 @@ export function ZoomIndicator({ zoomFactor }: Props) {
   const lastFactorRef = useRef(zoomFactor);
   const timerRef = useRef<number | null>(null);
 
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     if (Math.abs(lastFactorRef.current - zoomFactor) < ZOOM_EPSILON) return;
     lastFactorRef.current = zoomFactor;
@@ -30,12 +40,6 @@ export function ZoomIndicator({ zoomFactor }: Props) {
       setVisible(false);
       timerRef.current = null;
     }, HIDE_AFTER_MS);
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
   }, [zoomFactor]);
 
   const percent = `${Math.round(zoomFactor * 100)}%`;

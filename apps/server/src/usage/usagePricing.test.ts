@@ -2,96 +2,132 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   cacheSavingsUsd,
+  createOverrideRateTable,
   lookupRate,
-  normalizeModelName,
   parseRateTable,
   priceUsage,
-  type RateTable,
 } from "./usagePricing.ts";
 
-const emptyTable: RateTable = new Map();
-
-const totals = {
-  uncachedInputTokens: 1_000_000,
-  cachedInputTokens: 1_000_000,
-  cacheCreationTokens: 1_000_000,
-  outputTokens: 1_000_000,
-  reasoningTokens: 0,
-};
-
-describe("normalizeModelName", () => {
-  it("strips a provider prefix and lowercases", () => {
-    expect(normalizeModelName("kimi-code/k3")).toBe("k3");
-    expect(normalizeModelName("Moonshot/Kimi-K3")).toBe("kimi-k3");
-  });
+const rate = (input: number, cacheRead?: number) => ({
+  input_cost_per_token: input,
+  output_cost_per_token: input * 5,
+  ...(cacheRead === undefined ? {} : { cache_read_input_token_cost: cacheRead }),
 });
 
-describe("lookupRate", () => {
-  it("maps Kimi Code CLI names to official API rates", () => {
-    const k3 = lookupRate(emptyTable, "kimi-code/k3");
-    expect(k3).toEqual({
-      inputCostPerToken: 3e-6,
-      outputCostPerToken: 1.5e-5,
-      cacheReadCostPerToken: 3e-7,
-      cacheCreationCostPerToken: 3e-6,
-    });
-    expect(lookupRate(emptyTable, "k3")).toEqual(k3);
-    expect(lookupRate(emptyTable, "kimi-code/k3-256k")).toEqual(k3);
-    expect(lookupRate(emptyTable, "kimi-k3")).toEqual(k3);
+describe("usage pricing", () => {
+  const totals = {
+    uncachedInputTokens: 1_000_000,
+    cachedInputTokens: 1_000_000,
+    cacheCreationTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    reasoningTokens: 500_000,
+  };
 
-    expect(lookupRate(emptyTable, "kimi-code/kimi-for-coding")).toEqual({
-      inputCostPerToken: 9.5e-7,
-      outputCostPerToken: 4e-6,
-      cacheReadCostPerToken: 1.9e-7,
-      cacheCreationCostPerToken: 9.5e-7,
-    });
-    expect(lookupRate(emptyTable, "kimi-for-coding-highspeed")?.inputCostPerToken).toBe(1.9e-6);
-    expect(lookupRate(emptyTable, "kimi-k2.6")?.cacheReadCostPerToken).toBe(1.6e-7);
-    expect(lookupRate(emptyTable, "kimi-k2.5")?.outputCostPerToken).toBe(3e-6);
-  });
-
-  it("lets an explicit table entry override the official Kimi fallback", () => {
-    const table: RateTable = new Map([
-      [
-        "k3",
-        {
-          inputCostPerToken: 1,
-          outputCostPerToken: 2,
-          cacheReadCostPerToken: 0.1,
-          cacheCreationCostPerToken: 1,
-        },
-      ],
-    ]);
-
-    expect(lookupRate(table, "kimi-code/k3")?.inputCostPerToken).toBe(1);
-  });
-
-  it("still returns null for a model with no rate", () => {
-    expect(lookupRate(emptyTable, "not-a-real-model")).toBeNull();
-  });
-});
-
-describe("priceUsage", () => {
-  it("charges Kimi uncached input, cache reads, cache writes, and output separately", () => {
-    const priced = priceUsage(emptyTable, "k3", totals, null);
-
-    expect(priced.costSource).toBe("modelPriced");
-    expect(priced.costUsd).toBeCloseTo(3 + 0.3 + 3 + 15, 9);
-    expect(cacheSavingsUsd(emptyTable, "k3", totals)).toBeCloseTo(2.7, 9);
-  });
-
-  it("does not invent a rate from a LiteLLM document that only lists other models", () => {
-    const table = parseRateTable({
-      "claude-fable-5": {
-        input_cost_per_token: 1e-5,
-        output_cost_per_token: 5e-5,
+  it("uses custom token rates ahead of public and provider-reported costs", () => {
+    const table = parseRateTable({ "example-model": rate(1) });
+    const overrides = createOverrideRateTable({
+      "example-model": {
+        inputCostPerMillionTokens: 2,
+        outputCostPerMillionTokens: 8,
+        cacheReadCostPerMillionTokens: 0.5,
+        cacheWriteCostPerMillionTokens: 3,
       },
     });
 
-    expect(priceUsage(table, "mystery-model", totals, null).costSource).toBe("unpriced");
-    expect(priceUsage(table, "kimi-code/kimi-for-coding", totals, null).costUsd).toBeCloseTo(
-      0.95 + 0.19 + 0.95 + 4,
-      9,
+    for (const reportedCostUsd of [null, 99]) {
+      expect(priceUsage(table, "example-model", totals, reportedCostUsd, overrides)).toEqual({
+        costUsd: 13.5,
+        costSource: "modelPriced",
+      });
+    }
+    expect(cacheSavingsUsd(table, "example-model", totals, overrides)).toBe(1.5);
+  });
+
+  it("prices unknown models offline and uses input prices for omitted cache rates", () => {
+    const table = parseRateTable({});
+    const overrides = createOverrideRateTable({
+      "example-model": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 },
+    });
+
+    expect(priceUsage(table, "example-model", totals, null, overrides)).toEqual({
+      costUsd: 14,
+      costSource: "modelPriced",
+    });
+    expect(cacheSavingsUsd(table, "example-model", totals, overrides)).toBe(0);
+  });
+
+  it("preserves explicit zero rates and matches only the exact trimmed model ID", () => {
+    const table = parseRateTable({});
+    const overrides = createOverrideRateTable({
+      " vendor/example-model[1m] ": {
+        inputCostPerMillionTokens: 0,
+        outputCostPerMillionTokens: 0,
+      },
+    });
+    expect(priceUsage(table, " vendor/example-model[1m] ", totals, 99, overrides)).toEqual({
+      costUsd: 0,
+      costSource: "modelPriced",
+    });
+    for (const model of [
+      "example-model[1m]",
+      "vendor/example-model",
+      "vendor/Example-model[1m]",
+      "other/example-model[1m]",
+    ]) {
+      expect(priceUsage(table, model, totals, null, overrides).costSource).toBe("unpriced");
+      expect(priceUsage(table, model, totals, 99, overrides)).toEqual({
+        costUsd: 99,
+        costSource: "providerReported",
+      });
+    }
+  });
+
+  it("keeps the canonical Fable rate separate from DeepInfra in either order", () => {
+    const canonical = ["claude-fable-5", rate(1e-5, 1e-6)] as const;
+    const deepInfra = ["deepinfra/anthropic/claude-fable-5", rate(1e-5)] as const;
+
+    for (const entries of [
+      [canonical, deepInfra],
+      [deepInfra, canonical],
+    ]) {
+      const table = parseRateTable(Object.fromEntries(entries));
+
+      expect(lookupRate(table, "claude-fable-5")?.cacheReadCostPerToken).toBe(1e-6);
+      expect(lookupRate(table, "deepinfra/anthropic/claude-fable-5")?.cacheReadCostPerToken).toBe(
+        1e-5,
+      );
+      expect(lookupRate(table, "other/claude-fable-5")).toBeNull();
+    }
+  });
+
+  it("prices a bracketed context-tier variant at the base model's rate", () => {
+    const table = parseRateTable({ "claude-fable-5-1": rate(1e-5, 2.5e-7) });
+
+    expect(lookupRate(table, "claude-fable-5-1[1m]")).toEqual(
+      lookupRate(table, "claude-fable-5-1"),
     );
+    expect(lookupRate(table, "anthropic/Claude-Fable-5-1[1m]")).toBeNull();
+  });
+
+  it("adds a bare alias when every qualified entry has the same rate", () => {
+    const table = parseRateTable({
+      "provider-a/example-model": rate(1),
+      "provider-b/example-model": rate(1),
+    });
+
+    expect(lookupRate(table, "example-model")).toEqual(
+      lookupRate(table, "provider-a/example-model"),
+    );
+  });
+
+  it("leaves an ambiguous bare name unpriced", () => {
+    const table = parseRateTable({
+      "provider-a/example-model": rate(1),
+      "provider-b/example-model": rate(3),
+    });
+
+    expect(lookupRate(table, "provider-a/example-model")?.inputCostPerToken).toBe(1);
+    expect(lookupRate(table, "provider-b/example-model")?.inputCostPerToken).toBe(3);
+    expect(lookupRate(table, "example-model")).toBeNull();
   });
 });

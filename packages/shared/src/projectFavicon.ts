@@ -8,10 +8,18 @@ export const MANAGED_PROJECT_FAVICON_PREFIX = "t3-project-icon/";
 /** Hex SHA-256 prefix stored in the managed path so replacements bust client caches. */
 export const MANAGED_PROJECT_FAVICON_REVISION_LENGTH = 16;
 
-const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
-const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
+export const MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH = 255;
+export const MANAGED_PROJECT_FAVICON_REVISION_RE = new RegExp(
   `^[0-9a-f]{${MANAGED_PROJECT_FAVICON_REVISION_LENGTH}}$`,
 );
+
+export function getProjectFaviconResourceKey(
+  environmentId: string,
+  workspaceRoot: string,
+  faviconPath?: string | null,
+) {
+  return JSON.stringify([environmentId, workspaceRoot, faviconPath || null]);
+}
 
 export function getProjectFaviconCacheKey(
   environmentId: string,
@@ -87,12 +95,14 @@ export function toManagedProjectFaviconPath(fileName: string, revision: string):
   if (!isWorkspaceImagePreviewPath(base)) return null;
 
   const extensionIndex = base.lastIndexOf(".");
+  const extension = base.slice(extensionIndex).toLowerCase();
+  const maxStemLength =
+    MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH - revision.length - 1 - extension.length;
   const stem = base
     .slice(0, extensionIndex)
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, MANAGED_PROJECT_FAVICON_FILE_NAME_MAX_LENGTH);
-  const extension = base.slice(extensionIndex).toLowerCase();
+    .slice(0, maxStemLength);
   const safeStem = stem.length > 0 ? stem : "icon";
   const managed = `${MANAGED_PROJECT_FAVICON_PREFIX}${revision}-${safeStem}${extension}`;
   return parseManagedProjectFaviconPath(managed) ? managed : null;

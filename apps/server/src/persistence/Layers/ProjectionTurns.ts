@@ -18,6 +18,7 @@ import {
   ProjectionTurn,
   ProjectionTurnById,
   ProjectionTurnRepository,
+  SettleRunningProjectionTurnsInput,
   type ProjectionTurnRepositoryShape,
 } from "../Services/ProjectionTurns.ts";
 
@@ -229,6 +230,21 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       `,
   });
 
+  const settleRunningProjectionTurns = SqlSchema.void({
+    Request: SettleRunningProjectionTurnsInput,
+    execute: ({ threadId, state, completedAt, excludedTurnId }) =>
+      sql`
+        UPDATE projection_turns
+        SET
+          state = ${state},
+          completed_at = ${completedAt}
+        WHERE thread_id = ${threadId}
+          AND turn_id IS NOT NULL
+          AND state = 'running'
+          AND (${excludedTurnId} IS NULL OR turn_id <> ${excludedTurnId})
+      `,
+  });
+
   const clearCheckpointTurnConflictRow = SqlSchema.void({
     Request: ClearCheckpointTurnConflictInput,
     execute: ({ threadId, turnId, checkpointTurnCount }) =>
@@ -324,6 +340,15 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       ),
     );
 
+  const settleRunningByThreadId: ProjectionTurnRepositoryShape["settleRunningByThreadId"] = (
+    input,
+  ) =>
+    settleRunningProjectionTurns(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("ProjectionTurnRepository.settleRunningByThreadId:query"),
+      ),
+    );
+
   const clearCheckpointTurnConflict: ProjectionTurnRepositoryShape["clearCheckpointTurnConflict"] =
     (input) =>
       clearCheckpointTurnConflictRow(input).pipe(
@@ -344,6 +369,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
     deletePendingTurnStartByThreadId,
     listByThreadId,
     getByTurnId,
+    settleRunningByThreadId,
     clearCheckpointTurnConflict,
     deleteByThreadId,
   } satisfies ProjectionTurnRepositoryShape;

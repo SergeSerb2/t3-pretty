@@ -1,4 +1,6 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -181,7 +183,7 @@ here you go
 });
 
 describe("Origin Grok review workflow wiring", () => {
-  it("runs Origin PR review from macos-release with Grok 4.6", () => {
+  it("runs Origin PR review from self-hosted macos-release with Grok 4.6", () => {
     const reviewCi = NodeFS.readFileSync(NodePath.resolve(here, "review-origin-pr-ci.sh"), "utf8");
     const pipeline = NodeFS.readFileSync(
       NodePath.resolve(here, "../../.buildkite/pipeline.yml"),
@@ -196,7 +198,19 @@ describe("Origin Grok review workflow wiring", () => {
     );
     assert.notInclude(trusted, "refs/remotes/origin/main");
     assert.notInclude(trusted, "fetch --deepen=");
-    assert.include(trusted, "refs/t3-pretty/origin-main");
+    assert.include(trusted, '"+refs/heads/main:${main_ref}"');
+    assert.include(trusted, "originCommandEnvironment");
+    assert.include(trusted, "CURSOR_API_KEY");
+    assert.include(trusted, "ORIGIN_TOKEN");
+    assert.include(trusted, 'pass_origin_command_env "${DIR}/origin-forge.mjs"');
+    assert.notInclude(trusted, 'cp "${ROOT}/scripts/fork/origin-forge.mjs"');
+    assert.notInclude(
+      trusted,
+      'grep -q "originCommandEnvironment" "${ROOT}/scripts/fork/origin-forge.mjs"',
+    );
+    const updateIndex = trusted.indexOf("origin update");
+    assert.isAbove(updateIndex, trusted.indexOf("export GIT_TERMINAL_PROMPT=0"));
+    assert.isBelow(updateIndex, trusted.indexOf('ROOT="'));
     const reviewStep = pipeline.slice(pipeline.indexOf(":mag: Origin PR Review"));
     assert.include(reviewStep.slice(0, 1200), "queue: macos-release");
     assert.include(reviewStep, "automation");
@@ -208,10 +222,56 @@ describe("Origin Grok review workflow wiring", () => {
     assert.include(reviewCi, "cli-proxy-api-production-1615.up.railway.app");
     assert.include(reviewCi, "origin-forge.mjs");
     assert.include(reviewCi, "brew install node");
+    assert.include(reviewCi, "HOMEBREW_NO_ASK=1");
     assert.notInclude(reviewCi, "/Users/m1-dev/");
     assert.notInclude(reviewCi, "XAI_API_KEY");
     assert.notInclude(reviewCi, "api.x.ai");
     assert.notInclude(reviewCi, "gh api");
     assert.notInclude(reviewCi, "gh pr");
+  });
+
+  it("injects Origin API keys into main's runOrigin without copying this checkout's origin-forge", () => {
+    const trusted = NodeFS.readFileSync(
+      NodePath.resolve(here, "run-trusted-origin-pr-ci.sh"),
+      "utf8",
+    );
+    const python = trusted.split("<<'PY'\n")[1]?.split("\nPY\n")[0];
+    assert.ok(python, "trusted wrapper must ship a python injector");
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-origin-env-"));
+    const file = NodePath.join(dir, "origin-forge.mjs");
+    try {
+      NodeFS.writeFileSync(
+        file,
+        [
+          "export function runOrigin(args, options = {}) {",
+          "  return runCommand(originBin(), args, {",
+          "    ...options,",
+          "    env: { ...originInstallerEnvironment(), ...options.env },",
+          "    inheritEnv: false,",
+          "  });",
+          "}",
+          "",
+          "export function installOriginCli() {",
+          '  runCommand("sh", ["-c", "curl | sh"], {',
+          "    inheritEnv: false,",
+          "    env: originInstallerEnvironment(),",
+          "  });",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const result = NodeChildProcess.spawnSync("python3", ["-", file], {
+        encoding: "utf8",
+        input: python,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const patched = NodeFS.readFileSync(file, "utf8");
+      assert.include(patched, "CURSOR_API_KEY");
+      assert.include(patched, "ORIGIN_TOKEN");
+      assert.include(patched, "env: originInstallerEnvironment()");
+      assert.notInclude(patched.split("export function installOriginCli")[1], "CURSOR_API_KEY");
+    } finally {
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

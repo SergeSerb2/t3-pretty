@@ -35,40 +35,20 @@ const runtimeModeConfig: Record<RuntimeMode, RuntimeModeOption> = {
   },
 };
 
-// Kimi runs both full-access modes in the same unrestricted session; they
-// differ only in whether Kimi can stop to ask questions. Listed in ascending
-// order of access: "Yolo" may ask, "Full access" never does.
-const kimiRuntimeModeConfig: Partial<Record<RuntimeMode, RuntimeModeOption>> = {
-  yolo: {
-    label: "Yolo",
-    description: "Full access. Can stop to ask questions.",
-    icon: SparklesIcon,
-  },
-  "full-access": {
-    label: "Full access",
-    description: "Full access. Never stops to ask questions.",
-    icon: LockOpenIcon,
-  },
-};
-
-// "yolo" is Kimi-only; other providers never offer it.
+// "yolo" is a historical persisted spelling of full-access. Never offer it.
 const genericRuntimeModeOptions = (Object.keys(runtimeModeConfig) as RuntimeMode[]).filter(
   (mode) => mode !== "yolo",
 );
-const kimiRuntimeModeOptions: RuntimeMode[] = ["approval-required", "yolo", "full-access"];
 
 export function runtimeModeOptionsForProvider(
-  provider: ProviderDriverKind,
+  _provider: ProviderDriverKind,
 ): ReadonlyArray<RuntimeMode> {
-  return provider === "kimi" ? kimiRuntimeModeOptions : genericRuntimeModeOptions;
+  return genericRuntimeModeOptions;
 }
 
 export function resolveRuntimeModeOption(
-  provider: ProviderDriverKind,
+  _provider: ProviderDriverKind,
   mode: RuntimeMode,
 ): RuntimeModeOption {
-  if (provider === "kimi") {
-    return kimiRuntimeModeConfig[mode] ?? runtimeModeConfig[mode];
-  }
   return runtimeModeConfig[mode];
 }

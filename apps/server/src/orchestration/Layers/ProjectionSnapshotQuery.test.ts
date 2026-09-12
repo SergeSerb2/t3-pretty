@@ -1,50 +1,52 @@
 import {
+  type AgentSessionImportSource,
+  ChatAttachment,
   CheckpointRef,
   EventId,
   MessageId,
   ProjectId,
   ThreadId,
+  type ThreadPullRequestLink,
+  ThreadLinkedPullRequest,
   TurnId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
-import {
-  CREATE_PULL_REQUEST_CLOSE_MARKER,
-  CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
-  CREATE_PULL_REQUEST_OPEN_MARKER,
-} from "@t3tools/shared/createPullRequestPrompt";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import { SearchIndex, SearchIndexLive } from "../../search/SearchIndex.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
-import * as ToolProgress from "../ToolProgress.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { encodeThreadDetailPageCursor } from "../threadDetailCursor.ts";
+import { projectThreadDetailSnapshot } from "../ActivityPayloadProjection.ts";
+import { makeSqlStatementCounter } from "../../../integration/SqlStatementCounter.integration.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const encodeChatAttachments = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Array(ChatAttachment)),
+);
+const encodeThreadLinkedPullRequest = Schema.encodeSync(
+  Schema.fromJsonString(ThreadLinkedPullRequest),
+);
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
-    // Merged so tests can record live tool progress the query splices in.
-    Layer.provideMerge(ToolProgress.layer),
     Layer.provideMerge(RepositoryIdentityResolver.layer),
-    Layer.provideMerge(SearchIndexLive),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
   ),
@@ -55,10 +57,17 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
       const sql = yield* SqlClient.SqlClient;
+      const branchPullRequest = {
+        projectId: asProjectId("project-1"),
+        repository: "pingdotgg/t3code",
+        number: 43,
+        url: "https://github.com/pingdotgg/t3code/pull/43",
+      };
 
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_state`;
       yield* sql`DELETE FROM projection_thread_proposed_plans`;
+      yield* sql`DELETE FROM projection_thread_pull_requests`;
       yield* sql`DELETE FROM projection_turns`;
 
       yield* sql`
@@ -84,6 +93,45 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         )
       `;
 
+      // A merged link plus a newer open one: the multi-link projection must
+      // resolve to the open pull request, not the stale JSON column below.
+      yield* sql`
+        INSERT INTO projection_thread_pull_requests (
+          thread_id,
+          host,
+          repository,
+          number,
+          url,
+          source,
+          linked_at,
+          snapshot_json,
+          stack_json
+        )
+        VALUES
+          (
+            'thread-1',
+            'github.com',
+            'pingdotgg/t3code',
+            41,
+            'https://github.com/pingdotgg/t3code/pull/41',
+            'created',
+            '2026-02-24T00:00:02.500Z',
+            '{"state":"merged","title":"Groundwork","headBranch":"feat/groundwork","baseBranch":"main","isDraft":false,"updatedAt":"2026-02-24T00:00:02.600Z","syncedAt":"2026-02-24T00:00:02.700Z"}',
+            NULL
+          ),
+          (
+            'thread-1',
+            'github.com',
+            'pingdotgg/t3code',
+            42,
+            'https://github.com/pingdotgg/t3code/pull/42',
+            'manual',
+            '2026-02-24T00:00:03.000Z',
+            NULL,
+            NULL
+          )
+      `;
+
       yield* sql`
         INSERT INTO projection_threads (
           thread_id,
@@ -94,6 +142,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           interaction_mode,
           branch,
           worktree_path,
+          linked_pull_request_json,
+          branch_pull_request_json,
           latest_turn_id,
           latest_user_message_at,
           pending_approval_count,
@@ -101,6 +151,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           has_actionable_proposed_plan,
           pinned_at,
           pin_order_key,
+          active_order_key,
           created_at,
           updated_at,
           deleted_at
@@ -114,6 +165,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'default',
           NULL,
           NULL,
+          '{"projectId":"project-1","repository":"pingdotgg/t3code","number":41,"url":"https://github.com/pingdotgg/t3code/pull/41"}',
+          ${encodeThreadLinkedPullRequest(branchPullRequest)},
           'turn-1',
           '2026-02-24T00:00:04.000Z',
           1,
@@ -121,6 +174,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           '2026-02-24T00:00:01.000Z',
           'gm',
+          'hq',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -273,6 +327,37 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         sequence += 1;
       }
 
+      const expectedPullRequests: ReadonlyArray<ThreadPullRequestLink> = [
+        {
+          host: "github.com",
+          repository: "pingdotgg/t3code",
+          number: 41,
+          url: "https://github.com/pingdotgg/t3code/pull/41",
+          source: "created",
+          linkedAt: "2026-02-24T00:00:02.500Z",
+          snapshot: {
+            state: "merged",
+            title: "Groundwork",
+            headBranch: "feat/groundwork",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: "2026-02-24T00:00:02.600Z",
+            syncedAt: "2026-02-24T00:00:02.700Z",
+          },
+          stack: null,
+        },
+        {
+          host: "github.com",
+          repository: "pingdotgg/t3code",
+          number: 42,
+          url: "https://github.com/pingdotgg/t3code/pull/42",
+          source: "manual",
+          linkedAt: "2026-02-24T00:00:03.000Z",
+          snapshot: null,
+          stack: null,
+        },
+      ];
+
       const snapshot = yield* snapshotQuery.getSnapshot();
 
       assert.equal(snapshot.snapshotSequence, 5);
@@ -287,7 +372,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
           },
+          autoPull: false,
           faviconPath: null,
+          projectIcon: null,
           scripts: [
             {
               id: "script-1",
@@ -316,6 +403,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          pullRequests: expectedPullRequests,
+          branchPullRequest,
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -333,12 +422,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
-          scenery: null,
-          enabledSkillIds: [],
+          activeOrderKey: "hq",
           titleRegeneration: null,
           deletedAt: null,
           messages: [
@@ -409,7 +498,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
           },
+          autoPull: false,
           faviconPath: null,
+          projectIcon: null,
           scripts: [
             {
               id: "script-1",
@@ -437,6 +528,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          pullRequests: expectedPullRequests,
+          branchPullRequest,
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -454,12 +547,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
-          scenery: null,
-          enabledSkillIds: [],
+          activeOrderKey: "hq",
           titleRegeneration: null,
           session: {
             threadId: ThreadId.make("thread-1"),
@@ -484,184 +577,270 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value, snapshot.threads[0]);
       }
-    }),
-  );
 
-  it.effect("lists only narrow merged pull request settlement candidates", () =>
-    Effect.gen(function* () {
-      const snapshotQuery = yield* ProjectionSnapshotQuery;
-      const sql = yield* SqlClient.SqlClient;
+      const threadShell = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      assert.equal(threadShell._tag, "Some");
+      if (threadShell._tag === "Some") {
+        assert.deepEqual(threadShell.value, shellSnapshot.threads[0]);
+      }
 
-      yield* sql`DELETE FROM projection_thread_sessions`;
-      yield* sql`DELETE FROM projection_threads`;
-      yield* sql`DELETE FROM projection_projects`;
+      const commandReadModel = yield* snapshotQuery.getCommandReadModel();
+      assert.deepEqual(commandReadModel.threads[0]?.pullRequests, expectedPullRequests);
+      assert.deepEqual(
+        commandReadModel.threads[0]?.linkedPullRequest,
+        snapshot.threads[0]?.linkedPullRequest,
+      );
+
+      // Without link rows the legacy field is omitted, whatever the old JSON
+      // column still holds.
+      yield* sql`DELETE FROM projection_thread_pull_requests`;
+      const unlinkedShell = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      assert.equal(unlinkedShell._tag, "Some");
+      if (unlinkedShell._tag === "Some") {
+        assert.deepEqual(unlinkedShell.value.pullRequests, []);
+        assert.equal("linkedPullRequest" in unlinkedShell.value, false);
+      }
 
       yield* sql`
-        INSERT INTO projection_projects (
-          project_id,
-          title,
-          workspace_root,
-          default_model_selection_json,
-          scripts_json,
-          created_at,
-          updated_at,
-          deleted_at
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          created_at
         )
         VALUES
           (
-            'project-active',
-            'Active Project',
-            '/tmp/project-active',
-            '{"provider":"codex","model":"gpt-5-codex"}',
-            '[]',
-            '2026-08-10T00:00:00.000Z',
-            '2026-08-10T00:00:00.000Z',
-            NULL
+            'activity-task-started',
+            'thread-1',
+            'turn-1',
+            'info',
+            'task.started',
+            'Ship the query filter',
+            '{"taskId":"task-1","detail":"Ship the query filter"}',
+            '2026-02-24T00:00:06.100Z'
           ),
           (
-            'project-deleted',
-            'Deleted Project',
-            '/tmp/project-deleted',
-            '{"provider":"codex","model":"gpt-5-codex"}',
-            '[]',
-            '2026-08-10T00:00:00.000Z',
-            '2026-08-10T00:00:00.000Z',
-            '2026-08-10T00:00:01.000Z'
+            'activity-malformed-tool',
+            'thread-1',
+            'turn-1',
+            'info',
+            'tool.completed',
+            'Malformed tool output',
+            'not-json',
+            '2026-02-24T00:00:06.200Z'
           )
       `;
 
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id,
-          project_id,
-          title,
-          model_selection_json,
-          runtime_mode,
-          interaction_mode,
-          branch,
-          worktree_path,
-          created_at,
-          updated_at,
-          archived_at,
-          settled_override,
-          pinned_at,
-          pending_approval_count,
-          pending_user_input_count,
-          deleted_at
-        )
-        VALUES
-          ('eligible-root', 'project-active', 'Eligible Root', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/root', NULL, '2026-08-10T00:00:02.000Z', '2026-08-10T00:00:02.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('eligible-worktree', 'project-active', 'Eligible Worktree', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/worktree', '/tmp/project-worktree', '2026-08-10T00:00:03.000Z', '2026-08-10T00:00:03.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('eligible-stopped', 'project-active', 'Eligible Stopped', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/stopped', NULL, '2026-08-10T00:00:04.000Z', '2026-08-10T00:00:04.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('excluded-no-branch', 'project-active', 'No Branch', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', NULL, NULL, '2026-08-10T00:00:05.000Z', '2026-08-10T00:00:05.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('excluded-settled', 'project-active', 'Settled', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/settled', NULL, '2026-08-10T00:00:06.000Z', '2026-08-10T00:00:06.000Z', NULL, 'settled', NULL, 0, 0, NULL),
-          ('excluded-auto-settled', 'project-active', 'Auto Settled', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/auto-settled', NULL, '2026-08-10T00:00:06.500Z', '2026-08-10T00:00:06.500Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('excluded-pinned', 'project-active', 'Pinned', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/pinned', NULL, '2026-08-10T00:00:07.000Z', '2026-08-10T00:00:07.000Z', NULL, NULL, '2026-08-10T00:00:07.000Z', 0, 0, NULL),
-          ('excluded-approval', 'project-active', 'Approval', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/approval', NULL, '2026-08-10T00:00:08.000Z', '2026-08-10T00:00:08.000Z', NULL, NULL, NULL, 1, 0, NULL),
-          ('excluded-input', 'project-active', 'Input', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/input', NULL, '2026-08-10T00:00:09.000Z', '2026-08-10T00:00:09.000Z', NULL, NULL, NULL, 0, 1, NULL),
-          ('excluded-running', 'project-active', 'Running', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/running', NULL, '2026-08-10T00:00:10.000Z', '2026-08-10T00:00:10.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('excluded-starting', 'project-active', 'Starting', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/starting', NULL, '2026-08-10T00:00:11.000Z', '2026-08-10T00:00:11.000Z', NULL, NULL, NULL, 0, 0, NULL),
-          ('excluded-archived', 'project-active', 'Archived', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/archived', NULL, '2026-08-10T00:00:12.000Z', '2026-08-10T00:00:12.000Z', '2026-08-10T00:00:12.000Z', NULL, NULL, 0, 0, NULL),
-          ('excluded-deleted', 'project-active', 'Deleted', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/deleted', NULL, '2026-08-10T00:00:13.000Z', '2026-08-10T00:00:13.000Z', NULL, NULL, NULL, 0, 0, '2026-08-10T00:00:13.000Z'),
-          ('excluded-project', 'project-deleted', 'Deleted Project', '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default', 'feature/deleted-project', NULL, '2026-08-10T00:00:14.000Z', '2026-08-10T00:00:14.000Z', NULL, NULL, NULL, 0, 0, NULL)
-      `;
+      const detailWithoutActivities = yield* snapshotQuery.getThreadDetailById(
+        ThreadId.make("thread-1"),
+        { activityKinds: [] },
+      );
+      assert.equal(detailWithoutActivities._tag, "Some");
+      if (detailWithoutActivities._tag === "Some") {
+        assert.equal(detailWithoutActivities.value.activeOrderKey, "hq");
+        assert.deepEqual(detailWithoutActivities.value.activities, []);
+        assert.deepEqual(detailWithoutActivities.value.messages, snapshot.threads[0]?.messages);
+        assert.deepEqual(
+          detailWithoutActivities.value.proposedPlans,
+          snapshot.threads[0]?.proposedPlans,
+        );
+        assert.deepEqual(
+          detailWithoutActivities.value.checkpoints,
+          snapshot.threads[0]?.checkpoints,
+        );
+      }
+
+      const detailWithTaskActivities = yield* snapshotQuery.getThreadDetailById(
+        ThreadId.make("thread-1"),
+        { activityKinds: ["task.started", "task.progress"] },
+      );
+      assert.equal(detailWithTaskActivities._tag, "Some");
+      if (detailWithTaskActivities._tag === "Some") {
+        assert.deepEqual(detailWithTaskActivities.value.activities, [
+          {
+            id: asEventId("activity-task-started"),
+            tone: "info",
+            kind: "task.started",
+            summary: "Ship the query filter",
+            payload: { taskId: "task-1", detail: "Ship the query filter" },
+            turnId: asTurnId("turn-1"),
+            createdAt: "2026-02-24T00:00:06.100Z",
+          },
+        ]);
+      }
+
+      const counter = makeSqlStatementCounter();
+      const context = yield* snapshotQuery
+        .getThreadRuntimeContext(ThreadId.make("thread-1"))
+        .pipe(Effect.withTracer(counter.tracer));
+      assert.equal(counter.count(), 1);
+      assert.equal(context._tag, "Some");
+      if (context._tag === "Some") {
+        assert.deepEqual(context.value, {
+          id: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread 1",
+          session: snapshot.threads[0]?.session,
+        });
+      }
 
       yield* sql`
-        INSERT INTO orchestration_events (
-          event_id,
-          aggregate_kind,
-          stream_id,
-          stream_version,
-          event_type,
-          occurred_at,
-          actor_kind,
-          payload_json,
-          metadata_json,
-          recorded_at
-        )
-        VALUES
-          ('event-eligible-root-created', 'thread', 'eligible-root', 0, 'thread.created', '2099-01-01T00:00:00.000Z', 'client', '{"branch":"feature/root"}', '{}', '2026-08-10T00:00:02.100Z'),
-          ('event-eligible-root-title', 'thread', 'eligible-root', 1, 'thread.meta-updated', '2026-08-10T00:00:02.900Z', 'server', '{"title":"Renamed"}', '{}', '2026-08-10T00:00:02.900Z'),
-          ('event-eligible-worktree-created', 'thread', 'eligible-worktree', 0, 'thread.created', '2026-08-10T00:00:03.100Z', 'client', '{"branch":"feature/old"}', '{}', '2026-08-10T00:00:03.100Z'),
-          ('event-eligible-worktree-branch', 'thread', 'eligible-worktree', 1, 'thread.meta-updated', '2026-08-10T00:00:03.800Z', 'server', '{"branch":"feature/worktree"}', '{}', '2026-08-10T00:00:03.800Z'),
-          ('event-eligible-stopped-created', 'thread', 'eligible-stopped', 0, 'thread.created', '2026-08-10T00:00:04.500Z', 'client', '{"branch":"feature/stopped"}', '{}', '2026-08-10T00:00:04.500Z'),
-          ('event-excluded-auto-settled-created', 'thread', 'excluded-auto-settled', 0, 'thread.created', '2026-08-10T00:00:06.500Z', 'client', '{"branch":"feature/auto-settled"}', '{}', '2026-08-10T00:00:06.500Z')
+        UPDATE projection_thread_sessions
+        SET status = 'starting', active_turn_id = NULL, provider_name = 'claudeAgent',
+            provider_instance_id = 'claude-secondary', last_error = 'Starting another session'
+        WHERE thread_id = 'thread-1'
       `;
+      const changedContext = yield* snapshotQuery.getThreadRuntimeContext(
+        ThreadId.make("thread-1"),
+      );
+      assert.equal(changedContext._tag, "Some");
+      if (changedContext._tag === "Some") {
+        assert.equal(changedContext.value.session?.status, "starting");
+        assert.equal(changedContext.value.session?.activeTurnId, null);
+        assert.equal(changedContext.value.session?.providerName, "claudeAgent");
+        assert.equal(changedContext.value.session?.providerInstanceId, "claude-secondary");
+        assert.equal(changedContext.value.session?.lastError, "Starting another session");
+      }
+    }),
+  );
 
-      yield* sql`
-        INSERT INTO projection_thread_sessions (
-          thread_id,
-          status,
-          provider_name,
-          provider_session_id,
-          provider_thread_id,
-          runtime_mode,
-          active_turn_id,
-          last_error,
-          updated_at
-        )
-        VALUES
-          ('eligible-root', 'ready', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
-          ('eligible-stopped', 'stopped', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
-          ('excluded-running', 'running', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z'),
-          ('excluded-starting', 'starting', 'codex', NULL, NULL, 'full-access', NULL, NULL, '2026-08-10T00:00:15.000Z')
-      `;
-
-      yield* sql`
-        UPDATE projection_threads
-        SET branch_event_id = CASE thread_id
-          WHEN 'eligible-root' THEN 'event-eligible-root-created'
-          WHEN 'eligible-worktree' THEN 'event-eligible-worktree-branch'
-          WHEN 'eligible-stopped' THEN 'event-eligible-stopped-created'
-        END
-        WHERE thread_id IN ('eligible-root', 'eligible-worktree', 'eligible-stopped')
-      `;
-
-      yield* sql`
-        UPDATE projection_threads
-        SET
-          settled_at = '2026-08-10T00:00:20.000Z',
-          branch_event_id = 'event-excluded-auto-settled-created'
-        WHERE thread_id = 'excluded-auto-settled'
-      `;
-
-      const candidates = yield* snapshotQuery.listMergedPullRequestCandidates();
-
-      assert.deepEqual(candidates, [
+  it.effect("reads one turn-start message without decoding unrelated history", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-turn-start-read");
+      const messageId = MessageId.make("message-turn-start-read");
+      const createdAt = "2026-09-05T00:00:00.000Z";
+      const attachments = [
         {
-          threadId: ThreadId.make("eligible-root"),
-          branch: "feature/root",
-          cwd: "/tmp/project-active",
-          branchObservedAt: "2026-08-10T00:00:02.100Z",
-          branchEventId: EventId.make("event-eligible-root-created"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
+          type: "file" as const,
+          id: "notes",
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 8,
         },
+      ];
+      const attachmentsJson = yield* encodeChatAttachments(attachments);
+      yield* sql`
+        WITH RECURSIVE history(n) AS (
+          VALUES (1) UNION ALL SELECT n + 1 FROM history WHERE n < 2000
+        )
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, attachments_json,
+          is_streaming, created_at, updated_at
+        )
+        SELECT 'turn-start-history:' || n, ${threadId}, 'old-turn:' || n, 'assistant',
+          'Unrelated assistant output', 'not-json', 0, ${createdAt}, ${createdAt}
+        FROM history
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at
+        ) VALUES (${messageId}, ${threadId}, 'user', 'Read these notes',
+          ${attachmentsJson}, 0, ${createdAt}, ${createdAt})
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at
+        ) VALUES ('turn-start-unrelated-user', 'thread-turn-start-unrelated', 'user', 'Unrelated prompt',
+          'not-json', 0, ${createdAt}, ${createdAt})
+      `;
+
+      const counter = makeSqlStatementCounter();
+      const context = yield* query
+        .getTurnStartMessage({ threadId, messageId })
+        .pipe(Effect.withTracer(counter.tracer));
+      assert.equal(counter.count(), 1);
+      assert.deepEqual(
+        context,
+        Option.some({
+          message: {
+            id: messageId,
+            role: "user",
+            text: "Read these notes",
+            turnId: null,
+            streaming: false,
+            createdAt,
+            updatedAt: createdAt,
+            attachments,
+          },
+          hasOtherUserMessages: false,
+        }),
+      );
+      assert.equal(
+        (yield* query.getTurnStartMessage({
+          threadId: ThreadId.make("thread-turn-start-unrelated"),
+          messageId,
+        }))._tag,
+        "None",
+      );
+      assert.equal(
+        (yield* query.getTurnStartMessage({ threadId, messageId: MessageId.make("missing") }))._tag,
+        "None",
+      );
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            DELETE FROM projection_thread_messages
+            WHERE thread_id IN ('thread-turn-start-read', 'thread-turn-start-unrelated')
+          `;
+        }).pipe(Effect.orDie),
+      ),
+    ),
+  );
+
+  it.effect("keeps compaction and queued-message eligibility in the turn-start query", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-turn-start-eligibility");
+      const messageId = MessageId.make("message-turn-start-eligibility");
+      const createdAt = "2026-09-05T00:00:00.000Z";
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES (${messageId}, ${threadId}, 'user', 'Start a turn', 0, ${createdAt}, ${createdAt})
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, role, text, attachments_json, is_streaming, created_at, updated_at
+        ) VALUES ('turn-start-other-user', ${threadId}, 'user', '/compact', NULL, 0,
+          '2026-09-05T00:00:01.000Z', '2026-09-05T00:00:01.000Z')
+      `;
+
+      for (const { text, attachments, hasOtherUserMessages } of [
+        { text: "/compact", attachments: null, hasOtherUserMessages: false },
         {
-          threadId: ThreadId.make("eligible-worktree"),
-          branch: "feature/worktree",
-          cwd: "/tmp/project-worktree",
-          branchObservedAt: "2026-08-10T00:00:03.800Z",
-          branchEventId: EventId.make("event-eligible-worktree-branch"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
+          text: "\t\n\r /CoMpAcT\u00a0\u2028\ufeff",
+          attachments: "[ ]",
+          hasOtherUserMessages: false,
         },
+        { text: "/compact keep recent errors", attachments: "[]", hasOtherUserMessages: true },
+        { text: "", attachments: null, hasOtherUserMessages: true },
+        { text: "Queued prompt", attachments: null, hasOtherUserMessages: true },
         {
-          threadId: ThreadId.make("eligible-stopped"),
-          branch: "feature/stopped",
-          cwd: "/tmp/project-active",
-          branchObservedAt: "2026-08-10T00:00:04.500Z",
-          branchEventId: EventId.make("event-eligible-stopped-created"),
-          branchHeadRef: null,
-          branchHeadRepository: null,
-          branchHeadOwner: null,
-          branchHeadIsCrossRepository: null,
+          text: "/compact",
+          attachments:
+            '[{"type":"file","id":"notes","name":"notes.txt","mimeType":"text/plain","sizeBytes":8}]',
+          hasOtherUserMessages: true,
         },
-      ]);
+      ]) {
+        yield* sql`
+          UPDATE projection_thread_messages SET text = ${text}, attachments_json = ${attachments}
+          WHERE message_id = 'turn-start-other-user'
+        `;
+        const context = yield* query.getTurnStartMessage({ threadId, messageId });
+        assert.equal(context._tag, "Some");
+        if (context._tag === "Some") {
+          assert.equal(context.value.hasOtherUserMessages, hasOtherUserMessages);
+        }
+      }
     }),
   );
 
@@ -669,6 +848,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
       const sql = yield* SqlClient.SqlClient;
+      const branchPullRequest = {
+        projectId: asProjectId("project-archive-test"),
+        repository: "pingdotgg/t3code",
+        number: 43,
+        url: "https://github.com/pingdotgg/t3code/pull/43",
+      };
 
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_threads`;
@@ -775,6 +960,13 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         shellSnapshot.threads.map((thread) => thread.id),
         [ThreadId.make("thread-active")],
       );
+      assert.equal(shellSnapshot.threads[0]?.branchPullRequest, null);
+
+      yield* sql`
+        UPDATE projection_threads
+        SET branch_pull_request_json = ${encodeThreadLinkedPullRequest(branchPullRequest)}
+        WHERE thread_id = 'thread-archived'
+      `;
 
       const archivedShellSnapshot = yield* snapshotQuery.getArchivedShellSnapshot();
       assert.deepEqual(
@@ -782,6 +974,23 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [ThreadId.make("thread-archived")],
       );
       assert.equal(archivedShellSnapshot.threads[0]?.archivedAt, "2026-04-06T00:00:06.000Z");
+      assert.deepEqual(archivedShellSnapshot.threads[0]?.branchPullRequest, branchPullRequest);
+      const activeContext = yield* snapshotQuery.getThreadRuntimeContext(
+        ThreadId.make("thread-active"),
+      );
+      assert.equal(activeContext._tag, "Some");
+      if (activeContext._tag === "Some") assert.equal(activeContext.value.session, null);
+      for (const threadId of ["thread-archived", "thread-missing"]) {
+        assert.equal(
+          (yield* snapshotQuery.getThreadRuntimeContext(ThreadId.make(threadId)))._tag,
+          "None",
+        );
+      }
+      yield* sql`UPDATE projection_threads SET deleted_at = '2026-04-06T00:00:08.000Z' WHERE thread_id = 'thread-active'`;
+      assert.equal(
+        (yield* snapshotQuery.getThreadRuntimeContext(ThreadId.make("thread-active")))._tag,
+        "None",
+      );
     }),
   );
 
@@ -1026,6 +1235,52 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           assert.equal(firstThreadId.value, ThreadId.make("thread-first"));
         }
       }),
+  );
+
+  it.effect("measures replay payload bytes without decoding event bodies", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM orchestration_events`;
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+          command_id, causation_event_id, correlation_id, actor_kind, payload_json, metadata_json
+        )
+        VALUES
+          (
+            'replay-event-1', 'thread', 'thread-replay', 1, 'thread.activity-appended',
+            '2026-03-01T00:00:00.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 1000, 'x')), '{}'
+          ),
+          (
+            'replay-event-2', 'thread', 'thread-replay', 2, 'thread.activity-appended',
+            '2026-03-01T00:00:01.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 2000, 'x')), '{}'
+          ),
+          (
+            'replay-event-3', 'thread', 'thread-replay', 3, 'thread.activity-appended',
+            '2026-03-01T00:00:02.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', printf('%.*c', 3000, 'x')), '{}'
+          ),
+          (
+            'replay-event-4', 'thread', 'thread-replay', 4, 'thread.activity-appended',
+            '2026-03-01T00:00:03.000Z', NULL, NULL, NULL, 'provider',
+            json_object('output', '😀'), '{}'
+          )
+      `;
+
+      // Bytes, not code points: the 4-byte emoji row is {"output":"😀"}, 17 bytes.
+      const stats = yield* snapshotQuery.getEventReplayStats({
+        fromSequenceExclusive: 1,
+        toSequenceInclusive: 4,
+      });
+      assert.deepStrictEqual(stats, {
+        eventCount: 3,
+        payloadBytes: 5043,
+      });
+    }),
   );
 
   it.effect("reads single-thread checkpoint context without hydrating unrelated threads", () =>
@@ -1774,9 +2029,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_turns`;
       yield* sql`DELETE FROM projection_threads`;
       yield* sql`DELETE FROM projection_projects`;
-      yield* sql`DELETE FROM search_index_postings`;
-      yield* sql`DELETE FROM search_index_terms`;
-      yield* sql`DELETE FROM search_index_docs`;
 
       yield* sql`
         INSERT INTO projection_projects (
@@ -1878,25 +2130,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '2026-05-01T00:00:07.000Z',
             '2026-05-01T00:00:08.000Z',
             NULL
-          ),
-          (
-            'thread-autopr',
-            'project-search',
-            'Auto-PR search',
-            '{"provider":"codex","model":"gpt-5-codex"}',
-            'full-access',
-            'default',
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            '2026-05-01T00:00:09.000Z',
-            '2026-05-01T00:00:09.000Z',
-            NULL,
-            NULL
           )
       `;
 
@@ -1981,66 +2214,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             '2026-05-01T00:00:16.000Z',
             '2026-05-01T00:00:16.000Z'
-          ),
-          (
-            'message-autopr',
-            'thread-autopr',
-            'turn-autopr',
-            'user',
-            ${`Refactor the AUTOPR parser.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
-            0,
-            '2026-05-01T00:00:17.000Z',
-            '2026-05-01T00:00:17.000Z'
-          ),
-          (
-            'message-autopr-final',
-            'thread-autopr',
-            'turn-autopr',
-            'assistant',
-            'I merged main and opened the pull request for review.',
-            0,
-            '2026-05-01T00:00:18.000Z',
-            '2026-05-01T00:00:18.000Z'
-          ),
-          (
-            'message-midtag',
-            'thread-autopr',
-            NULL,
-            'user',
-            'How does <create_pull_request_instructions> tagging work? MIDTAG probe.',
-            0,
-            '2026-05-01T00:00:19.000Z',
-            '2026-05-01T00:00:19.000Z'
-          ),
-          (
-            'message-quoted-plus-suffix',
-            'thread-autopr',
-            NULL,
-            'user',
-            ${`Compare <create_pull_request_instructions> handling.\nQUOTEDVIS quarry after marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
-            0,
-            '2026-05-01T00:00:20.000Z',
-            '2026-05-01T00:00:20.000Z'
-          ),
-          (
-            'message-deep-quotes',
-            'thread-autopr',
-            NULL,
-            'user',
-            ${`${"Quote <create_pull_request_instructions> again.\n".repeat(5)}DEEPQUOTE quarry after fifth marker.${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`},
-            0,
-            '2026-05-01T00:00:21.000Z',
-            '2026-05-01T00:00:21.000Z'
-          ),
-          (
-            'message-inline-pair',
-            'thread-autopr',
-            NULL,
-            'user',
-            ${`Explain ${CREATE_PULL_REQUEST_OPEN_MARKER}INLINEVIS quarry${CREATE_PULL_REQUEST_CLOSE_MARKER}`},
-            0,
-            '2026-05-01T00:00:22.000Z',
-            '2026-05-01T00:00:22.000Z'
           )
       `;
 
@@ -2056,53 +2229,23 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           completed_at,
           checkpoint_files_json
         )
-        VALUES
-          (
-            'thread-active',
-            'turn-active',
-            'message-user',
-            'message-final',
-            'completed',
-            '2026-05-01T00:00:12.000Z',
-            '2026-05-01T00:00:12.000Z',
-            '2026-05-01T00:00:13.000Z',
-            '[]'
-          ),
-          (
-            'thread-autopr',
-            'turn-autopr',
-            'message-autopr',
-            'message-autopr-final',
-            'completed',
-            '2026-05-01T00:00:17.000Z',
-            '2026-05-01T00:00:17.000Z',
-            '2026-05-01T00:00:18.000Z',
-            '[]'
-          )
+        VALUES (
+          'thread-active',
+          'turn-active',
+          'message-user',
+          'message-final',
+          'completed',
+          '2026-05-01T00:00:12.000Z',
+          '2026-05-01T00:00:12.000Z',
+          '2026-05-01T00:00:13.000Z',
+          '[]'
+        )
       `;
 
-      // The fixture writes projection rows directly, so build the search
-      // index from them the way the projector would.
-      const searchIndex = yield* SearchIndex;
-      for (const threadId of [
-        "thread-active",
-        "thread-percent-decoy",
-        "thread-hidden",
-        "thread-autopr",
-      ]) {
-        yield* searchIndex.reindexThread({ threadId: ThreadId.make(threadId) });
-      }
-
       const literalPercent = yield* snapshotQuery.searchThreads({ query: "100%" });
-      // "%" is not a wildcard: it tokenizes away, leaving "100" — which also
-      // prefix-matches the "100x" decoy, on purpose (typeahead). Identical
-      // scores order by thread recency.
       assert.deepStrictEqual(
         literalPercent.matches.map((match) => [match.threadId, match.source]),
-        [
-          [ThreadId.make("thread-percent-decoy"), "user"],
-          [ThreadId.make("thread-active"), "user"],
-        ],
+        [[ThreadId.make("thread-active"), "user"]],
       );
 
       const user = yield* snapshotQuery.searchThreads({ query: "user needle" });
@@ -2116,62 +2259,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.deepStrictEqual(
         deduped.matches.map((match) => [match.threadId, match.source]),
         [[ThreadId.make("thread-active"), "user"]],
-      );
-
-      // The hidden auto-PR instruction block neither matches nor leaks into
-      // snippets: block-only phrases find nothing, and a hit on the user's own
-      // text produces an excerpt without the block.
-      assert.deepStrictEqual(
-        (yield* snapshotQuery.searchThreads({ query: "resolving any conflicts" })).matches,
-        [],
-      );
-      const autoPr = yield* snapshotQuery.searchThreads({ query: "AUTOPR parser" });
-      assert.deepStrictEqual(
-        autoPr.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "user"]],
-      );
-      assert.equal(autoPr.matches[0]?.snippet, "Refactor the AUTOPR parser.");
-      // A hidden-block hit must not shadow a genuine assistant match in the
-      // same thread: the block's words are excluded before indexing, and the
-      // visible assistant reply is what remains. ("pull request" alone would
-      // also tokenize-match inline quotes of the marker tag name, so probe
-      // the assistant-only phrase.)
-      const shadowed = yield* snapshotQuery.searchThreads({ query: "opened the pull request" });
-      assert.deepStrictEqual(
-        shadowed.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "assistant"]],
-      );
-      // User-authored text that merely quotes the marker mid-message is not a
-      // generated suffix and stays fully searchable.
-      const midTag = yield* snapshotQuery.searchThreads({ query: "MIDTAG probe" });
-      assert.deepStrictEqual(
-        midTag.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "user"]],
-      );
-      assert.match(midTag.matches[0]?.snippet ?? "", /MIDTAG probe/);
-      // Visible text between a quoted marker and the generated suffix stays
-      // searchable — the cut happens at the LAST marker, not the first.
-      const quotedPlusSuffix = yield* snapshotQuery.searchThreads({ query: "QUOTEDVIS quarry" });
-      assert.deepStrictEqual(
-        quotedPlusSuffix.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "user"]],
-      );
-      assert.match(quotedPlusSuffix.matches[0]?.snippet ?? "", /QUOTEDVIS quarry after marker/);
-      // The last-marker walk is unbounded: visible text after the FIFTH
-      // quoted marker still matches.
-      const deepQuotes = yield* snapshotQuery.searchThreads({ query: "DEEPQUOTE quarry" });
-      assert.deepStrictEqual(
-        deepQuotes.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "user"]],
-      );
-      assert.match(deepQuotes.matches[0]?.snippet ?? "", /DEEPQUOTE quarry after fifth marker/);
-      // An inline marker pair ending the text is not the newline-delimited
-      // generated block; its visible text keeps matching (shared stripper
-      // parity).
-      const inlinePair = yield* snapshotQuery.searchThreads({ query: "INLINEVIS quarry" });
-      assert.deepStrictEqual(
-        inlinePair.matches.map((match) => [match.threadId, match.source]),
-        [[ThreadId.make("thread-autopr"), "user"]],
       );
 
       assert.deepStrictEqual(
@@ -2206,7 +2293,6 @@ it.effect(
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
-      Layer.provide(ToolProgress.layer),
       Layer.provideMerge(
         Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
           resolve: (cwd: string) =>
@@ -2310,7 +2396,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
   //
   // Straggler user message at T03.5 (turn_id NULL, not any pending_message_id)
   // and a turnless activity at T03.6 — both belong to the page containing T03+.
-  const seedFanOutThread = Effect.fnUntraced(function* () {
+  const seedFanOutThread = Effect.fnUntraced(function* (options?: {
+    readonly importedMessageCount?: number;
+  }) {
     const sql = yield* SqlClient.SqlClient;
 
     // Tests in this block share one in-memory database; reset before seeding.
@@ -2338,6 +2426,20 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
         'turn-5', 0, 0, 0, '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:10.000Z', NULL)
     `;
+
+    if (options?.importedMessageCount) {
+      for (let index = 0; index < options.importedMessageCount; index += 1) {
+        const messageId = `import:codex:session-w:${String(index).padStart(6, "0")}`;
+        const role = index % 2 === 0 ? "user" : "assistant";
+        yield* sql`
+          INSERT INTO projection_thread_messages (
+            message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+          )
+          VALUES (${messageId}, 'thread-w', NULL, ${role}, ${"imported message " + index}, 0,
+            '2026-02-28T00:00:00.000Z', '2026-02-28T00:00:00.000Z')
+        `;
+      }
+    }
 
     const turns: ReadonlyArray<{
       turn: string;
@@ -2429,70 +2531,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     }),
   );
 
-  it.effect("splices live tool progress into the newest page only, over any persisted copy", () =>
-    Effect.gen(function* () {
-      yield* seedFanOutThread();
-      const sql = yield* SqlClient.SqlClient;
-      const snapshotQuery = yield* ProjectionSnapshotQuery;
-      const toolProgress = yield* ToolProgress.ToolProgressService;
-      const progressId = ToolProgress.toolProgressActivityId("call-1");
-      // A coalesced tick persisted a while ago ...
-      yield* sql`
-        INSERT INTO projection_thread_activities (
-          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at
-        )
-        VALUES (${progressId}, 'thread-w', 'turn-5', 'tool', 'tool.updated', 'Run',
-          '{"detail":"1/3"}', '2026-03-01T00:04:01.000Z')
-      `;
-      // ... and the registry holds a newer one for the same item.
-      yield* toolProgress.record({
-        threadId: threadW,
-        itemId: "call-1",
-        nowMs: 0,
-        activity: {
-          id: progressId,
-          tone: "tool",
-          kind: "tool.updated",
-          summary: "Run",
-          payload: { detail: "3/3" },
-          turnId: TurnId.make("turn-5"),
-          createdAt: "2026-03-01T00:04:03.000Z",
-        },
-      });
-
-      const progressDetail = (snapshot: {
-        thread: { activities: ReadonlyArray<{ id: string; payload: unknown }> };
-      }) =>
-        snapshot.thread.activities
-          .filter((activity) => activity.id === progressId)
-          .map((activity) => (activity.payload as { detail: string }).detail);
-
-      const full = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
-      assert.equal(full._tag, "Some");
-      if (full._tag === "Some") {
-        assert.deepEqual(progressDetail(full.value), ["3/3"]);
-        assert.equal(full.value.thread.activities.at(-1)?.id, progressId);
-      }
-
-      const firstPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 2 });
-      assert.equal(firstPage._tag, "Some");
-      if (firstPage._tag === "Some") {
-        assert.deepEqual(progressDetail(firstPage.value), ["3/3"]);
-        const beforeCursor = firstPage.value.page?.beforeCursor;
-        assert.ok(beforeCursor);
-        const olderPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
-          turnLimit: 2,
-          beforeCursor,
-        });
-        assert.equal(olderPage._tag, "Some");
-        if (olderPage._tag === "Some") {
-          assert.deepEqual(progressDetail(olderPage.value), []);
-        }
-      }
-      toolProgress.flush(threadW);
-    }),
-  );
-
   it.effect("windows to the last N user-anchored turns with subagent turns riding along", () =>
     Effect.gen(function* () {
       yield* seedFanOutThread();
@@ -2538,107 +2576,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.equal(snapshot.value.thread.activities.length, 6);
         assert.equal(snapshot.value.page?.hasMore, false);
         assert.equal(snapshot.value.page?.beforeCursor, null);
-      }
-    }),
-  );
-
-  it.effect("filters superseded activity payloads in SQLite before decoding the page", () =>
-    Effect.gen(function* () {
-      yield* seedFanOutThread();
-      const sql = yield* SqlClient.SqlClient;
-      const snapshotQuery = yield* ProjectionSnapshotQuery;
-      const hugePayload = "x".repeat(1_000_000);
-
-      const rows = [
-        {
-          id: "context-old",
-          kind: "context-window.updated",
-          summary: "old context",
-          payload: { usedTokens: 10, discarded: hugePayload },
-          group: null,
-          usedTokens: 10,
-          at: "2026-03-01T00:03:40.000Z",
-        },
-        {
-          id: "context-new",
-          kind: "context-window.updated",
-          summary: "new context",
-          payload: { usedTokens: 20 },
-          group: null,
-          usedTokens: 20,
-          at: "2026-03-01T00:03:41.000Z",
-        },
-        {
-          id: "context-malformed",
-          kind: "context-window.updated",
-          summary: "malformed context",
-          payload: { usedTokens: "unknown" },
-          group: null,
-          usedTokens: null,
-          at: "2026-03-01T00:03:42.000Z",
-        },
-        {
-          id: "tool-old-update",
-          kind: "tool.updated",
-          summary: "running",
-          payload: { data: { toolCallId: "call-1", rawOutput: hugePayload } },
-          group: "id:call-1",
-          usedTokens: null,
-          at: "2026-03-01T00:03:43.000Z",
-        },
-        {
-          id: "tool-completion",
-          kind: "tool.completed",
-          summary: "done",
-          payload: { data: { toolCallId: "call-1" } },
-          group: "id:call-1",
-          usedTokens: null,
-          at: "2026-03-01T00:03:44.000Z",
-        },
-        {
-          id: "tool-later-update",
-          kind: "tool.updated",
-          summary: "running again",
-          payload: { data: { toolCallId: "call-1" } },
-          group: "id:call-1",
-          usedTokens: null,
-          at: "2026-03-01T00:03:45.000Z",
-        },
-        {
-          id: "tool-unmatched-update",
-          kind: "tool.updated",
-          summary: "unmatched",
-          payload: { data: { toolCallId: "call-without-completion" } },
-          group: "id:call-without-completion",
-          usedTokens: null,
-          at: "2026-03-01T00:03:46.000Z",
-        },
-      ] as const;
-      for (const row of rows) {
-        yield* sql`
-          INSERT INTO projection_thread_activities (
-            activity_id, thread_id, turn_id, tone, kind, summary, payload_json,
-            projection_group_key, context_used_tokens, created_at
-          ) VALUES (
-            ${row.id}, 'thread-w', 'turn-4', 'tool', ${row.kind}, ${row.summary},
-            ${encodeUnknownJson(row.payload)}, ${row.group}, ${row.usedTokens}, ${row.at}
-          )
-        `;
-      }
-
-      const snapshot = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 2 });
-      assert.equal(snapshot._tag, "Some");
-      if (snapshot._tag === "Some") {
-        assert.deepEqual(activityIds(snapshot.value), [
-          "context-malformed",
-          "context-new",
-          "tool-completion",
-          "tool-later-update",
-          "tool-unmatched-update",
-          "turn-4-activity",
-          "turn-5-activity",
-          "turnless-activity",
-        ]);
       }
     }),
   );
@@ -2737,6 +2674,51 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     }),
   );
 
+  it.effect("keeps imported history on the oldest page after resumed turns", () =>
+    Effect.gen(function* () {
+      yield* seedFanOutThread({ importedMessageCount: 12 });
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+
+      const completePage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 50 });
+      assert.equal(completePage._tag, "Some");
+      if (completePage._tag !== "Some") return;
+      assert.equal(
+        completePage.value.thread.messages.filter((message) => message.id.startsWith("import:"))
+          .length,
+        12,
+      );
+      assert.equal(completePage.value.page?.hasMore, false);
+      assert.equal(completePage.value.page?.beforeCursor, null);
+
+      const recentPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, { turnLimit: 2 });
+      assert.equal(recentPage._tag, "Some");
+      if (recentPage._tag !== "Some") return;
+      assert.equal(
+        recentPage.value.thread.messages.some((message) => message.id.startsWith("import:")),
+        false,
+      );
+      const cursor = recentPage.value.page?.beforeCursor;
+      assert.notEqual(cursor, null);
+      assert.notEqual(cursor, undefined);
+      if (cursor === null || cursor === undefined) return;
+
+      const oldestPage = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
+        turnLimit: 1,
+        beforeCursor: cursor,
+      });
+      assert.equal(oldestPage._tag, "Some");
+      if (oldestPage._tag !== "Some") return;
+
+      const importedIds = oldestPage.value.thread.messages
+        .map((message) => message.id)
+        .filter((messageId) => messageId.startsWith("import:"));
+      assert.equal(importedIds.length, 12);
+      assert.equal(new Set(importedIds).size, 12);
+      assert.equal(oldestPage.value.page?.hasMore, false);
+      assert.equal(oldestPage.value.page?.beforeCursor, null);
+    }),
+  );
+
   it.effect("a cursor for a different thread degrades to the first page", () =>
     Effect.gen(function* () {
       yield* seedFanOutThread();
@@ -2830,9 +2812,84 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
           'thread-w',
           'turn-5',
           'tool',
-          'tool.completed',
+          CASE
+            WHEN sequence = 2 THEN 'tool.updated'
+            WHEN sequence IN (3, 70) THEN 'context-window.updated'
+            ELSE 'tool.completed'
+          END,
           'ran tool',
-          printf('{"sequence":%d}', sequence),
+          CASE
+            WHEN sequence IN (2, 80) THEN json_object(
+              'itemType', 'command_execution',
+              'toolCallId', 'cross-batch-call',
+              'title', CASE WHEN sequence = 80 THEN 'Build completed' ELSE 'Build' END,
+              'status', 'completed',
+              'data', json_object(
+                'toolCallId', 'cross-batch-call',
+                'item', json_object(
+                  'command', 'vp test run',
+                  'aggregatedOutput', printf(
+                    'command output%s%s',
+                    char(10),
+                    replace(hex(zeroblob(8192)), '00', 'x')
+                  )
+                ),
+                'rawOutput', printf(
+                  'raw output%s%s',
+                  char(10),
+                  replace(hex(zeroblob(8192)), '00', 'y')
+                ),
+                'files', json_array(json_object('path', 'apps/server/src/snapshot.ts'))
+              )
+            )
+            WHEN sequence = 10 THEN json_object(
+              'itemType', 'mcp_tool_call',
+              'status', 'completed',
+              'data', json_object(
+                'item', json_object(
+                  'type', 'mcpToolCall',
+                  'id', 'mcp-item-10',
+                  'tool', 'fetch_pr',
+                  'server', 'github',
+                  'status', 'completed',
+                  'arguments', json_object('pr', 42),
+                  'result', json_object(
+                    'content', json_array(json_object(
+                      'type', 'text',
+                      'text', printf(
+                        'PR body line one%s%s',
+                        char(10),
+                        replace(hex(zeroblob(8192)), '00', 'z')
+                      )
+                    ))
+                  ),
+                  '_meta', json_object('raw', replace(hex(zeroblob(8192)), '00', 'q'))
+                )
+              )
+            )
+            WHEN sequence = 11 THEN json_object(
+              'itemType', 'command_execution',
+              'status', 'completed',
+              'data', json_object(
+                'item', json_object(
+                  'status', 'failed',
+                  'command', 'vp test run',
+                  'aggregatedOutput', printf(
+                    'failed command%s%s',
+                    char(10),
+                    replace(hex(zeroblob(8192)), '00', 'w')
+                  )
+                ),
+                'rawOutput', json_object('stdout', 'failed output'),
+                'files', json_array(json_object('path', 'apps/server/src/failed.ts'))
+              )
+            )
+            WHEN sequence IN (3, 70) THEN json_object(
+              'usedTokens', sequence * 100,
+              'modelContextWindow', 100000
+            )
+            ELSE json_object('sequence', sequence)
+          END,
           sequence,
           '2026-03-01T00:04:00.000Z'
         FROM activity_rows
@@ -2910,12 +2967,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       const detailWithPinnedRequests = yield* snapshotQuery.getThreadDetailById(threadW);
       assert.equal(detailWithPinnedRequests._tag, "Some");
       if (detailWithPinnedRequests._tag === "Some") {
-        const ids = detailWithPinnedRequests.value.activities.map((activity) => activity.id);
+        const ids = new Set(
+          detailWithPinnedRequests.value.activities.map((activity) => activity.id),
+        );
         assert.equal(detailWithPinnedRequests.value.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
       }
 
       const windowWithPinnedRequests = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
@@ -2923,12 +2982,67 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       });
       assert.equal(windowWithPinnedRequests._tag, "Some");
       if (windowWithPinnedRequests._tag === "Some") {
-        const ids = windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id);
+        const ids = new Set(
+          windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id),
+        );
         assert.equal(windowWithPinnedRequests.value.thread.activities.length, 503);
-        assert.equal(ids.includes(asEventId("approval-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-old")), true);
-        assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.has(asEventId("approval-old")), true);
+        assert.equal(ids.has(asEventId("user-input-old")), true);
+        assert.equal(ids.has(asEventId("user-input-closed")), false);
+        assert.equal(ids.has(asEventId("user-input-tied-z-request")), true);
+      }
+
+      const fullSnapshot = yield* snapshotQuery.getThreadDetailSnapshot(threadW);
+      assert.equal(fullSnapshot._tag, "Some");
+      if (
+        detailWithPinnedRequests._tag === "Some" &&
+        fullSnapshot._tag === "Some" &&
+        windowWithPinnedRequests._tag === "Some"
+      ) {
+        const projectedFullSnapshot = projectThreadDetailSnapshot(fullSnapshot.value);
+        const projectedRawBaseline = projectThreadDetailSnapshot({
+          snapshotSequence: fullSnapshot.value.snapshotSequence,
+          thread: detailWithPinnedRequests.value,
+        });
+        assert.deepStrictEqual(projectedFullSnapshot, projectedRawBaseline);
+
+        const rawActivitiesById = new Map(
+          detailWithPinnedRequests.value.activities.map((activity) => [activity.id, activity]),
+        );
+        const projectedWindowSnapshot = projectThreadDetailSnapshot(windowWithPinnedRequests.value);
+        const projectedWindowBaseline = projectThreadDetailSnapshot({
+          ...windowWithPinnedRequests.value,
+          thread: {
+            ...windowWithPinnedRequests.value.thread,
+            activities: windowWithPinnedRequests.value.thread.activities.map(
+              (activity) => rawActivitiesById.get(activity.id) ?? activity,
+            ),
+          },
+        });
+        assert.deepStrictEqual(projectedWindowSnapshot, projectedWindowBaseline);
+
+        const projectedIds = new Set(
+          projectedFullSnapshot.thread.activities.map((activity) => activity.id),
+        );
+        assert.equal(projectedIds.has(asEventId("activity-0002")), false);
+        assert.equal(projectedIds.has(asEventId("activity-0003")), false);
+        assert.equal(projectedIds.has(asEventId("activity-0070")), true);
+
+        const failedCommand = projectedFullSnapshot.thread.activities.find(
+          (activity) => activity.id === asEventId("activity-0011"),
+        );
+        assert.deepStrictEqual(failedCommand?.payload, {
+          itemType: "command_execution",
+          status: "failed",
+          data: {
+            item: {
+              command: "vp test run",
+              aggregatedOutput: "failed command",
+            },
+            files: [{ path: "apps/server/src/failed.ts" }],
+            rawOutput: { content: "failed output" },
+          },
+        });
       }
     }),
   );
@@ -2987,4 +3101,291 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       }
     }),
   );
+});
+
+projectionSnapshotLayer("ProjectionSnapshotQuery imported sources", (it) => {
+  const encodeJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+  const source: AgentSessionImportSource = {
+    provider: "codex",
+    providerInstanceId: ProviderInstanceId.make("codex-home"),
+    providerSessionId: "native-session",
+    filePath: "/tmp/transcript.jsonl",
+    size: 128,
+    mtimeMs: 1_700_000_000_000,
+    device: 1,
+    inode: 2,
+    birthtimeMs: 1_699_000_000_000,
+  };
+
+  const seedImportedSession = Effect.fn("seedImportedSession")(function* (
+    projectId: ProjectId,
+    source: AgentSessionImportSource,
+  ) {
+    const sql = yield* SqlClient.SqlClient;
+    const threadId = ThreadId.make(
+      `import:${source.providerInstanceId}:${source.providerSessionId}`,
+    );
+    const timestamp = "2026-03-02T00:00:00.000Z";
+    yield* sql`
+      INSERT OR IGNORE INTO projection_projects (
+        project_id, title, workspace_root, scripts_json, created_at, updated_at
+      ) VALUES (${projectId}, 'Imported project', '/tmp/imported-project', '[]',
+        ${timestamp}, ${timestamp})
+    `;
+    yield* sql`
+      INSERT INTO projection_threads (
+        thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+        created_at, updated_at
+      ) VALUES (${threadId}, ${projectId}, 'Imported thread',
+        ${encodeJson({ instanceId: source.providerInstanceId, model: "gpt-5-codex" })},
+        'full-access', 'default',
+        ${timestamp}, ${timestamp})
+    `;
+    yield* sql`
+      INSERT INTO provider_session_runtime (
+        thread_id, provider_name, provider_instance_id, adapter_key, runtime_mode, status,
+        last_seen_at, resume_cursor_json, runtime_payload_json
+      ) VALUES (${threadId}, ${source.provider}, ${source.providerInstanceId},
+        ${source.provider}, 'full-access', 'stopped', ${timestamp},
+        ${encodeJson({ threadId: source.providerSessionId })},
+        ${encodeJson({ importedTranscripts: [source] })})
+    `;
+    yield* sql`
+      INSERT INTO projection_thread_messages (
+        message_id, thread_id, role, text, is_streaming, created_at, updated_at
+      ) VALUES (${`${threadId}:000000`}, ${threadId}, 'user', 'Imported history', 0,
+        ${timestamp}, ${timestamp})
+    `;
+    return { threadId, source };
+  });
+
+  it.effect("reads completed source copies without decoding message bodies", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-import-metadata");
+      const imported = yield* seedImportedSession(projectId, source);
+      const copiedSource = {
+        ...source,
+        filePath: "/tmp/transcript-copy.jsonl",
+        mtimeMs: null,
+        inode: null,
+        birthtimeMs: null,
+      };
+      yield* sql`
+        UPDATE provider_session_runtime
+        SET runtime_payload_json = ${encodeJson({
+          cwd: "/tmp/imported-project",
+          importedTranscripts: [source, copiedSource],
+        })}
+        WHERE thread_id = ${imported.threadId}
+      `;
+      yield* sql`
+        UPDATE projection_thread_messages SET attachments_json = 'not-json'
+        WHERE thread_id = ${imported.threadId}
+      `;
+
+      const counter = makeSqlStatementCounter();
+      const sources = yield* query
+        .getImportedAgentSessionSources(projectId)
+        .pipe(Effect.withTracer(counter.tracer));
+      assert.deepEqual(sources, [imported, { threadId: imported.threadId, source: copiedSource }]);
+      assert.equal(counter.count(), 1);
+    }),
+  );
+
+  it.effect("requires active project threads, a binding, and an imported message", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-import-completion");
+      const completed = yield* seedImportedSession(projectId, {
+        ...source,
+        providerSessionId: "completed",
+      });
+      yield* sql`
+        UPDATE projection_thread_messages SET message_id = ${`${completed.threadId}:legacy`}
+        WHERE thread_id = ${completed.threadId}
+      `;
+      const partials = yield* Effect.forEach(
+        [
+          "no-binding",
+          "no-history",
+          "no-imported-message",
+          "wrong-message-thread",
+          "archived",
+          "deleted",
+        ],
+        (providerSessionId) => seedImportedSession(projectId, { ...source, providerSessionId }),
+      );
+      const [noBinding, noHistory, noImportedMessage, wrongMessageThread, archived, deleted] =
+        partials;
+      assert.isDefined(noBinding);
+      assert.isDefined(noHistory);
+      assert.isDefined(noImportedMessage);
+      assert.isDefined(wrongMessageThread);
+      assert.isDefined(archived);
+      assert.isDefined(deleted);
+      yield* sql`DELETE FROM provider_session_runtime WHERE thread_id = ${noBinding.threadId}`;
+      yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = ${noHistory.threadId}`;
+      yield* sql`
+        UPDATE projection_thread_messages SET message_id = ${`normal:${noImportedMessage.threadId}`}
+        WHERE thread_id = ${noImportedMessage.threadId}
+      `;
+      yield* sql`
+        UPDATE projection_thread_messages SET thread_id = 'unrelated-thread'
+        WHERE thread_id = ${wrongMessageThread.threadId}
+      `;
+      yield* sql`
+        UPDATE projection_threads SET archived_at = '2026-03-03T00:00:00.000Z'
+        WHERE thread_id = ${archived.threadId}
+      `;
+      yield* sql`
+        UPDATE projection_threads SET deleted_at = '2026-03-03T00:00:00.000Z'
+        WHERE thread_id = ${deleted.threadId}
+      `;
+      const otherProjectId = ProjectId.make("project-import-other");
+      const otherProject = yield* seedImportedSession(otherProjectId, {
+        ...source,
+        providerSessionId: "other-project",
+      });
+      const deletedProjectId = ProjectId.make("project-import-deleted");
+      yield* seedImportedSession(deletedProjectId, {
+        ...source,
+        providerSessionId: "deleted-project",
+      });
+      yield* sql`
+        UPDATE projection_projects SET deleted_at = '2026-03-03T00:00:00.000Z'
+        WHERE project_id = ${deletedProjectId}
+      `;
+
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(projectId), [completed]);
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(otherProjectId), [otherProject]);
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(deletedProjectId), []);
+      assert.deepEqual(
+        yield* query.getImportedAgentSessionSources(ProjectId.make("project-import-missing")),
+        [],
+      );
+    }),
+  );
+
+  it.effect("keeps original sources when the current runtime provider and cursor change", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-import-switched");
+      const imported = yield* seedImportedSession(projectId, {
+        ...source,
+        provider: "claudeAgent",
+        providerInstanceId: ProviderInstanceId.make("claude-original"),
+        providerSessionId: "original-session",
+      });
+      yield* sql`
+        UPDATE provider_session_runtime
+        SET provider_name = 'codex', provider_instance_id = 'codex-new', adapter_key = 'codex',
+          resume_cursor_json = '{"threadId":"new-session"}'
+        WHERE thread_id = ${imported.threadId}
+      `;
+
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(projectId), [imported]);
+    }),
+  );
+
+  it.effect("skips invalid source payloads and entries without dropping valid sources", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("project-import-invalid");
+      const imported = yield* seedImportedSession(projectId, {
+        ...source,
+        providerSessionId: "a-invalid",
+      });
+      const valid = yield* seedImportedSession(projectId, {
+        ...source,
+        providerSessionId: "z-valid",
+      });
+      for (const payload of [null, "not-json", "null", "[]", "{}", '{"importedTranscripts":{}}']) {
+        yield* sql`
+          UPDATE provider_session_runtime SET runtime_payload_json = ${payload}
+          WHERE thread_id = ${imported.threadId}
+        `;
+        assert.deepEqual(yield* query.getImportedAgentSessionSources(projectId), [valid]);
+      }
+      yield* sql`
+        UPDATE provider_session_runtime SET runtime_payload_json = X'FF'
+        WHERE thread_id = ${imported.threadId}
+      `;
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(projectId), [valid]);
+
+      yield* sql`
+        UPDATE provider_session_runtime
+        SET runtime_payload_json = ${encodeJson({
+          importedTranscripts: [
+            null,
+            {},
+            { ...imported.source, size: -1 },
+            { ...imported.source, provider: "cursor" },
+            { ...imported.source, providerInstanceId: "wrong-instance" },
+            { ...imported.source, providerSessionId: "wrong-session" },
+            imported.source,
+          ],
+        })}
+        WHERE thread_id = ${imported.threadId}
+      `;
+      assert.deepEqual(yield* query.getImportedAgentSessionSources(projectId), [imported, valid]);
+    }),
+  );
+});
+
+it.effect("omits foreign-host PRs from legacy snapshots while preserving native links", () => {
+  const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: () =>
+          Effect.succeed({
+            canonicalKey: "github.com/acme/web",
+            provider: "github",
+            displayName: "acme/web",
+            locator: {
+              source: "git-remote" as const,
+              remoteName: "origin",
+              remoteUrl: "https://github.com/acme/web.git",
+            },
+          }),
+      }),
+    ),
+    Layer.provideMerge(SqlitePersistenceMemory),
+  );
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const query = yield* ProjectionSnapshotQuery;
+    yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES ('project-1', 'Project', '/repo', '[]', '2026-09-09T00:00:00Z', '2026-09-09T00:00:00Z')`;
+    yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at)
+      VALUES ('thread-1', 'project-1', 'Thread', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default', '2026-09-09T00:00:00Z', '2026-09-09T00:00:00Z')`;
+    yield* sql`INSERT INTO projection_thread_pull_requests (thread_id, host, repository, number, url, source, linked_at)
+      VALUES ('thread-1', 'github.enterprise.test', 'acme/web', 42, 'https://github.enterprise.test/acme/web/pull/42', 'manual', '2026-09-09T00:00:00Z')`;
+    const readThreads = Effect.gen(function* () {
+      const full = yield* query.getSnapshot();
+      const shell = yield* query.getShellSnapshot();
+      const detail = yield* query.getThreadDetailById(ThreadId.make("thread-1"));
+      const individual = yield* query.getThreadShellById(ThreadId.make("thread-1"));
+      return [
+        full.threads[0]!,
+        shell.threads[0]!,
+        Option.getOrThrow(detail),
+        Option.getOrThrow(individual),
+      ];
+    });
+    for (const thread of yield* readThreads) {
+      assert.equal(thread.linkedPullRequest ?? null, null);
+      assert.equal(thread.pullRequests[0]?.host, "github.enterprise.test");
+    }
+    yield* sql`UPDATE projection_thread_pull_requests SET host = 'github.com', url = 'https://github.com/acme/web/pull/42'`;
+    for (const thread of yield* readThreads) {
+      assert.equal(thread.linkedPullRequest?.url, "https://github.com/acme/web/pull/42");
+    }
+  }).pipe(Effect.provide(layer));
 });

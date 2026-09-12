@@ -1,3 +1,8 @@
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
+
+const ENCODED_ENTITY_ID_MAX_LENGTH = ENTITY_ID_MAX_LENGTH * 6;
+const THREAD_DEEP_LINK_MAX_LENGTH = "/threads//".length + ENCODED_ENTITY_ID_MAX_LENGTH * 2;
+
 function dataFromNotificationResponse(response: unknown): Record<string, unknown> | null {
   if (typeof response !== "object" || response === null) {
     return null;
@@ -31,14 +36,37 @@ function identifierFromNotificationResponse(response: unknown): string | null {
     return null;
   }
   const identifier = (request as { readonly identifier?: unknown }).identifier;
-  return typeof identifier === "string" ? identifier : null;
+  return typeof identifier === "string" && identifier.length <= ENTITY_ID_MAX_LENGTH
+    ? identifier
+    : null;
+}
+
+const MAX_HANDLED_NOTIFICATION_RESPONSE_IDS = 128;
+
+function rememberHandledNotificationResponseId(
+  handledResponseIds: Set<string>,
+  responseId: string,
+) {
+  while (handledResponseIds.size >= MAX_HANDLED_NOTIFICATION_RESPONSE_IDS) {
+    const oldestResponseId = handledResponseIds.values().next().value;
+    if (oldestResponseId === undefined) {
+      break;
+    }
+    handledResponseIds.delete(oldestResponseId);
+  }
+  handledResponseIds.add(responseId);
 }
 
 function encodeThreadDeepLink(input: {
   readonly environmentId: string;
   readonly threadId: string;
 }): string | null {
-  if (input.environmentId.length === 0 || input.threadId.length === 0) {
+  if (
+    input.environmentId.length === 0 ||
+    input.environmentId.length > ENTITY_ID_MAX_LENGTH ||
+    input.threadId.length === 0 ||
+    input.threadId.length > ENTITY_ID_MAX_LENGTH
+  ) {
     return null;
   }
   return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
@@ -46,6 +74,7 @@ function encodeThreadDeepLink(input: {
 
 function normalizeThreadDeepLink(value: string): string | null {
   if (
+    value.length > THREAD_DEEP_LINK_MAX_LENGTH ||
     value.trim() !== value ||
     value.startsWith("//") ||
     value.includes("?") ||
@@ -96,11 +125,15 @@ export function routeAgentNotificationResponseOnce(input: {
   if (responseId && input.handledResponseIds.has(responseId)) {
     return;
   }
-  if (responseId) {
-    input.handledResponseIds.add(responseId);
-  }
   const deepLink = extractAgentNotificationDeepLink(input.response);
   if (deepLink) {
     input.navigate(deepLink);
+  }
+  // Commit the dedupe marker only after routing succeeds. The cold-response
+  // consumer deliberately leaves a response persisted when navigation throws;
+  // marking it first would make the retry skip navigation and then clear the
+  // only recoverable copy.
+  if (responseId) {
+    rememberHandledNotificationResponseId(input.handledResponseIds, responseId);
   }
 }
