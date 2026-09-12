@@ -283,6 +283,8 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.message).toContain("Checking Grok");
       expect(snapshot.slashCommands.some((command) => command.name === "resume")).toBe(true);
       expect(snapshot.models[0]?.capabilities?.optionDescriptors).toEqual([]);
+      expect(snapshot.requiresNewThreadForModelChange).toBeUndefined();
+      expect(snapshot.supportsConversationRollback).toBe(false);
     }),
   );
 

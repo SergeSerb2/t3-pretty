@@ -526,6 +526,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const startFromOrigin =
     draftStartFromOrigin ?? projectSettings.settings.newWorktreesStartFromOrigin;
   const selectedSkillIds = selectedProjectDraft.enabledSkillIds ?? EMPTY_SKILL_IDS;
+  const defaultRuntimeMode = editingPendingTask
+    ? (editingPendingTask.runtimeMode ?? DEFAULT_RUNTIME_MODE)
+    : projectSettings.settings.defaultRuntimeMode;
 
   // Antigravity keeps unavailable selections so sign-out or a catalog change
   // cannot switch the user's model. Other providers retain their fallback
@@ -576,11 +579,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         option.selection.instanceId === selectedModel.instanceId &&
         option.selection.model === selectedModel.model,
     ) ?? null;
-  // Untouched drafts inherit the generic "full-access" default. Historical
-  // "yolo" values remap to full-access on every known provider.
+  // Untouched drafts inherit the project default, while pending-task edits
+  // retain the queued task's mode. Historical "yolo" values remap to
+  // full-access on every known provider.
   const runtimeMode = effectiveRuntimeModeForProviderDriver(
     selectedModelOption?.providerDriver,
-    selectedProjectDraft.runtimeMode,
+    selectedProjectDraft.runtimeMode ?? defaultRuntimeMode,
   );
   const selectedProviderStatus = useMemo(
     () =>
