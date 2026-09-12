@@ -3,7 +3,51 @@ import { formatComposerContextReference } from "@t3tools/shared/composerContextR
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
 
 import { toKindScopedComposerContextId } from "./composerContextReferences";
-import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
+
+export interface ParsedTerminalContextEntry {
+  header: string;
+  body: string;
+}
+
+type ParsedElementContextEntry = ParsedTerminalContextEntry;
+
+export interface ExtractedTerminalContexts {
+  promptText: string;
+  contextCount: number;
+  previewTitle: string | null;
+  contexts: ParsedTerminalContextEntry[];
+}
+
+export interface DisplayedUserMessageState {
+  visibleText: string;
+  copyText: string;
+  contextCount: number;
+  previewTitle: string | null;
+  contexts: ParsedTerminalContextEntry[];
+  elementContexts: ParsedElementContextEntry[];
+}
+
+const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
+  /(?:^|\n)<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
+  /(?:^|\n)<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
+
+function extractTrailingElementContexts(prompt: string): {
+  promptText: string;
+  contexts: ParsedElementContextEntry[];
+} {
+  const match = TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN.exec(prompt);
+  if (!match) {
+    return {
+      promptText: prompt,
+      contexts: [],
+    };
+  }
+  return {
+    promptText: prompt.slice(0, match.index).replace(/\n+$/, ""),
+    contexts: parseTerminalContextEntries(match[1] ?? ""),
+  };
+}
 
 export interface TerminalContextSelection {
   terminalId: string;
