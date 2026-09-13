@@ -17,10 +17,9 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   GitPullRequestClosedIcon,
+  HammerIcon,
   MessageSquareIcon,
   PencilIcon,
-  RotateCcwIcon,
-  SendIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
@@ -35,7 +34,6 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -495,8 +493,6 @@ export function PullRequestSummaryTab({
   fixCheckLabel = "Fix",
   canFixInThisThread = false,
   onFixFinding,
-  actionPending,
-  onCommentAction,
   onRefresh,
   restoredView,
   onViewChange,
@@ -519,6 +515,7 @@ export function PullRequestSummaryTab({
     body: string,
     action: "close" | "reopen",
   ) => Promise<{ readonly commentPosted: boolean }>;
+
   onRefresh: () => void;
   restoredView?: PullRequestPanelViewSnapshot;
   onViewChange?: (patch: PullRequestPanelViewSnapshot) => void;
@@ -1388,26 +1385,6 @@ export function PullRequestSummaryTab({
           </>
         )}
       </Section>
-      <div className="px-4 pb-4">
-        {/* Posting stays available when the conversation is folded or its activity read failed. */}
-        {detail.capabilities.comment && detail.viewerPermissions.comment ? (
-          <CommentComposer
-            reference={reference}
-            key={JSON.stringify([
-              environmentId,
-              reference.projectId,
-              reference.host,
-              reference.repository,
-              reference.number,
-            ])}
-            environmentId={environmentId}
-            detail={detail}
-            actionPending={actionPending}
-            onCommentAction={onCommentAction}
-            onCommented={onRefresh}
-          />
-        ) : null}
-      </div>
     </div>
   );
 }

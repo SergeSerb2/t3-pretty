@@ -327,6 +327,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "thread-notifications",
+    title: "Thread notifications",
+    to: "/settings/general",
+    searchTerms: ["notification sound alert completion input approval desktop"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
@@ -729,7 +735,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     scope: "environment-defaults",
     searchTerms: [
-      "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment",
+      "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
     ],
   },
   {
@@ -879,6 +885,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "automatic machine environment resources cpu memory capacity preference weight shared projects",
     ],
+  },
+  {
+    id: "github-routing",
+    title: "GitHub routing",
+    to: "/settings/connections",
+    searchTerms: ["pull request trusted environments shared credentials permissions read actions"],
   },
   {
     id: "archive",

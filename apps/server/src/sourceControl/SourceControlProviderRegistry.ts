@@ -19,6 +19,7 @@ import * as GitHubCli from "./GitHubCli.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
 import * as OriginCli from "./OriginCli.ts";
 import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
@@ -326,6 +327,8 @@ export const make = Effect.gen(function* () {
   const github = yield* GitHubSourceControlProvider.make;
   const gitlab = yield* GitLabSourceControlProvider.make;
   const origin = yield* OriginSourceControlProvider.make;
+  const forgejo = yield* ForgejoSourceControlProvider.make;
+  const forgejoDiscovery = yield* ForgejoSourceControlProvider.makeDiscovery;
   const bitbucket = yield* BitbucketSourceControlProvider.make;
   const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery;
   const azureDevOps = yield* AzureDevOpsSourceControlProvider.make;
@@ -355,6 +358,7 @@ export const make = Effect.gen(function* () {
       provider: origin,
       discovery: OriginSourceControlProvider.discovery,
     },
+    { kind: "forgejo", provider: forgejo, discovery: forgejoDiscovery },
   ]);
 });
 

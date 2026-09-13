@@ -43,6 +43,7 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   AzureDevOpsIcon,
   BitbucketIcon,
+  ForgejoIcon,
   GitHubIcon,
   GitLabIcon,
   OriginIcon,
@@ -163,7 +164,7 @@ interface PendingDefaultBranchAction {
 
 type PublishProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops" | "origin"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "origin"
 >;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
@@ -211,6 +212,14 @@ function requestVcsStatusRefresh(
 const RUNNING_SOURCE_CONTROL_ACTIONS = ["runStackedAction", "pull", "publishRepository"] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = [
+  {
+    value: "forgejo",
+    label: "Forgejo / Gitea",
+    description: "Your signed-in server",
+    host: "your server",
+    pathPlaceholder: "owner/repo",
+    Icon: ForgejoIcon,
+  },
   {
     value: "github",
     label: "GitHub",
@@ -473,6 +482,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     const accounts: Record<PublishProviderKind, string | null> = {
       github: null,
       gitlab: null,
+      forgejo: null,
       bitbucket: null,
       "azure-devops": null,
       origin: null,
@@ -525,7 +535,14 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
-  const publishHost = currentPublishProvider.host;
+  const publishHost =
+    publishProvider === "forgejo"
+      ? (Option.getOrNull(
+          sourceControlDiscovery.data?.sourceControlProviders.find(
+            (provider) => provider.kind === "forgejo",
+          )?.auth.host ?? Option.none(),
+        ) ?? currentPublishProvider.host)
+      : currentPublishProvider.host;
   const publishPathPlaceholder = currentPublishProvider.pathPlaceholder;
   const publishProviderLabel = currentPublishProvider.label;
   const publishWizardSteps = ["Provider", "Repository", "Summary"] as const;

@@ -3024,3 +3024,203 @@
 - `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Retain the collectComposerInlineTokens import from @t3tools/shared/composerInlineTokens.. Reason: T3 Pretty replaced this shared collector in the native editor with collectNativeComposerInlineTokens; restoring the old import would be unused and would regress the fork's native-specific tokenization architecture.
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260913.1625`; repaired with `gpt-5.6-sol`: Deduplicates the `FlatList` refresh control while preserving T3 Pretty pull-to-refresh behavior and the parent’s shared refresh-control integration.
   - edited `apps/mobile/src/features/files/SourceFileSurface.tsx`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260913.1646`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260913.1625`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — Preserved T3 Pretty's adaptive amber, blue, emerald, and red semantic color variables so custom mobile themes retain the fork's intended light/dark visual behavior.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Preserved T3 Pretty's flattenMenuActions-based row construction, which supports the fork's styled menu headers and action presentation rather than reverting to a plain filtered action list.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Preserved placement-mode anchor resolution through anchorForPlacement, including overlay and safe-area-aware positioning used by the fork's cross-platform anchored menu behavior.
+- `apps/mobile/src/components/SourceControlIcon.tsx` — Preserved T3 Pretty's first-class Cursor Origin icon kind and its existing rendering path.
+- `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` — Preserved the guarded Surge Connect refresh and retry behavior, including suppression of duplicate refresh requests and cleanup after both successful and failed refreshes.
+- `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` — Preserved the fork's existing removal flow through the externally supplied onRemoveEnvironment callback, which owns confirmation rather than directly disconnecting from this component.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Preserved T3 Pretty's 250ms animated chevron rotation synchronized with row expansion.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Preserved system reduced-motion handling for the chevron animation through the existing shared-value animated style.
+- `apps/mobile/src/lib/mobileTheme.ts` — T3 Pretty's default mobile theme continues to use DEFAULT_MOBILE_THEME_VARIABLES for each appearance, preserving the fork's World Scenery-oriented default iOS colors and theming.
+- `apps/mobile/src/lib/mobileTheme.ts` — Default-theme preview colors continue to be derived from the actual T3 Pretty default variables, including the fork-specific screen and primary colors, rather than the parent's generic standard preview palette.
+- `apps/mobile/src/lib/mobileTheme.ts` — Theme overrides remain applicable on top of T3 Pretty's default mobile variables.
+- `apps/server/src/project/RepositoryIdentityResolver.ts` — Preserved all T3 Pretty repository identity hardening constants used to bound identity metadata, remote counts, remote names, and remote URLs.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Preserved Cursor Origin as a first-class source-control host by retaining the OriginCli import.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Preserved Origin pull-request support by retaining OriginPullRequestCli.layer with OriginCli.layer provided to it.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Background pull-request refresh fibers remain attached to `backgroundRefreshScope`, so service shutdown closes them instead of leaving unmanaged work running.
+- `apps/server/src/pullRequest/PullRequestService.ts` — The stale-while-revalidate behavior for pull-request diffs and held detail reads remains intact: callers receive the held value immediately while refresh work runs in the background.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Existing refresh coalescing, cache recording, and failure-tolerant behavior remain unchanged.
+- `apps/server/src/server.ts` — Preserved T3 Pretty's current source-control architecture by not reintroducing the removed direct Azure DevOps, Bitbucket, GitHub, and GitLab module imports.
+- `apps/server/src/server.ts` — Preserved T3 Pretty's centralized `SourceControlProviderRegistry.sourceControlProviderCliLayers` composition, avoiding regression to duplicated provider registration in `server.ts`.
+- `apps/server/src/server.ts` — Preserved the fork architecture in which source-control provider membership is owned by the registry rather than manually enumerated at each runtime composition site.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Preserved T3 Pretty's per-host GitHub API quota cooldown, including skipping requests while a host is blocked.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Preserved quota recovery after successful commands and rate-limit tracking after GitHub rate-limit errors.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Adapted quota accounting to use the verified pinned credential host when present, retaining correct behavior for GitHub Enterprise hosts.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Preserved Cursor Origin as a first-class T3 Pretty source-control host by retaining the OriginCli import and registry-layer mock.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — The source-control discovery test continues to require Cursor Origin (`origin`) as a first-class provider, including its missing/unknown unauthenticated state when the executable is unavailable.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Cursor Origin remains a first-class discovered source-control provider, including its authenticated account assertion.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Retained OriginCli as a required first-class source-control integration in registry tests.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Retained the OriginCli mock layer so the T3 Pretty registry can be constructed with Cursor Origin support.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Preserved the OriginCli dependency required for T3 Pretty's first-class Cursor Origin integration and packaged desktop backend startup.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Preserved the OriginSourceControlProvider integration.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Preserved Cursor Origin as a first-class source-control host, including construction of OriginSourceControlProvider and registration under the "origin" kind with its existing discovery implementation.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Preserved the surrounding production CLI layer setup that includes OriginCli.layer, allowing packaged desktop backend boot with the Origin provider.
+- `apps/server/src/ws.ts` — Preserved T3 Pretty's source-control wiring in which ws.ts no longer directly imports AzureDevOpsCli, BitbucketApi, GitHubCli, or GitLabCli.
+- `apps/server/src/ws.ts` — Preserved T3 Pretty's `SourceControlProviderRegistry.sourceControlProviderCliLayers` aggregation instead of reverting to the parent's duplicated per-provider layer list.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved the fork's OriginIcon import, which supports T3 Pretty's first-class Cursor Origin source-control host presentation.
+- `apps/web/src/components/GitActionsControl.tsx` — Preserved T3 Pretty's first-class Cursor Origin publishing provider by retaining the "origin" provider kind.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Preserved T3 Pretty's existing server-update implementation and React hook imports without changing desktop-managed update messaging, thread-continuation handling, or update-state behavior.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Preserved T3 Pretty's restriction that ServerUpdateAction callers cannot override the button variant, protecting the fork's fixed update-action visual treatment.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Retained the existing T3 Pretty desktop-managed update confirmation and remote desktop lifecycle behavior surrounding this conflict.
+- `apps/web/src/components/ServerUpdateAction.tsx` — The standard server-update action remains an outline button rather than reverting to a caller-selected parent variant.
+- `apps/web/src/components/ServerUpdateAction.tsx` — The button retains T3 Pretty's defensive `xs` size fallback.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Retained T3 Pretty's GitPullRequestClosedIcon and MessageSquareIcon dependencies for its pull-request summary and conversation presentation.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The pull-request comment composer remains available, including permission- and capability-gated close-with-comment and reopen-with-comment actions.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — T3 Pretty's cross-surface reliability hardening remains intact: synchronous duplicate-submission prevention, mounted-state guards around asynchronous updates, exception handling, and draft clearing only after successful posting.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Pending pull-request actions continue to disable the composer and submission controls so drafts cannot be lost or submitted concurrently.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Origin finding fixes continue to support both the current thread and another thread through canFixInThisThread and PullRequestFixDestination.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's intentional removal of the obsolete TerminalIcon dependency from its customized Connections settings UI.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Relay-managed environments continue to use the T3 Pretty-specific SURGE_CONNECT_NAME branding instead of reverting to the parent's hard-coded "T3 Connect" label.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved the explicit environment retry command used by T3 Pretty's remote-environment recovery behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's managed relay session state and Surge Connect deregistration command.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved the relay catalog refresh command needed to keep Surge Connect environment state synchronized after unlink operations.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Duplicate remote environments sharing a machine label remain collapsed according to connection health and phase priority.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Hidden duplicate environments remain tracked separately and can still be exposed through the existing expander for management or removal.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Desktop-local backends such as WSL remain exempt from machine-level duplicate collapsing.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Working saved remote connections continue suppressing redundant unsaved relay discovery rows for the same machine.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Manual environment addition remains desktop-only and uses T3 Pretty's SSH-managed tunnel workflow.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Non-desktop clients continue to connect remote environments through Surge Connect rather than direct host-and-pairing-code links.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The add-environment dialog continues to render the fork's SSH fields directly, without reintroducing the obsolete remote/SSH mode selector.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — T3 Pretty's compact add-environment action styling and SSH-specific explanatory copy are retained.
+- `apps/web/src/connection/storage.test.ts` — Retained the `effect/Fiber` import used by T3 Pretty's cross-surface reliability test coverage.
+- `apps/web/src/hooks/useResizableWidth.ts` — Keyboard resizing remains available for Home, End, ArrowLeft, and ArrowRight, including Shift-modified 64px steps and normal 16px steps.
+- `apps/web/src/hooks/useResizableWidth.ts` — Keyboard-selected widths remain clamped, immediately reflected in state, and persisted under the fork's configured storage key.
+- `apps/web/src/hooks/useResizableWidth.ts` — The hook continues to expose an accurate isResizing value for T3 Pretty resize presentation and cross-surface behavior.
+- `apps/web/src/hooks/useResizableWidth.ts` — Pointer cancellation and lost capture continue to end the visible resizing state only for the active pointer; cancellation behavior itself is delegated to the shared drag implementation so cancelled drags retain its revert/non-persistence semantics.
+- `apps/web/src/sourceControlPresentation.ts` — Preserved T3 Pretty's first-class Cursor Origin source-control presentation by retaining the OriginIcon import used by the existing "origin" switch case.
+- `apps/web/src/state/sourceControlActions.ts` — Preserved T3 Pretty's first-class Cursor Origin repository publishing support through the `origin` provider.
+- `docs/user/source-control.md` — Preserved Origin as a first-class source-control provider with pull-request, clone, and publish support.
+- `docs/user/source-control.md` — Preserved the fork's supported-provider overview and its statement that changes can be reviewed without leaving the app.
+- `docs/user/source-control.md` — The expanded pull-request discovery and inspection documentation, including remembered filters and sorting, native iPhone/iPad pull-request management, compact linked-review tabs, Origin in-app routing, file trees, proactive panels, and browser-opening behavior.
+- `docs/user/source-control.md` — T3 Pretty's pull-request lifecycle behavior, including automatic settlement for closed-unmerged reviews while merged pull requests remain active until explicitly settled.
+- `docs/user/source-control.md` — Fork-specific review-feedback workflows: conditional Fix all, continuous fixing, Origin/Grok summary handling, GitHub reactions, and resolved-conversation controls.
+- `docs/user/source-control.md` — Codex auto-review status documentation and its public-signal semantics.
+- `docs/user/source-control.md` — Expanded in-place review editing, label management, and provider-specific Azure DevOps and Bitbucket limitations.
+- `packages/client-runtime/src/connection/registry.ts` — Preserved the optional ThreadLifecycleOutbox integration that watches each supervisor and drains pending thread lifecycle work within the supervisor's service scope.
+- `packages/client-runtime/src/connection/registry.ts` — Preserved scope-bound outbox watcher cleanup by continuing to fork the watcher into the environment service scope.
+- `packages/client-runtime/src/operations/projects.ts` — Preserved T3 Pretty's first-class `origin` source-control provider in `AddProjectRemoteProviderKind`, consistent with the existing source arrays, labels, path hints, and provider mapping.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Preserved T3 Pretty's CONNECTION_CATALOG_MAX_RECORDS_PER_KIND import and the associated bounded-catalog reliability test coverage.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Preserved T3 Pretty's schema-hardening coverage that rejects connection catalogs exceeding the per-kind record limit.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Preserved T3 Pretty's persisted-field size validation coverage for oversized connection labels.
+- `packages/client-runtime/src/platform/storageDocument.ts` — Preserved T3 Pretty's 1,024-record validation limit for persisted targets, profiles, credentials, and remote DPoP tokens.
+- `packages/client-runtime/src/platform/storageDocument.ts` — Extended the fork's catalog-size hardening consistently to GitHub routing permissions and disabled environment IDs.
+- `packages/client-runtime/src/state/connections.ts` — Preserved the T3 Pretty relay-mesh reconciliation command, including its typed registrations input, serial scheduling, and delegation to EnvironmentRegistry.reconcileRelayEnvironments.
+- `packages/client-runtime/src/state/projectEntities.ts` — Preserved T3 Pretty's explicit per-reference push loop, avoiding a spread call with an unbounded project-reference array and retaining its cross-surface reliability hardening.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Preserved the `describe` import required by T3 Pretty's pull-request environment atom test suite, including its idle conversation and diff payload TTL coverage.
+- `packages/client-runtime/src/state/threadShell.ts` — Preserved the parameterized threadShellListAtom used to build both the normal thread list and the automation-inclusive allThreadShellsAtom.
+- `packages/client-runtime/src/state/threadShell.ts` — Preserved automation run thread visibility specifically for automation surfaces through environmentAllThreadsAtom, without adding those threads to the standard shell list.
+- `packages/client-runtime/src/state/threadShell.ts` — Preserved explicit element-by-element accumulation of thread references rather than reverting to spread-based insertion.
+- `packages/contracts/src/project.ts` — ProjectListEntriesInput.cwd continues to use ProjectPath, preserving T3 Pretty's trimmed, non-empty, maximum-length path validation and associated cross-surface reliability hardening.
+- `packages/contracts/src/pullRequest.test.ts` — Preserved T3 Pretty's PullRequestSubmitReviewInput import and submit-review contract test support.
+- `packages/shared/src/sourceControl.ts` — Preserved T3 Pretty's first-class Cursor Origin change-request icon type.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/scripts/generate-uniwind-themes.mts` — Integrated upstream's explicit Readonly&lt;Record&lt;string, readonly [light: string, dark: string]&gt;&gt; type for ADAPTIVE_COLORS, enforcing two-value light/dark tuples without changing runtime behavior.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Integrated the parent refactor that selects the current submenu parent with `path[path.length - 1] ?? null`.
+- `apps/mobile/src/components/AndroidAnchoredMenu.tsx` — Retained hidden-action handling through T3 Pretty's existing flattenMenuActions path rather than duplicating the parent's plain-array filter.
+- `apps/mobile/src/components/SourceControlIcon.tsx` — Integrated the parent Forgejo icon kind, making the existing upstream Forgejo rendering path type-safe and reachable.
+- `apps/mobile/src/features/connection/CloudEnvironmentRows.tsx` — Integrated upstream's deletion of handleDisconnectCloudEnvironment; it is obsolete because connected environment rows already delegate removal through props.onRemoveEnvironment.
+- `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx` — Added the parent nightly's ThemedSwitch for enabling or disabling the environment via onSetEnabled while reflecting the current enabled state.
+- `apps/mobile/src/lib/mobileTheme.ts` — Theme lookup in getMobileThemeVariables now falls back explicitly to T3_CHAT_THEME instead of depending on BUILT_IN_THEMES[0], preserving stable behavior if built-in theme ordering changes or a theme ID is unknown.
+- `apps/mobile/src/lib/mobileTheme.ts` — Theme lookup in getMobileThemePreviewColors likewise uses the parent's explicit T3_CHAT_THEME fallback.
+- `apps/mobile/src/lib/mobileTheme.ts` — The parent's standard preview behavior for the Material You theme remains intact.
+- `apps/server/src/project/RepositoryIdentityResolver.ts` — Imported SourceControlProviderError from the shared contracts package so the upstream refine callback retains its typed error channel.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Integrated the parent Forgejo CLI import and layer provisioning.
+- `apps/server/src/pullRequest/PullRequestProviderRegistry.ts` — Integrated the parent ForgejoPullRequestProvider import, supporting the Forgejo provider already included in the registry's provider list.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Adopted the shared `revalidate` helper at both conflict sites, removing duplicated background-refresh launch logic.
+- `apps/server/src/pullRequest/PullRequestService.ts` — Integrated upstream propagation of the invoking caller's Effect context into detached revalidation reads.
+- `apps/server/src/server.ts` — Added the parent nightly's Forgejo CLI import so its new first-party Forgejo source-control wiring remains available.
+- `apps/server/src/server.ts` — Forgejo source-control support remains registered through the registry-owned `sourceControlProviderCliLayers` bundle, supporting the adjacent Forgejo repository identity refinement.
+- `apps/server/src/server.ts` — Existing Azure DevOps, Bitbucket, GitHub, and GitLab provider layers remain supplied through the same centralized bundle.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Integrated the Effect.fn-wrapped GitHubCli.execute implementation.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Integrated pinned GitHub credential lookup and rejection of commands that do not target the verified credential host.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Integrated pinned token and host injection through GH_HOST, GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN, and GITHUB_ENTERPRISE_TOKEN, while clearing GH_DEBUG.
+- `apps/server/src/sourceControl/GitHubCli.ts` — Integrated forwarding of caller-provided environment variables both with and without pinned credentials.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Integrated Forgejo CLI, source-control provider, and pull-request provider imports required by the new upstream Forgejo tests.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Integrated the Forgejo CLI test mock with an empty listLogins result so source-control registry tests remain deterministic.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Added the parent test expectation for Forgejo discovery, including its missing/unknown state when the `tea` executable is unavailable.
+- `apps/server/src/sourceControl/SourceControlDiscovery.test.ts` — Added Forgejo to the expected discovered source-control providers, verifying its authenticated account from the mocked `tea login` response.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Added the upstream ForgejoCli import.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.test.ts` — Added the ForgejoCli mock layer, including the upstream empty listLogins implementation required by the registry test setup.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Added the parent ForgejoSourceControlProvider import so upstream Forgejo registry behavior remains available.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Integrated the parent Forgejo source-control provider construction.
+- `apps/server/src/sourceControl/SourceControlProviderRegistry.ts` — Integrated Forgejo's dedicated discovery implementation and registered the provider under the "forgejo" kind.
+- `apps/server/src/ws.ts` — Added the parent nightly's ForgejoCli import so the new first-party Forgejo source-control support remains available to the surrounding server wiring.
+- `apps/server/src/ws.ts` — Added `ForgejoCli.layer` to the source-control provider registry dependencies, integrating the parent's new Forgejo support.
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent nightly's ForgejoIcon import for upstream Forgejo source-control presentation.
+- `apps/web/src/components/GitActionsControl.tsx` — Integrated the parent nightly's new "forgejo" publishing provider kind, matching the existing Forgejo/Gitea publish option.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated the parent's lucide CircleArrowUpIcon dependency used by the compact icon appearance for the server update action.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Added the parent's className customization hook and appearance="button" default.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated the parent's icon appearance with a compact ghost button, update icon, tooltip, and server-specific accessible label.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Integrated the parent's unified actionLabel and onClick behavior so icon actions support both self-update and manual-command copying rather than relying on the obsolete command variable.
+- `apps/web/src/components/ServerUpdateAction.tsx` — The button now uses the computed `onClick`, allowing manual-update targets to copy the update command while other targets run the update flow.
+- `apps/web/src/components/ServerUpdateAction.tsx` — The button displays the computed `actionLabel`, including the parent-provided “Copy update command” label for manual updates.
+- `apps/web/src/components/ServerUpdateAction.tsx` — The supplied `className` is forwarded to the standard button appearance.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the parent nightly's HammerIcon dependency without removing the fork-specific icons.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated the parent's EllipsisIcon import for the newer connection-actions presentation.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Disabled saved backend rows now include "Off" in their metadata, matching the newest parent behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added the parent `environmentCatalog.setEnabled` command binding for the new environment enable/disable behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added reactive update-state collection for every saved remote environment.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added eligibility filtering and target metadata for the upstream “Update all” server action, including enabled, connected, version-mismatch, update-capability, in-progress, desktop-managed, thread-continuation, and target-version handling.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added the enabled-only environment list used for thread load balancing so switched-off machines do not receive threads.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added the parent ServerUpdatesAction for saved environments when savedServerUpdateTargets is non-empty.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Adopted the parent flex action container so server updates and the desktop add-environment action coexist cleanly.
+- `apps/web/src/connection/storage.test.ts` — Added the parent nightly's `effect/Deferred` and `effect/Option` imports for its updated catalog-storage tests.
+- `apps/web/src/hooks/useResizableWidth.ts` — Adopted the parent useResizeDrag handler implementation for pointer-down, pointer-move, pointer-up, pointer-cancel, and lost-pointer-capture lifecycle behavior.
+- `apps/web/src/hooks/useResizableWidth.ts` — Kept the parent's simplified handler composition and adapted it with narrow wrappers rather than retaining obsolete direct references to dragStateRef and cancelDrag.
+- `apps/web/src/sourceControlPresentation.ts` — Integrated the parent Forgejo source-control icon import used by the existing "forgejo" presentation case.
+- `apps/web/src/state/sourceControlActions.ts` — Integrated the parent nightly's new `forgejo` repository publishing provider.
+- `docs/user/source-control.md` — Added Forgejo and Gitea to the introductory list of supported source-control providers.
+- `docs/user/source-control.md` — Added Forgejo and Gitea to the structured supported-provider overview, consistent with the adjacent upstream setup documentation.
+- `docs/user/source-control.md` — GitHub routing remains disabled by default and is enabled per trusted environment with separate Read PRs and Read and act permissions.
+- `docs/user/source-control.md` — Both requesting and responding environments must be enabled, broader action permissions require explicit trust, and endpoint changes or environment removal clear saved permission.
+- `docs/user/source-control.md` — GitHub review details, linked status, and permitted actions may route through another connected environment signed in to the same GitHub account, with a project on that host.
+- `docs/user/source-control.md` — Local-environment preference, read failover behavior, browser/mobile pairing requirements, machine-local credentials, ten-minute verified-credential outage handling, and verification requirements are documented.
+- `docs/user/source-control.md` — Uncertain actions are not automatically retried elsewhere, while listings, diffs, checkout, and pull-request creation continue using the project's environment.
+- `docs/user/source-control.md` — The parent's baseline auto-merge, fork-workflow approval, revert, editing, Azure DevOps, and Bitbucket guidance remains represented by the fork's more detailed sections.
+- `packages/client-runtime/src/connection/registry.ts` — Integrated the parent registry behavior that calls supervisor.connect only when the catalog entry is enabled, preventing disabled environments from being actively connected.
+- `packages/client-runtime/src/operations/projects.ts` — Integrated the parent implementation's `forgejo` provider into `AddProjectRemoteProviderKind`, enabling the already-present Forgejo/Gitea add-project flow to type-check coherently.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Integrated the parent GitHubRoutingPermissions and makeGitHubRoutingPermissions imports for upstream GitHub routing-permission tests.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Integrated upstream coverage for persisting explicit GitHub routing trust across restarts and clearing it when permissions or catalog connections are forgotten.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Integrated upstream endpoint-specific trust checks so changed bearer HTTP or WebSocket endpoints and relay targets do not inherit unrelated authorization.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Integrated upstream coverage requiring independent explicit GitHub routing trust for primary, relay, and SSH connections.
+- `packages/client-runtime/src/platform/storageDocument.test.ts` — Integrated upstream failure-safety coverage ensuring GitHub routing remains disabled when permission persistence fails.
+- `packages/client-runtime/src/platform/storageDocument.ts` — Added backward-compatible persisted GitHub routing permissions through an optional catalog field.
+- `packages/client-runtime/src/platform/storageDocument.ts` — Added persisted disabled environment IDs with an empty decoding default for documents created before the field existed.
+- `packages/client-runtime/src/platform/storageDocument.ts` — Preserved the upstream comments documenting disabled-environment connection behavior and backward compatibility.
+- `packages/client-runtime/src/state/connections.ts` — Integrated the parent setEnabled runtime command, including serial command scheduling and delegation to EnvironmentRegistry.setEnabled with the environment ID and enabled state.
+- `packages/client-runtime/src/state/projectEntities.ts` — Project references are now collected only from environments returned by enabledEnvironmentIds, integrating the parent's enabled-environment filtering behavior.
+- `packages/client-runtime/src/state/pullRequests.test.ts` — Integrated the parent runtime contract import for `PullRequestOperationError` while retaining all existing contract imports.
+- `packages/client-runtime/src/state/threadShell.ts` — Global thread references now include only environments returned by enabledEnvironmentIds.
+- `packages/client-runtime/src/state/threadShell.ts` — Both standard and automation-inclusive thread shell lists now exclude disabled environments while retaining the fork's list architecture and memoized array identity behavior.
+- `packages/contracts/src/project.ts` — Added optional directoryPath support for listing immediate filesystem children, including ignored entries.
+- `packages/contracts/src/project.ts` — Preserved upstream compatibility semantics: an empty directoryPath selects the root, while omission retains the indexed recursive listing used by older clients.
+- `packages/contracts/src/pullRequest.test.ts` — Integrated the parent pullRequestHostOf helper import used by the new provider host-identity and Forgejo HTTP-port test.
+- `packages/shared/src/sourceControl.ts` — Integrated the parent Forgejo change-request icon type, matching the adjacent Forgejo presentation implementation.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/lib/mobileTheme.ts` — Use the parent's generic built-in/T3 Chat resolution path for DEFAULT_MOBILE_THEME_ID in getMobileThemeVariables.. Reason: That would bypass T3 Pretty's authoritative appearance-specific DEFAULT_MOBILE_THEME_VARIABLES and regress its World Scenery default mobile theming.
+- `apps/mobile/src/lib/mobileTheme.ts` — Return STANDARD_THEME_PREVIEW_COLORS for DEFAULT_MOBILE_THEME_ID.. Reason: T3 Pretty's default preview must reflect its fork-specific default variables; using the generic parent preview would display colors inconsistent with the applied theme.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Allowing ServerUpdateAction callers to pass the full UpdateButtonProps contract, including variant.. Reason: T3 Pretty intentionally omits variant for this component so callers cannot override its authoritative update-action styling. The parent hunk does not consume a variant value here, and retaining it in the public prop type would weaken that fork-specific visual constraint.
+- `apps/web/src/components/ServerUpdateAction.tsx` — Use the parent button's caller-selected `variant` value.. Reason: T3 Pretty intentionally omits `variant` from this component's accepted props and enforces its fork-specific outline presentation; using `variant` would regress that styling and is incompatible with the resolved function signature.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Remove the CommentComposer implementation from PullRequestSummaryTab.. Reason: That deletion would remove T3 Pretty's in-app pull-request commenting and close/reopen-with-comment behavior, including its reliability safeguards; no parent replacement is present in the supplied conflict.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Narrow onFixFinding to a finding-only callback and remove canFixInThisThread.. Reason: This would regress T3 Pretty's established ability to choose between fixing a finding in the current thread or another thread.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Remove actionPending and onCommentAction from the PullRequestSummaryTab contract.. Reason: Those properties are required by T3 Pretty's guarded comment composer and close/reopen-with-comment workflow.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent add-environment dialog's direct “Remote link” mode for entering a backend host and pairing code.. Reason: T3 Pretty intentionally removed direct LAN/Tailscale-style manual pairing; non-desktop and non-SSH remote connections must use Surge Connect.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent dialog's remote/SSH mode-card selector and animated switching to renderRemoteModeBody().. Reason: Only desktop SSH addition remains valid in the fork, so a mode selector with a disabled fork workflow would be redundant and would regress the fork's connection architecture.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent's generic “Pair another environment to this client” copy and generic add-button styling.. Reason: The fork's SSH-specific copy and compact settings-header visual treatment are authoritative T3 Pretty presentation and accurately describe the retained workflow.
+- `packages/client-runtime/src/platform/storageDocument.ts` — The parent hunk's unrestricted Schema.Array validation for catalog collections.. Reason: Using unrestricted arrays would regress T3 Pretty's existing cross-surface reliability hardening. The upstream fields and behavior are retained, but all catalog record kinds use the fork's established 1,024-record bound.

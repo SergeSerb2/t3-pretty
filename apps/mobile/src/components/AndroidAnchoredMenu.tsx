@@ -195,7 +195,7 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
     return () => subscription.remove();
   }, [close, measuredAnchor, submenuDepth]);
 
-  const parent = path.length > 0 ? path[path.length - 1] : null;
+  const parent = path[path.length - 1] ?? null;
   const levelActions = flattenMenuActions(parent?.subactions ?? props.actions);
 
   const resolvedAnchor =
