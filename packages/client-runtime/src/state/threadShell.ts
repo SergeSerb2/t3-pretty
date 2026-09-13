@@ -14,7 +14,7 @@ import { Atom } from "effect/unstable/reactivity";
 import { isAutomationRunThread } from "./automations.ts";
 import type { EnvironmentThreadShell } from "./models.ts";
 import { scopeThreadShell } from "./models.ts";
-import type { EnvironmentCatalogState } from "./connections.ts";
+import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import {
   arrayElementsEqual,
   parseProjectRefCollectionKey,
@@ -215,7 +215,7 @@ export function createEnvironmentThreadShellAtoms(input: {
   let previousThreadRefs: ReadonlyArray<ScopedThreadRef> = [];
   const threadRefsAtom = Atom.make((get) => {
     const refs: ScopedThreadRef[] = [];
-    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+    for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       for (const ref of get(environmentThreadRefsAtom(environmentId))) {
         refs.push(ref);
       }
@@ -236,7 +236,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     let previous: ReadonlyArray<EnvironmentThreadShell> = [];
     return Atom.make((get) => {
       const next: EnvironmentThreadShell[] = [];
-      for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+      for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
         for (const thread of get(threadsAtom(environmentId))) {
           next.push(scopedThread(environmentId, thread));
         }

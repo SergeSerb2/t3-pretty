@@ -53,7 +53,7 @@ const color = (family: TailwindColorFamily, shade?: TailwindColorShade, opacity 
 // These replace the remaining dark:* utility pairs. A registered palette theme is
 // neither literally `light` nor `dark`, so appearance-sensitive values must also be
 // represented as semantic variables for custom themes.
-const ADAPTIVE_COLORS = {
+const ADAPTIVE_COLORS: Readonly<Record<string, readonly [light: string, dark: string]>> = {
   "--color-adaptive-amber-600-400": [color("amber", 600), color("amber", 400)],
   "--color-adaptive-blue-600-300": [color("blue", 600), color("blue", 300)],
   "--color-adaptive-emerald-600-300": [color("emerald", 600), color("emerald", 300)],
@@ -148,9 +148,9 @@ export const customThemeNames = BUILT_IN_THEME_IDS.flatMap((themeId) =>
 
 const adaptiveVariablesFor = (appearance: MobileThemeAppearance) =>
   Object.fromEntries(
-    Object.entries(ADAPTIVE_COLORS).map(([name, values]) => [
+    Object.entries(ADAPTIVE_COLORS).map(([name, [light, dark]]) => [
       name,
-      values[appearance === "light" ? 0 : 1],
+      appearance === "light" ? light : dark,
     ]),
   );
 

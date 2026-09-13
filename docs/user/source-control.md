@@ -1,12 +1,13 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Bitbucket, Azure DevOps, and Origin to clone and publish
+T3 Code integrates with GitHub, GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps, and Origin to clone and publish
 repositories, create pull requests, and review changes without leaving the app.
 
 ## Supported providers
 
 - **GitHub** – Pull requests, repository creation, and clone integration
 - **GitLab** – Merge requests, repository publishing, and hosted clones
+- **Forgejo and Gitea** – Pull requests, repository publishing, and clone integration
 - **Bitbucket** – Pull request workflows through API token authentication
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
 - **Origin** – Cursor's git forge at `origin.cursor.com`, with pull request, clone, and publish support
@@ -25,6 +26,26 @@ Install [GitHub CLI](https://cli.github.com/) 2.81.0 or newer, then sign in:
 ```bash
 gh auth login
 ```
+
+### Forgejo and Gitea
+
+Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or
+[Gitea CLI (`tea`)](https://gitea.com/gitea/tea) 0.16 or later on your T3 Code server.
+Sign in with `fj --host https://your-server auth add-token` or `tea login add`.
+Repeat for each server you use, including Codeberg.
+
+T3 Code prefers a matching `fj` login and falls back to `tea` when `fj` is unavailable
+or has no login for that server. Once an account is selected, failed actions stay on that
+account. Settings shows the detected CLI. Forgejo and Gitea share one integration entry.
+Servers hosted under a URL subpath, such as `https://example.com/forgejo`, use `tea` because
+fj 0.6 does not preserve the subpath when checking its account.
+
+When cloning or publishing, use a full repository URL to select a specific server.
+You can use `owner/repo` when only one fj server is configured, or with your default `tea`
+login when fj is unavailable or unconfigured. With multiple fj servers, use the full URL.
+If you have multiple `tea` accounts on one server, select one with
+`tea login default <login-name>`. Git push and clone also need Git credentials or an SSH key
+for that server.
 
 ### GitLab
 
@@ -140,6 +161,24 @@ merge. You can keep several reviews open as tabs in the right panel.
 - Command-click a pull request number in the sidebar—or Control-click on Windows and Linux—to open
   it in the browser instead of T3 Code.
 - Check out a teammate's branch to review the code locally.
+
+### Route GitHub access through another environment
+
+GitHub routing is off by default. In Settings → Connections (Environments on mobile), choose
+**Read PRs** or **Read and act** for each environment you trust to share GitHub access.
+Enable both the original environment and the environment answering its requests on this client.
+**Read and act** can use broader GitHub permissions than the original environment's credential;
+only enable it for environments you control and trust. Changing a saved endpoint or removing an
+environment clears its permission.
+
+GitHub review details, linked PR status, and permitted review actions can then use another
+connected environment signed in to the same GitHub account. Each needs a project on that host.
+A connected local environment is preferred for actions and can answer slow or failed reads.
+Browsers and mobile clients need a paired environment to use its GitHub CLI credentials.
+Credentials stay on their machines. Previously verified credentials remain usable for routing
+for ten minutes during a GitHub outage; new credentials must be verified first. An action with
+an uncertain result is never automatically retried elsewhere. Listings, diffs, and checkout or
+PR creation from Git actions continue to use the project's environment.
 
 ### Merge and lifecycle
 

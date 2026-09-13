@@ -8,6 +8,7 @@ export const SOURCE_CONTROL_DISCOVERY_PROVIDER_MAX_COUNT = 16;
 export const SourceControlProviderKind = Schema.Literals([
   "github",
   "gitlab",
+  "forgejo",
   "azure-devops",
   "bitbucket",
   "origin",
