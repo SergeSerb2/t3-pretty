@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and Google Antigravity.
+  Once configured, T3 Pretty can control them.
+</p>
+
+<p align="center">
   🌄 World Scenery &nbsp;·&nbsp; 🪟 Frosted glass &nbsp;·&nbsp; 🖥️ Desktop &nbsp;·&nbsp; 🌐 Web &nbsp;·&nbsp; 📱 Mobile &nbsp;·&nbsp; MIT
 </p>
 
@@ -34,6 +39,15 @@
 
 T3 Pretty is an **agent harness control surface**. It runs the coding-agent CLIs already on your
 machine and gives you one place to steer them — from a desktop window, a browser, or a phone.
+
+> [!WARNING]
+> T3 Pretty currently supports Codex, Claude, Cursor, Grok Build, and Antigravity. Install and authenticate at least one provider before use:
+>
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
+> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
 It keeps T3 Code's workflow, providers, remote access, and data paths. The fork's job is the
 look: **World Scenery** puts a real landscape behind frosted chrome, so the app reads as a place
@@ -88,13 +102,12 @@ Remote is a first-class path: pair over your tailnet, scan the QR from a running
 
 T3 Pretty does not sell models. It drives provider CLIs you already installed and logged into.
 
-| Provider       | CLI                                                                                          | Login               | Default |
-| -------------- | -------------------------------------------------------------------------------------------- | ------------------- | ------- |
-| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex login`       | On      |
-| **Claude**     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude auth login` | On      |
-| **Kimi Code**  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login`        | On      |
-| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)                                        | `agent login`       | Off     |
-| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                                                           | `grok login`        | Off     |
+| Provider       | CLI                                                   | Login               | Default |
+| -------------- | ----------------------------------------------------- | ------------------- | ------- |
+| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex login`       | On      |
+| **Claude**     | [Claude Code](https://claude.com/product/claude-code) | `claude auth login` | On      |
+| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`) | `agent login`       | Off     |
+| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                    | `grok login`        | Off     |
 
 Install and authenticate at least one provider on the machine that runs the server. Cursor is the
 one to watch: the binary is `cursor-agent`, the login command is `agent login`.
@@ -108,7 +121,7 @@ and let the agent open a pull request when it finishes.
 
 Everything you would expect from T3 Code is still here:
 
-- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi offers Supervised / Yolo / Full access, defaulting to Yolo)
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access)
 - Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
 - Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
 - Automatic pull requests, usage, storage cleanup, project icons
@@ -215,10 +228,10 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 - [Source control](./docs/user/source-control.md) · [Automatic pull requests](./docs/user/auto-pull-requests.md)
 - [Provider handoff](./docs/user/provider-handoff.md)
 - [Usage](./docs/user/usage.md) · [Storage](./docs/user/storage.md)
-- [Project icons](./docs/user/project-settings.md) · [Mobile appearance](./docs/user/mobile-appearance.md)
+- [Project settings](./docs/user/project-settings.md) (including project icons) · [Mobile appearance](./docs/user/mobile-appearance.md)
 - [Keeping client and server in sync](./docs/user/updating.md)
-- [Background service](./docs/user/background-service.md) (Linux and macOS)
-- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md) · [Kimi](./docs/user/providers-kimi.md)
+- [Run T3 Pretty as a background service](./docs/user/background-service.md) (Linux and macOS)
+- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 
 **Working on the fork**
 

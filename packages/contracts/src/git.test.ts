@@ -2,11 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import {
+  GIT_LIST_BRANCHES_MAX_LIMIT,
   VcsCreateWorktreeInput,
   GitPreparePullRequestThreadInput,
+  GitPreparePullRequestThreadResult,
   GitRunStackedActionResult,
   GitRunStackedActionInput,
   GitResolvePullRequestResult,
+  VcsListRefsResult,
   VcsStatusResult,
 } from "./git.ts";
 
@@ -14,9 +17,13 @@ const decodeCreateWorktreeInput = Schema.decodeUnknownSync(VcsCreateWorktreeInpu
 const decodePreparePullRequestThreadInput = Schema.decodeUnknownSync(
   GitPreparePullRequestThreadInput,
 );
+const decodePreparePullRequestThreadResult = Schema.decodeUnknownSync(
+  GitPreparePullRequestThreadResult,
+);
 const decodeRunStackedActionInput = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeRunStackedActionResult = Schema.decodeUnknownSync(GitRunStackedActionResult);
 const decodeResolvePullRequestResult = Schema.decodeUnknownSync(GitResolvePullRequestResult);
+const decodeVcsListRefsResult = Schema.decodeUnknownSync(VcsListRefsResult);
 const decodeVcsStatusResult = Schema.decodeUnknownSync(VcsStatusResult);
 
 function vcsStatusWithReview(automatedReview?: unknown) {
@@ -77,6 +84,43 @@ describe("GitPreparePullRequestThreadInput", () => {
 
     expect(parsed.reference).toBe("#42");
     expect(parsed.mode).toBe("worktree");
+  });
+});
+
+describe("GitPreparePullRequestThreadResult", () => {
+  it("defaults legacy responses to the pull request head", () => {
+    const parsed = decodePreparePullRequestThreadResult({
+      pullRequest: {
+        number: 42,
+        title: "PR threads",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+        baseBranch: "main",
+        headBranch: "feature/pr-threads",
+        state: "open",
+      },
+      branch: "feature/pr-threads",
+      worktreePath: "/tmp/pr-threads",
+    });
+
+    expect(parsed.isOnPullRequestHead).toBe(true);
+  });
+
+  it("preserves an explicit stale pull request checkout result", () => {
+    const parsed = decodePreparePullRequestThreadResult({
+      pullRequest: {
+        number: 42,
+        title: "PR threads",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+        baseBranch: "main",
+        headBranch: "feature/pr-threads",
+        state: "open",
+      },
+      branch: "feature/pr-threads",
+      worktreePath: "/tmp/pr-threads",
+      isOnPullRequestHead: false,
+    });
+
+    expect(parsed.isOnPullRequestHead).toBe(false);
   });
 });
 
@@ -163,5 +207,26 @@ describe("GitRunStackedActionResult", () => {
     if (parsed.toast.cta.kind === "run_action") {
       expect(parsed.toast.cta.action.kind).toBe("create_pr");
     }
+  });
+});
+
+describe("VcsListRefsResult", () => {
+  it("rejects ref pages beyond the request limit", () => {
+    const ref = {
+      name: "main",
+      current: false,
+      isDefault: false,
+      worktreePath: null,
+    };
+
+    expect(() =>
+      decodeVcsListRefsResult({
+        refs: Array.from({ length: GIT_LIST_BRANCHES_MAX_LIMIT + 1 }, () => ref),
+        isRepo: true,
+        hasPrimaryRemote: true,
+        nextCursor: null,
+        totalCount: GIT_LIST_BRANCHES_MAX_LIMIT + 1,
+      }),
+    ).toThrow();
   });
 });

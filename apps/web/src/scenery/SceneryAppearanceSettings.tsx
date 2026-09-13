@@ -59,17 +59,24 @@ export default function SceneryAppearanceSettings() {
   const [blurDraft, setBlurDraft] = useState(blur);
   useEffect(() => setBlurDraft(blur), [blur]);
   const blurTimer = useRef<number | null>(null);
+  const cancelPendingBlurCommit = () => {
+    if (blurTimer.current === null) return;
+    window.clearTimeout(blurTimer.current);
+    blurTimer.current = null;
+  };
   const onBlurInput = (value: number) => {
     setBlurDraft(value);
-    if (blurTimer.current !== null) {
-      window.clearTimeout(blurTimer.current);
-    }
-    blurTimer.current = window.setTimeout(() => setBlur(value), BLUR_COMMIT_DELAY_MS);
+    cancelPendingBlurCommit();
+    blurTimer.current = window.setTimeout(() => {
+      blurTimer.current = null;
+      setBlur(value);
+    }, BLUR_COMMIT_DELAY_MS);
   };
   useEffect(
     () => () => {
       if (blurTimer.current !== null) {
         window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
       }
     },
     [],
@@ -91,6 +98,7 @@ export default function SceneryAppearanceSettings() {
             <SettingResetButton
               label="photo blur"
               onClick={() => {
+                cancelPendingBlurCommit();
                 setBlurDraft(DEFAULT_BLUR);
                 setBlur(DEFAULT_BLUR);
               }}

@@ -8,7 +8,12 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import {
+  isModelCostUnknown,
+  mergeUsage,
+  type EnvironmentUsage,
+  USAGE_MERGE_MAX_ENVIRONMENTS,
+} from "./usageMerge.ts";
 
 function bucket(overrides: Partial<UsageBucket> = {}): UsageBucket {
   return {
@@ -40,6 +45,8 @@ function summary(
     homePath: string;
     volumeId?: string;
     distinctSessions?: number;
+    status?: "ok" | "missing" | "partial" | "failed";
+    message?: string | null;
   }[],
   contractVersion: number = USAGE_CONTRACT_VERSION,
 ): UsageSummary {
@@ -57,12 +64,12 @@ function summary(
         resolvedHomePath: source.homePath,
         volumeId: source.volumeId ?? `vol-${source.hostId}`,
       },
-      status: "ok" as const,
+      status: source.status ?? ("ok" as const),
       scannedFiles: 1,
       skippedFiles: 0,
       malformedRecords: 0,
       distinctSessions: source.distinctSessions ?? 1,
-      message: null,
+      message: source.message ?? null,
     })),
     pricing: { status: "fresh", source: "litellm", fetchedAt: null, knownModels: 10 },
     scanDurationMs: 1,
@@ -158,7 +165,7 @@ describe("mergeUsage", () => {
           summary(
             [bucket()],
             [{ provider: "claude", hostId: "linux", homePath: "/b" }],
-            USAGE_CONTRACT_VERSION - 1,
+            USAGE_CONTRACT_VERSION - 2,
           ),
         ),
       ],
@@ -167,6 +174,32 @@ describe("mergeUsage", () => {
 
     expect(merged.costUsd).toBe(10);
     expect(merged.staleEnvironments).toEqual(["env-b"]);
+  });
+
+  it("keeps the previous compatible contract version so additive provider expansions still merge", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket({ costUsd: 10 })],
+            [{ provider: "claude", hostId: "mac", homePath: "/a" }],
+          ),
+        ),
+        environment(
+          "env-b",
+          summary(
+            [bucket({ costUsd: 4, provider: "codex", model: "gpt-5.6-sol" })],
+            [{ provider: "codex", hostId: "linux", homePath: "/b" }],
+            USAGE_CONTRACT_VERSION - 1,
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(14);
+    expect(merged.staleEnvironments).toEqual([]);
   });
 
   it("derives provider shares and cost quality", () => {
@@ -193,6 +226,38 @@ describe("mergeUsage", () => {
     expect(merged.providers[0]?.costShare).toBeCloseTo(0.75, 5);
     expect(merged.costQuality.unpricedShare).toBeCloseTo(0.5, 5);
     expect(merged.costQuality.cacheSavingsUsd).toBe(4);
+  });
+
+  it("marks a model with no known rates as unpriced rather than free", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({ costUsd: 75 }),
+              bucket({
+                provider: "codex",
+                model: "unknown-model",
+                costUsd: 0,
+                costSource: "unpriced",
+                unpricedRecords: 5,
+              }),
+            ],
+            [
+              { provider: "claude", hostId: "mac", homePath: "/a/.claude" },
+              { provider: "codex", hostId: "mac", homePath: "/a/.codex" },
+            ],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.models.find((model) => model.model === "unknown-model")?.unpricedRecords).toBe(5);
+    expect(merged.models.filter(isModelCostUnknown).map((model) => model.model)).toEqual([
+      "unknown-model",
+    ]);
   });
 
   it("keeps two machines apart when hostname and home path collide", () => {
@@ -228,6 +293,119 @@ describe("mergeUsage", () => {
 
     expect(merged.costUsd).toBe(10);
     expect(merged.duplicateSources).toHaveLength(1);
+  });
+
+  it("does not collide fingerprints whose fields contain the old delimiter", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket()],
+            [
+              {
+                provider: "claude",
+                hostId: "mac claude",
+                homePath: "/sessions",
+                volumeId: "volume",
+              },
+            ],
+          ),
+        ),
+        environment(
+          "env-b",
+          summary(
+            [bucket()],
+            [
+              {
+                provider: "claude",
+                hostId: "mac",
+                homePath: "claude /sessions",
+                volumeId: "volume",
+              },
+            ],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(20);
+    expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("does not guess that sources with unknown filesystem identity are duplicates", () => {
+    const shape = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "",
+    };
+    const merged = mergeUsage(
+      [
+        environment("env-a", summary([bucket()], [shape])),
+        environment("env-b", summary([bucket()], [shape])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(20);
+    expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("prefers a complete duplicate source over a lower-id partial scan", () => {
+    const shared = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "volume",
+    };
+    const merged = mergeUsage(
+      [
+        environment("env-a", summary([bucket({ costUsd: 3 })], [{ ...shared, status: "partial" }])),
+        environment("env-b", summary([bucket({ costUsd: 10 })], [shared])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(10);
+    expect(merged.contributingEnvironments).toEqual(["env-b"]);
+    expect(merged.sourceWarnings).toHaveLength(0);
+  });
+
+  it("surfaces a selected partial source and ignores a failed duplicate owner", () => {
+    const shared = {
+      provider: "claude" as const,
+      hostId: "mac",
+      homePath: "/Users/theo/.claude",
+      volumeId: "volume",
+    };
+    const partial = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket()],
+            [{ ...shared, status: "partial", message: "Transcript scan hit its file limit." }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    const recovered = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary([], [{ ...shared, status: "failed", message: "Scan failed." }]),
+        ),
+        environment("env-b", summary([bucket()], [shared])),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(partial.sourceWarnings).toEqual(["env-a: Transcript scan hit its file limit."]);
+    expect(recovered.costUsd).toBe(10);
+    expect(recovered.sourceWarnings).toHaveLength(0);
   });
 
   it("totals sessions from per-directory distinct counts, not per-bucket sums", () => {

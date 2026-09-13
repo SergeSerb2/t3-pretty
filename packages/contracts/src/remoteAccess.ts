@@ -2,6 +2,36 @@ import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+// These ceilings are deliberately generous relative to every endpoint the
+// desktop currently produces. They keep the IPC payload finite without
+// changing ordinary local, Tailscale, or manually configured endpoint data.
+export const ADVERTISED_ENDPOINTS_MAX_ITEMS = 64;
+export const ADVERTISED_ENDPOINT_PROVIDER_ID_MAX_LENGTH = 512;
+export const ADVERTISED_ENDPOINT_PROVIDER_LABEL_MAX_LENGTH = 512;
+export const ADVERTISED_ENDPOINT_ID_MAX_LENGTH = 16_384;
+export const ADVERTISED_ENDPOINT_LABEL_MAX_LENGTH = 512;
+export const ADVERTISED_ENDPOINT_URL_MAX_LENGTH = 8_192;
+export const ADVERTISED_ENDPOINT_DESCRIPTION_MAX_LENGTH = 4_096;
+
+const AdvertisedEndpointProviderId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_PROVIDER_ID_MAX_LENGTH),
+);
+const AdvertisedEndpointProviderLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_PROVIDER_LABEL_MAX_LENGTH),
+);
+const AdvertisedEndpointId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_ID_MAX_LENGTH),
+);
+const AdvertisedEndpointLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_LABEL_MAX_LENGTH),
+);
+const AdvertisedEndpointUrl = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_URL_MAX_LENGTH),
+);
+const AdvertisedEndpointDescription = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINT_DESCRIPTION_MAX_LENGTH),
+);
+
 export const AdvertisedEndpointProviderKind = Schema.Literals([
   "core",
   "private-network",
@@ -39,8 +69,8 @@ export const AdvertisedEndpointSource = Schema.Literals([
 export type AdvertisedEndpointSource = typeof AdvertisedEndpointSource.Type;
 
 export const AdvertisedEndpointProvider = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
+  id: AdvertisedEndpointProviderId,
+  label: AdvertisedEndpointProviderLabel,
   kind: AdvertisedEndpointProviderKind,
   isAddon: Schema.Boolean,
 });
@@ -53,16 +83,21 @@ export const AdvertisedEndpointCompatibility = Schema.Struct({
 export type AdvertisedEndpointCompatibility = typeof AdvertisedEndpointCompatibility.Type;
 
 export const AdvertisedEndpoint = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  label: TrimmedNonEmptyString,
+  id: AdvertisedEndpointId,
+  label: AdvertisedEndpointLabel,
   provider: AdvertisedEndpointProvider,
-  httpBaseUrl: TrimmedNonEmptyString,
-  wsBaseUrl: TrimmedNonEmptyString,
+  httpBaseUrl: AdvertisedEndpointUrl,
+  wsBaseUrl: AdvertisedEndpointUrl,
   reachability: AdvertisedEndpointReachability,
   compatibility: AdvertisedEndpointCompatibility,
   source: AdvertisedEndpointSource,
   status: AdvertisedEndpointStatus,
   isDefault: Schema.optional(Schema.Boolean),
-  description: Schema.optional(TrimmedNonEmptyString),
+  description: Schema.optional(AdvertisedEndpointDescription),
 });
 export type AdvertisedEndpoint = typeof AdvertisedEndpoint.Type;
+
+export const AdvertisedEndpoints = Schema.Array(AdvertisedEndpoint).check(
+  Schema.isMaxLength(ADVERTISED_ENDPOINTS_MAX_ITEMS),
+);
+export type AdvertisedEndpoints = typeof AdvertisedEndpoints.Type;

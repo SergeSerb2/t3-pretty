@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - pre-ready Electron setup reads persisted settings synchronously before app services are available.
+// @effect-diagnostics nodeBuiltinImport:off - pre-ready Electron setup reads settings and prepares the Linux desktop entry synchronously before app services are available.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -7,9 +7,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as Electron from "electron";
+import { T3CODE_BUILD_FLAVOR } from "@t3tools/shared/connectBranding";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
+import { resolveDesktopAppBranding } from "./DesktopEnvironment.ts";
+import { renderUrlHandlerDesktopEntry } from "./DesktopLinuxUrlHandler.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 
 export interface DesktopPreReadyCommandLineReader {
@@ -29,6 +32,38 @@ export const WINDOWS_GPU_STABILITY_SWITCHES: ReadonlyArray<readonly [string, str
   ["disable-gpu-process-crash-limit"],
   ["disable-features", "CalculateNativeWinOcclusion"],
 ];
+const EARLY_DESKTOP_SETTINGS_MAX_BYTES = 1024 * 1024;
+
+function readEarlyDesktopSettings(path: string): string {
+  const descriptor = NodeFS.openSync(path, "r");
+  try {
+    const size = NodeFS.fstatSync(descriptor).size;
+    if (size > EARLY_DESKTOP_SETTINGS_MAX_BYTES) {
+      throw new Error("Desktop settings exceed the supported pre-ready size.");
+    }
+
+    const bytes = Buffer.allocUnsafe(size);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const bytesRead = NodeFS.readSync(
+        descriptor,
+        bytes,
+        offset,
+        bytes.byteLength - offset,
+        offset,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const probe = Buffer.allocUnsafe(1);
+    if (NodeFS.readSync(descriptor, probe, 0, 1, offset) > 0) {
+      throw new Error("Desktop settings changed during the pre-ready read.");
+    }
+    return bytes.subarray(0, offset).toString("utf8");
+  } finally {
+    NodeFS.closeSync(descriptor);
+  }
+}
 
 export function applyWindowsGpuStabilitySwitches(
   commandLine: DesktopPreReadyCommandLineWriter,
@@ -42,7 +77,7 @@ export function applyWindowsGpuStabilitySwitches(
   }
 }
 
-export function readCommandLineSwitchValue(
+function readCommandLineSwitchValue(
   commandLine: DesktopPreReadyCommandLineReader,
   switchName: string,
 ): string | null {
@@ -60,7 +95,7 @@ export const resolveEarlyLinuxElectronOptionsFromProcess =
       env: process.env,
       homeDirectory: NodeOS.homedir(),
       joinPath: NodePath.posix.join,
-      readFileString: (path) => NodeFS.readFileSync(path, "utf8"),
+      readFileString: readEarlyDesktopSettings,
     });
 
 export class DesktopPreReadyElectronOptions extends Context.Service<
@@ -71,6 +106,7 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
   return yield* Effect.sync((): DesktopPreReadyElectronOptions["Service"] => {
@@ -81,6 +117,34 @@ export const make = Effect.gen(function* () {
     const linux = platform === "linux" ? resolveEarlyLinuxElectronOptionsFromProcess() : null;
 
     if (linux !== null) {
+      // The portal also requires a valid desktop entry. An AppImage update may
+      // have removed the executable referenced by the previous launch's entry.
+      try {
+        const applicationsDir = NodePath.posix.join(
+          process.env.XDG_DATA_HOME?.trim() ||
+            NodePath.posix.join(NodeOS.homedir(), ".local", "share"),
+          "applications",
+        );
+        NodeFS.mkdirSync(applicationsDir, { recursive: true });
+        NodeFS.writeFileSync(
+          NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
+          renderUrlHandlerDesktopEntry({
+            displayName: resolveDesktopAppBranding({
+              isDevelopment: linux.isDevelopment,
+              appVersion: Electron.app.getVersion(),
+              buildFlavor: T3CODE_BUILD_FLAVOR,
+            }).displayName,
+            execTarget: process.env.APPIMAGE?.trim() || process.execPath,
+            scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
+          }),
+          "utf8",
+        );
+      } catch {
+        // The URL handler retries with the full environment and logs failures.
+      }
+      // Chromium caches its portal registration during startup. Set the identity
+      // before any asynchronous work can initialize it with Electron's default.
+      Electron.app.setDesktopName(linux.linuxDesktopEntryName);
       Electron.app.commandLine.appendSwitch("class", linux.linuxWmClass);
       if (linux.passwordStore !== null && linuxPasswordStoreCommandLine === null) {
         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);

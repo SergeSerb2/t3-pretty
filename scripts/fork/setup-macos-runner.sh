@@ -55,12 +55,54 @@ if (( has_full_xcode == 0 )); then
   fi
 fi
 
-if [[ ! -f "$TOKEN_PATH" ]]; then
-  echo "Missing runner token file at $TOKEN_PATH" >&2
+if [[ ! -f "$TOKEN_PATH" || -L "$TOKEN_PATH" ]]; then
+  echo "Missing or unsafe runner token file at $TOKEN_PATH" >&2
   exit 1
 fi
-token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["token"])' "$TOKEN_PATH")"
-rm -f "$TOKEN_PATH"
+trap 'rm -f -- "$TOKEN_PATH"' EXIT
+token="$(python3 - "$TOKEN_PATH" <<'PY'
+import json
+import os
+import stat
+import sys
+
+MAX_TOKEN_FILE_BYTES = 64 * 1024
+MAX_TOKEN_BYTES = 4096
+path = sys.argv[1]
+flags = os.O_RDONLY
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+fd = os.open(path, flags)
+try:
+    metadata = os.fstat(fd)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError("runner token path is not a regular file")
+    if metadata.st_size > MAX_TOKEN_FILE_BYTES:
+        raise ValueError("runner token file exceeds 64 KiB")
+    os.fchmod(fd, 0o600)
+    chunks = []
+    retained = 0
+    while retained <= MAX_TOKEN_FILE_BYTES:
+        chunk = os.read(fd, min(8192, MAX_TOKEN_FILE_BYTES + 1 - retained))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        retained += len(chunk)
+    if retained > MAX_TOKEN_FILE_BYTES:
+        raise ValueError("runner token file exceeds 64 KiB")
+    payload = json.loads(b"".join(chunks).decode("utf-8"))
+    token = payload.get("token") if isinstance(payload, dict) else None
+    if not isinstance(token, str) or not token or len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
+        raise ValueError("runner registration token is missing or oversized")
+    if any(ord(character) <= 0x1F or ord(character) == 0x7F for character in token):
+        raise ValueError("runner registration token contains a control character")
+    sys.stdout.write(token)
+finally:
+    os.close(fd)
+PY
+)"
+rm -f -- "$TOKEN_PATH"
+trap - EXIT
 if [[ -z "$token" ]]; then
   echo "Registration token was empty." >&2
   exit 1

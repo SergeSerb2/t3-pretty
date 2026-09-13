@@ -3,7 +3,7 @@ import { KeyboardController } from "react-native-keyboard-controller";
 
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 
-type PresentationPhase = "closed" | "opening" | "visible";
+type PresentationPhase = "closed" | "opening" | "visible" | "restoring";
 
 /**
  * The navigator-level UIKit completion event added by the repo's
@@ -58,10 +58,29 @@ export function useThreadSettingsSheetPresentation(input: {
   const restorePendingRef = useRef(false);
   const lastStackTransitionFinishedAtRef = useRef(0);
   const dismissRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openingFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const focusRestoreFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const focusRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearDismissRestoreTimer = useCallback(() => {
     if (dismissRestoreTimerRef.current !== null) {
       clearTimeout(dismissRestoreTimerRef.current);
       dismissRestoreTimerRef.current = null;
+    }
+  }, []);
+  const clearFocusRestoreSchedule = useCallback(() => {
+    if (focusRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(focusRestoreFrameRef.current);
+      focusRestoreFrameRef.current = null;
+    }
+    if (focusRestoreTimerRef.current !== null) {
+      clearTimeout(focusRestoreTimerRef.current);
+      focusRestoreTimerRef.current = null;
+    }
+  }, []);
+  const clearOpeningFrame = useCallback(() => {
+    if (openingFrameRef.current !== null) {
+      cancelAnimationFrame(openingFrameRef.current);
+      openingFrameRef.current = null;
     }
   }, []);
 
@@ -79,8 +98,10 @@ export function useThreadSettingsSheetPresentation(input: {
       openingIdRef.current += 1;
       focusRestoreIdRef.current += 1;
       clearDismissRestoreTimer();
+      clearFocusRestoreSchedule();
+      clearOpeningFrame();
     };
-  }, [clearDismissRestoreTimer]);
+  }, [clearDismissRestoreTimer, clearFocusRestoreSchedule, clearOpeningFrame]);
 
   const open = useCallback(() => {
     if (isActiveRef.current) {
@@ -90,8 +111,11 @@ export function useThreadSettingsSheetPresentation(input: {
     isActiveRef.current = true;
     focusRestoreIdRef.current += 1;
     clearDismissRestoreTimer();
+    clearFocusRestoreSchedule();
+    clearOpeningFrame();
     restorePendingRef.current = false;
-    restoreFocusAfterDismissRef.current = input.isEditorFocused || KeyboardController.isVisible();
+    restoreFocusAfterDismissRef.current =
+      phase === "restoring" || input.isEditorFocused || KeyboardController.isVisible();
     setPhase("opening");
 
     const openingId = openingIdRef.current + 1;
@@ -100,18 +124,27 @@ export function useThreadSettingsSheetPresentation(input: {
     // Start the keyboard transition before the custom native editor resigns
     // first responder, then present the sheet on the next frame. The sheet and
     // keyboard animate together instead of serializing two native transitions.
-    void KeyboardController.dismiss({ animated: true });
+    void KeyboardController.dismiss({ animated: true }).catch(() => undefined);
     input.editorRef.current?.blur();
 
-    requestAnimationFrame(() => {
+    openingFrameRef.current = requestAnimationFrame(() => {
+      openingFrameRef.current = null;
       if (!isMountedRef.current || !isActiveRef.current || openingIdRef.current !== openingId) {
         return;
       }
       setPhase("visible");
     });
-  }, [clearDismissRestoreTimer, input.editorRef, input.isEditorFocused]);
+  }, [
+    clearDismissRestoreTimer,
+    clearFocusRestoreSchedule,
+    clearOpeningFrame,
+    input.editorRef,
+    input.isEditorFocused,
+    phase,
+  ]);
 
   const restoreEditorFocus = useCallback(() => {
+    clearFocusRestoreSchedule();
     const focusRestoreId = focusRestoreIdRef.current + 1;
     focusRestoreIdRef.current = focusRestoreId;
     let attemptsRemaining = 20;
@@ -120,21 +153,26 @@ export function useThreadSettingsSheetPresentation(input: {
     // normally succeeds; the retries are insurance against UIKit briefly
     // refusing first-responder status right at the transition boundary.
     const restoreFocus = () => {
-      if (
-        !isMountedRef.current ||
-        focusRestoreIdRef.current !== focusRestoreId ||
-        isEditorFocusedRef.current ||
-        attemptsRemaining <= 0
-      ) {
+      focusRestoreTimerRef.current = null;
+      if (!isMountedRef.current || focusRestoreIdRef.current !== focusRestoreId) {
+        return;
+      }
+      if (isEditorFocusedRef.current || attemptsRemaining <= 0) {
+        setPhase("closed");
         return;
       }
 
       attemptsRemaining -= 1;
       input.editorRef.current?.focus();
-      setTimeout(restoreFocus, 50);
+      if (attemptsRemaining > 0) {
+        focusRestoreTimerRef.current = setTimeout(restoreFocus, 50);
+      }
     };
-    requestAnimationFrame(restoreFocus);
-  }, [input.editorRef]);
+    focusRestoreFrameRef.current = requestAnimationFrame(() => {
+      focusRestoreFrameRef.current = null;
+      restoreFocus();
+    });
+  }, [clearFocusRestoreSchedule, input.editorRef]);
 
   /** Runs the queued restore once — whichever completion signal arrives first. */
   const runPendingDismissalRestore = useCallback(() => {
@@ -157,11 +195,16 @@ export function useThreadSettingsSheetPresentation(input: {
    */
   const onDismissed = useCallback(() => {
     isActiveRef.current = false;
-    setPhase("closed");
+    clearOpeningFrame();
 
     if (!restoreFocusAfterDismissRef.current) {
+      setPhase("closed");
       return;
     }
+    // Keep the card expanded across the handoff back to its editor. With a
+    // hardware keyboard there is no software-keyboard travel to hide a collapse
+    // while the sheet dismissal and focus restoration finish.
+    setPhase("restoring");
     restoreFocusAfterDismissRef.current = false;
     restorePendingRef.current = true;
     clearDismissRestoreTimer();
@@ -176,7 +219,7 @@ export function useThreadSettingsSheetPresentation(input: {
       dismissRestoreTimerRef.current = null;
       runPendingDismissalRestore();
     }, SHEET_DISMISSAL_KEYBOARD_OVERLAP_MS);
-  }, [clearDismissRestoreTimer, runPendingDismissalRestore]);
+  }, [clearDismissRestoreTimer, clearOpeningFrame, runPendingDismissalRestore]);
 
   /** Wire to the navigator's `finishTransitioning` event. */
   const onStackTransitionsFinished = useCallback(() => {
@@ -185,7 +228,8 @@ export function useThreadSettingsSheetPresentation(input: {
   }, [runPendingDismissalRestore]);
 
   return {
-    isActive: phase !== "closed",
+    isActive: phase === "opening" || phase === "visible",
+    keepsComposerExpanded: phase !== "closed",
     isVisible: phase === "visible",
     open,
     onDismissed,

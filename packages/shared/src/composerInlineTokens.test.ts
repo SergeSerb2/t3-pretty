@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { PROJECT_PATH_MAX_LENGTH } from "@t3tools/contracts";
+
 import { collectComposerInlineTokens } from "./composerInlineTokens.ts";
 
 describe("collectComposerInlineTokens", () => {
@@ -29,6 +31,26 @@ describe("collectComposerInlineTokens", () => {
         end: 60,
       },
     ]);
+  });
+
+  it("collects skill names that begin with a digit", () => {
+    expect(collectComposerInlineTokens("Use $2spec next")).toEqual([
+      {
+        type: "skill",
+        value: "2spec",
+        source: "$2spec",
+        start: 4,
+        end: 10,
+      },
+    ]);
+  });
+
+  it("leaves digits-only dollar amounts and compact monetary expressions as text", () => {
+    expect(collectComposerInlineTokens("I'll pay $20 tomorrow")).toEqual([]);
+    expect(collectComposerInlineTokens("Budget is $1_000 total")).toEqual([]);
+    expect(collectComposerInlineTokens("Budget is $20k tomorrow")).toEqual([]);
+    expect(collectComposerInlineTokens("Cost is $100M total")).toEqual([]);
+    expect(collectComposerInlineTokens("Limit is $1e6 here")).toEqual([]);
   });
 
   it("does not convert incomplete trailing tokens", () => {
@@ -143,11 +165,38 @@ describe("collectComposerInlineTokens", () => {
     expect(collectComposerInlineTokens(`see [${label}](src/${label}) ok`)).toEqual([]);
   });
 
+  it("leaves a context reference link alone", () => {
+    expect(
+      collectComposerInlineTokens("see [checkout.png](t3-context://v1/image/ctx_abc) ok"),
+    ).toEqual([]);
+    expect(collectComposerInlineTokens("see ![ctx_abc](t3-context://v1/image/ctx_abc) ok")).toEqual(
+      [],
+    );
+  });
+
   it("stays fast on unterminated bracket runs", () => {
     // Unbounded, the label body rescanned the rest of the text from every
     // whitespace: this input took seconds.
     const started = performance.now();
     expect(collectComposerInlineTokens(" [[".repeat(40_000))).toEqual([]);
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("stays fast on repeated quoted mention fragments", () => {
+    const started = performance.now();
+    // Adjacent fragments form quoted paths containing " @". The final
+    // pair has no trailing whitespace, so it stays uncommitted.
+    expect(collectComposerInlineTokens(' @"'.repeat(40_000))).toHaveLength(19_999);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("bounds bare and quoted mention paths at the project-path contract", () => {
+    const path = "a".repeat(PROJECT_PATH_MAX_LENGTH);
+    expect(collectComposerInlineTokens(`@${path} `)).toHaveLength(1);
+    expect(collectComposerInlineTokens(`@"${path}" `)).toHaveLength(1);
+
+    const oversizedPath = `${path}a`;
+    expect(collectComposerInlineTokens(`@${oversizedPath} `)).toEqual([]);
+    expect(collectComposerInlineTokens(`@"${oversizedPath}" `)).toEqual([]);
   });
 });

@@ -16,6 +16,7 @@ export interface EnvironmentQueryView<A> {
   readonly data: A | null;
   readonly error: string | null;
   readonly isPending: boolean;
+  readonly isSuccess: boolean;
   readonly refresh: () => void;
 }
 
@@ -47,6 +48,7 @@ export function useEnvironmentQuery<A, E>(
     data: snapshot.data,
     error: snapshot.error,
     isPending: atom !== null && snapshot.isPending,
+    isSuccess: result._tag === "Success",
     refresh,
   };
 }

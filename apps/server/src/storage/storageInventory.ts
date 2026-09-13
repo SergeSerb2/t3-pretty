@@ -41,17 +41,33 @@ export interface StorageMeasuredWorktree {
   readonly setupStatus: StorageWorktreeEntry["setupStatus"];
 }
 
+function safeStorageBytes(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(value));
+}
+
 function uniquePathBytes(
   entries: ReadonlyArray<{ readonly path: string; readonly diskUsageBytes: number }>,
 ): number {
   const seen = new Map<string, number>();
   for (const entry of entries) {
     if (!seen.has(entry.path)) {
-      seen.set(entry.path, entry.diskUsageBytes);
+      seen.set(entry.path, safeStorageBytes(entry.diskUsageBytes));
     }
   }
   let total = 0;
   for (const bytes of seen.values()) {
+    if (bytes >= Number.MAX_SAFE_INTEGER - total) return Number.MAX_SAFE_INTEGER;
+    total += bytes;
+  }
+  return total;
+}
+
+function addStorageBytes(...values: readonly number[]): number {
+  let total = 0;
+  for (const value of values) {
+    const bytes = safeStorageBytes(value);
+    if (bytes >= Number.MAX_SAFE_INTEGER - total) return Number.MAX_SAFE_INTEGER;
     total += bytes;
   }
   return total;
@@ -69,6 +85,11 @@ export function isWithinManagedRoot(candidate: string, root: string): boolean {
 export function isStrictDescendant(candidate: string, root: string): boolean {
   const relative = NodePath.relative(root, candidate);
   return relative !== "" && !relative.startsWith("..") && !NodePath.isAbsolute(relative);
+}
+
+/** Whether deleting either path could remove all or part of the other path. */
+export function storagePathsOverlap(left: string, right: string): boolean {
+  return left === right || isStrictDescendant(left, right) || isStrictDescendant(right, left);
 }
 
 /** Whether a full-inventory progress frame should go on the wire. */
@@ -146,6 +167,8 @@ export function assembleStorageInventory(input: {
   readonly snapshots: ReadonlyArray<StorageThreadSnapshot>;
   readonly measurements: ReadonlyMap<string, StorageMeasuredWorktree>;
   readonly orphanWorktrees: ReadonlyArray<StorageOrphanEntry>;
+  readonly activeThreadsWithoutWorktree?: number;
+  readonly archivedThreadsWithoutWorktree?: number;
   readonly managedWorktreesRoot: string;
   readonly scan?: StorageInventoryScan;
 }): StorageInventoryAssembly {
@@ -168,7 +191,7 @@ export function assembleStorageInventory(input: {
       path,
       isArchived: snapshot.isArchived,
       isDirty: measurement.isDirty,
-      diskUsageBytes: measurement.diskUsageBytes,
+      diskUsageBytes: safeStorageBytes(measurement.diskUsageBytes),
       setupStatus: measurement.setupStatus,
       canRemoveWorktree: snapshot.canRemoveWorktree,
       ownerCount: ownerCounts.get(path) ?? 1,
@@ -182,21 +205,26 @@ export function assembleStorageInventory(input: {
 
   active.sort(sortWorktrees);
   archived.sort(sortWorktrees);
-  const orphans = [...input.orphanWorktrees].sort(sortOrphans);
+  const orphans = input.orphanWorktrees
+    .map((entry) => ({ ...entry, diskUsageBytes: safeStorageBytes(entry.diskUsageBytes) }))
+    .sort(sortOrphans);
 
   const activeWorktreeBytes = uniquePathBytes(active);
+  const activePaths = new Set(active.map((entry) => entry.path));
   const archivedWorktreeBytes = uniquePathBytes(
-    archived.filter((entry) => !active.some((activeEntry) => activeEntry.path === entry.path)),
+    archived.filter((entry) => !activePaths.has(entry.path)),
   );
   const orphanWorktreeBytes = uniquePathBytes(orphans);
   // Absence is "no managed path", not "not measured yet". A partial scan
   // must not report known owners as threads without a worktree.
-  const activeWithout = input.snapshots.filter(
-    (snapshot) => !snapshot.isArchived && snapshot.worktreePath === null,
-  ).length;
-  const archivedWithout = input.snapshots.filter(
-    (snapshot) => snapshot.isArchived && snapshot.worktreePath === null,
-  ).length;
+  const activeWithout =
+    input.activeThreadsWithoutWorktree ??
+    input.snapshots.filter((snapshot) => !snapshot.isArchived && snapshot.worktreePath === null)
+      .length;
+  const archivedWithout =
+    input.archivedThreadsWithoutWorktree ??
+    input.snapshots.filter((snapshot) => snapshot.isArchived && snapshot.worktreePath === null)
+      .length;
 
   return {
     activeWorktrees: active,
@@ -207,7 +235,7 @@ export function assembleStorageInventory(input: {
     activeWorktreeBytes,
     archivedWorktreeBytes,
     orphanWorktreeBytes,
-    totalBytes: activeWorktreeBytes + archivedWorktreeBytes + orphanWorktreeBytes,
+    totalBytes: addStorageBytes(activeWorktreeBytes, archivedWorktreeBytes, orphanWorktreeBytes),
     managedWorktreesRoot: input.managedWorktreesRoot,
     ...(input.scan === undefined ? {} : { scan: input.scan }),
   };

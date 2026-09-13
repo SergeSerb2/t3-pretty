@@ -1,5 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -11,7 +11,6 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { pullRequestEnvironment } from "../../state/pullRequests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -23,7 +22,12 @@ import {
   type ParsedDiffLine,
 } from "./pullRequestDiffParse";
 import { readableFailure } from "./pullRequestDetail.logic";
-import { parseRoutePositiveInt, type PullRequestDiffRouteParams } from "./pullRequestNavigation";
+import {
+  normalizePullRequestDiffRoutePath,
+  parseRoutePositiveInt,
+  resolvePullRequestRouteEnvironmentId,
+  type PullRequestDiffRouteParams,
+} from "./pullRequestNavigation";
 import { usePullRequestDiffSlices } from "./usePullRequestDiffSlices";
 import { useResolvedPullRequestReference } from "./useResolvedPullRequestReference";
 
@@ -36,8 +40,8 @@ const LINE_CLASS: Record<DiffLineKind, string> = {
 };
 
 const LINE_TEXT_CLASS: Record<DiffLineKind, string> = {
-  add: "text-emerald-700 dark:text-emerald-300",
-  del: "text-red-700 dark:text-red-300",
+  add: "text-adaptive-emerald-700-300",
+  del: "text-adaptive-red-700-300",
   hunk: "text-foreground-muted",
   meta: "text-foreground-tertiary",
   context: "text-foreground",
@@ -49,18 +53,22 @@ type PullRequestDiffScreenProps = StaticScreenProps<PullRequestDiffRouteParams>;
 
 export function PullRequestDiffScreen(props: PullRequestDiffScreenProps) {
   const navigation = useNavigation();
-  const iconColor = useThemeColor("--color-icon");
-  const environmentId = EnvironmentId.make(props.route.params.environmentId);
+  const environmentId = resolvePullRequestRouteEnvironmentId(props.route.params.environmentId);
   const number = parseRoutePositiveInt(props.route.params.number);
   const reference = useResolvedPullRequestReference(props.route.params);
-  const path = props.route.params.path;
+  const rawPath = props.route.params.path;
+  const path = normalizePullRequestDiffRoutePath(rawPath);
   const diff = usePullRequestDiffSlices({
     environmentId,
     reference,
     enabled: reference !== null,
   });
   const listed =
-    path === undefined ? diff.files[0] : diff.files.find((entry) => entry.displayPath === path);
+    rawPath === undefined
+      ? diff.files[0]
+      : path === null
+        ? undefined
+        : diff.files.find((entry) => entry.displayPath === path);
   const expanded = useExpandedWithheldDiffFile({
     environmentId,
     reference,
@@ -77,12 +85,12 @@ export function PullRequestDiffScreen(props: PullRequestDiffScreenProps) {
   }, [scopeKey, path]);
 
   useEffect(() => {
-    if (path === undefined || diff.loading || diff.loadingMore) return;
+    if (rawPath === undefined || path === null || diff.loading || diff.loadingMore) return;
     if (listed !== undefined) return;
     if (diff.nextCursor === null || attemptedCursors.current.has(diff.nextCursor)) return;
     attemptedCursors.current.add(diff.nextCursor);
     diff.loadMore();
-  }, [diff.loading, diff.loadingMore, diff.loadMore, diff.nextCursor, listed, path]);
+  }, [diff.loading, diff.loadingMore, diff.loadMore, diff.nextCursor, listed, path, rawPath]);
 
   const title = listed?.displayPath ?? path ?? "Diff";
   const waitingForSlice = listed === undefined && (diff.loading || diff.loadingMore);
@@ -114,7 +122,7 @@ export function PullRequestDiffScreen(props: PullRequestDiffScreenProps) {
         </View>
       ) : waitingForSlice || waitingForContents ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={iconColor} />
+          <ActivityIndicator colorClassName="accent-icon" />
         </View>
       ) : diff.error && listed === undefined ? (
         <View className="flex-1 justify-center px-6">

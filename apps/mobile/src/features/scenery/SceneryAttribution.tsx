@@ -9,13 +9,14 @@
  * Currently unmounted from Home and thread chrome while we find a better
  * credit treatment. Keep this component; do not delete it.
  */
-import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
+import { GlassView } from "expo-glass-effect";
 import * as Linking from "expo-linking";
 import { useRef } from "react";
 import { Pressable, StyleSheet, useColorScheme, View, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { SCENERY_CREDIT_MIN_BOTTOM } from "./sceneryDock";
 import { UNSPLASH_UTM, type SceneryPhoto } from "./sceneryLogic";
 
@@ -108,15 +109,15 @@ export function SceneryAttribution(props: {
           opacity: pressed ? 0.7 : 1,
         })}
       >
-        {isLiquidGlassSupported ? (
-          <LiquidGlassView
+        {NATIVE_LIQUID_GLASS_SUPPORTED ? (
+          <GlassView
             colorScheme={isDarkMode ? "dark" : "light"}
-            effect="regular"
-            interactive
+            glassEffectStyle="regular"
+            isInteractive
             style={pillStyle}
           >
             {label}
-          </LiquidGlassView>
+          </GlassView>
         ) : (
           <View
             style={[

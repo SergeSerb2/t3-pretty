@@ -11,10 +11,15 @@ import {
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
+import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
+import * as BitbucketApi from "./BitbucketApi.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
+import * as GitHubCli from "./GitHubCli.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
+import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import * as OriginCli from "./OriginCli.ts";
 import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
@@ -207,6 +212,7 @@ function bindProviderContext(
   });
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig;
@@ -303,6 +309,17 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       ),
     });
   },
+);
+
+/** CLI/API clients the live registry constructs during boot. Origin was
+ * registered in `make` but omitted from the production provide-merge, which
+ * died with `Service not found: t3/sourceControl/OriginCli`. */
+export const sourceControlProviderCliLayers = Layer.mergeAll(
+  AzureDevOpsCli.layer,
+  BitbucketApi.layer,
+  GitHubCli.layer,
+  GitLabCli.layer,
+  OriginCli.layer,
 );
 
 export const make = Effect.gen(function* () {

@@ -16,7 +16,7 @@ import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
-export class DesktopClerkBridgeInitializationError extends Schema.TaggedErrorClass<DesktopClerkBridgeInitializationError>()(
+export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<DesktopClerkBridgeInitializationError>()(
   "DesktopClerkBridgeInitializationError",
   {
     stateDir: Schema.String,
@@ -29,7 +29,7 @@ export class DesktopClerkBridgeInitializationError extends Schema.TaggedErrorCla
   }
 }
 
-export class DesktopClerkBridgeCleanupError extends Schema.TaggedErrorClass<DesktopClerkBridgeCleanupError>()(
+export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<DesktopClerkBridgeCleanupError>()(
   "DesktopClerkBridgeCleanupError",
   {
     stateDir: Schema.String,
@@ -53,7 +53,7 @@ export class DesktopClerk extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopClerk") {}
 
-export function resolveDesktopClerkFrontendApiHostname(
+function resolveDesktopClerkFrontendApiHostname(
   publishableKey: string | undefined,
 ): string | undefined {
   const normalizedKey = publishableKey?.trim();
@@ -72,7 +72,7 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
     : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 
-export function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
+function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
   return createClerkBridge({
     storage: storage({ path: stateDir }),
     passkeys: true,
@@ -83,6 +83,7 @@ export function createDesktopClerkBridge(stateDir: string, isDevelopment: boolea
   });
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
@@ -123,7 +124,7 @@ export const make = Effect.gen(function* () {
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
-      const runPromise = Effect.runPromiseWith(context);
+      const runFork = Effect.runForkWith(context);
 
       // The SDK bridge holds Electron's single-instance lock (acquired at
       // bridge creation) so OAuth deep-link callbacks on Windows/Linux are
@@ -136,13 +137,19 @@ export const make = Effect.gen(function* () {
       }
 
       yield* electronApp.on("second-instance", () => {
-        void runPromise(
+        runFork(
           Effect.gen(function* () {
             const mainWindow = yield* electronWindow.currentMainOrFirst;
             if (Option.isSome(mainWindow)) {
               yield* electronWindow.reveal(mainWindow.value);
             }
-          }),
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Failed to reveal desktop window for second instance.", {
+                cause,
+              }),
+            ),
+          ),
         );
       });
     }).pipe(Effect.withSpan("desktop.clerk.configure")),
