@@ -2928,3 +2928,97 @@
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260912.1599`; repaired with `gpt-5.6-sol`: Handle nullable materialized image preview URIs without regressing T3 Pretty's image callback, and update the start-turn test fixture for the required enabledSkillIds API field.
   - edited `apps/mobile/src/components/ComposerAttachmentStrip.tsx`
   - edited `apps/mobile/src/lib/composerContext.test.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260913.1625`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260912.1612`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — kept T3 Pretty's intentional deletion of this file
+- `apps/desktop/src/app/DesktopApp.ts` — Desktop shutdown still stops every backend pool instance, including WSL or remote instances, before the layer scope can be hard-killed.
+- `apps/desktop/src/app/DesktopApp.ts` — Concurrent backend stops remain capped by DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY instead of reverting to unbounded shutdown fan-out.
+- `apps/desktop/src/app/DesktopApp.ts` — shutdown.markComplete remains guaranteed with Effect.ensuring even if backend cleanup fails.
+- `apps/mobile/src/features/files/SourceFileSurface.tsx` — Preserved the retry animation-frame reference and path/index-aware scroll retry state used by T3 Pretty's cross-surface reliability handling.
+- `apps/mobile/src/features/files/SourceFileSurface.tsx` — Preserved the downstream target-line scrolling and scrollToIndex failure recovery contract by retaining the refs it depends on.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Preserved T3 Pretty's current `convertPastedImagesToAttachments` result-object API and use of `result.images` instead of reverting to the older bare image-array contract.
+- `apps/mobile/src/lib/composerImages.test.ts` — The file mock retains optional size and MIME type metadata used by T3 Pretty's mobile image reliability and resource-boundary tests.
+- `apps/mobile/src/lib/composerImages.test.ts` — The base64 barrier remains available for testing asynchronous image-send progress and race behavior.
+- `apps/mobile/src/lib/composerImages.test.ts` — The image-library launch mock remains available for T3 Pretty's composer image tests.
+- `apps/mobile/src/lib/composerImages.test.ts` — The Expo File mock retains variadic string-or-URI-object construction, including multi-segment paths used by fork runtime compatibility tests.
+- `apps/mobile/src/lib/composerImages.test.ts` — The regression test ensuring composer images are capped against the latest committed attachment state, protecting bounded mobile composer behavior.
+- `apps/mobile/src/lib/composerImages.test.ts` — Existing image-picking and attachment data-URL test coverage through the retained image-picker mock and Pretty-side imports.
+- `apps/mobile/src/lib/composerImages.test.ts` — The mobile file-system mock's cache path and flexible URI/object directory construction used by existing Pretty image preview and cleanup tests.
+- `apps/mobile/src/lib/composerImages.test.ts` — Base64 file-write behavior required by native pasted-image conversion and preview handling.
+- `apps/mobile/src/lib/composerImages.ts` — T3 Pretty continues creating managed composer preview files with writeComposerPreviewFile, preserving its bounded preview/cache lifecycle and cross-surface image-preview reliability.
+- `apps/mobile/src/lib/composerImages.ts` — If managed preview creation is unavailable, the resolved code falls back to the parent's source or rendered preview URI rather than losing the attachment preview.
+- `apps/mobile/src/lib/composerImages.ts` — Preserved T3 Pretty's removal of the legacy `pasteComposerClipboard`, `isOwnedPastedImageUri`, and `convertPastedImagesToAttachments` API path, including its temporary pasted-image file handling.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Preserved the iOS composer's T3 Pretty native inline-token architecture through the existing collectNativeComposerInlineTokens integration instead of restoring the obsolete generic shared-token import.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Kept `collapsable={false}` so React Native does not optimize away the iOS composer wrapper, preserving T3 Pretty's native editor lifecycle and cross-surface reliability behavior.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Preserved the native composer tokenization path based on collectNativeComposerInlineTokens instead of reintroducing the obsolete shared collectComposerInlineTokens dependency.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Kept `collapsable={false}` so React Native does not flatten the native composer view, preserving T3 Pretty's native editor lifecycle and reliability behavior.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Preserved T3 Pretty's handoff-specific draft update API, including lastHandoffPrompt tracking and pullRequestReference metadata.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Preserved T3 Pretty's current `convertPastedImagesToAttachments` result contract by reading converted images from `result.images`.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Preserved native pasted-image attachment references so pasted images remain represented in the composer draft.
+- `apps/server/src/usage/UsageService.ts` — Preserved the `isValidUsageTimeZone` import used by T3 Pretty's usage summary time-zone validation.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — The existing T3 Pretty ExpandedImageDialog implementation and all of its React hook and ReactNode dependencies remain intact.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — The expanded-media dialog still explicitly focuses its close control on mount and restores the previously focused connected element on unmount, preserving T3 Pretty’s hardened focus and composer-blur behavior.
+- `docs/user/composer.md` — T3 Pretty Internal dictation branding and composer microphone workflow.
+- `docs/user/composer.md` — Web and desktop dictation shortcuts, cancellation, command-palette access, configurable keybinding, incremental caret insertion, cleanup, review flow, and five-minute recording limit.
+- `docs/user/composer.md` — Cross-host Groq dictation through Surge Connect while keeping the API key on the configured host.
+- `docs/user/composer.md` — Mobile cleaned-speech insertion, supported iOS local-transcription fallback, and the HTTPS/localhost requirement for web microphone access.
+- `packages/client-runtime/package.json` — Preserved the fork-added ./state/automations package subpath and its type/default mappings to src/state/automations.ts.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/mobile/src/features/files/SourceFileSurface.tsx` — Reused the shared useSourceFileRefresh hook for JavaScript source surfaces instead of maintaining a duplicate local refresh state implementation.
+- `apps/mobile/src/features/files/SourceFileSurface.tsx` — Integrated the parent's conditional React Native RefreshControl, including asynchronous refresh invocation and spinner state.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Captured the composer draft insertion before asynchronous pasted-image conversion.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Calculated the existing attachment count at the captured insertion point.
+- `apps/mobile/src/features/threads/NewTaskDraftScreen.tsx` — Appended converted pasted images at the captured insertion point so edits made while conversion is in flight do not move the paste destination.
+- `apps/mobile/src/lib/composerImages.test.ts` — Added the hoisted expo-clipboard mock with image and string clipboard APIs.
+- `apps/mobile/src/lib/composerImages.test.ts` — Extended mocked file records with upstream's optional text storage.
+- `apps/mobile/src/lib/composerImages.test.ts` — Added upstream File.name and File.parentDirectory metadata initialization.
+- `apps/mobile/src/lib/composerImages.test.ts` — Supported upstream's parent-plus-name File construction through the retained variadic constructor.
+- `apps/mobile/src/lib/composerImages.test.ts` — Clipboard paste coverage for image-preferred behavior when both image and text are present.
+- `apps/mobile/src/lib/composerImages.test.ts` — Clipboard attachment-limit behavior that does not fall back to alternate text when an image cannot fit.
+- `apps/mobile/src/lib/composerImages.test.ts` — Plain-text clipboard paste and empty-clipboard error coverage.
+- `apps/mobile/src/lib/composerImages.test.ts` — The upstream pasted-text composer attachment import and file-system staging support, including file creation, text writes, and synchronous moves.
+- `apps/mobile/src/lib/composerImages.test.ts` — Upstream document-directory construction remains supported by the composed variadic Directory mock.
+- `apps/mobile/src/lib/composerImages.ts` — Image source size is measured from expo-file-system instead of trusting picker-reported metadata, protecting against Android content streams that deliver more bytes than advertised.
+- `apps/mobile/src/lib/composerImages.ts` — Provider-supported images within the byte cap pass through unchanged, preserving transparency and animation.
+- `apps/mobile/src/lib/composerImages.ts` — Unsupported, oversized, or unmeasurable image sources are rendered to a bounded JPEG off the JavaScript thread instead of being rejected or eagerly loaded at original size.
+- `apps/mobile/src/lib/composerImages.ts` — Final decoded base64 size is validated before attachment creation, and normalized image names, MIME types, data URLs, and rendered preview metadata are used consistently.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Imported PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES from the parent client runtime for native text-paste attachment handling.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Imported PROVIDER_SEND_TURN_MAX_INPUT_CHARS from the parent contracts package for the native composer's provider input limit.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Added `textPasteThresholdBytes`, enabling large pasted text to use the attachment flow when `onPasteText` is available and disabling the threshold otherwise.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — Added `maxInputChars={PROVIDER_SEND_TURN_MAX_INPUT_CHARS}` so the native composer enforces the parent provider send-turn input limit.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Imported PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES for the upstream native pasted-text attachment threshold behavior.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Imported PROVIDER_SEND_TURN_MAX_INPUT_CHARS for the upstream provider input-length limit behavior.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Added `textPasteThresholdBytes`, enabling native pasted-text attachment threshold handling when the text-paste callback is available.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Added `maxInputChars` using `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`, enforcing the provider send-turn input limit in the native composer.
+- `apps/mobile/src/state/use-composer-drafts.ts` — Integrated the parent insertComposerDraftText API, including context-aware insertion/replacement and post-insertion selection tracking.
+- `apps/mobile/src/state/use-thread-composer-state.ts` — Integrated the parent's captured `insertion` when appending native pasted images, allowing attachment references to respect and replace the composer selection captured before asynchronous conversion.
+- `apps/server/src/usage/UsageService.ts` — Integrated the parent `mergeProviderInstanceEnvironment` import required for provider-instance-specific environment handling in UsageService.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Added the parent’s KeyboardEvent type import required by the updated dialog keyboard handling.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Replaced the window-oriented keyboard-listener implementation with the parent’s typed React `onKeyDown` handler attached to `DialogPopup`.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Integrated the parent guard that leaves keyboard events originating from an HTML video element untouched, preventing media navigation and zoom shortcuts from interfering with native video controls.
+- `apps/web/src/components/chat/ExpandedImageDialog.tsx` — Retained context-menu suppression, zoomed-image panning, and left/right media navigation within the parent’s scoped handler.
+- `docs/user/composer.md` — Documented automatic text-file attachment creation for pasted fragments of 32 KiB or more.
+- `docs/user/composer.md` — Documented attachment fallback when a smaller paste would exceed the message limit.
+- `docs/user/composer.md` — Documented Cmd+Shift+V and Ctrl+Shift+V overrides for keeping large pasted text editable in the composer.
+- `packages/client-runtime/package.json` — Added the parent ./text-paste package subpath with type/default mappings to src/textPaste.ts.
+
+## Parent changes intentionally omitted
+
+- `apps/server/src/provider/opencodeRuntime.cliParsers.test.ts` — the parent nightly's changes to this fork-deleted file. Reason: resurrecting it would undo a deletion T3 Pretty made deliberately on main
+- `apps/desktop/src/app/DesktopApp.ts` — Replace the scope-finalizer body with the newly extracted stopAllPoolInstances() helper.. Reason: The zero-argument helper call shown by THEIRS provides no way at this boundary to carry T3 Pretty's explicit DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY limit. Using it would not demonstrably preserve the fork's authoritative bounded-shutdown safeguard, so only this refactor is omitted; the same stop-all and mark-complete behavior remains inline.
+- `apps/mobile/src/lib/composerImages.ts` — Use image.previewUri unconditionally and remove T3 Pretty's managed composer preview-file creation.. Reason: That would regress the fork's bounded preview/cache lifecycle. The upstream URI is retained as the fallback, while T3 Pretty's managed preview remains primary.
+- `apps/mobile/src/lib/composerImages.ts` — Upstream's refined discriminated return type and clipboard-image-priority documentation for `pasteComposerClipboard`, including the conditional text/error return construction.. Reason: T3 Pretty has removed the entire legacy clipboard helper, so applying this type-only refinement would require restoring a fork-deleted API.
+- `apps/mobile/src/lib/composerImages.ts` — Upstream's retained URI MIME inference, owned temporary pasted-image detection, conversion, attachment-limit enforcement, and temporary-file cleanup helpers.. Reason: These helpers are part of the same clipboard conversion path deleted by T3 Pretty; restoring them would regress the fork's authoritative file architecture and leave the removed legacy path present again.
+- `apps/mobile/src/native/T3ComposerEditor.ios.tsx` — The parent's retained collectComposerInlineTokens import from @t3tools/shared/composerInlineTokens.. Reason: T3 Pretty removed this generic collector in favor of the existing native-specific collectNativeComposerInlineTokens path; restoring the old import would be redundant or unused and would weaken that fork architecture.
+- `apps/mobile/src/native/T3ComposerEditor.native.tsx` — Retain the collectComposerInlineTokens import from @t3tools/shared/composerInlineTokens.. Reason: T3 Pretty replaced this shared collector in the native editor with collectNativeComposerInlineTokens; restoring the old import would be unused and would regress the fork's native-specific tokenization architecture.
