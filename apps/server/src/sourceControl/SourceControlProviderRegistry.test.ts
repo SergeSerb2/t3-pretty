@@ -325,6 +325,7 @@ it.effect("dies with Service not found when OriginCli is omitted from the CLI me
         SourceControlProviderRegistry.layer.pipe(
           Layer.provide(
             Layer.mergeAll(
+              NodeServices.layer,
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),
@@ -359,6 +360,7 @@ it.effect("dies with Service not found when ForgejoCli is omitted from the CLI m
         SourceControlProviderRegistry.layer.pipe(
           Layer.provide(
             Layer.mergeAll(
+              NodeServices.layer,
               Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
               Layer.mock(BitbucketApi.BitbucketApi)({}),
               Layer.mock(GitHubCli.GitHubCli)({}),
@@ -396,6 +398,7 @@ it.effect("boots the registry layer when OriginCli.layer is provided", () =>
       SourceControlProviderRegistry.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            NodeServices.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
             Layer.mock(GitHubCli.GitHubCli)({}),
@@ -432,6 +435,8 @@ it.effect("boots the registry layer when ForgejoCli.layer is provided", () =>
       SourceControlProviderRegistry.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            NodeServices.layer,
+            FetchHttpClient.layer,
             Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
             Layer.mock(BitbucketApi.BitbucketApi)({}),
             Layer.mock(GitHubCli.GitHubCli)({}),
