@@ -19,6 +19,7 @@ import * as GitHubCli from "./GitHubCli.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import * as ForgejoCli from "./ForgejoCli.ts";
 import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
 import * as OriginCli from "./OriginCli.ts";
 import * as OriginSourceControlProvider from "./OriginSourceControlProvider.ts";
@@ -312,15 +313,16 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   },
 );
 
-/** CLI/API clients the live registry constructs during boot. Origin was
- * registered in `make` but omitted from the production provide-merge, which
- * died with `Service not found: t3/sourceControl/OriginCli`. */
+/** CLI/API clients the live registry constructs during boot. Origin and
+ * Forgejo were registered in `make` but omitted from this provide-merge,
+ * which died with `Service not found` during packaged desktop backend boot. */
 export const sourceControlProviderCliLayers = Layer.mergeAll(
   AzureDevOpsCli.layer,
   BitbucketApi.layer,
   GitHubCli.layer,
   GitLabCli.layer,
   OriginCli.layer,
+  ForgejoCli.layer,
 );
 
 export const make = Effect.gen(function* () {
