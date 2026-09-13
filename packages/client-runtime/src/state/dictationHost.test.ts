@@ -19,7 +19,7 @@ function host(id: string, available = true, connected = true) {
     httpAuthorization: { _tag: "Bearer", token: `${id}-session` },
   };
   const presentation: EnvironmentPresentation = {
-    entry: { target, profile: Option.none() },
+    entry: { target, profile: Option.none(), enabled: true },
     connection: { phase: connected ? "connected" : "offline", error: null, traceId: null },
     serverConfig: {
       environment: { capabilities: available ? { voiceDictation: true } : {} },
