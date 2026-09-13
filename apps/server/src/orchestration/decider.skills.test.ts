@@ -23,6 +23,7 @@ function makeReadModel(input?: {
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
+    automations: [],
     projects: [
       {
         id: ProjectId.make("project-1"),

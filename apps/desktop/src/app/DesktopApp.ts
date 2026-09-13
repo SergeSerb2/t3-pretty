@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
@@ -12,6 +13,7 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
+import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
@@ -27,19 +29,24 @@ import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
+const DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY = 4;
 const DESKTOP_BACKEND_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::"] as const;
+export const DESKTOP_FATAL_STARTUP_MESSAGE_MAX_LENGTH = 4_096;
+export const DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH = 64 * 1_024;
 
 const makeDesktopRunId = Crypto.Crypto.pipe(
   Effect.flatMap((crypto) => crypto.randomUUIDv4),
   Effect.map((value) => value.replaceAll("-", "").slice(0, 12)),
 );
 
-export class DesktopBackendPortUnavailableError extends Schema.TaggedErrorClass<DesktopBackendPortUnavailableError>()(
+export class DesktopBackendPortUnavailableError extends Schema.TaggedError<DesktopBackendPortUnavailableError>()(
   "DesktopBackendPortUnavailableError",
   {
     startPort: Schema.Int,
@@ -52,13 +59,46 @@ export class DesktopBackendPortUnavailableError extends Schema.TaggedErrorClass<
   }
 }
 
-export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedErrorClass<DesktopDevelopmentBackendPortRequiredError>()(
+export class DesktopDevelopmentBackendPortRequiredError extends Schema.TaggedError<DesktopDevelopmentBackendPortRequiredError>()(
   "DesktopDevelopmentBackendPortRequiredError",
   {},
 ) {
   override get message(): string {
     return "T3CODE_PORT is required in desktop development.";
   }
+}
+
+const truncateStartupDiagnostic = (value: string, maximumLength: number): string =>
+  value.length <= maximumLength ? value : `${value.slice(0, maximumLength - 1)}…`;
+
+export function formatFatalStartupError(error: unknown): {
+  readonly message: string;
+  readonly detail: string;
+} {
+  let message = "Unknown startup error.";
+  try {
+    const candidate = error instanceof Error ? error.message : error;
+    message = typeof candidate === "string" ? candidate : String(candidate);
+  } catch {
+    // A hostile Error subclass or arbitrary defect can throw from coercion.
+  }
+
+  let detail = "";
+  if (error instanceof Error) {
+    try {
+      const stack = error.stack;
+      if (typeof stack === "string" && stack.length > 0) {
+        detail = truncateStartupDiagnostic(`\n${stack}`, DESKTOP_FATAL_STARTUP_DETAIL_MAX_LENGTH);
+      }
+    } catch {
+      // The native error box still gets the bounded primary message.
+    }
+  }
+
+  return {
+    message: truncateStartupDiagnostic(message, DESKTOP_FATAL_STARTUP_MESSAGE_MAX_LENGTH),
+    detail,
+  };
 }
 
 const { logInfo: logBootstrapInfo, logWarning: logBootstrapWarning } =
@@ -118,9 +158,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const state = yield* DesktopState.DesktopState;
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
-  const message = error instanceof Error ? error.message : String(error);
-  const detail =
-    error instanceof Error && typeof error.stack === "string" ? `\n${error.stack}` : "";
+  const { message, detail } = formatFatalStartupError(error);
   yield* logStartupError("fatal startup error", {
     stage,
     message,
@@ -140,6 +178,20 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
 const fatalStartupCause = <E>(stage: string, cause: Cause.Cause<E>) =>
   handleFatalStartupError(stage, Cause.pretty(cause)).pipe(Effect.andThen(Effect.failCause(cause)));
 
+export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances")(
+  function* (): Effect.fn.Return<void, never, DesktopBackendPool.DesktopBackendPool> {
+    // Stop every backend in the pool with a timeout to guarantee the quit
+    // path makes progress even if a backend hangs during teardown.
+    const pool = yield* DesktopBackendPool.DesktopBackendPool;
+    const instances = yield* pool.list;
+    yield* Effect.forEach(
+      instances,
+      (instance) => instance.stop({ timeout: Duration.seconds(5) }),
+      { concurrency: "unbounded" },
+    );
+  },
+);
+
 const bootstrap = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const primaryBackend = yield* pool.primary;
@@ -149,6 +201,8 @@ const bootstrap = Effect.gen(function* () {
   const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
   const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
+  const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
+  const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
   yield* logBootstrapInfo("bootstrap start");
 
   if (environment.isDevelopment && Option.isNone(environment.configuredBackendPort)) {
@@ -193,11 +247,15 @@ const bootstrap = Effect.gen(function* () {
     yield* logBootstrapInfo("bootstrap enabled network access", {
       endpointUrl: serverExposureState.endpointUrl,
     });
-  } else if (settings.serverExposureMode === "network-accessible") {
+  } else if (
+    settings.serverExposureMode === "network-accessible" &&
+    serverExposureState.mode === "local-only"
+  ) {
     yield* logBootstrapWarning(
       "bootstrap fell back to local-only because no advertised network host was available",
     );
   }
+  yield* snapShot.initialize;
 
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
@@ -225,6 +283,10 @@ const bootstrap = Effect.gen(function* () {
         ),
       );
     }
+    yield* appActivation.start.pipe(
+      Effect.tap(() => logBootstrapInfo("desktop app control socket ready")),
+      Effect.catch((error) => logStartupError("desktop app control socket unavailable", { error })),
+    );
     // Bring up the WSL backend if the user previously enabled it. The
     // primary is already starting; reconcile fires off the WSL register
     // in parallel rather than blocking primary readiness on a possibly
@@ -311,10 +373,15 @@ const startup = Effect.gen(function* () {
     });
   }
   yield* applicationMenu.configure;
-  yield* updates.configure;
   yield* linuxUrlHandler.register;
   yield* Fiber.join(installShellEnvironment);
+  // Open the window before talking to GitHub. Nightly configure used to
+  // await fetchLatestNightlyTag on this path; a hung fetch (AbortSignal not
+  // honored in some Electron builds) left Mac installs on the boot splash
+  // with no window.
   yield* bootstrap.pipe(Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)));
+  yield* updates.configure;
+  yield* DesktopRemoteUpdates.listen;
 }).pipe(Effect.withSpan("desktop.startup"));
 
 const scopedProgram = Effect.scoped(
@@ -335,7 +402,7 @@ const scopedProgram = Effect.scoped(
         // receiving SIGTERM + grace. Stops run concurrently.
         const instances = yield* pool.list;
         yield* Effect.forEach(instances, (instance) => instance.stop(), {
-          concurrency: "unbounded",
+          concurrency: DESKTOP_SHUTDOWN_BACKEND_CONCURRENCY,
         });
       }).pipe(Effect.ensuring(shutdown.markComplete)),
     );

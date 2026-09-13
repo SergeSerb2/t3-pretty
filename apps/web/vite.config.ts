@@ -1,6 +1,5 @@
 import * as NodeZlib from "node:zlib";
 
-import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -13,6 +12,8 @@ import pkg from "./package.json" with { type: "json" };
 import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
+import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import { tailwindPlugins } from "./vite/tailwind";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -84,6 +85,7 @@ const unitTestProject = {
     // run, those async tests can exceed Vitest's default 5s budget.
     hookTimeout: 15_000,
     testTimeout: 15_000,
+    setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
   },
 } satisfies TestProjectInlineConfiguration;
 
@@ -168,6 +170,15 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       devCompressionPlugin(),
+      thirdPartyLicensesPlugin({
+        bundleName: "web",
+        configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+        packageManifests: [
+          { bundle: "web", path: new URL("./package.json", import.meta.url) },
+          { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
+          { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
+        ],
+      }),
       tanstackRouter({
         // Route components load on demand so Settings/Usage/PR/pairing code
         // stays out of the entry chunk. The chat routes render on every cold
@@ -187,7 +198,7 @@ export default defineConfig(() => {
         parserOpts: { plugins: ["typescript", "jsx"] },
         presets: [reactCompilerPreset()],
       }),
-      tailwindcss(),
+      tailwindPlugins(bundledDev),
     ],
     optimizeDeps: {
       include: [
@@ -252,16 +263,17 @@ export default defineConfig(() => {
         ? {
             // One entry per shared prefix; the server's dev catch-all 404s the
             // same list, so the two sides cannot drift. `/ws` is the app's own
-            // socket — Vite's HMR socket is matched separately and exactly
-            // (path "/" plus a vite-hmr subprotocol), so the two upgrade
-            // handlers don't collide.
+            // socket and `/api` carries the device hub's stream sockets —
+            // Vite's HMR socket is matched separately and exactly (path "/"
+            // plus a vite-hmr subprotocol), so the upgrade handlers don't
+            // collide.
             proxy: Object.fromEntries(
               DEV_PROXIED_PATH_PREFIXES.map((prefix) => [
                 prefix,
                 {
                   target: devProxyTarget,
                   changeOrigin: true,
-                  ...(prefix === "/ws" ? { ws: true } : {}),
+                  ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
                 },
               ]),
             ),
@@ -283,9 +295,15 @@ export default defineConfig(() => {
           }
         : {}),
     },
+    // @tailwindcss/vite only emits a CSS sourcemap when devSourcemap is on; without it
+    // rolldown flags the transform as SOURCEMAP_BROKEN on every sourcemapped build.
+    css: {
+      devSourcemap: buildSourcemap !== false,
+    },
     build: {
       outDir: "dist",
       emptyOutDir: true,
+      manifest: true,
       sourcemap: buildSourcemap,
     },
     test: {

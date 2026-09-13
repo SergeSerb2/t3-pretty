@@ -23,7 +23,10 @@ function mockHandle(options: {
   readonly stderrError?: PlatformError.PlatformError;
 }) {
   return ChildProcessSpawner.makeHandle({
-    pid: ChildProcessSpawner.ProcessId(1),
+    // Never use a real special/system PID in a subprocess-handle double. The
+    // supplied kill implementation is inert, but the identifier must remain
+    // harmless even if a future platform finalizer changes its behavior.
+    pid: ChildProcessSpawner.ProcessId(424_242),
     exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(options.exitCode)),
     isRunning: Effect.succeed(false),
     kill: () => Effect.void,
@@ -175,6 +178,35 @@ it.effect("reports git tag non-zero exits without manufacturing a cause", () =>
     assert.notProperty(error, "cause");
     assert.notProperty(error, "stdout");
     assert.notProperty(error, "stderr");
+  }),
+);
+
+it.effect("fails closed when git tag output exceeds its memory ceiling", () =>
+  Effect.gen(function* () {
+    const error = yield* listGitTags("/repo", 8).pipe(
+      Effect.scoped,
+      Effect.provideService(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          Effect.succeed(
+            mockHandle({
+              exitCode: 0,
+              stdout: "v1.2.3\nv1.2.4\n",
+            }),
+          ),
+        ),
+      ),
+      Effect.flip,
+    );
+
+    if (error._tag !== "ReleaseTagListOutputTooLargeError") {
+      return assert.fail(`Unexpected error: ${error._tag}`);
+    }
+    assert.equal(error.stream, "stdout");
+    assert.equal(error.maxOutputBytes, 8);
+    assert.equal(error.executable, "git");
+    assert.equal(error.cwd, "/repo");
+    assert.notProperty(error, "text");
   }),
 );
 

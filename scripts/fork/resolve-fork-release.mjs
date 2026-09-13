@@ -12,24 +12,12 @@ function git(...args) {
 }
 
 function findNewestIntegratedNightly() {
-  const tags = git("tag", "--list", "v*-nightly.*", "--sort=-version:refname")
+  const tags = git("tag", "--merged", "HEAD", "--list", "v*-nightly.*", "--sort=-version:refname")
     .split("\n")
     .filter(Boolean);
 
   for (const tag of tags) {
-    if (!NIGHTLY_TAG.test(tag)) continue;
-    try {
-      NodeChildProcess.execFileSync(
-        "git",
-        ["merge-base", "--is-ancestor", `${tag}^{commit}`, "HEAD"],
-        {
-          stdio: "ignore",
-        },
-      );
-      return tag;
-    } catch {
-      // The tag exists locally but is not part of the fork yet.
-    }
+    if (NIGHTLY_TAG.test(tag)) return tag;
   }
 
   return null;

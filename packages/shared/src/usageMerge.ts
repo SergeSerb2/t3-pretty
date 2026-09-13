@@ -6,12 +6,13 @@
  *
  * @module usageMerge
  */
-import type {
-  EnvironmentId,
-  UsageBucket,
-  UsageProviderKind,
-  UsageSourceFingerprint,
-  UsageSummary,
+import {
+  USAGE_MERGE_COMPATIBLE_SINCE,
+  type EnvironmentId,
+  type UsageBucket,
+  type UsageProviderKind,
+  type UsageSourceFingerprint,
+  type UsageSummary,
 } from "@t3tools/contracts";
 
 export interface EnvironmentUsage {
@@ -19,6 +20,11 @@ export interface EnvironmentUsage {
   readonly label: string;
   readonly summary: UsageSummary;
 }
+
+/** Prevent one usage-page render from multiplying a large summary by a fleet. */
+export const USAGE_MERGE_MAX_ENVIRONMENTS = 32;
+const USAGE_MERGE_MAX_COVERAGE_MESSAGES = 128;
+const USAGE_MERGE_COVERAGE_MESSAGE_MAX_LENGTH = 1_024;
 
 export interface ProviderTotals {
   readonly provider: UsageProviderKind;
@@ -36,7 +42,20 @@ export interface ModelTotals {
   readonly costUsd: number;
   readonly totalTokens: number;
   readonly records: number;
+  /**
+   * Records whose tokens are counted here but which contributed nothing to
+   * `costUsd`. When it equals `records` the cost is unknown, not zero.
+   */
+  readonly unpricedRecords: number;
   readonly costShare: number;
+}
+
+/**
+ * A model whose every record lacked rates has an unknown cost, not a zero one.
+ * Clients must not present its `costUsd` as a real dollar figure.
+ */
+export function isModelCostUnknown(model: ModelTotals): boolean {
+  return model.records > 0 && model.unpricedRecords >= model.records;
 }
 
 export interface DailyTotals {
@@ -78,6 +97,12 @@ export interface MergedUsage {
   readonly costQuality: CostQuality;
   /** Environments whose data was dropped as a duplicate of another's. */
   readonly duplicateSources: readonly string[];
+  /** Partial or failed source diagnostics selected after de-duplication. */
+  readonly sourceWarnings: readonly string[];
+  /** Inputs beyond the bounded fleet fan-in. */
+  readonly omittedEnvironmentCount: number;
+  /** Additional duplicate/source diagnostics omitted from this render. */
+  readonly coverageWarningsOmitted: number;
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly staleEnvironments: readonly EnvironmentId[];
 }
@@ -90,13 +115,28 @@ export interface MergedUsage {
  * home path, which is every Mac in a fleet, from collapsing into one source and
  * having one of them silently dropped.
  */
-function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
-  return [
+function fingerprintKey(fingerprint: UsageSourceFingerprint, environmentId: EnvironmentId): string {
+  // Empty volume ids are explicitly allowed when filesystem identity cannot
+  // be read. In that case de-duplicating across environments would guess that
+  // two machines with the same hostname/path are one source and lose usage.
+  const volumeIdentity =
+    fingerprint.volumeId.length === 0
+      ? `unknown:${environmentId}`
+      : `volume:${fingerprint.volumeId}`;
+  // JSON tuple encoding avoids collisions between host/path strings that
+  // contain the delimiter used by the old space-joined key.
+  return JSON.stringify([
     fingerprint.hostId,
     fingerprint.provider,
     fingerprint.resolvedHomePath,
-    fingerprint.volumeId,
-  ].join(" ");
+    volumeIdentity,
+  ]);
+}
+
+function boundedCoverageMessage(message: string): string {
+  return message.length <= USAGE_MERGE_COVERAGE_MESSAGE_MAX_LENGTH
+    ? message
+    : `${message.slice(0, USAGE_MERGE_COVERAGE_MESSAGE_MAX_LENGTH - 1)}…`;
 }
 
 /**
@@ -104,32 +144,79 @@ function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
  *
  * Several environments on one machine (worktree servers, for instance) resolve
  * the same provider home and would otherwise double count every token. The
- * first environment in a stable order claims a fingerprint; the rest have that
- * provider's buckets dropped. Environments are sorted by id so the winner does
- * not change between renders.
+ * A complete scan wins over a partial scan; ties use stable environment-id
+ * order. The rest have that provider's buckets dropped, so an incomplete
+ * lower-id environment cannot suppress a complete duplicate.
  */
 function claimSources(environments: readonly EnvironmentUsage[]): {
   readonly ownerByFingerprint: ReadonlyMap<string, EnvironmentId>;
   readonly duplicates: readonly string[];
+  readonly warningsOmitted: number;
 } {
-  const ownerByFingerprint = new Map<string, EnvironmentId>();
+  const claims = new Map<
+    string,
+    {
+      readonly environmentId: EnvironmentId;
+      readonly label: string;
+      readonly path: string;
+      readonly quality: number;
+    }
+  >();
   const duplicates: string[] = [];
+  let warningsOmitted = 0;
+
+  const recordDuplicate = (label: string, path: string) => {
+    if (duplicates.length < USAGE_MERGE_MAX_COVERAGE_MESSAGES) {
+      duplicates.push(boundedCoverageMessage(`${label}: ${path}`));
+    } else {
+      warningsOmitted += 1;
+    }
+  };
 
   const ordered = [...environments].sort((a, b) => a.environmentId.localeCompare(b.environmentId));
 
   for (const environment of ordered) {
     for (const source of environment.summary.sources) {
-      if (source.status === "missing") continue;
-      const key = fingerprintKey(source.fingerprint);
-      if (ownerByFingerprint.has(key)) {
-        duplicates.push(`${environment.label}: ${source.fingerprint.resolvedHomePath}`);
+      if (source.status === "missing" || source.status === "failed") continue;
+      const key = fingerprintKey(source.fingerprint, environment.environmentId);
+      const quality = source.status === "ok" ? 2 : 1;
+      const current = claims.get(key);
+      if (current === undefined) {
+        claims.set(key, {
+          environmentId: environment.environmentId,
+          label: environment.label,
+          path: source.fingerprint.resolvedHomePath,
+          quality,
+        });
         continue;
       }
-      ownerByFingerprint.set(key, environment.environmentId);
+      if (current.environmentId === environment.environmentId) {
+        if (quality > current.quality) {
+          claims.set(key, { ...current, quality });
+        }
+        continue;
+      }
+      if (quality > current.quality) {
+        recordDuplicate(current.label, current.path);
+        claims.set(key, {
+          environmentId: environment.environmentId,
+          label: environment.label,
+          path: source.fingerprint.resolvedHomePath,
+          quality,
+        });
+      } else {
+        recordDuplicate(environment.label, source.fingerprint.resolvedHomePath);
+      }
     }
   }
 
-  return { ownerByFingerprint, duplicates };
+  return {
+    ownerByFingerprint: new Map(
+      [...claims].map(([key, claim]) => [key, claim.environmentId] as const),
+    ),
+    duplicates,
+    warningsOmitted,
+  };
 }
 
 /** Sources this environment owns after fingerprint claims, plus their buckets. */
@@ -143,8 +230,8 @@ function ownedContribution(
   const ownedProviders = new Set<UsageProviderKind>();
   const sessionsByProvider = new Map<UsageProviderKind, number>();
   for (const source of environment.summary.sources) {
-    if (source.status === "missing") continue;
-    const key = fingerprintKey(source.fingerprint);
+    if (source.status === "missing" || source.status === "failed") continue;
+    const key = fingerprintKey(source.fingerprint, environment.environmentId);
     if (ownerByFingerprint.get(key) === environment.environmentId) {
       const provider = source.fingerprint.provider;
       ownedProviders.add(provider);
@@ -162,6 +249,43 @@ function ownedContribution(
   };
 }
 
+function sourceCoverageWarnings(
+  environments: readonly EnvironmentUsage[],
+  ownerByFingerprint: ReadonlyMap<string, EnvironmentId>,
+): { readonly warnings: readonly string[]; readonly omitted: number } {
+  const warnings: string[] = [];
+  const seenWarnings = new Set<string>();
+  let omitted = 0;
+  const recordWarning = (message: string) => {
+    const bounded = boundedCoverageMessage(message);
+    if (seenWarnings.has(bounded)) return;
+    seenWarnings.add(bounded);
+    if (warnings.length < USAGE_MERGE_MAX_COVERAGE_MESSAGES) {
+      warnings.push(bounded);
+    } else {
+      omitted += 1;
+    }
+  };
+
+  for (const environment of environments) {
+    for (const source of environment.summary.sources) {
+      const key = fingerprintKey(source.fingerprint, environment.environmentId);
+      const detail =
+        source.message ??
+        `${source.fingerprint.provider} transcript reporting is ${source.status}.`;
+      if (
+        source.status === "partial" &&
+        ownerByFingerprint.get(key) === environment.environmentId
+      ) {
+        recordWarning(`${environment.label}: ${detail}`);
+      } else if (source.status === "failed" && !ownerByFingerprint.has(key)) {
+        recordWarning(`${environment.label}: ${detail}`);
+      }
+    }
+  }
+  return { warnings, omitted };
+}
+
 function bucketTokens(bucket: UsageBucket): number {
   // reasoningTokens is a subset of outputTokens and must not be added again.
   return (
@@ -170,6 +294,10 @@ function bucketTokens(bucket: UsageBucket): number {
     bucket.totals.cacheCreationTokens +
     bucket.totals.outputTokens
   );
+}
+
+export function isCompatibleUsageContractVersion(version: number, expected: number): boolean {
+  return version >= USAGE_MERGE_COMPATIBLE_SINCE && version <= expected;
 }
 
 const EMPTY_MERGED: MergedUsage = {
@@ -193,6 +321,9 @@ const EMPTY_MERGED: MergedUsage = {
     cacheSavingsUsd: 0,
   },
   duplicateSources: [],
+  sourceWarnings: [],
+  omittedEnvironmentCount: 0,
+  coverageWarningsOmitted: 0,
   contributingEnvironments: [],
   staleEnvironments: [],
 };
@@ -201,8 +332,10 @@ const EMPTY_MERGED: MergedUsage = {
  * Merges every connected environment's summary.
  *
  * `expectedContractVersion` guards against an environment running older server
- * code: rather than blocking the page, its data is excluded and its id is
- * reported so the UI can say coverage is partial.
+ * code: rather than blocking the page, incompatible data is excluded and its
+ * id is reported so the UI can say coverage is partial. Versions in
+ * [{@link USAGE_MERGE_COMPATIBLE_SINCE}, expected] still merge, so an additive
+ * provider expansion does not drop Claude/Codex totals from older servers.
  */
 export function mergeUsage(
   environments: readonly EnvironmentUsage[],
@@ -210,17 +343,30 @@ export function mergeUsage(
 ): MergedUsage {
   if (environments.length === 0) return EMPTY_MERGED;
 
+  const retainedEnvironments = environments.slice(0, USAGE_MERGE_MAX_ENVIRONMENTS);
+  const omittedEnvironmentCount = environments.length - retainedEnvironments.length;
+
   const current: EnvironmentUsage[] = [];
   const staleEnvironments: EnvironmentId[] = [];
-  for (const environment of environments) {
-    if (environment.summary.contractVersion === expectedContractVersion) {
+  for (const environment of retainedEnvironments) {
+    if (
+      isCompatibleUsageContractVersion(environment.summary.contractVersion, expectedContractVersion)
+    ) {
       current.push(environment);
     } else {
       staleEnvironments.push(environment.environmentId);
     }
   }
 
-  const { ownerByFingerprint, duplicates } = claimSources(current);
+  const {
+    ownerByFingerprint,
+    duplicates,
+    warningsOmitted: duplicateWarningsOmitted,
+  } = claimSources(current);
+  const { warnings: sourceWarnings, omitted: sourceWarningsOmitted } = sourceCoverageWarnings(
+    current,
+    ownerByFingerprint,
+  );
 
   let costUsd = 0;
   let uncachedInputTokens = 0;
@@ -240,7 +386,13 @@ export function mergeUsage(
   >();
   const modelAccumulator = new Map<
     string,
-    { provider: UsageProviderKind; costUsd: number; totalTokens: number; records: number }
+    {
+      provider: UsageProviderKind;
+      costUsd: number;
+      totalTokens: number;
+      records: number;
+      unpricedRecords: number;
+    }
   >();
   const dailyAccumulator = new Map<
     string,
@@ -310,10 +462,12 @@ export function mergeUsage(
         costUsd: 0,
         totalTokens: 0,
         records: 0,
+        unpricedRecords: 0,
       };
       model.costUsd += bucket.costUsd;
       model.totalTokens += tokens;
       model.records += bucket.records;
+      model.unpricedRecords += bucket.unpricedRecords;
       modelAccumulator.set(modelKey, model);
 
       const day = dailyAccumulator.get(bucket.day) ?? {
@@ -372,6 +526,7 @@ export function mergeUsage(
       costUsd: totals.costUsd,
       totalTokens: totals.totalTokens,
       records: totals.records,
+      unpricedRecords: totals.unpricedRecords,
       costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
     }))
     .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
@@ -411,6 +566,9 @@ export function mergeUsage(
       cacheSavingsUsd,
     },
     duplicateSources: duplicates,
+    sourceWarnings,
+    omittedEnvironmentCount,
+    coverageWarningsOmitted: duplicateWarningsOmitted + sourceWarningsOmitted,
     contributingEnvironments,
     staleEnvironments,
   };
