@@ -3230,3 +3230,5 @@
   - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx`
   - edited `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx`
   - edited `apps/web/src/components/settings/ConnectionsSettings.tsx`
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260913.1646`; repaired with `gpt-5.6-sol`: Extend both T3 Pretty default mobile palettes with all ten thread, composer, and warning variables introduced by the parent. This completes MobileThemeVariables without changing the fork’s default-theme routing or branding.
+  - edited `apps/mobile/src/lib/mobileDefaultTheme.ts`
