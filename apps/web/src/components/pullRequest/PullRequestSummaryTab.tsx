@@ -20,6 +20,8 @@ import {
   HammerIcon,
   MessageSquareIcon,
   PencilIcon,
+  RotateCcwIcon,
+  SendIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
@@ -34,6 +36,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { isCommentSubmitShortcut } from "../diffs/commentSubmitShortcut";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {

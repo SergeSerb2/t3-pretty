@@ -3226,3 +3226,7 @@
 - `packages/client-runtime/src/platform/storageDocument.ts` — The parent hunk's unrestricted Schema.Array validation for catalog collections.. Reason: Using unrestricted arrays would regress T3 Pretty's existing cross-surface reliability hardening. The upstream fields and behavior are retained, but all catalog record kinds use the fork's established 1,024-record bound.
 - `shared-typecheck` failed after merging `v0.0.41-nightly.20260913.1646`; repaired with `gpt-5.6-sol`: Mark generated dictation test hosts as enabled, preserving their existing availability behavior while satisfying the parent ConnectionCatalogEntry API.
   - edited `packages/client-runtime/src/state/dictationHost.test.ts`
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260913.1646`; repaired with `gpt-5.6-sol`: Restored imports and call-site props required by T3 Pretty's pull-request comment behavior, and updated hidden saved-backend rows to use the fork's enable/disable callback. These minimal edits resolve all reported error-level diagnostics without suppressions or upstream omissions.
+  - edited `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx`
+  - edited `apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx`
+  - edited `apps/web/src/components/settings/ConnectionsSettings.tsx`

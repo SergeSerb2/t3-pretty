@@ -3628,7 +3628,7 @@ export function ConnectionsSettings() {
                 key={environment.environmentId}
                 environment={environment}
                 removingEnvironmentId={removingSavedEnvironmentId}
-                onConnect={handleConnectSavedBackend}
+                onSetEnabled={handleSetSavedBackendEnabled}
                 onRemove={handleRemoveSavedBackend}
               />
             ))

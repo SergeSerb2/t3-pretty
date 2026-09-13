@@ -2613,6 +2613,8 @@ export function PullRequestDetailPanel({
                   fixFindingLabel={handoffLabels.fixFinding}
                   fixCheckLabel={handoffLabels.fixCheck}
                   onFixFinding={startFixFinding}
+                  actionPending={actionPending}
+                  onCommentAction={performCommentAction}
                   onRefresh={refreshDetail}
                 />
               </div>
