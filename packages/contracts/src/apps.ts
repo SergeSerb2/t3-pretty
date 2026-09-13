@@ -161,7 +161,7 @@ export const AppsOperation = Schema.Literals([
 ]);
 export type AppsOperation = typeof AppsOperation.Type;
 
-export class AppsError extends Schema.TaggedErrorClass<AppsError>()("AppsError", {
+export class AppsError extends Schema.TaggedError<AppsError>()("AppsError", {
   operation: AppsOperation,
   connectionId: Schema.optional(AppConnectionId),
   message: TrimmedNonEmptyString,

@@ -7,13 +7,14 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { SURGE_CONNECT_NAME } from "@t3tools/shared/connectBranding";
 import { ServerIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   deregisterManagedRelayEnvironmentCommand,
   useManagedRelayEnvironments,
 } from "../../cloud/managedRelayState";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useCopyTraceId } from "../../hooks/useCopyTraceId";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -121,6 +122,7 @@ export function T3ConnectEnvironmentRow(props: {
 
 export function T3ConnectUserProfilePage() {
   const environmentsState = useManagedRelayEnvironments();
+  const copyTraceId = useCopyTraceId();
   const deregisterEnvironment = useAtomCommand(deregisterManagedRelayEnvironmentCommand, {
     reportFailure: false,
   });
@@ -130,21 +132,48 @@ export function T3ConnectUserProfilePage() {
     null,
   );
   const mutationPendingRef = useRef(false);
+  const activeMutationRef = useRef<symbol | null>(null);
+  const activeAccountRef = useRef(environmentsState.accountId);
+  activeAccountRef.current = environmentsState.accountId;
+  const previousAccountRef = useRef(environmentsState.accountId);
   const [removedEnvironments, setRemovedEnvironments] = useState<{
     readonly accountId: string | null;
     readonly linkedAtById: ReadonlyMap<EnvironmentId, string>;
   }>({ accountId: null, linkedAtById: new Map() });
 
+  useEffect(() => {
+    if (previousAccountRef.current === environmentsState.accountId) return;
+    previousAccountRef.current = environmentsState.accountId;
+    activeMutationRef.current = null;
+    mutationPendingRef.current = false;
+    setDeregisteringEnvironmentId(null);
+    setConfirmingEnvironmentId(null);
+  }, [environmentsState.accountId]);
+
+  useEffect(
+    () => () => {
+      activeMutationRef.current = null;
+      mutationPendingRef.current = false;
+    },
+    [],
+  );
+
   const handleDeregister = async (environment: RelayClientEnvironmentRecord) => {
     const accountId = environmentsState.accountId;
     if (!accountId || mutationPendingRef.current) return;
 
+    const operation = Symbol("deregister-relay-environment");
+    activeMutationRef.current = operation;
     mutationPendingRef.current = true;
     setDeregisteringEnvironmentId(environment.environmentId);
     const result = await deregisterEnvironment({
       accountId,
       environmentId: environment.environmentId,
     });
+    if (activeMutationRef.current !== operation || activeAccountRef.current !== accountId) {
+      return;
+    }
+    activeMutationRef.current = null;
     mutationPendingRef.current = false;
     setDeregisteringEnvironmentId(null);
 
@@ -182,7 +211,7 @@ export function T3ConnectUserProfilePage() {
         ? {
             secondaryActionProps: {
               children: "Copy trace ID",
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => copyTraceId(traceId),
             },
           }
         : undefined,

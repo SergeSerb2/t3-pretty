@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   DIFF_WORKER_POOL_IDLE_MS,
   createDiffWorkerPoolIdleTerminator,
+  enqueueDiffWorkerThemeSync,
   isDiffWorkerPoolIdle,
   syncDiffWorkerPoolTheme,
 } from "./DiffWorkerPoolProvider.logic";
@@ -131,10 +132,47 @@ describe("syncDiffWorkerPoolTheme", () => {
 });
 
 describe("DiffWorkerPoolProvider painted theme", () => {
-  it("reconfigures the singleton pool when the painted appearance changes", () => {
+  it("reconfigures the shared pool when the painted appearance changes", () => {
     expect(providerSource).toContain("usePaintedAppearance");
-    expect(providerSource).toContain("useState(() => getDiffWorkerPool(diffThemeName))");
-    expect(providerSource).toContain("syncDiffWorkerPoolTheme(pool, diffThemeName)");
-    expect(providerSource).toContain("[diffThemeName, pool]");
+    expect(providerSource).toContain("WorkerPoolContextProvider");
+    expect(providerSource).toContain("syncDiffWorkerPoolTheme(workerPool, themeName)");
+    expect(providerSource).toContain("[themeName, workerPool]");
+  });
+});
+
+describe("enqueueDiffWorkerThemeSync", () => {
+  it("keeps the newest async theme write last", async () => {
+    const pool = {};
+    let releaseFirst: (() => void) | undefined;
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const writes: string[] = [];
+
+    const first = enqueueDiffWorkerThemeSync(pool, async () => {
+      writes.push("first:start");
+      await firstPending;
+      writes.push("first:end");
+    });
+    const second = enqueueDiffWorkerThemeSync(pool, async () => {
+      writes.push("second");
+    });
+
+    await Promise.resolve();
+    expect(writes).toEqual(["first:start"]);
+    releaseFirst?.();
+    await Promise.all([first, second]);
+    expect(writes).toEqual(["first:start", "first:end", "second"]);
+  });
+
+  it("continues after an earlier write rejects", async () => {
+    const pool = {};
+    const first = enqueueDiffWorkerThemeSync(pool, async () => {
+      throw new Error("theme failed");
+    });
+    const second = enqueueDiffWorkerThemeSync(pool, async () => undefined);
+
+    await expect(first).rejects.toThrow("theme failed");
+    await expect(second).resolves.toBeUndefined();
   });
 });

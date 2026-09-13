@@ -53,7 +53,10 @@ describe("thread sidebar width", () => {
       "utf8",
     );
 
-    expect(sidebarSource).toContain("hidden h-7 w-fit min-w-0 shrink-0 items-center gap-1");
+    expect(sidebarSource).toContain(
+      "hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden",
+    );
+    expect(sidebarSource).toContain('className="inline-flex min-w-0 items-center gap-1"');
     expect(sidebarSource).toContain("md:flex");
     expect(sidebarSource).toContain('src="/t3-pretty-mark.png"');
     expect(THREAD_SIDEBAR_MIN_WIDTH).toBe(13 * 16);

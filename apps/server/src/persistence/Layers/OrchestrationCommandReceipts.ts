@@ -14,6 +14,8 @@ import {
   PruneReceiptsInput,
 } from "../Services/OrchestrationCommandReceipts.ts";
 
+export const ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS = 8_192;
+
 const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
@@ -85,7 +87,13 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   });
 
   const upsert: OrchestrationCommandReceiptRepositoryShape["upsert"] = (receipt) =>
-    upsertReceiptRow(receipt).pipe(
+    upsertReceiptRow({
+      ...receipt,
+      error:
+        receipt.error === null
+          ? null
+          : receipt.error.slice(0, ORCHESTRATION_COMMAND_RECEIPT_ERROR_MAX_CHARS),
+    }).pipe(
       Effect.mapError(toPersistenceSqlError("OrchestrationCommandReceiptRepository.upsert:query")),
     );
 

@@ -21,10 +21,18 @@ printf '%s\\n' "$*"
 `,
   );
   NodeFS.chmodSync(fakeSecurity, 0o755);
-  NodeFS.chmodSync(wrapperPath, 0o755);
-  return NodeChildProcess.execFileSync(wrapperPath, args, {
+  const wrapperCopy = NodePath.join(directory, "security-eas-local-keychain");
+  NodeFS.writeFileSync(
+    wrapperCopy,
+    NodeFS.readFileSync(wrapperPath, "utf8").replace(
+      'real="/usr/bin/security"',
+      `real=${JSON.stringify(fakeSecurity)}`,
+    ),
+  );
+  NodeFS.chmodSync(wrapperCopy, 0o755);
+  return NodeChildProcess.execFileSync(wrapperCopy, args, {
     encoding: "utf8",
-    env: { ...process.env, T3CODE_REAL_SECURITY: fakeSecurity },
+    env: process.env,
   });
 }
 

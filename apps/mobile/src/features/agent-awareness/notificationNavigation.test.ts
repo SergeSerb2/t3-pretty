@@ -1,7 +1,11 @@
 import type { NotificationResponse } from "expo-notifications";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { ENTITY_ID_MAX_LENGTH } from "@t3tools/contracts";
 
-import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";
+import {
+  consumeLastAgentNotificationResponse,
+  shouldConsumeLastAgentNotificationResponse,
+} from "./notificationResponseConsumer";
 
 import {
   extractAgentNotificationDeepLink,
@@ -26,6 +30,14 @@ afterEach(() => {
 });
 
 describe("consumeLastAgentNotificationResponse", () => {
+  it("rejects a stale cold-start response after a newer live response arrives", () => {
+    const stale = responseWithData({}, "notification-old") as NotificationResponse;
+
+    expect(shouldConsumeLastAgentNotificationResponse(stale, "notification-new")).toBe(false);
+    expect(shouldConsumeLastAgentNotificationResponse(stale, "notification-old")).toBe(true);
+    expect(shouldConsumeLastAgentNotificationResponse(stale, null)).toBe(true);
+  });
+
   it("reports which initial-response operation failed", async () => {
     const cause = new Error("notification lookup unavailable");
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -88,6 +100,19 @@ describe("consumeLastAgentNotificationResponse", () => {
         notificationId: "notification-route",
       }),
     );
+  });
+
+  it("keeps an initial response when its navigation owner unmounts before routing", async () => {
+    const response = responseWithData({}, "notification-deferred") as NotificationResponse;
+    const clearLastResponse = vi.fn(() => Promise.resolve());
+
+    await consumeLastAgentNotificationResponse({
+      getLastResponse: () => Promise.resolve(response),
+      clearLastResponse,
+      handleResponse: () => false,
+    });
+
+    expect(clearLastResponse).not.toHaveBeenCalled();
   });
 });
 
@@ -152,9 +177,48 @@ describe("extractAgentNotificationDeepLink", () => {
     ).toBeNull();
     expect(extractAgentNotificationDeepLink({})).toBeNull();
   });
+
+  it("rejects oversized notification route identifiers before encoding them", () => {
+    const oversized = "e".repeat(ENTITY_ID_MAX_LENGTH + 1);
+
+    expect(
+      extractAgentNotificationDeepLink(
+        responseWithData({ environmentId: oversized, threadId: "thread" }),
+      ),
+    ).toBeNull();
+    expect(
+      extractAgentNotificationDeepLink(
+        responseWithData({ deepLink: `/threads/${oversized}/thread` }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("routeAgentNotificationResponseOnce", () => {
+  it("keeps a response retryable when navigation fails", () => {
+    const handledResponseIds = new Set<string>();
+    const response = responseWithData(
+      { environmentId: "env", threadId: "thread" },
+      "notification-retry",
+    );
+
+    expect(() =>
+      routeAgentNotificationResponseOnce({
+        handledResponseIds,
+        response,
+        navigate: () => {
+          throw new Error("navigation is not ready");
+        },
+      }),
+    ).toThrow("navigation is not ready");
+    expect(handledResponseIds.has("notification-retry")).toBe(false);
+
+    const navigate = vi.fn();
+    routeAgentNotificationResponseOnce({ handledResponseIds, response, navigate });
+    expect(navigate).toHaveBeenCalledWith("/threads/env/thread");
+    expect(handledResponseIds.has("notification-retry")).toBe(true);
+  });
+
   it("does not navigate twice when the initial and listener responses refer to one notification", () => {
     const handledResponseIds = new Set<string>();
     const navigations: Array<string> = [];
@@ -175,5 +239,24 @@ describe("routeAgentNotificationResponseOnce", () => {
     });
 
     expect(navigations).toEqual(["/threads/env/thread"]);
+  });
+
+  it("bounds response deduplication history for long-running sessions", () => {
+    const handledResponseIds = new Set<string>();
+
+    for (let index = 0; index < 129; index += 1) {
+      routeAgentNotificationResponseOnce({
+        handledResponseIds,
+        response: responseWithData(
+          { environmentId: "env", threadId: `thread-${index}` },
+          `notification-${index}`,
+        ),
+        navigate: () => undefined,
+      });
+    }
+
+    expect(handledResponseIds.size).toBe(128);
+    expect(handledResponseIds.has("notification-0")).toBe(false);
+    expect(handledResponseIds.has("notification-128")).toBe(true);
   });
 });

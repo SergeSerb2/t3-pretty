@@ -5,10 +5,14 @@ import type {
   ResourceMonitorEvent,
   ResourceMonitorExternalProcess,
   ResourceMonitorHelloEvent,
+  ResourceMonitorProcessTableEntry,
   ResourceMonitorSnapshotEvent,
   ResourceTelemetrySourceStatus,
 } from "@t3tools/contracts";
 import {
+  RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT,
+  RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
+  RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS,
   RESOURCE_MONITOR_PROTOCOL_VERSION,
   ResourceMonitorCommand as ResourceMonitorCommandSchema,
   ResourceMonitorEvent as ResourceMonitorEventSchema,
@@ -44,13 +48,14 @@ const BATTERY_SAMPLE_INTERVAL_MS = 5_000;
 const CONSTRAINED_SAMPLE_INTERVAL_MS = 15_000;
 const HANDSHAKE_TIMEOUT = Duration.seconds(5);
 const SAMPLE_REQUEST_TIMEOUT = Duration.seconds(5);
+const PROCESS_TABLE_REQUEST_TIMEOUT = Duration.seconds(5);
 const HISTORY_REQUEST_TIMEOUT = Duration.seconds(15);
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
 const FAILURE_WINDOW_MS = 60_000;
 const MAX_FAILURES_PER_WINDOW = 5;
 
-export class NativeTelemetrySpawnFailed extends Schema.TaggedErrorClass<NativeTelemetrySpawnFailed>()(
+export class NativeTelemetrySpawnFailed extends Schema.TaggedError<NativeTelemetrySpawnFailed>()(
   "NativeTelemetrySpawnFailed",
   {
     path: Schema.String,
@@ -62,7 +67,7 @@ export class NativeTelemetrySpawnFailed extends Schema.TaggedErrorClass<NativeTe
   }
 }
 
-export class NativeTelemetryHandshakeTimedOut extends Schema.TaggedErrorClass<NativeTelemetryHandshakeTimedOut>()(
+export class NativeTelemetryHandshakeTimedOut extends Schema.TaggedError<NativeTelemetryHandshakeTimedOut>()(
   "NativeTelemetryHandshakeTimedOut",
   {
     timeoutMs: Schema.Number,
@@ -73,10 +78,10 @@ export class NativeTelemetryHandshakeTimedOut extends Schema.TaggedErrorClass<Na
   }
 }
 
-export class NativeTelemetryRequestTimedOut extends Schema.TaggedErrorClass<NativeTelemetryRequestTimedOut>()(
+class NativeTelemetryRequestTimedOut extends Schema.TaggedError<NativeTelemetryRequestTimedOut>()(
   "NativeTelemetryRequestTimedOut",
   {
-    operation: Schema.Literals(["readHistory", "sampleNow"]),
+    operation: Schema.Literals(["processTable", "readHistory", "sampleNow"]),
     timeoutMs: Schema.Number,
   },
 ) {
@@ -85,7 +90,7 @@ export class NativeTelemetryRequestTimedOut extends Schema.TaggedErrorClass<Nati
   }
 }
 
-export class NativeTelemetryProtocolMismatch extends Schema.TaggedErrorClass<NativeTelemetryProtocolMismatch>()(
+export class NativeTelemetryProtocolMismatch extends Schema.TaggedError<NativeTelemetryProtocolMismatch>()(
   "NativeTelemetryProtocolMismatch",
   {
     expectedVersion: Schema.Number,
@@ -97,7 +102,7 @@ export class NativeTelemetryProtocolMismatch extends Schema.TaggedErrorClass<Nat
   }
 }
 
-export class NativeTelemetryDecodeFailed extends Schema.TaggedErrorClass<NativeTelemetryDecodeFailed>()(
+export class NativeTelemetryDecodeFailed extends Schema.TaggedError<NativeTelemetryDecodeFailed>()(
   "NativeTelemetryDecodeFailed",
   {
     cause: Schema.Defect(),
@@ -108,7 +113,7 @@ export class NativeTelemetryDecodeFailed extends Schema.TaggedErrorClass<NativeT
   }
 }
 
-export class NativeTelemetryCommandFailed extends Schema.TaggedErrorClass<NativeTelemetryCommandFailed>()(
+export class NativeTelemetryCommandFailed extends Schema.TaggedError<NativeTelemetryCommandFailed>()(
   "NativeTelemetryCommandFailed",
   {
     operation: Schema.String,
@@ -120,7 +125,7 @@ export class NativeTelemetryCommandFailed extends Schema.TaggedErrorClass<Native
   }
 }
 
-export class NativeTelemetryExited extends Schema.TaggedErrorClass<NativeTelemetryExited>()(
+export class NativeTelemetryExited extends Schema.TaggedError<NativeTelemetryExited>()(
   "NativeTelemetryExited",
   {
     exitCode: Schema.Number,
@@ -131,7 +136,7 @@ export class NativeTelemetryExited extends Schema.TaggedErrorClass<NativeTelemet
   }
 }
 
-export class NativeTelemetryStreamClosed extends Schema.TaggedErrorClass<NativeTelemetryStreamClosed>()(
+class NativeTelemetryStreamClosed extends Schema.TaggedError<NativeTelemetryStreamClosed>()(
   "NativeTelemetryStreamClosed",
   {},
 ) {
@@ -140,7 +145,7 @@ export class NativeTelemetryStreamClosed extends Schema.TaggedErrorClass<NativeT
   }
 }
 
-export class NativeTelemetryUnavailable extends Schema.TaggedErrorClass<NativeTelemetryUnavailable>()(
+export class NativeTelemetryUnavailable extends Schema.TaggedError<NativeTelemetryUnavailable>()(
   "NativeTelemetryUnavailable",
   {
     reason: Schema.String,
@@ -148,6 +153,19 @@ export class NativeTelemetryUnavailable extends Schema.TaggedErrorClass<NativeTe
 ) {
   override get message(): string {
     return `Resource monitor is unavailable: ${this.reason}`;
+  }
+}
+
+export class NativeTelemetryLimitExceeded extends Schema.TaggedError<NativeTelemetryLimitExceeded>()(
+  "NativeTelemetryLimitExceeded",
+  {
+    operation: Schema.Literals(["readHistory", "setExternalProcesses"]),
+    resource: Schema.Literals(["external processes", "history snapshots", "history entries"]),
+    maxItems: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return `Resource monitor '${this.operation}' exceeded the ${this.resource} limit of ${this.maxItems}.`;
   }
 }
 
@@ -161,7 +179,8 @@ export type NativeTelemetryClientError =
   | NativeTelemetryCommandFailed
   | NativeTelemetryExited
   | NativeTelemetryStreamClosed
-  | NativeTelemetryUnavailable;
+  | NativeTelemetryUnavailable
+  | NativeTelemetryLimitExceeded;
 
 export interface NativeTelemetryClientHealth {
   readonly status: ResourceTelemetrySourceStatus;
@@ -192,6 +211,10 @@ export class NativeTelemetryClient extends Context.Service<
       snapshot: HostPowerSnapshot,
     ) => Effect.Effect<void, NativeTelemetryClientError>;
     readonly sampleNow: Effect.Effect<NativeTelemetrySnapshot, NativeTelemetryClientError>;
+    readonly processTable: Effect.Effect<
+      ReadonlyArray<ResourceMonitorProcessTableEntry>,
+      NativeTelemetryClientError
+    >;
     readonly retry: Effect.Effect<boolean>;
     readonly health: Effect.Effect<NativeTelemetryClientHealth>;
     readonly subscribeHealth: Effect.Effect<
@@ -226,6 +249,66 @@ interface PendingHistoryRequest {
     NativeTelemetryClientError
   >;
   readonly snapshots: ReadonlyArray<ResourceMonitorSnapshotEvent>;
+  readonly retainedEntryCount: number;
+}
+
+type NativeTelemetryHistoryChunkOutcome =
+  | { readonly _tag: "ignored" }
+  | {
+      readonly _tag: "completed";
+      readonly deferred: PendingHistoryRequest["deferred"];
+      readonly snapshots: ReadonlyArray<ResourceMonitorSnapshotEvent>;
+    }
+  | {
+      readonly _tag: "rejected";
+      readonly deferred: PendingHistoryRequest["deferred"];
+      readonly resource: "history snapshots" | "history entries";
+      readonly maxItems: number;
+    };
+
+export type NativeTelemetryHistoryAppendResult =
+  | {
+      readonly _tag: "accepted";
+      readonly snapshots: ReadonlyArray<ResourceMonitorSnapshotEvent>;
+      readonly retainedEntryCount: number;
+    }
+  | {
+      readonly _tag: "rejected";
+      readonly resource: "history snapshots" | "history entries";
+      readonly maxItems: number;
+    };
+
+export function appendBoundedNativeTelemetryHistory(
+  current: Pick<PendingHistoryRequest, "snapshots" | "retainedEntryCount">,
+  incoming: ReadonlyArray<ResourceMonitorSnapshotEvent>,
+): NativeTelemetryHistoryAppendResult {
+  if (current.snapshots.length > RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS - incoming.length) {
+    return {
+      _tag: "rejected",
+      resource: "history snapshots",
+      maxItems: RESOURCE_MONITOR_HISTORY_MAX_SNAPSHOTS,
+    };
+  }
+  const incomingEntryCount = incoming.reduce(
+    (total, snapshot) =>
+      total + snapshot.processes.length + (snapshot.externalProcesses?.length ?? 0),
+    0,
+  );
+  if (
+    current.retainedEntryCount >
+    RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES - incomingEntryCount
+  ) {
+    return {
+      _tag: "rejected",
+      resource: "history entries",
+      maxItems: RESOURCE_MONITOR_HISTORY_MAX_RETAINED_ENTRIES,
+    };
+  }
+  return {
+    _tag: "accepted",
+    snapshots: [...current.snapshots, ...incoming],
+    retainedEntryCount: current.retainedEntryCount + incomingEntryCount,
+  };
 }
 
 const initialState: ClientState = {
@@ -340,10 +423,6 @@ function errorMessage(error: NativeTelemetryClientError): string {
   return error.message;
 }
 
-export function nativeTelemetrySupervisorFailureMessage(_cause: Cause.Cause<unknown>): string {
-  return "Resource monitor supervisor stopped unexpectedly.";
-}
-
 export function canRequestNativeTelemetryRetry(
   status: ResourceTelemetrySourceStatus,
   hasHandle: boolean,
@@ -358,6 +437,7 @@ export function canCommandNativeTelemetrySidecar(
   return hasHandle && (status === "healthy" || status === "degraded");
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(function* () {
   const binary = yield* ResourceMonitorBinary.ResourceMonitorBinary;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -386,12 +466,19 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
   const pendingSamples = yield* Ref.make(
     new Map<string, Deferred.Deferred<NativeTelemetrySnapshot, NativeTelemetryClientError>>(),
   );
+  const pendingProcessTables = yield* Ref.make(
+    new Map<
+      string,
+      Deferred.Deferred<ReadonlyArray<ResourceMonitorProcessTableEntry>, NativeTelemetryClientError>
+    >(),
+  );
   const pendingHistories = yield* Ref.make(new Map<string, PendingHistoryRequest>());
   const snapshots = yield* PubSub.sliding<NativeTelemetrySnapshot>(8);
   const healthChanges = yield* PubSub.sliding<NativeTelemetryClientHealth>(4);
   const retryQueue = yield* Queue.sliding<void>(1);
   const commandMutex = yield* Semaphore.make(1);
   const controlMutex = yield* Semaphore.make(1);
+  const historyMutex = yield* Semaphore.make(1);
   const currentHealth = Effect.all([Ref.get(state), Ref.get(collectionControl)]).pipe(
     Effect.map(([current, control]) => toHealth(current, control.sampleIntervalMs)),
   );
@@ -403,8 +490,12 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
   const failPending = (error: NativeTelemetryClientError) =>
     Effect.gen(function* () {
       const samples = yield* Ref.getAndSet(pendingSamples, new Map());
+      const processTables = yield* Ref.getAndSet(pendingProcessTables, new Map());
       const histories = yield* Ref.getAndSet(pendingHistories, new Map());
       yield* Effect.forEach(samples.values(), (deferred) => Deferred.fail(deferred, error), {
+        discard: true,
+      });
+      yield* Effect.forEach(processTables.values(), (deferred) => Deferred.fail(deferred, error), {
         discard: true,
       });
       yield* Effect.forEach(
@@ -462,13 +553,16 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
         return Effect.gen(function* () {
           const nativeSnapshot = { generation, snapshot: event } satisfies NativeTelemetrySnapshot;
           const sampledAt = DateTime.makeUnsafe(event.sampledAtUnixMs);
-          yield* Ref.update(state, (current) => ({
-            ...current,
-            status: "healthy" as const,
-            lastSampleAt: Option.some(sampledAt),
-            lastError: Option.none(),
-          }));
-          yield* publishHealth;
+          const healthChanged = yield* Ref.modify(state, (current) => [
+            current.status !== "healthy" || Option.isSome(current.lastError),
+            {
+              ...current,
+              status: "healthy" as const,
+              lastSampleAt: Option.some(sampledAt),
+              lastError: Option.none(),
+            },
+          ]);
+          if (healthChanged) yield* publishHealth;
           yield* PubSub.publish(snapshots, nativeSnapshot);
           if (event.requestId) {
             const deferred = yield* Ref.modify(pendingSamples, (pending) => {
@@ -482,32 +576,94 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
             }
           }
         });
+      case "processTable":
+        return Ref.modify(pendingProcessTables, (pending) => {
+          const next = new Map(pending);
+          const deferred = next.get(event.requestId);
+          next.delete(event.requestId);
+          return [Option.fromUndefinedOr(deferred), next] as const;
+        }).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.void,
+              onSome: (deferred) => Deferred.succeed(deferred, event.processes),
+            }),
+          ),
+          Effect.asVoid,
+        );
       case "historyChunk":
         return Effect.gen(function* () {
           const latestSnapshot = event.snapshots.at(-1);
-          yield* Ref.update(state, (current) => ({
-            ...current,
-            status: "healthy" as const,
-            lastSampleAt: latestSnapshot
-              ? Option.some(DateTime.makeUnsafe(latestSnapshot.sampledAtUnixMs))
-              : current.lastSampleAt,
-            lastError: Option.none(),
-          }));
-          yield* publishHealth;
-          const completed = yield* Ref.modify(pendingHistories, (pending) => {
-            const request = pending.get(event.requestId);
-            if (!request) return [Option.none(), pending] as const;
-            const snapshots = [...request.snapshots, ...event.snapshots];
-            const next = new Map(pending);
-            if (event.done) {
-              next.delete(event.requestId);
-              return [Option.some({ deferred: request.deferred, snapshots }), next] as const;
+          const healthChanged = yield* Ref.modify(state, (current) => [
+            current.status !== "healthy" || Option.isSome(current.lastError),
+            {
+              ...current,
+              status: "healthy" as const,
+              lastSampleAt: latestSnapshot
+                ? Option.some(DateTime.makeUnsafe(latestSnapshot.sampledAtUnixMs))
+                : current.lastSampleAt,
+              lastError: Option.none(),
+            },
+          ]);
+          if (healthChanged) yield* publishHealth;
+          const completed = yield* Ref.modify(
+            pendingHistories,
+            (
+              pending,
+            ): readonly [
+              NativeTelemetryHistoryChunkOutcome,
+              Map<string, PendingHistoryRequest>,
+            ] => {
+              const request = pending.get(event.requestId);
+              if (!request) {
+                return [{ _tag: "ignored" }, pending];
+              }
+              const next = new Map(pending);
+              const appended = appendBoundedNativeTelemetryHistory(request, event.snapshots);
+              if (appended._tag === "rejected") {
+                next.delete(event.requestId);
+                return [
+                  {
+                    _tag: "rejected" as const,
+                    deferred: request.deferred,
+                    resource: appended.resource,
+                    maxItems: appended.maxItems,
+                  },
+                  next,
+                ];
+              }
+              if (event.done) {
+                next.delete(event.requestId);
+                return [
+                  {
+                    _tag: "completed" as const,
+                    deferred: request.deferred,
+                    snapshots: appended.snapshots,
+                  },
+                  next,
+                ];
+              }
+              next.set(event.requestId, {
+                deferred: request.deferred,
+                snapshots: appended.snapshots,
+                retainedEntryCount: appended.retainedEntryCount,
+              });
+              return [{ _tag: "ignored" }, next];
+            },
+          );
+          if (completed._tag !== "ignored") {
+            if (completed._tag === "completed") {
+              yield* Deferred.succeed(completed.deferred, completed.snapshots);
+            } else {
+              yield* Deferred.fail(
+                completed.deferred,
+                new NativeTelemetryLimitExceeded({
+                  operation: "readHistory",
+                  resource: completed.resource,
+                  maxItems: completed.maxItems,
+                }),
+              );
             }
-            next.set(event.requestId, { deferred: request.deferred, snapshots });
-            return [Option.none(), next] as const;
-          });
-          if (Option.isSome(completed)) {
-            yield* Deferred.succeed(completed.value.deferred, completed.value.snapshots);
           }
         });
       case "error":
@@ -728,7 +884,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
             ...current,
             status: "unavailable" as const,
             hello: Option.none(),
-            lastError: Option.some(nativeTelemetrySupervisorFailureMessage(cause)),
+            lastError: Option.some("Resource monitor supervisor stopped unexpectedly."),
           })).pipe(
             Effect.andThen(publishHealth),
             Effect.andThen(
@@ -810,6 +966,13 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     processes,
   ) =>
     Effect.gen(function* () {
+      if (processes.length > RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT) {
+        return yield* new NativeTelemetryLimitExceeded({
+          operation: "setExternalProcesses",
+          resource: "external processes",
+          maxItems: RESOURCE_MONITOR_EXTERNAL_PROCESS_MAX_COUNT,
+        });
+      }
       yield* Ref.set(externalProcesses, [...processes]);
       const current = yield* Ref.get(state);
       if (!canCommandNativeTelemetrySidecar(current.status, Option.isSome(current.handle))) return;
@@ -821,63 +984,65 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     });
 
   const readHistory: NativeTelemetryClient["Service"]["readHistory"] = (windowMs) =>
-    Effect.gen(function* () {
-      const current = yield* Ref.get(state);
-      if (!canCommandNativeTelemetrySidecar(current.status, Option.isSome(current.handle))) {
-        return yield* new NativeTelemetryUnavailable({
-          reason: Option.getOrElse(current.lastError, () => "sidecar is not running"),
-        });
-      }
-      const requestId = yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError(
-          (cause) =>
-            new NativeTelemetryCommandFailed({
-              operation: "createHistoryRequestId",
-              cause,
-            }),
-        ),
-      );
-      const deferred = yield* Deferred.make<
-        ReadonlyArray<ResourceMonitorSnapshotEvent>,
-        NativeTelemetryClientError
-      >();
-      yield* Ref.update(pendingHistories, (pending) => {
-        const next = new Map(pending);
-        next.set(requestId, { deferred, snapshots: [] });
-        return next;
-      });
-      return yield* writeCommand(Option.getOrThrow(current.handle), {
-        version: RESOURCE_MONITOR_PROTOCOL_VERSION,
-        type: "readHistory",
-        requestId,
-        windowMs: Math.max(0, Math.round(windowMs)),
-      }).pipe(
-        Effect.andThen(
-          Deferred.await(deferred).pipe(
-            Effect.timeoutOption(HISTORY_REQUEST_TIMEOUT),
-            Effect.flatMap(
-              Option.match({
-                onNone: () =>
-                  Effect.fail(
-                    new NativeTelemetryRequestTimedOut({
-                      operation: "readHistory",
-                      timeoutMs: Duration.toMillis(HISTORY_REQUEST_TIMEOUT),
-                    }),
-                  ),
-                onSome: Effect.succeed,
+    historyMutex
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const current = yield* Ref.get(state);
+          if (!canCommandNativeTelemetrySidecar(current.status, Option.isSome(current.handle))) {
+            return yield* new NativeTelemetryUnavailable({
+              reason: Option.getOrElse(current.lastError, () => "sidecar is not running"),
+            });
+          }
+          const requestId = yield* crypto.randomUUIDv4.pipe(
+            Effect.mapError(
+              (cause) =>
+                new NativeTelemetryCommandFailed({
+                  operation: "createHistoryRequestId",
+                  cause,
+                }),
+            ),
+          );
+          const deferred = yield* Deferred.make<
+            ReadonlyArray<ResourceMonitorSnapshotEvent>,
+            NativeTelemetryClientError
+          >();
+          yield* Ref.update(pendingHistories, (pending) => {
+            const next = new Map(pending);
+            next.set(requestId, { deferred, snapshots: [], retainedEntryCount: 0 });
+            return next;
+          });
+          return yield* writeCommand(Option.getOrThrow(current.handle), {
+            version: RESOURCE_MONITOR_PROTOCOL_VERSION,
+            type: "readHistory",
+            requestId,
+            windowMs: Math.max(0, Math.round(windowMs)),
+          }).pipe(
+            Effect.andThen(Deferred.await(deferred)),
+            Effect.ensuring(
+              Ref.update(pendingHistories, (pending) => {
+                const next = new Map(pending);
+                next.delete(requestId);
+                return next;
               }),
             ),
-          ),
-        ),
-        Effect.ensuring(
-          Ref.update(pendingHistories, (pending) => {
-            const next = new Map(pending);
-            next.delete(requestId);
-            return next;
+          );
+        }),
+      )
+      .pipe(
+        Effect.timeoutOption(HISTORY_REQUEST_TIMEOUT),
+        Effect.flatMap(
+          Option.match({
+            onNone: () =>
+              Effect.fail(
+                new NativeTelemetryRequestTimedOut({
+                  operation: "readHistory",
+                  timeoutMs: Duration.toMillis(HISTORY_REQUEST_TIMEOUT),
+                }),
+              ),
+            onSome: Effect.succeed,
           }),
         ),
       );
-    });
 
   const sampleNow: NativeTelemetryClient["Service"]["sampleNow"] = Effect.gen(function* () {
     const current = yield* Ref.get(state);
@@ -907,16 +1072,68 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
       type: "sampleNow",
       requestId,
     }).pipe(
+      Effect.andThen(Deferred.await(deferred)),
+      Effect.ensuring(
+        Ref.update(pendingSamples, (pending) => {
+          const next = new Map(pending);
+          next.delete(requestId);
+          return next;
+        }),
+      ),
+    );
+  }).pipe(
+    Effect.timeoutOption(SAMPLE_REQUEST_TIMEOUT),
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.fail(
+            new NativeTelemetryRequestTimedOut({
+              operation: "sampleNow",
+              timeoutMs: Duration.toMillis(SAMPLE_REQUEST_TIMEOUT),
+            }),
+          ),
+        onSome: Effect.succeed,
+      }),
+    ),
+  );
+
+  const processTable: NativeTelemetryClient["Service"]["processTable"] = Effect.gen(function* () {
+    const current = yield* Ref.get(state);
+    if (!canCommandNativeTelemetrySidecar(current.status, Option.isSome(current.handle))) {
+      return yield* new NativeTelemetryUnavailable({
+        reason: Option.getOrElse(current.lastError, () => "sidecar is not running"),
+      });
+    }
+
+    const requestId = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(
+        (cause) => new NativeTelemetryCommandFailed({ operation: "createRequestId", cause }),
+      ),
+    );
+    const deferred = yield* Deferred.make<
+      ReadonlyArray<ResourceMonitorProcessTableEntry>,
+      NativeTelemetryClientError
+    >();
+    yield* Ref.update(pendingProcessTables, (pending) => {
+      const next = new Map(pending);
+      next.set(requestId, deferred);
+      return next;
+    });
+    return yield* writeCommand(Option.getOrThrow(current.handle), {
+      version: RESOURCE_MONITOR_PROTOCOL_VERSION,
+      type: "processTable",
+      requestId,
+    }).pipe(
       Effect.andThen(
         Deferred.await(deferred).pipe(
-          Effect.timeoutOption(SAMPLE_REQUEST_TIMEOUT),
+          Effect.timeoutOption(PROCESS_TABLE_REQUEST_TIMEOUT),
           Effect.flatMap(
             Option.match({
               onNone: () =>
                 Effect.fail(
                   new NativeTelemetryRequestTimedOut({
-                    operation: "sampleNow",
-                    timeoutMs: Duration.toMillis(SAMPLE_REQUEST_TIMEOUT),
+                    operation: "processTable",
+                    timeoutMs: Duration.toMillis(PROCESS_TABLE_REQUEST_TIMEOUT),
                   }),
                 ),
               onSome: Effect.succeed,
@@ -925,7 +1142,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
         ),
       ),
       Effect.ensuring(
-        Ref.update(pendingSamples, (pending) => {
+        Ref.update(pendingProcessTables, (pending) => {
           const next = new Map(pending);
           next.delete(requestId);
           return next;
@@ -955,6 +1172,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
     setExternalProcesses,
     setHostPowerState,
     sampleNow,
+    processTable,
     retry: Ref.get(state).pipe(
       Effect.flatMap((current) =>
         !canRequestNativeTelemetryRetry(current.status, Option.isSome(current.handle))
@@ -1006,6 +1224,11 @@ export const layerTest = (
       sampleNow: Effect.fail(
         new NativeTelemetryUnavailable({
           reason: "No resource monitor sample was configured for this test.",
+        }),
+      ),
+      processTable: Effect.fail(
+        new NativeTelemetryUnavailable({
+          reason: "No resource monitor process table was configured for this test.",
         }),
       ),
       retry: Effect.succeed(false),

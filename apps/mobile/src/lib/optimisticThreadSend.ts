@@ -4,12 +4,14 @@ import type {
   MessageId,
   ModelSelection,
   OrchestrationMessage,
+  OrchestrationSessionStatus,
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
   SkillId,
   ThreadId,
 } from "@t3tools/contracts";
+import { parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
 
 import { scopedThreadKey } from "./scopedEntities";
 import type { QueuedThreadMessage } from "../state/thread-outbox-model";
@@ -52,6 +54,7 @@ export function optimisticStartingThreadToShell(
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     enabledSkillIds: thread.enabledSkillIds ?? [],
+    pullRequests: [],
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     latestTurn: null,
@@ -89,6 +92,16 @@ export function optimisticStartingMessage(thread: OptimisticStartingThread): Orc
     createdAt: thread.message.createdAt,
     updatedAt: thread.message.createdAt,
   };
+}
+
+export function isOptimisticStartingThreadPending(
+  thread: OptimisticStartingThread | null,
+  sessionStatus: OrchestrationSessionStatus | null | undefined,
+): boolean {
+  return !(
+    thread === null ||
+    (sessionStatus === "error" && parseNativeResumeCommand(thread.message.text)?._tag === "Resume")
+  );
 }
 
 export function queuedThreadMessageToFeedMessage(

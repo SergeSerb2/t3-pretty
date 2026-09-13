@@ -1,6 +1,7 @@
 import type { SharePayload } from "expo-sharing";
 
 import { SerializedAsyncQueue } from "../../lib/serialized-async-queue";
+import { compareTimestamps } from "../../lib/time";
 import {
   hasIncomingShareContent,
   type IncomingShareDestination,
@@ -20,6 +21,8 @@ export interface IncomingShareInboxDependencies {
   }) => Promise<{
     readonly draft: IncomingShareDraft;
     readonly cleanup: () => Promise<void>;
+    /** Removes app-owned files created before the inbox write committed. */
+    readonly rollback?: () => Promise<void>;
   }>;
   readonly cleanupReplayedPayloads?: (payloads: ReadonlyArray<SharePayload>) => Promise<void>;
   readonly idForPayloads: (payloads: ReadonlyArray<SharePayload>) => Promise<string>;
@@ -33,7 +36,7 @@ export function sortAndDedupeIncomingShares(
 ): ReadonlyArray<IncomingShareDraft> {
   const ids = new Set<string>();
   return [...drafts]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .sort((left, right) => compareTimestamps(right.createdAt, left.createdAt))
     .filter((draft) => {
       if (ids.has(draft.id)) {
         return false;
@@ -116,7 +119,14 @@ export class IncomingShareInbox {
       // The durable inbox write is the transaction boundary. Never clear the
       // native handoff first: a process termination must leave one recoverable
       // copy on one side of the boundary.
-      await this.dependencies.writeDraft(draft);
+      try {
+        await this.dependencies.writeDraft(draft);
+      } catch (error) {
+        if (built.rollback) {
+          await this.cleanup(built.rollback);
+        }
+        throw error;
+      }
       await this.cleanup(built.cleanup);
       this.clearNativePayloads();
       return sortAndDedupeIncomingShares([draft, ...persisted]);
@@ -128,8 +138,12 @@ export class IncomingShareInbox {
       // The stable payload-derived id already coalesces retries of the same
       // native handoff. Payload equality cannot identify duplicate handoffs:
       // users may intentionally share identical content more than once.
+      // Finish every fallible read before crossing the durable deletion
+      // boundary. A read failure after removeDraft succeeds would otherwise
+      // reject the operation even though retrying cannot recover that item.
+      const persisted = await this.dependencies.loadDrafts();
       await this.dependencies.removeDraft(shareId);
-      return sortAndDedupeIncomingShares(await this.dependencies.loadDrafts());
+      return sortAndDedupeIncomingShares(persisted.filter((draft) => draft.id !== shareId));
     });
   }
 

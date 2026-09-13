@@ -1,4 +1,8 @@
-import type { RelayAgentActivityState, RelayDeliveryResult } from "@t3tools/contracts/relay";
+import {
+  RELAY_DEVICE_MAX_COUNT,
+  type RelayAgentActivityState,
+  type RelayDeliveryResult,
+} from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -7,7 +11,17 @@ import * as AgentActivityRows from "./AgentActivityRows.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as AgentActivityPublisher from "./AgentActivityPublisher.ts";
+import { FcmDeliveries } from "./FcmDeliveries.ts";
 import * as ApnsDeliveries from "./ApnsDeliveries.ts";
+
+const publisherLayer = AgentActivityPublisher.layer.pipe(
+  Layer.provide(
+    Layer.succeed(FcmDeliveries, {
+      enqueue: () => Effect.succeed(null),
+      process: () => Effect.void,
+    }),
+  ),
+);
 
 const state: RelayAgentActivityState = {
   environmentId: "env" as RelayAgentActivityState["environmentId"],
@@ -74,7 +88,6 @@ function makeEnvironmentLinks(
 ): EnvironmentLinks.EnvironmentLinks["Service"] {
   return {
     upsert: () => Effect.void,
-    listUsersForEnvironment: () => Effect.succeed(["dev:julius"]),
     listDeliveryUsersForEnvironment: () =>
       Effect.succeed([
         {
@@ -83,7 +96,6 @@ function makeEnvironmentLinks(
           liveActivitiesEnabled: true,
         },
       ]),
-    listPublicKeysForEnvironment: () => Effect.succeed([]),
     listForUser: () => Effect.succeed([]),
     getForUser: () => Effect.succeed(null),
     revokeForUser: () => Effect.succeed(false),
@@ -129,6 +141,64 @@ function makeApnsDeliveries(
 }
 
 describe("AgentActivityPublisher", () => {
+  it.effect("routes Android publication and registration replay to FCM alongside iOS", () => {
+    const android = { ...target("android"), platform: "android" as const, ios_major_version: null };
+    const ios = target("ios");
+    const fcmCalls: Array<Parameters<FcmDeliveries["Service"]["enqueue"]>[0]> = [];
+    const appleDevices: string[] = [];
+    return Effect.gen(function* () {
+      const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+      yield* publisher.publish({
+        environmentId: state.environmentId,
+        environmentPublicKey: "key",
+        threadId: state.threadId,
+        state,
+      });
+      yield* publisher.replayForLiveActivityRegistration({
+        userId: android.user_id,
+        deviceId: android.device_id,
+      });
+      expect(fcmCalls).toEqual([
+        { target: android, state },
+        { target: android, state: null, replay: true },
+      ]);
+      expect(appleDevices).toEqual(["ios"]);
+    }).pipe(
+      Effect.provide(
+        AgentActivityPublisher.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+              Layer.succeed(EnvironmentLinks.EnvironmentLinks, makeEnvironmentLinks()),
+              Layer.succeed(
+                LiveActivities.LiveActivities,
+                makeLiveActivities({ listTargets: () => Effect.succeed([android, ios]) }),
+              ),
+              Layer.succeed(
+                ApnsDeliveries.ApnsDeliveries,
+                makeApnsDeliveries({
+                  sendForTarget: (input) =>
+                    Effect.sync(() => {
+                      appleDevices.push(input.target.device_id);
+                      return null;
+                    }),
+                }),
+              ),
+              Layer.succeed(FcmDeliveries, {
+                enqueue: (input) =>
+                  Effect.sync(() => {
+                    fcmCalls.push(input);
+                    return null;
+                  }),
+                process: () => Effect.void,
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+
   it.effect("replays the latest aggregate when a Live Activity token registers", () => {
     const registeredTarget: LiveActivities.TargetRow = {
       ...target("device-1"),
@@ -157,7 +227,7 @@ describe("AgentActivityPublisher", () => {
         });
       }).pipe(
         Effect.provide(
-          AgentActivityPublisher.layer.pipe(
+          publisherLayer.pipe(
             Layer.provide(
               Layer.mergeAll(
                 Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
@@ -230,7 +300,7 @@ describe("AgentActivityPublisher", () => {
         });
       }).pipe(
         Effect.provide(
-          AgentActivityPublisher.layer.pipe(
+          publisherLayer.pipe(
             Layer.provide(
               Layer.mergeAll(
                 Layer.succeed(
@@ -300,6 +370,73 @@ describe("AgentActivityPublisher", () => {
     });
   });
 
+  it.effect("retains bounded diagnostics while still publishing every delivery user", () => {
+    const deliveryUsers = Array.from({ length: RELAY_DEVICE_MAX_COUNT + 1 }, (_, index) => ({
+      userId: `user-${index}`,
+      notificationsEnabled: false,
+      liveActivitiesEnabled: true,
+    }));
+    let sentCount = 0;
+
+    return Effect.gen(function* () {
+      const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+      const result = yield* publisher.publish({
+        environmentId: "env",
+        environmentPublicKey: "environment-public-key",
+        threadId: "thread",
+        state,
+      });
+
+      expect(sentCount).toBe(RELAY_DEVICE_MAX_COUNT + 1);
+      expect(result.deliveries).toHaveLength(RELAY_DEVICE_MAX_COUNT);
+    }).pipe(
+      Effect.provide(
+        AgentActivityPublisher.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+              Layer.succeed(
+                EnvironmentLinks.EnvironmentLinks,
+                makeEnvironmentLinks({
+                  listDeliveryUsersForEnvironment: () => Effect.succeed(deliveryUsers),
+                }),
+              ),
+              Layer.succeed(
+                LiveActivities.LiveActivities,
+                makeLiveActivities({
+                  listTargets: ({ userId }) =>
+                    Effect.succeed([{ ...target(userId), user_id: userId }]),
+                }),
+              ),
+              Layer.succeed(
+                ApnsDeliveries.ApnsDeliveries,
+                makeApnsDeliveries({
+                  sendForTarget: (input) =>
+                    Effect.sync(() => {
+                      sentCount += 1;
+                      return {
+                        deviceId: input.target.device_id,
+                        kind: "live_activity_update" as const,
+                        ok: true,
+                        queued: true,
+                        apnsStatus: null,
+                        apnsReason: null,
+                        apnsId: null,
+                      };
+                    }),
+                }),
+              ),
+              Layer.succeed(FcmDeliveries, {
+                enqueue: () => Effect.succeed(null),
+                process: () => Effect.void,
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+
   it.effect("ends the last remote Live Activity with a terminal content state", () => {
     const completedState: RelayAgentActivityState = {
       ...state,
@@ -324,7 +461,7 @@ describe("AgentActivityPublisher", () => {
         });
       }).pipe(
         Effect.provide(
-          AgentActivityPublisher.layer.pipe(
+          publisherLayer.pipe(
             Layer.provide(
               Layer.mergeAll(
                 Layer.succeed(
@@ -430,7 +567,7 @@ describe("AgentActivityPublisher", () => {
         });
       }).pipe(
         Effect.provide(
-          AgentActivityPublisher.layer.pipe(
+          publisherLayer.pipe(
             Layer.provide(
               Layer.mergeAll(
                 Layer.succeed(
@@ -517,7 +654,7 @@ describe("AgentActivityPublisher", () => {
   });
 
   it.effect(
-    "does not build Live Activity aggregates for links with Live Activities disabled",
+    "delivers notifications without querying activity rows when Live Activities are disabled",
     () => {
       const notificationState: RelayAgentActivityState = {
         ...state,
@@ -542,20 +679,14 @@ describe("AgentActivityPublisher", () => {
           });
         }).pipe(
           Effect.provide(
-            AgentActivityPublisher.layer.pipe(
+            publisherLayer.pipe(
               Layer.provide(
                 Layer.mergeAll(
                   Layer.succeed(
                     AgentActivityRows.AgentActivityRows,
                     makeAgentActivityRows({
                       listForUser: () =>
-                        Effect.succeed([
-                          {
-                            ...state,
-                            environmentId: "other-env" as RelayAgentActivityState["environmentId"],
-                            threadId: "other-thread" as RelayAgentActivityState["threadId"],
-                          },
-                        ]),
+                        Effect.die("Notification-only delivery must not read rows"),
                     }),
                   ),
                   Layer.succeed(

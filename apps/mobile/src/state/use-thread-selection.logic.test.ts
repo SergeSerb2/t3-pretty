@@ -61,6 +61,7 @@ function makeThread(
     ...input,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledAt ?? null,
+    pullRequests: input.pullRequests ?? [],
   };
 }
 
@@ -87,6 +88,7 @@ function makeShell(
     ...input,
     settledOverride: input.settledOverride ?? null,
     settledAt: input.settledAt ?? null,
+    pullRequests: input.pullRequests ?? [],
   };
 }
 
