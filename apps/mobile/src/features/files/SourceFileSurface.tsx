@@ -372,14 +372,6 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
       maxToRenderPerBatch={80}
       windowSize={12}
       onScrollToIndexFailed={handleScrollToIndexFailed}
-      refreshControl={
-        props.onRefresh ? (
-          <RefreshControl
-            refreshing={isPullRefreshing}
-            onRefresh={() => void handlePullToRefresh()}
-          />
-        ) : undefined
-      }
       {...(codeWordBreak
         ? {}
         : {
