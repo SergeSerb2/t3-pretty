@@ -52,6 +52,10 @@ export interface Preferences {
     readonly local?: boolean;
     readonly worktree?: boolean;
   };
+  readonly autoBabysitPullRequestByEnvMode?: {
+    readonly local?: boolean;
+    readonly worktree?: boolean;
+  };
   /** Newest app version whose What's New notes were shown — see
       features/whats-new. */
   readonly lastSeenChangelogVersion?: string;
@@ -143,6 +147,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingMode?: SidebarProjectGroupingMode;
     legacyThreadListEnabled?: boolean;
     autoCreatePullRequestByEnvMode?: {
+      local?: boolean;
+      worktree?: boolean;
+    };
+    autoBabysitPullRequestByEnvMode?: {
       local?: boolean;
       worktree?: boolean;
     };
@@ -245,6 +253,21 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     }
     if (Object.keys(byEnvMode).length > 0) {
       preferences.autoCreatePullRequestByEnvMode = byEnvMode;
+    }
+  }
+  if (
+    typeof parsed.autoBabysitPullRequestByEnvMode === "object" &&
+    parsed.autoBabysitPullRequestByEnvMode !== null
+  ) {
+    const byEnvMode: { local?: boolean; worktree?: boolean } = {};
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.local === "boolean") {
+      byEnvMode.local = parsed.autoBabysitPullRequestByEnvMode.local;
+    }
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.worktree === "boolean") {
+      byEnvMode.worktree = parsed.autoBabysitPullRequestByEnvMode.worktree;
+    }
+    if (Object.keys(byEnvMode).length > 0) {
+      preferences.autoBabysitPullRequestByEnvMode = byEnvMode;
     }
   }
   if (typeof parsed.lastSeenChangelogVersion === "string") {

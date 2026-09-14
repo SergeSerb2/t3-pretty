@@ -27,12 +27,26 @@ export const AUTO_CREATE_PULL_REQUEST_DEFAULTS: Record<AutoCreatePullRequestEnvM
   worktree: true,
 };
 
+/** Babysit (fix reviews + auto-merge) is opt-in in every workspace mode. */
+export const AUTO_BABYSIT_PULL_REQUEST_DEFAULTS: Record<AutoCreatePullRequestEnvMode, boolean> = {
+  local: false,
+  worktree: false,
+};
+
 export function resolveAutoCreatePullRequest(
   byEnvMode: Partial<Record<AutoCreatePullRequestEnvMode, boolean | undefined>> | null | undefined,
   envMode: AutoCreatePullRequestEnvMode,
 ): boolean {
   const stored = byEnvMode?.[envMode];
   return typeof stored === "boolean" ? stored : AUTO_CREATE_PULL_REQUEST_DEFAULTS[envMode];
+}
+
+export function resolveAutoBabysitPullRequest(
+  byEnvMode: Partial<Record<AutoCreatePullRequestEnvMode, boolean | undefined>> | null | undefined,
+  envMode: AutoCreatePullRequestEnvMode,
+): boolean {
+  const stored = byEnvMode?.[envMode];
+  return typeof stored === "boolean" ? stored : AUTO_BABYSIT_PULL_REQUEST_DEFAULTS[envMode];
 }
 
 /** Markers come from the hidden-block registry so the shared stripper knows them. */
@@ -43,7 +57,10 @@ export const CREATE_PULL_REQUEST_CLOSE_MARKER =
 const OPEN_TAG = CREATE_PULL_REQUEST_OPEN_MARKER;
 const CLOSE_TAG = CREATE_PULL_REQUEST_CLOSE_MARKER;
 
-function buildGuidelines(model: string | null | undefined): string {
+const BABYSIT_PULL_REQUEST_GUIDELINE_MARKER =
+  "Watch Auto Review, review comments, and required checks.";
+
+function buildGuidelines(model: string | null | undefined, babysitPullRequest: boolean): string {
   const selectedModel = model?.trim();
   return `Guidelines:
 - If the current branch IS the repository's default branch (e.g. main), first create a feature branch for this work — never commit or push directly to the default branch.
@@ -57,10 +74,20 @@ function buildGuidelines(model: string | null | undefined): string {
     selectedModel
       ? `\n- T3 Code recorded the current thread's selected model as ${JSON.stringify(selectedModel)}. If the PR body identifies the model, copy this exact identifier; do not infer or substitute a different model or version.`
       : ""
+  }${
+    babysitPullRequest
+      ? `
+- After the PR is open, stay with it until it can merge:
+  - ${BABYSIT_PULL_REQUEST_GUIDELINE_MARKER}
+  - Apply real review findings with the smallest safe fix and push.
+  - Dismiss invalid or out-of-scope review comments with a concrete reason.
+  - When checks are green and the PR is mergeable, enable auto-merge if the host can wait on remaining checks; otherwise merge it.
+  - If you are blocked on a human decision (security, auth, billing, or conflicting intent), stop and report instead of guessing.`
+      : ""
   }`;
 }
 
-const GUIDELINES = buildGuidelines(undefined);
+const GUIDELINES = buildGuidelines(undefined, false);
 
 /** Sent on its own when the user asks for a PR without other work. */
 export const CREATE_PULL_REQUEST_PROMPT = `Please create a pull request for the work in this session.
@@ -72,13 +99,16 @@ ${GUIDELINES}`;
  * blank lines separate it from the user's own text; the marker tags let the
  * timeline strip it before rendering the bubble.
  */
-export function buildCreatePullRequestMessageSuffix(model?: string | null | undefined): string {
+export function buildCreatePullRequestMessageSuffix(
+  model?: string | null | undefined,
+  options?: { readonly babysitPullRequest?: boolean },
+): string {
   return `
 
 ${OPEN_TAG}
 When you finish the work above, also create a pull request for it.
 
-${buildGuidelines(model)}
+${buildGuidelines(model, options?.babysitPullRequest === true)}
 ${CLOSE_TAG}`;
 }
 
@@ -99,6 +129,7 @@ export function applyCreatePullRequestSuffix(input: {
   readonly autoCreatePullRequest: boolean;
   readonly threadHasStarted: boolean;
   readonly model?: string | null | undefined;
+  readonly babysitPullRequest?: boolean;
 }): string {
   if (
     !input.autoCreatePullRequest ||
@@ -108,7 +139,12 @@ export function applyCreatePullRequestSuffix(input: {
   ) {
     return input.text;
   }
-  return input.text + buildCreatePullRequestMessageSuffix(input.model);
+  return (
+    input.text +
+    buildCreatePullRequestMessageSuffix(input.model, {
+      babysitPullRequest: input.babysitPullRequest === true,
+    })
+  );
 }
 
 /**
@@ -117,6 +153,11 @@ export function applyCreatePullRequestSuffix(input: {
  */
 export function hasCreatePullRequestSuffix(text: string): boolean {
   return hasHiddenInstructionSuffix(text, CREATE_PULL_REQUEST_TAG);
+}
+
+/** True when the trailing auto-PR block also asked the agent to babysit reviews. */
+export function hasBabysitPullRequestSuffix(text: string): boolean {
+  return hasCreatePullRequestSuffix(text) && text.includes(BABYSIT_PULL_REQUEST_GUIDELINE_MARKER);
 }
 
 /**

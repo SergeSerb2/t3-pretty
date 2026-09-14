@@ -1207,6 +1207,7 @@ export function NewTaskDraftScreen(props: {
       !modelSelection ||
       initialMessageText.length === 0 ||
       flow.submitting ||
+      !flow.autoCreatePullRequestSettled ||
       (workspaceMode === "worktree" && !selectedBranchName)
     ) {
       return;
@@ -1353,6 +1354,7 @@ export function NewTaskDraftScreen(props: {
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
+    flow.autoCreatePullRequestSettled &&
     pendingPastedTextAttachmentCount === 0 &&
     !voiceInput.blocksSubmission &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
@@ -1674,6 +1676,40 @@ export function NewTaskDraftScreen(props: {
                         onPress={settingsSheetPresentation.open}
                       />
                     </View>
+                    {flow.canToggleAutoCreatePullRequest ? (
+                      <ComposerInlineControl
+                        accessibilityHint="Asks the agent to open a pull request after finishing this task"
+                        accessibilityLabel={
+                          flow.autoCreatePullRequest
+                            ? "Create PR when done: on"
+                            : "Create PR when done: off"
+                        }
+                        disabled={isComposerInteractionLocked}
+                        emphasized={flow.autoCreatePullRequest}
+                        icon="arrow.triangle.pull"
+                        label={flow.babysitPullRequest ? "PR+" : "PR"}
+                        onPress={() => flow.setAutoCreatePullRequest(!flow.autoCreatePullRequest)}
+                        selected={flow.autoCreatePullRequest}
+                        showChevron={false}
+                      />
+                    ) : null}
+                    {flow.canToggleAutoCreatePullRequest && flow.autoCreatePullRequest ? (
+                      <ComposerInlineControl
+                        accessibilityHint="Fixes Auto Review comments and merges the PR when checks go green"
+                        accessibilityLabel={
+                          flow.babysitPullRequest
+                            ? "Fix reviews and auto-merge: on"
+                            : "Fix reviews and auto-merge: off"
+                        }
+                        disabled={isComposerInteractionLocked}
+                        emphasized={flow.babysitPullRequest}
+                        icon="checkmark.circle"
+                        label="Merge"
+                        onPress={() => flow.setBabysitPullRequest(!flow.babysitPullRequest)}
+                        selected={flow.babysitPullRequest}
+                        showChevron={false}
+                      />
+                    ) : null}
                     {flow.planModeEnabled ? (
                       <ComposerInlineControl
                         accessibilityHint={`Switches to ${flow.interactionMode === "plan" ? "Build" : "Plan"} mode`}
