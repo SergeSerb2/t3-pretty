@@ -3343,3 +3343,73 @@
 - None. The resolver did not omit any parent change to protect T3 Pretty.
 - `web-typecheck` failed after merging `v0.0.41-nightly.20260914.1707`; repaired with `gpt-5.6-sol`: The keyboard resize path now preserves T3 Pretty’s behavior while using the parent’s keyed width-state architecture, resolving the sole error-level typecheck diagnostic.
   - edited `apps/web/src/hooks/useResizableWidth.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260914.1722`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260914.1707`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/app/DesktopConfig.ts` — Preserved T3 Pretty's use of ADVERTISED_ENDPOINT_URL_MAX_LENGTH to enforce bounded desktop HTTPS endpoint inputs.
+- `apps/desktop/src/app/DesktopConfig.ts` — Preserved the fork's bounded comma-separated endpoint parsing and its item, segment, and per-endpoint length limits.
+- `apps/desktop/src/updates/releaseNotes.ts` — Preserved T3 Pretty's cap on raw release-note candidates, preventing unbounded processing of malformed or oversized updater input.
+- `apps/desktop/src/updates/releaseNotes.ts` — Preserved runtime validation of each unknown release-note candidate before accessing its fields.
+- `apps/desktop/src/updates/releaseNotes.ts` — Preserved truncation of displayed release version strings to MAX_RELEASE_NOTE_VERSION_LENGTH.
+- `apps/desktop/src/updates/releaseNotes.ts` — Preserved the existing bounded item extraction and normalized release-note output behavior.
+- `apps/server/src/http.ts` — Preserved the OTLP request-body byte limit, including explicit parse-error reporting when the configured maximum is exceeded.
+- `apps/server/src/http.ts` — Preserved extraction of resourceSpans count so browser OTLP decode failures retain useful diagnostics.
+- `apps/server/src/http.ts` — Preserved T3 Pretty's explicit JSON decoding path and mapping of body decoding failures into HttpServerError.RequestParseError.
+- `apps/server/src/provider/providerSnapshot.test.ts` — Preserved T3 Pretty's NATIVE_RESUME_SLASH_COMMAND import and the native resume capability test coverage that consumes it.
+- `apps/server/src/provider/providerSnapshot.ts` — Provider command result diagnostics continue to prioritize timeout, trimmed stderr, trimmed stdout, and nonzero exit-code details.
+- `apps/server/src/provider/providerSnapshot.ts` — Authentication detection continues to support nested provider response shapes, arrays, alternate authentication field names, cycle protection, and a bounded traversal budget.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the useEffect and useMemo imports required by T3 Pretty's extended pull-request summary behavior.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty's section-heading action design: controls remain siblings of the collapse trigger to avoid nested buttons and are shown only while the section is open.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Restores the saved shown-comment count when reopening the pull-request panel and reports subsequent pagination through the existing view snapshot flow.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Scopes pagination to the full pull-request target identity rather than only its URL, preventing comment-window state from leaking between pull requests.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Keeps Origin Grok auto-review summaries hidden by default, supports the persisted reveal preference, counts those summaries separately, and filters the displayed conversation accordingly.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved the `data-pull-request-tab-scroll="summary"` hook used to identify and restore the summary tab's independent scroll state.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserved T3 Pretty's `py-3` section spacing and removal of the generic `space-y-2` child gap, retaining the fork's authoritative pull-request summary visual layout.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Description section expansion is restored from T3 Pretty’s saved view state and changes continue to be remembered.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Checks section retains its visible check count, saved expansion state, and T3 Pretty’s open-by-default fallback.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Existing pull-request navigation and return-state behavior is preserved through the section-state callbacks.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The destination-aware FixFindingButton remains available for failing checks, including choosing the current thread versus the configured alternate thread.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Current-thread eligibility, alternate-thread labeling, per-finding pending state, and global pending-action disabling are preserved.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The keyedChecks rendering path is retained so repeated or otherwise colliding check runs receive the fork's prepared stable keys.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — T3 Pretty's compact checks-list spacing and presentation are preserved.
+- `packages/contracts/src/keybindings.ts` — Preserved the fork-specific `composer.dictation` command in the shared keybinding contract so Groq voice-input shortcuts continue to serialize across connected hosts.
+
+## Parent changes integrated at conflict boundaries
+
+- `apps/desktop/src/app/DesktopConfig.ts` — Integrated the parent observability schema imports for parsing T3CODE_OTLP_HEADERS and T3CODE_OTLP_PROTOCOL.
+- `apps/desktop/src/updates/releaseNotes.ts` — Integrated parent channel filtering so only release notes whose versions resolve to the active DesktopUpdateChannel are shown.
+- `apps/desktop/src/updates/releaseNotes.ts` — Applied channel filtering after candidate validation within the fork's defensive one-pass implementation.
+- `apps/server/src/http.ts` — Integrated the parent OtlpSerialization service acquisition used by the downstream serialization.traces(bodyJson) export path.
+- `apps/server/src/provider/providerSnapshot.test.ts` — Integrated the parent parseGenericCliVersion import required by the upstream CLI version parsing tests.
+- `apps/server/src/provider/providerSnapshot.ts` — Added the parent documentation clarifying that parseGenericCliVersion returns the first semantic version, accepts a leading "v", and returns null when no version is found.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the parent's removal of the obsolete useId React import while retaining the shared useRef, useState, and ReactNode imports.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Integrated the optional keepMounted prop declaration, matching the existing destructured default and forwarding it to CollapsiblePanel.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Retains upstream's removal of the obsolete `checksId`, `expandedChecksUrl`, and `showChecks` local state.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Preserves upstream's intent that changing pull-request targets resets the visible comment window, adapted to T3 Pretty's stronger `targetKey` identity and restored-view support.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Description and Checks sections are keyed by the pull-request URL so their component state is scoped to the active pull request.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The Description section remains mounted while collapsed, preserving its child state and avoiding unnecessary teardown.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Checks remain rendered directly inside the shared Section component rather than retaining the obsolete nested Checks expander from the merge base.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — All reported checks are rendered with status icons, status labels, optional host links, failure detection, hover styling, and fix-action gating.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent intent to avoid rendering faults for repeated check runs is retained through T3 Pretty's keyedChecks abstraction rather than the parent's inline positional key.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.host`.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.effort`.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.mode`.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.workspace`.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.previousWorktree`.
+- `packages/contracts/src/keybindings.ts` — Added upstream keybinding contract support for `composer.branch`.
+
+## Parent changes intentionally omitted
+
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Parent-side removal of the useEffect and useMemo imports.. Reason: T3 Pretty's fork-specific implementation in this component still requires these hooks; removing them would break type-checking and regress the fork's pull-request summary behavior.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Upstream's compact metadata-section layout using `pt-2.5 pb-1` while retaining `space-y-2`.. Reason: This directly conflicts with T3 Pretty's intentional summary-tab visual spacing (`py-3` with no generic child gap). The fork's visual design is authoritative, so only this styling portion is omitted.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — Make the Checks section collapsed by default with `defaultOpen={false}`.. Reason: This directly conflicts with T3 Pretty’s authoritative remembered-section behavior and its open-by-default fallback. The smallest omission is the parent’s fallback value; URL-keyed state scoping is still integrated.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent's inline detail.checks.map call with an index/name/URL key and its gap-2 row spacing.. Reason: T3 Pretty already routes checks through keyedChecks to protect repeated runs and uses tighter spacing for its destination-aware action; replacing that path would regress the fork's reliability and presentation.
+- `apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx` — The parent's generic HammerIcon Button that immediately invokes onFixFinding(finding).. Reason: T3 Pretty's callback and UX support explicit fix destinations. The generic one-click control would remove the fork's current-thread/other-thread choice and is replaced by FixFindingButton while preserving the parent's failing-check action capability.
