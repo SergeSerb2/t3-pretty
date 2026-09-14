@@ -222,6 +222,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const [groupDisplayStates, setGroupDisplayStates] = useState<
     ReadonlyMap<string, HomeGroupDisplayState>
   >(() => new Map());
+  const [collapsedPrNests, setCollapsedPrNests] = useState<ReadonlySet<string>>(() => new Set());
   const isFocused = useIsFocused();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const threadListV2Enabled = useThreadListV2Enabled();
@@ -433,8 +434,15 @@ export function HomeScreen(props: HomeScreenProps) {
             groups: projectGroups,
             displayStates: effectiveGroupDisplayStates,
             showAllThreads: hasSearchQuery,
+            isPrNestExpanded: (key) => !collapsedPrNests.has(key),
           }),
-    [threadListV2Enabled, projectGroups, effectiveGroupDisplayStates, hasSearchQuery],
+    [
+      threadListV2Enabled,
+      projectGroups,
+      effectiveGroupDisplayStates,
+      hasSearchQuery,
+      collapsedPrNests,
+    ],
   );
 
   const projectByKey = useMemo(() => {
@@ -726,6 +734,7 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: null,
+      isPrNestExpanded: (key) => !collapsedPrNests.has(key),
     });
   }, [
     pendingOrder,
@@ -743,6 +752,7 @@ export function HomeScreen(props: HomeScreenProps) {
     matchedThreadKeys,
     threadListV2Enabled,
     v2ScopedProjectGroup,
+    collapsedPrNests,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -864,6 +874,20 @@ export function HomeScreen(props: HomeScreenProps) {
           projectTitle={v2ProjectTitleByProjectKey.get(
             scopedProjectKey(thread.environmentId, thread.projectId),
           )}
+          nest={item.item.nest}
+          childCount={item.item.childCount}
+          pullRequestKey={item.item.pullRequestKey}
+          nestExpanded={
+            item.item.pullRequestKey == null || !collapsedPrNests.has(item.item.pullRequestKey)
+          }
+          onToggleNest={(key) => {
+            setCollapsedPrNests((current) => {
+              const next = new Set(current);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
+              return next;
+            });
+          }}
           providerInstance={resolveThreadProviderInstance(serverConfigs, thread)}
           environmentLabel={
             Object.keys(props.savedConnectionsById).length > 1
@@ -941,6 +965,7 @@ export function HomeScreen(props: HomeScreenProps) {
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
       toggleSettledShelf,
+      collapsedPrNests,
       toggleSnoozedShelf,
       v2ProjectTitleByProjectKey,
       props.searchQuery,
@@ -962,8 +987,10 @@ export function HomeScreen(props: HomeScreenProps) {
       searchQuery: props.searchQuery,
       snoozePresetMinute: nowMinute,
       threadSearchMatchByKey,
+      collapsedPrNests,
     }),
     [
+      collapsedPrNests,
       projectByKey,
       props.searchQuery,
       props.savedConnectionsById,
@@ -979,8 +1006,9 @@ export function HomeScreen(props: HomeScreenProps) {
       savedConnectionsById: props.savedConnectionsById,
       searchQuery: props.searchQuery,
       threadSearchMatchByKey,
+      collapsedPrNests,
     }),
-    [props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
+    [collapsedPrNests, props.savedConnectionsById, props.searchQuery, threadSearchMatchByKey],
   );
 
   const renderItem = useCallback(
@@ -1002,6 +1030,7 @@ export function HomeScreen(props: HomeScreenProps) {
               onNewThread={props.onNewThreadInProject}
               project={item.group.representative}
               threadCount={item.group.threads.length + item.group.pendingTasks.length}
+              threads={item.group.threads}
               title={item.group.title}
             />
           );
@@ -1044,6 +1073,20 @@ export function HomeScreen(props: HomeScreenProps) {
               onRegenerateThreadTitle={handleRegenerateThreadTitle}
               onRenameThread={handleRenameThread}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              nest={item.nest}
+              childCount={item.childCount}
+              pullRequestKey={item.pullRequestKey}
+              nestExpanded={
+                item.pullRequestKey == null || !collapsedPrNests.has(item.pullRequestKey)
+              }
+              onToggleNest={(key) => {
+                setCollapsedPrNests((current) => {
+                  const next = new Set(current);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }}
               onSelectThread={props.onSelectThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1081,6 +1124,7 @@ export function HomeScreen(props: HomeScreenProps) {
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
       updateGroupDisplay,
+      collapsedPrNests,
     ],
   );
 

@@ -29,7 +29,7 @@ import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { THREAD_RENAME_MENU_ACTION } from "./thread-rename";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
 import { QueuedMessageIcon } from "./queued-message-icon";
-import { resolveThreadStatus } from "./threadPresentation";
+import { resolveHighestThreadStatus, resolveThreadStatus } from "./threadPresentation";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -101,6 +101,7 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
   /** Project a quick new thread should target; null hides the button. */
   readonly newThreadTarget?: EnvironmentProject | null;
   readonly onNewThread?: (project: EnvironmentProject) => void;
+  readonly threads?: readonly EnvironmentThreadShell[];
 }) {
   const { groupKey, onGroupAction, onNewThread } = props;
   const newThreadTarget = props.newThreadTarget ?? null;
@@ -115,6 +116,8 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
     }
   }, [newThreadTarget, onNewThread]);
   const showNewThreadButton = onNewThread !== undefined && newThreadTarget !== null;
+  const collapsedStatus =
+    props.collapsed && props.threads ? resolveHighestThreadStatus(props.threads) : null;
 
   // The new-thread button is a SIBLING of the collapse toggle, not a child:
   // nested touchables are unreachable to VoiceOver/TalkBack (the parent
@@ -164,6 +167,18 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
         >
           {props.title}
         </Text>
+        {collapsedStatus ? (
+          <Text
+            className={
+              compact
+                ? "text-sm font-t3-medium text-foreground-secondary"
+                : "text-xs font-t3-medium text-foreground-secondary"
+            }
+            numberOfLines={1}
+          >
+            {collapsedStatus.label}
+          </Text>
+        ) : null}
         <Text
           className={
             compact
@@ -462,6 +477,11 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
   readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
+  readonly nest?: "parent" | "child" | null;
+  readonly childCount?: number;
+  readonly nestExpanded?: boolean;
+  readonly onToggleNest?: (pullRequestKey: string) => void;
+  readonly pullRequestKey?: string | null;
   readonly titleRegenerationSupported: boolean;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
@@ -691,9 +711,36 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           onSelectThread(thread);
         }}
       >
-        <View className="pr-[18px] pt-[10px]" style={{ paddingLeft: THREAD_LIST_COMPACT_INSET }}>
+        <View
+          className="pr-[18px] pt-[10px]"
+          style={{
+            paddingLeft: THREAD_LIST_COMPACT_INSET + (props.nest === "child" ? 16 : 0),
+          }}
+        >
           <View className={cn("gap-[3px] pb-[10px]", !props.isLast && "border-b border-separator")}>
             <View className="flex-row items-center justify-between gap-2">
+              {props.nest === "parent" && (props.childCount ?? 0) > 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: props.nestExpanded !== false }}
+                  accessibilityLabel={
+                    props.nestExpanded === false ? "Show related threads" : "Hide related threads"
+                  }
+                  hitSlop={8}
+                  onPress={() => {
+                    if (props.pullRequestKey) props.onToggleNest?.(props.pullRequestKey);
+                  }}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+                >
+                  <SymbolView
+                    name={props.nestExpanded === false ? "chevron.right" : "chevron.down"}
+                    size={compact ? 14 : 12}
+                    tintColorClassName="accent-foreground-muted"
+                    type="monochrome"
+                    weight="medium"
+                  />
+                </Pressable>
+              ) : null}
               <Text
                 className={cn(
                   "flex-1 text-lg font-t3-bold",
@@ -767,11 +814,34 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           minHeight: 64,
           justifyContent: "center",
           paddingHorizontal: 12,
+          paddingLeft: props.nest === "child" ? 28 : 12,
           paddingVertical: 10,
         })}
       >
         <View className="gap-[3px]">
           <View className="flex-row items-center justify-between gap-2">
+            {props.nest === "parent" && (props.childCount ?? 0) > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: props.nestExpanded !== false }}
+                accessibilityLabel={
+                  props.nestExpanded === false ? "Show related threads" : "Hide related threads"
+                }
+                hitSlop={8}
+                onPress={() => {
+                  if (props.pullRequestKey) props.onToggleNest?.(props.pullRequestKey);
+                }}
+                style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+              >
+                <SymbolView
+                  name={props.nestExpanded === false ? "chevron.right" : "chevron.down"}
+                  size={12}
+                  tintColorClassName="accent-foreground-muted"
+                  type="monochrome"
+                  weight="medium"
+                />
+              </Pressable>
+            ) : null}
             <Text
               className={cn(
                 "flex-1 text-base font-t3-medium",

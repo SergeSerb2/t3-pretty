@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { nestThreadsByPullRequest } from "@t3tools/shared/threadPullRequestNesting";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import type { HomeThreadGroup } from "./homeThreadList";
@@ -32,6 +33,9 @@ export interface HomeThreadListItem {
   readonly key: string;
   readonly thread: EnvironmentThreadShell;
   readonly isLast: boolean;
+  readonly nest: "parent" | "child" | null;
+  readonly childCount: number;
+  readonly pullRequestKey: string | null;
 }
 
 export interface HomePendingTaskListItem {
@@ -106,7 +110,9 @@ export function homeListItemsAreEqual(previous: HomeListItem, item: HomeListItem
       return (
         previous.type === "thread" &&
         previous.thread === item.thread &&
-        previous.isLast === item.isLast
+        previous.isLast === item.isLast &&
+        previous.nest === item.nest &&
+        previous.childCount === item.childCount
       );
     case "show-more":
       return (
@@ -125,6 +131,7 @@ export function buildHomeListLayout(input: {
    * When searching, pagination is suspended so every match stays visible.
    */
   readonly showAllThreads?: boolean;
+  readonly isPrNestExpanded?: (pullRequestKey: string) => boolean;
 }): HomeListLayout {
   const items: HomeListItem[] = [];
   const stickyHeaderIndices: number[] = [];
@@ -146,7 +153,34 @@ export function buildHomeListLayout(input: {
       continue;
     }
 
-    const totalCount = group.threads.length;
+    const nestedThreads: Array<{
+      readonly thread: EnvironmentThreadShell;
+      readonly nest: "parent" | "child" | null;
+      readonly childCount: number;
+      readonly pullRequestKey: string | null;
+    }> = [];
+    for (const nest of nestThreadsByPullRequest(group.threads)) {
+      nestedThreads.push({
+        thread: nest.parent,
+        nest: nest.children.length > 0 ? "parent" : null,
+        childCount: nest.children.length,
+        pullRequestKey: nest.pullRequestKey,
+      });
+      const nestExpanded =
+        nest.pullRequestKey === null ||
+        input.showAllThreads === true ||
+        (input.isPrNestExpanded?.(nest.pullRequestKey) ?? true);
+      if (!nestExpanded) continue;
+      for (const child of nest.children) {
+        nestedThreads.push({
+          thread: child,
+          nest: "child",
+          childCount: 0,
+          pullRequestKey: nest.pullRequestKey,
+        });
+      }
+    }
+    const totalCount = nestedThreads.length;
     // Default to the group's recent-activity window (last few days, or a small
     // fallback for stale projects), capped at the initial page size. Until the
     // user taps "Show more", older threads stay hidden to save vertical space;
@@ -165,7 +199,7 @@ export function buildHomeListLayout(input: {
             : baselineCount,
           totalCount,
         );
-    const visibleThreads = group.threads.slice(0, visibleCount);
+    const visibleThreads = nestedThreads.slice(0, visibleCount);
     const hiddenCount = totalCount - visibleCount;
     const hasShowMoreRow = !input.showAllThreads && totalCount > baselineCount;
 
@@ -182,11 +216,14 @@ export function buildHomeListLayout(input: {
       });
     }
 
-    for (const [threadIndex, thread] of visibleThreads.entries()) {
+    for (const [threadIndex, entry] of visibleThreads.entries()) {
       items.push({
         type: "thread",
-        key: `thread:${thread.environmentId}:${thread.id}`,
-        thread,
+        key: `thread:${entry.thread.environmentId}:${entry.thread.id}`,
+        thread: entry.thread,
+        nest: entry.nest,
+        childCount: entry.childCount,
+        pullRequestKey: entry.pullRequestKey,
         isLast: threadIndex === visibleThreads.length - 1 && !hasShowMoreRow,
       });
     }

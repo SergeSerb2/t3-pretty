@@ -398,6 +398,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pinningSupported: boolean;
   /** False on servers that predate thread title regeneration. */
   readonly titleRegenerationSupported: boolean;
+  readonly nest?: "parent" | "child" | null;
+  readonly childCount?: number;
+  readonly nestExpanded?: boolean;
+  readonly pullRequestKey?: string | null;
+  readonly onToggleNest?: (pullRequestKey: string) => void;
   /** Server supports reordering this card's section. */
   readonly reorderSupported?: boolean;
   readonly onMoveThread?: (
@@ -733,9 +738,33 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   // The sidebar pane fills selected rows with the theme's message surface, so
   // every piece of row text must use that surface's paired foreground.
+  const nestToggle =
+    props.nest === "parent" && (props.childCount ?? 0) > 0 ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: props.nestExpanded !== false }}
+        accessibilityLabel={
+          props.nestExpanded === false ? "Show related threads" : "Hide related threads"
+        }
+        hitSlop={8}
+        onPress={() => {
+          if (props.pullRequestKey) props.onToggleNest?.(props.pullRequestKey);
+        }}
+        style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
+      >
+        <SymbolView
+          name={props.nestExpanded === false ? "chevron.right" : "chevron.down"}
+          size={14}
+          tintColorClassName="accent-foreground-muted"
+          type="monochrome"
+          weight="medium"
+        />
+      </Pressable>
+    ) : null;
   const cardContent = (
     <>
       <View className="flex-row items-center gap-1.5">
+        {nestToggle}
         {props.project ? (
           <ProjectFavicon
             environmentId={thread.environmentId}
@@ -965,14 +994,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }
       >
         {sidebarPane ? (
-          cardContent
+          <View style={props.nest === "child" ? { paddingLeft: 16 } : undefined}>
+            {cardContent}
+          </View>
         ) : (
           /* Flat native list rows: no tonal containers — colored status
              labels and text hierarchy carry state, an inset hairline
              separates rows. The opaque screen background stays so swipe
              actions reveal behind the row. */
           <View className={materialYouStyleLayoutActive ? undefined : "bg-screen"}>
-            <View className="px-5 py-2.5">{cardContent}</View>
+            <View
+              className="px-5 py-2.5"
+              style={props.nest === "child" ? { paddingLeft: 36 } : undefined}
+            >
+              {cardContent}
+            </View>
             {props.showTrailingDivider !== false ? (
               <View className="ml-5 h-px bg-border-subtle" />
             ) : null}
@@ -1013,7 +1049,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             "min-h-[44px] flex-row items-center gap-2.5 py-2",
             sidebarPane ? "px-3" : "px-5",
           )}
+          style={props.nest === "child" ? { paddingLeft: sidebarPane ? 28 : 36 } : undefined}
         >
+          {nestToggle}
           {props.project ? (
             <View className="opacity-40">
               <ProjectFavicon

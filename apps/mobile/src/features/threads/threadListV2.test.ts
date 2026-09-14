@@ -468,6 +468,47 @@ describe("getThreadListV2OrderedSection", () => {
 });
 
 describe("buildThreadListV2Items", () => {
+  it("nests later PR threads under the first-linked parent", () => {
+    const pullRequest = {
+      host: "github.com",
+      repository: "org/repo",
+      number: 4,
+      url: "https://github.com/org/repo/pull/4",
+      source: "manual" as const,
+      snapshot: null,
+      stack: null,
+    };
+    const parent = makeThread({
+      id: ThreadId.make("parent"),
+      title: "Parent",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      pullRequests: [{ ...pullRequest, linkedAt: "2026-03-01T00:00:00.000Z" }],
+    });
+    const child = makeThread({
+      id: ThreadId.make("child"),
+      title: "Child",
+      createdAt: "2026-03-02T00:00:00.000Z",
+      pullRequests: [{ ...pullRequest, linkedAt: "2026-03-02T00:00:00.000Z" }],
+    });
+    const expanded = buildThreadListV2Items({
+      threads: [parent, child],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+    });
+    expect(expanded.items.map((item) => item.thread.id)).toEqual([parent.id, child.id]);
+    expect(expanded.items[0]).toMatchObject({ nest: "parent", childCount: 1 });
+
+    const collapsed = buildThreadListV2Items({
+      threads: [parent, child],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      isPrNestExpanded: () => false,
+    });
+    expect(collapsed.items.map((item) => item.thread.id)).toEqual([parent.id]);
+  });
+
   it("ignores the previous pull request state after a different pull request is linked", () => {
     const thread = makeThread({
       id: ThreadId.make("linked"),

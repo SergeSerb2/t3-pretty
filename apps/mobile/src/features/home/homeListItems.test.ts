@@ -241,4 +241,63 @@ describe("buildHomeListLayout", () => {
     expect(layout.stickyHeaderIndices).toEqual([0, 8]);
     expect(layout.items[8]).toMatchObject({ type: "header", isFirst: false });
   });
+
+  it("nests later PR threads under the first-linked parent", () => {
+    const project = makeProject("alpha", "alpha");
+    const parent = {
+      ...makeThread("parent", project.id),
+      createdAt: "2026-03-01T00:00:00.000Z",
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "org/repo",
+          number: 4,
+          url: "https://github.com/org/repo/pull/4",
+          source: "manual" as const,
+          linkedAt: "2026-03-01T00:00:00.000Z",
+          snapshot: null,
+          stack: null,
+        },
+      ],
+    };
+    const child = {
+      ...makeThread("child", project.id),
+      createdAt: "2026-03-02T00:00:00.000Z",
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "org/repo",
+          number: 4,
+          url: "https://github.com/org/repo/pull/4",
+          source: "manual" as const,
+          linkedAt: "2026-03-02T00:00:00.000Z",
+          snapshot: null,
+          stack: null,
+        },
+      ],
+    };
+    const group: HomeThreadGroup = {
+      ...makeGroup("alpha", 0),
+      representative: project,
+      projects: [project],
+      threads: [parent, child],
+      recentThreads: [parent, child],
+    };
+    const expanded = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+    });
+    const expandedThreads = expanded.items.filter((item) => item.type === "thread");
+    expect(expandedThreads.map((item) => item.thread.id)).toEqual([parent.id, child.id]);
+    expect(expandedThreads[0]).toMatchObject({ nest: "parent", childCount: 1 });
+    expect(expandedThreads[1]).toMatchObject({ nest: "child" });
+
+    const collapsed = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    const collapsedThreads = collapsed.items.filter((item) => item.type === "thread");
+    expect(collapsedThreads.map((item) => item.thread.id)).toEqual([parent.id]);
+  });
 });
