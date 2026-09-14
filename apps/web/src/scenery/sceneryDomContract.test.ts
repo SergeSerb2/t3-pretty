@@ -241,12 +241,17 @@ describe("glass contract with upstream chrome", () => {
   it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain("height: var(--workspace-chrome-edge-fade)");
+    expect(messagesTimelineSource).toContain("h-[var(--workspace-titlebar-scroll-fade-height)]");
+    expect(messagesTimelineSource).toContain("pt-[var(--workspace-titlebar-scroll-fade-height)]");
+    expect(messagesTimelineSource).not.toContain("--workspace-chrome-edge-fade");
     expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
     expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
     expect(indexCssSource).toContain(
       "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
     );
-    expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: -1;/s);
+    expect(indexCssSource).toContain("--workspace-chrome-edge-blur");
+    expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: 8;/s);
     expect(indexCssSource).toMatch(
       /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
     );
@@ -267,14 +272,23 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
-    expect(sceneryCssSource).toMatch(
-      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    expect(indexCssSource).toMatch(
+      /\[data-chrome-fade-top\]::before[\s\S]*?backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.25\);/,
     );
     expect(sceneryCssSource).toMatch(
-      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(var\(--workspace-chrome-edge-blur\)\) saturate\(1\.2\);/s,
     );
     expect(sceneryCssSource).toMatch(
       /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
+    );
+    expect(indexCssSource).toMatch(
+      /html\[data-window-interacting\] \[data-chrome-fade-top\]::before \{\s*background-color: var\(--toolbar-background\);\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/s,
+    );
+    expect(indexCssSource).toMatch(
+      /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\) \{\s*\[data-chrome-fade-top\]::before \{[^}]*background-color: var\(--toolbar-background\);/s,
     );
     expect(sceneryCssSource).toMatch(
       /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
@@ -291,6 +305,9 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).not.toContain(
       "border-color: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent)",
     );
+    expect(sidebarSource).toContain("in-data-[side=left]:cursor-w-resize");
+    expect(sidebarSource).not.toContain("hover:after:bg-sidebar-border");
+    expect(sidebarSource).not.toContain("after:w-[2px]");
   });
 });
 

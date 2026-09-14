@@ -312,12 +312,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     var(--workspace-titlebar-layout-control-count) * var(--workspace-titlebar-control-size) +
       (var(--workspace-titlebar-layout-control-count) - 1) * 0.25rem
   );
-  /* Timeline spacer + titlebar plate skirt. Same length so the message-list
-     fade and the titlebar plate meet without a hole of wallpaper. */
+  /* Timeline spacer stays short so at-rest messages sit below the header.
+     The frosted skirts are wider and overlay the receiving surface. */
   --workspace-titlebar-scroll-fade-height: 2.5rem;
-  --workspace-chrome-edge-fade: var(--workspace-titlebar-scroll-fade-height);
-  /* Sidebar seam only: the titlebar spacer is too wide for a side dissolve. */
-  --workspace-sidebar-edge-fade: 1rem;
+  --workspace-chrome-edge-fade: 8rem;
+  --workspace-sidebar-edge-fade: 6.5rem;
+  --workspace-chrome-edge-blur: 40px;
 
   @variant dark {
     --appearance-contrast-target: white;
@@ -694,6 +694,20 @@ html[data-window-interacting] .chat-composer-glass-shell::before,
 html[data-window-interacting] .chat-composer-context-strip::before,
 html[data-window-interacting] [data-chrome-fade-top]::before,
 html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Wide masked plate stays. The dissolve already goes to transparent; a short
+   interacting/fallback height would restore the hard cut this skirt removes. */
+html[data-window-interacting] [data-chrome-fade-top]::before {
+  background-color: var(--toolbar-background);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+  background-color: var(--sidebar);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -2825,9 +2839,8 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 }
 
 /* Soft chrome skirts live on the receiving surface: the header and
-   sidebar stay clipped, and the fade never hangs out of those hosts.
-   Mask the whole plate so grain and fill dissolve; a transparent-stop
-   gradient over an opaque background-color would stay a hard rectangle. */
+   sidebar stay clipped. The plates are wide frosted glass over the
+   next section, not a short opaque dissolve. */
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   position: relative;
   z-index: 20;
@@ -2847,64 +2860,82 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   content: "";
   pointer-events: none;
   position: absolute;
-  background-color: var(--toolbar-background);
+  background-color: color-mix(in srgb, var(--toolbar-background) 38%, transparent);
   background-image: var(--surface-grain);
   background-repeat: repeat;
   background-size: var(--surface-grain-size);
+  -webkit-backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.25);
+  backdrop-filter: blur(var(--workspace-chrome-edge-blur)) saturate(1.25);
 }
 
 [data-chrome-fade-top]::before {
   top: 0;
   right: 0;
   left: 0;
-  /* Behind in-flow transcript. Chat already reserves
-     --workspace-titlebar-scroll-fade-height (TIMELINE_LIST_FADE_HEADER) and
-     masks that band with topbar-scroll-fade; this plate only shows through
-     that hole. */
-  z-index: -1;
+  /* Over the transcript so backdrop-filter frosts the messages. Below the
+     header and banners (z-index 20). */
+  z-index: 8;
   height: var(--workspace-chrome-edge-fade);
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
+    rgb(0 0 0 / 78%) 14%,
+    rgb(0 0 0 / 48%) 36%,
+    rgb(0 0 0 / 24%) 58%,
+    rgb(0 0 0 / 10%) 78%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
+    rgb(0 0 0 / 78%) 14%,
+    rgb(0 0 0 / 48%) 36%,
+    rgb(0 0 0 / 24%) 58%,
+    rgb(0 0 0 / 10%) 78%,
     transparent 100%
   );
 }
 
 [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
-  top: 0;
+  top: var(--workspace-topbar-height);
   bottom: 0;
   left: 0;
-  /* Below the header (z-index 20) so the left 1rem of the titlebar stays clickable. */
+  /* Below the header (z-index 20) so titlebar controls stay clickable. */
   z-index: 10;
   width: var(--workspace-sidebar-edge-fade);
-  background-color: var(--sidebar);
+  background-color: color-mix(in srgb, var(--sidebar) 38%, transparent);
   -webkit-mask-image: linear-gradient(
     to right,
     black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
+    rgb(0 0 0 / 78%) 14%,
+    rgb(0 0 0 / 48%) 36%,
+    rgb(0 0 0 / 24%) 58%,
+    rgb(0 0 0 / 10%) 78%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to right,
     black 0%,
-    rgb(0 0 0 / 72%) 32%,
-    rgb(0 0 0 / 38%) 58%,
-    rgb(0 0 0 / 12%) 82%,
+    rgb(0 0 0 / 78%) 14%,
+    rgb(0 0 0 / 48%) 36%,
+    rgb(0 0 0 / 24%) 58%,
+    rgb(0 0 0 / 10%) 78%,
     transparent 100%
   );
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  [data-chrome-fade-top]::before {
+    background-color: var(--toolbar-background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
+    background-color: var(--sidebar);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
