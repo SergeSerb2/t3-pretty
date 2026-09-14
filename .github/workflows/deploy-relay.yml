@@ -1,9 +1,13 @@
+# Production Relay deploys from Buildkite `:cloud: Relay` / `deploy-relay`
+# (`scripts/fork/deploy-relay-ci.sh` on macos-release). This file must not
+# run on GitHub-hosted runners: Checkout needs the Buildkite
+# `/opt/homebrew/etc/buildkite-agent/checkout-origin.sh` helper, which
+# hosted macos-latest does not have. The push trigger was removed so
+# GitHub Actions cannot start this workflow on main and spam failure
+# notifications. Keep workflow_dispatch only; do not re-add push.
 name: Deploy T3 Connect relay
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -35,7 +39,9 @@ env:
 jobs:
   deploy_relay:
     name: Deploy production relay
-    if: github.repository == 'SergeSerb2/t3-pretty'
+    # Belt-and-suspenders: skip unless Buildkite is actually running this
+    # file. Native production deploy is the Buildkite deploy-relay step.
+    if: github.repository == 'SergeSerb2/t3-pretty' && env.BUILDKITE == 'true'
     # macos-release can read the file-store fallbacks that hosted
     # linux-small and hosted M4 cannot. Clerk / PlanetScale / Axiom tokens
     # are not interpolatable on the importer without risking a failed
