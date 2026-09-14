@@ -79,6 +79,13 @@ export function canAnimateSceneryInkTransition(): boolean {
   if (document.hidden) {
     return false;
   }
+  // A new draft accepts typing while its wallpaper loads. Snapshotting that
+  // live composer freezes the caret and can replay partial glyphs. Keep the
+  // CSS photo dissolve instead. Read the mounted DOM because the sibling
+  // layout effect publishing sceneryComposer may not have run yet.
+  if (document.querySelector?.('[data-chat-composer-overlay][data-composer-placement="hero"]')) {
+    return false;
+  }
   // While useTheme's swap dissolve is mid-flight, a second startViewTransition
   // would skip it and park the scenery layers; commit directly instead.
   if (document.documentElement.dataset.themeSwap !== undefined) {
