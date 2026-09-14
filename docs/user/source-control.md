@@ -164,7 +164,7 @@ merge. You can keep several reviews open as tabs in the right panel.
 
 ### Route GitHub access through another environment
 
-GitHub routing is off by default. In Settings → Connections (Environments on mobile), choose
+GitHub sharing is off by default. In Settings → Connections → GitHub sharing (Environments on mobile), choose
 **Read PRs** or **Read and act** for each environment you trust to share GitHub access.
 Enable both the original environment and the environment answering its requests on this client.
 **Read and act** can use broader GitHub permissions than the original environment's credential;

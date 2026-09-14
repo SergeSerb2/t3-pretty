@@ -956,8 +956,13 @@ function OpenCommandPaletteDialog(props: {
         )
       : "";
   const browsePath = useMemo(
-    () => getFilesystemBrowsePath(query, browseEnvironmentPlatform, !isRemoteProjectRepositoryStep),
-    [browseEnvironmentPlatform, isRemoteProjectRepositoryStep, query],
+    () =>
+      getFilesystemBrowsePath(
+        query,
+        browseEnvironmentPlatform,
+        browseEnvironmentId !== null && !isRemoteProjectRepositoryStep,
+      ),
+    [browseEnvironmentId, browseEnvironmentPlatform, isRemoteProjectRepositoryStep, query],
   );
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
@@ -1556,6 +1561,14 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = useCallback(() => {
+    // With no environment at all there is nothing to browse, so the only
+    // useful next step is connecting one.
+    if (addProjectEnvironmentOptions.length === 0) {
+      setOpen(false);
+      void navigate({ to: "/settings/connections" });
+      return;
+    }
+
     if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
       pushPaletteView({
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
@@ -1564,24 +1577,14 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const environmentId = defaultAddProjectEnvironmentId;
-    if (!environmentId) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Unable to browse projects",
-          description: "No environment is available.",
-        }),
-      );
-      return;
-    }
-
-    void startAddProjectSourceSelection(environmentId);
+    void startAddProjectSourceSelection(defaultAddProjectEnvironmentId);
   }, [
     addProjectEnvironmentGroups,
     addProjectEnvironmentOptions.length,
     defaultAddProjectEnvironmentId,
+    navigate,
     pushPaletteView,
+    setOpen,
     startAddProjectSourceSelection,
   ]);
 
@@ -1792,7 +1795,6 @@ function OpenCommandPaletteDialog(props: {
       "environment",
     ],
     title: "Add project",
-    disabled: defaultAddProjectEnvironmentId === null,
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {

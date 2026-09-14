@@ -5,6 +5,7 @@ import {
   AuthClientMetadata,
   AuthProofKeyThumbprint,
   AuthSessionId,
+  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   AuthSubject,
   AuthEnvironmentScopes,
@@ -30,6 +31,11 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import {
+  REUSABLE_DEV_SESSION_EXPIRES_AT,
+  REUSABLE_DEV_SESSION_PREFIX,
+  resolveReusableDevAuth,
+} from "./ReusableDevAuth.ts";
 import {
   base64UrlDecodeUtf8,
   base64UrlEncode,
@@ -439,6 +445,7 @@ const DEFAULT_SESSION_TTL = Duration.days(30);
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
 const SESSION_REMOVAL_PUBLISH_CONCURRENCY = 16;
 
+
 const SessionClaims = Schema.Struct({
   v: Schema.Literal(1),
   kind: Schema.Literal("session"),
@@ -515,6 +522,31 @@ export const make = Effect.gen(function* () {
   } as const;
   const cookieName = resolveSessionCookieName(cookieInput);
   const legacyCookieName = resolveLegacySessionCookieName(cookieInput);
+  const devAuth = resolveReusableDevAuth(serverConfig);
+  if (devAuth) {
+    yield* authSessions
+      .createIfAbsent({
+        sessionId: devAuth.sessionId,
+        subject: "reusable-dev-token",
+        scopes: AuthAdministrativeScopes,
+        method: "browser-session-cookie",
+        client: {
+          label: "Reusable dev token",
+          ipAddress: null,
+          userAgent: null,
+          deviceType: "unknown",
+          os: null,
+          browser: null,
+        },
+        issuedAt: yield* DateTime.now,
+        expiresAt: REUSABLE_DEV_SESSION_EXPIRES_AT,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new SessionCredentialIssueError({ sessionId: devAuth.sessionId, cause }),
+        ),
+      );
+  }
 
   const emitUpsert = (clientSession: AuthClientSession) =>
     PubSub.publish(changesPubSub, {
@@ -745,6 +777,42 @@ export const make = Effect.gen(function* () {
       if (token.length > AUTH_CREDENTIAL_MAX_LENGTH) {
         return yield* new MalformedSessionTokenError({});
       }
+      if (devAuth?.matches(token)) {
+        const row = yield* authSessions
+          .getById({ sessionId: devAuth.sessionId })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new SessionCredentialVerificationError({ sessionId: devAuth.sessionId, cause }),
+            ),
+          );
+        if (Option.isNone(row)) {
+          return yield* new UnknownSessionTokenError({ sessionId: devAuth.sessionId });
+        }
+        if (row.value.revokedAt !== null) {
+          return yield* new SessionTokenRevokedError({
+            sessionId: devAuth.sessionId,
+            revokedAt: row.value.revokedAt,
+          });
+        }
+        const observedAt = yield* DateTime.now;
+        if (row.value.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
+          return yield* new SessionTokenExpiredError({
+            sessionId: devAuth.sessionId,
+            expiresAt: row.value.expiresAt,
+            observedAt,
+          });
+        }
+        return {
+          sessionId: row.value.sessionId,
+          token,
+          method: row.value.method,
+          client: toClientMetadata(row.value.client),
+          expiresAt: row.value.expiresAt,
+          subject: row.value.subject,
+          scopes: row.value.scopes,
+        } satisfies VerifiedSession;
+      }
       const tokenParts = token.split(".");
       if (tokenParts.length !== 2) {
         return yield* new MalformedSessionTokenError({});
@@ -868,6 +936,9 @@ export const make = Effect.gen(function* () {
     const claims = yield* decodeWebSocketClaims(base64UrlDecodeUtf8(encodedPayload)).pipe(
       Effect.mapError((cause) => new InvalidWebSocketTokenPayloadError({ cause })),
     );
+    if (claims.sid.startsWith(REUSABLE_DEV_SESSION_PREFIX) && claims.sid !== devAuth?.sessionId) {
+      return yield* new UnknownWebSocketSessionError({ sessionId: claims.sid });
+    }
 
     const observedAt = yield* DateTime.now;
     const expiresAt = DateTime.make(claims.exp);

@@ -1,5 +1,22 @@
 # T3 Pretty upstream integration report
 
+- Parent nightly: `v0.0.41-nightly.20260914.1700`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260914.1687`
+- Conflict resolver: manual repair of the blocked Buildkite #2014 merge (desktop protocol kept on the fork API)
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `apps/desktop/src/electron/ElectronProtocol.ts` — kept `DesktopProtocolRegistrationInput` with `scheme`, `targetOrigin`, `backendOrigin`, `clerkFrontendApiHostname`, and `clientDistDir`. Upstream's `{ targetOrigin } | { assetDirectory }` union is not wired through this fork's desktop boot/packaging.
+- `apps/desktop/src/app/DesktopEnvironment.ts` — kept `clientDistPath` (same on-disk client tree as upstream `clientAssetsDir`).
+- `apps/desktop/src/app/DesktopApp.ts` — kept fork protocol registration after backend config; added upstream `localEnvironmentEnabled` early-return that still registers with the fork API so the window can open without a local backend.
+
+## Post-merge repairs
+
+- `desktop-typecheck` failed on Buildkite #2014 after 4 automated repair rounds because the hybrid merge mixed upstream `assetDirectory` / `clientAssetsDir` call sites with the fork protocol type. This landing restores the fork-correct registration.
+
+
+## Previous integration notes
+
 - Parent nightly: `v0.0.39-nightly.20260905.1284`
 - Previously integrated parent nightly: `v0.0.39-nightly.20260904.1280`
 - Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning

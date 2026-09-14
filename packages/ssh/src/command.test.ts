@@ -154,6 +154,7 @@ describe("ssh command", () => {
     }),
   );
 
+
   it.effect("reads the last non-empty ssh output line", () =>
     Effect.sync(() => {
       assert.equal(
