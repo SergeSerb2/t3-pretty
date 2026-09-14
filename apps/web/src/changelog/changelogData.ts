@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1722002127",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Retarget thread reorder off a disconnected same-machine twin",
+      },
+      {
+        kind: "fixed",
+        title: "Make new threads arrive immediately",
+      },
+      {
+        kind: "fixed",
+        title: "Widen frosted chrome edges and hide the sidebar resize bar",
+      },
+      {
+        kind: "new",
+        title: "Nest threads by PR and group live sidebar lists by project",
+      },
+      {
+        kind: "fixed",
+        title: "Clear always-nullish runningTurnId for tsc",
+      },
+      {
+        kind: "fixed",
+        title: "Managed worktree storage inventory",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1722002120",
     date: "2026-09-14",
     items: [
