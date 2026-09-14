@@ -205,16 +205,18 @@ const bootstrap = Effect.gen(function* () {
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
 
   // Local environment can be disabled so the window still opens against
-  // remote/SSH environments. The fork protocol serves the packaged client
-  // from disk (clientDistDir) and only proxies API paths.
+  // remote/SSH environments. Packaged builds serve the client from disk
+  // and omit a backend origin so API paths are not proxied to a closed
+  // local port. Development still uses the running Vite origin.
   if (!settings.localEnvironmentEnabled) {
-    const rendererTarget = environment.isDevelopment
-      ? Option.getOrThrow(environment.devServerUrl)
-      : new URL(`http://127.0.0.1:${DEFAULT_DESKTOP_BACKEND_PORT}/`);
+    const developmentOrigin = environment.isDevelopment
+      ? Option.getOrUndefined(environment.devServerUrl)
+      : undefined;
     yield* electronProtocol.registerDesktopProtocol({
       scheme: ElectronProtocol.getDesktopScheme(environment.isDevelopment),
-      targetOrigin: rendererTarget,
-      backendOrigin: rendererTarget,
+      ...(developmentOrigin === undefined
+        ? {}
+        : { targetOrigin: developmentOrigin, backendOrigin: developmentOrigin }),
       clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
       clientDistDir: environment.isDevelopment ? undefined : environment.clientDistPath,
     });

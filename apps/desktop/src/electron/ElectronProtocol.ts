@@ -53,8 +53,11 @@ export class ElectronProtocolUnregistrationError extends Schema.TaggedError<Elec
 
 export interface DesktopProtocolRegistrationInput {
   readonly scheme: string;
-  readonly targetOrigin: URL;
-  readonly backendOrigin: URL;
+  // When omitted, API paths are not proxied (no local backend). Packaged
+  // builds with the local environment disabled serve the client from disk
+  // and let the renderer talk to remote environments directly.
+  readonly targetOrigin?: URL;
+  readonly backendOrigin?: URL;
   readonly clerkFrontendApiHostname: string | undefined;
   // Built renderer on disk (apps/server/dist/client). When set, documents and
   // assets are read straight from disk so the window can load before the
@@ -212,10 +215,18 @@ async function handleRendererRequest(
     return new Response(null, { status: 404 });
   }
   const isRead = request.method === "GET" || request.method === "HEAD";
-  if (input.clientDistDir === undefined || !isRead || isProxiedRendererPath(requestUrl.pathname)) {
+  const isApiPath = isProxiedRendererPath(requestUrl.pathname);
+  if (
+    input.targetOrigin !== undefined &&
+    (input.clientDistDir === undefined || !isRead || isApiPath)
+  ) {
     return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
   }
-  return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
+  if (input.clientDistDir !== undefined && isRead && !isApiPath) {
+    return serveClientDistFile(input.clientDistDir, requestUrl.pathname, contentSecurityPolicy);
+  }
+  // No backend to proxy to: the disk-served client talks to remotes itself.
+  return new Response(null, { status: 503 });
 }
 
 /**
