@@ -1152,7 +1152,19 @@ describe("deriveMessagesTimelineRows", () => {
       },
     ]);
 
-    // Once the agent has replied the finished card stays under the send.
+    expect(
+      deriveMessagesTimelineRows({
+        timelineEntries: [userEntry],
+        isWorking: true,
+        activeTurnStartedAt: "2026-01-01T00:00:00Z",
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+        worktreeSetup: snapshot,
+      }).map((row) => row.kind),
+    ).toEqual(["message", "worktree-setup"]);
+
+    // Once setup is done the live placeholders return so the first turn can
+    // rise in under the card. The finished card stays under the send.
     const withMessages = deriveMessagesTimelineRows({
       timelineEntries: [userEntry, assistantEntry],
       isWorking: true,
@@ -1166,6 +1178,7 @@ describe("deriveMessagesTimelineRows", () => {
       "worktree-setup",
       "working",
       "message",
+      "thinking",
     ]);
   });
 

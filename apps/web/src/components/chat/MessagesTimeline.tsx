@@ -280,6 +280,7 @@ interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
+  worktreeSetupExiting: boolean;
 }
 
 interface TimelineRowActivityState {
@@ -381,6 +382,8 @@ interface MessagesTimelineProps {
   activeTurnStartedAt: string | null;
   /** Live bootstrap progress for this thread, or null when none is tracked. */
   worktreeSetup?: WorktreeSetupSnapshot | null;
+  /** The setup card is held for one exit beat after the first turn starts. */
+  worktreeSetupExiting?: boolean;
   onCancelWorktreeSetup?: () => void;
   onWorktreeSetupWorkLocally?: () => void;
   onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
@@ -444,6 +447,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onCiteAssistantText,
   isWorking,
   worktreeSetup = null,
+  worktreeSetupExiting = false,
   onCancelWorktreeSetup,
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
@@ -924,6 +928,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
+      worktreeSetupExiting,
     }),
     [
       readyCitationRequest,
@@ -954,6 +959,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onCancelWorktreeSetup,
       onWorktreeSetupWorkLocally,
       onOpenWorktreeSetupTerminal,
+      worktreeSetupExiting,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1387,6 +1393,7 @@ type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["grouped
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  const { worktreeSetupExiting } = use(TimelineRowCtx);
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isExpandedToolGroupHeader =
     (row.kind === "work-toggle" && row.expanded) || (row.kind === "work-live" && row.expanded);
@@ -1419,6 +1426,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       )}
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
+      data-worktree-setup-exiting={
+        row.kind === "worktree-setup" && worktreeSetupExiting ? "" : undefined
+      }
       data-message-id={
         row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
       }
@@ -1464,6 +1474,7 @@ function WorktreeSetupTimelineRow({
   return (
     <WorktreeSetupCard
       snapshot={row.snapshot}
+      exiting={ctx.worktreeSetupExiting}
       onCancel={ctx.onCancelWorktreeSetup}
       onWorkLocally={row.snapshot.phase === "running" ? ctx.onWorktreeSetupWorkLocally : null}
       onOpenTerminal={onOpenTerminal}

@@ -344,6 +344,30 @@ export function resolveDraftHeroState(input: {
   );
 }
 
+/** One exit beat for the worktree setup card before the first turn takes over. */
+export const WORKTREE_SETUP_EXIT_MS = 220;
+export const WORKTREE_SETUP_EXIT_REDUCED_MS = 150;
+
+export function isWorktreeSetupSubscriptionActive(input: {
+  ref: { ownerKey: string; threadId: ThreadId } | null;
+  ownerKey: string;
+  threadId: ThreadId;
+}): boolean {
+  if (input.ref === null) return false;
+  // Draft routes key the card on the draft id so a failed bootstrap can rotate
+  // the thread id. Promotion drops that draft id; the same thread must keep
+  // the card long enough to play the exit.
+  return input.ref.ownerKey === input.ownerKey || input.ref.threadId === input.threadId;
+}
+
+export function worktreeSetupExitDurationMs(input: {
+  motionEnabled: boolean;
+  prefersReducedMotion: boolean;
+}): number {
+  if (!input.motionEnabled) return 0;
+  return input.prefersReducedMotion ? WORKTREE_SETUP_EXIT_REDUCED_MS : WORKTREE_SETUP_EXIT_MS;
+}
+
 /**
  * Keep painted timelines on screen across thread jumps. Remounting LegendList
  * (or handing it an empty first paint) punches a hole through the chat pane —

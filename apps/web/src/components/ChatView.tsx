@@ -445,6 +445,8 @@ import {
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   resolveDraftHeroState,
+  isWorktreeSetupSubscriptionActive,
+  worktreeSetupExitDurationMs,
   restorePlanFollowUpComposer,
   isPaintOnlyThreadTimeline,
   peekHeldThreadTimeline,
@@ -3442,13 +3444,16 @@ export default function ChatView(props: ChatViewProps) {
   // thread that was set up, not the route: a deleted bootstrap thread rotates
   // the draft's thread id, and the failed card must survive that.
   const worktreeSetupOwnerKey = draftId ?? routeThreadKey;
-  const worktreeSetupActive =
-    worktreeSetupRef !== null && worktreeSetupRef.ownerKey === worktreeSetupOwnerKey;
+  const worktreeSetupActive = isWorktreeSetupSubscriptionActive({
+    ref: worktreeSetupRef,
+    ownerKey: worktreeSetupOwnerKey,
+    threadId,
+  });
   // The setup runs on the environment that received the dispatch, so both
   // the subscription and cancel target that one even if the draft's machine
   // picker changes underneath.
   const worktreeSetupQuery = useEnvironmentQuery(
-    worktreeSetupActive
+    worktreeSetupRef !== null && worktreeSetupActive
       ? vcsEnvironment.worktreeSetup({
           environmentId: worktreeSetupRef.environmentId,
           input: { threadId: worktreeSetupRef.threadId },
@@ -3462,18 +3467,17 @@ export default function ChatView(props: ChatViewProps) {
     if (latestWorktreeSetup) setHeldWorktreeSetup(latestWorktreeSetup);
   }, [latestWorktreeSetup]);
   const worktreeSetup =
-    worktreeSetupActive && heldWorktreeSetup?.threadId === worktreeSetupRef.threadId
+    worktreeSetupActive &&
+    worktreeSetupRef !== null &&
+    heldWorktreeSetup?.threadId === worktreeSetupRef.threadId
       ? heldWorktreeSetup
       : null;
   // A finished card is dropped once the agent's turn shows in the timeline:
   // the card belongs to the send, and the agent takes over from there.
+  // The drop waits one exit beat so the card can recede instead of vanishing.
   const worktreeSetupDoneAndTurnVisible =
     worktreeSetup?.phase === "done" && activeThread?.latestTurn?.startedAt != null;
-  useEffect(() => {
-    if (!worktreeSetupDoneAndTurnVisible) return;
-    setWorktreeSetupRef(null);
-    setHeldWorktreeSetup(null);
-  }, [worktreeSetupDoneAndTurnVisible]);
+  const worktreeSetupExiting = worktreeSetupDoneAndTurnVisible;
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup, {
     reportFailure: false,
   });
@@ -3515,6 +3519,26 @@ export default function ChatView(props: ChatViewProps) {
   // owns unmount.
   writeSceneryComposerPlacement(sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null);
   const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
+  useEffect(() => {
+    if (!worktreeSetupDoneAndTurnVisible) return;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+    const durationMs = worktreeSetupExitDurationMs({
+      motionEnabled: sceneryMotionEnabled,
+      prefersReducedMotion,
+    });
+    if (durationMs === 0) {
+      setWorktreeSetupRef(null);
+      setHeldWorktreeSetup(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setWorktreeSetupRef(null);
+      setHeldWorktreeSetup(null);
+    }, durationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [sceneryMotionEnabled, worktreeSetupDoneAndTurnVisible]);
   const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
   const [
     attachDraftHeroTransitionGroupRef,
@@ -9091,6 +9115,7 @@ export default function ChatView(props: ChatViewProps) {
                 isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
                 activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
                 worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
+                worktreeSetupExiting={!paintOnlyDisplayedTimeline && worktreeSetupExiting}
                 onCancelWorktreeSetup={onCancelWorktreeSetup}
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}

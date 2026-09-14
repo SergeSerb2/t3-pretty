@@ -11,8 +11,8 @@
  * - CSS does the animating (compositor thread) — the driver only tags
  *   classes, because the main thread is busy re-parsing markdown while a
  *   response streams;
- * - enters animate, exits are instant (upstream unmounts synchronously;
- *   asymmetric enter/exit is the intended feel anyway);
+ * - enters animate, exits are instant except the worktree-setup card, which
+ *   is held for one exit beat when the first turn takes over;
  * - the html.no-transitions theme-swap kill switch and reduced motion both
  *   neutralize everything here without extra wiring.
  */
@@ -49,6 +49,22 @@ html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+/* Worktree setup → first turn. ChatView holds the row for this beat so the
+   card can recede along the same path it entered while working/thinking
+   rows rise in. Fade-only (no height): the leftover hole collapses when
+   the row unmounts, after it is already invisible. */
+html[data-scenery-motion] [data-timeline-root]:has([data-worktree-setup-exiting]) > * {
+  animation: scenery-worktree-setup-exit 220ms var(--sc-ease-out) both;
+}
+
+@keyframes scenery-worktree-setup-exit {
+  to {
+    opacity: 0;
+    translate: 0 calc(8px * var(--sc-m));
+    filter: blur(calc(4px * var(--sc-m)));
   }
 }
 
@@ -659,7 +675,8 @@ html[data-scenery-motion] [data-slot="empty-header"].max-w-none {
     --sc-m: 0;
   }
 
-  html[data-scenery-motion] [data-timeline-root].scenery-row-enter > * {
+  html[data-scenery-motion] [data-timeline-root].scenery-row-enter > *,
+  html[data-scenery-motion] [data-timeline-root]:has([data-worktree-setup-exiting]) > * {
     animation: scenery-row-fade 150ms ease-out both;
   }
 

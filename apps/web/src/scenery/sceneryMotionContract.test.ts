@@ -80,6 +80,15 @@ describe("row arrival contract with the messages timeline", () => {
     expect(messagesTimelineSource).toContain("data-timeline-row-kind={row.kind}");
     expect(messagesTimelineSource).toContain("data-message-role");
   });
+
+  it("the worktree setup card still has an authored exit beat", () => {
+    expect(messagesTimelineSource).toContain("data-worktree-setup-exiting");
+    expect(chatViewSource).toContain("worktreeSetupExitDurationMs");
+    expect(motionStylesSource).toContain(
+      "[data-timeline-root]:has([data-worktree-setup-exiting]) > *",
+    );
+    expect(motionStylesSource).toContain("scenery-worktree-setup-exit 220ms");
+  });
 });
 
 describe("working-row thinking indicator contract", () => {
