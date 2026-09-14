@@ -131,6 +131,7 @@ export function buildHomeListLayout(input: {
    * When searching, pagination is suspended so every match stays visible.
    */
   readonly showAllThreads?: boolean;
+  readonly selectedThreadKey?: string | null;
   readonly isPrNestExpanded?: (pullRequestKey: string) => boolean;
 }): HomeListLayout {
   const items: HomeListItem[] = [];
@@ -170,8 +171,9 @@ export function buildHomeListLayout(input: {
         nest.pullRequestKey === null ||
         input.showAllThreads === true ||
         (input.isPrNestExpanded?.(nest.pullRequestKey) ?? true);
-      if (!nestExpanded) continue;
       for (const child of nest.children) {
+        const childKey = `${child.environmentId}:${child.id}`;
+        if (!nestExpanded && childKey !== input.selectedThreadKey) continue;
         nestedThreads.push({
           thread: child,
           nest: "child",

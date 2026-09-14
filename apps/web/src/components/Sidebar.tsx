@@ -4966,7 +4966,10 @@ export default function Sidebar() {
                                   : null;
                               }),
                             )}
-                            hideProjectLabel={showProjectFolders}
+                            hideProjectLabel={
+                              showProjectFolders &&
+                              (item.section === "pinned" || item.section === "active")
+                            }
                             {...(item.pullRequestKey == null
                               ? {}
                               : {

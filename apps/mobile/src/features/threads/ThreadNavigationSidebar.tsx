@@ -381,9 +381,17 @@ function ThreadNavigationSidebarPane(
             groups,
             displayStates: groupDisplayStates,
             showAllThreads: hasSearchQuery,
+            selectedThreadKey: props.selectedThreadKey,
             isPrNestExpanded: (key) => !collapsedPrNests.has(key),
           }),
-    [threadListV2Enabled, groups, groupDisplayStates, hasSearchQuery, collapsedPrNests],
+    [
+      threadListV2Enabled,
+      groups,
+      groupDisplayStates,
+      hasSearchQuery,
+      props.selectedThreadKey,
+      collapsedPrNests,
+    ],
   );
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();

@@ -299,5 +299,17 @@ describe("buildHomeListLayout", () => {
     });
     const collapsedThreads = collapsed.items.filter((item) => item.type === "thread");
     expect(collapsedThreads.map((item) => item.thread.id)).toEqual([parent.id]);
+
+    const collapsedWithSelectedChild = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+      selectedThreadKey: `${child.environmentId}:${child.id}`,
+    });
+    expect(
+      collapsedWithSelectedChild.items
+        .filter((item) => item.type === "thread")
+        .map((item) => item.thread.id),
+    ).toEqual([parent.id, child.id]);
   });
 });
