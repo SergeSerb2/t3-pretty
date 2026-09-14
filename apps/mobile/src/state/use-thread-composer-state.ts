@@ -270,15 +270,24 @@ export function useThreadComposerState() {
   }, [selectedThreadDetail, selectedThreadShell]);
 
   const liveTurnHeadline = useMemo(() => {
-    const runningTurnId =
+    const sessionTurnId =
+      selectedThreadSessionActivity?.orchestrationStatus === "running"
+        ? (selectedThreadSessionActivity.activeTurnId ?? null)
+        : null;
+    const latestRunningTurnId =
       selectedThread?.latestTurn?.state === "running" ? selectedThread.latestTurn.turnId : null;
     return deriveLiveTurnHeadline(
       selectedThreadActivities ?? [],
-      runningTurnId,
+      sessionTurnId ?? latestRunningTurnId,
       selectedEnvironmentRuntime?.serverConfig?.settings.generateActivityHeadlines ??
         DEFAULT_SERVER_SETTINGS.generateActivityHeadlines,
     );
-  }, [selectedEnvironmentRuntime, selectedThread, selectedThreadActivities]);
+  }, [
+    selectedEnvironmentRuntime,
+    selectedThread,
+    selectedThreadActivities,
+    selectedThreadSessionActivity,
+  ]);
 
   const isCompacting = useMemo(() => {
     const queuedMessage = selectedThreadQueuedMessages.findLast(
