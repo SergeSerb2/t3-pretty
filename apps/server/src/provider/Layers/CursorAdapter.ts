@@ -88,6 +88,8 @@ import {
 
 const PROVIDER = ProviderDriverKind.make("cursor");
 const CURSOR_RUNTIME_EVENT_BUFFER_CAPACITY = 512;
+const CURSOR_TRANSPORT_RETRY_LIMIT = 2;
+const CURSOR_TRANSPORT_FAILURE_DETAIL = "Cursor reported a transport failure.";
 const CURSOR_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
@@ -1064,31 +1066,52 @@ export function makeCursorAdapter(
           }
 
           // ACP has no system-message field; keep runtime context separate from the user's text.
-          const result = yield* ctx.acp
-            .prompt({
-              prompt: [
-                ...promptParts,
-                {
-                  type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
-                },
-              ],
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
-              ),
-            );
+          const runtimeInstruction = {
+            type: "text" as const,
+            text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+          };
+          const promptOnce = (prompt: Array<EffectAcpSchema.ContentBlock>) =>
+            ctx.acp
+              .prompt({ prompt })
+              .pipe(
+                Effect.mapError((error) =>
+                  mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+                ),
+              );
 
-          yield* ctx.acp.drainEvents;
-          const failure = ctx.assistantReply.failure;
-          if (ctx.promptsInFlight === 1 && result.stopReason !== "cancelled" && failure) {
-            return yield* new ProviderAdapterRequestError({
+          let result = yield* promptOnce([...promptParts, runtimeInstruction]);
+          for (let attempt = 0; ; attempt += 1) {
+            yield* ctx.acp.drainEvents;
+            const failure = ctx.assistantReply.failure;
+            const transportFailed =
+              ctx.promptsInFlight === 1 && result.stopReason !== "cancelled" && Boolean(failure);
+            if (!transportFailed) {
+              break;
+            }
+            if (attempt >= CURSOR_TRANSPORT_RETRY_LIMIT) {
+              return yield* new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "session/prompt",
+                detail: CURSOR_TRANSPORT_FAILURE_DETAIL,
+                cause: failure,
+              });
+            }
+            yield* offerRuntimeEvent({
+              type: "runtime.warning",
+              ...(yield* makeEventStamp()),
               provider: PROVIDER,
-              method: "session/prompt",
-              detail: "Cursor reported a transport failure.",
-              cause: failure,
+              threadId: input.threadId,
+              turnId,
+              payload: {
+                message: "Cursor's model stream was interrupted. Retrying.",
+                detail: failure,
+              },
             });
+            ctx.assistantReply = new CursorTransportFailure();
+            // The failed prompt already landed in Cursor's session. Re-sending
+            // the original user text would duplicate the request after a long
+            // tool loop; a continue prompt resumes from that history.
+            result = yield* promptOnce([{ type: "text", text: "Continue." }, runtimeInstruction]);
           }
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
