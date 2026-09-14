@@ -1018,6 +1018,47 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("stops a ready session before resuming a different native session", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const now = "2026-01-01T00:00:00.000Z";
+      const resume = (suffix: string, nativeSessionId: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-native-resume-${suffix}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`user-message-native-resume-${suffix}`),
+            role: "user" as const,
+            text: `/resume ${nativeSessionId}`,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required" as const,
+          createdAt: now,
+        });
+
+      yield* resume("first", "native-session-first");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.stopSession).not.toHaveBeenCalled();
+
+      yield* resume("second", "native-session-second");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 2));
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.stopSession).toHaveBeenCalledWith({ threadId: ThreadId.make("thread-1") });
+      expect(harness.startSession.mock.calls.map((call) => call[1])).toMatchObject([
+        { nativeSessionId: "native-session-first" },
+        { nativeSessionId: "native-session-second" },
+      ]);
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.session?.status).toBe("ready");
+    }),
+  );
+
   effectIt.effect("does not reactivate a turn that completed before sendTurn returns", () =>
     Effect.gen(function* () {
       const accepted = yield* Deferred.make<{

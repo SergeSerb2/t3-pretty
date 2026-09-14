@@ -777,7 +777,7 @@ function isCompactCommandMessage(message: ChatMessage): boolean {
 }
 
 function isNativeResumeCommandText(text: string): boolean {
-  return parseNativeResumeCommand(text) !== null;
+  return parseNativeResumeCommand(text)?._tag === "Resume";
 }
 
 type ChatViewProps =

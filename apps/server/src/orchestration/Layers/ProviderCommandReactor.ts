@@ -935,6 +935,10 @@ const make = Effect.gen(function* () {
       return restartedSession.threadId;
     }
 
+    if (options?.nativeSessionId !== undefined && activeSession) {
+      yield* providerService.stopSession({ threadId });
+    }
+
     const startedSession = yield* startProviderSession(
       options?.nativeSessionId !== undefined
         ? { nativeSessionId: options.nativeSessionId }
