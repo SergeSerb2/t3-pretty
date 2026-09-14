@@ -1043,7 +1043,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             </ComposerDictationToolbar>
           </Animated.View>
         </ComposerSurface>
-        {!isExpanded && !isVoiceInputPresented ? (
+        {!isExpanded ? (
           <ThreadModelIdentityCaption
             identity={modelIdentity}
             picker={settingsPicker}
