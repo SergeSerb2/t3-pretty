@@ -241,4 +241,112 @@ describe("buildHomeListLayout", () => {
     expect(layout.stickyHeaderIndices).toEqual([0, 8]);
     expect(layout.items[8]).toMatchObject({ type: "header", isFirst: false });
   });
+
+  it("nests later PR threads under the first-linked parent", () => {
+    const project = makeProject("alpha", "alpha");
+    const parent = {
+      ...makeThread("parent", project.id),
+      createdAt: "2026-03-01T00:00:00.000Z",
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "org/repo",
+          number: 4,
+          url: "https://github.com/org/repo/pull/4",
+          source: "manual" as const,
+          linkedAt: "2026-03-01T00:00:00.000Z",
+          snapshot: null,
+          stack: null,
+        },
+      ],
+    };
+    const child = {
+      ...makeThread("child", project.id),
+      createdAt: "2026-03-02T00:00:00.000Z",
+      pullRequests: [
+        {
+          host: "github.com",
+          repository: "org/repo",
+          number: 4,
+          url: "https://github.com/org/repo/pull/4",
+          source: "manual" as const,
+          linkedAt: "2026-03-02T00:00:00.000Z",
+          snapshot: null,
+          stack: null,
+        },
+      ],
+    };
+    const group: HomeThreadGroup = {
+      ...makeGroup("alpha", 0),
+      representative: project,
+      projects: [project],
+      threads: [parent, child],
+      recentThreads: [parent, child],
+    };
+    const expanded = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+    });
+    const expandedThreads = expanded.items.filter((item) => item.type === "thread");
+    expect(expandedThreads.map((item) => item.thread.id)).toEqual([parent.id, child.id]);
+    expect(expandedThreads[0]).toMatchObject({ nest: "parent", childCount: 1 });
+    expect(expandedThreads[1]).toMatchObject({ nest: "child" });
+
+    const collapsed = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    const collapsedThreads = collapsed.items.filter((item) => item.type === "thread");
+    expect(collapsedThreads.map((item) => item.thread.id)).toEqual([parent.id]);
+
+    const collapsedWithSelectedChild = buildHomeListLayout({
+      groups: [group],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+      selectedThreadKey: `${child.environmentId}:${child.id}`,
+    });
+    expect(
+      collapsedWithSelectedChild.items
+        .filter((item) => item.type === "thread")
+        .map((item) => item.thread.id),
+    ).toEqual([parent.id, child.id]);
+
+    const extras = Array.from({ length: 7 }, (_, index) =>
+      makeThread(`extra-${index}`, project.id),
+    );
+    const pagedGroup: HomeThreadGroup = {
+      ...group,
+      threads: [parent, child, ...extras],
+      recentThreads: [parent, child, ...extras],
+    };
+    const collapsedPaged = buildHomeListLayout({
+      groups: [pagedGroup],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    expect(
+      collapsedPaged.items.filter((item) => item.type === "thread").map((item) => item.thread.id),
+    ).toEqual([parent.id, ...extras.slice(0, 5).map((thread) => thread.id)]);
+    expect(collapsedPaged.items.find((item) => item.type === "show-more")).toMatchObject({
+      hiddenCount: 2,
+    });
+
+    const recentWindow = buildHomeListLayout({
+      groups: [
+        {
+          ...pagedGroup,
+          recentThreads: [parent, child, extras[0]!, extras[1]!, extras[2]!, extras[3]!],
+        },
+      ],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    expect(
+      recentWindow.items.filter((item) => item.type === "thread").map((item) => item.thread.id),
+    ).toEqual([parent.id, extras[0]!.id, extras[1]!.id, extras[2]!.id, extras[3]!.id]);
+    expect(recentWindow.items.find((item) => item.type === "show-more")).toMatchObject({
+      hiddenCount: 3,
+    });
+  });
 });

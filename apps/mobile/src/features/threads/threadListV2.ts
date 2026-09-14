@@ -1,3 +1,5 @@
+import { nestThreadsByPullRequest } from "@t3tools/shared/threadPullRequestNesting";
+import { resolveHighestThreadStatus, type ThreadStatusPresentation } from "./threadPresentation";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import {
   effectiveSnoozed,
@@ -219,6 +221,56 @@ export interface ThreadListV2Item {
   /** Settled-shelf row: part of the settled threads section. */
   readonly settled: boolean;
   readonly isLast: boolean;
+  readonly nest?: "parent" | "child" | null;
+  readonly childCount?: number;
+  readonly pullRequestKey?: string | null;
+  readonly collapsedNestStatus?: ThreadStatusPresentation | null;
+}
+
+function flattenNestedSection(
+  threads: readonly EnvironmentThreadShell[],
+  isPrNestExpanded: ((pullRequestKey: string) => boolean) | undefined,
+  selectedThreadKey: string | null,
+  expandAllNests = false,
+): Array<{
+  readonly thread: EnvironmentThreadShell;
+  readonly nest: "parent" | "child" | null;
+  readonly childCount: number;
+  readonly pullRequestKey: string | null;
+  readonly collapsedNestStatus: ThreadStatusPresentation | null;
+}> {
+  const flattened: Array<{
+    readonly thread: EnvironmentThreadShell;
+    readonly nest: "parent" | "child" | null;
+    readonly childCount: number;
+    readonly pullRequestKey: string | null;
+    readonly collapsedNestStatus: ThreadStatusPresentation | null;
+  }> = [];
+  for (const nest of nestThreadsByPullRequest(threads)) {
+    flattened.push({
+      thread: nest.parent,
+      nest: nest.children.length > 0 ? "parent" : null,
+      childCount: nest.children.length,
+      pullRequestKey: nest.pullRequestKey,
+      collapsedNestStatus: resolveHighestThreadStatus(nest.children),
+    });
+    const nestExpanded =
+      expandAllNests ||
+      nest.pullRequestKey === null ||
+      (isPrNestExpanded?.(nest.pullRequestKey) ?? true);
+    for (const child of nest.children) {
+      const childKey = `${child.environmentId}:${child.id}`;
+      if (!nestExpanded && childKey !== selectedThreadKey) continue;
+      flattened.push({
+        thread: child,
+        nest: "child",
+        childCount: 0,
+        pullRequestKey: nest.pullRequestKey,
+        collapsedNestStatus: null,
+      });
+    }
+  }
+  return flattened;
 }
 
 export interface ThreadListV2Layout {
@@ -371,6 +423,7 @@ export function buildThreadListV2Items(input: {
       outbox. Such a thread has work the user is waiting on, so it stays in
       the active block even when the server has settled it. */
   readonly queuedThreadKeys?: ReadonlySet<string>;
+  readonly isPrNestExpanded?: (pullRequestKey: string) => boolean;
 }): ThreadListV2Layout {
   const now = input.now;
   const pending =
@@ -472,52 +525,53 @@ export function buildThreadListV2Items(input: {
         );
 
   const items: ThreadListV2Item[] = [];
-  for (const thread of applyPendingThreadOrder(
-    sortPinnedThreadsByOrderKey(pinned),
-    "pinned",
-    pending,
-  )) {
-    items.push({
-      thread,
-      variant: "card",
-      snoozed: false,
-      pinned: true,
-      settled: false,
-      isLast: false,
-    });
-  }
-  for (const thread of orderedActive) {
-    items.push({
-      thread,
-      variant: "card",
-      snoozed: false,
-      pinned: false,
-      settled: false,
-      isLast: false,
-    });
-  }
+  const pushNested = (
+    threads: readonly EnvironmentThreadShell[],
+    flags: Pick<ThreadListV2Item, "variant" | "snoozed" | "pinned" | "settled">,
+  ) => {
+    for (const entry of flattenNestedSection(
+      threads,
+      input.isPrNestExpanded,
+      selectedThreadKey,
+      query.length > 0,
+    )) {
+      items.push({
+        ...flags,
+        thread: entry.thread,
+        nest: entry.nest,
+        childCount: entry.childCount,
+        pullRequestKey: entry.pullRequestKey,
+        collapsedNestStatus: entry.collapsedNestStatus,
+        isLast: false,
+      });
+    }
+  };
+  pushNested(applyPendingThreadOrder(sortPinnedThreadsByOrderKey(pinned), "pinned", pending), {
+    variant: "card",
+    snoozed: false,
+    pinned: true,
+    settled: false,
+  });
+  pushNested(orderedActive, {
+    variant: "card",
+    snoozed: false,
+    pinned: false,
+    settled: false,
+  });
   const snoozedShelfHeaderIndex = orderedSnoozed.length > 0 ? items.length : null;
-  for (const thread of visibleSnoozed) {
-    items.push({
-      thread,
-      variant: "slim",
-      snoozed: true,
-      pinned: false,
-      settled: false,
-      isLast: false,
-    });
-  }
+  pushNested(visibleSnoozed, {
+    variant: "slim",
+    snoozed: true,
+    pinned: false,
+    settled: false,
+  });
   const settledShelfHeaderIndex = orderedSettled.length > 0 ? items.length : null;
-  for (const thread of visibleSettled) {
-    items.push({
-      thread,
-      variant: "slim",
-      snoozed: false,
-      pinned: false,
-      settled: true,
-      isLast: false,
-    });
-  }
+  pushNested(visibleSettled, {
+    variant: "slim",
+    snoozed: false,
+    pinned: false,
+    settled: true,
+  });
   const last = items.at(-1);
   if (last) {
     items[items.length - 1] = { ...last, isLast: true };

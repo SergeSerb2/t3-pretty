@@ -1820,6 +1820,28 @@ describe("composerDraftStore project draft thread mapping", () => {
       startFromOrigin: true,
     });
   });
+
+  it("clears an attached pull request when the draft changes project", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setDraftThreadContext(draftId, {
+      attachedPullRequest: {
+        host: "github.com",
+        repository: "org/repo",
+        number: 4,
+        url: "https://github.com/org/repo/pull/4",
+        title: "Fix nest",
+        headBranch: "fix-nest",
+      },
+    });
+    expect(store.getDraftThread(draftId)?.attachedPullRequest?.url).toBe(
+      "https://github.com/org/repo/pull/4",
+    );
+    store.setDraftThreadContext(draftId, { projectRef: remoteProjectRef });
+    expect(
+      useComposerDraftStore.getState().getDraftThread(draftId)?.attachedPullRequest,
+    ).toBeNull();
+  });
 });
 
 describe("composerDraftStore modelSelection", () => {

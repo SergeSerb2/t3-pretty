@@ -1,6 +1,11 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { nestThreadsByPullRequest } from "@t3tools/shared/threadPullRequestNesting";
 
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
+import {
+  resolveHighestThreadStatus,
+  type ThreadStatusPresentation,
+} from "../threads/threadPresentation";
 import type { HomeThreadGroup } from "./homeThreadList";
 
 /** Threads shown per project before the "Show more" affordance appears. */
@@ -32,6 +37,10 @@ export interface HomeThreadListItem {
   readonly key: string;
   readonly thread: EnvironmentThreadShell;
   readonly isLast: boolean;
+  readonly nest: "parent" | "child" | null;
+  readonly childCount: number;
+  readonly pullRequestKey: string | null;
+  readonly collapsedNestStatus: ThreadStatusPresentation | null;
 }
 
 export interface HomePendingTaskListItem {
@@ -106,7 +115,10 @@ export function homeListItemsAreEqual(previous: HomeListItem, item: HomeListItem
       return (
         previous.type === "thread" &&
         previous.thread === item.thread &&
-        previous.isLast === item.isLast
+        previous.isLast === item.isLast &&
+        previous.nest === item.nest &&
+        previous.childCount === item.childCount &&
+        previous.collapsedNestStatus?.kind === item.collapsedNestStatus?.kind
       );
     case "show-more":
       return (
@@ -125,6 +137,8 @@ export function buildHomeListLayout(input: {
    * When searching, pagination is suspended so every match stays visible.
    */
   readonly showAllThreads?: boolean;
+  readonly selectedThreadKey?: string | null;
+  readonly isPrNestExpanded?: (pullRequestKey: string) => boolean;
 }): HomeListLayout {
   const items: HomeListItem[] = [];
   const stickyHeaderIndices: number[] = [];
@@ -146,17 +160,47 @@ export function buildHomeListLayout(input: {
       continue;
     }
 
-    const totalCount = group.threads.length;
+    type NestRow = {
+      readonly thread: EnvironmentThreadShell;
+      readonly nest: "parent" | "child" | null;
+      readonly childCount: number;
+      readonly pullRequestKey: string | null;
+      readonly collapsedNestStatus: ThreadStatusPresentation | null;
+    };
+    const units = nestThreadsByPullRequest(group.threads).map((nest) => ({
+      parent: {
+        thread: nest.parent,
+        nest: nest.children.length > 0 ? ("parent" as const) : null,
+        childCount: nest.children.length,
+        pullRequestKey: nest.pullRequestKey,
+        collapsedNestStatus: resolveHighestThreadStatus(nest.children),
+      },
+      children: nest.children.map((child): NestRow => ({
+        thread: child,
+        nest: "child",
+        childCount: 0,
+        pullRequestKey: nest.pullRequestKey,
+        collapsedNestStatus: null,
+      })),
+    }));
+    const totalCount = units.length;
+    const recentThreadKeys = new Set(
+      group.recentThreads.map((thread) => `${thread.environmentId}:${thread.id}`),
+    );
+    const recentUnitCount = units.filter(
+      (unit) =>
+        recentThreadKeys.has(`${unit.parent.thread.environmentId}:${unit.parent.thread.id}`) ||
+        unit.children.some((child) =>
+          recentThreadKeys.has(`${child.thread.environmentId}:${child.thread.id}`),
+        ),
+    ).length;
     // Default to the group's recent-activity window (last few days, or a small
     // fallback for stale projects), capped at the initial page size. Until the
-    // user taps "Show more", older threads stay hidden to save vertical space;
-    // "Show less" resets visibleCount to the initial constant, which lands back
-    // here at the recency baseline.
-    const baselineCount = Math.min(
-      group.recentThreads.length,
-      HOME_INITIAL_VISIBLE_THREADS,
-      totalCount,
-    );
+    // user taps "Show more", older conversations stay hidden to save vertical
+    // space; "Show less" resets visibleCount to the initial constant, which
+    // lands back here at the recency baseline. A PR nest is one unit so
+    // collapse cannot steal slots from other threads.
+    const baselineCount = Math.min(recentUnitCount, HOME_INITIAL_VISIBLE_THREADS, totalCount);
     const visibleCount = input.showAllThreads
       ? totalCount
       : Math.min(
@@ -165,8 +209,23 @@ export function buildHomeListLayout(input: {
             : baselineCount,
           totalCount,
         );
-    const visibleThreads = group.threads.slice(0, visibleCount);
-    const hiddenCount = totalCount - visibleCount;
+    const visibleThreads: NestRow[] = [];
+    for (const unit of units.slice(0, visibleCount)) {
+      visibleThreads.push(unit.parent);
+      const nestExpanded =
+        unit.parent.pullRequestKey === null ||
+        input.showAllThreads === true ||
+        (input.isPrNestExpanded?.(unit.parent.pullRequestKey) ?? true);
+      for (const child of unit.children) {
+        const childKey = `${child.thread.environmentId}:${child.thread.id}`;
+        if (nestExpanded || childKey === input.selectedThreadKey) {
+          visibleThreads.push(child);
+        }
+      }
+    }
+    const hiddenCount = units
+      .slice(visibleCount)
+      .reduce((count, unit) => count + 1 + unit.children.length, 0);
     const hasShowMoreRow = !input.showAllThreads && totalCount > baselineCount;
 
     // Pending (unsent) tasks lead the group and are never paginated away.
@@ -182,11 +241,15 @@ export function buildHomeListLayout(input: {
       });
     }
 
-    for (const [threadIndex, thread] of visibleThreads.entries()) {
+    for (const [threadIndex, entry] of visibleThreads.entries()) {
       items.push({
         type: "thread",
-        key: `thread:${thread.environmentId}:${thread.id}`,
-        thread,
+        key: `thread:${entry.thread.environmentId}:${entry.thread.id}`,
+        thread: entry.thread,
+        nest: entry.nest,
+        childCount: entry.childCount,
+        pullRequestKey: entry.pullRequestKey,
+        collapsedNestStatus: entry.collapsedNestStatus,
         isLast: threadIndex === visibleThreads.length - 1 && !hasShowMoreRow,
       });
     }
