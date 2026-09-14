@@ -26,6 +26,36 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1707002026",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Omit dead backend proxy and retry staged WSL probe timeouts",
+      },
+      {
+        kind: "fixed",
+        title: "Provide ForgejoCli in source-control boot layers",
+      },
+      {
+        kind: "fixed",
+        title: "Finish TaggedErrorClass rename so Windows NSIS sidecar loads",
+      },
+      {
+        kind: "fixed",
+        title: "Prod deploy from re-adding android_api_level",
+      },
+      {
+        kind: "fixed",
+        title: "Abort dictation start after caret or canStart races",
+      },
+      {
+        kind: "new",
+        title: "Share Groq voice input across connected hosts",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1700002022",
     date: "2026-09-14",
     items: [
