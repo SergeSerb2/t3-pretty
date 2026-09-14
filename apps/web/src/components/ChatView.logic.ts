@@ -356,16 +356,16 @@ export function isWorktreeSetupSubscriptionActive(input: {
   if (input.ref === null) return false;
   // Draft routes key the card on the draft id so a failed bootstrap can rotate
   // the thread id. Promotion drops that draft id; the same thread must keep
-  // the card long enough to play the exit. ChatView drops the ref when
-  // threadId changes, so this cannot resurrect a finished card later.
+  // the card long enough to play the exit.
   return input.ref.ownerKey === input.ownerKey || input.ref.threadId === input.threadId;
 }
 
-export function shouldDropWorktreeSetupOnThreadChange(
-  previousThreadId: ThreadId | null,
-  nextThreadId: ThreadId,
-): boolean {
-  return previousThreadId !== null && previousThreadId !== nextThreadId;
+export function shouldDropInactiveWorktreeSetup(input: {
+  ref: { ownerKey: string; threadId: ThreadId } | null;
+  ownerKey: string;
+  threadId: ThreadId;
+}): boolean {
+  return input.ref !== null && !isWorktreeSetupSubscriptionActive(input);
 }
 
 export function worktreeSetupExitDurationMs(input: {

@@ -446,7 +446,7 @@ import {
   resolveComposerProviderSelection,
   resolveDraftHeroState,
   isWorktreeSetupSubscriptionActive,
-  shouldDropWorktreeSetupOnThreadChange,
+  shouldDropInactiveWorktreeSetup,
   worktreeSetupExitDurationMs,
   restorePlanFollowUpComposer,
   isPaintOnlyThreadTimeline,
@@ -1738,14 +1738,6 @@ export default function ChatView(props: ChatViewProps) {
     ownerKey: string;
   } | null>(null);
   const [heldWorktreeSetup, setHeldWorktreeSetup] = useState<WorktreeSetupSnapshot | null>(null);
-  const worktreeSetupThreadIdRef = useRef(threadId);
-  useEffect(() => {
-    const previousThreadId = worktreeSetupThreadIdRef.current;
-    worktreeSetupThreadIdRef.current = threadId;
-    if (!shouldDropWorktreeSetupOnThreadChange(previousThreadId, threadId)) return;
-    setWorktreeSetupRef(null);
-    setHeldWorktreeSetup(null);
-  }, [threadId]);
   // Set by "Work locally": the draft whose restored message should be resent
   // once the cancelled dispatch has settled and the draft is in local mode.
   // Keyed by draft id so a bootstrap rotating the thread id keeps it, while
@@ -3458,6 +3450,21 @@ export default function ChatView(props: ChatViewProps) {
     ownerKey: worktreeSetupOwnerKey,
     threadId,
   });
+  useEffect(() => {
+    // Leave leftover setup when this view no longer owns the card. A draft
+    // can rotate threadId under the same ownerKey; that must keep the card.
+    if (
+      !shouldDropInactiveWorktreeSetup({
+        ref: worktreeSetupRef,
+        ownerKey: worktreeSetupOwnerKey,
+        threadId,
+      })
+    ) {
+      return;
+    }
+    setWorktreeSetupRef(null);
+    setHeldWorktreeSetup(null);
+  }, [threadId, worktreeSetupOwnerKey, worktreeSetupRef]);
   // The setup runs on the environment that received the dispatch, so both
   // the subscription and cancel target that one even if the draft's machine
   // picker changes underneath.

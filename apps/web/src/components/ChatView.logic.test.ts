@@ -66,7 +66,7 @@ import {
   threadShellHasStarted,
   resolveDraftHeroState,
   isWorktreeSetupSubscriptionActive,
-  shouldDropWorktreeSetupOnThreadChange,
+  shouldDropInactiveWorktreeSetup,
   worktreeSetupExitDurationMs,
   WORKTREE_SETUP_EXIT_MS,
   WORKTREE_SETUP_EXIT_REDUCED_MS,
@@ -631,13 +631,38 @@ describe("worktree setup card handoff", () => {
     );
   });
 
-  it("drops a leftover setup only when ChatView switches threads", () => {
+  it("drops leftover setup when this view no longer owns the card", () => {
     const threadId = ThreadId.make("thread-setup");
-    expect(shouldDropWorktreeSetupOnThreadChange(null, threadId)).toBe(false);
-    expect(shouldDropWorktreeSetupOnThreadChange(threadId, threadId)).toBe(false);
-    expect(shouldDropWorktreeSetupOnThreadChange(threadId, ThreadId.make("other-thread"))).toBe(
-      true,
-    );
+    const ref = { ownerKey: "draft-1", threadId };
+
+    expect(
+      shouldDropInactiveWorktreeSetup({
+        ref: null,
+        ownerKey: "draft-1",
+        threadId,
+      }),
+    ).toBe(false);
+    expect(
+      shouldDropInactiveWorktreeSetup({
+        ref,
+        ownerKey: "draft-1",
+        threadId: ThreadId.make("rotated-thread"),
+      }),
+    ).toBe(false);
+    expect(
+      shouldDropInactiveWorktreeSetup({
+        ref,
+        ownerKey: "environment-local:thread-setup",
+        threadId,
+      }),
+    ).toBe(false);
+    expect(
+      shouldDropInactiveWorktreeSetup({
+        ref,
+        ownerKey: "environment-local:other-thread",
+        threadId: ThreadId.make("other-thread"),
+      }),
+    ).toBe(true);
   });
 });
 
