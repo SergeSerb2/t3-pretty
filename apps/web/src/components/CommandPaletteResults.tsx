@@ -91,7 +91,7 @@ interface CommandPaletteResultsProps {
 export function CommandPaletteResults(props: CommandPaletteResultsProps) {
   if (props.groups.length === 0) {
     return (
-      <div className="py-10 text-center text-sm text-muted-foreground">
+      <div className="py-10 text-center text-sm text-muted-foreground" role="status">
         {props.emptyStateMessage ??
           (props.isActionsOnly
             ? "No matching actions."

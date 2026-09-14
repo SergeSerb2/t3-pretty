@@ -15,6 +15,8 @@ import { MobileStorageDecodeError, MobileStorageEncodeError } from "./mobile-sto
 
 const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
+export const CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS = 64;
+export const CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH = 512;
 
 export interface Preferences {
   readonly liveActivitiesEnabled?: boolean;
@@ -22,6 +24,7 @@ export interface Preferences {
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
   readonly themeMode?: MobileThemeMode;
+  readonly materialYouStyleLayoutEnabled?: boolean;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
   readonly markdownFontSize?: number;
@@ -49,6 +52,10 @@ export interface Preferences {
     readonly local?: boolean;
     readonly worktree?: boolean;
   };
+  readonly autoBabysitPullRequestByEnvMode?: {
+    readonly local?: boolean;
+    readonly worktree?: boolean;
+  };
   /** Newest app version whose What's New notes were shown — see
       features/whats-new. */
   readonly lastSeenChangelogVersion?: string;
@@ -56,6 +63,9 @@ export interface Preferences {
   readonly scenery?: MobileSceneryPreferences;
   /** Device-local counterpart of desktop's `planModeEnabled` legacy flag. */
   readonly planModeEnabled?: boolean;
+  /** Fresh keys reset both shelves to collapsed when users update. */
+  readonly threadListSettledShelfExpanded?: boolean;
+  readonly threadListSnoozedShelfExpanded?: boolean;
 }
 
 /** One thread → photo binding in the World Scenery theme. */
@@ -81,7 +91,7 @@ export interface MobileSceneryPreferences {
   readonly assignments?: Readonly<Record<string, MobileSceneryAssignment>>;
 }
 
-export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
+export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
   "MobilePreferencesLoadError",
   { cause: Schema.Defect() },
 ) {
@@ -90,7 +100,7 @@ export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePr
   }
 }
 
-export class MobilePreferencesSaveError extends Schema.TaggedErrorClass<MobilePreferencesSaveError>()(
+export class MobilePreferencesSaveError extends Schema.TaggedError<MobilePreferencesSaveError>()(
   "MobilePreferencesSaveError",
   { cause: Schema.Defect() },
 ) {
@@ -125,6 +135,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
     themeMode?: MobileThemeMode;
+    materialYouStyleLayoutEnabled?: boolean;
     baseFontSize?: number;
     terminalFontSize?: number | null;
     markdownFontSize?: number;
@@ -139,9 +150,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       local?: boolean;
       worktree?: boolean;
     };
+    autoBabysitPullRequestByEnvMode?: {
+      local?: boolean;
+      worktree?: boolean;
+    };
     lastSeenChangelogVersion?: string;
     scenery?: MobileSceneryPreferences;
     planModeEnabled?: boolean;
+    threadListSettledShelfExpanded?: boolean;
+    threadListSnoozedShelfExpanded?: boolean;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -172,6 +189,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   ) {
     preferences.themeMode = parsed.themeMode;
   }
+  if (typeof parsed.materialYouStyleLayoutEnabled === "boolean") {
+    preferences.materialYouStyleLayoutEnabled = parsed.materialYouStyleLayoutEnabled;
+  }
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {
     preferences.terminalFontSize = parsed.terminalFontSize;
@@ -184,9 +204,23 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.codeWordBreak === "boolean") preferences.codeWordBreak = parsed.codeWordBreak;
   if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
-    preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
-      (account): account is string => typeof account === "string",
-    );
+    const accounts: string[] = [];
+    const seenAccounts = new Set<string>();
+    for (const account of parsed.connectOnboardingOptOutAccounts.slice(
+      -CONNECT_ONBOARDING_OPT_OUT_MAX_ACCOUNTS,
+    )) {
+      if (
+        typeof account !== "string" ||
+        account.length === 0 ||
+        account.length > CONNECT_ONBOARDING_ACCOUNT_ID_MAX_LENGTH ||
+        seenAccounts.has(account)
+      ) {
+        continue;
+      }
+      seenAccounts.add(account);
+      accounts.push(account);
+    }
+    preferences.connectOnboardingOptOutAccounts = accounts;
   }
   if (Array.isArray(parsed.collapsedProjectGroups)) {
     preferences.collapsedProjectGroups = parsed.collapsedProjectGroups.filter(
@@ -219,6 +253,21 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     }
     if (Object.keys(byEnvMode).length > 0) {
       preferences.autoCreatePullRequestByEnvMode = byEnvMode;
+    }
+  }
+  if (
+    typeof parsed.autoBabysitPullRequestByEnvMode === "object" &&
+    parsed.autoBabysitPullRequestByEnvMode !== null
+  ) {
+    const byEnvMode: { local?: boolean; worktree?: boolean } = {};
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.local === "boolean") {
+      byEnvMode.local = parsed.autoBabysitPullRequestByEnvMode.local;
+    }
+    if (typeof parsed.autoBabysitPullRequestByEnvMode.worktree === "boolean") {
+      byEnvMode.worktree = parsed.autoBabysitPullRequestByEnvMode.worktree;
+    }
+    if (Object.keys(byEnvMode).length > 0) {
+      preferences.autoBabysitPullRequestByEnvMode = byEnvMode;
     }
   }
   if (typeof parsed.lastSeenChangelogVersion === "string") {
@@ -270,6 +319,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.planModeEnabled === "boolean") {
     preferences.planModeEnabled = parsed.planModeEnabled;
+  }
+  if (typeof parsed.threadListSettledShelfExpanded === "boolean") {
+    preferences.threadListSettledShelfExpanded = parsed.threadListSettledShelfExpanded;
+  }
+  if (typeof parsed.threadListSnoozedShelfExpanded === "boolean") {
+    preferences.threadListSnoozedShelfExpanded = parsed.threadListSnoozedShelfExpanded;
   }
   return preferences;
 }

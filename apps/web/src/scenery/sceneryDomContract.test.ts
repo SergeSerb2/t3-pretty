@@ -10,8 +10,9 @@ import * as NodeFS from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "../components/AppSidebarLayout.tsx?raw";
-import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
+import composerSpecularSource from "../components/chat/ComposerSpecular.tsx?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
+import messagesTimelineSource from "../components/chat/MessagesTimeline.tsx?raw";
 import previewPanelShellSource from "../components/preview/PreviewPanelShell.tsx?raw";
 import pullRequestSummaryTabSource from "../components/pullRequest/PullRequestSummaryTab.tsx?raw";
 import threadTerminalDrawerSource from "../components/ThreadTerminalDrawer.tsx?raw";
@@ -20,9 +21,11 @@ import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
+import threadRouteViewSource from "../routes/-threadRouteView.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
 import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
@@ -49,6 +52,14 @@ describe("scenery structural contract with upstream markup", () => {
       '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
     );
     expect(chatViewSource).toContain("data-chat-header");
+    expect(chatViewSource).toContain('data-chat-messages=""');
+    expect(sceneryCssSource).toMatch(
+      /\[data-chat-messages\]\s*\{[^}]*background-color: transparent;/s,
+    );
+    expect(messagesTimelineSource).toContain('data-timeline-loading="true"');
+    expect(sceneryCssSource).toMatch(
+      /\[data-timeline-loading\]\s*\{[^}]*background-color: transparent;/s,
+    );
   });
 
   it("the composer overlay still carries the attributes the dock clearance targets", () => {
@@ -82,47 +93,31 @@ describe("scenery structural contract with upstream markup", () => {
   });
 
   it("the thread routes still render ChatView inside SidebarInset", () => {
-    for (const text of [serverThreadRouteSource, draftThreadRouteSource]) {
-      expect(text).toContain("<SidebarInset");
-      expect(text).toContain("<ChatView");
-    }
-  });
-});
-
-describe("composer attach contract with upstream markup", () => {
-  it("the right action group the attach slot is injected into still exists", () => {
-    expect(chatComposerSource).toContain('data-chat-composer-actions="right"');
+    expect(threadRouteViewSource).toContain("<SidebarInset");
+    expect(threadRouteViewSource).toContain("<ChatView");
   });
 
-  it("the editor chrome the file-chip strip mounts into still exists", () => {
-    expect(chatComposerSource).toContain('data-chat-composer-editor-chrome="true"');
+  it("both thread routes share one component so promotion cannot remount ChatView", () => {
+    // The draft→server navigation lands seconds after the first send; two
+    // different route components would remount ChatView there, flashing every
+    // glass surface right as the generated title arrives.
+    expect(draftThreadRouteSource).toContain("component: ThreadRouteView");
+    expect(serverThreadRouteSource).toContain("<ThreadRouteView");
   });
 
-  it("the composer still ingests OS-style Files drops on its drag wrapper", () => {
-    expect(chatViewSource).toContain("onDrop={workspaceFileDropHandlers.onDrop}");
-    expect(chatComposerSource).toContain("addDroppedFiles: (files: File[]) => {");
-    expect(chatComposerSource).toContain("void addComposerImages(files)");
+  it("the shared thread view keeps ChatView mounted across the draft→server swap", () => {
+    expect(threadRouteViewSource).not.toContain("strict: false");
+    expect(threadRouteViewSource).toContain('from: "/_chat/draft/$draftId"');
+    expect(threadRouteViewSource).toContain('from: "/_chat/$environmentId/$threadId"');
   });
 
-  it("ChatView still bakes attached filepaths into the outgoing prompt", () => {
-    expect(chatViewSource).toContain("applyAttachedFilePathsSuffix");
-    expect(chatViewSource).toContain("takeAttachedFilesForThread");
-  });
-
-  it("plan follow-up send also bakes attached filepaths before starting the turn", () => {
-    const followUpFnStart = chatViewSource.indexOf("const onSubmitPlanFollowUp = useCallback");
-    expect(followUpFnStart).toBeGreaterThan(-1);
-    const nextCallback = chatViewSource.indexOf(
-      "const onImplementPlanInNewThread = useCallback",
-      followUpFnStart,
+  it("the server branch still gates ChatView on renderState", () => {
+    // Direct visits to missing/not-ready threads must not mount ChatView.
+    // Promotion still renders: the draft route already has ChatView, and the
+    // replace lands with a shell so this gate stays true.
+    expect(threadRouteViewSource).toContain(
+      'renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)',
     );
-    const followUpSlice = chatViewSource.slice(
-      followUpFnStart,
-      nextCallback === -1 ? followUpFnStart + 8000 : nextCallback,
-    );
-    expect(followUpSlice).toContain("takeAttachedFilesForThread(activeThreadKey)");
-    expect(followUpSlice).toContain("applyAttachedFilePathsSuffix");
-    expect(followUpSlice).toContain("restoreAttachedFiles(activeThreadKey, attachedFilesSnapshot)");
   });
 });
 
@@ -130,6 +125,55 @@ describe("glass contract with upstream chrome", () => {
   it("the composer still wears the glass shell driven by the --glass vars", () => {
     expect(chatViewSource).toContain("chat-composer-glass-shell");
     expect(indexCssSource).toContain("var(--chat-composer-glass-surface) var(--glass-opacity)");
+    expect(indexCssSource).toContain("var(--composer-hover-dur, 1)");
+    expect(composerSpecularSource).toContain('"--composer-hover-dur"');
+  });
+
+  it("composer glass stacks without trapping backdrop-filter in a Backdrop Root", () => {
+    const shellRule =
+      indexCssSource.match(
+        /\.chat-composer-glass-shell \{[^}]*--composer-hover-dur:[^}]+\}/,
+      )?.[0] ?? "";
+    expect(shellRule).toContain("z-index: 0;");
+    expect(shellRule).not.toContain("isolation: isolate");
+    expect(indexCssSource).toMatch(
+      /\.chat-composer-glass-shell::before\s*\{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturation\)\);/s,
+    );
+    expect(sceneryCssSource).toContain("--glass-opacity: 42%;");
+  });
+
+  it("keeps hover chrome on an inset top drawer's joined outline", () => {
+    const joinedRim =
+      /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\)\s+\[data-chat-composer-main-surface="true"\]::after\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+    const drawerHover =
+      /\.chat-composer-glass-shell:hover \.chat-composer-top-drawer::before\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+    const drawerSpecular =
+      /\.chat-composer-glass-shell:has\(\.chat-composer-top-drawer\) \.chat-composer-specular\s*\{[^}]+\}/.exec(
+        indexCssSource,
+      )?.[0];
+
+    expect(joinedRim).toContain("clip-path: polygon(");
+    expect(drawerHover).toContain("border-color:");
+    expect(drawerSpecular).toContain("display: none;");
+  });
+
+  it("composites the faint composer glow after rendering full-range gradients", () => {
+    const specularLayers = indexCssSource.slice(
+      indexCssSource.indexOf(".chat-composer-specular::before"),
+      indexCssSource.indexOf(".chat-composer-glass-shell:hover .chat-composer-specular::after"),
+    );
+    expect(
+      specularLayers.match(
+        /background: radial-gradient\(circle closest-side, (?:var\(--foreground\)|white), transparent\);/g,
+      ),
+    ).toHaveLength(4);
+    for (const opacity of ["0.06", "0.05", "0.035", "0.025"]) {
+      expect(specularLayers).toContain(`opacity: ${opacity};`);
+    }
   });
 
   it("header controls still paint from the --toolbar-control var", () => {
@@ -156,7 +200,10 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestSummaryTabSource).toContain('data-pull-request-summary-heading=""');
     expect(pullRequestSummaryTabSource).toContain("bg-background");
     expect(sceneryCssSource).toMatch(
-      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--sidebar\);/s,
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*background-color: var\(--scenery-chrome-fill\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-pull-request-summary-heading\]\.bg-background\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
     );
   });
 
@@ -164,8 +211,10 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestsRouteSource).toContain("data-pull-requests-column");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-panel");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-header");
+    expect(pullRequestsRouteSource).toContain("data-chrome-fade-top");
     expect(sceneryCssSource).toContain("[data-pull-requests-column]");
     expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
+    expect(sceneryCssSource).toContain("[data-workspace-header]");
     expect(sceneryCssSource).toContain("[data-pull-requests-header]");
   });
 
@@ -186,6 +235,49 @@ describe("glass contract with upstream chrome", () => {
     );
     expect(threadTerminalDrawerSource).toContain(
       'transparentBackground: document.documentElement.hasAttribute("data-scenery-on")',
+    );
+  });
+
+  it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
+    expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
+    expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
+    expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
+    expect(indexCssSource).toContain(
+      "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
+    );
+    expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: -1;/s);
+    expect(indexCssSource).toMatch(
+      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
+    );
+    expect(chatViewSource).toContain('data-chrome-fade-top=""');
+    expect(indexCssSource).toContain(
+      '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
+    );
+    expect(indexCssSource).toContain("width: var(--workspace-sidebar-edge-fade)");
+    expect(indexCssSource).toMatch(
+      /\[data-chrome-fade-top\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
+    );
+    expect(settingsLayoutSource).toContain("data-chrome-fade-top");
+    expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
+    expect(indexCssSource).not.toContain(
+      ":is([data-chat-header], [data-pull-requests-header])::after",
+    );
+    expect(chatViewSource).not.toContain("overflow-x-clip");
+    expect(sceneryCssSource).toMatch(
+      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
+    );
+    expect(sceneryCssSource).toMatch(
+      /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
     );
   });
 

@@ -18,6 +18,7 @@ import {
 import { Atom } from "effect/unstable/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
+import { compareIsoDateTimes } from "./lib/threadSort";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 
 export interface DesktopPreviewOverlay {
@@ -139,7 +140,7 @@ const latestSnapshot = (
   sessions: Record<string, PreviewSessionSnapshot>,
 ): PreviewSessionSnapshot | null =>
   Object.values(sessions)
-    .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    .toSorted((a, b) => compareIsoDateTimes(a.updatedAt, b.updatedAt))
     .at(-1) ?? null;
 
 const removeSession = (current: ThreadPreviewState, tabId: string): ThreadPreviewState => {
@@ -171,19 +172,6 @@ export function useActivePreviewSessions(): Record<string, ThreadPreviewState> {
 
 export function readThreadPreviewState(ref: ScopedThreadRef): ThreadPreviewState {
   return appAtomRegistry.get(previewStateAtom(scopedThreadKey(ref)));
-}
-
-export function subscribeThreadPreviewState(
-  ref: ScopedThreadRef,
-  listener: (state: ThreadPreviewState, previous: ThreadPreviewState) => void,
-): () => void {
-  const atom = previewStateAtom(scopedThreadKey(ref));
-  let previous = appAtomRegistry.get(atom);
-  return appAtomRegistry.subscribe(atom, (state) => {
-    const prior = previous;
-    previous = state;
-    listener(state, prior);
-  });
 }
 
 export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEvent): void {
@@ -271,7 +259,7 @@ export function applyPreviewServerSnapshot(
     }
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
-    if (existing && existing.updatedAt > snapshot.updatedAt) return current;
+    if (existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0) return current;
     const recentlySeenUrls = rememberSnapshotUrl(current.recentlySeenUrls, snapshot);
     return {
       ...current,
@@ -297,7 +285,7 @@ export function updatePreviewServerSnapshot(
   updateThreadPreviewState(ref, (current) => {
     if (current.suppressedTabIds.has(snapshot.tabId)) return current;
     const existing = current.sessions[snapshot.tabId];
-    if (existing && existing.updatedAt > snapshot.updatedAt) return current;
+    if (existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0) return current;
     const sessions = { ...current.sessions, [snapshot.tabId]: snapshot };
     const activeTabId =
       current.activeTabId && sessions[current.activeTabId] ? current.activeTabId : snapshot.tabId;
@@ -332,7 +320,10 @@ export function reconcilePreviewServerSessions(
     for (const snapshot of snapshots) {
       if (currentSuppressedTabIds.has(snapshot.tabId)) continue;
       const existing = sameServer ? current.sessions[snapshot.tabId] : undefined;
-      const next = existing && existing.updatedAt > snapshot.updatedAt ? existing : snapshot;
+      const next =
+        existing && compareIsoDateTimes(existing.updatedAt, snapshot.updatedAt) > 0
+          ? existing
+          : snapshot;
       sessions[next.tabId] = next;
       recentlySeenUrls = rememberSnapshotUrl(recentlySeenUrls, next);
     }
@@ -368,12 +359,39 @@ export function reconcilePreviewServerSessions(
   });
 }
 
+function isPreviewStateEqual(
+  previous: DesktopPreviewOverlay | null,
+  next: DesktopPreviewOverlay | null,
+) {
+  return (
+    previous === next ||
+    (previous !== null &&
+      next !== null &&
+      previous.hasWebContents === next.hasWebContents &&
+      previous.canGoBack === next.canGoBack &&
+      previous.canGoForward === next.canGoForward &&
+      previous.loading === next.loading &&
+      previous.zoomFactor === next.zoomFactor &&
+      previous.pictureInPicture === next.pictureInPicture &&
+      previous.colorScheme === next.colorScheme &&
+      previous.audioMuted === next.audioMuted &&
+      previous.audible === next.audible &&
+      previous.controller === next.controller &&
+      previous.favicon?.dataUrl === next.favicon?.dataUrl &&
+      previous.favicon?.pageUrl === next.favicon?.pageUrl &&
+      previous.favicon?.capturedAt === next.favicon?.capturedAt)
+  );
+}
+
 export function applyPreviewDesktopState(
   ref: ScopedThreadRef,
   tabId: string,
   overlay: DesktopPreviewOverlay | null,
 ): void {
   updateThreadPreviewState(ref, (current) => {
+    if (isPreviewStateEqual(current.desktopByTabId[tabId] ?? null, overlay)) {
+      return current;
+    }
     const desktopByTabId = { ...current.desktopByTabId };
     if (overlay) desktopByTabId[tabId] = overlay;
     else delete desktopByTabId[tabId];
@@ -443,13 +461,6 @@ export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
     ...current,
     recentlySeenUrls: dedupeRecentUrls(current.recentlySeenUrls, url),
   }));
-}
-
-export function removePreviewThread(ref: ScopedThreadRef): void {
-  const threadKey = scopedThreadKey(ref);
-  appAtomRegistry.set(previewStateAtom(threadKey), EMPTY_THREAD_PREVIEW_STATE);
-  syncActivePreviewThread(threadKey, EMPTY_THREAD_PREVIEW_STATE);
-  changedPreviewThreadKeys.delete(threadKey);
 }
 
 export function isPreviewSupportedInRuntime(): boolean {

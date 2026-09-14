@@ -17,6 +17,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("maps UTF-8 byte ranges without allocating a second copy of the line", () => {
+  expect(WorkspaceSearchIndex.mapContentMatchRanges("héllo wörld", [[7, 13]])).toEqual([
+    { start: 6, end: 11 },
+  ]);
+});
+
+it("retains and remaps the matching window from an oversized source line", () => {
+  const prefix = "a".repeat(70_000);
+  const line = `${prefix}needle${"b".repeat(70_000)}`;
+  const bounded = WorkspaceSearchIndex.boundContentMatchLine(
+    line,
+    [{ start: prefix.length, end: prefix.length + "needle".length }],
+    64 * 1024,
+  );
+
+  expect(bounded.lineContent).toHaveLength(64 * 1024);
+  expect(
+    bounded.lineContent.slice(bounded.matchRanges[0]!.start, bounded.matchRanges[0]!.end),
+  ).toBe("needle");
+  expect(bounded.truncated).toBe(true);
+});
+
 function fileItem(relativePath: string): FileItem {
   return {
     relativePath,

@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and Google Antigravity.
+  Once configured, T3 Pretty can control them.
+</p>
+
+<p align="center">
   🌄 World Scenery &nbsp;·&nbsp; 🪟 Frosted glass &nbsp;·&nbsp; 🖥️ Desktop &nbsp;·&nbsp; 🌐 Web &nbsp;·&nbsp; 📱 Mobile &nbsp;·&nbsp; MIT
 </p>
 
@@ -19,13 +24,11 @@
 </p>
 
 <p align="center">
-  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest"><strong>⬇ Latest release</strong></a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg"><strong>⬇ macOS</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg">macOS</a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe">Windows</a>
   &nbsp;·&nbsp;
-  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe">Windows</a>
-  &nbsp;·&nbsp;
-  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases">All releases</a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/">R2 feed</a>
 </p>
 
 <p align="center">
@@ -35,6 +38,15 @@
 T3 Pretty is an **agent harness control surface**. It runs the coding-agent CLIs already on your
 machine and gives you one place to steer them — from a desktop window, a browser, or a phone.
 
+> [!WARNING]
+> T3 Pretty currently supports Codex, Claude, Cursor, Grok Build, and Antigravity. Install and authenticate at least one provider before use:
+>
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
+> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+
 It keeps T3 Code's workflow, providers, remote access, and data paths. The fork's job is the
 look: **World Scenery** puts a real landscape behind frosted chrome, so the app reads as a place
 rather than a flat panel. Internal package names, protocols, and `~/.t3` stay stable on purpose.
@@ -42,9 +54,14 @@ Visual changes are not allowed to trade away capability or existing state.
 
 > [!IMPORTANT]
 > `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
-> not this fork. T3 Pretty is this repository. Grab a desktop build from
-> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), run from
-> source (below), or install the headless server with
+> not this fork. T3 Pretty is this repository. Desktop builds publish to the
+> [R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/)
+> (`latest-mac.yml` / `latest.yml`); do not install from old GitHub Release assets.
+> The GitHub tag `desktop-r2-latest` is only a pointer. Grab today's
+> [macOS DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
+> or
+> [Windows EXE](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe),
+> run from source (below), or install the headless server with
 > `curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh`.
 
 ---
@@ -88,13 +105,12 @@ Remote is a first-class path: pair over your tailnet, scan the QR from a running
 
 T3 Pretty does not sell models. It drives provider CLIs you already installed and logged into.
 
-| Provider       | CLI                                                                                          | Login               | Default |
-| -------------- | -------------------------------------------------------------------------------------------- | ------------------- | ------- |
-| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)                                         | `codex login`       | On      |
-| **Claude**     | [Claude Code](https://claude.com/product/claude-code)                                        | `claude auth login` | On      |
-| **Kimi Code**  | [Kimi Code CLI](https://www.kimi.com/code/docs/en/kimi-code-cli/guides/getting-started.html) | `kimi login`        | On      |
-| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`)                                        | `agent login`       | Off     |
-| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                                                           | `grok login`        | Off     |
+| Provider       | CLI                                                   | Login               | Default |
+| -------------- | ----------------------------------------------------- | ------------------- | ------- |
+| **Codex**      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex login`       | On      |
+| **Claude**     | [Claude Code](https://claude.com/product/claude-code) | `claude auth login` | On      |
+| **Cursor**     | [Cursor CLI](https://cursor.com/cli) (`cursor-agent`) | `agent login`       | Off     |
+| **Grok Build** | [Grok Build CLI](https://x.ai/cli)                    | `grok login`        | Off     |
 
 Install and authenticate at least one provider on the machine that runs the server. Cursor is the
 one to watch: the binary is `cursor-agent`, the login command is `agent login`.
@@ -108,7 +124,7 @@ and let the agent open a pull request when it finishes.
 
 Everything you would expect from T3 Code is still here:
 
-- Permission modes (Supervised, Auto-accept edits, Auto, Full access — Kimi offers Supervised / Yolo / Full access, defaulting to Yolo)
+- Permission modes (Supervised, Auto-accept edits, Auto, Full access)
 - Worktrees, checkpoints, diffs, and a Ghostty-backed terminal
 - Source control for GitHub, GitLab, Bitbucket, Azure DevOps, and [Origin](https://origin.cursor.com)
 - Automatic pull requests, usage, storage cleanup, project icons
@@ -121,18 +137,25 @@ behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/op
 
 ## Download 📦
 
-Every merge to `main` publishes a desktop build. **[Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest)** always points at the current Origin tag. **[All releases](https://cursor.com/codebase/serbinenko/t3-pretty/releases)** lists the rest.
+Every merge to `main` publishes a desktop build to the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+That feed is the install channel. Do not install from old GitHub Release assets.
+The GitHub tag `desktop-r2-latest` is only a pointer.
 
-| Platform                     | Installer                                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg)              |
-| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe)               |
-| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)                                         |
-| 📋 **Release notes**         | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
+| Platform                     | Installer                                                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)                                  |
+| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe)                                    |
+| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)                                                             |
+| 📋 **Feed tip**              | [latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml) · [latest-linux.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml) |
 
 The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
 
-The feed always lists whatever is current: [macOS manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [Windows manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml) · [Linux manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml). Mobile is source-only for now: [apps/mobile/README.md](./apps/mobile/README.md).
+The Mac and Windows links above are today's tip. When they go stale, read
+[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml)
+and [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml)
+for the current filenames. Mobile is source-only for now:
+[apps/mobile/README.md](./apps/mobile/README.md).
 
 ---
 
@@ -215,10 +238,10 @@ Full docs live in [docs/](./docs). There is no separate docs site.
 - [Source control](./docs/user/source-control.md) · [Automatic pull requests](./docs/user/auto-pull-requests.md)
 - [Provider handoff](./docs/user/provider-handoff.md)
 - [Usage](./docs/user/usage.md) · [Storage](./docs/user/storage.md)
-- [Project icons](./docs/user/project-settings.md) · [Mobile appearance](./docs/user/mobile-appearance.md)
+- [Project settings](./docs/user/project-settings.md) (including project icons) · [Mobile appearance](./docs/user/mobile-appearance.md)
 - [Keeping client and server in sync](./docs/user/updating.md)
-- [Background service](./docs/user/background-service.md) (Linux and macOS)
-- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md) · [Kimi](./docs/user/providers-kimi.md)
+- [Run T3 Pretty as a background service](./docs/user/background-service.md) (Linux and macOS)
+- Providers: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 
 **Working on the fork**
 

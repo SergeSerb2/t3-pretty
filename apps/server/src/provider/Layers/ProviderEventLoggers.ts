@@ -62,6 +62,8 @@ export const NoOpProviderEventLoggers: ProviderEventLoggers["Service"] = {
 /**
  * Builds both stream views over one shared store. Setup failures are logged
  * and downgraded to the no-op service so diagnostics never block startup.
+ *
+ * @public Service construction is part of the canonical Effect module API.
  */
 // Native logs drop per-token deltas and cumulative tool updates by default;
 // this keeps them for protocol debugging at the cost of much larger files.

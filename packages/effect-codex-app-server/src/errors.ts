@@ -1,15 +1,15 @@
 import * as Schema from "effect/Schema";
 import type * as SchemaIssue from "effect/SchemaIssue";
 
-export const CodexAppServerRequestOperation = Schema.Literals([
+const CodexAppServerRequestOperation = Schema.Literals([
   "decode-payload",
   "encode-payload",
   "handle-request",
   "receive-response",
 ]);
-export type CodexAppServerRequestOperation = typeof CodexAppServerRequestOperation.Type;
+type CodexAppServerRequestOperation = typeof CodexAppServerRequestOperation.Type;
 
-export const CodexAppServerSchemaIssueKind = Schema.Literals([
+const CodexAppServerSchemaIssueKind = Schema.Literals([
   "Filter",
   "Encoding",
   "Pointer",
@@ -22,39 +22,50 @@ export const CodexAppServerSchemaIssueKind = Schema.Literals([
   "Forbidden",
   "OneOf",
 ]);
-export type CodexAppServerSchemaIssueKind = typeof CodexAppServerSchemaIssueKind.Type;
+type CodexAppServerSchemaIssueKind = typeof CodexAppServerSchemaIssueKind.Type;
 
-export interface CodexAppServerSchemaIssueDiagnostics {
+interface CodexAppServerSchemaIssueDiagnostics {
   readonly issueCount: number;
   readonly issueKinds: ReadonlyArray<CodexAppServerSchemaIssueKind>;
   readonly maximumPathDepth: number;
 }
 
+const CODEX_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY = 4_096;
+
 const schemaIssueDiagnostics = (root: SchemaIssue.Issue): CodexAppServerSchemaIssueDiagnostics => {
   let issueCount = 0;
   let maximumPathDepth = 0;
   const issueKinds = new Set<CodexAppServerSchemaIssueKind>();
+  const pending: Array<{ readonly issue: SchemaIssue.Issue; readonly pathDepth: number }> = [
+    { issue: root, pathDepth: 0 },
+  ];
 
-  const visit = (issue: SchemaIssue.Issue, pathDepth: number): void => {
+  while (pending.length > 0 && issueCount < CODEX_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY) {
+    const current = pending.pop();
+    if (!current) break;
+    const { issue, pathDepth } = current;
     issueCount += 1;
     issueKinds.add(issue._tag);
     maximumPathDepth = Math.max(maximumPathDepth, pathDepth);
     switch (issue._tag) {
       case "Filter":
       case "Encoding":
-        visit(issue.issue, pathDepth);
+        pending.push({ issue: issue.issue, pathDepth });
         break;
       case "Pointer":
-        visit(issue.issue, pathDepth + issue.path.length);
+        pending.push({ issue: issue.issue, pathDepth: pathDepth + issue.path.length });
         break;
       case "Composite":
-      case "AnyOf":
-        for (const child of issue.issues) visit(child, pathDepth);
+      case "AnyOf": {
+        const remaining = CODEX_SCHEMA_ISSUE_DIAGNOSTIC_NODE_CAPACITY - issueCount - pending.length;
+        for (let index = Math.min(issue.issues.length, remaining) - 1; index >= 0; index -= 1) {
+          pending.push({ issue: issue.issues[index]!, pathDepth });
+        }
         break;
+      }
     }
-  };
+  }
 
-  visit(root, 0);
   return {
     issueCount,
     issueKinds: [...issueKinds],
@@ -62,7 +73,7 @@ const schemaIssueDiagnostics = (root: SchemaIssue.Issue): CodexAppServerSchemaIs
   };
 };
 
-export const CodexAppServerPayloadKind = Schema.Literals([
+const CodexAppServerPayloadKind = Schema.Literals([
   "null",
   "array",
   "string",
@@ -74,7 +85,7 @@ export const CodexAppServerPayloadKind = Schema.Literals([
   "function",
   "undefined",
 ]);
-export type CodexAppServerPayloadKind = typeof CodexAppServerPayloadKind.Type;
+type CodexAppServerPayloadKind = typeof CodexAppServerPayloadKind.Type;
 
 const payloadKind = (payload: unknown): CodexAppServerPayloadKind => {
   if (payload === null) return "null";
@@ -84,8 +95,7 @@ const payloadKind = (payload: unknown): CodexAppServerPayloadKind => {
 
 const protocolMessageFields = ["id", "method", "params", "result", "error"] as const;
 
-export const CodexAppServerProtocolMessageField = Schema.Literals(protocolMessageFields);
-export type CodexAppServerProtocolMessageField = typeof CodexAppServerProtocolMessageField.Type;
+const CodexAppServerProtocolMessageField = Schema.Literals(protocolMessageFields);
 
 export interface CodexAppServerRequestDiagnostics {
   readonly method?: string;
@@ -110,6 +120,7 @@ export type CodexAppServerProtocolParseOperation = typeof CodexAppServerProtocol
 
 export const CodexAppServerTransportOperation = Schema.Literals([
   "read-input-stream",
+  "write-output-stream",
   "read-process-exit-status",
 ]);
 export type CodexAppServerTransportOperation = typeof CodexAppServerTransportOperation.Type;
@@ -118,6 +129,7 @@ export const CodexAppServerIdentifierPurpose = Schema.Literals([
   "provider-event",
   "command-approval-request",
   "file-change-approval-request",
+  "mcp-elicitation-request",
   "user-input-request",
 ]);
 export type CodexAppServerIdentifierPurpose = typeof CodexAppServerIdentifierPurpose.Type;
@@ -128,7 +140,7 @@ export interface CodexAppServerProtocolErrorShape {
   readonly data?: unknown;
 }
 
-export class CodexAppServerSpawnError extends Schema.TaggedErrorClass<CodexAppServerSpawnError>()(
+export class CodexAppServerSpawnError extends Schema.TaggedError<CodexAppServerSpawnError>()(
   "CodexAppServerSpawnError",
   {
     command: Schema.optional(Schema.String),
@@ -142,7 +154,7 @@ export class CodexAppServerSpawnError extends Schema.TaggedErrorClass<CodexAppSe
   }
 }
 
-export class CodexAppServerProcessExitedError extends Schema.TaggedErrorClass<CodexAppServerProcessExitedError>()(
+export class CodexAppServerProcessExitedError extends Schema.TaggedError<CodexAppServerProcessExitedError>()(
   "CodexAppServerProcessExitedError",
   {
     code: Schema.optional(Schema.Number),
@@ -157,7 +169,7 @@ export class CodexAppServerProcessExitedError extends Schema.TaggedErrorClass<Co
   }
 }
 
-export class CodexAppServerProtocolParseError extends Schema.TaggedErrorClass<CodexAppServerProtocolParseError>()(
+export class CodexAppServerProtocolParseError extends Schema.TaggedError<CodexAppServerProtocolParseError>()(
   "CodexAppServerProtocolParseError",
   {
     operation: CodexAppServerProtocolParseOperation,
@@ -230,7 +242,7 @@ export class CodexAppServerProtocolParseError extends Schema.TaggedErrorClass<Co
   }
 }
 
-export class CodexAppServerTransportError extends Schema.TaggedErrorClass<CodexAppServerTransportError>()(
+export class CodexAppServerTransportError extends Schema.TaggedError<CodexAppServerTransportError>()(
   "CodexAppServerTransportError",
   {
     operation: CodexAppServerTransportOperation,
@@ -243,7 +255,19 @@ export class CodexAppServerTransportError extends Schema.TaggedErrorClass<CodexA
   }
 }
 
-export class CodexAppServerIdentifierGenerationError extends Schema.TaggedErrorClass<CodexAppServerIdentifierGenerationError>()(
+export class CodexAppServerWireLineTooLargeError extends Schema.TaggedError<CodexAppServerWireLineTooLargeError>()(
+  "CodexAppServerWireLineTooLargeError",
+  {
+    maximumBytes: Schema.Int,
+    observedBytes: Schema.Int,
+  },
+) {
+  override get message() {
+    return `Codex App Server wire message exceeded the ${this.maximumBytes}-byte line limit.`;
+  }
+}
+
+export class CodexAppServerIdentifierGenerationError extends Schema.TaggedError<CodexAppServerIdentifierGenerationError>()(
   "CodexAppServerIdentifierGenerationError",
   {
     purpose: CodexAppServerIdentifierPurpose,
@@ -255,7 +279,7 @@ export class CodexAppServerIdentifierGenerationError extends Schema.TaggedErrorC
   }
 }
 
-export class CodexAppServerInputStreamEndedError extends Schema.TaggedErrorClass<CodexAppServerInputStreamEndedError>()(
+export class CodexAppServerInputStreamEndedError extends Schema.TaggedError<CodexAppServerInputStreamEndedError>()(
   "CodexAppServerInputStreamEndedError",
   {},
 ) {
@@ -264,7 +288,16 @@ export class CodexAppServerInputStreamEndedError extends Schema.TaggedErrorClass
   }
 }
 
-export class CodexAppServerRequestError extends Schema.TaggedErrorClass<CodexAppServerRequestError>()(
+export class CodexAppServerOutputStreamEndedError extends Schema.TaggedError<CodexAppServerOutputStreamEndedError>()(
+  "CodexAppServerOutputStreamEndedError",
+  {},
+) {
+  override get message() {
+    return "Codex App Server output stream ended.";
+  }
+}
+
+export class CodexAppServerRequestError extends Schema.TaggedError<CodexAppServerRequestError>()(
   "CodexAppServerRequestError",
   {
     code: Schema.Number,
@@ -420,8 +453,10 @@ export const CodexAppServerError = Schema.Union([
   CodexAppServerProcessExitedError,
   CodexAppServerProtocolParseError,
   CodexAppServerTransportError,
+  CodexAppServerWireLineTooLargeError,
   CodexAppServerIdentifierGenerationError,
   CodexAppServerInputStreamEndedError,
+  CodexAppServerOutputStreamEndedError,
 ]);
 
 export type CodexAppServerError = typeof CodexAppServerError.Type;
