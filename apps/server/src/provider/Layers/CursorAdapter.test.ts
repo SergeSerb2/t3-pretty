@@ -260,6 +260,12 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           "Cursor's model stream was interrupted. Retrying.",
         );
       }
+      const assistantText = runtimeEvents
+        .filter((event) => event.type === "content.delta")
+        .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
+        .join("");
+      assert.ok(!assistantText.includes("RetriableError"));
+      assert.ok(assistantText.includes("hello from mock"));
       assert.isTrue(runtimeEvents.some((event) => event.type === "turn.completed"));
     }),
   );

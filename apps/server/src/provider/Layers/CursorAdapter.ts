@@ -144,6 +144,8 @@ interface CursorSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   assistantReply: CursorTransportFailure;
+  /** Held until the item is known not to be a transport dump. */
+  pendingAssistantItem: { itemId: string; started: boolean } | undefined;
   stopped: boolean;
 }
 
@@ -790,6 +792,7 @@ export function makeCursorAdapter(
             cursorSkillNames: undefined,
             promptsInFlight: 0,
             assistantReply: new CursorTransportFailure(),
+            pendingAssistantItem: undefined,
             stopped: false,
           };
 
@@ -804,18 +807,26 @@ export function makeCursorAdapter(
                     return;
                   case "AssistantItemStarted":
                     ctx.assistantReply = new CursorTransportFailure();
-                    yield* offerRuntimeEvent(
-                      makeAcpAssistantItemEvent({
-                        stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
-                        threadId: ctx.threadId,
-                        turnId: ctx.activeTurnId,
-                        itemId: event.itemId,
-                        lifecycle: "item.started",
-                      }),
-                    );
+                    ctx.pendingAssistantItem = { itemId: event.itemId, started: false };
                     return;
                   case "AssistantItemCompleted":
+                    if (ctx.assistantReply.failure) {
+                      ctx.pendingAssistantItem = undefined;
+                      return;
+                    }
+                    if (ctx.pendingAssistantItem && !ctx.pendingAssistantItem.started) {
+                      yield* offerRuntimeEvent(
+                        makeAcpAssistantItemEvent({
+                          stamp: yield* makeEventStamp(),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          itemId: event.itemId,
+                          lifecycle: "item.started",
+                        }),
+                      );
+                    }
+                    ctx.pendingAssistantItem = undefined;
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
@@ -869,6 +880,22 @@ export function makeCursorAdapter(
                       event.rawPayload,
                       "acp.jsonrpc",
                     );
+                    if (ctx.assistantReply.failure) {
+                      return;
+                    }
+                    if (ctx.pendingAssistantItem && !ctx.pendingAssistantItem.started) {
+                      yield* offerRuntimeEvent(
+                        makeAcpAssistantItemEvent({
+                          stamp: yield* makeEventStamp(),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          itemId: ctx.pendingAssistantItem.itemId,
+                          lifecycle: "item.started",
+                        }),
+                      );
+                      ctx.pendingAssistantItem.started = true;
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp: yield* makeEventStamp(),
@@ -967,6 +994,7 @@ export function makeCursorAdapter(
           if (steeringTurnId === undefined) {
             ctx.lastPlanFingerprint = undefined;
             ctx.assistantReply = new CursorTransportFailure();
+            ctx.pendingAssistantItem = undefined;
           }
           ctx.session = {
             ...ctx.session,
@@ -1108,6 +1136,9 @@ export function makeCursorAdapter(
               },
             });
             ctx.assistantReply = new CursorTransportFailure();
+            ctx.pendingAssistantItem = undefined;
+            // promptsInFlight is this sendTurn, not ACP's prompt slot. Continue
+            // stays on the same send so the counter does not change.
             // The failed prompt already landed in Cursor's session. Re-sending
             // the original user text would duplicate the request after a long
             // tool loop; a continue prompt resumes from that history.
