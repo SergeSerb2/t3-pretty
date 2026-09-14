@@ -3,10 +3,12 @@
 T3 Code runs coding agents on your computer and lets you control them from its
 desktop, web, or mobile app. Set up the machine where the agents will work first.
 
-This page installs the public T3 Pretty build from GitHub, with T3 Connect and
-separate `~/.t3-pretty` state. Maintainers using T3 Pretty Internal should follow
-the [internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
-for the Surge Connect build instead.
+This page installs T3 Pretty from the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+GitHub Releases are not the install channel; the GitHub tag `desktop-r2-latest`
+is only a pointer. The same feed is the
+[internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
+(Surge Connect, `~/.t3`).
 
 ## Requirements
 
@@ -25,7 +27,7 @@ T3 Pretty's CLI is not `npx t3`; that command installs upstream T3 Code.
 Install the T3 Pretty server (Node.js 22.16+ or 24.10+):
 
 ```bash
-curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
 Then start it:
@@ -36,7 +38,7 @@ t3 serve
 
 This starts the server and opens the local web app. Run `t3 --help` for
 command-line options. On a machine that should stay reachable after logout, run
-`t3 service install` and pair from another device, then turn on **T3 Connect**
+`t3 service install` and pair from another device, then turn on **Surge Connect**
 under **Settings** → **Connections**.
 
 The executable is built for Apple Silicon Macs, Linux, and Windows. There is
@@ -57,8 +59,21 @@ however you run other Node processes.
 
 ## Desktop app
 
-Download T3 Pretty for macOS, Windows, or Linux from
-[GitHub Releases](https://github.com/SergeSerb2/t3-pretty/releases).
+Download today's tip from the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+Do not install from old GitHub Release assets. The GitHub tag `desktop-r2-latest`
+is only a pointer.
+
+- macOS (Apple Silicon):
+  [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
+- Windows (x64):
+  [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe)
+
+When those filenames go stale, read
+[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml)
+and [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml)
+for the current tip. After the first install, the desktop app updates itself from
+the same feed.
 
 ### Windows Subsystem for Linux
 
@@ -100,8 +115,8 @@ the desktop app and try again.
 
 Install the T3 Pretty mobile app for iOS or Android through the distribution
 channel for your build. The phone connects to a T3 Pretty server on another
-machine. Follow [remote access](./remote-access.md) to link it through T3 Connect
-or a pairing URL.
+machine. Follow [remote access](./remote-access.md) to link it through Surge
+Connect or a pairing URL.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and
