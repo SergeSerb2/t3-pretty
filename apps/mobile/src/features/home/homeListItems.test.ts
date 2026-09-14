@@ -331,5 +331,22 @@ describe("buildHomeListLayout", () => {
     expect(collapsedPaged.items.find((item) => item.type === "show-more")).toMatchObject({
       hiddenCount: 2,
     });
+
+    const recentWindow = buildHomeListLayout({
+      groups: [
+        {
+          ...pagedGroup,
+          recentThreads: [parent, child, extras[0]!, extras[1]!, extras[2]!, extras[3]!],
+        },
+      ],
+      displayStates: displayStates({}),
+      isPrNestExpanded: () => false,
+    });
+    expect(
+      recentWindow.items.filter((item) => item.type === "thread").map((item) => item.thread.id),
+    ).toEqual([parent.id, extras[0]!.id, extras[1]!.id, extras[2]!.id, extras[3]!.id]);
+    expect(recentWindow.items.find((item) => item.type === "show-more")).toMatchObject({
+      hiddenCount: 3,
+    });
   });
 });

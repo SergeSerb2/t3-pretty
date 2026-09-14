@@ -184,17 +184,23 @@ export function buildHomeListLayout(input: {
       })),
     }));
     const totalCount = units.length;
+    const recentThreadKeys = new Set(
+      group.recentThreads.map((thread) => `${thread.environmentId}:${thread.id}`),
+    );
+    const recentUnitCount = units.filter(
+      (unit) =>
+        recentThreadKeys.has(`${unit.parent.thread.environmentId}:${unit.parent.thread.id}`) ||
+        unit.children.some((child) =>
+          recentThreadKeys.has(`${child.thread.environmentId}:${child.thread.id}`),
+        ),
+    ).length;
     // Default to the group's recent-activity window (last few days, or a small
     // fallback for stale projects), capped at the initial page size. Until the
     // user taps "Show more", older conversations stay hidden to save vertical
     // space; "Show less" resets visibleCount to the initial constant, which
     // lands back here at the recency baseline. A PR nest is one unit so
     // collapse cannot steal slots from other threads.
-    const baselineCount = Math.min(
-      group.recentThreads.length,
-      HOME_INITIAL_VISIBLE_THREADS,
-      totalCount,
-    );
+    const baselineCount = Math.min(recentUnitCount, HOME_INITIAL_VISIBLE_THREADS, totalCount);
     const visibleCount = input.showAllThreads
       ? totalCount
       : Math.min(
