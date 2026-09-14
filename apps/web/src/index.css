@@ -2820,7 +2820,6 @@ html[data-theme-token-probe] *::after {
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
 html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
-  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 
@@ -2828,15 +2827,19 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
    sidebar stay clipped, and the fade never hangs out of those hosts.
    Mask the whole plate so grain and fill dissolve; a transparent-stop
    gradient over an opaque background-color would stay a hard rectangle. */
-:is([data-chat-header], [data-pull-requests-header]) {
+[data-workspace-header] {
   position: relative;
   z-index: 20;
+  background-color: var(--toolbar-background);
 }
 
-[data-chrome-fade-top],
-[data-sidebar-state="expanded"] [data-slot="sidebar-inset"] {
+[data-chrome-fade-top] {
   position: relative;
   isolation: isolate;
+}
+
+[data-sidebar-state="expanded"] [data-slot="sidebar-inset"] {
+  position: relative;
 }
 
 [data-chrome-fade-top]::before,

@@ -21,6 +21,7 @@ import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -213,7 +214,7 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestsRouteSource).toContain("data-chrome-fade-top");
     expect(sceneryCssSource).toContain("[data-pull-requests-column]");
     expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
-    expect(sceneryCssSource).toContain("[data-pull-requests-header]");
+    expect(sceneryCssSource).toContain("[data-workspace-header]");
   });
 
   it("the bottom terminal drawer wears the same chrome glass plate as the sidebars", () => {
@@ -251,15 +252,16 @@ describe("glass contract with upstream chrome", () => {
     );
     expect(indexCssSource).toContain("width: var(--workspace-sidebar-edge-fade)");
     expect(indexCssSource).toMatch(
-      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
+      /\[data-chrome-fade-top\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
     );
+    expect(settingsLayoutSource).toContain("data-chrome-fade-top");
     expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
     expect(indexCssSource).not.toContain(
       ":is([data-chat-header], [data-pull-requests-header])::after",
     );
     expect(chatViewSource).not.toContain("overflow-x-clip");
     expect(sceneryCssSource).toMatch(
-      /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+      /\[data-workspace-header\]\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
       /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,

@@ -550,13 +550,15 @@ export function SettingsPageContainer({
       highlightTarget={highlightTarget}
       onTargetHandled={clearTargetHash}
     >
-      <div
-        className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
-        data-settings-page-scroll
-      >
-        <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
-          {children}
-        </WorkspacePageContainer>
+      <div className="relative flex min-h-0 flex-1 flex-col" data-chrome-fade-top="">
+        <div
+          className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
+          data-settings-page-scroll
+        >
+          <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
+            {children}
+          </WorkspacePageContainer>
+        </div>
       </div>
     </SettingsSearchTargetProvider>
   );
