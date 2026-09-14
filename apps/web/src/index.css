@@ -315,7 +315,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Timeline spacer stays short so at-rest messages sit below the header.
      The frosted skirts are wider and overlay the receiving surface. */
   --workspace-titlebar-scroll-fade-height: 2.5rem;
-  --workspace-chrome-edge-fade: 8rem;
+  --workspace-chrome-edge-fade: 10rem;
   --workspace-sidebar-edge-fade: 6.5rem;
   --workspace-chrome-edge-blur: 40px;
 
@@ -2606,6 +2606,7 @@ html[data-scenery-motion] .chat-markdown-codeblock[data-copied="true"]::after {
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--color-zinc-200);
   --sidebar-stage-fade: var(--sidebar);
+  border-color: transparent;
 
   @variant dark {
     --background: #000;
@@ -2860,7 +2861,7 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   content: "";
   pointer-events: none;
   position: absolute;
-  background-color: color-mix(in srgb, var(--toolbar-background) 38%, transparent);
+  background-color: var(--toolbar-background);
   background-image: var(--surface-grain);
   background-repeat: repeat;
   background-size: var(--surface-grain-size);
@@ -2873,25 +2874,28 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
   right: 0;
   left: 0;
   /* Over the transcript so backdrop-filter frosts the messages. Below the
-     header and banners (z-index 20). */
+     header and banners (z-index 20). Full toolbar fill at the seam, then
+     the mask eases frost off so the titlebar does not end in a hard cut. */
   z-index: 8;
   height: var(--workspace-chrome-edge-fade);
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
-    rgb(0 0 0 / 78%) 14%,
-    rgb(0 0 0 / 48%) 36%,
-    rgb(0 0 0 / 24%) 58%,
-    rgb(0 0 0 / 10%) 78%,
+    black 10%,
+    rgb(0 0 0 / 70%) 28%,
+    rgb(0 0 0 / 40%) 48%,
+    rgb(0 0 0 / 18%) 68%,
+    rgb(0 0 0 / 6%) 86%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     black 0%,
-    rgb(0 0 0 / 78%) 14%,
-    rgb(0 0 0 / 48%) 36%,
-    rgb(0 0 0 / 24%) 58%,
-    rgb(0 0 0 / 10%) 78%,
+    black 10%,
+    rgb(0 0 0 / 70%) 28%,
+    rgb(0 0 0 / 40%) 48%,
+    rgb(0 0 0 / 18%) 68%,
+    rgb(0 0 0 / 6%) 86%,
     transparent 100%
   );
 }
@@ -2899,27 +2903,32 @@ html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-
 [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   top: var(--workspace-topbar-height);
   bottom: 0;
-  left: 0;
+  /* Cover a subpixel seam so the sidebar fill and this plate meet. */
+  left: -1px;
   /* Below the header (z-index 20) so titlebar controls stay clickable. */
   z-index: 10;
-  width: var(--workspace-sidebar-edge-fade);
-  background-color: color-mix(in srgb, var(--sidebar) 38%, transparent);
+  width: calc(var(--workspace-sidebar-edge-fade) + 1px);
+  /* Full sidebar fill at the seam, then the mask dissolves it into chat.
+     A 38% plate next to an opaque sidebar reads as a hard vertical bar. */
+  background-color: var(--sidebar);
   -webkit-mask-image: linear-gradient(
     to right,
     black 0%,
-    rgb(0 0 0 / 78%) 14%,
-    rgb(0 0 0 / 48%) 36%,
-    rgb(0 0 0 / 24%) 58%,
-    rgb(0 0 0 / 10%) 78%,
+    black 10%,
+    rgb(0 0 0 / 70%) 28%,
+    rgb(0 0 0 / 40%) 48%,
+    rgb(0 0 0 / 18%) 68%,
+    rgb(0 0 0 / 6%) 86%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to right,
     black 0%,
-    rgb(0 0 0 / 78%) 14%,
-    rgb(0 0 0 / 48%) 36%,
-    rgb(0 0 0 / 24%) 58%,
-    rgb(0 0 0 / 10%) 78%,
+    black 10%,
+    rgb(0 0 0 / 70%) 28%,
+    rgb(0 0 0 / 40%) 48%,
+    rgb(0 0 0 / 18%) 68%,
+    rgb(0 0 0 / 6%) 86%,
     transparent 100%
   );
 }
