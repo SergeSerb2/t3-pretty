@@ -210,6 +210,7 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestsRouteSource).toContain("data-pull-requests-column");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-panel");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-header");
+    expect(pullRequestsRouteSource).toContain("data-chrome-fade-top");
     expect(sceneryCssSource).toContain("[data-pull-requests-column]");
     expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
     expect(sceneryCssSource).toContain("[data-pull-requests-header]");
@@ -238,15 +239,14 @@ describe("glass contract with upstream chrome", () => {
   it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
     expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
-    expect(indexCssSource).toContain("[data-chat-messages]::before");
+    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
+    expect(indexCssSource).toContain(":is([data-chat-messages], [data-chrome-fade-top])::before");
     expect(indexCssSource).toContain(
       '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
     );
+    expect(indexCssSource).toContain("width: var(--workspace-sidebar-edge-fade)");
     expect(indexCssSource).toMatch(
       /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
-    );
-    expect(indexCssSource).toMatch(
-      /\[data-chat-messages\]::before\s*\{[^}]*mask-image: linear-gradient\(/s,
     );
     expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
     expect(indexCssSource).not.toContain(
@@ -257,10 +257,13 @@ describe("glass contract with upstream chrome", () => {
       /:is\(\[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
-      /\[data-chat-messages\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+      /:is\(\[data-chat-messages\], \[data-chrome-fade-top\]\)::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
     );
     expect(sceneryCssSource).toMatch(
       /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
     );
   });
 

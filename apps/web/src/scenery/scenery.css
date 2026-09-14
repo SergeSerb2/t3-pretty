@@ -923,7 +923,8 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   backdrop-filter: blur(24px) saturate(1.35);
 }
 
-html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-messages]::before {
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  :is([data-chat-messages], [data-chrome-fade-top])::before {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   background-image: none;
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
@@ -1040,6 +1041,16 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     rgb(0 0 0 / 12%) 82%,
     transparent 100%
   );
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  :is([data-chat-messages], [data-chrome-fade-top])::before,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  [data-sidebar-state="expanded"]
+  [data-slot="sidebar-inset"]::after {
+  background-color: var(--scenery-chrome-fill-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Right panel: the same glass plate as the left sidebar. One fill + blur on
@@ -1184,7 +1195,8 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
     background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
   }
 
-  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chat-messages]::before,
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    :is([data-chat-messages], [data-chrome-fade-top])::before,
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
     [data-sidebar-state="expanded"]
     [data-slot="sidebar-inset"]::after {
