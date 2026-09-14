@@ -2827,7 +2827,7 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
    sidebar stay clipped, and the fade never hangs out of those hosts.
    Mask the whole plate so grain and fill dissolve; a transparent-stop
    gradient over an opaque background-color would stay a hard rectangle. */
-[data-workspace-header] {
+:is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   position: relative;
   z-index: 20;
   background-color: var(--toolbar-background);
