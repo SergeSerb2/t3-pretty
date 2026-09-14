@@ -700,10 +700,14 @@ html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sideba
 
 html[data-window-interacting] [data-chrome-fade-top]::before {
   background-color: var(--toolbar-background);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   background-color: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* AppKit inactive-window convention: when the desktop window is not key, the

@@ -281,6 +281,9 @@ describe("glass contract with upstream chrome", () => {
       /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
     );
     expect(indexCssSource).toMatch(
+      /html\[data-window-interacting\] \[data-chrome-fade-top\]::before \{\s*background-color: var\(--toolbar-background\);\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/s,
+    );
+    expect(indexCssSource).toMatch(
       /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\) \{\s*\[data-chrome-fade-top\]::before \{[^}]*background-color: var\(--toolbar-background\);/s,
     );
     expect(sceneryCssSource).toMatch(
