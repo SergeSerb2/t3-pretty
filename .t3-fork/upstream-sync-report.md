@@ -3232,3 +3232,75 @@
   - edited `apps/web/src/components/settings/ConnectionsSettings.tsx`
 - `mobile-typecheck` failed after merging `v0.0.41-nightly.20260913.1646`; repaired with `gpt-5.6-sol`: Extend both T3 Pretty default mobile palettes with all ten thread, composer, and warning variables introduced by the parent. This completes MobileThemeVariables without changing the fork’s default-theme routing or branding.
   - edited `apps/mobile/src/lib/mobileDefaultTheme.ts`
+
+---
+
+# Additional reconciliation with newer T3 Pretty main
+
+- Parent nightly: `v0.0.41-nightly.20260914.1687`
+- Previously integrated parent nightly: `v0.0.41-nightly.20260913.1658`
+- Conflict resolver: `gpt-5.6-sol` with `xhigh` reasoning
+
+## T3 Pretty changes preserved at conflict boundaries
+
+- `pnpm-lock.yaml` — fork-only dependency entries are re-derived by lockfile regeneration against the merged package manifests
+- `apps/mobile/src/widgets/AgentActivity.test.ts` — Preserved the T3 Pretty Live Activity test's ability to verify that activityBackgroundTint is explicitly null, allowing the system to render Liquid Glass rather than an opaque activity background.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Preserved adaptive, readable foreground treatment across dark Live Activity banners, iOS 26 liquid glass, and light or dark home-screen widgets.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Preserved the surrounding T3 Pretty phase-aware status and split-glance tint behavior for normal rendering modes.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Preserved the exact 480:351 frame ratio for T3 Pretty's branded cut-out T3 asset, preventing distortion.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Preserved the fork-specific documentation identifying the asset as the cut-out T3 mark.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — The branded T3Mark rendering and T3 Pretty visual presentation remain intact.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — The simplified, solo-thread, and multi-thread banner variants composed by bannerBody are preserved.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Live thread titles, statuses, phase marks, elapsed time, progress bars, glance segments, and overflow presentation remain available instead of reverting to the legacy compact-row banner.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Deep-link handling remains centralized in bannerModifiers and continues to apply to the full banner.
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts` — Retained the T3 Pretty ToolProgress namespace import needed by fork-specific tool-progress test coverage and behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved the managedRelaySessionAtom import used by T3 Pretty's managed relay and Surge Connect behavior.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved the SURGE_CODE_ACCOUNT_NAME and SURGE_CONNECT_NAME branding imports for T3 Pretty's Surge Connect identity and presentation.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The WSL management button remains hoverable and focusable via aria-disabled rather than native disabled, allowing its explanatory tooltip to work for pointer and keyboard users.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The visually disabled styling and existing tooltip explanation are retained.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Preserved T3 Pretty's removal of direct LAN/Tailscale pairing by not restoring the connectPairingAtom command; remote machines continue to use Surge Connect or desktop SSH, while desktop-local backends such as WSL remain supported.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The fork-only Surge Connect account section remains visible in Connections settings.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Duplicate remote environments remain collapsed by default through visibleSavedEnvironments and hiddenSavedEnvironments, with an explicit accessible control to reveal or hide them.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Hidden duplicate environments remain selectable and removable after being revealed because they participate in the upstream selector and use the selected environment's SavedBackendListRow detail controls.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The fork's Surge Connect identity is retained for environments without a display URL rather than introducing the parent's T3 Connect fallback label.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — The T3 Pretty agent computer-control setting remains available, including the macOS permission guidance, new-session status message, default reset action, and enableComputerUse switch behavior.
+- `apps/web/src/index.css` — Preserved T3 Pretty’s transparent tool-call Shiki rendering, inherited typography, and wrapping behavior for long command tokens.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved T3 Pretty's `react-native.js` LegendList patch postimage (`444dade`), which includes the fork's mobile inset compensation, end-position settling, and related iOS thread-bottom safeguards.
+- `patches/@legendapp__list@3.3.5.patch` — Preserved the corrected LegendList patch metadata identifying the T3 Pretty-modified react-native.mjs output blob, including the fork's iOS thread-bottom and initial-scroll behavior represented by the surrounding patch hunks.
+
+## Parent changes integrated at conflict boundaries
+
+- `pnpm-lock.yaml` — took the parent nightly's generated lockfile wholesale instead of AI-splicing it
+- `apps/mobile/src/widgets/AgentActivity.test.ts` — Integrated upstream's activityBackgroundTint modifier mocking requirement; the modifier remains callable with upstream inputs, while using T3 Pretty's inspectable representation.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Adopted SwiftUI hierarchical primary and secondary foreground styles so system tinted and vibrant presentations are inherited correctly.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Integrated detection of accented and vibrant widget rendering modes, enabling the surrounding phase-tint logic to use monochrome system foregrounds in those modes.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Added the upstream foreground-style parameter type required by the phase tint helper.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Adopted the parent's Foreground parameter type for renderLogo, matching the foregroundStyle API instead of accepting an unrestricted string.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — The parent’s iOS Liquid Glass behavior is integrated: supported environments use a clear activity background tint, while older hosts receive a null tint.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — The parent’s runtime environment availability check is retained rather than applying the new tint indiscriminately.
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts` — Imported the upstream splitBufferedAssistantText helper alongside ProviderRuntimeIngestionLive for the parent test additions.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated the parent connectionStatusTitle import alongside connectionStatusText for the updated connection-status presentation API.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Updated the WSL management button label from “Managed above” to upstream's “Managed locally” wording.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added selected-environment state and resolution, with fallback to the primary environment and then the first available environment.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Added location-hash handling so the connections-environment and wsl-backend search targets select the primary environment.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — The parent refactor from an immediate SettingsPageContainer return to the reusable primarySettings JSX composition is integrated.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated the new responsive two-pane environment selector and detail layout, including bordered card styling and independent scroll areas.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated primary-environment selection and rendering of primarySettings in the detail pane.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated machine-kind icons, selected and disabled visual states, connection status indicators, URL tooltips, and accessible selection controls.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Integrated per-environment connection management, thread-placement preferences, and GitHub routing settings in the selected environment detail pane.
+- `apps/web/src/components/settings/IntegrationsSettings.tsx` — Removed the device-support explanatory comment in accordance with the parent-side cleanup; runtime device integration behavior is unchanged.
+- `apps/web/src/index.css` — Integrated the parent’s one-shot 600ms opacity fade for newly inserted streaming markdown blocks and Shiki code blocks.
+- `apps/web/src/index.css` — Preserved the parent’s data-streaming scope so completed threads do not replay the animation, and its prefers-reduced-motion gate so users requesting reduced motion receive no fade.
+- `patches/@legendapp__list@3.3.5.patch` — Adopted the parent nightly's abbreviated git index metadata format for the `react-native.js` patch entry.
+
+## Parent changes intentionally omitted
+
+- `apps/mobile/src/widgets/AgentActivity.test.ts` — Upstream's identity-returning activityBackgroundTint test mock.. Reason: Returning null directly would serialize only as an anonymous null modifier and break T3 Pretty's named assertion that protects the transparent Live Activity background. This affects only mock representation, not upstream production behavior.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — Parent's generic 3:2 logo frame sizing and glyph description.. Reason: The T3 Pretty cut-out T3 asset has a fork-specific 480:351 aspect ratio; using 3:2 would distort its branded presentation.
+- `apps/mobile/src/widgets/AgentActivity.tsx` — The parent-side legacy banner composition with a centered agents/attention header and up to five renderCompactRow entries.. Reason: That composition is unchanged from the merge-base design and would overwrite T3 Pretty’s newer authoritative bannerBody variants, regressing live thread detail, progress, timing, glance, and overflow behavior. The actual parent improvement at this boundary—the availability-gated Liquid Glass tint—is integrated separately.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Retention of the connectPairingAtom command binding from the parent version.. Reason: T3 Pretty intentionally removed direct LAN/Tailscale pairing in favor of Surge Connect and desktop SSH. Restoring this binding would regress that fork-specific connection architecture.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Always show every saved environment unconditionally in the new environment selector.. Reason: T3 Pretty intentionally collapses duplicate remote homes by default while retaining an explicit reveal path so working-aware duplicate handling and removability are not regressed.
+- `apps/web/src/components/settings/ConnectionsSettings.tsx` — Use "T3 Connect" as the fallback display label for environments without a display URL.. Reason: The surrounding T3 Pretty connection flow is branded as Surge Connect, so the parent presentation string is adapted without changing connection behavior.
+- `patches/@legendapp__list@3.3.5.patch` — THEIRS shortened the index hashes and restored the parent-only patched output hash 93aac741d2cf77ce35996362439108176f19da7a.. Reason: That output hash does not describe the T3 Pretty patch, which contains additional fork-specific LegendList changes. Retaining it would regress the prior patch-metadata repair and leave stale metadata. The formatting-only hash abbreviation has no runtime behavior.
+- `mobile-typecheck` failed after merging `v0.0.41-nightly.20260914.1687`; repaired with `gpt-5.6-sol`: Updated the Live Activity helper color contracts to compose T3 Pretty’s progress and timer UI with the parent’s hierarchical foreground-style API.
+  - edited `apps/mobile/src/widgets/AgentActivity.tsx`
