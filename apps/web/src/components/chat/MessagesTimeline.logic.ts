@@ -1261,8 +1261,9 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   // The setup card takes the place of the working and thinking placeholders
-  // while a worktree is being prepared. It stays after the setup settles so a
-  // failure and its actions remain visible until the thread state moves on.
+  // while a worktree is being prepared. A finished card stays under the send
+  // so failure actions remain, but once setup is done the live placeholders
+  // come back so the first turn can rise in under the exiting card.
   if (input.worktreeSetup) {
     const setupRow = {
       kind: "worktree-setup",
@@ -1281,7 +1282,9 @@ export function deriveMessagesTimelineRows(input: {
     } else {
       nextRows.push(setupRow);
     }
-    return attachTrailingToolGroupsToAssistant(nextRows);
+    if (worktreeSetupReservesLivePlaceholders(input.worktreeSetup)) {
+      return attachTrailingToolGroupsToAssistant(nextRows);
+    }
   }
 
   if (input.isWorking && activeTurnHeaderIndex === input.timelineEntries.length) {
@@ -1299,6 +1302,10 @@ export function deriveMessagesTimelineRows(input: {
 }
 
 export const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
+
+export function worktreeSetupReservesLivePlaceholders(snapshot: WorktreeSetupSnapshot): boolean {
+  return snapshot.phase !== "done";
+}
 
 type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 

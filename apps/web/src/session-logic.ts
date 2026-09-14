@@ -503,6 +503,8 @@ export function deriveWorkLogEntries(
     if (activity.kind === "tool.progress") continue;
     if (activity.kind === "context-window.updated") continue;
     if (activity.kind === "turn.plan.updated") continue;
+    // Generated live-status headlines feed the work-live row, never the log.
+    if (activity.kind === "turn.headline") continue;
     if (activity.summary === "Checkpoint captured") continue;
     if (isNoContentRuntimeWarning(activity)) continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
@@ -531,6 +533,26 @@ export function deriveWorkLogEntries(
     entries.push(entry);
   }
   return collapseDerivedWorkLogEntries(entries);
+}
+
+/**
+ * Latest generated status headline for the running turn, or null when none
+ * has arrived yet. The server keeps one `turn.headline` activity per turn
+ * (stable id), so the last match is the current one.
+ */
+export function deriveLiveTurnHeadline(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  runningTurnId: TurnId | null,
+  enabled = true,
+): string | null {
+  if (!enabled || runningTurnId === null) return null;
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index]!;
+    if (activity.kind === "turn.headline" && activity.turnId === runningTurnId) {
+      return activity.summary;
+    }
+  }
+  return null;
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,

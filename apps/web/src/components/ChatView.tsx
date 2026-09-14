@@ -74,6 +74,7 @@ import {
 } from "@t3tools/shared/projectScripts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { NATIVE_RESUME_THREAD_TITLE, parseNativeResumeCommand } from "@t3tools/shared/nativeResume";
+import { applyCreatePullRequestSuffix } from "@t3tools/shared/createPullRequestPrompt";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
@@ -127,6 +128,7 @@ import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   findLatestProposedPlan,
+  deriveLiveTurnHeadline,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -220,7 +222,7 @@ import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { BranchToolbar } from "./BranchToolbar";
+import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
@@ -446,6 +448,9 @@ import {
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
   resolveDraftHeroState,
+  isWorktreeSetupSubscriptionActive,
+  shouldDropInactiveWorktreeSetup,
+  worktreeSetupExitDurationMs,
   restorePlanFollowUpComposer,
   isPaintOnlyThreadTimeline,
   peekHeldThreadTimeline,
@@ -1699,6 +1704,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const branchToolbarRef = useRef<BranchToolbarHandle>(null);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
@@ -2826,6 +2832,15 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  const liveTurnHeadline = useMemo(
+    () =>
+      deriveLiveTurnHeadline(
+        threadActivities,
+        activeRunningTurnId,
+        settings.generateActivityHeadlines,
+      ),
+    [threadActivities, activeRunningTurnId, settings.generateActivityHeadlines],
+  );
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
   // until orchestration-v2 lands (source precedence lives in the derive).
@@ -3444,13 +3459,31 @@ export default function ChatView(props: ChatViewProps) {
   // thread that was set up, not the route: a deleted bootstrap thread rotates
   // the draft's thread id, and the failed card must survive that.
   const worktreeSetupOwnerKey = draftId ?? routeThreadKey;
-  const worktreeSetupActive =
-    worktreeSetupRef !== null && worktreeSetupRef.ownerKey === worktreeSetupOwnerKey;
+  const worktreeSetupActive = isWorktreeSetupSubscriptionActive({
+    ref: worktreeSetupRef,
+    ownerKey: worktreeSetupOwnerKey,
+    threadId,
+  });
+  useEffect(() => {
+    // Leave leftover setup when this view no longer owns the card. A draft
+    // can rotate threadId under the same ownerKey; that must keep the card.
+    if (
+      !shouldDropInactiveWorktreeSetup({
+        ref: worktreeSetupRef,
+        ownerKey: worktreeSetupOwnerKey,
+        threadId,
+      })
+    ) {
+      return;
+    }
+    setWorktreeSetupRef(null);
+    setHeldWorktreeSetup(null);
+  }, [threadId, worktreeSetupOwnerKey, worktreeSetupRef]);
   // The setup runs on the environment that received the dispatch, so both
   // the subscription and cancel target that one even if the draft's machine
   // picker changes underneath.
   const worktreeSetupQuery = useEnvironmentQuery(
-    worktreeSetupActive
+    worktreeSetupRef !== null && worktreeSetupActive
       ? vcsEnvironment.worktreeSetup({
           environmentId: worktreeSetupRef.environmentId,
           input: { threadId: worktreeSetupRef.threadId },
@@ -3464,18 +3497,17 @@ export default function ChatView(props: ChatViewProps) {
     if (latestWorktreeSetup) setHeldWorktreeSetup(latestWorktreeSetup);
   }, [latestWorktreeSetup]);
   const worktreeSetup =
-    worktreeSetupActive && heldWorktreeSetup?.threadId === worktreeSetupRef.threadId
+    worktreeSetupActive &&
+    worktreeSetupRef !== null &&
+    heldWorktreeSetup?.threadId === worktreeSetupRef.threadId
       ? heldWorktreeSetup
       : null;
   // A finished card is dropped once the agent's turn shows in the timeline:
   // the card belongs to the send, and the agent takes over from there.
+  // The drop waits one exit beat so the card can recede instead of vanishing.
   const worktreeSetupDoneAndTurnVisible =
     worktreeSetup?.phase === "done" && activeThread?.latestTurn?.startedAt != null;
-  useEffect(() => {
-    if (!worktreeSetupDoneAndTurnVisible) return;
-    setWorktreeSetupRef(null);
-    setHeldWorktreeSetup(null);
-  }, [worktreeSetupDoneAndTurnVisible]);
+  const worktreeSetupExiting = worktreeSetupDoneAndTurnVisible;
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup, {
     reportFailure: false,
   });
@@ -3517,6 +3549,26 @@ export default function ChatView(props: ChatViewProps) {
   // owns unmount.
   writeSceneryComposerPlacement(sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null);
   const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
+  useEffect(() => {
+    if (!worktreeSetupDoneAndTurnVisible) return;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+    const durationMs = worktreeSetupExitDurationMs({
+      motionEnabled: sceneryMotionEnabled,
+      prefersReducedMotion,
+    });
+    if (durationMs === 0) {
+      setWorktreeSetupRef(null);
+      setHeldWorktreeSetup(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setWorktreeSetupRef(null);
+      setHeldWorktreeSetup(null);
+    }, durationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [sceneryMotionEnabled, worktreeSetupDoneAndTurnVisible]);
   const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
   const [
     attachDraftHeroTransitionGroupRef,
@@ -5724,6 +5776,38 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  const autoCreatePullRequestEnvMode = sendEnvMode === "worktree" ? "worktree" : "local";
+  const autoCreatePullRequestPreference = useUiStateStore(
+    (store) => store.autoCreatePullRequestByEnvMode[autoCreatePullRequestEnvMode],
+  );
+  const autoBabysitPullRequestPreference = useUiStateStore(
+    (store) => store.autoBabysitPullRequestByEnvMode[autoCreatePullRequestEnvMode],
+  );
+  // Gate the applied value, not just the toggle's visibility: outside a git
+  // repository the hidden control leaves no way to turn the behavior off, and
+  // fetch/push/PR instructions are meaningless there anyway.
+  const autoCreatePullRequest = isGitRepo && autoCreatePullRequestPreference;
+  const babysitPullRequest = autoCreatePullRequest && autoBabysitPullRequestPreference;
+  const setAutoCreatePullRequestForEnvMode = useUiStateStore(
+    (store) => store.setAutoCreatePullRequest,
+  );
+  const setAutoBabysitPullRequestForEnvMode = useUiStateStore(
+    (store) => store.setAutoBabysitPullRequest,
+  );
+  const onToggleAutoCreatePullRequest = useCallback(() => {
+    setAutoCreatePullRequestForEnvMode(autoCreatePullRequestEnvMode, !autoCreatePullRequest);
+  }, [autoCreatePullRequest, autoCreatePullRequestEnvMode, setAutoCreatePullRequestForEnvMode]);
+  const onToggleBabysitPullRequest = useCallback(() => {
+    setAutoBabysitPullRequestForEnvMode(autoCreatePullRequestEnvMode, !babysitPullRequest);
+  }, [autoCreatePullRequestEnvMode, babysitPullRequest, setAutoBabysitPullRequestForEnvMode]);
+  // The suffix only ever rides a thread's first message, so the toggle is
+  // only offered while the thread is still fresh (macOS/mobile parity).
+  // Count optimistic rows too: a local draft keeps messages: [] until
+  // promotion, and `!isServerThread` would otherwise leave the chip up
+  // after the first send.
+  const autoPrThreadHasStarted =
+    (activeThread?.messages.length ?? 0) > 0 || optimisticUserMessages.length > 0;
+  const offerAutoCreatePullRequestToggle = isGitRepo && !autoPrThreadHasStarted;
   const localCheckoutBranchMismatch = useMemo(
     () =>
       isServerThread
@@ -6509,6 +6593,17 @@ export default function ChatView(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  const getShortcutContext = useCallback(
+    () => ({
+      terminalFocus: getTerminalFocusOwner() !== null,
+      terminalOpen: Boolean(terminalUiState.terminalOpen),
+      previewFocus: isPreviewFocused(),
+      previewOpen: previewPanelOpen,
+      modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+    }),
+    [composerRef, previewPanelOpen, terminalUiState.terminalOpen],
+  );
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
@@ -6529,13 +6624,7 @@ export default function ChatView(props: ChatViewProps) {
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
       }
-      const shortcutContext = {
-        terminalFocus: terminalFocusOwner !== null,
-        terminalOpen: Boolean(terminalUiState.terminalOpen),
-        previewFocus: isPreviewFocused(),
-        previewOpen: previewPanelOpen,
-        modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
-      };
+      const shortcutContext = getShortcutContext();
 
       if (
         !shortcutContext.terminalFocus &&
@@ -6700,7 +6789,33 @@ export default function ChatView(props: ChatViewProps) {
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
+        if (!event.repeat) composerRef.current?.toggleModelPicker();
+        return;
+      }
+
+      if (
+        command === "composer.host" ||
+        command === "composer.effort" ||
+        command === "composer.mode" ||
+        command === "composer.workspace"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.openControl(command);
+        return;
+      }
+
+      if (command === "composer.branch") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.openBranchPicker();
+        return;
+      }
+
+      if (command === "composer.previousWorktree") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
         return;
       }
 
@@ -6755,7 +6870,7 @@ export default function ChatView(props: ChatViewProps) {
     supportsSettlement,
     confirmAndUnpinThread,
     copyActiveThreadReference,
-    previewPanelOpen,
+    getShortcutContext,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -7386,7 +7501,15 @@ export default function ChatView(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      // The attachment-only fallback substitutes before the auto-PR suffix so
+      // an attachments-only first message still carries the PR instruction.
+      text: applyCreatePullRequestSuffix({
+        text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+        autoCreatePullRequest,
+        threadHasStarted: autoPrThreadHasStarted,
+        model: ctxSelectedModel,
+        babysitPullRequest,
+      }),
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -8347,7 +8470,16 @@ export default function ChatView(props: ChatViewProps) {
     const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
-    const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
+    // The implementation prompt is the new thread's first user message, so the
+    // auto-PR toggle applies to it the same way it applies to a composer send —
+    // the implementing agent is the one that should open the PR.
+    const implementationPrompt = applyCreatePullRequestSuffix({
+      text: buildPlanImplementationPrompt(planMarkdown),
+      autoCreatePullRequest,
+      threadHasStarted: false,
+      model: ctxSelectedModel,
+      babysitPullRequest,
+    });
     const outgoingImplementationPrompt = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -8463,6 +8595,8 @@ export default function ChatView(props: ChatViewProps) {
     activeProposedPlan,
     activeThreadBranch,
     activeThread,
+    autoCreatePullRequest,
+    babysitPullRequest,
     beginLocalDispatch,
     activeEnvironmentUnavailable,
     createThread,
@@ -8857,6 +8991,10 @@ export default function ChatView(props: ChatViewProps) {
       // reader's feet. A link the agent wrote can open any other one here, and that one has to be
       // checkable out like it is anywhere else.
       <PullRequestDetailPanel
+        getShortcutContext={getShortcutContext}
+        shortcutsEnabled={
+          rightPanelOpen && activeRightPanelSurface?.id === renderedRightPanelSurface.id
+        }
         key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
         environmentId={activeThread.environmentId}
         onSelectPullRequest={(reference) => {
@@ -9095,6 +9233,7 @@ export default function ChatView(props: ChatViewProps) {
             {/* Messages Wrapper. data-chat-transcript-active is the ink view-transition group. */}
             <div
               data-chat-messages=""
+              data-chrome-fade-top=""
               data-chat-transcript="true"
               data-chat-transcript-active="true"
               className="relative flex min-h-0 flex-1 flex-col bg-background"
@@ -9116,12 +9255,14 @@ export default function ChatView(props: ChatViewProps) {
                 isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
                 activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
                 worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
+                worktreeSetupExiting={!paintOnlyDisplayedTimeline && worktreeSetupExiting}
                 onCancelWorktreeSetup={onCancelWorktreeSetup}
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
                 listRef={legendListRef}
                 timelineEntries={displayedTimeline.entries}
                 latestTurn={paintOnlyDisplayedTimeline ? null : activeLatestTurn}
+                liveHeadline={paintOnlyDisplayedTimeline ? null : liveTurnHeadline}
                 runningTurnId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
                 turnDiffSummaries={
                   paintOnlyDisplayedTimeline
@@ -9322,6 +9463,11 @@ export default function ChatView(props: ChatViewProps) {
                             threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            autoCreatePullRequest={autoCreatePullRequest}
+                            babysitPullRequest={babysitPullRequest}
+                            showAutoCreatePullRequestToggle={offerAutoCreatePullRequestToggle}
+                            onToggleAutoCreatePullRequest={onToggleAutoCreatePullRequest}
+                            onToggleBabysitPullRequest={onToggleBabysitPullRequest}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerCatalogKnown={serverConfig !== null}
@@ -9397,6 +9543,7 @@ export default function ChatView(props: ChatViewProps) {
                           {mountComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
+                                ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
                                 showGitControls={isGitRepo}

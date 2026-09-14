@@ -24,6 +24,8 @@ import { cn } from "~/lib/utils";
 
 interface WorktreeSetupCardProps {
   snapshot: WorktreeSetupSnapshot;
+  /** The card is receding so the first turn can take its place. */
+  exiting?: boolean;
   /** Interrupts the server-side bootstrap. Hidden once the setup has settled. */
   onCancel: (() => void) | null;
   /** Restarts the same message in the project checkout instead of a worktree. */
@@ -175,6 +177,7 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
 
 export function WorktreeSetupCard({
   snapshot,
+  exiting = false,
   onCancel,
   onWorkLocally,
   onOpenTerminal,
@@ -202,7 +205,11 @@ export function WorktreeSetupCard({
   return (
     <section
       aria-label="Worktree setup"
-      className="mt-3 rounded-lg border border-border bg-card/60 px-2.5 pt-1.5 pb-2"
+      aria-hidden={exiting || undefined}
+      className={cn(
+        "mt-3 rounded-lg border border-border bg-card/60 px-2.5 pt-1.5 pb-2",
+        exiting && "pointer-events-none",
+      )}
       data-worktree-setup-phase={snapshot.phase}
     >
       <div className={cn("flex min-h-6 items-center gap-1.5 px-0.5 text-sm", headerClassName)}>

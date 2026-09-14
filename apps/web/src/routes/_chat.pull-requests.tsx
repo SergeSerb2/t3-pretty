@@ -151,6 +151,16 @@ import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
+function getShortcutContext() {
+  return {
+    terminalFocus: isTerminalFocused(),
+    terminalOpen: false,
+    previewFocus: false,
+    previewOpen: false,
+    modelPickerOpen: false,
+  };
+}
+
 export interface PullRequestsSearch extends PullRequestListPreferences {
   /**
    * Narrows the list to one server. Absent means every connected one, which is the default the
@@ -1919,7 +1929,7 @@ function PullRequestsRouteView() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
       const command = resolveShortcutCommand(event, keybindings, {
-        context: { terminalFocus: isTerminalFocused() },
+        context: getShortcutContext(),
       });
       if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
       if (command === "rightPanel.toggle") toggleRightPanelFromShortcut(event);
@@ -1986,6 +1996,8 @@ function PullRequestsRouteView() {
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
             <PullRequestDetailPanel
+              getShortcutContext={getShortcutContext}
+              shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
               key={renderedPullRequestSurface.id}
               environmentId={panelEnvironmentId}
               onSelectPullRequest={(reference) => {
@@ -2292,7 +2304,10 @@ function PullRequestsColumn({
   return (
     // Painted flat like the chat column: the inset underneath carries the chrome grain, and a
     // content surface that lets it show reads as a different background than every thread.
-    <div className="@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+    <div
+      className="@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      data-pull-requests-column=""
+    >
       {/* A closed right panel leaves this column full-width, so the shared header
           reserves native window controls and hosts the controls strip itself: on
           desktop the header is a drag-region, and only a no-drag descendant wins
@@ -2301,6 +2316,7 @@ function PullRequestsColumn({
           the route level, whose box spans the panel too, so the toggle keeps one
           fixed top-right anchor. */}
       <WorkspacePageHeader
+        data-pull-requests-header
         electron={isElectron}
         reserveNativeControls={!rightPanelOpen}
         className="relative bg-background"
@@ -2364,41 +2380,47 @@ function PullRequestsColumn({
         {rightPanelControl}
       </WorkspacePageHeader>
 
-      <div
-        ref={scrollRef}
-        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
-      >
-        {/* The top padding is the shared fade band's height, the same pairing the
+      <div className="relative flex min-h-0 flex-1 flex-col" data-chrome-fade-top="">
+        <div
+          ref={scrollRef}
+          className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
+        >
+          {/* The top padding is the shared fade band's height, the same pairing the
             settings page makes: at rest the controls sit fully below the mask, and only
             content actually passing under the chrome fades. */}
-        <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
-          <div className="flex flex-col gap-3">
-            <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
-                {searchInput}
+          <WorkspacePageContainer
+            width="expanded"
+            className="min-h-full gap-4"
+            data-pull-requests-panel=""
+          >
+            <div className="flex flex-col gap-3">
+              <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
+                  {searchInput}
+                </div>
+                {sortMenu}
+                {filtersMenu}
+                <CompactFilterMenu
+                  label="Filter by provider"
+                  outlined
+                  iconOnly={host !== undefined}
+                  triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
+                  triggerLabel="All"
+                  value={host ?? ""}
+                  options={hostMenuOptions}
+                  onChange={(next) => onHost(next === "" ? undefined : next)}
+                />
+                {!condensed ? (
+                  <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                ) : null}
               </div>
-              {sortMenu}
-              {filtersMenu}
-              <CompactFilterMenu
-                label="Filter by provider"
-                outlined
-                iconOnly={host !== undefined}
-                triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
-                triggerLabel="All"
-                value={host ?? ""}
-                options={hostMenuOptions}
-                onChange={(next) => onHost(next === "" ? undefined : next)}
-              />
-              {!condensed ? (
-                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-              ) : null}
+              {/* Scrolled past this marker, the controls are gone and the title takes over. */}
+              <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
             </div>
-            {/* Scrolled past this marker, the controls are gone and the title takes over. */}
-            <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
-          </div>
 
-          {listBody}
-        </WorkspacePageContainer>
+            {listBody}
+          </WorkspacePageContainer>
+        </div>
       </div>
     </div>
   );

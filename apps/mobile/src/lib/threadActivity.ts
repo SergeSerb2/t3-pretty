@@ -27,6 +27,7 @@ import {
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
+  workEntryHandoffKey,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
@@ -172,6 +173,7 @@ export type ThreadFeedEntry =
       readonly hasFailure: boolean;
       readonly live: boolean;
       readonly shimmer: boolean;
+      readonly liveActivityKey?: string;
     }
   | {
       readonly type: "turn-fold";
@@ -192,6 +194,8 @@ export type ThreadFeedEntry =
       readonly id: string;
       readonly createdAt: string;
       readonly turnId: TurnId | null;
+      /** Generated live status, or "Thinking" when none has arrived. */
+      readonly label?: string;
     }
   | {
       /**
@@ -246,6 +250,7 @@ const presentedActivityGroupsCache = new WeakMap<
     readonly unsettledTurnId: TurnId | null;
     readonly isWorking: boolean;
     readonly activeTail: boolean;
+    readonly liveHeadline: string | null;
     readonly rows: ReadonlyArray<ThreadFeedEntry>;
   }
 >();
@@ -413,6 +418,8 @@ function deriveWorkLogEntries(
   for (const activity of foldUserInputActivities(ordered)) {
     if (activity.tone !== "error" && isWorktreeSetupActivity(activity.kind)) continue;
     if (activity.kind === "tool.started") continue;
+    // Generated live-status headlines feed the live activity row, never the log.
+    if (activity.kind === "turn.headline") continue;
     // Like web: an agent's task.started row anchors its batch. It has a fixed
     // id and timestamp, unlike progress ticks, whose stable per-task id is
     // rewritten with a new createdAt on every update (and would otherwise
@@ -428,6 +435,26 @@ function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity));
   }
   return collapseDerivedWorkLogEntries(entries);
+}
+
+/**
+ * Latest generated status headline for the running turn, or null when none
+ * has arrived yet. The server keeps one `turn.headline` activity per turn
+ * (stable id), so the last match is the current one.
+ */
+export function deriveLiveTurnHeadline(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  runningTurnId: TurnId | null,
+  enabled = true,
+): string | null {
+  if (!enabled || runningTurnId === null) return null;
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const activity = activities[index]!;
+    if (activity.kind === "turn.headline" && activity.turnId === runningTurnId) {
+      return activity.summary;
+    }
+  }
+  return null;
 }
 
 /** Adapters forward unknown wire-only SDK messages (background_tasks_changed,
@@ -1742,6 +1769,7 @@ export function deriveThreadFeedPresentation(
   expandedTurnIds: ReadonlySet<TurnId>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
   activeWorkStartedAt: string | null = null,
+  liveHeadline: string | null = null,
 ): ThreadFeedEntry[] {
   const sourceFeed = feed.filter(
     (entry) =>
@@ -1805,6 +1833,7 @@ export function deriveThreadFeedPresentation(
         unsettledTurnId,
         isWorking,
         isActiveTailGroup,
+        liveHeadline,
       );
     }
   }
@@ -1825,7 +1854,7 @@ export function deriveThreadFeedPresentation(
           row.turnId === unsettledTurnId),
     )
   ) {
-    result.push(thinkingRow(activeWorkStartedAt, unsettledTurnId));
+    result.push(thinkingRow(activeWorkStartedAt, unsettledTurnId, liveHeadline ?? "Thinking"));
   }
   return result;
 }
@@ -1837,9 +1866,13 @@ export function deriveThreadFeedPresentation(
  */
 export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
-function thinkingRow(createdAt: string, turnId: TurnId | null) {
-  if (cachedThinkingRow?.createdAt !== createdAt || cachedThinkingRow.turnId !== turnId) {
-    cachedThinkingRow = { type: "thinking", id: LIVE_ACTIVITY_ROW_ID, createdAt, turnId };
+function thinkingRow(createdAt: string, turnId: TurnId | null, label: string) {
+  if (
+    cachedThinkingRow?.createdAt !== createdAt ||
+    cachedThinkingRow.turnId !== turnId ||
+    cachedThinkingRow.label !== label
+  ) {
+    cachedThinkingRow = { type: "thinking", id: LIVE_ACTIVITY_ROW_ID, createdAt, turnId, label };
   }
   return cachedThinkingRow;
 }
@@ -1851,6 +1884,7 @@ function appendPresentedFeedEntry(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  liveHeadline: string | null,
 ): void {
   if (entry.type !== "activity-group") {
     result.push(entry);
@@ -1867,6 +1901,7 @@ function appendPresentedFeedEntry(
     cached.unsettledTurnId !== unsettledTurnId ||
     cached.isWorking !== isWorking ||
     cached.activeTail !== activeTail ||
+    cached.liveHeadline !== liveHeadline ||
     cached.rows.some(
       (row) =>
         (row.type === "work-toggle" && expandedWorkGroupIds.has(row.groupId) !== row.expanded) ||
@@ -1881,8 +1916,9 @@ function appendPresentedFeedEntry(
       unsettledTurnId,
       isWorking,
       activeTail,
+      liveHeadline,
     );
-    cached = { unsettledTurnId, isWorking, activeTail, rows };
+    cached = { unsettledTurnId, isWorking, activeTail, liveHeadline, rows };
     presentedActivityGroupsCache.set(entry, cached);
   }
   for (const row of cached.rows) {
@@ -1897,6 +1933,7 @@ function appendActivityGroupRows(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  liveHeadline: string | null,
 ): void {
   const activities = omitSupersededLifecycleMarkers(
     entry.activities.filter(
@@ -1922,6 +1959,7 @@ function appendActivityGroupRows(
       unsettledTurnId,
       isWorking,
       activeTail && isTrailingRun,
+      liveHeadline,
     );
     groupableRun = [];
   };
@@ -1966,6 +2004,7 @@ function appendToolGroupRows(
   unsettledTurnId: TurnId | null,
   isWorking: boolean,
   activeTail: boolean,
+  liveHeadline: string | null,
 ): void {
   const firstEntry = activities[0]!.workEntry;
   const identity = firstEntry.toolCallId
@@ -1991,15 +2030,18 @@ function appendToolGroupRows(
   // an earlier run (a call whose end was never reported) stays in place.
   const shimmer = activeTail && (active || latestActivity.status === "success");
   const singleActivity = activities.length === 1 ? latestActivity : null;
-  const summary = live
-    ? liveToolActivitySummary(latestActivity, live)
-    : singleActivity !== null &&
-        singleActivity.toolLike &&
-        toolGroupAction(singleActivity.workEntry) !== "edit"
-      ? singleToolCallLabel(singleActivity)
-      : singleActivity !== null && !singleActivity.toolLike
-        ? singleActivity.workEntry.label
-        : summarizeToolGroup(activities.map((activity) => activity.workEntry));
+  const summary =
+    shimmer && liveHeadline
+      ? liveHeadline
+      : live
+        ? liveToolActivitySummary(latestActivity, live)
+        : singleActivity !== null &&
+            singleActivity.toolLike &&
+            toolGroupAction(singleActivity.workEntry) !== "edit"
+          ? singleToolCallLabel(singleActivity)
+          : singleActivity !== null && !singleActivity.toolLike
+            ? singleActivity.workEntry.label
+            : summarizeToolGroup(activities.map((activity) => activity.workEntry));
   const primarySourceActivity = activities.find(
     (activity) => activity.workEntry.toolSource !== undefined,
   );
@@ -2045,6 +2087,7 @@ function appendToolGroupRows(
     ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
     ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
     ...(summaryToolIcon ? { summaryToolIcon } : {}),
+    ...(live ? { liveActivityKey: workEntryHandoffKey(latestActivity.workEntry) } : {}),
     hasFailure: activities.findLast((activity) => activity.toolLike)?.status === "failure",
     live,
     shimmer,

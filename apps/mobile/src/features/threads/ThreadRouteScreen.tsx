@@ -905,6 +905,7 @@ function ThreadRouteContent(
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           activeWorkStartedAt={composer.activeWorkStartedAt}
+          liveHeadline={composer.liveTurnHeadline}
           isCompacting={composer.isCompacting}
           creationState={creationState}
           activePendingApproval={requests.activePendingApproval}

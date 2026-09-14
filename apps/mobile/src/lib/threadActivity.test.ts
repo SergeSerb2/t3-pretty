@@ -17,6 +17,7 @@ import {
   agentSpawnSummary,
   buildPendingUserInputAnswers,
   buildThreadFeed,
+  deriveLiveTurnHeadline,
   deriveThreadFeedPresentation,
   isPendingUserInputOptionSelected,
   setPendingUserInputCustomAnswer,
@@ -1050,6 +1051,40 @@ describe("buildThreadFeed", () => {
       {
         type: "activity-group",
         activities: [{ id: "activity-signal" }],
+      },
+    ]);
+  });
+
+  it("omits generated turn headlines from the settled feed", () => {
+    const turnId = TurnId.make("turn-1");
+    const thread = makeThread({
+      id: ThreadId.make("thread-headline"),
+      projectId: ProjectId.make("project-1"),
+      title: "Headline thread",
+      activities: [
+        makeActivity({
+          id: EventId.make("turn-1:headline"),
+          kind: "turn.headline",
+          summary: "Updating contract tests",
+          createdAt: "2026-04-01T00:00:03.000Z",
+          turnId,
+          tone: "info",
+        }),
+        makeActivity({
+          id: EventId.make("tool-complete"),
+          kind: "tool.completed",
+          summary: "Tool call complete",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: { itemType: "command_execution", command: "vp test", status: "completed" },
+        }),
+      ],
+    });
+
+    expect(buildThreadFeed(thread)).toMatchObject([
+      {
+        type: "activity-group",
+        activities: [{ id: "tool-complete" }],
       },
     ]);
   });
@@ -2296,6 +2331,74 @@ describe("buildThreadFeed", () => {
     },
   );
 
+  it("rewrites only the shimmering live tool row with a generated headline", () => {
+    const turnId = TurnId.make("turn-live-headline");
+    const activity = (
+      id: string,
+      lifecycleStatus: ThreadFeedActivity["lifecycleStatus"],
+      status: ThreadFeedActivity["status"],
+    ): ThreadFeedActivity => ({
+      id,
+      createdAt: "2026-04-01T00:00:02.000Z",
+      turnId,
+      summary: `Tool ${id}`,
+      detail: null,
+      canExpand: false,
+      getFullDetail: () => null,
+      getCopyText: () => id,
+      icon: "command",
+      toolLike: true,
+      status,
+      lifecycleStatus,
+      workEntry: {
+        id,
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId,
+        label: `Tool ${id}`,
+        tone: "tool",
+        toolLifecycleStatus: lifecycleStatus,
+        command: "pnpm test",
+        itemType: "command_execution",
+      },
+    });
+    const latestTurn = {
+      turnId,
+      state: "running" as const,
+      requestedAt: "2026-04-01T00:00:00.000Z",
+      startedAt: "2026-04-01T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+    const present = (
+      lifecycleStatus: ThreadFeedActivity["lifecycleStatus"],
+      status: ThreadFeedActivity["status"],
+    ) =>
+      deriveThreadFeedPresentation(
+        [
+          {
+            type: "activity-group",
+            id: "activity-1",
+            createdAt: "2026-04-01T00:00:02.000Z",
+            turnId,
+            activities: [activity("activity-1", lifecycleStatus, status)],
+          },
+        ],
+        latestTurn,
+        new Set(),
+        new Set(),
+        latestTurn.startedAt,
+        "Updating contract tests",
+      );
+
+    expect(present("inProgress", "neutral")).toMatchObject([
+      { type: "work-toggle", shimmer: true, summary: "Updating contract tests" },
+    ]);
+    expect(present("declined", "failure")).toMatchObject([
+      { type: "work-toggle", shimmer: false, summary: "Declined pnpm" },
+      { type: "thinking", label: "Updating contract tests" },
+    ]);
+  });
+
   it("shows one Thinking row while a turn works without live tool activity", () => {
     const turnId = TurnId.make("turn-thinking");
     const latestTurn = {
@@ -2339,6 +2442,19 @@ describe("buildThreadFeed", () => {
         (entry) => entry.type,
       ),
     ).toEqual(["message"]);
+    expect(
+      deriveThreadFeedPresentation(
+        feed,
+        latestTurn,
+        new Set(),
+        new Set(),
+        "now",
+        "Updating contract tests",
+      )[1],
+    ).toMatchObject({
+      type: "thinking",
+      label: "Updating contract tests",
+    });
   });
 
   it("keeps one live slot while calls fail and restart", () => {
@@ -2412,6 +2528,58 @@ describe("buildThreadFeed", () => {
       "activity-group:runtime-error",
       "work-toggle:live-activity-row",
     ]);
+  });
+
+  it("identifies live handoffs by call, not lifecycle event or summary", () => {
+    const turnId = TurnId.make("turn-failing-calls");
+    const latestTurn = {
+      turnId,
+      state: "running" as const,
+      requestedAt: "2026-04-01T00:00:00.000Z",
+      startedAt: "2026-04-01T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    };
+    const call = (n: number, status: "inProgress" | "completed") =>
+      makeActivity({
+        id: EventId.make(`call-${n}-${status}`),
+        kind: status === "completed" ? "tool.completed" : "tool.updated",
+        tone: "tool",
+        summary: "Command run",
+        createdAt: `2026-04-01T00:00:${String(n * 2 + (status === "completed" ? 1 : 0)).padStart(2, "0")}.000Z`,
+        turnId,
+        payload: {
+          itemType: "command_execution",
+          toolCallId: `call-${n}`,
+          title: "Command run",
+          status,
+          detail: `Bash: ls ${n}`,
+        },
+      });
+    const liveRow = (activities: ReadonlyArray<ReturnType<typeof makeActivity>>) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(
+          makeThread({
+            id: ThreadId.make("thread-failing-calls"),
+            projectId: ProjectId.make("project-1"),
+            title: "Failing calls",
+            latestTurn,
+            activities,
+          }),
+        ),
+        latestTurn,
+        new Set(),
+        new Set(),
+        latestTurn.startedAt,
+      ).find((row) => row.type === "work-toggle");
+
+    const running = liveRow([call(1, "inProgress")]);
+    const completed = liveRow([call(1, "inProgress"), call(1, "completed")]);
+    const next = liveRow([call(1, "inProgress"), call(1, "completed"), call(2, "inProgress")]);
+    expect(running?.liveActivityKey).toBe(JSON.stringify([turnId, "call-1"]));
+    expect(completed?.liveActivityKey).toBe(running?.liveActivityKey);
+    expect(next?.liveActivityKey).toBe(JSON.stringify([turnId, "call-2"]));
+    expect(next?.id).toBe(running?.id);
   });
 
   it("hands a settled tool run off to Thinking once assistant text streams after it", () => {
@@ -3451,4 +3619,34 @@ it("keeps attachment-only question answers expandable outside mobile work groups
   expect(running[0]?.type).toBe("work-toggle");
   expect(running[1]).toBe(group);
   expect(running[2]?.type).toBe("work-toggle");
+});
+
+describe("deriveLiveTurnHeadline", () => {
+  it("returns the running turn's headline and ignores other turns", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: EventId.make("turn-1:headline"),
+        kind: "turn.headline",
+        summary: "Old turn status",
+        createdAt: "2026-04-01T00:00:01.000Z",
+        turnId: TurnId.make("turn-1"),
+        tone: "info",
+      }),
+      makeActivity({
+        id: EventId.make("turn-2:headline"),
+        kind: "turn.headline",
+        summary: "Updating contract tests",
+        createdAt: "2026-04-01T00:00:02.000Z",
+        turnId: TurnId.make("turn-2"),
+        tone: "info",
+      }),
+    ];
+
+    expect(deriveLiveTurnHeadline(activities, TurnId.make("turn-2"))).toBe(
+      "Updating contract tests",
+    );
+    expect(deriveLiveTurnHeadline(activities, TurnId.make("turn-3"))).toBeNull();
+    expect(deriveLiveTurnHeadline(activities, null)).toBeNull();
+    expect(deriveLiveTurnHeadline(activities, TurnId.make("turn-2"), false)).toBeNull();
+  });
 });

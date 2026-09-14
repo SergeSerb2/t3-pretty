@@ -53,6 +53,8 @@ describe("DesktopEnvironment", () => {
           T3CODE_DEV_REMOTE_T3_SERVER_ENTRY_PATH: " /remote/server.mjs ",
           T3CODE_OTLP_TRACES_URL: " http://127.0.0.1:4318/v1/traces ",
           T3CODE_OTLP_EXPORT_INTERVAL_MS: "2500",
+          T3CODE_OTLP_HEADERS: "authorization=Basic%20abc%3D%3D,x-tenant=t3",
+          T3CODE_OTLP_PROTOCOL: "http/protobuf",
         },
       );
 
@@ -78,10 +80,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.backendCwd, "/repo");
       assert.equal(environment.appUserModelId, "com.sergeserb.t3pretty.dev");
       assert.equal(environment.linuxWmClass, "t3pretty-dev");
-      assert.equal(
-        environment.linuxDesktopEntryName,
-        "com.sergeserb.T3Pretty.Development.desktop",
-      );
+      assert.equal(environment.linuxDesktopEntryName, "com.sergeserb.T3Pretty.Development.desktop");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -91,6 +90,14 @@ describe("DesktopEnvironment", () => {
       assert.deepEqual(environment.commitHashOverride, Option.some("0123456789abcdef"));
       assert.deepEqual(environment.otlpTracesUrl, Option.some("http://127.0.0.1:4318/v1/traces"));
       assert.equal(environment.otlpExportIntervalMs, 2500);
+      assert.deepEqual(
+        environment.otlpHeaders,
+        Option.some({
+          authorization: "Basic abc==",
+          "x-tenant": "t3",
+        }),
+      );
+      assert.equal(environment.otlpProtocol, "http/protobuf");
     }),
   );
 
@@ -108,6 +115,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
+      assert.equal(environment.otlpProtocol, "http/json");
     }),
   );
 
@@ -171,10 +179,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.displayName, "T3 Pretty Internal (Dev)");
       assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
       assert.equal(environment.linuxWmClass, "t3code-dev");
-      assert.equal(
-        environment.linuxDesktopEntryName,
-        "com.t3tools.T3Code.Development.desktop",
-      );
+      assert.equal(environment.linuxDesktopEntryName, "com.t3tools.T3Code.Development.desktop");
       assert.equal(environment.userDataDirName, "t3code-dev");
       assert.include(environment.developmentDockIconPath, "t3-pretty-internal-1024.png");
     }),

@@ -915,12 +915,35 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-timeli
 
 /* Chat header: frosted chrome band over the photo (SurgeCode .toolbar). The
    Pull Requests page header wears the same band, so both pages meet the photo
-   with the same chrome. */
+   with the same chrome. The fade skirt is a ::before on the messages pane. */
 html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-  :is([data-chat-header], [data-pull-requests-header]) {
+  :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.35);
   backdrop-filter: blur(24px) saturate(1.35);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on] [data-chrome-fade-top]::before {
+  background-color: color-mix(in srgb, var(--toolbar-background) 42%, transparent);
+  background-image: none;
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
 }
 
 /* Header controls (Add action / Open / Commit / Initialize git…): the band
@@ -992,6 +1015,41 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
   background-image: none;
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
   backdrop-filter: blur(14px) saturate(1.1);
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+  [data-sidebar-state="expanded"]
+  [data-slot="sidebar-inset"]::after {
+  background-color: var(--scenery-chrome-fill);
+  background-image: none;
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+}
+
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  [data-chrome-fade-top]::before,
+html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-interacting]
+  [data-sidebar-state="expanded"]
+  [data-slot="sidebar-inset"]::after {
+  background-color: var(--scenery-chrome-fill-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Right panel: the same glass plate as the left sidebar. One fill + blur on
@@ -1132,8 +1190,15 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
    over an arbitrary photo. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
-    :is([data-chat-header], [data-pull-requests-header]) {
-    background-color: color-mix(in srgb, var(--toolbar-background) 92%, transparent);
+    :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]),
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-chrome-fade-top]::before,
+  html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]
+    [data-sidebar-state="expanded"]
+    [data-slot="sidebar-inset"]::after {
+    background-color: var(--scenery-chrome-fill-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on]

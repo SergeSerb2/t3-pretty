@@ -1,4 +1,5 @@
 import { QuestionAnswerHistory } from "./QuestionAnswerHistory";
+import { SlidingActivity } from "./SlidingActivity";
 import {
   getQuestionAnswerPreview,
   hasQuestionAnswer,
@@ -926,6 +927,7 @@ export function ThreadWorkGroupToggle(props: {
   readonly toolIcon?: ToolActivityIcon;
   readonly hasFailure: boolean;
   readonly shimmer: boolean;
+  readonly liveActivityKey?: string | undefined;
   readonly onToggle: () => void;
 }) {
   const accessibilityLabel = props.hasFailure
@@ -952,37 +954,39 @@ export function ThreadWorkGroupToggle(props: {
         className="min-h-8 flex-row items-center gap-1.5 rounded-md px-0.5 py-0 active:bg-subtle"
         style={{ minHeight: props.rowSizing.estimatedRowHeight }}
       >
-        {props.shimmer ? (
-          <ShimmeringWorkContent
-            key={props.rowSizing.textSizeKey}
-            environmentId={props.environmentId}
-            icon={icon}
-            iconSubtleColor={props.iconSubtleColor}
-            label={props.summary}
-            showIcon
-            themeAppearance={props.themeAppearance}
-            toolIcon={props.toolIcon}
-          />
-        ) : (
-          <>
-            <View className="h-6 w-6 items-center justify-center">
-              <ToolActivityIconView
-                environmentId={props.environmentId}
-                icon={props.toolIcon}
-                fallback={icon}
-                fallbackColor={props.iconSubtleColor}
-                themeAppearance={props.themeAppearance}
-              />
-            </View>
-            <Text
+        <SlidingActivity activityKey={props.expanded ? null : (props.liveActivityKey ?? null)}>
+          {props.shimmer ? (
+            <ShimmeringWorkContent
               key={props.rowSizing.textSizeKey}
-              className="min-w-0 flex-1 text-sm text-foreground-muted"
-              numberOfLines={1}
-            >
-              {props.summary}
-            </Text>
-          </>
-        )}
+              environmentId={props.environmentId}
+              icon={icon}
+              iconSubtleColor={props.iconSubtleColor}
+              label={props.summary}
+              showIcon
+              themeAppearance={props.themeAppearance}
+              toolIcon={props.toolIcon}
+            />
+          ) : (
+            <>
+              <View className="h-6 w-6 items-center justify-center">
+                <ToolActivityIconView
+                  environmentId={props.environmentId}
+                  icon={props.toolIcon}
+                  fallback={icon}
+                  fallbackColor={props.iconSubtleColor}
+                  themeAppearance={props.themeAppearance}
+                />
+              </View>
+              <Text
+                key={props.rowSizing.textSizeKey}
+                className="min-w-0 flex-1 text-sm text-foreground-muted"
+                numberOfLines={1}
+              >
+                {props.summary}
+              </Text>
+            </>
+          )}
+        </SlidingActivity>
         <ThreadDisclosureChevron
           expanded={props.expanded}
           collapsedDirection="down"
@@ -1131,11 +1135,13 @@ export const ThreadAgentSpawnCard = memo(function ThreadAgentSpawnCard(props: {
 export function ThreadThinkingRow(props: {
   readonly rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
   readonly iconSubtleColor: ColorValue;
+  readonly label?: string;
 }) {
+  const label = props.label ?? "Thinking";
   return (
     <View
       accessible
-      accessibilityLabel="Thinking"
+      accessibilityLabel={label}
       className="-mx-1 min-h-8 flex-row items-center px-1.5 py-0"
       style={{ minHeight: props.rowSizing.estimatedRowHeight }}
     >
@@ -1143,7 +1149,7 @@ export function ThreadThinkingRow(props: {
         key={props.rowSizing.textSizeKey}
         icon="brain"
         iconSubtleColor={props.iconSubtleColor}
-        label="Thinking"
+        label={label}
         showIcon
       />
     </View>

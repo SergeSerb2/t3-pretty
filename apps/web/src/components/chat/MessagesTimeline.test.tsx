@@ -791,7 +791,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("<video");
     expect(markup).toContain('aria-label="demo.mp4"');
-    expect(markup).toContain('controls=""');
     expect(markup).not.toContain("Expand demo.mp4");
   });
 
@@ -1667,6 +1666,98 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Thinking");
     expect(markup).toContain("lucide-brain");
     expect(markup).toContain('data-timeline-row-id="live-activity-row"');
+  });
+
+  it("prefers a generated headline over the thinking fallback", () => {
+    const turnId = TurnId.make("turn-live");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        liveHeadline="Updating contract tests"
+        activeTurnStartedAt={MESSAGE_CREATED_AT}
+        latestTurn={{
+          turnId,
+          state: "running",
+          startedAt: MESSAGE_CREATED_AT,
+          completedAt: null,
+        }}
+        runningTurnId={turnId}
+        timelineEntries={[]}
+      />,
+    );
+
+    expect(markup).toContain("Updating contract tests");
+    expect(markup).not.toContain("Thinking");
+  });
+
+  it("rewrites only the active live tool row with a generated headline", () => {
+    const turnId = TurnId.make("turn-live");
+    const liveProps = {
+      ...buildProps(),
+      isWorking: true,
+      liveHeadline: "Updating contract tests",
+      activeTurnStartedAt: MESSAGE_CREATED_AT,
+      latestTurn: {
+        turnId,
+        state: "running" as const,
+        startedAt: MESSAGE_CREATED_AT,
+        completedAt: null,
+      },
+      runningTurnId: turnId,
+    };
+
+    const activeMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...liveProps}
+        timelineEntries={[
+          {
+            id: "entry-live",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-live",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId,
+              toolCallId: "call-live",
+              label: "Run tests",
+              tone: "tool",
+              itemType: "command_execution",
+              command: "pnpm test",
+              toolLifecycleStatus: "inProgress",
+            },
+          },
+        ]}
+      />,
+    );
+    expect(activeMarkup).toContain("Updating contract tests");
+    expect(activeMarkup).not.toContain("Running pnpm");
+
+    const inactiveMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...liveProps}
+        timelineEntries={[
+          {
+            id: "entry-declined",
+            kind: "work",
+            createdAt: MESSAGE_CREATED_AT,
+            entry: {
+              id: "work-declined",
+              createdAt: MESSAGE_CREATED_AT,
+              turnId,
+              toolCallId: "call-declined",
+              label: "Run tests",
+              tone: "tool",
+              itemType: "command_execution",
+              command: "pnpm test",
+              toolLifecycleStatus: "declined",
+            },
+          },
+        ]}
+      />,
+    );
+    expect(inactiveMarkup).toContain("Declined pnpm");
+    expect(inactiveMarkup).toContain("Updating contract tests");
   });
 
   it("keeps the completed command in the shared activity row with a present-tense label", () => {

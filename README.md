@@ -24,13 +24,11 @@
 </p>
 
 <p align="center">
-  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest"><strong>⬇ Latest release</strong></a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg"><strong>⬇ macOS</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg">macOS</a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe">Windows</a>
   &nbsp;·&nbsp;
-  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe">Windows</a>
-  &nbsp;·&nbsp;
-  <a href="https://cursor.com/codebase/serbinenko/t3-pretty/releases">All releases</a>
+  <a href="https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/">R2 feed</a>
 </p>
 
 <p align="center">
@@ -56,9 +54,14 @@ Visual changes are not allowed to trade away capability or existing state.
 
 > [!IMPORTANT]
 > `npx t3@latest`, Homebrew `t3-code`, and winget `T3Tools.T3Code` install **upstream T3 Code**,
-> not this fork. T3 Pretty is this repository. Grab a desktop build from
-> [Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest), run from
-> source (below), or install the headless server with
+> not this fork. T3 Pretty is this repository. Desktop builds publish to the
+> [R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/)
+> (`latest-mac.yml` / `latest.yml`); do not install from old GitHub Release assets.
+> The GitHub tag `desktop-r2-latest` is only a pointer. Grab today's
+> [macOS DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
+> or
+> [Windows EXE](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe),
+> run from source (below), or install the headless server with
 > `curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh`.
 
 ---
@@ -134,18 +137,25 @@ behavior at conflict boundaries. See [docs/operations/fork-release.md](./docs/op
 
 ## Download 📦
 
-Every merge to `main` publishes a desktop build. **[Latest release](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest)** always points at the current Origin tag. **[All releases](https://cursor.com/codebase/serbinenko/t3-pretty/releases)** lists the rest.
+Every merge to `main` publishes a desktop build to the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
+That feed is the install channel. Do not install from old GitHub Release assets.
+The GitHub tag `desktop-r2-latest` is only a pointer.
 
-| Platform                     | Installer                                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-arm64.dmg)              |
-| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.34-nightly.20260819.1133000284-x64.exe)               |
-| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)                                         |
-| 📋 **Release notes**         | [Latest](https://cursor.com/codebase/serbinenko/t3-pretty/releases/latest) · [All](https://cursor.com/codebase/serbinenko/t3-pretty/releases) |
+| Platform                     | Installer                                                                                                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🍎 **macOS** (Apple Silicon) | [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)                                                                                                                                                                                  |
+| 🪟 **Windows** (x64)         | [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe)                                                                                                                                                                                   |
+| 🐧 **Linux** (x64)           | [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)                                                                                                                                                                                                             |
+| 📋 **Feed tip**              | [latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml) · [latest-linux.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml) |
 
 The installer filenames still say `T3-Code-…` on purpose: internal package names stay compatible with T3 Code. The app you launch is **T3 Pretty (Alpha)**. After the first install, the desktop app updates itself from the same public feed.
 
-The feed always lists whatever is current: [macOS manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml) · [Windows manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml) · [Linux manifest](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml). Mobile is source-only for now: [apps/mobile/README.md](./apps/mobile/README.md).
+The Mac and Windows links above are today's tip. When they go stale, read
+[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml)
+and [latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml)
+for the current filenames. Mobile is source-only for now:
+[apps/mobile/README.md](./apps/mobile/README.md).
 
 ---
 

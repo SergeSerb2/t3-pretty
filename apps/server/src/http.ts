@@ -17,7 +17,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { cast } from "effect/Function";
 import {
-  HttpBody,
   HttpClient,
   HttpClientResponse,
   HttpMiddleware,
@@ -28,7 +27,7 @@ import {
   HttpServerRespondable,
 } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import { OtlpTracer } from "effect/unstable/observability";
+import { OtlpTracer, OtlpSerialization } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
 import {
@@ -457,8 +456,10 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const config = yield* ServerConfig.ServerConfig;
     const otlpTracesUrl = config.otlpTracesUrl;
+    const otlpHeaders = config.otlpHeaders;
     const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
+    const serialization = yield* OtlpSerialization.OtlpSerialization;
     const rawBodyJson = yield* readJsonBodyWithinByteLimit(
       request.stream,
       OTLP_TRACES_MAX_BODY_BYTES,
@@ -504,7 +505,8 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
 
     return yield* httpClient
       .post(otlpTracesUrl, {
-        body: HttpBody.jsonUnsafe(bodyJson),
+        body: serialization.traces(bodyJson),
+        headers: otlpHeaders,
       })
       .pipe(
         Effect.flatMap((response) =>

@@ -259,6 +259,8 @@ function translateLegacyProjectOverridePatch(
   } as ServerSettingsPatch;
 }
 
+export type ServerSettingsInternalPatch = ServerSettingsPatch;
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,

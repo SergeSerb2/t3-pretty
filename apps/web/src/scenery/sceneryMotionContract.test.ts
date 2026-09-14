@@ -12,6 +12,7 @@ import { describe, expect, it } from "vite-plus/test";
 import agentsPanelSource from "../components/AgentsPanel.tsx?raw";
 import animatedHeightSource from "../components/AnimatedHeight.tsx?raw";
 import pairingRouteSource from "../components/auth/PairingRouteSurface.tsx?raw";
+import chatViewLogicSource from "../components/ChatView.logic.ts?raw";
 import chatViewSource from "../components/ChatView.tsx?raw";
 import changedFilesSource from "../components/chat/ChangedFilesTree.tsx?raw";
 import chatComposerSource from "../components/chat/ChatComposer.tsx?raw";
@@ -71,7 +72,9 @@ describe("row arrival contract with the messages timeline", () => {
 
   it("animates the row's inner box, not the overflow-x-clip wrapper", () => {
     expect(messagesTimelineSource).toContain("overflow-x-clip");
-    expect(motionStylesSource).toContain("[data-timeline-root].scenery-row-enter > *");
+    expect(motionStylesSource).toContain(
+      "[data-timeline-root].scenery-row-enter\n  > *:not([data-worktree-setup-exiting])",
+    );
     expect(motionDriverSource).toContain("seenRowIdsRef.current.clear()");
   });
 
@@ -79,6 +82,19 @@ describe("row arrival contract with the messages timeline", () => {
     expect(messagesTimelineSource).toContain("data-timeline-row-id={row.id}");
     expect(messagesTimelineSource).toContain("data-timeline-row-kind={row.kind}");
     expect(messagesTimelineSource).toContain("data-message-role");
+  });
+
+  it("the worktree setup card still has an authored exit beat", () => {
+    expect(messagesTimelineSource).toContain("data-worktree-setup-exiting");
+    expect(chatViewSource).toContain("worktreeSetupExitDurationMs");
+    expect(motionStylesSource).toContain("[data-timeline-root] > [data-worktree-setup-exiting]");
+    expect(motionStylesSource).toContain(
+      "animation: scenery-worktree-setup-exit var(--sc-worktree-setup-exit-ms)",
+    );
+    expect(motionStylesSource).toContain("--sc-worktree-setup-exit-ms: 220ms");
+    expect(motionStylesSource).toContain("--sc-worktree-setup-exit-ms: 150ms");
+    expect(chatViewLogicSource).toContain("WORKTREE_SETUP_EXIT_MS = 220");
+    expect(chatViewLogicSource).toContain("WORKTREE_SETUP_EXIT_REDUCED_MS = 150");
   });
 });
 

@@ -36,6 +36,13 @@ export interface WorkLogPresentationEntry {
   readonly toolSource?: ToolActivitySource;
 }
 
+/** Lifecycle events for one call share a handoff identity across clients. */
+export function workEntryHandoffKey(
+  entry: Pick<WorkLogPresentationEntry, "turnId" | "toolCallId"> & { readonly id: string },
+): string {
+  return JSON.stringify([entry.turnId, entry.toolCallId ?? entry.id]);
+}
+
 export type ToolGroupAction =
   | "link-pr"
   | "unlink-pr"

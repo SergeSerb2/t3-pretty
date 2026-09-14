@@ -39,6 +39,7 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  BotIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -208,9 +209,11 @@ import {
 import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import {
+  ThreadActiveSubagentIndicator,
   ThreadPullRequestBadgeControl,
   ThreadPullRequestsMiniList,
   ThreadWorktreeIndicator,
+  activeSubagentCountLabel,
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
@@ -416,6 +419,14 @@ function SidebarThreadTooltip({
                 {showInstanceBadge && providerEntry
                   ? `${modelLabel} · ${providerEntry.displayName}`
                   : modelLabel}
+              </div>
+            </div>
+          ) : null}
+          {activeSubagentCountLabel(thread.activeSubagentCount ?? 0) ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <BotIcon aria-hidden className="size-3 shrink-0 text-sky-600 dark:text-sky-400" />
+              <div className="min-w-0 truncate text-foreground/75">
+                {activeSubagentCountLabel(thread.activeSubagentCount ?? 0)}
               </div>
             </div>
           ) : null}
@@ -1773,6 +1784,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               </span>
             ) : null}
             {draftIndicator}
+            <ThreadActiveSubagentIndicator
+              className={props.isActive || isSelected ? "text-current" : undefined}
+              count={thread.activeSubagentCount}
+            />
             {title}
             {nestCountLabel}
             {nestStatusLabel}
@@ -2079,7 +2094,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 </span>
               )}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              <ThreadActiveSubagentIndicator
+                className={props.isActive || isSelected ? "text-current" : undefined}
+                count={thread.activeSubagentCount}
+              />
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
@@ -2271,6 +2290,10 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
           {props.project ? (
             <ProjectFavicon project={props.project} className="size-4 shrink-0" />
           ) : null}
+          <ThreadActiveSubagentIndicator
+            className={props.isHighlighted || props.isRouteActive ? "text-current" : undefined}
+            count={thread.activeSubagentCount}
+          />
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}

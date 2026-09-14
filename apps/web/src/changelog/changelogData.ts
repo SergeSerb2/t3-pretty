@@ -26,6 +26,156 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.41-nightly.20260914.1707002090",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "new",
+        title: "Slide between live tool calls",
+      },
+      {
+        kind: "fixed",
+        title: "Retry Cursor turns after HTTP/2 transport dumps",
+      },
+      {
+        kind: "fixed",
+        title: "Generated live activity headlines",
+      },
+      {
+        kind: "fixed",
+        title: "Ease worktree setup into the first turn",
+      },
+      {
+        kind: "fixed",
+        title: "Fade titlebar and sidebar chrome into the next section",
+      },
+      {
+        kind: "new",
+        title: "Composer Create PR chip and review-and-merge option",
+      },
+    ],
+  },
+  {
+    version: "0.0.41-nightly.20260914.1707002073",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Ease worktree setup into the first turn",
+      },
+      {
+        kind: "fixed",
+        title: "Fade titlebar and sidebar chrome into the next section",
+      },
+      {
+        kind: "new",
+        title: "Composer Create PR chip and review-and-merge option",
+      },
+      {
+        kind: "new",
+        title: "Share global environment secrets across Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: "Intercept /resume so native sessions actually resume",
+      },
+      {
+        kind: "fixed",
+        title: "Let the new-thread hero show the wallpaper",
+      },
+    ],
+  },
+  {
+    version: "0.0.41-nightly.20260914.1707002066",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "fixed",
+        title: "Fade titlebar and sidebar chrome into the next section",
+      },
+      {
+        kind: "new",
+        title: "Composer Create PR chip and review-and-merge option",
+      },
+      {
+        kind: "new",
+        title: "Share global environment secrets across Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: "Intercept /resume so native sessions actually resume",
+      },
+      {
+        kind: "fixed",
+        title: "Let the new-thread hero show the wallpaper",
+      },
+      {
+        kind: "fixed",
+        title: "Thread photo backgrounds after upstream sync",
+      },
+    ],
+  },
+  {
+    version: "0.0.41-nightly.20260914.1707002055",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "new",
+        title: "Composer Create PR chip and review-and-merge option",
+      },
+      {
+        kind: "new",
+        title: "Share global environment secrets across Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: "Intercept /resume so native sessions actually resume",
+      },
+      {
+        kind: "fixed",
+        title: "Let the new-thread hero show the wallpaper",
+      },
+      {
+        kind: "fixed",
+        title: "Thread photo backgrounds after upstream sync",
+      },
+      {
+        kind: "fixed",
+        title: "Omit dead backend proxy and retry staged WSL probe timeouts",
+      },
+    ],
+  },
+  {
+    version: "0.0.41-nightly.20260914.1707002042",
+    date: "2026-09-14",
+    items: [
+      {
+        kind: "new",
+        title: "Share global environment secrets across Surge Connect",
+      },
+      {
+        kind: "fixed",
+        title: "Intercept /resume so native sessions actually resume",
+      },
+      {
+        kind: "fixed",
+        title: "Let the new-thread hero show the wallpaper",
+      },
+      {
+        kind: "fixed",
+        title: "Thread photo backgrounds after upstream sync",
+      },
+      {
+        kind: "fixed",
+        title: "Omit dead backend proxy and retry staged WSL probe timeouts",
+      },
+      {
+        kind: "fixed",
+        title: "Provide ForgejoCli in source-control boot layers",
+      },
+    ],
+  },
+  {
     version: "0.0.41-nightly.20260914.1707002033",
     date: "2026-09-14",
     items: [

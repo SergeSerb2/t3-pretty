@@ -25,7 +25,9 @@ import {
 } from "@t3tools/contracts";
 import {
   applyCreatePullRequestSuffix,
+  hasBabysitPullRequestSuffix,
   hasCreatePullRequestSuffix,
+  resolveAutoBabysitPullRequest,
   resolveAutoCreatePullRequest,
 } from "@t3tools/shared/createPullRequestPrompt";
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
@@ -182,6 +184,8 @@ type NewTaskFlowContextValue = {
   readonly autoCreatePullRequest: boolean;
   readonly autoCreatePullRequestSettled: boolean;
   readonly canToggleAutoCreatePullRequest: boolean;
+  readonly babysitPullRequest: boolean;
+  readonly setBabysitPullRequest: (enabled: boolean) => void;
   readonly planModeEnabled: boolean;
   readonly expandedProvider: string | null;
   readonly environments: ReadonlyArray<{
@@ -492,6 +496,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const autoCreatePullRequestByEnvMode = preferencesHydrated
     ? preferencesResult.value.autoCreatePullRequestByEnvMode
     : undefined;
+  const autoBabysitPullRequestByEnvMode = preferencesHydrated
+    ? preferencesResult.value.autoBabysitPullRequestByEnvMode
+    : undefined;
   // A draft-scoped override (set when a queued task is hydrated for editing,
   // or when the user flips the toggle mid-edit) wins over the per-mode
   // preference so editing unrelated text cannot change a queued task's choice.
@@ -503,25 +510,68 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     (preferencesHydrated
       ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, workspaceMode)
       : false);
+  const babysitPullRequestChoice =
+    selectedProjectDraft.autoBabysitPullRequest ??
+    (preferencesHydrated
+      ? resolveAutoBabysitPullRequest(autoBabysitPullRequestByEnvMode, workspaceMode)
+      : false);
   // Submission waits for this: sending during hydration would race the stored
-  // choice in whichever direction the fallback picks. A draft override settles
-  // it immediately; otherwise the persisted preferences must have loaded.
+  // choice in whichever direction the fallback picks. Draft overrides settle
+  // the pair only when both flags are pinned; otherwise persisted preferences
+  // must have loaded so babysit cannot default to false.
   const autoCreatePullRequestSettled =
-    selectedProjectDraft.autoCreatePullRequest !== undefined || preferencesHydrated;
-  const setAutoCreatePullRequest = useCallback(
-    (enabled: boolean) => {
+    (selectedProjectDraft.autoCreatePullRequest !== undefined &&
+      selectedProjectDraft.autoBabysitPullRequest !== undefined) ||
+    preferencesHydrated;
+  const persistPullRequestPreferences = useCallback(
+    (input: { readonly create?: boolean; readonly babysit?: boolean }) => {
+      const create = input.create ?? autoCreatePullRequestChoice;
+      const babysit = input.babysit ?? babysitPullRequestChoice;
       if (editingPendingTaskRef.current !== null && selectedProjectDraftKey !== null) {
-        updateComposerDraftSettings(selectedProjectDraftKey, { autoCreatePullRequest: enabled });
+        updateComposerDraftSettings(selectedProjectDraftKey, {
+          autoCreatePullRequest: create,
+          autoBabysitPullRequest: babysit,
+        });
         return;
       }
       savePreferences({
         autoCreatePullRequestByEnvMode: {
           ...autoCreatePullRequestByEnvMode,
-          [workspaceMode]: enabled,
+          [workspaceMode]: create,
+        },
+        autoBabysitPullRequestByEnvMode: {
+          ...autoBabysitPullRequestByEnvMode,
+          [workspaceMode]: babysit,
         },
       });
     },
-    [autoCreatePullRequestByEnvMode, savePreferences, selectedProjectDraftKey, workspaceMode],
+    [
+      autoBabysitPullRequestByEnvMode,
+      babysitPullRequestChoice,
+      autoCreatePullRequestByEnvMode,
+      autoCreatePullRequestChoice,
+      savePreferences,
+      selectedProjectDraftKey,
+      workspaceMode,
+    ],
+  );
+  const setAutoCreatePullRequest = useCallback(
+    (enabled: boolean) => {
+      persistPullRequestPreferences({
+        create: enabled,
+        babysit: enabled ? babysitPullRequestChoice : false,
+      });
+    },
+    [babysitPullRequestChoice, persistPullRequestPreferences],
+  );
+  const setBabysitPullRequest = useCallback(
+    (enabled: boolean) => {
+      persistPullRequestPreferences({
+        create: enabled ? true : autoCreatePullRequestChoice,
+        babysit: enabled,
+      });
+    },
+    [autoCreatePullRequestChoice, persistPullRequestPreferences],
   );
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
@@ -723,6 +773,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // environment is offline the captured/preferred choice is preserved.
   const projectConfirmedNotGitRepo = branchState.data?.isRepo === false;
   const autoCreatePullRequest = !projectConfirmedNotGitRepo && autoCreatePullRequestChoice;
+  const babysitPullRequest = autoCreatePullRequest && babysitPullRequestChoice;
   const allBranchRefs = branchState.refs;
   const availableBranches = useMemo(
     () =>
@@ -1032,6 +1083,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         // Pin the queued task's auto-PR choice to the draft so re-queueing
         // reproduces it even if the global preference changes meanwhile.
         autoCreatePullRequest: hasCreatePullRequestSuffix(message.text),
+        autoBabysitPullRequest: hasBabysitPullRequestSuffix(message.text),
         workspaceSelection: {
           mode: message.creation.workspaceMode,
           branch: message.creation.branch,
@@ -1086,24 +1138,29 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       const projectCwd = usingPendingSnapshot
         ? editingPendingTask?.creation?.projectCwd
         : selectedProject.workspaceRoot;
+      // This builder is the only mobile suffix site (send, queue, re-queue,
+      // and edit-flush). Both flags have to land here or Merge/PR+ is a no-op.
+      const createPullRequest =
+        !projectConfirmedNotGitRepo &&
+        (draft.autoCreatePullRequest ??
+          (preferencesHydrated
+            ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
+            : false));
+      const babysitPullRequest =
+        createPullRequest &&
+        (draft.autoBabysitPullRequest ??
+          (preferencesHydrated
+            ? resolveAutoBabysitPullRequest(autoBabysitPullRequestByEnvMode, mode)
+            : false));
       return {
         environmentId: selectedProject.environmentId,
         threadId: ThreadId.make(metadata.threadId),
         messageId: MessageId.make(metadata.messageId),
         commandId: CommandId.make(metadata.commandId),
-        // Queued tasks capture the auto-PR instruction at queue time so a
-        // later preference flip cannot alter an already-queued task. A
-        // draft-scoped override (hydrated from the queued text or set by the
-        // toggle mid-edit) wins over the per-mode preference; non-git
-        // projects never queue the instruction.
         text: applyCreatePullRequestSuffix({
           text,
-          autoCreatePullRequest:
-            !projectConfirmedNotGitRepo &&
-            (draft.autoCreatePullRequest ??
-              (preferencesHydrated
-                ? resolveAutoCreatePullRequest(autoCreatePullRequestByEnvMode, mode)
-                : false)),
+          autoCreatePullRequest: createPullRequest,
+          babysitPullRequest,
           threadHasStarted: false,
           model: draftModelSelection.model,
         }),
@@ -1154,6 +1211,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       };
     },
     [
+      autoBabysitPullRequestByEnvMode,
       autoCreatePullRequestByEnvMode,
       editingPendingProject,
       editingPendingTask,
@@ -1302,6 +1360,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       autoCreatePullRequest,
       autoCreatePullRequestSettled,
       canToggleAutoCreatePullRequest: !projectConfirmedNotGitRepo && preferencesHydrated,
+      babysitPullRequest,
+      setBabysitPullRequest,
       planModeEnabled,
       expandedProvider,
       environments,
@@ -1344,6 +1404,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       attachments,
       autoCreatePullRequest,
       autoCreatePullRequestSettled,
+      babysitPullRequest,
       availableBranches,
       beginEditingPendingTask,
       preferencesHydrated,
@@ -1394,6 +1455,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setRuntimeMode,
       setSelectedModelKey,
       setAutoCreatePullRequest,
+      setBabysitPullRequest,
       setStartFromOrigin,
       setWorkspaceMode,
       startFromOrigin,

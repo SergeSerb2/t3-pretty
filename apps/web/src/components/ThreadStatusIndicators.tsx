@@ -17,6 +17,7 @@ import {
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 import {
+  BotIcon,
   CheckIcon,
   CircleDashedIcon,
   EyeIcon,
@@ -484,6 +485,47 @@ export function terminalStatusFromRunningIds(
   };
 }
 
+export function activeSubagentCountLabel(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? "subagent" : "subagents"} working`;
+}
+
+export function ThreadActiveSubagentIndicator({
+  count,
+  className,
+}: {
+  count: number | undefined;
+  className?: string;
+}) {
+  const n = count ?? 0;
+  const label = activeSubagentCountLabel(n);
+  if (label === null) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            aria-label={label}
+            data-testid="thread-active-subagent-count"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5 text-sky-600 dark:text-sky-400",
+              "[[data-highlighted]_&]:text-current [[data-selected]_&]:text-current",
+              className,
+            )}
+          />
+        }
+      >
+        <BotIcon aria-hidden className="size-3.5" />
+        <span aria-hidden className="text-[10px] font-medium leading-none tabular-nums">
+          {n}
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function ThreadWorktreeIndicator({
   thread,
 }: {
@@ -600,12 +642,14 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     pr === null && supportsMultiplePullRequests
       ? resolveThreadCurrentPullRequestLink(thread.pullRequests)
       : null;
-  if (!prStatus && !threadStatus && !pendingLink) {
+  const subagentCount = thread.activeSubagentCount ?? 0;
+  if (!prStatus && !threadStatus && !pendingLink && subagentCount <= 0) {
     return null;
   }
 
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
+      <ThreadActiveSubagentIndicator count={subagentCount} />
       {prStatus && pr ? (
         <Tooltip>
           <TooltipTrigger

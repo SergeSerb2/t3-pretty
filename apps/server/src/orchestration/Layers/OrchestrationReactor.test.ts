@@ -15,6 +15,7 @@ import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
+import { ActivityHeadlineReactor } from "./ActivityHeadlineReactor.ts";
 
 describe("OrchestrationReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<OrchestrationReactor, never> | null = null;
@@ -104,6 +105,14 @@ describe("OrchestrationReactor", () => {
             },
           }),
         ),
+        Layer.provideMerge(
+          Layer.succeed(ActivityHeadlineReactor, {
+            start: () => {
+              started.push("activity-headline-reactor");
+              return Effect.void;
+            },
+          }),
+        ),
       ),
     );
 
@@ -120,6 +129,7 @@ describe("OrchestrationReactor", () => {
       "thread-settlement-reactor",
       "pull-request-sync-reactor",
       "agent-awareness-relay",
+      "activity-headline-reactor",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

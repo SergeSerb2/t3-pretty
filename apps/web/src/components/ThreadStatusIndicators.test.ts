@@ -9,6 +9,7 @@ import {
 
 import {
   ChangeRequestStatusIcon,
+  activeSubagentCountLabel,
   prStatusIndicator,
   settledPrHoverColorClass,
 } from "./ThreadStatusIndicators";
@@ -132,5 +133,13 @@ describe("settledPrHoverColorClass", () => {
     expect(settledPrHoverColorClass("open", true)).toContain(
       "group-hover/sidebar-row:text-zinc-500",
     );
+  });
+});
+
+describe("activeSubagentCountLabel", () => {
+  it("labels only live counts", () => {
+    expect(activeSubagentCountLabel(0)).toBeNull();
+    expect(activeSubagentCountLabel(1)).toBe("1 subagent working");
+    expect(activeSubagentCountLabel(3)).toBe("3 subagents working");
   });
 });

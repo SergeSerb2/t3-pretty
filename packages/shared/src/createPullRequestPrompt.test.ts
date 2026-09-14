@@ -6,6 +6,7 @@ import {
   CREATE_PULL_REQUEST_CLOSE_MARKER,
   CREATE_PULL_REQUEST_MESSAGE_SUFFIX,
   CREATE_PULL_REQUEST_OPEN_MARKER,
+  hasBabysitPullRequestSuffix,
   hasCreatePullRequestSuffix,
   stripCreatePullRequestSuffix,
 } from "./createPullRequestPrompt.ts";
@@ -77,6 +78,25 @@ describe("applyCreatePullRequestSuffix", () => {
       'T3 Code recorded the current thread\'s selected model as "grok-build".',
     );
     expect(result).toContain("copy this exact identifier");
+    expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
+  });
+
+  it("adds review-and-merge instructions when babysit is on", () => {
+    const result = applyCreatePullRequestSuffix({
+      text: "Fix the login bug",
+      autoCreatePullRequest: true,
+      threadHasStarted: false,
+      babysitPullRequest: true,
+    });
+
+    expect(result).toBe(
+      `Fix the login bug${buildCreatePullRequestMessageSuffix(undefined, {
+        babysitPullRequest: true,
+      })}`,
+    );
+    expect(result).toContain("Watch Auto Review, review comments, and required checks.");
+    expect(result).toContain("enable auto-merge");
+    expect(hasBabysitPullRequestSuffix(result)).toBe(true);
     expect(stripCreatePullRequestSuffix(result)).toBe("Fix the login bug");
   });
 });
@@ -168,5 +188,6 @@ describe("hasCreatePullRequestSuffix", () => {
   it("detects the applied suffix", () => {
     expect(hasCreatePullRequestSuffix(`x${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`)).toBe(true);
     expect(hasCreatePullRequestSuffix("x")).toBe(false);
+    expect(hasBabysitPullRequestSuffix(`x${CREATE_PULL_REQUEST_MESSAGE_SUFFIX}`)).toBe(false);
   });
 });

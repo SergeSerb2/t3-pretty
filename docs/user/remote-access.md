@@ -106,7 +106,9 @@ need to forward an OAuth callback port.
 In the desktop app, selecting **Connect** also makes the new device available through T3
 Connect. Once both desktops participate, each app automatically keeps the full account mesh in its
 connection list, including machines added later. Threads from every linked desktop are therefore
-available in either app without repeating **Connect** on both sides.
+available in either app without repeating **Connect** on both sides. Global environment variables
+saved in **Settings → Providers** follow the same mesh: they are written to every connected
+environment so agents on those machines can use the keys.
 
 The **Remote Environments** list shows one row per machine. When several environments publish from
 the same machine (for example an installed app and a second server on one host), only the working
@@ -181,10 +183,12 @@ T3 Pretty and T3 Pretty Internal can be installed side by side, but both product
 register `t3code://`. The app installed most recently receives pairing and deep links; open the
 other app and use **Add Environment** when you need to target it explicitly.
 
-Install the T3 Pretty CLI on the remote machine first — `npx t3` is upstream T3 Code:
+Install the T3 Pretty CLI on the remote machine first from the
+[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/)
+(`npx t3` is upstream T3 Code):
 
 ```bash
-curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
+curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
 ```
 
 For a command-line host, replace `<private-ip>` with the host's LAN or tailnet

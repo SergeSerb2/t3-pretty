@@ -2320,6 +2320,14 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverExportGlobalEnvironment]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverExportGlobalEnvironment,
+            serverSettings.getSettings.pipe(Effect.map((settings) => settings.globalEnvironment)),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,

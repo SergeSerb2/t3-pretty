@@ -217,6 +217,56 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* adapter.stopSession(threadId);
       const runtimeEvents = yield* Fiber.join(runtimeEventsFiber);
       assert.isFalse(runtimeEvents.some((event) => event.type === "turn.completed"));
+      assert.equal(runtimeEvents.filter((event) => event.type === "runtime.warning").length, 2);
+    }),
+  );
+
+  it.effect("retries a Cursor transport dump and settles the turn when the stream recovers", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-transport-error-retry");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({
+          T3_ACP_FIRST_PROMPT_RESPONSE_TEXT:
+            "Error: RetriableError: [canceled] http/2 stream closed with error code CANCELLED (0x8)",
+        }),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const sent = yield* adapter.sendTurn({
+        threadId,
+        input: "continue after a cancelled stream",
+        attachments: [],
+      });
+      assert.equal(sent.threadId, threadId);
+      yield* adapter.stopSession(threadId);
+      const runtimeEvents = yield* Fiber.join(runtimeEventsFiber);
+      const warnings = runtimeEvents.filter((event) => event.type === "runtime.warning");
+      assert.equal(warnings.length, 1);
+      if (warnings[0]?.type === "runtime.warning") {
+        assert.equal(
+          warnings[0].payload.message,
+          "Cursor's model stream was interrupted. Retrying.",
+        );
+      }
+      const assistantText = runtimeEvents
+        .filter((event) => event.type === "content.delta")
+        .map((event) => (event.type === "content.delta" ? event.payload.delta : ""))
+        .join("");
+      assert.ok(!assistantText.includes("RetriableError"));
+      assert.ok(assistantText.includes("hello from mock"));
+      assert.isTrue(runtimeEvents.some((event) => event.type === "turn.completed"));
     }),
   );
 

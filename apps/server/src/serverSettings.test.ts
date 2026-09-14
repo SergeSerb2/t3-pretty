@@ -1225,6 +1225,62 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("stores global environment secrets and injects them into every agent process", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const instanceId = ProviderInstanceId.make("codex_global");
+
+      const next = yield* serverSettings.updateSettings({
+        globalEnvironment: [
+          { name: "OPENAI_API_KEY", value: "sk-global-secret", sensitive: true },
+          { name: "ANTHROPIC_BASE_URL", value: "https://example.test", sensitive: false },
+        ],
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [
+              { name: "ANTHROPIC_BASE_URL", value: "https://instance.test", sensitive: false },
+            ],
+            config: {},
+          },
+        },
+      });
+
+      assert.deepEqual(next.globalEnvironment, [
+        {
+          name: "OPENAI_API_KEY",
+          value: "sk-global-secret",
+          sensitive: true,
+          valueRedacted: true,
+        },
+        { name: "ANTHROPIC_BASE_URL", value: "https://example.test", sensitive: false },
+      ]);
+      const persisted = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(persisted, "sk-global-secret");
+      assert.deepEqual(
+        ServerSettingsModule.redactServerSettingsForClient(next).globalEnvironment[0],
+        {
+          name: "OPENAI_API_KEY",
+          value: "",
+          sensitive: true,
+          valueRedacted: true,
+        },
+      );
+
+      const environment = yield* resolveProviderInstanceTerminalEnvironment({
+        serverSettings,
+        path,
+        rawProviderInstanceId: instanceId,
+        env: undefined,
+      });
+      assert.equal(environment.OPENAI_API_KEY, "sk-global-secret");
+      assert.equal(environment.ANTHROPIC_BASE_URL, "https://instance.test");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

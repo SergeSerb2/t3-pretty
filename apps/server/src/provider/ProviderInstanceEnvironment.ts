@@ -2,6 +2,20 @@ import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
 
 import { expandHomePath } from "../pathExpansion.ts";
 
+export function prependGlobalEnvironment(
+  globalEnvironment: ProviderInstanceEnvironment | undefined,
+  instanceEnvironment: ProviderInstanceEnvironment | undefined,
+): ProviderInstanceEnvironment | undefined {
+  if (globalEnvironment === undefined || globalEnvironment.length === 0) {
+    return instanceEnvironment;
+  }
+  if (instanceEnvironment === undefined || instanceEnvironment.length === 0) {
+    return globalEnvironment;
+  }
+  return [...globalEnvironment, ...instanceEnvironment];
+}
+
+/** Overlay a resolved instance env onto `process.env`. Globals are already prepended on that list. */
 export function mergeProviderInstanceEnvironment(
   environment: ProviderInstanceEnvironment | undefined,
   baseEnv: NodeJS.ProcessEnv = process.env,

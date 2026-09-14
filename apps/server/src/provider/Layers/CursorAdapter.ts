@@ -88,6 +88,8 @@ import {
 
 const PROVIDER = ProviderDriverKind.make("cursor");
 const CURSOR_RUNTIME_EVENT_BUFFER_CAPACITY = 512;
+const CURSOR_TRANSPORT_RETRY_LIMIT = 2;
+const CURSOR_TRANSPORT_FAILURE_DETAIL = "Cursor reported a transport failure.";
 const CURSOR_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
@@ -142,6 +144,8 @@ interface CursorSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   assistantReply: CursorTransportFailure;
+  /** Held until the item is known not to be a transport dump. */
+  pendingAssistantItem: { itemId: string; started: boolean } | undefined;
   stopped: boolean;
 }
 
@@ -788,6 +792,7 @@ export function makeCursorAdapter(
             cursorSkillNames: undefined,
             promptsInFlight: 0,
             assistantReply: new CursorTransportFailure(),
+            pendingAssistantItem: undefined,
             stopped: false,
           };
 
@@ -802,18 +807,26 @@ export function makeCursorAdapter(
                     return;
                   case "AssistantItemStarted":
                     ctx.assistantReply = new CursorTransportFailure();
-                    yield* offerRuntimeEvent(
-                      makeAcpAssistantItemEvent({
-                        stamp: yield* makeEventStamp(),
-                        provider: PROVIDER,
-                        threadId: ctx.threadId,
-                        turnId: ctx.activeTurnId,
-                        itemId: event.itemId,
-                        lifecycle: "item.started",
-                      }),
-                    );
+                    ctx.pendingAssistantItem = { itemId: event.itemId, started: false };
                     return;
                   case "AssistantItemCompleted":
+                    if (ctx.assistantReply.failure) {
+                      ctx.pendingAssistantItem = undefined;
+                      return;
+                    }
+                    if (ctx.pendingAssistantItem && !ctx.pendingAssistantItem.started) {
+                      yield* offerRuntimeEvent(
+                        makeAcpAssistantItemEvent({
+                          stamp: yield* makeEventStamp(),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          itemId: event.itemId,
+                          lifecycle: "item.started",
+                        }),
+                      );
+                    }
+                    ctx.pendingAssistantItem = undefined;
                     yield* offerRuntimeEvent(
                       makeAcpAssistantItemEvent({
                         stamp: yield* makeEventStamp(),
@@ -867,6 +880,22 @@ export function makeCursorAdapter(
                       event.rawPayload,
                       "acp.jsonrpc",
                     );
+                    if (ctx.assistantReply.failure) {
+                      return;
+                    }
+                    if (ctx.pendingAssistantItem && !ctx.pendingAssistantItem.started) {
+                      yield* offerRuntimeEvent(
+                        makeAcpAssistantItemEvent({
+                          stamp: yield* makeEventStamp(),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          itemId: ctx.pendingAssistantItem.itemId,
+                          lifecycle: "item.started",
+                        }),
+                      );
+                      ctx.pendingAssistantItem.started = true;
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
                         stamp: yield* makeEventStamp(),
@@ -965,6 +994,7 @@ export function makeCursorAdapter(
           if (steeringTurnId === undefined) {
             ctx.lastPlanFingerprint = undefined;
             ctx.assistantReply = new CursorTransportFailure();
+            ctx.pendingAssistantItem = undefined;
           }
           ctx.session = {
             ...ctx.session,
@@ -1064,31 +1094,55 @@ export function makeCursorAdapter(
           }
 
           // ACP has no system-message field; keep runtime context separate from the user's text.
-          const result = yield* ctx.acp
-            .prompt({
-              prompt: [
-                ...promptParts,
-                {
-                  type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
-                },
-              ],
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
-              ),
-            );
+          const runtimeInstruction = {
+            type: "text" as const,
+            text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+          };
+          const promptOnce = (prompt: Array<EffectAcpSchema.ContentBlock>) =>
+            ctx.acp
+              .prompt({ prompt })
+              .pipe(
+                Effect.mapError((error) =>
+                  mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+                ),
+              );
 
-          yield* ctx.acp.drainEvents;
-          const failure = ctx.assistantReply.failure;
-          if (ctx.promptsInFlight === 1 && result.stopReason !== "cancelled" && failure) {
-            return yield* new ProviderAdapterRequestError({
+          let result = yield* promptOnce([...promptParts, runtimeInstruction]);
+          for (let attempt = 0; ; attempt += 1) {
+            yield* ctx.acp.drainEvents;
+            const failure = ctx.assistantReply.failure;
+            const transportFailed =
+              ctx.promptsInFlight === 1 && result.stopReason !== "cancelled" && Boolean(failure);
+            if (!transportFailed) {
+              break;
+            }
+            if (attempt >= CURSOR_TRANSPORT_RETRY_LIMIT) {
+              return yield* new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "session/prompt",
+                detail: CURSOR_TRANSPORT_FAILURE_DETAIL,
+                cause: failure,
+              });
+            }
+            yield* offerRuntimeEvent({
+              type: "runtime.warning",
+              ...(yield* makeEventStamp()),
               provider: PROVIDER,
-              method: "session/prompt",
-              detail: "Cursor reported a transport failure.",
-              cause: failure,
+              threadId: input.threadId,
+              turnId,
+              payload: {
+                message: "Cursor's model stream was interrupted. Retrying.",
+                detail: failure,
+              },
             });
+            ctx.assistantReply = new CursorTransportFailure();
+            ctx.pendingAssistantItem = undefined;
+            // promptsInFlight is this sendTurn, not ACP's prompt slot. Continue
+            // stays on the same send so the counter does not change.
+            // The failed prompt already landed in Cursor's session. Re-sending
+            // the original user text would duplicate the request after a long
+            // tool loop; a continue prompt resumes from that history.
+            result = yield* promptOnce([{ type: "text", text: "Continue." }, runtimeInstruction]);
           }
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);

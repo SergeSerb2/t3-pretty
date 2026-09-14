@@ -274,6 +274,7 @@ function Section({
   title,
   count,
   defaultOpen = true,
+  keepMounted = false,
   actions,
   onOpenChange,
   children,
@@ -281,6 +282,7 @@ function Section({
   title: string;
   count?: number;
   defaultOpen?: boolean;
+  keepMounted?: boolean;
   /** Controls riding on the heading row itself. A sibling of the trigger, not a child of it —
       a button cannot hold a button — and only while open, since they act on what is shown. */
   actions?: ReactNode;
@@ -313,6 +315,7 @@ function Section({
     <Collapsible
       open={open}
       onOpenChange={setOpenWithScrollAnchor}
+      render={<section aria-label={title} />}
       data-pull-request-summary-section
     >
       {/* The heading rides the top of the scroll box the way a diff's file header does, so a
@@ -341,7 +344,7 @@ function Section({
         </CollapsibleTrigger>
         {open ? actions : null}
       </div>
-      <CollapsiblePanel>
+      <CollapsiblePanel keepMounted={keepMounted}>
         <div className="px-4 pb-4">{children}</div>
       </CollapsiblePanel>
     </Collapsible>
@@ -1008,7 +1011,9 @@ export function PullRequestSummaryTab({
       </section>
 
       <Section
+        key={`description:${detail.url}`}
         title="Description"
+        keepMounted
         defaultOpen={restoredView?.sectionOpen?.description ?? true}
         onOpenChange={(open) => rememberSection("description", open)}
       >
@@ -1053,6 +1058,7 @@ export function PullRequestSummaryTab({
       </Section>
 
       <Section
+        key={`checks:${detail.url}`}
         title="Checks"
         count={detail.checks.length}
         defaultOpen={restoredView?.sectionOpen?.checks ?? true}

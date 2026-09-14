@@ -471,6 +471,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "live-activity-headlines",
     title: "Live activity headlines",
     to: "/settings/general",
+    searchTerms: ["rewrite tool call human readable status line generated headline"],
   },
   {
     id: "diagnostics",
@@ -574,6 +575,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "agents cli codex claude cursor grok opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory endpoint arguments environment variables display name accent color custom favorite hidden auto compact",
     ],
+  },
+  {
+    id: "global-environment",
+    title: "Global environment variables",
+    to: "/settings/providers",
+    searchTerms: [
+      "secrets api keys env vars shared surge connect t3 connect remote machines agents",
+    ],
+    scope: "environment",
+    providerSettingsOnly: true,
   },
   {
     id: "usage-providers",

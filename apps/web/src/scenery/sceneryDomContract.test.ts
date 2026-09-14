@@ -21,6 +21,7 @@ import useHandleNewThreadSource from "../hooks/useHandleNewThread.ts?raw";
 import useThemeSource from "../hooks/useTheme.ts?raw";
 import rightPanelLayoutSource from "../rightPanelLayout.ts?raw";
 import rootRouteSource from "../routes/__root.tsx?raw";
+import settingsLayoutSource from "../components/settings/settingsLayout.tsx?raw";
 import pullRequestsRouteSource from "../routes/_chat.pull-requests.tsx?raw";
 import serverThreadRouteSource from "../routes/_chat.$environmentId.$threadId.tsx?raw";
 import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
@@ -210,8 +211,10 @@ describe("glass contract with upstream chrome", () => {
     expect(pullRequestsRouteSource).toContain("data-pull-requests-column");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-panel");
     expect(pullRequestsRouteSource).toContain("data-pull-requests-header");
+    expect(pullRequestsRouteSource).toContain("data-chrome-fade-top");
     expect(sceneryCssSource).toContain("[data-pull-requests-column]");
     expect(sceneryCssSource).toContain("[data-pull-requests-panel]");
+    expect(sceneryCssSource).toContain("[data-workspace-header]");
     expect(sceneryCssSource).toContain("[data-pull-requests-header]");
   });
 
@@ -232,6 +235,49 @@ describe("glass contract with upstream chrome", () => {
     );
     expect(threadTerminalDrawerSource).toContain(
       'transparentBackground: document.documentElement.hasAttribute("data-scenery-on")',
+    );
+  });
+
+  it("chrome skirts fade on receiving surfaces instead of overflowing host plates", () => {
+    expect(indexCssSource).toContain("--workspace-titlebar-scroll-fade-height");
+    expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
+    expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
+    expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
+    expect(indexCssSource).toContain(
+      "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
+    );
+    expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: -1;/s);
+    expect(indexCssSource).toMatch(
+      /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
+    );
+    expect(chatViewSource).toContain('data-chrome-fade-top=""');
+    expect(indexCssSource).toContain(
+      '[data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after',
+    );
+    expect(indexCssSource).toContain("width: var(--workspace-sidebar-edge-fade)");
+    expect(indexCssSource).toMatch(
+      /\[data-chrome-fade-top\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
+    );
+    expect(settingsLayoutSource).toContain("data-chrome-fade-top");
+    expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
+    expect(indexCssSource).not.toContain(
+      ":is([data-chat-header], [data-pull-requests-header])::after",
+    );
+    expect(chatViewSource).not.toContain("overflow-x-clip");
+    expect(sceneryCssSource).toMatch(
+      /:is\(\[data-workspace-header\], \[data-chat-header\], \[data-pull-requests-header\]\)\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-chrome-fade-top\]::before\s*\{[^}]*backdrop-filter: blur\(24px\) saturate\(1\.35\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
+    );
+    expect(sceneryCssSource).toMatch(
+      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
+    );
+    expect(sceneryCssSource).toMatch(
+      /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
     );
   });
 
