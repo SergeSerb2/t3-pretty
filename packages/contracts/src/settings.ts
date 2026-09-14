@@ -35,6 +35,7 @@ import {
 } from "./preview.ts";
 import {
   ProviderInstanceConfig,
+  ProviderInstanceEnvironment,
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
@@ -1201,6 +1202,15 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  /**
+   * Environment variables injected into every agent, terminal, and provider
+   * process on this machine. Sensitive values are stored in the secret store.
+   * Clients that participate in shared-settings sync write this list to every
+   * connected environment so a key set once is available on other machines.
+   */
+  globalEnvironment: ProviderInstanceEnvironment.pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1460,6 +1470,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  globalEnvironment: Schema.optionalKey(ProviderInstanceEnvironment),
   // Per-entry, unlike `providerInstances`: a client only ever adds or removes
   // one source, and sending the whole map races another edit that has not
   // echoed back yet. `null` removes; the server merges into its current map.

@@ -27,6 +27,8 @@ import {
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   filterSharedServerPatch,
+  prepareSharedGlobalEnvironmentFanOut,
+  sharedGlobalEnvironmentNeedsExport,
   splitSharedServerPatch,
   supportsSharedSettingsSync,
 } from "@t3tools/client-runtime/state/shared-settings";
@@ -443,6 +445,10 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     serverEnvironment.updateSettings,
     "server settings update",
   );
+  const exportGlobalEnvironment = useAtomCommand(serverEnvironment.exportGlobalEnvironment, {
+    label: "server global environment export",
+    reportFailure: false,
+  });
   const { environments } = useEnvironments();
   const updateSettings = useCallback(
     (patch: UnifiedSettingsPatch) => {
@@ -477,35 +483,67 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           if (environmentId) {
             targets.add(environmentId);
           }
-          let wroteToTarget = false;
-          for (const targetId of targets) {
-            const target = environments.find((candidate) => candidate.environmentId === targetId);
-            const targetPatch = filterSharedServerPatch(
-              sharedPatch,
-              target?.serverConfig?.environment.capabilities,
-              target?.serverConfig?.settings,
-              sourceSettings,
-              targetId === environmentId,
-            );
-            if (Object.keys(targetPatch).length === 0) continue;
-            wroteToTarget = true;
-            void persistServerSettings({
-              environmentId: targetId,
-              input: { patch: targetPatch },
-            });
-          }
-          if (!wroteToTarget) {
-            warnUnsaved(
-              targets.size > 0 ? "Update older servers to save this setting." : undefined,
-            );
-          }
+          const writeShared = async () => {
+            let outgoing = sharedPatch;
+            let fanOutSecrets = true;
+            // ponytail: sync on save to currently connected machines; a later
+            // join only receives secrets after the next save (or an export).
+            if (sharedGlobalEnvironmentNeedsExport(outgoing)) {
+              let exported = null;
+              if (environmentId) {
+                const result = await exportGlobalEnvironment({
+                  environmentId,
+                  input: {},
+                });
+                if (result._tag === "Success") {
+                  exported = result.value;
+                }
+              }
+              const prepared = prepareSharedGlobalEnvironmentFanOut(outgoing, exported);
+              outgoing = prepared.patch;
+              fanOutSecrets = prepared.fanOutSecrets;
+              if (!fanOutSecrets) {
+                warnUnsaved(
+                  "Could not read stored secrets to copy them to other connected machines.",
+                );
+              }
+            }
+            let wroteToTarget = false;
+            for (const targetId of targets) {
+              const target = environments.find((candidate) => candidate.environmentId === targetId);
+              let candidate = outgoing;
+              if (!fanOutSecrets && targetId !== environmentId) {
+                const { globalEnvironment: _omit, ...rest } = outgoing;
+                candidate = rest;
+              }
+              const targetPatch = filterSharedServerPatch(
+                candidate,
+                target?.serverConfig?.environment.capabilities,
+                target?.serverConfig?.settings,
+                sourceSettings,
+                targetId === environmentId,
+              );
+              if (Object.keys(targetPatch).length === 0) continue;
+              wroteToTarget = true;
+              void persistServerSettings({
+                environmentId: targetId,
+                input: { patch: targetPatch },
+              });
+            }
+            if (!wroteToTarget) {
+              warnUnsaved(
+                targets.size > 0 ? "Update older servers to save this setting." : undefined,
+              );
+            }
+          };
+          void writeShared();
         }
       }
       if (Object.keys(clientPatch).length > 0) {
         void persistClientSettingsPatch(clientPatch);
       }
     },
-    [environmentId, environments, persistServerSettings],
+    [environmentId, environments, exportGlobalEnvironment, persistServerSettings],
   );
 
   return updateSettings;

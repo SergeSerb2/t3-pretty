@@ -199,6 +199,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       });
       expect(second.capabilities.pullRequests).toBe(true);
       expect(second.capabilities.usagePriceOverrides).toBe(true);
+      expect(second.capabilities.globalEnvironment).toBe(true);
       expect(second.capabilities.threadActiveReorder).toBe(true);
       expect(second.capabilities.threadTitleRegeneration).toBe(true);
       expect(second.capabilities.threadPullRequests).toBe(true);

@@ -175,6 +175,12 @@ instance can have its own environment variables, such as API keys or a custom
 base URL. Mark secret values as sensitive; after saving, T3 Code does not display
 their original values.
 
+Keys that every agent on the machine should see belong in **Settings → Providers →
+Global environment variables**. Saving them also writes the list to other T3
+Connect environments you are connected to, so you set a key once and agents on
+those machines can use it. A machine that joins later receives the secrets the
+next time you save the list while it is connected.
+
 ### When Auth Is Needed
 
 Provider auth is required before you start a session with that provider, not before you start

@@ -10,7 +10,9 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   filterSharedServerPatch,
   findSharedSettingsMismatches,
+  hydrateSharedGlobalEnvironment,
   pickSharedServerSettings,
+  prepareSharedGlobalEnvironmentFanOut,
   splitSharedServerPatch,
   supportsSharedSettingsSync,
 } from "./sharedSettings.ts";
@@ -104,16 +106,105 @@ describe("splitSharedServerPatch", () => {
       enableAgentBrowserAccess: false,
       defaultThreadEnvMode: "worktree",
       newWorktreesStartFromOrigin: true,
+      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
     });
     expect(sharedPatch).toEqual({
       sidebarAutoSettleAfterDays: 7,
       sidebarAutoSettleOnMerge: false,
       continueThreadsAfterServerUpdate: true,
       newWorktreesStartFromOrigin: true,
+      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
     });
     expect(localPatch).toEqual({
       enableAgentBrowserAccess: false,
       defaultThreadEnvMode: "worktree",
+    });
+  });
+});
+
+describe("hydrateSharedGlobalEnvironment", () => {
+  it("replaces redacted values from the exported list and leaves typed values alone", () => {
+    expect(
+      hydrateSharedGlobalEnvironment(
+        [
+          { name: "KEPT", value: "new-secret", sensitive: true },
+          { name: "EXISTING", value: "", sensitive: true, valueRedacted: true },
+          { name: "MISSING", value: "", sensitive: true, valueRedacted: true },
+        ],
+        [
+          { name: "EXISTING", value: "stored-secret", sensitive: true },
+          { name: "UNUSED", value: "ignored", sensitive: true },
+        ],
+      ),
+    ).toEqual([
+      { name: "KEPT", value: "new-secret", sensitive: true },
+      { name: "EXISTING", value: "stored-secret", sensitive: true },
+      { name: "MISSING", value: "", sensitive: true, valueRedacted: true },
+    ]);
+  });
+});
+
+describe("prepareSharedGlobalEnvironmentFanOut", () => {
+  it("fans out typed values without an export", () => {
+    const patch = {
+      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+    };
+    expect(prepareSharedGlobalEnvironmentFanOut(patch, null)).toEqual({
+      patch,
+      fanOutSecrets: true,
+    });
+  });
+
+  it("does not fan out redacted rows when export is missing", () => {
+    const patch = {
+      sidebarAutoSettleAfterDays: 7,
+      globalEnvironment: [
+        { name: "OPENAI_API_KEY", value: "", sensitive: true, valueRedacted: true },
+      ],
+    };
+    expect(prepareSharedGlobalEnvironmentFanOut(patch, null)).toEqual({
+      patch,
+      fanOutSecrets: false,
+    });
+  });
+
+  it("hydrates redacted rows from a successful export", () => {
+    expect(
+      prepareSharedGlobalEnvironmentFanOut(
+        {
+          globalEnvironment: [
+            { name: "OPENAI_API_KEY", value: "", sensitive: true, valueRedacted: true },
+          ],
+        },
+        [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+      ),
+    ).toEqual({
+      patch: {
+        globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+      },
+      fanOutSecrets: true,
+    });
+  });
+
+  it("does not fan out when export leaves a redacted row", () => {
+    expect(
+      prepareSharedGlobalEnvironmentFanOut(
+        {
+          globalEnvironment: [
+            { name: "OPENAI_API_KEY", value: "", sensitive: true, valueRedacted: true },
+            { name: "MISSING", value: "", sensitive: true, valueRedacted: true },
+          ],
+        },
+        [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+      ),
+    ).toEqual({
+      patch: {
+        globalEnvironment: [
+          { name: "OPENAI_API_KEY", value: "sk-test", sensitive: true },
+          { name: "MISSING", value: "", sensitive: true, valueRedacted: true },
+        ],
+      },
+      fanOutSecrets: false,
     });
   });
 });
@@ -124,6 +215,22 @@ describe("pickSharedServerSettings", () => {
       Object.keys(pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, restartCapabilities)).sort(),
     ).toEqual([
       "continueThreadsAfterServerUpdate",
+      "newWorktreesStartFromOrigin",
+      "sidebarAutoSettleAfterDays",
+      "sidebarAutoSettleOnMerge",
+      "sourceControlWritingStyle",
+      "textGenerationModelSelection",
+    ]);
+    expect(
+      Object.keys(
+        pickSharedServerSettings(DEFAULT_SERVER_SETTINGS, {
+          ...restartCapabilities,
+          globalEnvironment: true,
+        }),
+      ).sort(),
+    ).toEqual([
+      "continueThreadsAfterServerUpdate",
+      "globalEnvironment",
       "newWorktreesStartFromOrigin",
       "sidebarAutoSettleAfterDays",
       "sidebarAutoSettleOnMerge",
@@ -233,7 +340,22 @@ describe("filterSharedServerPatch", () => {
       );
     },
   );
+
+  it("shares global environment only when the target advertises the capability", () => {
+    const patch = {
+      sidebarAutoSettleAfterDays: 7,
+      globalEnvironment: [{ name: "OPENAI_API_KEY", value: "sk-test", sensitive: true }],
+    };
+    expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+    expect(
+      filterSharedServerPatch(patch, { ...restartCapabilities, globalEnvironment: true }),
+    ).toEqual(patch);
+  });
 });
+
+const globalEnvironmentCapabilities = { ...restartCapabilities, globalEnvironment: true };
 
 describe("findSharedSettingsMismatches", () => {
   const primarySettings = {
@@ -390,6 +512,31 @@ describe("findSharedSettingsMismatches", () => {
       ).toEqual([{ environmentId: boxId, label: "Remote Box" }]);
     },
   );
+
+  it("does not treat older servers as mismatched after a global environment save", () => {
+    const settings = {
+      ...primarySettings,
+      globalEnvironment: [
+        { name: "OPENAI_API_KEY", value: "", sensitive: true, valueRedacted: true },
+      ],
+    };
+    expect(
+      findSharedSettingsMismatches({
+        primaryEnvironmentId: primaryId,
+        primarySettings: settings,
+        primaryCapabilities: globalEnvironmentCapabilities,
+        environments: [
+          {
+            environmentId: boxId,
+            label: "Remote Box",
+            syncEligible: true,
+            settings: primarySettings,
+            capabilities: restartCapabilities,
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
 
   it("lists sync-eligible environments whose shared settings differ", () => {
     const mismatches = findSharedSettingsMismatches({

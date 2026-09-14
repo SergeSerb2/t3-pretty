@@ -81,6 +81,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { EnvironmentVariablesEditor } from "./EnvironmentVariablesEditor";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { UsageProviderSettings } from "./UsageProviderSettings";
@@ -1082,6 +1083,21 @@ export function EnvironmentProviderSettings({
             )}
           </div>
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        {...searchableSetting("global-environment")}
+        hideTitle
+        inert={readOnly}
+        aria-disabled={readOnly || undefined}
+        className={readOnly ? "opacity-50 select-none" : undefined}
+      >
+        <EnvironmentVariablesEditor
+          title="Global environment variables"
+          description={`Available to every agent on this machine. Saving also writes them to other ${SURGE_CONNECT_NAME} environments you are connected to.`}
+          environment={settings.globalEnvironment ?? []}
+          onChange={(globalEnvironment) => updateSettings({ globalEnvironment })}
+        />
       </SettingsSection>
 
       <UsageProviderSettings

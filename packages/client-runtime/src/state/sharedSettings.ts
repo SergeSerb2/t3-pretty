@@ -11,6 +11,7 @@
 import type {
   EnvironmentId,
   ExecutionEnvironmentCapabilities,
+  ProviderInstanceEnvironment,
   ServerSettings,
   ServerSettingsPatch,
 } from "@t3tools/contracts";
@@ -28,7 +29,53 @@ const SHARED_SERVER_SETTING_KEYS = [
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
   "textGenerationModelSelection",
+  "globalEnvironment",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
+
+export type SharedSettingsCapabilities = Pick<
+  ExecutionEnvironmentCapabilities,
+  "threadRestartContinuation" | "globalEnvironment"
+>;
+
+/** Fill redacted secret values from an operator export so other machines receive them. */
+export function hydrateSharedGlobalEnvironment(
+  patch: ProviderInstanceEnvironment,
+  exported: ProviderInstanceEnvironment,
+): ProviderInstanceEnvironment {
+  if (!patch.some((variable) => variable.valueRedacted === true)) {
+    return patch;
+  }
+  const exportedByName = new Map(exported.map((variable) => [variable.name, variable]));
+  return patch.map((variable) => {
+    if (variable.valueRedacted !== true) return variable;
+    const secret = exportedByName.get(variable.name);
+    if (secret === undefined || secret.value.length === 0) return variable;
+    const { valueRedacted: _omit, ...rest } = variable;
+    return { ...rest, value: secret.value };
+  });
+}
+
+export function sharedGlobalEnvironmentNeedsExport(patch: ServerSettingsPatch): boolean {
+  return patch.globalEnvironment?.some((variable) => variable.valueRedacted === true) === true;
+}
+
+/** Hydrate secrets for mesh fan-out. A failed export must not copy redacted rows. */
+export function prepareSharedGlobalEnvironmentFanOut(
+  patch: ServerSettingsPatch,
+  exported: ProviderInstanceEnvironment | null,
+): { readonly patch: ServerSettingsPatch; readonly fanOutSecrets: boolean } {
+  if (!sharedGlobalEnvironmentNeedsExport(patch)) {
+    return { patch, fanOutSecrets: true };
+  }
+  if (exported === null) {
+    return { patch, fanOutSecrets: false };
+  }
+  const globalEnvironment = hydrateSharedGlobalEnvironment(patch.globalEnvironment!, exported);
+  return {
+    patch: { ...patch, globalEnvironment },
+    fanOutSecrets: !globalEnvironment.some((variable) => variable.valueRedacted === true),
+  };
+}
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];
 
@@ -57,7 +104,7 @@ export function splitSharedServerPatch(patch: ServerSettingsPatch): {
 /** Filter unsupported preferences; direct model writes retain the server's fallback behavior. */
 export function filterSharedServerPatch(
   patch: ServerSettingsPatch,
-  capabilities: Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation"> | undefined,
+  capabilities: SharedSettingsCapabilities | undefined,
   settings?: ServerSettings,
   sourceSettings = settings,
   targetIsSource = false,
@@ -79,15 +126,18 @@ export function filterSharedServerPatch(
   ) {
     patch = Struct.omit(patch, ["textGenerationModelSelection"]);
   }
-  return capabilities?.threadRestartContinuation === true
+  if (capabilities?.threadRestartContinuation !== true) {
+    patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
+  }
+  return capabilities?.globalEnvironment === true
     ? patch
-    : Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
+    : Struct.omit(patch, ["globalEnvironment"]);
 }
 
 /** The shared subset supported by one environment. */
 export function pickSharedServerSettings(
   settings: ServerSettings,
-  capabilities?: Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">,
+  capabilities?: SharedSettingsCapabilities,
 ): ServerSettingsPatch {
   return filterSharedServerPatch(
     Struct.pick(settings, SHARED_SERVER_SETTING_KEYS),
@@ -119,9 +169,7 @@ export interface SharedSettingsEnvironment {
   readonly label: string;
   readonly syncEligible: boolean;
   readonly settings: ServerSettings | null;
-  readonly capabilities?:
-    | Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">
-    | undefined;
+  readonly capabilities?: SharedSettingsCapabilities | undefined;
 }
 
 /**
@@ -135,9 +183,7 @@ export interface SharedSettingsEnvironment {
 export function findSharedSettingsMismatches(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly primarySettings: ServerSettings | null;
-  readonly primaryCapabilities?:
-    | Pick<ExecutionEnvironmentCapabilities, "threadRestartContinuation">
-    | undefined;
+  readonly primaryCapabilities?: SharedSettingsCapabilities | undefined;
   readonly environments: ReadonlyArray<SharedSettingsEnvironment>;
 }): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }> {
   if (input.primaryEnvironmentId === null || input.primarySettings === null) {

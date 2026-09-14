@@ -106,7 +106,9 @@ need to forward an OAuth callback port.
 In the desktop app, selecting **Connect** also makes the new device available through T3
 Connect. Once both desktops participate, each app automatically keeps the full account mesh in its
 connection list, including machines added later. Threads from every linked desktop are therefore
-available in either app without repeating **Connect** on both sides.
+available in either app without repeating **Connect** on both sides. Global environment variables
+saved in **Settings → Providers** follow the same mesh: they are written to every connected
+environment so agents on those machines can use the keys.
 
 The **Remote Environments** list shows one row per machine. When several environments publish from
 the same machine (for example an installed app and a second server on one host), only the working
