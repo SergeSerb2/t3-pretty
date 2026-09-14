@@ -2307,7 +2307,7 @@ function PullRequestsColumn({
         data-pull-requests-header
         electron={isElectron}
         reserveNativeControls={!rightPanelOpen}
-        className="relative"
+        className="relative bg-background"
       >
         {titlebarControls}
         {condensed ? (

@@ -2819,7 +2819,8 @@ html[data-theme-token-probe] *::after {
 /* Workspace actions use a small, separate chrome hierarchy. Keeping these
    roles explicit prevents the thread toolbar from falling back to the default
    dark-mode whites while preserving the same theme file across clients. */
-html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
+html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
+  background-color: var(--toolbar-background);
   color: var(--contrast-toolbar-foreground);
 }
 
@@ -2830,7 +2831,6 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
 :is([data-workspace-header], [data-chat-header], [data-pull-requests-header]) {
   position: relative;
   z-index: 20;
-  background-color: var(--toolbar-background);
 }
 
 [data-chrome-fade-top] {
@@ -2857,8 +2857,10 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   top: 0;
   right: 0;
   left: 0;
-  /* Behind in-flow transcript: the plate fills the existing topbar-scroll-fade
-     mask hole instead of dimming the first messages. */
+  /* Behind in-flow transcript. Chat already reserves
+     --workspace-titlebar-scroll-fade-height (TIMELINE_LIST_FADE_HEADER) and
+     masks that band with topbar-scroll-fade; this plate only shows through
+     that hole. */
   z-index: -1;
   height: var(--workspace-chrome-edge-fade);
   -webkit-mask-image: linear-gradient(

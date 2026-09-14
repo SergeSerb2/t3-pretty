@@ -243,6 +243,9 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toContain("--workspace-chrome-edge-fade");
     expect(indexCssSource).toContain("--workspace-sidebar-edge-fade");
     expect(indexCssSource).toContain("[data-chrome-fade-top]::before");
+    expect(indexCssSource).toContain(
+      "html[data-theme-id] :is([data-workspace-header], [data-chat-header], [data-pull-requests-header])",
+    );
     expect(indexCssSource).toMatch(/\[data-chrome-fade-top\]::before\s*\{[^}]*z-index: -1;/s);
     expect(indexCssSource).toMatch(
       /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]::after\s*\{[^}]*z-index: 10;/s,
