@@ -400,7 +400,8 @@ import {
   takeDraftHeroHandoff,
 } from "./chat/draftHeroTransition";
 import { useMotionStore } from "../scenery/motionStore";
-import { writeSceneryComposerPlacement } from "../scenery/sceneryArrivalLogic";
+import { writeSceneryComposerPlacement } from "../scenery/sceneryComposerPlacement";
+import { useDraftArrival } from "./chat/useDraftArrival";
 import { bindSceneryPlaceSlot } from "../scenery/sceneryPlaceSlot";
 import { useSceneryThemeActive } from "../scenery/useHtmlAttributes";
 import {
@@ -583,18 +584,15 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
       isDraftHero: isDraftHeroState,
       handoff,
     });
-    const stateChanged = stateChangedInPlace || shouldGlideHandoff;
+    // New scenery drafts have their own short arrival at the final position.
+    const stateChanged =
+      stateChangedInPlace || (shouldGlideHandoff && !(isDraftHeroState && sceneryDockRef.current));
     const prefersReducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
-    // Fog already hides the route swap; a FLIP under it finishes during the
-    // hold and then the chrome-in 14px rise reads as a second bounce.
-    const sceneryFogCoversSwap =
-      typeof document !== "undefined" && document.documentElement.dataset.sceneryArrival === "fog";
-
     animationRef.current?.cancel();
     animationRef.current = null;
 
@@ -609,7 +607,6 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean, sceneryDock = f
       stateChanged &&
       !prefersReducedMotion &&
       !mobileComposerTransitionActive &&
-      !sceneryFogCoversSwap &&
       transitionGroup &&
       previousComposerRect &&
       nextComposerRect &&
@@ -3542,10 +3539,6 @@ export default function ChatView(props: ChatViewProps) {
     hasWorktreeSetupCard: worktreeSetup !== null,
   });
   const sceneryThemeActive = useSceneryThemeActive();
-  // Written during render so a sibling scenery layout effect in the same
-  // commit can read hero/docked before first paint. The layout cleanup still
-  // owns unmount.
-  writeSceneryComposerPlacement(sceneryThemeActive ? (isDraftHeroState ? "hero" : "docked") : null);
   const sceneryMotionEnabled = useMotionStore((state) => state.enabled);
   useEffect(() => {
     if (!worktreeSetupDoneAndTurnVisible) return;
@@ -3568,6 +3561,7 @@ export default function ChatView(props: ChatViewProps) {
     return () => window.clearTimeout(timeoutId);
   }, [sceneryMotionEnabled, worktreeSetupDoneAndTurnVisible]);
   const sceneryDraftDock = sceneryThemeActive && sceneryMotionEnabled;
+  const draftArrivalRef = useDraftArrival(activeThreadKey, isDraftHeroState && sceneryDraftDock);
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -9340,6 +9334,7 @@ export default function ChatView(props: ChatViewProps) {
                 className="w-full shrink-0 ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div
+                  ref={draftArrivalRef}
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl"
                 >

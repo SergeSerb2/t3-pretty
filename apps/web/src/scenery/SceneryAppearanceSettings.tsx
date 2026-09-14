@@ -168,7 +168,7 @@ export default function SceneryAppearanceSettings() {
 
       <SettingsRow
         {...searchableSetting("setting-scenery-motion")}
-        description="Animate arriving messages and the new-thread fog sequence. Turn this off if you prefer a still thread."
+        description="Animate new threads and arriving messages. Turn this off if you prefer a still thread."
         resetAction={
           !motionEnabled ? (
             <SettingResetButton label="thread motion" onClick={() => setMotionEnabled(true)} />

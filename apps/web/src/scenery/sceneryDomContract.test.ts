@@ -28,7 +28,6 @@ import draftThreadRouteSource from "../routes/_chat.draft.$draftId.tsx?raw";
 import threadRouteViewSource from "../routes/-threadRouteView.tsx?raw";
 import sceneryLayerSource from "./SceneryLayer.tsx?raw";
 import sceneryPlaceCreditSource from "./SceneryPlaceCredit.tsx?raw";
-import sceneryArrivalSource from "./SceneryArrival.tsx?raw";
 import sceneryAppearanceSettingsSource from "./SceneryAppearanceSettings.tsx?raw";
 import sceneryHostSource from "./SceneryHost.tsx?raw";
 import activeScenerySource from "./ActiveScenery.tsx?raw";
@@ -355,71 +354,11 @@ describe("scenery attribution contract", () => {
   });
 });
 
-describe("scenery new-thread arrival contract", () => {
-  it("plays the fog sequence only from the scenery layer", () => {
-    expect(activeScenerySource).toContain("SceneryArrival");
-    expect(sceneryArrivalSource).toContain("Entering...");
-    expect(sceneryCssSource).toContain(".scenery-fog");
-    expect(chatViewSource).toContain('data-scenery-hero-chrome="headline"');
-    expect(chatViewSource).toContain('data-scenery-hero-chrome="composer"');
-  });
-
-  it("docks the World Scenery composer with the longer scenery curve", () => {
-    expect(chatViewSource).toContain("SCENERY_DRAFT_HERO_TRANSITION_DURATION_MS");
-    expect(chatViewSource).toContain("scenery-hero-headline-ghost");
-    expect(chatViewSource).toContain("shouldGlideDraftHeroHandoff");
-    expect(chatViewSource).toContain("shouldPopDraftHeroGlide");
-  });
-
-  it("does not keep a transform transition on settled hero chrome", () => {
-    const settledChrome =
-      /html\[data-scenery-arrival="settled"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
-        sceneryCssSource,
-      )?.[0];
-    expect(settledChrome, "missing settled chrome rule").toBeTruthy();
-    expect(settledChrome).not.toContain("transition");
-    expect(sceneryCssSource).not.toContain(
-      'html[data-scenery-arrival="settled"] [data-scenery-hero-chrome="composer"]',
-    );
-  });
-
-  it("holds fog until the wallpaper is decoded and primes it before navigation", () => {
-    expect(sceneryArrivalSource).toContain("photoReady");
-    expect(sceneryArrivalSource).toContain("remainingFogHoldMs");
-    expect(sceneryLayerSource).toContain("preloadWallpaper");
-    expect(sceneryLayerSource).toContain("sceneryArrivalCoversSwap");
+describe("scenery draft markup contract", () => {
+  it("keeps the composer placement and photo priming entry points", () => {
     expect(useHandleNewThreadSource).toContain("primeWorldSceneryForNewThread");
-    expect(primeWorldScenerySource).toContain("requestSceneryArrival");
+    expect(primeWorldScenerySource).toContain("primeSceneryForThread");
     expect(chatViewSource).toContain("writeSceneryComposerPlacement");
-  });
-
-  it("covers the swap with a transition so fog does not restart at reveal", () => {
-    expect(sceneryCssSource).toContain("@starting-style");
-    expect(sceneryCssSource).toContain("calc(var(--fog-alpha, 1) * 0.78)");
-    expect(sceneryCssSource).not.toContain("scenery-fog-gather");
-    expect(sceneryCssSource).not.toContain("scenery-fog-dissipate");
-  });
-
-  it("does not blur hero chrome during the fog sequence", () => {
-    const fogChrome =
-      /html\[data-scenery-arrival="fog"\] \[data-scenery-hero-chrome\]\s*\{[^}]+\}/.exec(
-        sceneryCssSource,
-      )?.[0];
-    expect(fogChrome, "missing fog chrome rule").toBeTruthy();
-    expect(fogChrome).not.toContain("filter:");
-  });
-
-  it("locks fog ink to the arrival overlay so an ink flip cannot snap it", () => {
-    expect(sceneryCssSource).toContain('.scenery-arrival[data-fog="light"] .scenery-fog');
-    expect(sceneryCssSource).not.toContain("html:not(.dark) .scenery-fog");
-  });
-
-  it("uses one warped noise field instead of a repeating turbulence tile", () => {
-    expect(sceneryArrivalSource).toContain("scenery-fog__field");
-    expect(sceneryArrivalSource).toContain("feDisplacementMap");
-    expect(sceneryCssSource).toContain(".scenery-fog__field");
-    expect(sceneryCssSource).not.toContain("400px 400px");
-    expect(sceneryCssSource).not.toContain("stitchTiles");
   });
 });
 
@@ -525,8 +464,8 @@ describe("scenery photo swap animations", () => {
   });
 
   it("keeps the fade-out duration mirrored with the React unmount timer", () => {
-    expect(sceneryCssSource).toContain("--scenery-swap-out: 0.6s");
-    expect(sceneryLayerSource).toContain("SCENERY_SWAP_OUT_MS = 600");
+    expect(sceneryCssSource).toContain("--scenery-swap-out: 0.24s");
+    expect(sceneryLayerSource).toContain("SCENERY_SWAP_OUT_MS = 240");
   });
 
   it("keys the outgoing layer so a new dissolve restarts the animation", () => {
