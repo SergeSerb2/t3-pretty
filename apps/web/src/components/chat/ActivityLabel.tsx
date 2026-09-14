@@ -32,23 +32,15 @@ export function ActivityLabel({
       document.visibilityState === "hidden"
     )
       return;
-    const bounds = element.getBoundingClientRect();
-    if (bounds.bottom <= 0 || bounds.top >= window.innerHeight) return;
 
     const mask = {
       maskImage: "linear-gradient(90deg, #000 0% 45%, transparent 55% 100%)",
       maskSize: "220% 100%",
       maskRepeat: "no-repeat",
     };
-    const animation = element.animate(
-      [
-        { ...mask, maskPosition: "100% 0%", opacity: 0.45 },
-        { ...mask, maskPosition: "0% 0%", opacity: 1 },
-      ],
-      { duration: 480, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-    );
+    let animation: Animation | undefined;
     const retire = () => {
-      animation.cancel();
+      animation?.cancel();
       observer.disconnect();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -56,11 +48,22 @@ export function ActivityLabel({
       if (document.visibilityState === "hidden") retire();
     };
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => !entry.isIntersecting)) retire();
+      if (!entries.some((entry) => entry.isIntersecting)) {
+        retire();
+        return;
+      }
+      if (animation) return;
+      animation = element.animate(
+        [
+          { ...mask, maskPosition: "100% 0%", opacity: 0.45 },
+          { ...mask, maskPosition: "0% 0%", opacity: 1 },
+        ],
+        { duration: 480, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      );
+      void animation.finished.then(retire, () => {});
     });
     observer.observe(element);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    void animation.finished.then(retire, () => {});
     return retire;
   }, [activityKey, headline, reducedMotion]);
 

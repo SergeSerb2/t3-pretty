@@ -23,11 +23,14 @@ async function render(activityKey: string, headline: string | null) {
     if (renderer) renderer.update(content);
     else
       renderer = create(content, {
-        createNodeMock: () => ({
-          animate,
-          getBoundingClientRect: () => ({ top: 100, bottom: 128 }),
-        }),
+        createNodeMock: () => ({ animate }),
       });
+  });
+}
+
+async function becomeVisible() {
+  await act(() => {
+    onIntersection([{ isIntersecting: true }]);
   });
 }
 
@@ -36,7 +39,6 @@ beforeEach(() => {
   visible = true;
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", { innerHeight: 800 });
   vi.stubGlobal(
     "document",
     Object.defineProperty(new EventTarget(), "visibilityState", {
@@ -66,6 +68,8 @@ describe("ActivityLabel", () => {
     await render("call-1", null);
     expect(animate).not.toHaveBeenCalled();
     await render("call-1", "Checking the sidebar layout");
+    expect(animate).not.toHaveBeenCalled();
+    await becomeVisible();
     expect(animate).toHaveBeenCalledTimes(1);
     expect(renderer!.root.findByType("span").children).toEqual(["Checking the sidebar layout"]);
     await render("call-1", "Checking the sidebar layout");
@@ -82,7 +86,9 @@ describe("ActivityLabel", () => {
   it("cancels an interrupted reveal before revealing the latest description", async () => {
     await render("call-1", null);
     await render("call-1", "Checking layout");
+    await becomeVisible();
     await render("call-1", "Checking compact navigation");
+    await becomeVisible();
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(animate).toHaveBeenCalledTimes(2);
     await render("call-2", null);
@@ -107,6 +113,7 @@ describe("ActivityLabel", () => {
     async (reason) => {
       await render("call-1", null);
       await render("call-1", "Checking layout");
+      await becomeVisible();
       if (reason === "hidden") {
         visible = false;
         document.dispatchEvent(new Event("visibilitychange"));

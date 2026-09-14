@@ -3805,7 +3805,10 @@ export default function LegacySidebar() {
           selectedProjectKey={activeRouteProjectKey}
           onNewThread={handleNewThreadClick}
           onSelectProject={(project) => {
-            useUiStateStore.getState().setProjectExpanded(project.projectKey, true);
+            useUiStateStore
+              .getState()
+              .setProjectExpanded(projectExpansionPreferenceKeys(project), true);
+            expandThreadListForProject(project.projectKey);
             setOpen(true);
           }}
         />
