@@ -280,6 +280,9 @@ describe("glass contract with upstream chrome", () => {
     expect(sceneryCssSource).toMatch(
       /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
     );
+    expect(indexCssSource).toMatch(
+      /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\) \{\s*\[data-chrome-fade-top\]::before \{[^}]*background-color: var\(--toolbar-background\);/s,
+    );
     expect(sceneryCssSource).toMatch(
       /@supports not[\s\S]*?\[data-workspace-header\][\s\S]*?\[data-chrome-fade-top\]::before[\s\S]*?--scenery-chrome-fill-solid/,
     );
