@@ -69,9 +69,10 @@ export type EnsureWslNodePtyResult =
       readonly retryLimit?: number;
     };
 
-// Outcome of asking the staged self-contained runtime to prove itself. Any
-// failure sends the launch to the mounted server tree; the caller decides what
-// to do with the cache.
+// Outcome of asking the staged self-contained runtime to prove itself.
+// Transport failures (timeout/spawn/process) are non-fatal so the caller
+// retries the same staged cache. A real probe failure is fatal and sends
+// the launch to the mounted server tree.
 export type ProbeWslRuntimeResult =
   | {
       readonly ok: true;
@@ -80,6 +81,8 @@ export type ProbeWslRuntimeResult =
   | {
       readonly ok: false;
       readonly reason: string;
+      readonly fatal: boolean;
+      readonly retryLimit?: number;
     };
 
 export class DesktopWslDistroListError extends Schema.TaggedError<DesktopWslDistroListError>()(
@@ -713,13 +716,14 @@ const probeWslRuntimeImpl = (
       "the staged runtime",
     );
     if (transportFailureReason !== null) {
-      return { ok: false, reason: transportFailureReason } as const;
+      return { ok: false, reason: transportFailureReason, fatal: false } as const;
     }
     if (probe.exitCode !== 0) {
       const trimmedTail = probe.stderr.trim().slice(-500);
       return {
         ok: false,
         reason: `${linuxAppRoot}/t3 --version failed (exit ${probe.exitCode})${trimmedTail ? `: ${trimmedTail}` : ""}`,
+        fatal: true,
       } as const;
     }
     const resolvedPath = parseResolvedPath(probe.stdout);
@@ -727,6 +731,7 @@ const probeWslRuntimeImpl = (
       return {
         ok: false,
         reason: "WSL login-shell PATH could not be resolved during backend preflight.",
+        fatal: true,
       } as const;
     }
     return { ok: true, resolvedPath } as const;

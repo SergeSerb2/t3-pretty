@@ -531,7 +531,11 @@ describe("DesktopBackendConfiguration", () => {
             }),
           probeRuntime: (_distro, root) => {
             observedProbeRoots.push(root);
-            return { ok: false, reason: `${root}/t3 --version failed (exit 127)` };
+            return {
+              ok: false,
+              reason: `${root}/t3 --version failed (exit 127)`,
+              fatal: true,
+            };
           },
           ensureNodePty: (_distro, root) => {
             observedNodePtyRoots.push(root);
@@ -572,6 +576,7 @@ describe("DesktopBackendConfiguration", () => {
           probeRuntime: () => ({
             ok: false,
             reason: "unsupported CPU architecture or incompatible system libraries",
+            fatal: true,
           }),
           ensureNodePty: () => ({
             ok: false,
@@ -593,6 +598,45 @@ describe("DesktopBackendConfiguration", () => {
     );
   });
 
+  it.effect("resolveWsl retries the staged runtime when the probe times out", () => {
+    const stagedAppRoot = "/home/test/.t3/wsl-runtime/cache";
+    const invalidatedRuntimeIds: string[] = [];
+    let ensureNodePtyCalls = 0;
+    return withPackagedWslHarness(
+      {
+        archiveHash: "e".repeat(64),
+        wsl: () => ({
+          prepareRuntime: () => ({ ok: true, linuxAppRoot: stagedAppRoot }),
+          invalidateRuntime: (_distro, runtimeId) =>
+            Effect.sync(() => {
+              invalidatedRuntimeIds.push(runtimeId);
+            }),
+          probeRuntime: () => ({
+            ok: false,
+            reason: "WSL backend preflight timed out while probing for the staged runtime.",
+            fatal: false,
+          }),
+          ensureNodePty: () => {
+            ensureNodePtyCalls += 1;
+            throw new Error("a transient staged probe must not extract the mounted fallback");
+          },
+        }),
+      },
+      () =>
+        Effect.gen(function* () {
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const config = yield* configuration.resolveWsl({ port: 5000, distro: "Ubuntu" });
+          const failure = Option.getOrThrow(config.preflightFailure);
+
+          assert.isFalse(failure.fatal);
+          assert.equal(failure.retryLimit, 12);
+          assert.include(failure.reason, "timed out");
+          assert.equal(ensureNodePtyCalls, 0);
+          assert.deepEqual(invalidatedRuntimeIds, []);
+        }),
+    );
+  });
+
   it.effect("resolveWsl keeps WSL retryable when the mounted fallback fails transiently", () => {
     const stagedAppRoot = "/home/test/.t3/wsl-runtime/cache";
     const invalidatedRuntimeIds: string[] = [];
@@ -605,7 +649,11 @@ describe("DesktopBackendConfiguration", () => {
             Effect.sync(() => {
               invalidatedRuntimeIds.push(runtimeId);
             }),
-          probeRuntime: () => ({ ok: false, reason: "t3 --version failed (exit 1)" }),
+          probeRuntime: () => ({
+            ok: false,
+            reason: "t3 --version failed (exit 1)",
+            fatal: true,
+          }),
           ensureNodePty: () => ({
             ok: false,
             reason: "WSL backend preflight timed out while probing for Node.js.",

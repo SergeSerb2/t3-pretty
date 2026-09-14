@@ -416,6 +416,17 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
           runtimeId: input.runtimeArchive.runtimeId,
         } as const;
       }
+      // Timeout/spawn/process while running t3 --version is the same class of
+      // transient as a node-pty transport failure: retry the staged cache
+      // instead of extracting the mounted tree or treating the cache as bad.
+      if (!stagedProbe.fatal) {
+        return {
+          _tag: "Failed",
+          reason: stagedProbe.reason,
+          fatal: false,
+          ...(stagedProbe.retryLimit === undefined ? {} : { retryLimit: stagedProbe.retryLimit }),
+        } as const;
+      }
       yield* Effect.logWarning(
         "The staged WSL runtime did not start; retrying from the mounted server tree.",
         { reason: stagedProbe.reason },
