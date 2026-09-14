@@ -61,6 +61,7 @@ import {
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
+import { SceneryBackdrop } from "../scenery/SceneryBackdrop";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import {
   ThreadGitControls,
@@ -893,6 +894,7 @@ function ThreadRouteContent(
             : undefined
         }
       >
+        {routeThreadIdentity !== null ? <SceneryBackdrop threadKey={routeThreadIdentity} /> : null}
         <ThreadDetailScreen
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           contentPresentation={contentPresentation}

@@ -50,6 +50,10 @@ describe("scenery structural contract with upstream markup", () => {
       '"relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"',
     );
     expect(chatViewSource).toContain("data-chat-header");
+    expect(chatViewSource).toContain('data-chat-messages=""');
+    expect(sceneryCssSource).toMatch(
+      /\[data-chat-messages\]\s*\{[^}]*background-color: transparent;/s,
+    );
   });
 
   it("the composer overlay still carries the attributes the dock clearance targets", () => {
@@ -91,9 +95,8 @@ describe("scenery structural contract with upstream markup", () => {
     // The draft→server navigation lands seconds after the first send; two
     // different route components would remount ChatView there, flashing every
     // glass surface right as the generated title arrives.
-    for (const text of [serverThreadRouteSource, draftThreadRouteSource]) {
-      expect(text).toContain("component: ThreadRouteView");
-    }
+    expect(draftThreadRouteSource).toContain("component: ThreadRouteView");
+    expect(serverThreadRouteSource).toContain("<ThreadRouteView");
   });
 
   it("the shared thread view keeps ChatView mounted across the draft→server swap", () => {
