@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_SERVER_SETTINGS,
   MessageId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
@@ -41,7 +42,7 @@ import {
 } from "../lib/composerImages";
 import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
-import { buildThreadFeed } from "../lib/threadActivity";
+import { buildThreadFeed, deriveLiveTurnHeadline } from "../lib/threadActivity";
 import { acknowledgedThreadMessagesAtom } from "./acknowledged-thread-messages";
 import { appendPendingThreadMessages } from "../features/threads/pending-thread-feed";
 import { appAtomRegistry } from "../state/atom-registry";
@@ -267,6 +268,20 @@ export function useThreadComposerState() {
       activeTurnId: selectedThread.session.activeTurnId ?? undefined,
     };
   }, [selectedThreadDetail, selectedThreadShell]);
+
+  const liveTurnHeadline = useMemo(() => {
+    const runningTurnId =
+      (selectedThread?.session?.status === "running"
+        ? (selectedThread.session.activeTurnId ?? null)
+        : null) ??
+      (selectedThread?.latestTurn?.state === "running" ? selectedThread.latestTurn.turnId : null);
+    return deriveLiveTurnHeadline(
+      selectedThreadActivities ?? [],
+      runningTurnId,
+      selectedEnvironmentRuntime?.serverConfig?.settings.generateActivityHeadlines ??
+        DEFAULT_SERVER_SETTINGS.generateActivityHeadlines,
+    );
+  }, [selectedEnvironmentRuntime, selectedThread, selectedThreadActivities]);
 
   const isCompacting = useMemo(() => {
     const queuedMessage = selectedThreadQueuedMessages.findLast(
@@ -802,6 +817,7 @@ export function useThreadComposerState() {
     feedbackSubmissions,
     dismissFeedback,
     selectedThreadFeed,
+    liveTurnHeadline,
     selectedThreadQueueCount,
     selectedThreadQueuedMessages,
     dispatchingQueuedMessageId,

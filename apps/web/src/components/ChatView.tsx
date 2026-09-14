@@ -128,6 +128,7 @@ import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   findLatestProposedPlan,
+  deriveLiveTurnHeadline,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
@@ -2828,6 +2829,15 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  const liveTurnHeadline = useMemo(
+    () =>
+      deriveLiveTurnHeadline(
+        threadActivities,
+        activeRunningTurnId,
+        settings.generateActivityHeadlines,
+      ),
+    [threadActivities, activeRunningTurnId, settings.generateActivityHeadlines],
+  );
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
   // until orchestration-v2 lands (source precedence lives in the derive).
@@ -9191,6 +9201,7 @@ export default function ChatView(props: ChatViewProps) {
                 listRef={legendListRef}
                 timelineEntries={displayedTimeline.entries}
                 latestTurn={paintOnlyDisplayedTimeline ? null : activeLatestTurn}
+                liveHeadline={paintOnlyDisplayedTimeline ? null : liveTurnHeadline}
                 runningTurnId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
                 turnDiffSummaries={
                   paintOnlyDisplayedTimeline

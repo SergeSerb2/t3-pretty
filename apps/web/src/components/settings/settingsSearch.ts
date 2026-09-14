@@ -471,6 +471,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "live-activity-headlines",
     title: "Live activity headlines",
     to: "/settings/general",
+    searchTerms: ["rewrite tool call human readable status line generated headline"],
   },
   {
     id: "diagnostics",

@@ -615,6 +615,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
+      ...(settings.generateActivityHeadlines !== DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines
+        ? ["Live activity headlines"]
+        : []),
       ...getChangedBrowserSettingLabels(settings),
       ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
         ? ["Agent browser access"]
@@ -632,6 +635,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.appearanceContrast,
       settings.diffColorScheme,
       settings.enableAgentBrowserAccess,
+      settings.generateActivityHeadlines,
       settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
@@ -772,6 +776,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+      generateActivityHeadlines: DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
       fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
       fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
@@ -3047,6 +3052,36 @@ export function GeneralSettingsPanel() {
                 ) : null}
               </div>
             )
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["generateActivityHeadlines"]}
+          {...searchableSetting("live-activity-headlines")}
+          description="The text generation model rewrites the live activity line of a running turn into a short readable status instead of raw tool and error text."
+          resetAction={
+            settings.generateActivityHeadlines !==
+            DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines ? (
+              <SettingResetButton
+                label="live activity headlines"
+                onClick={() =>
+                  updateSettings({
+                    generateActivityHeadlines: DEFAULT_UNIFIED_SETTINGS.generateActivityHeadlines,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["generateActivityHeadlines"]}
+              checked={settings.generateActivityHeadlines}
+              onCheckedChange={(checked) =>
+                updateSettings({ generateActivityHeadlines: Boolean(checked) })
+              }
+              aria-label="Live activity headlines"
+            />
           }
         />
       </SettingsSection>

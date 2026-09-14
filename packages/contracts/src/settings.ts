@@ -1050,11 +1050,11 @@ export const ServerSettings = Schema.Struct({
   autoGenerateProjectIcons: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * When on, the text generation model rewrites the live activity line of a
-   * running turn (web and mobile only: desktop always leaves the status as-is).
-   * Defaults to off because the rewritten text is typically less informative
-   * than the service's own status, and misleading when the service runs ahead.
+   * running turn into a short human-readable headline ("Updating contract
+   * tests") instead of raw tool summaries and error text. Generation uses the
+   * user's text generation provider subscription.
    */
-  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  generateActivityHeadlines: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
