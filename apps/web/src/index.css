@@ -2854,7 +2854,9 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   top: 0;
   right: 0;
   left: 0;
-  z-index: 10;
+  /* Behind in-flow transcript: the plate fills the existing topbar-scroll-fade
+     mask hole instead of dimming the first messages. */
+  z-index: -1;
   height: var(--workspace-chrome-edge-fade);
   -webkit-mask-image: linear-gradient(
     to bottom,
@@ -2878,7 +2880,8 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 20;
+  /* Below the header (z-index 20) so the left 1rem of the titlebar stays clickable. */
+  z-index: 10;
   width: var(--workspace-sidebar-edge-fade);
   background-color: var(--sidebar);
   -webkit-mask-image: linear-gradient(
