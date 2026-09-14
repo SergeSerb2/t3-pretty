@@ -3341,3 +3341,5 @@
 ## Parent changes intentionally omitted
 
 - None. The resolver did not omit any parent change to protect T3 Pretty.
+- `web-typecheck` failed after merging `v0.0.41-nightly.20260914.1707`; repaired with `gpt-5.6-sol`: The keyboard resize path now preserves T3 Pretty’s behavior while using the parent’s keyed width-state architecture, resolving the sole error-level typecheck diagnostic.
+  - edited `apps/web/src/hooks/useResizableWidth.ts`

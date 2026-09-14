@@ -180,7 +180,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       } catch (error) {
         console.error("Could not persist panel width.", error);
       }
-      setWidth(nextWidth);
+      setWidthState({ storageKey, width: nextWidth });
     },
     [clampedWidth, edge, maxWidth, minWidth, storageKey],
   );
