@@ -245,6 +245,9 @@ describe("glass contract with upstream chrome", () => {
     expect(indexCssSource).toMatch(
       /\[data-sidebar-state="expanded"\] \[data-slot="sidebar-inset"\]\s*\{[^}]*position: relative;[^}]*isolation: isolate;/s,
     );
+    expect(indexCssSource).toMatch(
+      /\[data-chat-messages\]::before\s*\{[^}]*mask-image: linear-gradient\(/s,
+    );
     expect(indexCssSource).not.toContain(":has(> [data-chat-header])");
     expect(indexCssSource).not.toContain(
       ":is([data-chat-header], [data-pull-requests-header])::after",

@@ -2823,8 +2823,10 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
 }
 
 /* Soft chrome skirts live on the receiving surface: the header and
-   sidebar stay clipped, and the fade never hangs out of those hosts. */
-:is([data-chat-header], [data-pull-requests-header]) {
+   sidebar stay clipped, and the fade never hangs out of those hosts.
+   Mask the whole plate so grain and fill dissolve; a transparent-stop
+   gradient over an opaque background-color would stay a hard rectangle. */
+[data-chat-header] {
   position: relative;
   z-index: 20;
 }
@@ -2852,22 +2854,22 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   left: 0;
   z-index: 10;
   height: var(--workspace-chrome-edge-fade);
-  background-image:
-    linear-gradient(
-      to bottom,
-      var(--toolbar-background) 0%,
-      color-mix(in srgb, var(--toolbar-background) 72%, transparent) 32%,
-      color-mix(in srgb, var(--toolbar-background) 38%, transparent) 58%,
-      color-mix(in srgb, var(--toolbar-background) 12%, transparent) 82%,
-      transparent 100%
-    ),
-    var(--surface-grain);
-  background-size: auto, var(--surface-grain-size);
-}
-
-[data-app-sidebar] {
-  background-color: transparent;
-  border-color: transparent;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
 }
 
 [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
@@ -2877,17 +2879,22 @@ html[data-theme-id] :is([data-chat-header], [data-pull-requests-header]) {
   z-index: 20;
   width: var(--workspace-chrome-edge-fade);
   background-color: var(--sidebar);
-  background-image:
-    linear-gradient(
-      to right,
-      var(--sidebar) 0%,
-      color-mix(in srgb, var(--sidebar) 72%, transparent) 32%,
-      color-mix(in srgb, var(--sidebar) 38%, transparent) 58%,
-      color-mix(in srgb, var(--sidebar) 12%, transparent) 82%,
-      transparent 100%
-    ),
-    var(--surface-grain);
-  background-size: auto, var(--surface-grain-size);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    black 0%,
+    rgb(0 0 0 / 72%) 32%,
+    rgb(0 0 0 / 38%) 58%,
+    rgb(0 0 0 / 12%) 82%,
+    transparent 100%
+  );
 }
 
 html[data-theme-id] [data-chat-header] [data-slot="button"],
@@ -3007,7 +3014,6 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
   --sidebar-stage-fade: var(--app-theme-sidebar);
-  background-color: transparent;
   border-color: transparent;
 }
 
