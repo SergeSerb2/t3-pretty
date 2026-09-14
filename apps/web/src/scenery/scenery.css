@@ -1048,6 +1048,7 @@ html[data-theme-id][data-theme-id="world-scenery"][data-scenery-on][data-window-
   [data-sidebar-state="expanded"]
   [data-slot="sidebar-inset"]::after {
   background-color: var(--scenery-chrome-fill-solid);
+  background-image: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -1208,6 +1209,7 @@ html[data-theme-id="world-scenery"].dark .tool-call-shiki .shiki.pierre-light sp
     [data-sidebar-state="expanded"]
     [data-slot="sidebar-inset"]::after {
     background-color: var(--scenery-chrome-fill-solid);
+    background-image: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

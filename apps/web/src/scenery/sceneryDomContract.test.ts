@@ -282,10 +282,10 @@ describe("glass contract with upstream chrome", () => {
       /\[data-slot="sidebar-inset"\]::after\s*\{[^}]*backdrop-filter: blur\(14px\) saturate\(1\.1\);/s,
     );
     expect(sceneryCssSource).toMatch(
-      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid/,
+      /\[data-window-interacting\][\s\S]*?--scenery-chrome-fill-solid[\s\S]*?background-image: none/,
     );
     expect(indexCssSource).toMatch(
-      /\[data-window-interacting\] \[data-chrome-fade-top\]::before\s*\{[^}]*height: var\(--workspace-titlebar-scroll-fade-height\);/s,
+      /\[data-window-interacting\] \[data-chrome-fade-top\]::before\s*\{[^}]*height: var\(--workspace-titlebar-scroll-fade-height\);[^}]*background-image: none;/s,
     );
     expect(indexCssSource).toMatch(
       /\[data-window-interacting\][\s\S]*?\[data-slot="sidebar-inset"\]::after\s*\{[^}]*width: var\(--workspace-sidebar-edge-fade-solid\);/s,

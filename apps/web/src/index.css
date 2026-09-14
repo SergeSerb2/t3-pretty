@@ -707,10 +707,12 @@ html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sideba
    to the reserved hole so a solid slab cannot paint over the transcript. */
 html[data-window-interacting] [data-chrome-fade-top]::before {
   height: var(--workspace-titlebar-scroll-fade-height);
+  background-image: none;
 }
 
 html[data-window-interacting] [data-sidebar-state="expanded"] [data-slot="sidebar-inset"]::after {
   width: var(--workspace-sidebar-edge-fade-solid);
+  background-image: none;
 }
 
 /* AppKit inactive-window convention: when the desktop window is not key, the
