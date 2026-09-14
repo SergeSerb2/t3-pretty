@@ -142,6 +142,9 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
+import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
+import { ProjectionThreadRepositoryLive } from "./persistence/Layers/ProjectionThreads.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -270,6 +273,13 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 );
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+
+const StorageInventoryLayerLive = StorageInventoryService.layer.pipe(
+  Layer.provide(VcsProcess.layer),
+  Layer.provide(ProjectionProjectRepositoryLive),
+  Layer.provide(ProjectionThreadRepositoryLive),
+  Layer.provide(PersistenceLayerLive),
+);
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
@@ -530,7 +540,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.
   Layer.provideMerge(BackgroundLayerLive),
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
-  Layer.provideMerge(UsageLayerLive),
+  Layer.provideMerge(Layer.mergeAll(UsageLayerLive, StorageInventoryLayerLive)),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),

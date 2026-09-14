@@ -118,6 +118,14 @@ import {
   VcsStatusStreamEvent,
 } from "./git.ts";
 import {
+  StorageGetInventoryInput,
+  StorageInventory,
+  StorageInventoryError,
+  StoragePathNotManagedError,
+  StorageRemoveOrphanInput,
+  StorageRemoveOrphanResult,
+} from "./storage.ts";
+import {
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
   ReviewDiffPreviewError,
@@ -1236,6 +1244,29 @@ const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
 });
 
+const WsStorageGetInventoryRpc = Rpc.make(WS_METHODS.storageGetInventory, {
+  payload: StorageGetInventoryInput,
+  success: StorageInventory,
+  error: Schema.Union([StorageInventoryError, EnvironmentAuthorizationError]),
+});
+
+const WsStorageStreamInventoryRpc = Rpc.make(WS_METHODS.storageStreamInventory, {
+  payload: StorageGetInventoryInput,
+  success: StorageInventory,
+  error: Schema.Union([StorageInventoryError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsStorageRemoveOrphanRpc = Rpc.make(WS_METHODS.storageRemoveOrphan, {
+  payload: StorageRemoveOrphanInput,
+  success: StorageRemoveOrphanResult,
+  error: Schema.Union([
+    StorageInventoryError,
+    StoragePathNotManagedError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 /**
  * Ephemeral live diff preview for compact/mobile surfaces.
  * Not the persisted T3 Review model. Future review sessions should use
@@ -1652,6 +1683,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
+  WsStorageGetInventoryRpc,
+  WsStorageStreamInventoryRpc,
+  WsStorageRemoveOrphanRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,
